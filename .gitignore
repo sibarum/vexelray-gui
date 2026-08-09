@@ -5,3 +5,4 @@ target/
 .vscode/
 cp.txt
 cp-*.txt
+gui.png

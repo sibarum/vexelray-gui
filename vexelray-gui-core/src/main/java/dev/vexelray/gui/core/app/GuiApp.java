@@ -3,12 +3,16 @@ package dev.vexelray.gui.core.app;
 import dev.vexelray.canvas.Canvas;
 import dev.vexelray.canvas.CanvasShader;
 import dev.vexelray.canvas.CanvasVertex;
+import dev.vexelray.gui.core.Gui;
+import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
+import dev.vexelray.gui.core.layout.TextMeasurer;
 import dev.vexelray.gui.core.model.RetainedNode;
 import dev.vexelray.os.NativePlatform;
 import dev.vexelray.os.NativeWindow;
 import dev.vexelray.os.WindowConfig;
 import dev.vexelray.shader.ComposedShader;
 import dev.vexelray.text.AtlasData;
+import dev.vexelray.text.GlyphLayout;
 import dev.vexelray.text.TextLayout;
 import dev.vexelray.vulkan.present.AtlasTexture;
 import dev.vexelray.vulkan.present.GraphicsPipeline;
@@ -32,22 +36,16 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The GUI application host and frame loop — the seam where the framework meets VexelRay. It owns the window and
+ * The GUI application host and frame loop — the seam between the framework and VexelRay. It owns the window and
  * the VexelRay objects (device, swapchain, render pass, font atlas, the Canvas pipeline, a dynamic vertex buffer,
- * the presenter) and each frame it walks a {@link RetainedNode} tree into a {@link Canvas} ({@link TreeRenderer}),
- * uploads the geometry, and presents. This is exactly VexelRay's dynamic-Canvas present path — the GUI writes no
- * Vulkan or shader code; it only composes native API.
- *
- * <p>Step 1 (architecture.md §12 step 4): render a hard-coded tree, on demand, through {@code Canvas}. The
- * mutation queue, layout engine, input, and idle-blocking loop are later steps; here the loop simply re-emits the
- * (static) tree each frame via {@link WindowedPresenter}'s per-frame callback.
+ * the presenter). Each frame it asks the {@link Gui} to drain mutations, reconcile, and lay out the tree, then
+ * walks the resulting {@link RetainedNode} tree into a {@link Canvas} ({@link TreeRenderer}) and presents. The GUI
+ * writes no Vulkan or shader code — this only composes VexelRay's native API.
  */
 public final class GuiApp implements AutoCloseable {
 
-    /** Default font atlas shipped by vexelray-text (baked by vexelray-msdf-maven-plugin). */
     private static final String ATLAS_JSON = "/dev/vexelray/text/atlas/primary.json";
     private static final String ATLAS_PNG = "/dev/vexelray/text/atlas/primary.png";
-    /** Vertex-buffer capacity in floats — headroom for a frame's worth of Canvas geometry. */
     private static final int CAPACITY_FLOATS = 512 * 1024;
 
     private final NativeWindow window;
@@ -62,8 +60,8 @@ public final class GuiApp implements AutoCloseable {
     private final WindowedPresenter presenter;
     private final Canvas canvas;
     private final TextLayout text;
+    private final TextMeasurer measurer;
 
-    /** Open a window and wire up the native rendering path. */
     public GuiApp(String title, int width, int height) {
         NativePlatform platform = NativePlatform.current();
         this.window = platform.createWindow(new WindowConfig(title, width, height, true));
@@ -77,9 +75,9 @@ public final class GuiApp implements AutoCloseable {
 
         int[] atlasSize = new int[2];
         byte[] atlasRgba = loadAtlasRgba(atlasSize);
-        AtlasData atlasData = AtlasData.loadFromResource(ATLAS_JSON);
         this.atlas = new AtlasTexture(device, atlasSize[0], atlasSize[1], atlasRgba);
-        this.text = new TextLayout(atlasData);
+        this.text = new TextLayout(AtlasData.loadFromResource(ATLAS_JSON));
+        this.measurer = measurer(text);
         this.canvas = new Canvas(swapchain.width(), swapchain.height());
         this.vertexBuffer = new VertexBuffer(device, CAPACITY_FLOATS);
 
@@ -90,20 +88,22 @@ public final class GuiApp implements AutoCloseable {
         this.presenter = new WindowedPresenter(device, swapchain, renderPass.handle(), pipeline, window);
     }
 
-    /** Render {@code root} until the window closes (or {@code maxFrames} presented if positive). */
-    public void run(RetainedNode root, int maxFrames) {
+    /** Drive {@code gui} until the window closes (or {@code maxFrames} presented if positive). */
+    public void run(Gui gui, int maxFrames) {
         presenter.configureDraw(vertexBuffer.handle(), atlas.descriptorSet(), 0);
         presenter.run(maxFrames, 0, (dt, pushConstants) -> {
+            RetainedNode root = gui.frame(canvas.width(), canvas.height(), measurer);
             canvas.begin();
-            TreeRenderer.emit(root, canvas, text);
+            if (root != null) {
+                TreeRenderer.emit(root, canvas, text);
+            }
             vertexBuffer.update(canvas.toVertexArray());
             presenter.setVertexCount(canvas.vertexCount());
         });
     }
 
-    /** Render {@code root} until the window closes. */
-    public void run(RetainedNode root) {
-        run(root, 0);
+    public void run(Gui gui) {
+        run(gui, 0);
     }
 
     @Override
@@ -121,17 +121,20 @@ public final class GuiApp implements AutoCloseable {
         window.close();
     }
 
-    // --- headless capture (verification / thumbnails); no window, its own device ---
+    // --- headless capture ---
 
-    /** Render {@code root} once into a {@code width}×{@code height} image and write it as a PNG. */
-    public static void capture(RetainedNode root, int width, int height, float bgR, float bgG, float bgB,
-                               String path) throws IOException {
+    /** Reconcile + lay out {@code gui} at {@code width}×{@code height}, render one frame, and write a PNG. */
+    public static void capture(Gui gui, int width, int height, float bgR, float bgG, float bgB, String path)
+            throws IOException {
         int[] atlasSize = new int[2];
         byte[] atlasRgba = loadAtlasRgba(atlasSize);
-        AtlasData atlasData = AtlasData.loadFromResource(ATLAS_JSON);
-
+        TextLayout text = new TextLayout(AtlasData.loadFromResource(ATLAS_JSON));
+        RetainedNode root = gui.frame(width, height, measurer(text));
         Canvas canvas = new Canvas(width, height);
-        TreeRenderer.emit(root, canvas, new TextLayout(atlasData));
+        canvas.begin();
+        if (root != null) {
+            TreeRenderer.emit(root, canvas, text);
+        }
         float[] vertices = canvas.toVertexArray();
         int vertexCount = canvas.vertexCount();
 
@@ -155,9 +158,18 @@ public final class GuiApp implements AutoCloseable {
         }
     }
 
-    // --- native-API glue (composition, not re-implementation) ---
+    // --- native-API glue ---
 
-    /** The Canvas pipeline config: the fat vertex format, the atlas descriptor, alpha blend, no push constant. */
+    /** Text intrinsic sizing over VexelRay's glyph layout: width = measured advance, height = line height. */
+    private static TextMeasurer measurer(TextLayout text) {
+        GlyphLayout gl = text.glyphLayout();
+        return (node, axis) -> {
+            float size = node.textSize();
+            String s = node.textString() == null ? "" : node.textString();
+            return axis == Axis.HORIZONTAL ? gl.measure(s, size) : gl.ascent(size) + gl.descent(size);
+        };
+    }
+
     private static GraphicsPipeline.Config canvasConfig(AtlasTexture atlas) {
         List<GraphicsPipeline.VertexAttribute> attrs = new ArrayList<>();
         for (CanvasVertex.Attr a : CanvasVertex.ATTRIBUTES) {

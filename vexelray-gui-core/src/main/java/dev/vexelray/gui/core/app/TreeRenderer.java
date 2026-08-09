@@ -32,24 +32,27 @@ public final class TreeRenderer {
     }
 
     private static void drawSelf(RetainedNode n, Canvas canvas, TextLayout text) {
-        if (n.borderWidth > 0f && n.borderColor != null) {
-            canvas.fillRoundRect(n.x, n.y, n.w, n.h, n.cornerRadius, n.borderColor);
-            float bw = n.borderWidth;
-            Color fill = n.background;
-            if (fill != null) {
-                float innerR = Math.max(0f, n.cornerRadius - bw);
-                canvas.fillRoundRect(n.x + bw, n.y + bw, n.w - 2 * bw, n.h - 2 * bw, innerR, fill);
+        Color bg = n.background();
+        float radius = n.corner();
+        float bw = n.borderWidth();
+        Color border = n.borderColor();
+        if (bw > 0f && border != null) {
+            canvas.fillRoundRect(n.x, n.y, n.w, n.h, radius, border);
+            if (bg != null) {
+                float innerR = Math.max(0f, radius - bw);
+                canvas.fillRoundRect(n.x + bw, n.y + bw, n.w - 2 * bw, n.h - 2 * bw, innerR, bg);
             }
-        } else if (n.background != null) {
-            canvas.fillRoundRect(n.x, n.y, n.w, n.h, n.cornerRadius, n.background);
+        } else if (bg != null) {
+            canvas.fillRoundRect(n.x, n.y, n.w, n.h, radius, bg);
         }
 
-        if (n.text != null && !n.text.isEmpty()) {
-            TextLayout.TextStyle style = TextLayout.TextStyle.of(n.textSize)
+        String s = n.textString();
+        if (s != null && !s.isEmpty()) {
+            TextLayout.TextStyle style = TextLayout.TextStyle.of(n.textSize())
                     .withWrap(TextLayout.WrapMode.WORD_CHAR)
-                    .withAlign(n.hAlign, n.vAlign);
+                    .withAlign(n.hAlign(), n.vAlign());
             float pad = Math.min(TEXT_PAD_X, n.w * 0.25f);
-            canvas.text(text, n.text, n.x + pad, n.y, Math.max(1f, n.w - 2 * pad), n.h, style, n.textColor);
+            canvas.text(text, s, n.x + pad, n.y, Math.max(1f, n.w - 2 * pad), n.h, style, n.textColor());
         }
     }
 }

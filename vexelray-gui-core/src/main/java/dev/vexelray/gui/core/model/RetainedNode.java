@@ -1,99 +1,133 @@
 package dev.vexelray.gui.core.model;
 
 import dev.vexelray.canvas.Color;
+import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
+import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
+import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.text.TextLayout;
 
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.Map;
 
 /**
- * A node in the retained UI tree — the model the GUI thread owns and the {@code TreeRenderer} walks. In this
- * first milestone (architecture.md §12 step 4) a tree is hard-coded with absolute pixel {@code bounds} and plain
- * visual props; the mutation queue, reconciler, and flex layout that will <em>own</em> and <em>compute</em> these
- * arrive in the next step. Colours are VexelRay's native {@link Color}; alignment is VexelRay's {@link TextLayout}
- * enums — the GUI defines no drawing types of its own.
+ * The live model node — GUI-thread-only, mutated exclusively by the {@link Reconciler}. Identity is the stable
+ * {@code id} (the {@code Node} handle shares it). Props live in an untyped map keyed by {@link PropKey} and are
+ * read through the typed accessors below; {@link #x}/{@link #y}/{@link #w}/{@link #h} are the layout-computed
+ * rect (screen px), filled by the flex layout each dirty frame.
  */
 public final class RetainedNode {
 
-    private static final AtomicLong IDS = new AtomicLong(1);
-
-    /** Client-stable identity (auto-assigned for now; client-assigned once the mutation channel lands). */
     public final long id;
+    public final NodeKind kind;
+    private final Map<PropKey, Object> props = new EnumMap<>(PropKey.class);
+    public final List<RetainedNode> children = new ArrayList<>();
+    public RetainedNode parent;
 
-    // Layout rect in absolute screen pixels (top-left origin, Y-down). Hard-coded for now; computed by layout later.
+    // Layout-computed rect, absolute screen px (Y-down).
     public float x;
     public float y;
     public float w;
     public float h;
 
-    // Visual props.
-    public Color background;               // null = no fill
-    public float cornerRadius;             // px
-    public float borderWidth;              // px, 0 = no border
-    public Color borderColor;              // used when borderWidth > 0
-
-    // Text (single run for now; RichText model arrives later).
-    public String text;                    // null/empty = no text
-    public float textSize = 16f;           // px per em
-    public Color textColor = Color.WHITE;
-    public TextLayout.HAlign hAlign = TextLayout.HAlign.LEFT;
-    public TextLayout.VAlign vAlign = TextLayout.VAlign.MIDDLE;
-
-    public final List<RetainedNode> children = new ArrayList<>();
-
-    public RetainedNode() {
-        this.id = IDS.getAndIncrement();
+    public RetainedNode(long id, NodeKind kind) {
+        this.id = id;
+        this.kind = kind;
     }
 
-    /** A fresh node with an auto-assigned id. */
-    public static RetainedNode node() {
-        return new RetainedNode();
-    }
-
-    // --- fluent builders (ergonomic hard-coding of a tree; superseded by the mutation API later) ---
-
-    public RetainedNode bounds(float x, float y, float w, float h) {
-        this.x = x;
-        this.y = y;
-        this.w = w;
-        this.h = h;
-        return this;
-    }
-
-    public RetainedNode background(Color c) {
-        this.background = c;
-        return this;
-    }
-
-    public RetainedNode corner(float radius) {
-        this.cornerRadius = radius;
-        return this;
-    }
-
-    public RetainedNode border(float width, Color color) {
-        this.borderWidth = width;
-        this.borderColor = color;
-        return this;
-    }
-
-    public RetainedNode text(String s, float size, Color color) {
-        this.text = s;
-        this.textSize = size;
-        this.textColor = color;
-        return this;
-    }
-
-    public RetainedNode align(TextLayout.HAlign h, TextLayout.VAlign v) {
-        this.hAlign = h;
-        this.vAlign = v;
-        return this;
-    }
-
-    public RetainedNode add(RetainedNode... kids) {
-        for (RetainedNode k : kids) {
-            children.add(k);
+    public void set(PropKey key, Object value) {
+        if (value == null) {
+            props.remove(key);
+        } else {
+            props.put(key, value);
         }
-        return this;
+    }
+
+    public Object raw(PropKey key) {
+        return props.get(key);
+    }
+
+    // --- typed accessors with defaults ---
+
+    public Color background() {
+        return (Color) props.get(PropKey.BACKGROUND);
+    }
+
+    public float corner() {
+        return f(PropKey.CORNER, 0f);
+    }
+
+    public float borderWidth() {
+        return f(PropKey.BORDER_WIDTH, 0f);
+    }
+
+    public Color borderColor() {
+        return (Color) props.get(PropKey.BORDER_COLOR);
+    }
+
+    public String textString() {
+        return (String) props.get(PropKey.TEXT);
+    }
+
+    public float textSize() {
+        return f(PropKey.TEXT_SIZE, 16f);
+    }
+
+    public Color textColor() {
+        Object c = props.get(PropKey.TEXT_COLOR);
+        return c != null ? (Color) c : Color.WHITE;
+    }
+
+    public TextLayout.HAlign hAlign() {
+        Object a = props.get(PropKey.H_ALIGN);
+        return a != null ? (TextLayout.HAlign) a : TextLayout.HAlign.LEFT;
+    }
+
+    public TextLayout.VAlign vAlign() {
+        Object a = props.get(PropKey.V_ALIGN);
+        return a != null ? (TextLayout.VAlign) a : TextLayout.VAlign.MIDDLE;
+    }
+
+    public Direction direction() {
+        Object d = props.get(PropKey.DIRECTION);
+        return d != null ? (Direction) d : Direction.ROW;
+    }
+
+    public Justify justify() {
+        Object j = props.get(PropKey.JUSTIFY);
+        return j != null ? (Justify) j : Justify.START;
+    }
+
+    public AlignItems alignItems() {
+        Object a = props.get(PropKey.ALIGN_ITEMS);
+        return a != null ? (AlignItems) a : AlignItems.STRETCH;
+    }
+
+    public Length width() {
+        return len(PropKey.WIDTH);
+    }
+
+    public Length height() {
+        return len(PropKey.HEIGHT);
+    }
+
+    public float padding() {
+        return f(PropKey.PADDING, 0f);
+    }
+
+    public float gap() {
+        return f(PropKey.GAP, 0f);
+    }
+
+    private float f(PropKey key, float dflt) {
+        Object v = props.get(key);
+        return v != null ? ((Number) v).floatValue() : dflt;
+    }
+
+    private Length len(PropKey key) {
+        Object v = props.get(key);
+        return v != null ? (Length) v : Length.AUTO;
     }
 }

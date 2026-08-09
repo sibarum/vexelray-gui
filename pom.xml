@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>dev.vexelray.gui</groupId>
+    <artifactId>vexelray-gui</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>vexelray-gui</name>
+    <description>
+        A GPU-accelerated Java GUI framework built on the VexelRay Vulkan stack. It is a framework only:
+        it renders exclusively through VexelRay's native Canvas and owns no rendering, windowing, or
+        native code (except the NFD file-dialog facade). Retained node tree with stable identity, mutated
+        through an MPSC message queue drained on the GUI thread; app logic on worker threads. See
+        docs/architecture.md.
+    </description>
+
+    <modules>
+        <!-- Framework core: retained Node tree, MPSC mutation + event channels (PENDING_WAKE), Length +
+             flex layout, lifecycle FSM + animation transform layer, input dispatch, RichText, GuiApp loop. -->
+        <module>vexelray-gui-core</module>
+        <!-- Widgets built on core: box, text, button, slider, list, scroll, text field, ... -->
+        <module>vexelray-gui-widget</module>
+        <!-- The GUI's one native binding: a Panama nativefiledialog-extended facade. -->
+        <module>vexelray-gui-nfd</module>
+        <!-- Canonical showcase / reference app. -->
+        <module>vexelray-gui-demo</module>
+    </modules>
+
+    <properties>
+        <maven.compiler.release>25</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <!-- VexelRay: the Vulkan engine we build on. Installed to the local .m2 by `mvn install` in the
+             sibling vexelray repo (which in turn requires SupirVast installed first). -->
+        <vexelray.version>0.1.0-SNAPSHOT</vexelray.version>
+        <!-- SupirVast: transitive via VexelRay; pinned for any incidental direct use. -->
+        <supirvast.version>0.1.0-SNAPSHOT</supirvast.version>
+        <joml.version>1.10.7</joml.version>
+        <junit.version>5.11.4</junit.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Reactor-internal modules: children reference these without a version. -->
+            <dependency>
+                <groupId>dev.vexelray.gui</groupId>
+                <artifactId>vexelray-gui-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.vexelray.gui</groupId>
+                <artifactId>vexelray-gui-widget</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.vexelray.gui</groupId>
+                <artifactId>vexelray-gui-nfd</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- VexelRay engine artifacts (from the sibling repo's install). The GUI draws through
+                 -canvas, lays text with -text, drives the runtime via -vulkan, and windows/inputs via -os. -->
+            <dependency>
+                <groupId>dev.vexelray</groupId>
+                <artifactId>vexelray-canvas</artifactId>
+                <version>${vexelray.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.vexelray</groupId>
+                <artifactId>vexelray-text</artifactId>
+                <version>${vexelray.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.vexelray</groupId>
+                <artifactId>vexelray-vulkan</artifactId>
+                <version>${vexelray.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.vexelray</groupId>
+                <artifactId>vexelray-os-api</artifactId>
+                <version>${vexelray.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.vexelray</groupId>
+                <artifactId>vexelray-os-windows</artifactId>
+                <version>${vexelray.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.vexelray</groupId>
+                <artifactId>vexelray-os-linux</artifactId>
+                <version>${vexelray.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.vexelray</groupId>
+                <artifactId>vexelray-os-macos</artifactId>
+                <version>${vexelray.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>dev.supirvast</groupId>
+                <artifactId>vastir</artifactId>
+                <version>${supirvast.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.joml</groupId>
+                <artifactId>joml</artifactId>
+                <version>${joml.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.junit</groupId>
+                <artifactId>junit-bom</artifactId>
+                <version>${junit.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.13.0</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>3.5.2</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+        <plugins>
+            <!-- The demo runs via `exec:exec` (see vexelray-gui-demo). Declared here with skip=true and a
+                 valid executable so a reactor build never launches it on the aggregator or siblings; the
+                 demo module un-skips it. Same pattern as VexelRay's root pom. -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.0</version>
+                <configuration>
+                    <skip>true</skip>
+                    <executable>${java.home}/bin/java</executable>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

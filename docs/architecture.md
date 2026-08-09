@@ -127,21 +127,26 @@ it. Unidirectional, Elm-shaped.
 
 ---
 
-## 5. Threading — *decision to confirm*
+## 5. Threading — full worker-thread model
 
-The prior design mandated worker-threaded handlers and an MPSC queue from day one. First-principles,
-the **model** (single-writer tree, mutations in, events out) is right, but *forcing* multi-threading
-in v1 is optional complexity:
+**Decided:** the full model from day one. App logic runs on a worker executor; the GUI thread owns
+only drain → reconcile → layout → emit → present. The contract is strictly one-way: workers enqueue
+mutations and read immutable event snapshots; **only** the GUI thread mutates the retained tree.
 
-- **Recommended for v1:** build the single-writer + queue seam, but run handlers on the GUI thread by
-  default with an explicit `gui.async(...)` opt-out. The queue/event API is identical whether the
-  producer is a worker or the GUI thread, so nothing is thrown away — we just don't *require* an
-  executor and cross-thread wake CAS to get the first widgets on screen. Threading hardens later
-  behind the same API.
-- **Alternative:** full worker-thread model immediately (per the old doc).
+- **MPSC mutation queue**, drained once per frame (per-producer FIFO preserves a worker's program
+  order; `batch(...)` posts an atomic group no frame splits; `SetProp` coalesces last-write-wins
+  within a drain, structural ops never coalesce).
+- **`PENDING_WAKE` cross-thread wake CAS.** The GUI thread blocks in `waitEvents(timeout)` (E2) at 0%
+  CPU when idle; a worker enqueuing while it sleeps must wake it. A single `AtomicBoolean` guards the
+  OS wake so a burst of posts collapses to one message:
+  `if (pendingWake.compareAndSet(false,true)) window.postWake();` on enqueue; the GUI thread resets it
+  to `false` after draining. This is the backpressure that stops a hot worker flooding the message
+  pump.
+- **Handlers run off the GUI thread by default** — `gui.on(...)` dispatches to the worker executor, so
+  a slow handler can never stall rendering; a `gui.onUi(...)` variant runs on the GUI thread for the
+  rare handler that must.
 
-Either way the contract is one-way: workers enqueue mutations, read events; only the GUI thread
-mutates the tree.
+`window.postWake()` is the one OS primitive this needs; it rides in with E1/E2 on `vexelray-os`.
 
 ---
 
@@ -225,19 +230,21 @@ step-1 timeout, no busy loop. Steps 6–8 are pure `Canvas` + native presenter; 
 
 ## 11. Modules
 
-Deliberately slim — the engine carries render/OS/text, so the framework is nearly one module:
-
 ```
-vexelray-gui        the framework: model (Node/Mutation/Event), layout+units, animation+lifecycle,
-                    input dispatch, RichText, widgets, the app loop (GuiApp).   -> vexelray-canvas,
-                    -text, -vulkan, -os
-vexelray-gui-demo   canonical showcase app.                                     -> vexelray-gui
+vexelray-gui           parent (pom), groupId dev.vexelray.gui, Java 25
+├─ vexelray-gui-core   the framework core: model (Node/RetainedNode, Mutation/Event, reconciler,
+│                      MPSC + PENDING_WAKE threading), Length + flex layout, lifecycle FSM + animation
+│                      transform layer, framework-owned input dispatch, RichText, and the app loop
+│                      (GuiApp).                                    -> vexelray-canvas, -text, -vulkan, -os
+├─ vexelray-gui-widget widgets built on core: box, text, button, slider, list, scroll, text field, … -> -core
+├─ vexelray-gui-nfd    the GUI's one native binding — a Panama nativefiledialog-extended facade;
+│                      results delivered back through core's event queue.                            -> -core
+└─ vexelray-gui-demo   canonical showcase app.                                          -> -widget, -nfd
 ```
 
-Packages inside `vexelray-gui`: `model · layout · anim · input · text · widget · app`. Split into
-sub-modules only if one grows a hard dependency boundary. **File dialog (req 7)** is a native/platform
-concern → proposed as a VexelRay addition (`vexelray-os` NFD facade) consumed here, consistent with §0;
-if you'd rather it live in the GUI, it's a small `vexelray-gui-nfd` module instead (open question).
+Core packages: `model · layout · anim · input · text · app`. The file dialog (req 7) is the single
+deliberate exception to §0's "no native bindings in the GUI" — a self-contained facade, invoked on the
+GUI thread (NFD is modal/main-thread), result posted to a worker via the event queue.
 
 ---
 
@@ -257,13 +264,18 @@ Engine first (the prerequisites), then the framework bottom-up:
 
 ---
 
-## 13. Decisions to confirm
+## 13. Resolved decisions
 
-1. **Engine prerequisites (§3):** add input events + `waitEvents` to `vexelray-os` and a clip-rect to
-   `vexelray-canvas`, rather than any shim in the GUI. (This is the crux of "use the native API.")
-2. **Threading (§5):** single-writer + queue seam now, but GUI-thread handlers by default with
-   `async` opt-out — vs. full worker-thread model immediately.
-3. **Module shape (§11):** one `vexelray-gui` module + demo (file dialog folded into VexelRay-os) —
-   vs. splitting core/widgets and/or a `-gui-nfd` module.
-4. **Retained-tree + MPSC model (§4):** confirmed kept (justified from reqs), or reconsider.
+1. **Rendering (§0):** GUI renders only through VexelRay's `Canvas`; no Vulkan/shader/vertex code here.
+2. **Engine prerequisites (§3):** E1 input events + E2 `waitEvents`/`postWake` land in `vexelray-os`,
+   E3 clip-rect in `vexelray-canvas`. No shim in the GUI.
+3. **Retained-tree + MPSC model (§4):** kept, justified from reqs (immediate-mode and locked-tree
+   rejected).
+4. **Threading (§5):** full worker-thread model immediately — worker-executor handlers, MPSC drain,
+   `PENDING_WAKE` wake CAS.
+5. **Modules (§11):** `-core` + `-widget` + `-nfd` + `-demo`; the NFD Panama facade is the GUI's one
+   native binding.
+
+Still open: layout-animation path (size/position via `onChange`) first-class vs. transform-layer-only
+for v1; group membership static vs. dynamic; choreographer interruption semantics (all §6/later).
 ```

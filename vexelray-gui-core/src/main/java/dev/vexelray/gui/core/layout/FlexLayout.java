@@ -61,15 +61,15 @@ public final class FlexLayout {
             return;
         }
 
-        float pad = n.padding().scalarPx(ctx, n.w);
-        float inset = n.borderPx + pad;
+        float insetX = n.borderPx + n.paddingX().scalarPx(ctx, n.w);
+        float insetY = n.borderPx + n.paddingY().scalarPx(ctx, n.w);
         float gap = n.gap().scalarPx(ctx, n.w);
         boolean row = n.direction() == Direction.ROW;
 
-        float baseX = n.x + inset;
-        float baseY = n.y + inset;
-        float baseW = Math.max(0f, n.w - 2f * inset);
-        float baseH = Math.max(0f, n.h - 2f * inset);
+        float baseX = n.x + insetX;
+        float baseY = n.y + insetY;
+        float baseW = Math.max(0f, n.w - 2f * insetX);
+        float baseH = Math.max(0f, n.h - 2f * insetY);
 
         // Pass 1: place in the full content box (no scroll) to measure how much space the children need.
         float[] need = place(n, baseX, baseY, row ? baseW : baseH, row ? baseH : baseW, row, gap, ctx, tm);
@@ -228,7 +228,8 @@ public final class FlexLayout {
         if (isBasisFree(along)) {
             return Math.max(0f, along.resolve(ctx, 0f));
         }
-        float inset = n.borderWidth().scalarPx(ctx, 0f) + n.padding().scalarPx(ctx, 0f);
+        Length padAxis = axis == Axis.HORIZONTAL ? n.paddingX() : n.paddingY();
+        float inset = n.borderWidth().scalarPx(ctx, 0f) + padAxis.scalarPx(ctx, 0f);
         if (n.kind == NodeKind.TEXT) {
             float textPx = Math.max(1f, n.textSize().scalarPx(ctx, emBasis(ctx)));
             return Math.max(0f, tm.intrinsic(n, axis, textPx)) + 2f * inset;

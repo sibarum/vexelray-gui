@@ -94,6 +94,12 @@ public final class Node {
         return prop(PropKey.PADDING, p);
     }
 
+    /** CSS-style shorthand: {@code vertical} padding top+bottom, {@code horizontal} padding left+right. */
+    public Node padding(Length vertical, Length horizontal) {
+        prop(PropKey.PADDING_Y, vertical);
+        return prop(PropKey.PADDING_X, horizontal);
+    }
+
     public Node margin(Length m) {
         return prop(PropKey.MARGIN, m);
     }

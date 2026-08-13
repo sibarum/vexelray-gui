@@ -60,6 +60,23 @@ class FlexLayoutTest {
     }
 
     @Test
+    void perAxisPaddingInsetsIndependently() {
+        RetainedNode root = box(0);
+        root.set(PropKey.DIRECTION, Direction.ROW);
+        root.set(PropKey.PADDING_X, Length.rem(1));    // 16 left/right
+        root.set(PropKey.PADDING_Y, Length.rem(0.5f)); // 8 top/bottom
+        RetainedNode child = box(1);
+        child.set(PropKey.WIDTH, Length.rem(2));
+        add(root, child);
+
+        FlexLayout.layout(root, 200f, 100f, ctx(), TM);
+
+        assertEquals(16f, child.x, EPS, "horizontal padding insets x");
+        assertEquals(8f, child.y, EPS, "vertical padding insets y");
+        assertEquals(84f, child.h, EPS, "cross stretch fills height minus vertical padding");
+    }
+
+    @Test
     void percentResolvesAgainstParentContentExtent() {
         RetainedNode root = box(0);
         root.set(PropKey.DIRECTION, Direction.ROW);

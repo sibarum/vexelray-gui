@@ -139,6 +139,18 @@ public final class RetainedNode {
         return len(PropKey.PADDING, Length.ZERO);
     }
 
+    /** Horizontal padding (left = right): {@code PADDING_X} if set, else the uniform {@code PADDING}, else zero. */
+    public Length paddingX() {
+        Object v = props.get(PropKey.PADDING_X);
+        return v instanceof Length l ? l : padding();
+    }
+
+    /** Vertical padding (top = bottom): {@code PADDING_Y} if set, else the uniform {@code PADDING}, else zero. */
+    public Length paddingY() {
+        Object v = props.get(PropKey.PADDING_Y);
+        return v instanceof Length l ? l : padding();
+    }
+
     public Length margin() {
         return len(PropKey.MARGIN, Length.ZERO);
     }

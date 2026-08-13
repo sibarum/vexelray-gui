@@ -23,6 +23,8 @@ public enum PropKey {
     WIDTH(true),
     HEIGHT(true),
     PADDING(true),
+    PADDING_X(true),
+    PADDING_Y(true),
     MARGIN(true),
     BORDER_WIDTH(true),
     GAP(true),

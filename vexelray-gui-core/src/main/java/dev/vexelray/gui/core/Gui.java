@@ -96,7 +96,8 @@ public final class Gui implements AutoCloseable {
         // the single-writer reconciler here is the GUI-thread write the model requires.
         this.mutationSub = pump.subscribe(MUTATIONS, reconciler::apply, MUTATION_MAILBOX, Backpressure.BLOCK);
         // Framework input dispatch on the same bus; click handlers run on the worker executor (off the GUI thread).
-        this.input = new InputDispatcher(bus, CLICKS, workers);
+        // Wheel scrolling mutates scroll offsets on the GUI thread and asks for a relayout next frame.
+        this.input = new InputDispatcher(bus, CLICKS, workers, reconciler::markLayoutDirty);
 
         // Window size as a coalesced, latest-wins State on the bus — the framework relays out from it and workers
         // can observe resizes without coupling to the window.

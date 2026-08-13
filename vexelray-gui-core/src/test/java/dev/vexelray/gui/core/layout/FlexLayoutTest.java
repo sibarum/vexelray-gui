@@ -179,6 +179,45 @@ class FlexLayoutTest {
     }
 
     @Test
+    void verticalOverflowSetsScrollbarAndReservesWidth() {
+        RetainedNode root = box(0);
+        root.set(PropKey.DIRECTION, Direction.COLUMN);
+        for (int i = 0; i < 5; i++) {
+            RetainedNode c = box(1 + i);
+            c.set(PropKey.HEIGHT, Length.rem(2)); // 32 each -> 160 total
+            add(root, c);
+        }
+
+        FlexLayout.layout(root, 100f, 100f, ctx(), TM);
+
+        assertTrue(root.overflowY, "content taller than the box overflows vertically");
+        assertTrue(!root.overflowX, "no spurious horizontal overflow from stretched children");
+        assertTrue(root.viewW < 100f, "the vertical scrollbar reserves width");
+        assertTrue(root.contentH > 150f, "content height reflects all children");
+    }
+
+    @Test
+    void scrollOffsetClampsToContentAndShiftsChildren() {
+        RetainedNode root = box(0);
+        root.set(PropKey.DIRECTION, Direction.COLUMN);
+        RetainedNode first = box(1);
+        first.set(PropKey.HEIGHT, Length.rem(2));
+        add(root, first);
+        for (int i = 0; i < 5; i++) {
+            RetainedNode c = box(2 + i);
+            c.set(PropKey.HEIGHT, Length.rem(2));
+            add(root, c);
+        }
+        root.scrollY = 1000f; // absurd; layout must clamp to maxScroll
+
+        FlexLayout.layout(root, 100f, 100f, ctx(), TM);
+
+        float maxScroll = root.contentH - root.viewH;
+        assertEquals(maxScroll, root.scrollY, EPS, "scroll clamps to content - viewport");
+        assertEquals(-maxScroll, first.y, EPS, "children shift up by the scroll offset");
+    }
+
+    @Test
     void alignItemsCenterCentersOnCross() {
         RetainedNode root = box(0);
         root.set(PropKey.DIRECTION, Direction.ROW);

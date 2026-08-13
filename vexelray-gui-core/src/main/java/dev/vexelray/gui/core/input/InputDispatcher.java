@@ -38,9 +38,13 @@ public final class InputDispatcher {
     /** Input edges are drained every frame; a generous mailbox with drop-oldest never sheds under real rates. */
     private static final int MAILBOX = 4096;
 
+    /** Pixels scrolled per wheel notch. */
+    private static final float WHEEL_STEP = 48f;
+
     private final Atchung bus;
     private final Topic<ClickEvent> clicks;
     private final Executor handlerExecutor;
+    private final Runnable requestLayout;
     private final Pump pump;
     private final Subscription sub;
     private final Map<Long, Runnable> clickHandlers = new ConcurrentHashMap<>();
@@ -60,9 +64,14 @@ public final class InputDispatcher {
     private boolean leftDown;
 
     public InputDispatcher(Atchung bus, Topic<ClickEvent> clicks, Executor handlerExecutor) {
+        this(bus, clicks, handlerExecutor, () -> { });
+    }
+
+    public InputDispatcher(Atchung bus, Topic<ClickEvent> clicks, Executor handlerExecutor, Runnable requestLayout) {
         this.bus = bus;
         this.clicks = clicks;
         this.handlerExecutor = handlerExecutor;
+        this.requestLayout = requestLayout;
         this.pump = bus.pump();
         this.sub = pump.subscribe(InputTopics.INPUT, this::handle, MAILBOX, Backpressure.DROP_OLDEST);
     }
@@ -150,10 +159,47 @@ public final class InputDispatcher {
                 leftDown = false;
                 refreshStates();
             }
+            case InputEvent.Scrolled s -> {
+                RetainedNode hit = HitTest.at(currentRoot, s.x(), s.y());
+                boolean changed = false;
+                if (s.yOffset() != 0) {
+                    RetainedNode t = ancestorScrollable(hit, false);
+                    if (t != null) {
+                        t.scrollY = clamp(t.scrollY - (float) s.yOffset() * WHEEL_STEP, 0f,
+                                Math.max(0f, t.contentH - t.viewH));
+                        changed = true;
+                    }
+                }
+                if (s.xOffset() != 0) {
+                    RetainedNode t = ancestorScrollable(hit, true);
+                    if (t != null) {
+                        t.scrollX = clamp(t.scrollX + (float) s.xOffset() * WHEEL_STEP, 0f,
+                                Math.max(0f, t.contentW - t.viewW));
+                        changed = true;
+                    }
+                }
+                if (changed) {
+                    requestLayout.run();
+                }
+            }
             default -> {
-                // Scroll, keys, focus: consumed here in later steps.
+                // Keys, focus: consumed here in later steps.
             }
         }
+    }
+
+    /** Nearest ancestor-or-self of {@code hit} that overflows on the given axis. */
+    private static RetainedNode ancestorScrollable(RetainedNode hit, boolean horizontal) {
+        for (RetainedNode n = hit; n != null; n = n.parent) {
+            if (horizontal ? n.overflowX : n.overflowY) {
+                return n;
+            }
+        }
+        return null;
+    }
+
+    private static float clamp(float v, float lo, float hi) {
+        return v < lo ? lo : (v > hi ? hi : v);
     }
 
     /** Recompute each registered node's interaction state and fire the handler on any change. */

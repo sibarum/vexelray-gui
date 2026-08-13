@@ -116,6 +116,11 @@ public final class Demo {
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
 
         Node log = gui.column().width(Length.FILL).height(Length.FILL).gap(Length.rem(0.375f));
+        // Pre-fill enough lines to overflow the panel, so the auto vertical scrollbar appears (and reserves space).
+        for (int i = 1; i <= 16; i++) {
+            log.append(gui.text("log line " + i + " — overflows, scrolls")
+                    .height(Length.rem(1.5f)).textSize(Length.rem(1)).textColor(DIM));
+        }
 
         Node leftCard = card(gui, "Retained tree", ACCENT,
                 "Built through Node handles, mutated by messages, laid out by flex - no hard-coded rects.")

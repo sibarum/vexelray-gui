@@ -348,10 +348,13 @@ exists as siblings, so those steps are *integration*, not construction.
    clickable and restyle on hover/press. Pointer **capture + drag** (`onDrag` → `DragEvent` START/MOVE/END,
    tracking off-node until release) drives a first widget, the `Slider` (`vexelray-gui-widget`). Focus
    routing, wheel, keyboard, and shortcuts remain.]**
-9. **Overflow + scroll (in progress):** decided — reserve-space scrollbars on both axes (per-axis
-   disable), always visible when a container overflows (never hover-triggered; see the pointer-target UX
-   rule). Requires engine **E3** (Canvas clip-rect) first, then overflow detection + scroll offset +
-   scrollbar widget (drag reuses `onDrag` capture) + wheel dispatch.
+9. **Overflow + scroll (in progress):** reserve-space scrollbars on both axes (per-axis disable via
+   `Node.scroll(x,y)`), always visible when a container overflows (never hover-triggered; see the
+   pointer-target UX rule). **[done: engine E3 (Canvas rounded, antialiased clip via SDF coverage);
+   layout overflow detection + reserve + scroll-offset with clamp (`FlexLayout.place`); `TreeRenderer`
+   clips the viewport and draws the reserved track+thumb; mouse-wheel scrolls the container under the
+   pointer (`InputDispatcher`) and requests a relayout. Scroll offsets persist on `RetainedNode`, so a
+   resize/relayout keeps position. Remaining: dragging the scrollbar thumb (reuses `onDrag` capture).]**
 7. Application event/state publishing (§4) + `gui.on/onUi` over Atchung (§5); the E2 wake subscriber.
 8. Lifecycle FSM + animation transform layer (§7); `RichText` (§9).
 9. Scroll/clip views, text field (+ `tactroller-clipboard`); then (later) semantic-transaction

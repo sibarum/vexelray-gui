@@ -32,6 +32,11 @@ public final class Reconciler {
         layoutDirty = false;
     }
 
+    /** Force a relayout next frame — used when scroll offsets change (which reposition without a tree mutation). */
+    public void markLayoutDirty() {
+        layoutDirty = true;
+    }
+
     public void applyAll(List<Mutation> mutations) {
         for (Mutation m : mutations) {
             apply(m);

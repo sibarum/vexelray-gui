@@ -20,14 +20,52 @@ public final class TreeRenderer {
     /** Horizontal inset, in px, so text doesn't kiss rounded corners. */
     private static final float TEXT_PAD_X = 10f;
 
+    private static final Color SCROLL_TRACK = Color.rgb(0x161b26);
+    private static final Color SCROLL_THUMB = Color.rgb(0x39415a);
+
     private TreeRenderer() {
     }
 
     /** Emit the whole tree rooted at {@code node} into {@code canvas}, laying text with {@code text}. */
     public static void emit(RetainedNode node, Canvas canvas, TextLayout text) {
         drawSelf(node, canvas, text);
+        boolean clip = node.overflowX || node.overflowY;
+        if (clip) {
+            // Clip children to the scroll viewport, honouring the container's (inset) rounded corner.
+            float inset = node.viewX - node.x;
+            float radius = Math.max(0f, node.cornerPx - inset);
+            canvas.pushClip(node.viewX, node.viewY, node.viewW, node.viewH, radius);
+        }
         for (RetainedNode child : node.children) {
             emit(child, canvas, text);
+        }
+        if (clip) {
+            canvas.popClip();
+            drawScrollbars(node, canvas);
+        }
+    }
+
+    /** Draw the reserved-space scrollbars (track + pill thumb) for an overflowing container — chrome, not clipped. */
+    private static void drawScrollbars(RetainedNode n, Canvas canvas) {
+        float sb = n.scrollbarPx;
+        float minThumb = sb * 2f;
+        if (n.overflowY) {
+            float trackX = n.viewX + n.viewW;
+            float th = Math.max(minThumb, n.viewH * (n.viewH / n.contentH));
+            float maxScroll = Math.max(0f, n.contentH - n.viewH);
+            float frac = maxScroll > 0f ? n.scrollY / maxScroll : 0f;
+            float thumbY = n.viewY + frac * (n.viewH - th);
+            canvas.fillRoundRect(trackX, n.viewY, sb, n.viewH, sb * 0.5f, SCROLL_TRACK);
+            canvas.fillRoundRect(trackX + sb * 0.15f, thumbY, sb * 0.7f, th, sb * 0.35f, SCROLL_THUMB);
+        }
+        if (n.overflowX) {
+            float trackY = n.viewY + n.viewH;
+            float tw = Math.max(minThumb, n.viewW * (n.viewW / n.contentW));
+            float maxScroll = Math.max(0f, n.contentW - n.viewW);
+            float frac = maxScroll > 0f ? n.scrollX / maxScroll : 0f;
+            float thumbX = n.viewX + frac * (n.viewW - tw);
+            canvas.fillRoundRect(n.viewX, trackY, n.viewW, sb, sb * 0.5f, SCROLL_TRACK);
+            canvas.fillRoundRect(thumbX, trackY + sb * 0.15f, tw, sb * 0.7f, sb * 0.35f, SCROLL_THUMB);
         }
     }
 

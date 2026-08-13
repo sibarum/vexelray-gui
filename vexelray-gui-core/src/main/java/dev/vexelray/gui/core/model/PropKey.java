@@ -25,7 +25,10 @@ public enum PropKey {
     PADDING(true),
     MARGIN(true),
     BORDER_WIDTH(true),
-    GAP(true);
+    GAP(true),
+    // Per-axis overflow scrolling: enabled by default (auto scrollbars on overflow); set false to disable an axis.
+    SCROLL_X(true),
+    SCROLL_Y(true);
 
     private final boolean layoutAffecting;
 

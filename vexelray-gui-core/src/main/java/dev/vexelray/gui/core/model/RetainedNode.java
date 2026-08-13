@@ -40,6 +40,20 @@ public final class RetainedNode {
     public float cornerPx;
     public float textSizePx = 16f;
 
+    // Scroll state: scrollX/Y persist across frames (adjusted by wheel + scrollbar drag, clamped by layout). The
+    // rest is layout-computed: whether each axis overflows, the clipped content viewport, and the full content size.
+    public float scrollX;
+    public float scrollY;
+    public boolean overflowX;
+    public boolean overflowY;
+    public float viewX;
+    public float viewY;
+    public float viewW;
+    public float viewH;
+    public float contentW;
+    public float contentH;
+    public float scrollbarPx;
+
     public RetainedNode(long id, NodeKind kind) {
         this.id = id;
         this.kind = kind;
@@ -131,6 +145,18 @@ public final class RetainedNode {
 
     public Length gap() {
         return len(PropKey.GAP, Length.ZERO);
+    }
+
+    /** Whether horizontal overflow may scroll (default true = auto scrollbar). */
+    public boolean scrollXAllowed() {
+        Object v = props.get(PropKey.SCROLL_X);
+        return !(v instanceof Boolean b) || b;
+    }
+
+    /** Whether vertical overflow may scroll (default true = auto scrollbar). */
+    public boolean scrollYAllowed() {
+        Object v = props.get(PropKey.SCROLL_Y);
+        return !(v instanceof Boolean b) || b;
     }
 
     private Length len(PropKey key, Length dflt) {

@@ -102,6 +102,12 @@ public final class Node {
         return prop(PropKey.GAP, g);
     }
 
+    /** Enable/disable overflow scrolling per axis (both default on — auto scrollbars appear on overflow). */
+    public Node scroll(boolean allowX, boolean allowY) {
+        prop(PropKey.SCROLL_X, allowX);
+        return prop(PropKey.SCROLL_Y, allowY);
+    }
+
     // --- structure ---
 
     public Node append(Node child) {

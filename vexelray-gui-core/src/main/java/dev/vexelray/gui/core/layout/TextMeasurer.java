@@ -10,5 +10,6 @@ import dev.vexelray.gui.core.model.RetainedNode;
  */
 @FunctionalInterface
 public interface TextMeasurer {
-    float intrinsic(RetainedNode textNode, Axis axis);
+    /** Intrinsic px size of {@code textNode} along {@code axis} at the given resolved {@code textSizePx}. */
+    float intrinsic(RetainedNode textNode, Axis axis, float textSizePx);
 }

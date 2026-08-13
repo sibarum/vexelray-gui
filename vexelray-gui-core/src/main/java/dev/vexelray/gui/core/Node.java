@@ -34,12 +34,12 @@ public final class Node {
         return prop(PropKey.BACKGROUND, c);
     }
 
-    public Node corner(float radiusPx) {
-        return prop(PropKey.CORNER, radiusPx);
+    public Node corner(Length radius) {
+        return prop(PropKey.CORNER, radius);
     }
 
-    public Node border(float widthPx, Color color) {
-        prop(PropKey.BORDER_WIDTH, widthPx);
+    public Node border(Length width, Color color) {
+        prop(PropKey.BORDER_WIDTH, width);
         return prop(PropKey.BORDER_COLOR, color);
     }
 
@@ -50,8 +50,8 @@ public final class Node {
         return this;
     }
 
-    public Node textSize(float px) {
-        return prop(PropKey.TEXT_SIZE, px);
+    public Node textSize(Length size) {
+        return prop(PropKey.TEXT_SIZE, size);
     }
 
     public Node textColor(Color c) {
@@ -90,12 +90,16 @@ public final class Node {
         return height(h);
     }
 
-    public Node padding(float px) {
-        return prop(PropKey.PADDING, px);
+    public Node padding(Length p) {
+        return prop(PropKey.PADDING, p);
     }
 
-    public Node gap(float px) {
-        return prop(PropKey.GAP, px);
+    public Node margin(Length m) {
+        return prop(PropKey.MARGIN, m);
+    }
+
+    public Node gap(Length g) {
+        return prop(PropKey.GAP, g);
     }
 
     // --- structure ---

@@ -178,10 +178,9 @@ public final class GuiApp implements AutoCloseable {
     /** Text intrinsic sizing over VexelRay's glyph layout: width = measured advance, height = line height. */
     private static TextMeasurer measurer(TextLayout text) {
         GlyphLayout gl = text.glyphLayout();
-        return (node, axis) -> {
-            float size = node.textSize();
+        return (node, axis, textSizePx) -> {
             String s = node.textString() == null ? "" : node.textString();
-            return axis == Axis.HORIZONTAL ? gl.measure(s, size) : gl.ascent(size) + gl.descent(size);
+            return axis == Axis.HORIZONTAL ? gl.measure(s, textSizePx) : gl.ascent(textSizePx) + gl.descent(textSizePx);
         };
     }
 

@@ -9,7 +9,6 @@ public enum PropKey {
     // Visual
     BACKGROUND(false),
     CORNER(false),
-    BORDER_WIDTH(false),
     BORDER_COLOR(false),
     TEXT_COLOR(false),
     // Text (size affects layout via intrinsic measure)
@@ -17,13 +16,15 @@ public enum PropKey {
     TEXT_SIZE(true),
     H_ALIGN(false),
     V_ALIGN(false),
-    // Layout
+    // Layout (border-box: border + padding inset the content, so border width is layout-affecting)
     DIRECTION(true),
     JUSTIFY(true),
     ALIGN_ITEMS(true),
     WIDTH(true),
     HEIGHT(true),
     PADDING(true),
+    MARGIN(true),
+    BORDER_WIDTH(true),
     GAP(true);
 
     private final boolean layoutAffecting;

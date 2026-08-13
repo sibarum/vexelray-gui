@@ -32,15 +32,18 @@ public final class TreeRenderer {
     }
 
     private static void drawSelf(RetainedNode n, Canvas canvas, TextLayout text) {
+        // Border width, corner radius and text size were resolved to px by the layout pass (border-box), so the
+        // renderer needs no units or layout context — it just paints the computed rect.
         Color bg = n.background();
-        float radius = n.corner();
-        float bw = n.borderWidth();
+        float radius = n.cornerPx;
+        float bw = n.borderPx;
         Color border = n.borderColor();
         if (bw > 0f && border != null) {
             canvas.fillRoundRect(n.x, n.y, n.w, n.h, radius, border);
             if (bg != null) {
                 float innerR = Math.max(0f, radius - bw);
-                canvas.fillRoundRect(n.x + bw, n.y + bw, n.w - 2 * bw, n.h - 2 * bw, innerR, bg);
+                canvas.fillRoundRect(n.x + bw, n.y + bw, Math.max(0f, n.w - 2 * bw),
+                        Math.max(0f, n.h - 2 * bw), innerR, bg);
             }
         } else if (bg != null) {
             canvas.fillRoundRect(n.x, n.y, n.w, n.h, radius, bg);
@@ -48,7 +51,7 @@ public final class TreeRenderer {
 
         String s = n.textString();
         if (s != null && !s.isEmpty()) {
-            TextLayout.TextStyle style = TextLayout.TextStyle.of(n.textSize())
+            TextLayout.TextStyle style = TextLayout.TextStyle.of(n.textSizePx)
                     .withWrap(TextLayout.WrapMode.WORD_CHAR)
                     .withAlign(n.hAlign(), n.vAlign());
             float pad = Math.min(TEXT_PAD_X, n.w * 0.25f);

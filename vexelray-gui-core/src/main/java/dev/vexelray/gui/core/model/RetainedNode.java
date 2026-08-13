@@ -20,17 +20,25 @@ import java.util.Map;
  */
 public final class RetainedNode {
 
+    /** Default text size when none is set: one root em (≈16px at the default context). */
+    private static final Length DEFAULT_TEXT_SIZE = Length.rem(1f);
+
     public final long id;
     public final NodeKind kind;
     private final Map<PropKey, Object> props = new EnumMap<>(PropKey.class);
     public final List<RetainedNode> children = new ArrayList<>();
     public RetainedNode parent;
 
-    // Layout-computed rect, absolute screen px (Y-down).
+    // Layout-computed border-box rect, absolute screen px (Y-down). w/h include border + padding (border-box).
     public float x;
     public float y;
     public float w;
     public float h;
+
+    // Layout-computed, resolved-to-px render inputs (filled each layout pass so the renderer needs no units/ctx).
+    public float borderPx;
+    public float cornerPx;
+    public float textSizePx = 16f;
 
     public RetainedNode(long id, NodeKind kind) {
         this.id = id;
@@ -55,12 +63,12 @@ public final class RetainedNode {
         return (Color) props.get(PropKey.BACKGROUND);
     }
 
-    public float corner() {
-        return f(PropKey.CORNER, 0f);
+    public Length corner() {
+        return len(PropKey.CORNER, Length.ZERO);
     }
 
-    public float borderWidth() {
-        return f(PropKey.BORDER_WIDTH, 0f);
+    public Length borderWidth() {
+        return len(PropKey.BORDER_WIDTH, Length.ZERO);
     }
 
     public Color borderColor() {
@@ -71,8 +79,8 @@ public final class RetainedNode {
         return (String) props.get(PropKey.TEXT);
     }
 
-    public float textSize() {
-        return f(PropKey.TEXT_SIZE, 16f);
+    public Length textSize() {
+        return len(PropKey.TEXT_SIZE, DEFAULT_TEXT_SIZE);
     }
 
     public Color textColor() {
@@ -106,28 +114,27 @@ public final class RetainedNode {
     }
 
     public Length width() {
-        return len(PropKey.WIDTH);
+        return len(PropKey.WIDTH, Length.AUTO);
     }
 
     public Length height() {
-        return len(PropKey.HEIGHT);
+        return len(PropKey.HEIGHT, Length.AUTO);
     }
 
-    public float padding() {
-        return f(PropKey.PADDING, 0f);
+    public Length padding() {
+        return len(PropKey.PADDING, Length.ZERO);
     }
 
-    public float gap() {
-        return f(PropKey.GAP, 0f);
+    public Length margin() {
+        return len(PropKey.MARGIN, Length.ZERO);
     }
 
-    private float f(PropKey key, float dflt) {
+    public Length gap() {
+        return len(PropKey.GAP, Length.ZERO);
+    }
+
+    private Length len(PropKey key, Length dflt) {
         Object v = props.get(key);
-        return v != null ? ((Number) v).floatValue() : dflt;
-    }
-
-    private Length len(PropKey key) {
-        Object v = props.get(key);
-        return v != null ? (Length) v : Length.AUTO;
+        return v instanceof Length l ? l : dflt;
     }
 }

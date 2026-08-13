@@ -204,16 +204,32 @@ all meet on it.
 
 ## 6. Layout + units
 
-Flex essentials: row/column, wrap, grow/**shrink**/**basis**, justify + align, position
-relative/absolute. **One `measure(axis, availPx)` per node.** Units as a sum type resolved only at
-layout time against a `LayoutContext{ rootEmPx, zoom, dpi, viewportW/H }`:
+Rows and columns with **border-box** sizing: padding, margin, border and gap, `justify` + `alignItems`,
+grow/fill. Not a full flex implementation (no wrap, no shrink-below-basis) but **bulletproof** — every
+size is clamped non-negative, every property defaults sensibly, nothing is ever left null or NaN, so a
+node can never land at an unexpected position or size. **One `measure(axis)` per node** derives
+intrinsic sizes; a second pass places everything.
+
+**Border-box.** A node's rect (`x,y,w,h`) is its border-box: `w`/`h` include border + padding; the
+content box children occupy is inset by `border + padding` on every side. Margin is space *outside* the
+border-box separating a node from its siblings and its parent's content edge.
+
+**Units — no pixel unit.** Every length is relative, so a UI scales with font size, zoom, DPI and window
+size rather than being pinned to device pixels. Resolved only at layout time against a
+`LayoutContext{ rootEmPx, zoom, dpi, viewportW/H }`:
 
 ```java
-sealed interface Length permits Em, Rem, Vw, Vh, Px, Fraction /*grow*/, Auto, Fill { }
+sealed interface Length permits Em, Rem, Percent, Vw, Vh, Grow /*flex*/, Auto, Fill { }
 ```
 
-`em = v·rootEmPx·zoom·dpi`; `rem` = flat root (no cascade); `vw/vh = v/100·viewport`. Layout runs only
-when structure or a layout-affecting prop changed (`layoutDirty`), never per animation frame (§7).
+`em = rem = v·rootEmPx·zoom·dpi` (flat root, no cascade); `vw/vh = v/100·viewport`;
+`percent = v/100·basis`, where the basis is the parent content extent along the axis (width/height) or
+the node's own border-box width (padding/border/gap/corner). `Auto` sizes to content; `Fill`/`Grow`
+share leftover main-axis space (on the cross axis they stretch like `Auto`). Every visual scalar — width,
+height, padding, margin, border width, gap, corner radius, **text size** — is a `Length`; there is no
+`px`. Layout resolves border/corner/text-size to px onto the node so the renderer needs no units or
+context. Layout runs only when structure or a layout-affecting prop changed (`layoutDirty`), never per
+animation frame (§7).
 
 ---
 

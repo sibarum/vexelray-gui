@@ -111,21 +111,23 @@ public final class Demo {
     /** Build the dashboard with flex; return the handles the worker will mutate. */
     private static Refs buildUi(Gui gui) {
         Node header = gui.text("VexelRay GUI")
-                .width(Length.FILL).height(Length.px(64)).background(PANEL).textSize(28f).textColor(INK)
+                .width(Length.FILL).height(Length.rem(4)).background(PANEL).textSize(Length.rem(1.75f)).textColor(INK)
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
 
-        Node log = gui.column().width(Length.FILL).height(Length.FILL).gap(6f);
+        Node log = gui.column().width(Length.FILL).height(Length.FILL).gap(Length.rem(0.375f));
 
         Node leftCard = card(gui, "Retained tree", ACCENT,
                 "Built through Node handles, mutated by messages, laid out by flex - no hard-coded rects.")
                 .width(Length.FILL).height(Length.FILL);
         Node rightCard = gui.column().width(Length.FILL).height(Length.FILL)
-                .background(PANEL).corner(16f).border(1.5f, LINE).padding(20f).gap(10f)
+                .background(PANEL).corner(Length.rem(1)).border(Length.rem(0.1f), LINE)
+                .padding(Length.rem(1.25f)).gap(Length.rem(0.625f))
                 .children(
-                        gui.text("Live from a worker").height(Length.px(30)).textSize(22f).textColor(ACCENT),
+                        gui.text("Live from a worker").height(Length.rem(1.875f)).textSize(Length.rem(1.375f))
+                                .textColor(ACCENT),
                         log);
 
-        Node body = gui.row().width(Length.FILL).height(Length.FILL).padding(24f).gap(24f)
+        Node body = gui.row().width(Length.FILL).height(Length.FILL).padding(Length.rem(1.5f)).gap(Length.rem(1.5f))
                 .children(leftCard, rightCard);
 
         Node getStarted = button(gui, "Get started", Color.WHITE, ACCENT, ACCENT_HOVER, ACCENT_PRESSED, false);
@@ -135,15 +137,15 @@ public final class Demo {
         gui.onClick(getStarted, () -> {
             int n = clicks.incrementAndGet();
             log.append(gui.text("clicked \"Get started\" x" + n)
-                    .height(Length.px(24)).textSize(16f).textColor(ACCENT));
+                    .height(Length.rem(1.5f)).textSize(Length.rem(1)).textColor(ACCENT));
         });
 
-        Node controls = gui.row().width(Length.FILL).height(Length.px(64)).padding(24f).gap(12f)
-                .justify(Justify.START).alignItems(AlignItems.CENTER)
+        Node controls = gui.row().width(Length.FILL).height(Length.rem(4)).padding(Length.rem(1.5f))
+                .gap(Length.rem(0.75f)).justify(Justify.START).alignItems(AlignItems.CENTER)
                 .children(getStarted, button(gui, "Docs", DIM, PANEL, PANEL_HOVER, PANEL_PRESSED, true));
 
-        Node footer = gui.text("step 2: retained tree + mutations + flex layout")
-                .width(Length.FILL).height(Length.px(36)).textSize(15f).textColor(DIM)
+        Node footer = gui.text("flex layout: rows/columns, padding/margin/border, border-box, relative units")
+                .width(Length.FILL).height(Length.rem(2.25f)).textSize(Length.rem(0.9375f)).textColor(DIM)
                 .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE);
 
         gui.root().background(BG).children(header, body, controls, footer);
@@ -152,20 +154,21 @@ public final class Demo {
 
     /** A bordered card: coloured title row + a wrapped body paragraph. */
     private static Node card(Gui gui, String title, Color titleColor, String body) {
-        return gui.column().background(PANEL).corner(16f).border(1.5f, LINE).padding(20f).gap(10f)
+        return gui.column().background(PANEL).corner(Length.rem(1)).border(Length.rem(0.1f), LINE)
+                .padding(Length.rem(1.25f)).gap(Length.rem(0.625f))
                 .children(
-                        gui.text(title).height(Length.px(30)).textSize(22f).textColor(titleColor),
-                        gui.text(body).height(Length.FILL).textSize(17f).textColor(DIM)
+                        gui.text(title).height(Length.rem(1.875f)).textSize(Length.rem(1.375f)).textColor(titleColor),
+                        gui.text(body).height(Length.FILL).textSize(Length.rem(1.0625f)).textColor(DIM)
                                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.TOP));
     }
 
     /** A fixed-size labelled button that lightens on hover and darkens while pressed. */
     private static Node button(Gui gui, String label, Color fg, Color base, Color hover, Color pressed,
                                boolean bordered) {
-        Node b = gui.text(label).width(Length.px(160)).height(Length.px(44)).background(base).corner(10f)
-                .textColor(fg).align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE);
+        Node b = gui.text(label).width(Length.rem(10)).height(Length.rem(2.75f)).background(base)
+                .corner(Length.rem(0.625f)).textColor(fg).align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE);
         if (bordered) {
-            b.border(1.5f, LINE);
+            b.border(Length.rem(0.1f), LINE);
         }
         // Restyle on pointer interaction — the handler runs on a worker thread and mutates via the handle.
         gui.onState(b, state -> b.background(switch (state) {
@@ -186,7 +189,7 @@ public final class Demo {
                     refs.header().text("VexelRay GUI    tick " + n);
                     if (n <= 8) {
                         refs.log().append(gui.text("event " + n + " from worker thread")
-                                .height(Length.px(24)).textSize(16f).textColor(INK));
+                                .height(Length.rem(1.5f)).textSize(Length.rem(1)).textColor(INK));
                     }
                 }
             } catch (InterruptedException e) {

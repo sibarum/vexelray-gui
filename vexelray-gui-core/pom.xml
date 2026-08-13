@@ -26,6 +26,12 @@
             <groupId>sibarum.atchung</groupId>
             <artifactId>atchung-core</artifactId>
         </dependency>
+        <!-- The input topic contract: the InputEvent / MouseButton types dispatch hit-tests against. Pure
+             API, no native backend — the concrete Tactroller + bridge enter at the application edge (demo). -->
+        <dependency>
+            <groupId>sibarum.tactroller</groupId>
+            <artifactId>tactroller-api</artifactId>
+        </dependency>
         <!-- Draw through the native 2D API; lay text; drive the runtime; window. -->
         <dependency>
             <groupId>dev.vexelray</groupId>

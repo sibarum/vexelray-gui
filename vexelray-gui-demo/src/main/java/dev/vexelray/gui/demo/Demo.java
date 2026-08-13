@@ -8,15 +8,22 @@ import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.text.TextLayout;
+import sibarum.tactroller.api.BackendException;
+import sibarum.tactroller.api.CoordinateSpace;
+import sibarum.tactroller.api.NativeWindow;
+import sibarum.tactroller.api.Tactroller;
+import sibarum.tactroller.atchung.TactrollerInputBridge;
+
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * vexelray-gui showcase — step 2. The UI is built declaratively through {@link Gui}/{@link Node} handles and
- * laid out by the flex engine (no hard-coded rects), and a worker thread mutates it live (a header counter and a
- * growing event log) — proving the retained tree + MPSC mutation queue + single-writer reconcile + relayout path
- * end to end, with app logic off the GUI thread.
+ * vexelray-gui showcase — step 6. The UI is built declaratively through {@link Gui}/{@link Node} handles and laid
+ * out by the flex engine (no hard-coded rects); a worker thread mutates it live; and the "Get started" button is
+ * clickable — input flows tactroller → atchung → framework dispatch → a click handler that mutates the tree,
+ * proving the whole vertical with app logic off the GUI thread.
  *
- * <p>Run: {@code Demo} (windowed), {@code Demo <frames>} (capped), {@code Demo --capture <out.png>} (headless).
- * Needs {@code --enable-native-access=ALL-UNNAMED}.
+ * <p>Run: {@code Demo} (windowed, interactive), {@code Demo <frames>} (capped), {@code Demo --capture <out.png>}
+ * (headless). Needs {@code --enable-native-access=ALL-UNNAMED}.
  */
 public final class Demo {
 
@@ -50,12 +57,48 @@ public final class Demo {
         }
 
         int maxFrames = args.length > 0 ? Integer.parseInt(args[0]) : 0;
-        startWorker(gui, refs);        // app logic off the GUI thread, mutating via the queue
-        try (GuiApp app = new GuiApp("VexelRay GUI", W, H)) {
-            app.run(gui, maxFrames);
+        startWorker(gui, refs);        // app logic off the GUI thread, mutating via the bus
+        try (GuiApp app = new GuiApp("VexelRay GUI", W, H);
+             Tactroller input = openInput(app, gui)) {
+            TactrollerInputBridge bridge = input == null ? null : bridgeFor(input, gui);
+            app.run(gui, maxFrames, () -> pump(bridge));
         }
         gui.close();
         System.out.println("clean shutdown");
+    }
+
+    /**
+     * Open tactroller and attach it to the app window for client-space coordinates + focus gating. Returns
+     * {@code null} (input disabled) if no backend is present, so the showcase still renders headless/in CI.
+     */
+    private static Tactroller openInput(GuiApp app, Gui gui) {
+        try {
+            Tactroller t = Tactroller.open();
+            t.attach(NativeWindow.ofHwnd(app.windowHandle()));
+            t.setCoordinateSpace(CoordinateSpace.CLIENT);
+            System.out.println("input: " + t.backendName());
+            return t;
+        } catch (BackendException e) {
+            System.out.println("input unavailable (" + e.getMessage() + "); running without pointer input");
+            return null;
+        }
+    }
+
+    /** Bridge tactroller onto the GUI's bus: pumped once per frame, its edges feed the framework's dispatch. */
+    private static TactrollerInputBridge bridgeFor(Tactroller input, Gui gui) {
+        return new TactrollerInputBridge(input, gui.bus());
+    }
+
+    /** Snapshot input onto the bus for this frame; a transient backend poll failure just skips the frame. */
+    private static void pump(TactrollerInputBridge bridge) {
+        if (bridge == null) {
+            return;
+        }
+        try {
+            bridge.pump();
+        } catch (BackendException e) {
+            // Transient poll failure — drop this frame's input rather than tear down the loop.
+        }
     }
 
     private record Refs(Node header, Node log) {
@@ -81,10 +124,19 @@ public final class Demo {
         Node body = gui.row().width(Length.FILL).height(Length.FILL).padding(24f).gap(24f)
                 .children(leftCard, rightCard);
 
+        Node getStarted = button(gui, "Get started", ACCENT, Color.WHITE, false);
+        // The click vertical: tactroller -> atchung -> dispatch -> this handler (on a worker thread), which
+        // mutates the tree through handles just like the background worker does.
+        AtomicInteger clicks = new AtomicInteger();
+        gui.onClick(getStarted, () -> {
+            int n = clicks.incrementAndGet();
+            log.append(gui.text("clicked \"Get started\" x" + n)
+                    .height(Length.px(24)).textSize(16f).textColor(ACCENT));
+        });
+
         Node controls = gui.row().width(Length.FILL).height(Length.px(64)).padding(24f).gap(12f)
                 .justify(Justify.START).alignItems(AlignItems.CENTER)
-                .children(button(gui, "Get started", ACCENT, Color.WHITE, false),
-                        button(gui, "Docs", PANEL, DIM, true));
+                .children(getStarted, button(gui, "Docs", PANEL, DIM, true));
 
         Node footer = gui.text("step 2: retained tree + mutations + flex layout")
                 .width(Length.FILL).height(Length.px(36)).textSize(15f).textColor(DIM)

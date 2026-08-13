@@ -34,6 +34,13 @@
             <groupId>dev.vexelray.gui</groupId>
             <artifactId>vexelray-gui-nfd</artifactId>
         </dependency>
+        <!-- The application edge for input: the tactroller->atchung bridge (brings tactroller-api +
+             atchung-core transitively). The GUI core knows only the input topic contract; the demo owns
+             the concrete input source and hands the GUI the same bus. -->
+        <dependency>
+            <groupId>sibarum.tactroller</groupId>
+            <artifactId>tactroller-atchung</artifactId>
+        </dependency>
     </dependencies>
 
     <build>
@@ -74,6 +81,12 @@
                     <artifactId>vexelray-os-windows</artifactId>
                     <scope>runtime</scope>
                 </dependency>
+                <!-- The tactroller input backend for this OS (ServiceLoader picks it up). -->
+                <dependency>
+                    <groupId>sibarum.tactroller</groupId>
+                    <artifactId>tactroller-windows</artifactId>
+                    <scope>runtime</scope>
+                </dependency>
             </dependencies>
         </profile>
         <profile>
@@ -85,6 +98,12 @@
                     <artifactId>vexelray-os-linux</artifactId>
                     <scope>runtime</scope>
                 </dependency>
+                <dependency>
+                    <groupId>sibarum.tactroller</groupId>
+                    <artifactId>tactroller-linux</artifactId>
+                    <version>${tactroller.version}</version>
+                    <scope>runtime</scope>
+                </dependency>
             </dependencies>
         </profile>
         <profile>
@@ -94,6 +113,12 @@
                 <dependency>
                     <groupId>dev.vexelray</groupId>
                     <artifactId>vexelray-os-macos</artifactId>
+                    <scope>runtime</scope>
+                </dependency>
+                <dependency>
+                    <groupId>sibarum.tactroller</groupId>
+                    <artifactId>tactroller-macos</artifactId>
+                    <version>${tactroller.version}</version>
                     <scope>runtime</scope>
                 </dependency>
             </dependencies>

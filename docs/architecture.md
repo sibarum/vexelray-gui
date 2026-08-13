@@ -325,7 +325,10 @@ exists as siblings, so those steps are *integration*, not construction.
    channel now migrating from the bespoke sink to an Atchung `Topic`/`Pump`]**
 5. `Length` + flex layout + `measure` (§6); the tree→Canvas emitter (§10 step 7). **[done]**
 6. **Input integration:** wire `tactroller-atchung` into the loop (steps 2–3); framework dispatch +
-   focus + shortcuts (§8); first interactive widgets (button, slider).
+   focus + shortcuts (§8); first interactive widgets (button, slider). **[in progress: the click path is
+   live — tactroller → atchung `"tactroller.input"` → `InputDispatcher` hit-test + leaf→root bubbling →
+   `onClick` handler + a `ClickEvent` topic, drained each frame in `Gui.frame`; the demo's "Get started"
+   button is clickable. Focus routing, capture, wheel, keyboard, and shortcuts remain.]**
 7. Application event/state publishing (§4) + `gui.on/onUi` over Atchung (§5); the E2 wake subscriber.
 8. Lifecycle FSM + animation transform layer (§7); `RichText` (§9).
 9. Scroll/clip views, text field (+ `tactroller-clipboard`); then (later) semantic-transaction

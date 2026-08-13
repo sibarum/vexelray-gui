@@ -88,10 +88,25 @@ public final class GuiApp implements AutoCloseable {
         this.presenter = new WindowedPresenter(device, swapchain, renderPass.handle(), pipeline, window);
     }
 
+    /** The OS window handle (an {@code HWND} on Windows) — used to attach input (tactroller) for client-space
+     *  coordinates and focus gating at the application edge. */
+    public long windowHandle() {
+        return window.osHandle();
+    }
+
     /** Drive {@code gui} until the window closes (or {@code maxFrames} presented if positive). */
     public void run(Gui gui, int maxFrames) {
+        run(gui, maxFrames, () -> { });
+    }
+
+    /**
+     * Drive {@code gui}, running {@code beforeFrame} at the top of each frame — the app-edge hook for pumping input
+     * onto the bus (e.g. {@code TactrollerInputBridge::pump}) before {@link Gui#frame} drains and dispatches it.
+     */
+    public void run(Gui gui, int maxFrames, Runnable beforeFrame) {
         presenter.configureDraw(vertexBuffer.handle(), atlas.descriptorSet(), 0);
         presenter.run(maxFrames, 0, (dt, pushConstants) -> {
+            beforeFrame.run();
             RetainedNode root = gui.frame(canvas.width(), canvas.height(), measurer);
             canvas.begin();
             if (root != null) {

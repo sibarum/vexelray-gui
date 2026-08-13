@@ -9,6 +9,8 @@ import dev.vexelray.gui.core.model.Mutation;
 import dev.vexelray.gui.core.model.NodeKind;
 import dev.vexelray.gui.core.model.PropKey;
 import dev.vexelray.gui.core.model.Reconciler;
+import dev.vexelray.gui.core.input.ClickEvent;
+import dev.vexelray.gui.core.input.InputDispatcher;
 import dev.vexelray.gui.core.model.RetainedNode;
 import sibarum.atchung.Atchung;
 import sibarum.atchung.Backpressure;
@@ -48,12 +50,16 @@ public final class Gui implements AutoCloseable {
     /** Mailbox bound for the mutation pump. BLOCK makes this a throttle, not a drop threshold (see class doc). */
     private static final int MUTATION_MAILBOX = 1 << 16;
 
+    /** Framework click events, resolved from raw input by the dispatcher; workers subscribe here. */
+    private static final Topic<ClickEvent> CLICKS = Topic.of("vexelray.gui.clicks", ClickEvent.class);
+
     private final AtomicLong ids = new AtomicLong(1);
     private final Atchung bus;
     private final MutationSink sink;
     private final Pump pump;
     private final Subscription mutationSub;
     private final Reconciler reconciler;
+    private final InputDispatcher input;
     private final Node root;
     private float lastViewportW = -1f;
     private float lastViewportH = -1f;
@@ -83,6 +89,8 @@ public final class Gui implements AutoCloseable {
         // The GUI thread drains this pump each frame; the subscriber runs on that (drain) thread, so applying to
         // the single-writer reconciler here is the GUI-thread write the model requires.
         this.mutationSub = pump.subscribe(MUTATIONS, reconciler::apply, MUTATION_MAILBOX, Backpressure.BLOCK);
+        // Framework input dispatch on the same bus; click handlers run on the worker executor (off the GUI thread).
+        this.input = new InputDispatcher(bus, CLICKS, workers);
 
         Map<PropKey, Object> init = new EnumMap<>(PropKey.class);
         init.put(PropKey.DIRECTION, Direction.COLUMN);
@@ -95,6 +103,20 @@ public final class Gui implements AutoCloseable {
     /** The Atchung bus this GUI publishes mutations, events, and (via a bridge) input on. */
     public Atchung bus() {
         return bus;
+    }
+
+    /**
+     * Register a click handler for {@code node} — fired when a left press and release land on it (bubbling to the
+     * nearest ancestor with a handler). Runs on a worker thread, so it may freely mutate the tree via handles.
+     */
+    public Gui onClick(Node node, Runnable handler) {
+        input.onClick(node.id(), handler);
+        return this;
+    }
+
+    /** The click topic: {@code gui.bus().subscribe(gui.clicks(), ...)} to react to clicks anywhere. */
+    public Topic<ClickEvent> clicks() {
+        return CLICKS;
     }
 
     /** The root node (fills the viewport). Append the UI to it. */
@@ -154,8 +176,11 @@ public final class Gui implements AutoCloseable {
      * text intrinsic sizes.
      */
     public RetainedNode frame(float viewportW, float viewportH, TextMeasurer tm) {
+        // Dispatch this frame's input first, against the previous frame's laid-out tree (§8, §10): a click may
+        // register a mutation, which the drain below then applies in the same frame.
+        input.dispatch(reconciler.root());
         // Drain the mutation pump on the GUI thread: the subscriber applies each Mutation to the reconciler in
-        // FIFO order (single writer). Returns the count applied this frame; the tree is up to date afterward.
+        // FIFO order (single writer). The tree is up to date afterward.
         pump.drain();
         RetainedNode r = reconciler.root();
         boolean viewportChanged = viewportW != lastViewportW || viewportH != lastViewportH;
@@ -170,6 +195,7 @@ public final class Gui implements AutoCloseable {
 
     @Override
     public void close() {
+        input.close();
         mutationSub.close();
         workers.shutdownNow();
     }

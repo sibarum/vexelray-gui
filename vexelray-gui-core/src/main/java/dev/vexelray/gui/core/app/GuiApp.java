@@ -84,7 +84,7 @@ public final class GuiApp implements AutoCloseable {
         ComposedShader vs = CanvasShader.vertex();
         ComposedShader fs = CanvasShader.fragment();
         this.pipeline = new GraphicsPipeline(device, renderPass.handle(), swapchain.width(), swapchain.height(),
-                vs.spirv(), "main", fs.spirv(), "main", canvasConfig(atlas));
+                vs.spirv(), "main", fs.spirv(), "main", canvasConfig(atlas, true)); // dynamic viewport: resizable
         this.presenter = new WindowedPresenter(device, swapchain, renderPass.handle(), pipeline, window);
     }
 
@@ -172,7 +172,7 @@ public final class GuiApp implements AutoCloseable {
                  VertexBuffer vb = new VertexBuffer(device, vertices);
                  GraphicsPipeline pipeline = new GraphicsPipeline(device, rp.handle(), width, height,
                          CanvasShader.vertex().spirv(), "main", CanvasShader.fragment().spirv(), "main",
-                         canvasConfig(atlas))) {
+                         canvasConfig(atlas, false))) { // fixed viewport: offscreen, no resize
                 byte[] rgba = OffscreenDraw.toRgba(device, rp.handle(), pipeline, width, height, vb.handle(),
                         atlas.descriptorSet(), vertexCount, bgR, bgG, bgB, 1f);
                 ImageIO.write(toImage(rgba, width, height), "PNG", new File(path));
@@ -191,13 +191,13 @@ public final class GuiApp implements AutoCloseable {
         };
     }
 
-    private static GraphicsPipeline.Config canvasConfig(AtlasTexture atlas) {
+    private static GraphicsPipeline.Config canvasConfig(AtlasTexture atlas, boolean dynamicViewport) {
         List<GraphicsPipeline.VertexAttribute> attrs = new ArrayList<>();
         for (CanvasVertex.Attr a : CanvasVertex.ATTRIBUTES) {
             attrs.add(new GraphicsPipeline.VertexAttribute(a.location(), vkFormat(a.components()), a.offset()));
         }
         return new GraphicsPipeline.Config(CanvasVertex.STRIDE_BYTES, attrs,
-                new long[]{atlas.descriptorSetLayout()}, true, Vk.SHADER_STAGE_FRAGMENT_BIT, 0);
+                new long[]{atlas.descriptorSetLayout()}, true, Vk.SHADER_STAGE_FRAGMENT_BIT, 0, dynamicViewport);
     }
 
     private static int vkFormat(int components) {

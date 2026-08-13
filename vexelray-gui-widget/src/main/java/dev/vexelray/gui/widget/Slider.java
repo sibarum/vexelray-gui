@@ -11,8 +11,9 @@ import java.util.function.DoubleConsumer;
 /**
  * A horizontal slider: a track with a thumb positioned by a 0..1 value. Dragging the track (anywhere on it) sets
  * the value from the pointer's fraction across the track, with pointer capture so the drag continues off the track
- * — built entirely on {@code Gui.onDrag}. The thumb is placed by a percent-width spacer, so it follows the value
- * through the flex layout with no pixel math.
+ * — built entirely on {@code Gui.onDrag}. The thumb is placed between two grow-weighted spacers ({@code grow(value)}
+ * and {@code grow(1-value)}) that split the free space (track minus thumb), so the thumb lands exactly at the right
+ * edge at 100% with no pixel math and no overflow.
  *
  * <p>Reads flow out through {@link #onChange}; the handler runs on a worker thread (the drag dispatch thread), so
  * it must not touch the retained tree except through {@link Node} handles (which are thread-safe).
@@ -23,21 +24,23 @@ public final class Slider {
     private static final Color THUMB = Color.rgb(0x3aa0ff);
 
     private final Node track;
-    private final Node spacer;
+    private final Node leftSpacer;
+    private final Node rightSpacer;
     private volatile float value;
     private volatile DoubleConsumer onChange = v -> { };
 
     /** Build a slider on {@code gui} with the given initial value (0..1). */
     public Slider(Gui gui, float initial) {
         this.value = clamp01(initial);
-        // spacer takes value% of the track width, pushing the thumb along; the remainder fills.
-        this.spacer = gui.box().width(Length.percent(this.value * 100f)).height(Length.percent(100));
+        // The two spacers grow in proportion value : (1-value), splitting the space left over by the thumb, so the
+        // thumb's centre tracks the value and never pushes past the track edge.
+        this.leftSpacer = gui.box().width(Length.grow(this.value)).height(Length.percent(100));
+        this.rightSpacer = gui.box().width(Length.grow(1f - this.value)).height(Length.percent(100));
         Node thumb = gui.box().width(Length.rem(1.1f)).height(Length.percent(100))
                 .background(THUMB).corner(Length.rem(0.55f));
-        Node rest = gui.box().width(Length.FILL).height(Length.percent(100));
         this.track = gui.row().height(Length.rem(1.1f)).background(TRACK).corner(Length.rem(0.55f))
-                .alignItems(AlignItems.CENTER)
-                .children(spacer, thumb, rest);
+                .alignItems(AlignItems.CENTER).scroll(false, false) // a slider never scrolls
+                .children(leftSpacer, thumb, rightSpacer);
         gui.onDrag(track, e -> set(e.fractionX()));
     }
 
@@ -66,7 +69,8 @@ public final class Slider {
     private void set(float raw) {
         float v = clamp01(raw);
         this.value = v;
-        spacer.width(Length.percent(v * 100f));
+        leftSpacer.width(Length.grow(v));
+        rightSpacer.width(Length.grow(1f - v));
         onChange.accept(v);
     }
 

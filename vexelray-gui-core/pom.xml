@@ -13,14 +13,20 @@
     <artifactId>vexelray-gui-core</artifactId>
 
     <description>
-        Framework core: the retained Node tree with stable identity, MPSC mutation + event channels
-        (single-writer, PENDING_WAKE wake CAS), Length + flex layout, lifecycle FSM + the animation
-        transform layer, framework-owned input dispatch, the RichText model, and the GuiApp frame loop.
-        Renders only through VexelRay's Canvas.
+        Framework core: the retained Node tree with stable identity, the Atchung-backed mutation channel
+        (single-writer reconciler, pumped once per frame) + event/state publishing, Length + flex layout,
+        lifecycle FSM + the animation transform layer, framework-owned input dispatch, the RichText model,
+        and the GuiApp frame loop. Renders only through VexelRay's Canvas; messages only through Atchung.
     </description>
 
     <dependencies>
-        <!-- Draw through the native 2D API; lay text; drive the runtime; window + input. -->
+        <!-- The message bus: mutations are published to a Topic and drained via a Pump on the GUI thread;
+             app events and state are published here too (architecture.md §4-5). -->
+        <dependency>
+            <groupId>sibarum.atchung</groupId>
+            <artifactId>atchung-core</artifactId>
+        </dependency>
+        <!-- Draw through the native 2D API; lay text; drive the runtime; window. -->
         <dependency>
             <groupId>dev.vexelray</groupId>
             <artifactId>vexelray-canvas</artifactId>

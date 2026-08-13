@@ -10,9 +10,13 @@ import dev.vexelray.gui.core.model.NodeKind;
 import dev.vexelray.gui.core.model.PropKey;
 import dev.vexelray.gui.core.model.Reconciler;
 import dev.vexelray.gui.core.model.RetainedNode;
+import sibarum.atchung.Atchung;
+import sibarum.atchung.Backpressure;
+import sibarum.atchung.Pump;
+import sibarum.atchung.Subscription;
+import sibarum.atchung.Topic;
 
 import java.util.EnumMap;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -20,17 +24,35 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * The framework facade and the boundary between worker threads and the GUI thread. Workers build UI and mutate it
- * through {@link Node} handles minted here (each posts a {@code Create}); the GUI thread calls {@link #frame} once
- * per frame to drain the mutation queue, reconcile the retained tree (single writer), and lay it out. Application
- * event handlers submit to the worker executor (used once input/events land).
+ * through {@link Node} handles minted here (each publishes a {@code Create}); the GUI thread calls {@link #frame}
+ * once per frame to drain the mutation channel, reconcile the retained tree (single writer), and lay it out.
+ *
+ * <p>The mutation channel is an Atchung {@code Topic<Mutation>} (architecture.md §4-5): {@link Node} setters
+ * publish to it from any thread, and a {@link Pump} owned here drains it on the GUI thread. Losslessness is
+ * required — a dropped tree edit corrupts the model — so the pumped mailbox uses {@link Backpressure#BLOCK} with a
+ * generous capacity, which throttles a runaway producer instead of shedding edits. The GUI owns the model and the
+ * reconciler; Atchung owns the transport. The same bus carries application events and input, so a subscriber on
+ * another thread, process, or machine is indistinguishable from a local one.
  *
  * <p>Tree construction is just the first batch of mutations: node factories return handles immediately with no
  * round-trip to the GUI thread, so a worker can assemble a whole subtree off-thread.
  */
 public final class Gui implements AutoCloseable {
 
+    /**
+     * The internal tree-mutation channel. A private topic name so it never collides with application traffic on a
+     * shared bus; losslessly drained on the GUI thread each frame.
+     */
+    private static final Topic<Mutation> MUTATIONS = Topic.of("vexelray.gui.mutations", Mutation.class);
+
+    /** Mailbox bound for the mutation pump. BLOCK makes this a throttle, not a drop threshold (see class doc). */
+    private static final int MUTATION_MAILBOX = 1 << 16;
+
     private final AtomicLong ids = new AtomicLong(1);
-    private final MutationSink sink = new MutationSink();
+    private final Atchung bus;
+    private final MutationSink sink;
+    private final Pump pump;
+    private final Subscription mutationSub;
     private final Reconciler reconciler;
     private final Node root;
     private float lastViewportW = -1f;
@@ -41,15 +63,38 @@ public final class Gui implements AutoCloseable {
         return t;
     });
 
+    /** Create a GUI on its own private Atchung bus. */
     public Gui() {
+        this(Atchung.create());
+    }
+
+    /**
+     * Create a GUI on a shared Atchung bus — hand in the same bus the application uses so input publishers
+     * ({@code tactroller-atchung}), widgets, and workers all meet the framework on one fabric.
+     */
+    public Gui(Atchung bus) {
+        this.bus = bus;
+        this.pump = bus.pump();
+        // Publisher seam for Node handles: every setter publishes a Mutation onto the bus from any thread.
+        this.sink = m -> bus.publish(MUTATIONS, m);
+
         long rootId = ids.getAndIncrement();
         this.reconciler = new Reconciler(rootId);
+        // The GUI thread drains this pump each frame; the subscriber runs on that (drain) thread, so applying to
+        // the single-writer reconciler here is the GUI-thread write the model requires.
+        this.mutationSub = pump.subscribe(MUTATIONS, reconciler::apply, MUTATION_MAILBOX, Backpressure.BLOCK);
+
         Map<PropKey, Object> init = new EnumMap<>(PropKey.class);
         init.put(PropKey.DIRECTION, Direction.COLUMN);
         init.put(PropKey.WIDTH, Length.FILL);
         init.put(PropKey.HEIGHT, Length.FILL);
         sink.post(new Mutation.Create(rootId, NodeKind.BOX, init));
         this.root = new Node(rootId, sink);
+    }
+
+    /** The Atchung bus this GUI publishes mutations, events, and (via a bridge) input on. */
+    public Atchung bus() {
+        return bus;
     }
 
     /** The root node (fills the viewport). Append the UI to it. */
@@ -109,10 +154,9 @@ public final class Gui implements AutoCloseable {
      * text intrinsic sizes.
      */
     public RetainedNode frame(float viewportW, float viewportH, TextMeasurer tm) {
-        List<Mutation> batch = sink.drain();
-        if (!batch.isEmpty()) {
-            reconciler.applyAll(batch);
-        }
+        // Drain the mutation pump on the GUI thread: the subscriber applies each Mutation to the reconciler in
+        // FIFO order (single writer). Returns the count applied this frame; the tree is up to date afterward.
+        pump.drain();
         RetainedNode r = reconciler.root();
         boolean viewportChanged = viewportW != lastViewportW || viewportH != lastViewportH;
         if (r != null && (reconciler.layoutDirty() || viewportChanged)) {
@@ -126,6 +170,7 @@ public final class Gui implements AutoCloseable {
 
     @Override
     public void close() {
+        mutationSub.close();
         workers.shutdownNow();
     }
 }

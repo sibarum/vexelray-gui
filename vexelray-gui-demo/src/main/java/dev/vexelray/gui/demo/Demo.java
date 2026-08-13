@@ -7,6 +7,7 @@ import dev.vexelray.gui.core.app.GuiApp;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
+import dev.vexelray.gui.widget.Slider;
 import dev.vexelray.text.TextLayout;
 import sibarum.tactroller.api.BackendException;
 import sibarum.tactroller.api.CoordinateSpace;
@@ -140,9 +141,16 @@ public final class Demo {
                     .height(Length.rem(1.5f)).textSize(Length.rem(1)).textColor(ACCENT));
         });
 
+        // A slider (drag with pointer capture) driving a live value label.
+        Node valueLabel = gui.text("50%").width(Length.rem(3.5f)).textSize(Length.rem(1)).textColor(INK)
+                .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
+        Slider slider = new Slider(gui, 0.5f).onChange(v -> valueLabel.text(Math.round(v * 100) + "%"));
+        slider.node().width(Length.rem(14));
+
         Node controls = gui.row().width(Length.FILL).height(Length.rem(4)).padding(Length.rem(1.5f))
                 .gap(Length.rem(0.75f)).justify(Justify.START).alignItems(AlignItems.CENTER)
-                .children(getStarted, button(gui, "Docs", DIM, PANEL, PANEL_HOVER, PANEL_PRESSED, true));
+                .children(getStarted, button(gui, "Docs", DIM, PANEL, PANEL_HOVER, PANEL_PRESSED, true),
+                        slider.node(), valueLabel);
 
         Node footer = gui.text("flex layout: rows/columns, padding/margin/border, border-box, relative units")
                 .width(Length.FILL).height(Length.rem(2.25f)).textSize(Length.rem(0.9375f)).textColor(DIM)

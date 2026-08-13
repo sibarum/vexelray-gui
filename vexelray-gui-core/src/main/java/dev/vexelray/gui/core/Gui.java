@@ -10,6 +10,7 @@ import dev.vexelray.gui.core.model.NodeKind;
 import dev.vexelray.gui.core.model.PropKey;
 import dev.vexelray.gui.core.model.Reconciler;
 import dev.vexelray.gui.core.input.ClickEvent;
+import dev.vexelray.gui.core.input.DragEvent;
 import dev.vexelray.gui.core.input.InputDispatcher;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.model.RetainedNode;
@@ -142,6 +143,16 @@ public final class Gui implements AutoCloseable {
      */
     public Gui onState(Node node, java.util.function.Consumer<InteractionState> handler) {
         input.onState(node.id(), handler);
+        return this;
+    }
+
+    /**
+     * Drag {@code node}: a left press on it (or a descendant) captures the pointer and delivers START/MOVE/END
+     * {@link DragEvent}s — MOVE continues while held even when the pointer leaves the node. The handler runs on a
+     * worker thread; use {@link DragEvent#fractionX()}/{@code fractionY()} to map the pointer onto the node.
+     */
+    public Gui onDrag(Node node, java.util.function.Consumer<DragEvent> handler) {
+        input.onDrag(node.id(), handler);
         return this;
     }
 

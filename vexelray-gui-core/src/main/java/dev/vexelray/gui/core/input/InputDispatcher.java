@@ -45,10 +45,14 @@ public final class InputDispatcher {
     private final Subscription sub;
     private final Map<Long, Runnable> clickHandlers = new ConcurrentHashMap<>();
     private final Map<Long, Consumer<InteractionState>> stateHandlers = new ConcurrentHashMap<>();
+    private final Map<Long, Consumer<DragEvent>> dragHandlers = new ConcurrentHashMap<>();
     private final Map<Long, InteractionState> reportedState = new ConcurrentHashMap<>();
 
     private RetainedNode currentRoot;
     private long pressTargetId = -1;
+    // Pointer capture for dragging: while a drag is active, MOVE events route to this node's handler regardless of
+    // what's under the pointer, until the button is released.
+    private RetainedNode dragCapture;
     // Pointer/button tracking for interaction state. hoverHit is the topmost node currently under the pointer;
     // pressHit is the topmost node the left button went down on (both null when none / button up).
     private RetainedNode hoverHit;
@@ -76,10 +80,20 @@ public final class InputDispatcher {
         stateHandlers.put(nodeId, handler);
     }
 
-    /** Drop {@code nodeId}'s click and state handlers (call when the node is removed). */
+    /**
+     * Register a drag handler for {@code nodeId}: a left press on the node (or a descendant) captures the pointer
+     * and delivers START, then MOVE for every subsequent motion while held (even off the node), then END on
+     * release. Replaces any prior handler for that node.
+     */
+    public void onDrag(long nodeId, Consumer<DragEvent> handler) {
+        dragHandlers.put(nodeId, handler);
+    }
+
+    /** Drop {@code nodeId}'s click, state and drag handlers (call when the node is removed). */
     public void clearHandlers(long nodeId) {
         clickHandlers.remove(nodeId);
         stateHandlers.remove(nodeId);
+        dragHandlers.remove(nodeId);
         reportedState.remove(nodeId);
     }
 
@@ -102,6 +116,9 @@ public final class InputDispatcher {
     private void handle(InputEvent e) {
         switch (e) {
             case InputEvent.PointerMoved m -> {
+                if (dragCapture != null) {
+                    fireDrag(DragEvent.Phase.MOVE, m.x(), m.y());
+                }
                 hoverHit = HitTest.at(currentRoot, m.x(), m.y());
                 refreshStates();
             }
@@ -111,9 +128,18 @@ public final class InputDispatcher {
                 pressHit = hit;
                 hoverHit = hit;
                 leftDown = true;
+                // Capture for drag if the hit (or an ancestor) registered a drag handler.
+                dragCapture = ancestorWithDragHandler(hit);
+                if (dragCapture != null) {
+                    fireDrag(DragEvent.Phase.START, b.x(), b.y());
+                }
                 refreshStates();
             }
             case InputEvent.ButtonReleased b when b.button() == MouseButton.LEFT -> {
+                if (dragCapture != null) {
+                    fireDrag(DragEvent.Phase.END, b.x(), b.y());
+                    dragCapture = null;
+                }
                 RetainedNode hit = HitTest.at(currentRoot, b.x(), b.y());
                 if (hit != null && hit.id == pressTargetId) {
                     fireClick(hit, b.x(), b.y());
@@ -159,6 +185,26 @@ public final class InputDispatcher {
             }
         }
         return false;
+    }
+
+    /** The nearest ancestor-or-self of {@code hit} with a drag handler, or {@code null}. */
+    private RetainedNode ancestorWithDragHandler(RetainedNode hit) {
+        for (RetainedNode n = hit; n != null; n = n.parent) {
+            if (dragHandlers.containsKey(n.id)) {
+                return n;
+            }
+        }
+        return null;
+    }
+
+    private void fireDrag(DragEvent.Phase phase, float x, float y) {
+        RetainedNode n = dragCapture;
+        Consumer<DragEvent> handler = dragHandlers.get(n.id);
+        if (handler == null) {
+            return;
+        }
+        DragEvent e = new DragEvent(phase, x, y, n.x, n.y, n.w, n.h);
+        handlerExecutor.execute(() -> handler.accept(e));
     }
 
     private void fireClick(RetainedNode target, float x, float y) {

@@ -10,6 +10,7 @@ import sibarum.tactroller.api.InputEvent;
 import sibarum.tactroller.api.MouseButton;
 
 import java.util.Map;
+import java.util.function.Consumer;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 
@@ -17,10 +18,16 @@ import java.util.concurrent.Executor;
  * Framework-owned input dispatch (architecture.md §8). Subscribes a {@link Pump} to the {@link InputTopics#INPUT}
  * topic and, once per frame, drains it on the GUI thread and routes each edge against the current laid-out tree.
  *
- * <p>v1 scope: left-button click resolution. A press hit-tests to the topmost node under the pointer and remembers
- * it; a release on the same node fires a click — routed to the nearest ancestor (self included) with a registered
- * handler (leaf→root bubbling), and re-published as a {@link ClickEvent} on the click topic for workers. Handlers
- * run on the supplied executor (off the GUI thread by default), so a slow handler never stalls rendering.
+ * <p>Scope so far:
+ * <ul>
+ *   <li><b>Clicks</b> — a left press then release on the same node fires a click, routed to the nearest ancestor
+ *       (self included) with a registered handler (leaf→root bubbling) and re-published as a {@link ClickEvent}.</li>
+ *   <li><b>Interaction state</b> — from pointer motion + left-button state, each node registered via
+ *       {@link #onState} is told when its {@link InteractionState} changes (NORMAL/HOVER/PRESSED), so it can
+ *       restyle. State is computed with ancestor-or-self coverage, so hovering a button's label counts as hovering
+ *       the button.</li>
+ * </ul>
+ * Handlers run on the supplied executor (off the GUI thread by default), so a slow handler never stalls rendering.
  *
  * <p>Because {@link #dispatch} runs during the frame, before layout, hit-testing uses the previous frame's rects —
  * the standard one-frame-geometry latency, invisible in practice. Focus routing, capture, wheel, keyboard, and
@@ -37,9 +44,16 @@ public final class InputDispatcher {
     private final Pump pump;
     private final Subscription sub;
     private final Map<Long, Runnable> clickHandlers = new ConcurrentHashMap<>();
+    private final Map<Long, Consumer<InteractionState>> stateHandlers = new ConcurrentHashMap<>();
+    private final Map<Long, InteractionState> reportedState = new ConcurrentHashMap<>();
 
     private RetainedNode currentRoot;
     private long pressTargetId = -1;
+    // Pointer/button tracking for interaction state. hoverHit is the topmost node currently under the pointer;
+    // pressHit is the topmost node the left button went down on (both null when none / button up).
+    private RetainedNode hoverHit;
+    private RetainedNode pressHit;
+    private boolean leftDown;
 
     public InputDispatcher(Atchung bus, Topic<ClickEvent> clicks, Executor handlerExecutor) {
         this.bus = bus;
@@ -54,9 +68,19 @@ public final class InputDispatcher {
         clickHandlers.put(nodeId, handler);
     }
 
-    /** Drop {@code nodeId}'s click handler (call when the node is removed). */
+    /**
+     * Register an interaction-state handler for {@code nodeId}, invoked whenever the node's {@link InteractionState}
+     * changes (NORMAL/HOVER/PRESSED). Replaces any prior handler for that node.
+     */
+    public void onState(long nodeId, Consumer<InteractionState> handler) {
+        stateHandlers.put(nodeId, handler);
+    }
+
+    /** Drop {@code nodeId}'s click and state handlers (call when the node is removed). */
     public void clearHandlers(long nodeId) {
         clickHandlers.remove(nodeId);
+        stateHandlers.remove(nodeId);
+        reportedState.remove(nodeId);
     }
 
     /**
@@ -77,9 +101,17 @@ public final class InputDispatcher {
 
     private void handle(InputEvent e) {
         switch (e) {
+            case InputEvent.PointerMoved m -> {
+                hoverHit = HitTest.at(currentRoot, m.x(), m.y());
+                refreshStates();
+            }
             case InputEvent.ButtonPressed b when b.button() == MouseButton.LEFT -> {
                 RetainedNode hit = HitTest.at(currentRoot, b.x(), b.y());
                 pressTargetId = hit == null ? -1 : hit.id;
+                pressHit = hit;
+                hoverHit = hit;
+                leftDown = true;
+                refreshStates();
             }
             case InputEvent.ButtonReleased b when b.button() == MouseButton.LEFT -> {
                 RetainedNode hit = HitTest.at(currentRoot, b.x(), b.y());
@@ -87,11 +119,46 @@ public final class InputDispatcher {
                     fireClick(hit, b.x(), b.y());
                 }
                 pressTargetId = -1;
+                pressHit = null;
+                hoverHit = hit;
+                leftDown = false;
+                refreshStates();
             }
             default -> {
-                // Motion, scroll, keys, focus: consumed here in later steps.
+                // Scroll, keys, focus: consumed here in later steps.
             }
         }
+    }
+
+    /** Recompute each registered node's interaction state and fire the handler on any change. */
+    private void refreshStates() {
+        for (Map.Entry<Long, Consumer<InteractionState>> entry : stateHandlers.entrySet()) {
+            long id = entry.getKey();
+            InteractionState now;
+            if (leftDown && covers(id, pressHit) && covers(id, hoverHit)) {
+                now = InteractionState.PRESSED;
+            } else if (covers(id, hoverHit)) {
+                now = InteractionState.HOVER;
+            } else {
+                now = InteractionState.NORMAL;
+            }
+            InteractionState prev = reportedState.getOrDefault(id, InteractionState.NORMAL);
+            if (now != prev) {
+                reportedState.put(id, now);
+                InteractionState delivered = now;
+                handlerExecutor.execute(() -> entry.getValue().accept(delivered));
+            }
+        }
+    }
+
+    /** Whether {@code handlerId} is {@code hit} or one of its ancestors (so a child hit covers its container). */
+    private static boolean covers(long handlerId, RetainedNode hit) {
+        for (RetainedNode n = hit; n != null; n = n.parent) {
+            if (n.id == handlerId) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void fireClick(RetainedNode target, float x, float y) {

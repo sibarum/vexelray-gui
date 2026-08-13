@@ -32,8 +32,12 @@ public final class Demo {
 
     private static final Color BG = Color.rgb(0x11141b);
     private static final Color PANEL = Color.rgb(0x1b2130);
+    private static final Color PANEL_HOVER = Color.rgb(0x232a3d);
+    private static final Color PANEL_PRESSED = Color.rgb(0x151a26);
     private static final Color LINE = Color.rgb(0x2b3346);
     private static final Color ACCENT = Color.rgb(0x3aa0ff);
+    private static final Color ACCENT_HOVER = Color.rgb(0x57b1ff);
+    private static final Color ACCENT_PRESSED = Color.rgb(0x2b86e0);
     private static final Color INK = Color.rgb(0xeef2f8);
     private static final Color DIM = Color.rgb(0x93a0b4);
 
@@ -124,7 +128,7 @@ public final class Demo {
         Node body = gui.row().width(Length.FILL).height(Length.FILL).padding(24f).gap(24f)
                 .children(leftCard, rightCard);
 
-        Node getStarted = button(gui, "Get started", ACCENT, Color.WHITE, false);
+        Node getStarted = button(gui, "Get started", Color.WHITE, ACCENT, ACCENT_HOVER, ACCENT_PRESSED, false);
         // The click vertical: tactroller -> atchung -> dispatch -> this handler (on a worker thread), which
         // mutates the tree through handles just like the background worker does.
         AtomicInteger clicks = new AtomicInteger();
@@ -136,7 +140,7 @@ public final class Demo {
 
         Node controls = gui.row().width(Length.FILL).height(Length.px(64)).padding(24f).gap(12f)
                 .justify(Justify.START).alignItems(AlignItems.CENTER)
-                .children(getStarted, button(gui, "Docs", PANEL, DIM, true));
+                .children(getStarted, button(gui, "Docs", DIM, PANEL, PANEL_HOVER, PANEL_PRESSED, true));
 
         Node footer = gui.text("step 2: retained tree + mutations + flex layout")
                 .width(Length.FILL).height(Length.px(36)).textSize(15f).textColor(DIM)
@@ -155,13 +159,20 @@ public final class Demo {
                                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.TOP));
     }
 
-    /** A fixed-size labelled button (a text node with a background). */
-    private static Node button(Gui gui, String label, Color bg, Color fg, boolean bordered) {
-        Node b = gui.text(label).width(Length.px(160)).height(Length.px(44)).background(bg).corner(10f)
+    /** A fixed-size labelled button that lightens on hover and darkens while pressed. */
+    private static Node button(Gui gui, String label, Color fg, Color base, Color hover, Color pressed,
+                               boolean bordered) {
+        Node b = gui.text(label).width(Length.px(160)).height(Length.px(44)).background(base).corner(10f)
                 .textColor(fg).align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE);
         if (bordered) {
             b.border(1.5f, LINE);
         }
+        // Restyle on pointer interaction — the handler runs on a worker thread and mutates via the handle.
+        gui.onState(b, state -> b.background(switch (state) {
+            case NORMAL -> base;
+            case HOVER -> hover;
+            case PRESSED -> pressed;
+        }));
         return b;
     }
 

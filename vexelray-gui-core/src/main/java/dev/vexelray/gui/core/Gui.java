@@ -11,6 +11,7 @@ import dev.vexelray.gui.core.model.PropKey;
 import dev.vexelray.gui.core.model.Reconciler;
 import dev.vexelray.gui.core.input.ClickEvent;
 import dev.vexelray.gui.core.input.InputDispatcher;
+import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.model.RetainedNode;
 import sibarum.atchung.Atchung;
 import sibarum.atchung.Backpressure;
@@ -117,6 +118,16 @@ public final class Gui implements AutoCloseable {
     /** The click topic: {@code gui.bus().subscribe(gui.clicks(), ...)} to react to clicks anywhere. */
     public Topic<ClickEvent> clicks() {
         return CLICKS;
+    }
+
+    /**
+     * React to {@code node}'s pointer-interaction state (NORMAL/HOVER/PRESSED) — e.g. to restyle a button on hover
+     * and press. The handler is invoked on a worker thread on each state change, so it may mutate the tree via
+     * handles. Hovering a descendant (a button's label) counts as hovering {@code node}.
+     */
+    public Gui onState(Node node, java.util.function.Consumer<InteractionState> handler) {
+        input.onState(node.id(), handler);
+        return this;
     }
 
     /** The root node (fills the viewport). Append the UI to it. */

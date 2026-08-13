@@ -107,6 +107,13 @@ public final class GuiApp implements AutoCloseable {
         presenter.configureDraw(vertexBuffer.handle(), atlas.descriptorSet(), 0);
         presenter.run(maxFrames, 0, (dt, pushConstants) -> {
             beforeFrame.run();
+            // Follow the window: on resize, rebuild the Canvas at the new size so its pixel→NDC mapping matches the
+            // (dynamic) viewport, and feed the live size to the GUI, which relays out and republishes the Viewport.
+            int ww = window.width();
+            int wh = window.height();
+            if (ww > 0 && wh > 0 && (ww != canvas.width() || wh != canvas.height())) {
+                canvas.resize(ww, wh); // keeps the vertex buffer — no per-resize allocation
+            }
             RetainedNode root = gui.frame(canvas.width(), canvas.height(), measurer);
             canvas.begin();
             if (root != null) {

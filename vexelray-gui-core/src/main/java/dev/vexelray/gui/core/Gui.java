@@ -15,7 +15,9 @@ import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.model.RetainedNode;
 import sibarum.atchung.Atchung;
 import sibarum.atchung.Backpressure;
+import sibarum.atchung.Committer;
 import sibarum.atchung.Pump;
+import sibarum.atchung.State;
 import sibarum.atchung.Subscription;
 import sibarum.atchung.Topic;
 
@@ -62,6 +64,8 @@ public final class Gui implements AutoCloseable {
     private final Reconciler reconciler;
     private final InputDispatcher input;
     private final Node root;
+    private final State<Viewport> viewport;
+    private final Committer<Viewport, Viewport> setViewport;
     private float lastViewportW = -1f;
     private float lastViewportH = -1f;
     private final ExecutorService workers = Executors.newCachedThreadPool(r -> {
@@ -93,6 +97,12 @@ public final class Gui implements AutoCloseable {
         // Framework input dispatch on the same bus; click handlers run on the worker executor (off the GUI thread).
         this.input = new InputDispatcher(bus, CLICKS, workers);
 
+        // Window size as a coalesced, latest-wins State on the bus — the framework relays out from it and workers
+        // can observe resizes without coupling to the window.
+        State.Builder<Viewport> vb = State.of(new Viewport(0, 0));
+        this.setViewport = vb.mutation("set", (current, next) -> next);
+        this.viewport = vb.build();
+
         Map<PropKey, Object> init = new EnumMap<>(PropKey.class);
         init.put(PropKey.DIRECTION, Direction.COLUMN);
         init.put(PropKey.WIDTH, Length.FILL);
@@ -104,6 +114,11 @@ public final class Gui implements AutoCloseable {
     /** The Atchung bus this GUI publishes mutations, events, and (via a bridge) input on. */
     public Atchung bus() {
         return bus;
+    }
+
+    /** The live window size as a bus {@code State} — subscribe with {@code gui.viewport().onCommit(...)}. */
+    public State<Viewport> viewport() {
+        return viewport;
     }
 
     /**
@@ -195,6 +210,11 @@ public final class Gui implements AutoCloseable {
         pump.drain();
         RetainedNode r = reconciler.root();
         boolean viewportChanged = viewportW != lastViewportW || viewportH != lastViewportH;
+        if (viewportChanged) {
+            // Publish the new size on the bus (coalesced State) before relaying out, so observers and the layout
+            // see the same value this frame.
+            viewport.commit(setViewport, new Viewport(Math.round(viewportW), Math.round(viewportH)));
+        }
         if (r != null && (reconciler.layoutDirty() || viewportChanged)) {
             FlexLayout.layout(r, viewportW, viewportH, LayoutContext.of(viewportW, viewportH), tm);
             reconciler.clearDirty();

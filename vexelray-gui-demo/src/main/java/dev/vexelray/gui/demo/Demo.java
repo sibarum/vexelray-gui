@@ -142,7 +142,7 @@ public final class Demo {
         });
 
         // A slider (drag with pointer capture) driving a live value label.
-        Node valueLabel = gui.text("50%").width(Length.rem(3.5f)).textSize(Length.rem(1)).textColor(INK)
+        Node valueLabel = gui.text("50%").width(Length.rem(5)).textSize(Length.rem(1)).textColor(INK)
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
         Slider slider = new Slider(gui, 0.5f).onChange(v -> valueLabel.text(Math.round(v * 100) + "%"));
         slider.node().width(Length.rem(14));

@@ -152,7 +152,9 @@ public final class Demo {
         Slider slider = new Slider(gui, 0.5f).onChange(v -> valueLabel.text(Math.round(v * 100) + "%"));
         slider.node().width(Length.rem(14));
 
-        Node controls = gui.row().width(Length.FILL).height(Length.rem(4)).padding(Length.rem(1.5f))
+        // Padding is uniform, so a fixed-height bar keeps it small vertically (24px top+bottom would leave only
+        // 16px of content for 44px buttons -> overflow + clip). rem(0.5) = 8px leaves 48px, enough for the buttons.
+        Node controls = gui.row().width(Length.FILL).height(Length.rem(4)).padding(Length.rem(0.5f))
                 .gap(Length.rem(0.75f)).justify(Justify.START).alignItems(AlignItems.CENTER)
                 .children(getStarted, button(gui, "Docs", DIM, PANEL, PANEL_HOVER, PANEL_PRESSED, true),
                         slider.node(), valueLabel);

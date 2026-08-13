@@ -20,8 +20,9 @@ public final class TreeRenderer {
     /** Horizontal inset, in px, so text doesn't kiss rounded corners. */
     private static final float TEXT_PAD_X = 10f;
 
-    private static final Color SCROLL_TRACK = Color.rgb(0x161b26);
-    private static final Color SCROLL_THUMB = Color.rgb(0x39415a);
+    private static final Color SCROLL_OUTLINE = Color.rgb(0x39415a); // track border, visible against any panel
+    private static final Color SCROLL_TRACK = Color.rgb(0x181d28);   // subtle inner fill
+    private static final Color SCROLL_THUMB = Color.rgb(0x5a6685);   // clearly visible thumb
 
     private TreeRenderer() {
     }
@@ -45,7 +46,7 @@ public final class TreeRenderer {
         }
     }
 
-    /** Draw the reserved-space scrollbars (track + pill thumb) for an overflowing container — chrome, not clipped. */
+    /** Draw the reserved-space scrollbars (outlined track + pill thumb) for an overflowing container — chrome. */
     private static void drawScrollbars(RetainedNode n, Canvas canvas) {
         float sb = n.scrollbarPx;
         float minThumb = sb * 2f;
@@ -55,8 +56,8 @@ public final class TreeRenderer {
             float maxScroll = Math.max(0f, n.contentH - n.viewH);
             float frac = maxScroll > 0f ? n.scrollY / maxScroll : 0f;
             float thumbY = n.viewY + frac * (n.viewH - th);
-            canvas.fillRoundRect(trackX, n.viewY, sb, n.viewH, sb * 0.5f, SCROLL_TRACK);
-            canvas.fillRoundRect(trackX + sb * 0.15f, thumbY, sb * 0.7f, th, sb * 0.35f, SCROLL_THUMB);
+            track(canvas, trackX, n.viewY, sb, n.viewH);
+            canvas.fillRoundRect(trackX + sb * 0.2f, thumbY, sb * 0.6f, th, sb * 0.3f, SCROLL_THUMB);
         }
         if (n.overflowX) {
             float trackY = n.viewY + n.viewH;
@@ -64,9 +65,17 @@ public final class TreeRenderer {
             float maxScroll = Math.max(0f, n.contentW - n.viewW);
             float frac = maxScroll > 0f ? n.scrollX / maxScroll : 0f;
             float thumbX = n.viewX + frac * (n.viewW - tw);
-            canvas.fillRoundRect(n.viewX, trackY, n.viewW, sb, sb * 0.5f, SCROLL_TRACK);
-            canvas.fillRoundRect(thumbX, trackY + sb * 0.15f, tw, sb * 0.7f, sb * 0.35f, SCROLL_THUMB);
+            track(canvas, n.viewX, trackY, n.viewW, sb);
+            canvas.fillRoundRect(thumbX, trackY + sb * 0.2f, tw, sb * 0.6f, sb * 0.3f, SCROLL_THUMB);
         }
+    }
+
+    /** An outlined track: a border-coloured rounded rect with a subtle inner fill, so it reads against any panel. */
+    private static void track(Canvas canvas, float x, float y, float w, float h) {
+        float r = Math.min(w, h) * 0.5f;
+        canvas.fillRoundRect(x, y, w, h, r, SCROLL_OUTLINE);
+        canvas.fillRoundRect(x + 1.5f, y + 1.5f, Math.max(0f, w - 3f), Math.max(0f, h - 3f),
+                Math.max(0f, r - 1.5f), SCROLL_TRACK);
     }
 
     private static void drawSelf(RetainedNode n, Canvas canvas, TextLayout text) {

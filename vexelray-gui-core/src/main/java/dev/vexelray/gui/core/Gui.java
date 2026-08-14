@@ -30,6 +30,7 @@ import sibarum.atchung.Topic;
 
 import java.util.EnumMap;
 import java.util.Map;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
@@ -95,6 +96,17 @@ public final class Gui implements AutoCloseable {
      * ({@code tactroller-atchung}), widgets, and workers all meet the framework on one fabric.
      */
     public Gui(Atchung bus) {
+        this(bus, null);
+    }
+
+    /**
+     * Create a GUI on a shared bus with an explicit executor for input handlers (clicks, keys, chars, drags,
+     * state). Pass a same-thread executor ({@code Runnable::run}) for a <b>deterministic, headless</b> GUI —
+     * input published on the bus is handled synchronously inside {@link #frame}, so a test (or any embedder) has
+     * exact control over what fires and when, with no worker-thread races. {@code null} uses the default worker
+     * pool (handlers run off the GUI thread), which is what a live application wants.
+     */
+    public Gui(Atchung bus, java.util.concurrent.Executor handlerExecutor) {
         this.bus = bus;
         this.pump = bus.pump();
         // Publisher seam for Node handles: every setter publishes a Mutation onto the bus from any thread.
@@ -107,7 +119,8 @@ public final class Gui implements AutoCloseable {
         this.mutationSub = pump.subscribe(MUTATIONS, reconciler::apply, MUTATION_MAILBOX, Backpressure.BLOCK);
         // Framework input dispatch on the same bus; click handlers run on the worker executor (off the GUI thread).
         // Wheel scrolling mutates scroll offsets on the GUI thread and asks for a relayout next frame.
-        this.input = new InputDispatcher(bus, CLICKS, workers, reconciler::markLayoutDirty);
+        Executor handlers = handlerExecutor != null ? handlerExecutor : workers;
+        this.input = new InputDispatcher(bus, CLICKS, handlers, reconciler::markLayoutDirty);
         this.input.focusTopic(FOCUS);
 
         // Window size as a coalesced, latest-wins State on the bus — the framework relays out from it and workers

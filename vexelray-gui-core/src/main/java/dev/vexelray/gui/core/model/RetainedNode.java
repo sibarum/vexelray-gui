@@ -145,6 +145,14 @@ public final class RetainedNode {
         return v instanceof Integer i ? i : -1;
     }
 
+    /** The formatting spans on this text node (empty if none). */
+    @SuppressWarnings("unchecked")
+    public java.util.List<dev.vexelray.gui.core.text.Span> spans() {
+        Object v = props.get(PropKey.SPANS);
+        return v instanceof java.util.List<?> list ? (java.util.List<dev.vexelray.gui.core.text.Span>) list
+                : java.util.List.of();
+    }
+
     public Direction direction() {
         Object d = props.get(PropKey.DIRECTION);
         return d != null ? (Direction) d : Direction.ROW;

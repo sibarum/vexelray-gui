@@ -22,6 +22,7 @@ public enum PropKey {
     CARET_ON(false),     // caret blink phase: true = currently shown
     SELECT_START(false), // selection range start (Integer char offset); == SELECT_END means no selection
     SELECT_END(false),   // selection range end (Integer char offset)
+    SPANS(false),        // formatting spans (List<Span>): fg/bg/underline over character ranges
     // Layout (border-box: border + padding inset the content, so border width is layout-affecting)
     DIRECTION(true),
     JUSTIFY(true),

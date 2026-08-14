@@ -3,6 +3,7 @@ package dev.vexelray.gui.core.app;
 import dev.vexelray.canvas.Canvas;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.model.RetainedNode;
+import dev.vexelray.gui.core.text.Span;
 import dev.vexelray.text.TextLayout;
 
 /**
@@ -89,21 +90,132 @@ public final class TreeRenderer {
 
         String s = n.textString();
         float pad = Math.min(TEXT_PAD_X, n.w * 0.25f);
-        // Selection highlight sits behind the glyphs (a formatting-like background over the selected range).
-        if (s != null && !s.isEmpty() && n.selectStart() != n.selectEnd()) {
+        boolean hasText = s != null && !s.isEmpty();
+        java.util.List<Span> spans = hasText ? n.spans() : java.util.List.of();
+
+        // 1. Formatting-span backgrounds, then the selection highlight, all behind the glyphs.
+        if (hasText) {
+            for (Span sp : spans) {
+                if (sp.bg() != null) {
+                    fillRangeRect(n, s, pad, sp.start(), sp.end(), sp.bg(), canvas, text);
+                }
+            }
+        }
+        if (hasText && n.selectStart() != n.selectEnd()) {
             drawSelection(n, s, pad, canvas, text);
         }
-        if (s != null && !s.isEmpty()) {
-            TextLayout.TextStyle style = TextLayout.TextStyle.of(n.textSizePx)
-                    .withWrap(TextLayout.WrapMode.WORD_CHAR)
-                    .withAlign(n.hAlign(), n.vAlign());
-            canvas.text(text, s, n.x + pad, n.y, Math.max(1f, n.w - 2 * pad), n.h, style, n.textColor());
+
+        // 2. The text itself — split into foreground-colour runs when any fg span applies, else one draw.
+        if (hasText) {
+            boolean anyFg = false;
+            for (Span sp : spans) {
+                if (sp.fg() != null) {
+                    anyFg = true;
+                    break;
+                }
+            }
+            if (anyFg) {
+                drawSpannedText(n, s, pad, spans, canvas, text);
+            } else {
+                TextLayout.TextStyle style = TextLayout.TextStyle.of(n.textSizePx)
+                        .withWrap(TextLayout.WrapMode.WORD_CHAR)
+                        .withAlign(n.hAlign(), n.vAlign());
+                canvas.text(text, s, n.x + pad, n.y, Math.max(1f, n.w - 2 * pad), n.h, style, n.textColor());
+            }
+            // 3. Underlines on top of the glyphs.
+            for (Span sp : spans) {
+                if (sp.underline()) {
+                    drawUnderline(n, s, pad, sp.start(), sp.end(),
+                            sp.fg() != null ? sp.fg() : n.textColor(), canvas, text);
+                }
+            }
         }
-        // Text-field caret: a thin vertical bar at the caret offset, drawn only while shown this blink phase.
+
+        // 4. Text-field caret: a thin vertical bar at the caret offset, only while shown this blink phase.
         int caret = n.caret();
         if (caret >= 0 && n.caretOn()) {
             drawCaret(n, caret, s == null ? "" : s, pad, canvas, text);
         }
+    }
+
+    /** X offset (px, absolute) of the caret position before character {@code offset} in {@code s}. */
+    private static float caretXAbs(RetainedNode n, String s, float pad, int offset, TextLayout text) {
+        int clamped = Math.max(0, Math.min(offset, s.length()));
+        return n.x + pad + text.glyphLayout().measure(s.substring(0, clamped), n.textSizePx);
+    }
+
+    /** Top y (px) of the single text line within the node, vertically centred. */
+    private static float lineTop(RetainedNode n, TextLayout text) {
+        return n.y + (n.h - lineHeight(n, text)) * 0.5f;
+    }
+
+    private static float lineHeight(RetainedNode n, TextLayout text) {
+        return text.glyphLayout().ascent(n.textSizePx) + text.glyphLayout().descent(n.textSizePx);
+    }
+
+    /** Fill a rounded-less rect over the character range [lo, hi) — used for span backgrounds. */
+    private static void fillRangeRect(RetainedNode n, String s, float pad, int start, int end, Color color,
+                                      Canvas canvas, TextLayout text) {
+        int lo = Math.max(0, Math.min(start, end));
+        int hi = Math.min(s.length(), Math.max(start, end));
+        if (hi <= lo) {
+            return;
+        }
+        float x0 = caretXAbs(n, s, pad, lo, text);
+        float x1 = caretXAbs(n, s, pad, hi, text);
+        canvas.fillRoundRect(x0, lineTop(n, text), Math.max(1f, x1 - x0), lineHeight(n, text), 0f, color);
+    }
+
+    /** Underline the character range [start, end) just below the baseline. */
+    private static void drawUnderline(RetainedNode n, String s, float pad, int start, int end, Color color,
+                                      Canvas canvas, TextLayout text) {
+        int lo = Math.max(0, Math.min(start, end));
+        int hi = Math.min(s.length(), Math.max(start, end));
+        if (hi <= lo) {
+            return;
+        }
+        float px = n.textSizePx;
+        float x0 = caretXAbs(n, s, pad, lo, text);
+        float x1 = caretXAbs(n, s, pad, hi, text);
+        float baseline = lineTop(n, text) + text.glyphLayout().ascent(px);
+        float thickness = Math.max(1f, px * 0.06f);
+        canvas.fillRoundRect(x0, baseline + thickness, Math.max(1f, x1 - x0), thickness, 0f, color);
+    }
+
+    /**
+     * Draw {@code s} split into maximal runs of a constant effective foreground colour (the topmost fg span at
+     * each character, else the node colour). Single-line, left-origin — the case for editable fields and simple
+     * labels; wrapped/centred spanned text is a later refinement.
+     */
+    private static void drawSpannedText(RetainedNode n, String s, float pad, java.util.List<Span> spans,
+                                        Canvas canvas, TextLayout text) {
+        float px = n.textSizePx;
+        int len = s.length();
+        int i = 0;
+        while (i < len) {
+            Color fg = fgAt(spans, i, n.textColor());
+            int j = i + 1;
+            while (j < len && java.util.Objects.equals(fgAt(spans, j, n.textColor()), fg)) {
+                j++;
+            }
+            float x = caretXAbs(n, s, pad, i, text);
+            TextLayout.TextStyle style = TextLayout.TextStyle.of(px)
+                    .withWrap(TextLayout.WrapMode.NONE)
+                    .withAlign(TextLayout.HAlign.LEFT, n.vAlign());
+            canvas.text(text, s.substring(i, j), x, n.y, Math.max(1f, n.x + n.w - pad - x), n.h, style, fg);
+            i = j;
+        }
+    }
+
+    /** The effective foreground colour at character {@code i}: the last fg span covering it, else {@code base}. */
+    private static Color fgAt(java.util.List<Span> spans, int i, Color base) {
+        Color fg = base;
+        for (Span sp : spans) {
+            if (sp.fg() != null && sp.covers(i)) {
+                fg = sp.fg();
+            }
+        }
+        return fg;
     }
 
     /** Translucent selection background, sized text-color-neutral so glyphs stay legible on top. */

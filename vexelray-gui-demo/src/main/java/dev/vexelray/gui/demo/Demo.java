@@ -198,6 +198,11 @@ public final class Demo {
         // Enter submits into the log. Proves the keyboard/focus/text vertical end to end.
         TextField field = new TextField(gui, "type here, Enter to log");
         field.node().width(Length.rem(18));
+        // Formatting spans: they auto-diff — colours/underline stay attached to their text as you edit.
+        field.setSpans(java.util.List.of(
+                dev.vexelray.gui.core.text.Span.foreground(0, 4, ACCENT),      // "type"
+                dev.vexelray.gui.core.text.Span.background(5, 9, LINE),         // "here"
+                dev.vexelray.gui.core.text.Span.underline(11, 16)));           // "Enter"
         field.onSubmit(s -> log.append(gui.text("submitted: " + s)
                 .height(Length.rem(1.5f)).textSize(Length.rem(1)).textColor(INK)));
 

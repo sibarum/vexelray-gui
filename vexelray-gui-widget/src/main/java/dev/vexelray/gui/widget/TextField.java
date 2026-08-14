@@ -6,13 +6,16 @@ import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.FocusEvent;
 import dev.vexelray.gui.core.input.KeyEvent;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.text.Span;
 import dev.vexelray.gui.core.text.TextEdit;
 import dev.vexelray.text.TextLayout;
 import sibarum.tactroller.api.Key;
 import sibarum.tactroller.api.Modifier;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
+import java.util.List;
 import java.util.function.Consumer;
 
 /**
@@ -54,6 +57,10 @@ public final class TextField {
     private final Deque<TextEdit> undo = new ArrayDeque<>();
     private final Deque<TextEdit> redo = new ArrayDeque<>();
     private boolean coalesceBarrier;
+
+    // Formatting spans (fg/bg/underline). Auto-diff: every edit and undo/redo remaps them through the TextEdit
+    // so they stay attached to their text. Guarded by `this`.
+    private List<Span> spans = new ArrayList<>();
 
     private volatile boolean focused;
     private volatile boolean blinkOn;
@@ -125,6 +132,36 @@ public final class TextField {
     public TextField onSubmit(Consumer<String> handler) {
         this.onSubmit = handler == null ? s -> { } : handler;
         return this;
+    }
+
+    // --- formatting spans (§4.4) ---
+
+    /** Replace the whole span set (bulk refresh — e.g. re-running a highlighter). Empty/null clears them. */
+    public synchronized TextField setSpans(List<Span> newSpans) {
+        spans = newSpans == null ? new ArrayList<>() : new ArrayList<>(newSpans);
+        node.spans(spans);
+        return this;
+    }
+
+    /** Add a single span, keeping the rest (§4.4 single-span update). */
+    public synchronized TextField addSpan(Span span) {
+        if (span != null) {
+            spans.add(span);
+            node.spans(spans);
+        }
+        return this;
+    }
+
+    /** Remove all spans. */
+    public synchronized TextField clearSpans() {
+        spans.clear();
+        node.spans(List.of());
+        return this;
+    }
+
+    /** A snapshot of the current spans. */
+    public synchronized List<Span> spans() {
+        return List.copyOf(spans);
     }
 
     // --- input handlers (worker threads) ---
@@ -312,12 +349,30 @@ public final class TextField {
         if (removed.isEmpty() && insert.isEmpty()) {
             return null;
         }
+        TextEdit edit = new TextEdit(at, removed, insert);
         content.replace(at, at + removeLen, insert);
         caret = at + insert.length();
         anchor = caret;
-        recordEdit(new TextEdit(at, removed, insert));
+        recordEdit(edit);
+        remapSpans(edit);
         syncNode();
         return content.toString();
+    }
+
+    /** Auto-diff (§4.4): remap every span through {@code edit}, dropping any that collapsed, and push to the node. */
+    private void remapSpans(TextEdit edit) {
+        if (spans.isEmpty()) {
+            return;
+        }
+        List<Span> next = new ArrayList<>(spans.size());
+        for (Span sp : spans) {
+            Span r = sp.remap(edit);
+            if (r != null) {
+                next.add(r);
+            }
+        }
+        spans = next;
+        node.spans(next);
     }
 
     /** Push {@code e} onto the undo stack, merging into the previous entry when it continues a run (§4.3). */
@@ -378,6 +433,7 @@ public final class TextField {
             anchor = caret;
             redo.push(e);
             coalesceBarrier = true;
+            remapSpans(e.inverse()); // undo maps spans from post-edit coords back to pre-edit
             syncNode();
             changed = content.toString();
         }
@@ -397,6 +453,7 @@ public final class TextField {
             anchor = caret;
             undo.push(e);
             coalesceBarrier = true;
+            remapSpans(e); // redo re-applies the edit, so spans map forward through it
             syncNode();
             changed = content.toString();
         }

@@ -85,6 +85,14 @@ public final class Node {
         return prop(PropKey.SELECT_END, end);
     }
 
+    /**
+     * Set the formatting spans (fg/bg/underline over character ranges) drawn on this text node. Replaces the whole
+     * set; pass an empty list to clear. The list is copied defensively. See {@link dev.vexelray.gui.core.text.Span}.
+     */
+    public Node spans(java.util.List<dev.vexelray.gui.core.text.Span> spans) {
+        return prop(PropKey.SPANS, spans == null ? java.util.List.of() : java.util.List.copyOf(spans));
+    }
+
     // --- layout ---
 
     public Node direction(Direction d) {

@@ -3,6 +3,7 @@ package dev.vexelray.gui.demo;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
+import dev.vexelray.gui.core.TextClipboard;
 import dev.vexelray.gui.core.app.GuiApp;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
@@ -15,6 +16,8 @@ import sibarum.tactroller.api.CoordinateSpace;
 import sibarum.tactroller.api.NativeWindow;
 import sibarum.tactroller.api.Tactroller;
 import sibarum.tactroller.atchung.TactrollerInputBridge;
+import sibarum.tactroller.clipboard.Clipboard;
+import sibarum.tactroller.clipboard.ClipboardException;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -65,7 +68,8 @@ public final class Demo {
         int maxFrames = args.length > 0 ? Integer.parseInt(args[0]) : 0;
         startWorker(gui, refs);        // app logic off the GUI thread, mutating via the bus
         try (GuiApp app = new GuiApp("VexelRay GUI", W, H);
-             Tactroller input = openInput(app, gui)) {
+             Tactroller input = openInput(app, gui);
+             Clipboard clipboard = openClipboard(gui)) {
             TactrollerInputBridge bridge = input == null ? null : bridgeFor(input, gui);
             app.run(gui, maxFrames, () -> pump(bridge));
         }
@@ -86,6 +90,40 @@ public final class Demo {
             return t;
         } catch (BackendException e) {
             System.out.println("input unavailable (" + e.getMessage() + "); running without pointer input");
+            return null;
+        }
+    }
+
+    /**
+     * Open the OS clipboard and install it on the GUI so text widgets can cut/copy/paste. Returns {@code null}
+     * (leaving the GUI's in-memory default in place) if no clipboard backend is present, so the showcase still
+     * runs headless/in CI.
+     */
+    private static Clipboard openClipboard(Gui gui) {
+        try {
+            Clipboard clip = Clipboard.open();
+            gui.clipboard(new TextClipboard() {
+                @Override
+                public String get() {
+                    try {
+                        return clip.getText().orElse("");
+                    } catch (ClipboardException e) {
+                        return "";
+                    }
+                }
+
+                @Override
+                public void set(String text) {
+                    try {
+                        clip.setText(text);
+                    } catch (ClipboardException e) {
+                        // best effort — a transient clipboard failure just drops the copy
+                    }
+                }
+            });
+            return clip;
+        } catch (ClipboardException e) {
+            System.out.println("clipboard unavailable (" + e.getMessage() + "); cut/copy/paste use in-memory buffer");
             return null;
         }
     }

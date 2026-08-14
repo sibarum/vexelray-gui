@@ -128,6 +128,18 @@ public final class RetainedNode {
         return Boolean.TRUE.equals(props.get(PropKey.CARET_ON));
     }
 
+    /** Selection start offset (character index), or {@code -1} for no selection. */
+    public int selectStart() {
+        Object v = props.get(PropKey.SELECT_START);
+        return v instanceof Integer i ? i : -1;
+    }
+
+    /** Selection end offset (character index), or {@code -1} for no selection. */
+    public int selectEnd() {
+        Object v = props.get(PropKey.SELECT_END);
+        return v instanceof Integer i ? i : -1;
+    }
+
     public Direction direction() {
         Object d = props.get(PropKey.DIRECTION);
         return d != null ? (Direction) d : Direction.ROW;

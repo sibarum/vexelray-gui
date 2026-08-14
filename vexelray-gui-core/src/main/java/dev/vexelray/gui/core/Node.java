@@ -78,6 +78,12 @@ public final class Node {
         return prop(PropKey.CARET_ON, on);
     }
 
+    /** Set the selection range (character offsets); {@code start == end} clears the selection. */
+    public Node selection(int start, int end) {
+        prop(PropKey.SELECT_START, start);
+        return prop(PropKey.SELECT_END, end);
+    }
+
     // --- layout ---
 
     public Node direction(Direction d) {

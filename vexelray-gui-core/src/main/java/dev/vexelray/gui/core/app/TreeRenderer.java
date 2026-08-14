@@ -89,6 +89,10 @@ public final class TreeRenderer {
 
         String s = n.textString();
         float pad = Math.min(TEXT_PAD_X, n.w * 0.25f);
+        // Selection highlight sits behind the glyphs (a formatting-like background over the selected range).
+        if (s != null && !s.isEmpty() && n.selectStart() != n.selectEnd()) {
+            drawSelection(n, s, pad, canvas, text);
+        }
         if (s != null && !s.isEmpty()) {
             TextLayout.TextStyle style = TextLayout.TextStyle.of(n.textSizePx)
                     .withWrap(TextLayout.WrapMode.WORD_CHAR)
@@ -100,6 +104,24 @@ public final class TreeRenderer {
         if (caret >= 0 && n.caretOn()) {
             drawCaret(n, caret, s == null ? "" : s, pad, canvas, text);
         }
+    }
+
+    /** Translucent selection background, sized text-color-neutral so glyphs stay legible on top. */
+    private static final Color SELECTION = Color.withAlpha(Color.rgb(0x3aa0ff), 0.35f);
+
+    /** Draw the selection highlight from {@code selectStart} to {@code selectEnd} (order-independent). */
+    private static void drawSelection(RetainedNode n, String s, float pad, Canvas canvas, TextLayout text) {
+        int lo = Math.max(0, Math.min(n.selectStart(), n.selectEnd()));
+        int hi = Math.min(s.length(), Math.max(n.selectStart(), n.selectEnd()));
+        if (hi <= lo) {
+            return;
+        }
+        float px = n.textSizePx;
+        float x0 = n.x + pad + text.glyphLayout().measure(s.substring(0, lo), px);
+        float x1 = n.x + pad + text.glyphLayout().measure(s.substring(0, hi), px);
+        float lineH = text.glyphLayout().ascent(px) + text.glyphLayout().descent(px);
+        float y = n.y + (n.h - lineH) * 0.5f;
+        canvas.fillRoundRect(x0, y, Math.max(1f, x1 - x0), lineH, 0f, SELECTION);
     }
 
     /** Draw the caret bar for an editable field at character {@code caret}, measuring the prefix advance. */

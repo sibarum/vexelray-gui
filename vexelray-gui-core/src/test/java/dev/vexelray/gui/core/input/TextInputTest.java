@@ -95,4 +95,39 @@ class TextInputTest {
         assertEquals(List.of(3), caretHits, "click maps to the nearest character offset");
         assertEquals(1, d.focused(), "clicking the field also focuses it");
     }
+
+    @Test
+    void dragAfterPressExtendsSelectionToPointer() {
+        Atchung bus = Atchung.create();
+        InputDispatcher d = new InputDispatcher(bus, CLICKS, Runnable::run);
+        RetainedNode field = textNode(1, "abcdef", 0, 100);
+
+        TextMeasurer m = new TextMeasurer() {
+            @Override
+            public float intrinsic(RetainedNode n, Axis axis, float px) {
+                return 0f;
+            }
+
+            @Override
+            public int offsetAt(String text, float localX, float px) {
+                return Math.max(0, Math.min(text.length(), Math.round(localX / 10f)));
+            }
+        };
+
+        List<Integer> anchors = new ArrayList<>();
+        List<Integer> drags = new ArrayList<>();
+        d.onCaretHit(1, anchors::add);
+        d.onCaretDrag(1, drags::add);
+
+        // Press at x=14 (localX=4 -> offset 0), drag to x=54 (localX=44 -> offset 4), release.
+        bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, 14, 5, 0));
+        bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(54, 5, 40, 0, 0));
+        bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, 54, 5, 0));
+        // A move after release must not extend anymore.
+        bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(94, 5, 40, 0, 0));
+        d.dispatch(field, m);
+
+        assertEquals(List.of(0), anchors, "press sets the selection anchor at the pressed offset");
+        assertEquals(List.of(4), drags, "drag extends to the pointer offset; the post-release move is ignored");
+    }
 }

@@ -18,8 +18,10 @@ public enum PropKey {
     V_ALIGN(false),
     // Text editing (visual/state only — caret position and blink don't reflow the line):
     EDITABLE(false),
-    CARET(false),    // caret offset into the text (Integer), or absent/-1 for no caret
-    CARET_ON(false), // caret blink phase: true = currently shown
+    CARET(false),        // caret offset into the text (Integer), or absent/-1 for no caret
+    CARET_ON(false),     // caret blink phase: true = currently shown
+    SELECT_START(false), // selection range start (Integer char offset); == SELECT_END means no selection
+    SELECT_END(false),   // selection range end (Integer char offset)
     // Layout (border-box: border + padding inset the content, so border width is layout-affecting)
     DIRECTION(true),
     JUSTIFY(true),

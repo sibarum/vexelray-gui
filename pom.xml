@@ -129,6 +129,11 @@
                 <artifactId>tactroller-windows</artifactId>
                 <version>${tactroller.version}</version>
             </dependency>
+            <dependency>
+                <groupId>sibarum.tactroller</groupId>
+                <artifactId>tactroller-clipboard</artifactId>
+                <version>${tactroller.version}</version>
+            </dependency>
 
             <dependency>
                 <groupId>dev.supirvast</groupId>

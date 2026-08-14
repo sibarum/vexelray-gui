@@ -77,6 +77,7 @@ public final class Gui implements AutoCloseable {
     private final Committer<Viewport, Viewport> setViewport;
     private float lastViewportW = -1f;
     private float lastViewportH = -1f;
+    private volatile TextClipboard clipboard = new TextClipboard.InMemory();
     private final ExecutorService workers = Executors.newCachedThreadPool(r -> {
         Thread t = new Thread(r, "vexelray-gui-worker");
         t.setDaemon(true);
@@ -195,6 +196,16 @@ public final class Gui implements AutoCloseable {
         return this;
     }
 
+    /**
+     * Register a caret-drag handler for {@code node}: while the pointer is held down after pressing the node,
+     * each motion delivers the character offset under the pointer, so the field can extend a selection. Runs
+     * on a worker thread.
+     */
+    public Gui onCaretDrag(Node node, java.util.function.IntConsumer handler) {
+        input.onCaretDrag(node.id(), handler);
+        return this;
+    }
+
     /** Make {@code node} focusable (reachable by click and Tab) without a key handler — e.g. a button. */
     public Gui focusable(Node node, boolean canFocus) {
         input.setFocusable(node.id(), canFocus);
@@ -221,6 +232,17 @@ public final class Gui implements AutoCloseable {
     /** The focus-change topic: {@code gui.bus().subscribe(gui.focusEvents(), ...)}. */
     public Topic<FocusEvent> focusEvents() {
         return FOCUS;
+    }
+
+    /** Install the clipboard implementation text widgets use (default: an in-memory, process-local one). */
+    public Gui clipboard(TextClipboard clipboard) {
+        this.clipboard = clipboard == null ? new TextClipboard.InMemory() : clipboard;
+        return this;
+    }
+
+    /** The clipboard text widgets read/write (cut/copy/paste). Never null. */
+    public TextClipboard clipboard() {
+        return clipboard;
     }
 
     /** The root node (fills the viewport). Append the UI to it. */

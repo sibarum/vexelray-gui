@@ -41,6 +41,11 @@
             <groupId>sibarum.tactroller</groupId>
             <artifactId>tactroller-atchung</artifactId>
         </dependency>
+        <!-- Standalone OS clipboard for text widgets (cut/copy/paste); no input-subsystem coupling. -->
+        <dependency>
+            <groupId>sibarum.tactroller</groupId>
+            <artifactId>tactroller-clipboard</artifactId>
+        </dependency>
     </dependencies>
 
     <build>

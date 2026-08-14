@@ -93,16 +93,28 @@ public final class TreeRenderer {
         boolean hasText = s != null && !s.isEmpty();
         java.util.List<Span> spans = hasText ? n.spans() : java.util.List.of();
 
+        // A single-line editable field masks overflow and scrolls horizontally to keep the caret in view — it
+        // never grows a scrollbar or spills past its edge, i.e. it behaves like a normal text field. The scroll
+        // offset persists on the node (nothing else touches a text leaf's scrollX).
+        boolean clip = n.editable();
+        float viewW = Math.max(1f, n.w - 2 * pad);
+        float originX = n.x + pad;
+        if (clip) {
+            updateHScroll(n, s == null ? "" : s, viewW, text);
+            originX -= n.scrollX;
+            canvas.pushClip(n.x + pad, n.y, viewW, n.h, 0f);
+        }
+
         // 1. Formatting-span backgrounds, then the selection highlight, all behind the glyphs.
         if (hasText) {
             for (Span sp : spans) {
                 if (sp.bg() != null) {
-                    fillRangeRect(n, s, pad, sp.start(), sp.end(), sp.bg(), canvas, text);
+                    fillRangeRect(n, s, originX, sp.start(), sp.end(), sp.bg(), canvas, text);
                 }
             }
         }
         if (hasText && n.selectStart() != n.selectEnd()) {
-            drawSelection(n, s, pad, canvas, text);
+            drawSelection(n, s, originX, canvas, text);
         }
 
         // 2. The text itself — split into foreground-colour runs when any fg span applies, else one draw.
@@ -115,17 +127,22 @@ public final class TreeRenderer {
                 }
             }
             if (anyFg) {
-                drawSpannedText(n, s, pad, spans, canvas, text);
+                drawSpannedText(n, s, originX, spans, canvas, text);
             } else {
-                TextLayout.TextStyle style = TextLayout.TextStyle.of(n.textSizePx)
-                        .withWrap(TextLayout.WrapMode.WORD_CHAR)
-                        .withAlign(n.hAlign(), n.vAlign());
-                canvas.text(text, s, n.x + pad, n.y, Math.max(1f, n.w - 2 * pad), n.h, style, n.textColor());
+                // Editable fields draw unwrapped/left from the scrolled origin; labels keep wrap + their align.
+                TextLayout.WrapMode wrap = clip ? TextLayout.WrapMode.NONE : TextLayout.WrapMode.WORD_CHAR;
+                TextLayout.HAlign ha = clip ? TextLayout.HAlign.LEFT : n.hAlign();
+                float drawW = clip
+                        ? text.glyphLayout().measure(s, n.textSizePx) + viewW
+                        : Math.max(1f, n.w - 2 * pad);
+                TextLayout.TextStyle style = TextLayout.TextStyle.of(n.textSizePx).withWrap(wrap)
+                        .withAlign(ha, n.vAlign());
+                canvas.text(text, s, originX, n.y, Math.max(1f, drawW), n.h, style, n.textColor());
             }
             // 3. Underlines on top of the glyphs.
             for (Span sp : spans) {
                 if (sp.underline()) {
-                    drawUnderline(n, s, pad, sp.start(), sp.end(),
+                    drawUnderline(n, s, originX, sp.start(), sp.end(),
                             sp.fg() != null ? sp.fg() : n.textColor(), canvas, text);
                 }
             }
@@ -134,14 +151,40 @@ public final class TreeRenderer {
         // 4. Text-field caret: a thin vertical bar at the caret offset, only while shown this blink phase.
         int caret = n.caret();
         if (caret >= 0 && n.caretOn()) {
-            drawCaret(n, caret, s == null ? "" : s, pad, canvas, text);
+            drawCaret(n, caret, s == null ? "" : s, originX, canvas, text);
+        }
+
+        if (clip) {
+            canvas.popClip();
         }
     }
 
-    /** X offset (px, absolute) of the caret position before character {@code offset} in {@code s}. */
-    private static float caretXAbs(RetainedNode n, String s, float pad, int offset, TextLayout text) {
+    /**
+     * Keep the caret within the view of an editable single-line field by adjusting the persisted horizontal
+     * scroll: scroll right when the caret runs past the right edge, left when it precedes the origin, and clamp
+     * so the field never scrolls past its content.
+     */
+    private static void updateHScroll(RetainedNode n, String s, float viewW, TextLayout text) {
+        float px = n.textSizePx;
+        int caret = n.caret();
+        if (caret >= 0) {
+            int c = Math.max(0, Math.min(caret, s.length()));
+            float caretX = text.glyphLayout().measure(s.substring(0, c), px);
+            if (caretX - n.scrollX > viewW) {
+                n.scrollX = caretX - viewW;
+            }
+            if (caretX - n.scrollX < 0) {
+                n.scrollX = caretX;
+            }
+        }
+        float maxScroll = Math.max(0f, text.glyphLayout().measure(s, px) - viewW);
+        n.scrollX = Math.max(0f, Math.min(n.scrollX, maxScroll));
+    }
+
+    /** X (px, absolute) of the caret position before character {@code offset}, from the (scrolled) text origin. */
+    private static float runX(float originX, String s, int offset, float px, TextLayout text) {
         int clamped = Math.max(0, Math.min(offset, s.length()));
-        return n.x + pad + text.glyphLayout().measure(s.substring(0, clamped), n.textSizePx);
+        return originX + text.glyphLayout().measure(s.substring(0, clamped), px);
     }
 
     /** Top y (px) of the single text line within the node, vertically centred. */
@@ -153,21 +196,21 @@ public final class TreeRenderer {
         return text.glyphLayout().ascent(n.textSizePx) + text.glyphLayout().descent(n.textSizePx);
     }
 
-    /** Fill a rounded-less rect over the character range [lo, hi) — used for span backgrounds. */
-    private static void fillRangeRect(RetainedNode n, String s, float pad, int start, int end, Color color,
+    /** Fill a rect over the character range [start, end) from {@code originX} — used for span backgrounds. */
+    private static void fillRangeRect(RetainedNode n, String s, float originX, int start, int end, Color color,
                                       Canvas canvas, TextLayout text) {
         int lo = Math.max(0, Math.min(start, end));
         int hi = Math.min(s.length(), Math.max(start, end));
         if (hi <= lo) {
             return;
         }
-        float x0 = caretXAbs(n, s, pad, lo, text);
-        float x1 = caretXAbs(n, s, pad, hi, text);
+        float x0 = runX(originX, s, lo, n.textSizePx, text);
+        float x1 = runX(originX, s, hi, n.textSizePx, text);
         canvas.fillRoundRect(x0, lineTop(n, text), Math.max(1f, x1 - x0), lineHeight(n, text), 0f, color);
     }
 
     /** Underline the character range [start, end) just below the baseline. */
-    private static void drawUnderline(RetainedNode n, String s, float pad, int start, int end, Color color,
+    private static void drawUnderline(RetainedNode n, String s, float originX, int start, int end, Color color,
                                       Canvas canvas, TextLayout text) {
         int lo = Math.max(0, Math.min(start, end));
         int hi = Math.min(s.length(), Math.max(start, end));
@@ -175,8 +218,8 @@ public final class TreeRenderer {
             return;
         }
         float px = n.textSizePx;
-        float x0 = caretXAbs(n, s, pad, lo, text);
-        float x1 = caretXAbs(n, s, pad, hi, text);
+        float x0 = runX(originX, s, lo, px, text);
+        float x1 = runX(originX, s, hi, px, text);
         float baseline = lineTop(n, text) + text.glyphLayout().ascent(px);
         float thickness = Math.max(1f, px * 0.06f);
         canvas.fillRoundRect(x0, baseline + thickness, Math.max(1f, x1 - x0), thickness, 0f, color);
@@ -184,10 +227,10 @@ public final class TreeRenderer {
 
     /**
      * Draw {@code s} split into maximal runs of a constant effective foreground colour (the topmost fg span at
-     * each character, else the node colour). Single-line, left-origin — the case for editable fields and simple
-     * labels; wrapped/centred spanned text is a later refinement.
+     * each character, else the node colour), from the (scrolled) origin. Single-line, left-origin — the case for
+     * editable fields and simple labels; wrapped/centred spanned text is a later refinement.
      */
-    private static void drawSpannedText(RetainedNode n, String s, float pad, java.util.List<Span> spans,
+    private static void drawSpannedText(RetainedNode n, String s, float originX, java.util.List<Span> spans,
                                         Canvas canvas, TextLayout text) {
         float px = n.textSizePx;
         int len = s.length();
@@ -198,11 +241,11 @@ public final class TreeRenderer {
             while (j < len && java.util.Objects.equals(fgAt(spans, j, n.textColor()), fg)) {
                 j++;
             }
-            float x = caretXAbs(n, s, pad, i, text);
+            float x = runX(originX, s, i, px, text);
             TextLayout.TextStyle style = TextLayout.TextStyle.of(px)
                     .withWrap(TextLayout.WrapMode.NONE)
                     .withAlign(TextLayout.HAlign.LEFT, n.vAlign());
-            canvas.text(text, s.substring(i, j), x, n.y, Math.max(1f, n.x + n.w - pad - x), n.h, style, fg);
+            canvas.text(text, s.substring(i, j), x, n.y, Math.max(1f, n.x + n.w - x), n.h, style, fg);
             i = j;
         }
     }
@@ -222,28 +265,23 @@ public final class TreeRenderer {
     private static final Color SELECTION = Color.withAlpha(Color.rgb(0x3aa0ff), 0.35f);
 
     /** Draw the selection highlight from {@code selectStart} to {@code selectEnd} (order-independent). */
-    private static void drawSelection(RetainedNode n, String s, float pad, Canvas canvas, TextLayout text) {
+    private static void drawSelection(RetainedNode n, String s, float originX, Canvas canvas, TextLayout text) {
         int lo = Math.max(0, Math.min(n.selectStart(), n.selectEnd()));
         int hi = Math.min(s.length(), Math.max(n.selectStart(), n.selectEnd()));
         if (hi <= lo) {
             return;
         }
         float px = n.textSizePx;
-        float x0 = n.x + pad + text.glyphLayout().measure(s.substring(0, lo), px);
-        float x1 = n.x + pad + text.glyphLayout().measure(s.substring(0, hi), px);
-        float lineH = text.glyphLayout().ascent(px) + text.glyphLayout().descent(px);
-        float y = n.y + (n.h - lineH) * 0.5f;
-        canvas.fillRoundRect(x0, y, Math.max(1f, x1 - x0), lineH, 0f, SELECTION);
+        float x0 = runX(originX, s, lo, px, text);
+        float x1 = runX(originX, s, hi, px, text);
+        canvas.fillRoundRect(x0, lineTop(n, text), Math.max(1f, x1 - x0), lineHeight(n, text), 0f, SELECTION);
     }
 
     /** Draw the caret bar for an editable field at character {@code caret}, measuring the prefix advance. */
-    private static void drawCaret(RetainedNode n, int caret, String s, float pad, Canvas canvas, TextLayout text) {
-        int clamped = Math.max(0, Math.min(caret, s.length()));
+    private static void drawCaret(RetainedNode n, int caret, String s, float originX, Canvas canvas, TextLayout text) {
         float px = n.textSizePx;
-        float prefixW = text.glyphLayout().measure(s.substring(0, clamped), px);
-        float caretX = n.x + pad + prefixW;
-        // Vertically centre a bar roughly the text's line height within the field.
-        float lineH = text.glyphLayout().ascent(px) + text.glyphLayout().descent(px);
+        float caretX = runX(originX, s, caret, px, text);
+        float lineH = lineHeight(n, text);
         float caretY = n.y + (n.h - lineH) * 0.5f;
         float w = Math.max(1f, px * 0.07f);
         canvas.fillRoundRect(caretX, caretY, w, lineH, 0f, n.textColor());

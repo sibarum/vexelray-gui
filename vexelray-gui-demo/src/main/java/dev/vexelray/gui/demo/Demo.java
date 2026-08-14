@@ -196,7 +196,7 @@ public final class Demo {
 
         // An editable single-line text field: typed text flows tactroller CharTyped -> bus -> dispatch -> onChar;
         // Enter submits into the log. Proves the keyboard/focus/text vertical end to end.
-        TextField field = new TextField(gui, "type here, Enter to log");
+        TextField field = new TextField(gui, "type here, Enter to log — long text scrolls and is masked at the edge");
         field.node().width(Length.rem(18));
         // Formatting spans: they auto-diff — colours/underline stay attached to their text as you edit.
         field.setSpans(java.util.List.of(

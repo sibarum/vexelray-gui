@@ -10,6 +10,7 @@ import dev.vexelray.gui.core.model.NodeKind;
 import dev.vexelray.gui.core.model.PropKey;
 import dev.vexelray.gui.core.model.Reconciler;
 import dev.vexelray.gui.core.input.ClickEvent;
+import dev.vexelray.gui.core.input.CursorShape;
 import dev.vexelray.gui.core.input.DragEvent;
 import dev.vexelray.gui.core.input.FocusEvent;
 import dev.vexelray.gui.core.input.InputDispatcher;
@@ -232,6 +233,15 @@ public final class Gui implements AutoCloseable {
     /** The focus-change topic: {@code gui.bus().subscribe(gui.focusEvents(), ...)}. */
     public Topic<FocusEvent> focusEvents() {
         return FOCUS;
+    }
+
+    /**
+     * Install the sink notified when the desired pointer cursor changes (§8.3) — e.g. the I-beam over editable
+     * text. The application maps {@link CursorShape} onto its window's cursor. Called on the GUI thread.
+     */
+    public Gui onCursorChange(java.util.function.Consumer<CursorShape> sink) {
+        input.cursorSink(sink);
+        return this;
     }
 
     /** Install the clipboard implementation text widgets use (default: an in-memory, process-local one). */

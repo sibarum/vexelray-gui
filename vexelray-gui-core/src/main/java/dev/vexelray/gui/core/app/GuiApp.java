@@ -104,6 +104,10 @@ public final class GuiApp implements AutoCloseable {
      * onto the bus (e.g. {@code TactrollerInputBridge::pump}) before {@link Gui#frame} drains and dispatches it.
      */
     public void run(Gui gui, int maxFrames, Runnable beforeFrame) {
+        // Map the GUI's desired cursor shape onto the OS window (I-beam over editable text, §8.3).
+        gui.onCursorChange(shape -> window.setCursor(
+                shape == dev.vexelray.gui.core.input.CursorShape.TEXT
+                        ? NativeWindow.Cursor.TEXT : NativeWindow.Cursor.ARROW));
         presenter.configureDraw(vertexBuffer.handle(), atlas.descriptorSet(), 0);
         presenter.run(maxFrames, 0, (dt, pushConstants) -> {
             beforeFrame.run();

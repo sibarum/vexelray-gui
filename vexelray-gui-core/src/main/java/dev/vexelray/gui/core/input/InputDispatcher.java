@@ -99,6 +99,9 @@ public final class InputDispatcher {
     private RetainedNode hoverHit;
     private RetainedNode pressHit;
     private boolean leftDown;
+    // Cursor shape reporting (§8.3): the app-installed sink and the last shape reported (to fire only on change).
+    private Consumer<CursorShape> cursorSink = s -> { };
+    private CursorShape reportedCursor = CursorShape.DEFAULT;
 
     public InputDispatcher(Atchung bus, Topic<ClickEvent> clicks, Executor handlerExecutor) {
         this(bus, clicks, handlerExecutor, () -> { });
@@ -179,6 +182,11 @@ public final class InputDispatcher {
     /** The topic focus changes publish on (set by Gui). */
     public void focusTopic(Topic<FocusEvent> topic) {
         this.focusTopic = topic;
+    }
+
+    /** Install the sink notified (on the GUI thread) when the desired cursor shape changes (§8.3). */
+    public void cursorSink(Consumer<CursorShape> sink) {
+        this.cursorSink = sink == null ? s -> { } : sink;
     }
 
     /** Programmatically move focus to {@code nodeId} (or -1 to clear). */
@@ -564,6 +572,21 @@ public final class InputDispatcher {
                 handlerExecutor.execute(() -> entry.getValue().accept(delivered));
             }
         }
+        updateCursor();
+    }
+
+    /** Report the desired cursor shape for whatever is under the pointer — I-beam over editable text (§8.3). */
+    private void updateCursor() {
+        CursorShape desired = isTextTarget(hoverHit) ? CursorShape.TEXT : CursorShape.DEFAULT;
+        if (desired != reportedCursor) {
+            reportedCursor = desired;
+            cursorSink.accept(desired);
+        }
+    }
+
+    /** Whether {@code n} is a text node that takes the text-placement cursor (editable, or selectable later). */
+    private static boolean isTextTarget(RetainedNode n) {
+        return n != null && n.editable();
     }
 
     /** Whether {@code handlerId} is {@code hit} or one of its ancestors (so a child hit covers its container). */

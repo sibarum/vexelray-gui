@@ -16,6 +16,10 @@ public enum PropKey {
     TEXT_SIZE(true),
     H_ALIGN(false),
     V_ALIGN(false),
+    // Text editing (visual/state only — caret position and blink don't reflow the line):
+    EDITABLE(false),
+    CARET(false),    // caret offset into the text (Integer), or absent/-1 for no caret
+    CARET_ON(false), // caret blink phase: true = currently shown
     // Layout (border-box: border + padding inset the content, so border width is layout-affecting)
     DIRECTION(true),
     JUSTIFY(true),

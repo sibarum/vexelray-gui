@@ -112,6 +112,22 @@ public final class RetainedNode {
         return a != null ? (TextLayout.VAlign) a : TextLayout.VAlign.MIDDLE;
     }
 
+    /** Whether this text node is an editable text field. */
+    public boolean editable() {
+        return Boolean.TRUE.equals(props.get(PropKey.EDITABLE));
+    }
+
+    /** Caret offset into the text, or {@code -1} for no caret. */
+    public int caret() {
+        Object c = props.get(PropKey.CARET);
+        return c instanceof Integer i ? i : -1;
+    }
+
+    /** Whether the caret is shown this blink phase (only meaningful when {@link #caret()} >= 0). */
+    public boolean caretOn() {
+        return Boolean.TRUE.equals(props.get(PropKey.CARET_ON));
+    }
+
     public Direction direction() {
         Object d = props.get(PropKey.DIRECTION);
         return d != null ? (Direction) d : Direction.ROW;

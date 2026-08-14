@@ -88,12 +88,30 @@ public final class TreeRenderer {
         }
 
         String s = n.textString();
+        float pad = Math.min(TEXT_PAD_X, n.w * 0.25f);
         if (s != null && !s.isEmpty()) {
             TextLayout.TextStyle style = TextLayout.TextStyle.of(n.textSizePx)
                     .withWrap(TextLayout.WrapMode.WORD_CHAR)
                     .withAlign(n.hAlign(), n.vAlign());
-            float pad = Math.min(TEXT_PAD_X, n.w * 0.25f);
             canvas.text(text, s, n.x + pad, n.y, Math.max(1f, n.w - 2 * pad), n.h, style, n.textColor());
         }
+        // Text-field caret: a thin vertical bar at the caret offset, drawn only while shown this blink phase.
+        int caret = n.caret();
+        if (caret >= 0 && n.caretOn()) {
+            drawCaret(n, caret, s == null ? "" : s, pad, canvas, text);
+        }
+    }
+
+    /** Draw the caret bar for an editable field at character {@code caret}, measuring the prefix advance. */
+    private static void drawCaret(RetainedNode n, int caret, String s, float pad, Canvas canvas, TextLayout text) {
+        int clamped = Math.max(0, Math.min(caret, s.length()));
+        float px = n.textSizePx;
+        float prefixW = text.glyphLayout().measure(s.substring(0, clamped), px);
+        float caretX = n.x + pad + prefixW;
+        // Vertically centre a bar roughly the text's line height within the field.
+        float lineH = text.glyphLayout().ascent(px) + text.glyphLayout().descent(px);
+        float caretY = n.y + (n.h - lineH) * 0.5f;
+        float w = Math.max(1f, px * 0.07f);
+        canvas.fillRoundRect(caretX, caretY, w, lineH, 0f, n.textColor());
     }
 }

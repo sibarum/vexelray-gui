@@ -63,6 +63,21 @@ public final class Node {
         return prop(PropKey.V_ALIGN, v);
     }
 
+    /** Mark this text node editable (a text field). Editing state (caret) is carried by {@link #caret}. */
+    public Node editable(boolean editable) {
+        return prop(PropKey.EDITABLE, editable);
+    }
+
+    /** Set the caret offset into the text (character index), or {@code -1} to hide the caret. */
+    public Node caret(int offset) {
+        return prop(PropKey.CARET, offset);
+    }
+
+    /** Set the caret blink phase — {@code true} shows the caret this instant, {@code false} hides it. */
+    public Node caretOn(boolean on) {
+        return prop(PropKey.CARET_ON, on);
+    }
+
     // --- layout ---
 
     public Node direction(Direction d) {

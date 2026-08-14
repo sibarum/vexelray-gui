@@ -8,6 +8,7 @@ import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.widget.Slider;
+import dev.vexelray.gui.widget.TextField;
 import dev.vexelray.text.TextLayout;
 import sibarum.tactroller.api.BackendException;
 import sibarum.tactroller.api.CoordinateSpace;
@@ -152,6 +153,13 @@ public final class Demo {
         Slider slider = new Slider(gui, 0.5f).onChange(v -> valueLabel.text(Math.round(v * 100) + "%"));
         slider.node().width(Length.rem(14));
 
+        // An editable single-line text field: typed text flows tactroller CharTyped -> bus -> dispatch -> onChar;
+        // Enter submits into the log. Proves the keyboard/focus/text vertical end to end.
+        TextField field = new TextField(gui, "type here, Enter to log");
+        field.node().width(Length.rem(18));
+        field.onSubmit(s -> log.append(gui.text("submitted: " + s)
+                .height(Length.rem(1.5f)).textSize(Length.rem(1)).textColor(INK)));
+
         // Per-axis padding: small vertically so 44px buttons fit a 64px bar, but full horizontally (rem(1.5) = 24px)
         // so the first button aligns with the cards' left edge (body padding is also rem(1.5)).
         Node controls = gui.row().width(Length.FILL).height(Length.rem(4)).padding(Length.rem(0.5f), Length.rem(1.5f))
@@ -159,11 +167,19 @@ public final class Demo {
                 .children(getStarted, button(gui, "Docs", DIM, PANEL, PANEL_HOVER, PANEL_PRESSED, true),
                         slider.node(), valueLabel);
 
+        Node fieldRow = gui.row().width(Length.FILL).height(Length.rem(3.25f))
+                .padding(Length.rem(0.375f), Length.rem(1.5f)).gap(Length.rem(0.75f))
+                .alignItems(AlignItems.CENTER).scroll(false, false)
+                .children(
+                        gui.text("Field:").width(Length.rem(4)).textSize(Length.rem(1)).textColor(DIM)
+                                .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE),
+                        field.node());
+
         Node footer = gui.text("flex layout: rows/columns, padding/margin/border, border-box, relative units")
                 .width(Length.FILL).height(Length.rem(2.25f)).textSize(Length.rem(0.9375f)).textColor(DIM)
                 .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE);
 
-        gui.root().background(BG).children(header, body, controls, footer);
+        gui.root().background(BG).children(header, body, controls, fieldRow, footer);
         return new Refs(header, log);
     }
 

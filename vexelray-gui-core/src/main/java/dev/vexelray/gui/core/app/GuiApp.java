@@ -185,9 +185,32 @@ public final class GuiApp implements AutoCloseable {
     /** Text intrinsic sizing over VexelRay's glyph layout: width = measured advance, height = line height. */
     private static TextMeasurer measurer(TextLayout text) {
         GlyphLayout gl = text.glyphLayout();
-        return (node, axis, textSizePx) -> {
-            String s = node.textString() == null ? "" : node.textString();
-            return axis == Axis.HORIZONTAL ? gl.measure(s, textSizePx) : gl.ascent(textSizePx) + gl.descent(textSizePx);
+        return new TextMeasurer() {
+            @Override
+            public float intrinsic(RetainedNode node, Axis axis, float textSizePx) {
+                String s = node.textString() == null ? "" : node.textString();
+                return axis == Axis.HORIZONTAL
+                        ? gl.measure(s, textSizePx)
+                        : gl.ascent(textSizePx) + gl.descent(textSizePx);
+            }
+
+            @Override
+            public int offsetAt(String s, float localX, float textSizePx) {
+                if (s == null || s.isEmpty() || localX <= 0f) {
+                    return 0;
+                }
+                // Walk character boundaries, returning the offset whose caret-x is nearest localX. O(n^2) over the
+                // prefix measures, but a single line is short; a prefix-advance scan is a later optimisation.
+                float prev = 0f;
+                for (int i = 1; i <= s.length(); i++) {
+                    float w = gl.measure(s.substring(0, i), textSizePx);
+                    if (localX < (prev + w) * 0.5f) {
+                        return i - 1;
+                    }
+                    prev = w;
+                }
+                return s.length();
+            }
         };
     }
 

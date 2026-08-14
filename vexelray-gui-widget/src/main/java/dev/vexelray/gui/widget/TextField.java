@@ -6,10 +6,13 @@ import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.FocusEvent;
 import dev.vexelray.gui.core.input.KeyEvent;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.text.TextEdit;
 import dev.vexelray.text.TextLayout;
 import sibarum.tactroller.api.Key;
 import sibarum.tactroller.api.Modifier;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.function.Consumer;
 
 /**
@@ -38,10 +41,19 @@ public final class TextField {
     private final Gui gui;
     private final Node node;
 
+    /** Cap on retained undo history, so a long editing session can't grow the stacks without bound. */
+    private static final int UNDO_LIMIT = 1000;
+
     // Authoritative edit state, guarded by `this`. caret is the moving end; anchor the fixed end of a selection.
     private final StringBuilder content = new StringBuilder();
     private int caret;
     private int anchor;
+
+    // Undo/redo over the edit-diff (§4.3). Each user edit pushes a TextEdit; a caret move or non-typing op sets
+    // a coalescing barrier so a fresh typing/deletion run starts its own undo entry instead of merging.
+    private final Deque<TextEdit> undo = new ArrayDeque<>();
+    private final Deque<TextEdit> redo = new ArrayDeque<>();
+    private boolean coalesceBarrier;
 
     private volatile boolean focused;
     private volatile boolean blinkOn;
@@ -89,12 +101,15 @@ public final class TextField {
         return content.toString();
     }
 
-    /** Replace the content programmatically; the caret moves to the end and any selection clears. */
+    /** Replace the content programmatically; the caret moves to the end, selection clears, and history resets. */
     public synchronized TextField text(String s) {
         content.setLength(0);
         content.append(s == null ? "" : s);
         caret = content.length();
         anchor = caret;
+        undo.clear();
+        redo.clear();
+        coalesceBarrier = true;
         syncNode();
         onChange.accept(content.toString());
         return this;
@@ -118,19 +133,17 @@ public final class TextField {
         if (cp < 0x20 || cp == 0x7F) {
             return; // control characters ride the key channel, never the text channel
         }
+        String s = new String(Character.toChars(cp));
         String changed;
         synchronized (this) {
-            if (hasSelection()) {
-                deleteSelection();
-            }
-            content.insert(caret, new String(Character.toChars(cp)));
-            caret += Character.charCount(cp);
-            anchor = caret;
-            syncNode();
-            changed = content.toString();
+            int at = hasSelection() ? selLo() : caret;
+            int removeLen = hasSelection() ? selHi() - selLo() : 0;
+            changed = applyEdit(at, removeLen, s);
         }
         wake();
-        onChange.accept(changed);
+        if (changed != null) {
+            onChange.accept(changed);
+        }
     }
 
     private void onKey(KeyEvent e) {
@@ -144,28 +157,25 @@ public final class TextField {
                 case C -> { copy(); return; }
                 case X -> { cut(); return; }
                 case V -> { paste(); return; }
+                case Z -> { if (shift) { redo(); } else { undo(); } return; } // Ctrl+Z undo, Ctrl+Shift+Z redo
+                case Y -> { redo(); return; }                                  // Ctrl+Y redo
                 default -> { /* Ctrl+other falls through to motion (word-jump) below */ }
             }
         }
 
-        boolean edited = false;
         String changed = null;
         synchronized (this) {
             switch (k) {
-                case LEFT -> moveCaret(ctrl ? prevWord(caret) : stepLeft(caret), shift);
-                case RIGHT -> moveCaret(ctrl ? nextWord(caret) : stepRight(caret), shift);
-                case HOME -> moveCaret(0, shift);
-                case END -> moveCaret(content.length(), shift);
-                case BACKSPACE -> edited = ctrl ? deleteWordBack() : backspace();
-                case DELETE -> edited = ctrl ? deleteWordForward() : deleteForward();
+                case LEFT -> { moveCaret(ctrl ? prevWord(caret) : stepLeft(caret), shift); syncNode(); }
+                case RIGHT -> { moveCaret(ctrl ? nextWord(caret) : stepRight(caret), shift); syncNode(); }
+                case HOME -> { moveCaret(0, shift); syncNode(); }
+                case END -> { moveCaret(content.length(), shift); syncNode(); }
+                case BACKSPACE -> changed = ctrl ? deleteWordBack() : backspace();
+                case DELETE -> changed = ctrl ? deleteWordForward() : deleteForward();
                 case ENTER -> { /* handled outside the lock */ }
                 default -> {
                     return; // not an edit command; typed text arrives via onChar
                 }
-            }
-            syncNode();
-            if (edited) {
-                changed = content.toString();
             }
         }
         wake();
@@ -181,6 +191,7 @@ public final class TextField {
         synchronized (this) {
             caret = clamp(offset);
             anchor = caret;
+            coalesceBarrier = true;
             syncNode();
         }
         wake();
@@ -190,6 +201,7 @@ public final class TextField {
     private void extendTo(int offset) {
         synchronized (this) {
             caret = clamp(offset);
+            coalesceBarrier = true;
             syncNode();
         }
         wake();
@@ -230,15 +242,16 @@ public final class TextField {
         synchronized (this) {
             sel = selectionText();
             if (!sel.isEmpty()) {
-                deleteSelection();
-                syncNode();
-                changed = content.toString();
+                coalesceBarrier = true;
+                changed = applyEdit(selLo(), selHi() - selLo(), "");
             }
         }
         if (!sel.isEmpty()) {
             gui.clipboard().set(sel);
             wake();
-            onChange.accept(changed);
+            if (changed != null) {
+                onChange.accept(changed);
+            }
         }
     }
 
@@ -250,23 +263,22 @@ public final class TextField {
         String oneLine = clip.replace('\n', ' ').replace('\r', ' '); // single-line field: no embedded newlines
         String changed;
         synchronized (this) {
-            if (hasSelection()) {
-                deleteSelection();
-            }
-            content.insert(caret, oneLine);
-            caret += oneLine.length();
-            anchor = caret;
-            syncNode();
-            changed = content.toString();
+            int at = hasSelection() ? selLo() : caret;
+            int removeLen = hasSelection() ? selHi() - selLo() : 0;
+            coalesceBarrier = true; // a paste is its own undo entry, never merged with adjacent typing
+            changed = applyEdit(at, removeLen, oneLine);
         }
         wake();
-        onChange.accept(changed);
+        if (changed != null) {
+            onChange.accept(changed);
+        }
     }
 
     private void selectAll() {
         synchronized (this) {
             anchor = 0;
             caret = content.length();
+            coalesceBarrier = true;
             syncNode();
         }
         wake();
@@ -290,11 +302,106 @@ public final class TextField {
         return hasSelection() ? content.substring(selLo(), selHi()) : "";
     }
 
-    private void deleteSelection() {
-        int lo = selLo();
-        content.delete(lo, selHi());
-        caret = lo;
-        anchor = lo;
+    /**
+     * The one content-mutation path: replace {@code [at, at+removeLen)} with {@code insert}, move the caret to the
+     * end of the insertion, record the resulting {@link TextEdit} for undo (coalescing typing/deletion runs), and
+     * mirror to the node. Returns the new content, or {@code null} if the edit was a no-op.
+     */
+    private String applyEdit(int at, int removeLen, String insert) {
+        String removed = content.substring(at, at + removeLen);
+        if (removed.isEmpty() && insert.isEmpty()) {
+            return null;
+        }
+        content.replace(at, at + removeLen, insert);
+        caret = at + insert.length();
+        anchor = caret;
+        recordEdit(new TextEdit(at, removed, insert));
+        syncNode();
+        return content.toString();
+    }
+
+    /** Push {@code e} onto the undo stack, merging into the previous entry when it continues a run (§4.3). */
+    private void recordEdit(TextEdit e) {
+        redo.clear();
+        TextEdit top = undo.peek();
+        if (!coalesceBarrier && top != null && canCoalesce(top, e)) {
+            undo.pop();
+            undo.push(merge(top, e));
+        } else {
+            undo.push(e);
+            while (undo.size() > UNDO_LIMIT) {
+                undo.removeLast();
+            }
+        }
+        coalesceBarrier = false;
+    }
+
+    private static boolean isInsert(TextEdit t) {
+        return t.removed().isEmpty() && !t.inserted().isEmpty();
+    }
+
+    private static boolean isDelete(TextEdit t) {
+        return t.inserted().isEmpty() && !t.removed().isEmpty();
+    }
+
+    /** Whether {@code e} continues {@code top}'s run: contiguous single-char typing, or backspace/forward-delete. */
+    private static boolean canCoalesce(TextEdit top, TextEdit e) {
+        if (isInsert(top) && isInsert(e) && e.inserted().length() == 1 && e.at() == top.insertedEnd()) {
+            return true; // typing run: "a" then "b" at the caret
+        }
+        if (isDelete(top) && isDelete(e) && e.removed().length() == 1 && e.removedEnd() == top.at()) {
+            return true; // backspace run: deletions extending leftward
+        }
+        return isDelete(top) && isDelete(e) && e.removed().length() == 1 && e.at() == top.at();
+        // forward-delete run: repeated deletions at the same caret
+    }
+
+    private static TextEdit merge(TextEdit top, TextEdit e) {
+        if (isInsert(top)) {
+            return new TextEdit(top.at(), "", top.inserted() + e.inserted());
+        }
+        if (e.removedEnd() == top.at()) {
+            return new TextEdit(e.at(), e.removed() + top.removed(), ""); // backspace: e is left of top
+        }
+        return new TextEdit(top.at(), top.removed() + e.removed(), "");    // forward-delete: e at the caret
+    }
+
+    private void undo() {
+        String changed = null;
+        synchronized (this) {
+            TextEdit e = undo.poll();
+            if (e == null) {
+                return;
+            }
+            content.replace(e.at(), e.insertedEnd(), e.removed());
+            caret = e.at() + e.removed().length();
+            anchor = caret;
+            redo.push(e);
+            coalesceBarrier = true;
+            syncNode();
+            changed = content.toString();
+        }
+        wake();
+        onChange.accept(changed);
+    }
+
+    private void redo() {
+        String changed = null;
+        synchronized (this) {
+            TextEdit e = redo.poll();
+            if (e == null) {
+                return;
+            }
+            content.replace(e.at(), e.removedEnd(), e.inserted());
+            caret = e.insertedEnd();
+            anchor = caret;
+            undo.push(e);
+            coalesceBarrier = true;
+            syncNode();
+            changed = content.toString();
+        }
+        wake();
+        onChange.accept(changed);
     }
 
     private void moveCaret(int newPos, boolean extend) {
@@ -302,66 +409,50 @@ public final class TextField {
         if (!extend) {
             anchor = caret;
         }
+        coalesceBarrier = true; // a caret move ends the current typing/deletion run for undo grouping
     }
 
-    private boolean backspace() {
+    /** @return the new content after the edit, or {@code null} if nothing changed. */
+    private String backspace() {
         if (hasSelection()) {
-            deleteSelection();
-            return true;
+            return applyEdit(selLo(), selHi() - selLo(), "");
         }
         if (caret > 0) {
             int start = content.offsetByCodePoints(caret, -1);
-            content.delete(start, caret);
-            caret = start;
-            anchor = caret;
-            return true;
+            return applyEdit(start, caret - start, "");
         }
-        return false;
+        return null;
     }
 
-    private boolean deleteForward() {
+    private String deleteForward() {
         if (hasSelection()) {
-            deleteSelection();
-            return true;
+            return applyEdit(selLo(), selHi() - selLo(), "");
         }
         if (caret < content.length()) {
             int end = content.offsetByCodePoints(caret, 1);
-            content.delete(caret, end);
-            anchor = caret;
-            return true;
+            return applyEdit(caret, end - caret, "");
         }
-        return false;
+        return null;
     }
 
     /** Ctrl+Backspace: delete from the previous word boundary to the caret (or the selection, if any). */
-    private boolean deleteWordBack() {
+    private String deleteWordBack() {
         if (hasSelection()) {
-            deleteSelection();
-            return true;
+            return applyEdit(selLo(), selHi() - selLo(), "");
         }
         int start = prevWord(caret);
-        if (start < caret) {
-            content.delete(start, caret);
-            caret = start;
-            anchor = start;
-            return true;
-        }
-        return false;
+        coalesceBarrier = true; // word-delete is its own undo entry
+        return start < caret ? applyEdit(start, caret - start, "") : null;
     }
 
     /** Ctrl+Delete: delete from the caret to the next word boundary (or the selection, if any). */
-    private boolean deleteWordForward() {
+    private String deleteWordForward() {
         if (hasSelection()) {
-            deleteSelection();
-            return true;
+            return applyEdit(selLo(), selHi() - selLo(), "");
         }
         int end = nextWord(caret);
-        if (end > caret) {
-            content.delete(caret, end);
-            anchor = caret;
-            return true;
-        }
-        return false;
+        coalesceBarrier = true;
+        return end > caret ? applyEdit(caret, end - caret, "") : null;
     }
 
     private int stepLeft(int c) {

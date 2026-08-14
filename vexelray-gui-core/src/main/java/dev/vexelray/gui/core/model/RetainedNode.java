@@ -175,4 +175,34 @@ public final class RetainedNode {
         Object v = props.get(key);
         return v instanceof Length l ? l : dflt;
     }
+
+    // --- scrollbar thumb geometry (shared by the renderer and input dispatch so grab-testing matches drawing) ---
+
+    /** Vertical thumb length in px (proportional to the visible fraction, floored so it stays grabbable). */
+    public float vThumbLen() {
+        return contentH <= 0f ? 0f : Math.max(scrollbarPx * 2f, viewH * (viewH / contentH));
+    }
+
+    /** Horizontal thumb length in px. */
+    public float hThumbLen() {
+        return contentW <= 0f ? 0f : Math.max(scrollbarPx * 2f, viewW * (viewW / contentW));
+    }
+
+    /** Vertical thumb rect {x, y, w, h} in the right-hand reserved strip. */
+    public float[] vThumbRect() {
+        float len = vThumbLen();
+        float max = Math.max(0f, contentH - viewH);
+        float frac = max > 0f ? scrollY / max : 0f;
+        float y = viewY + frac * (viewH - len);
+        return new float[]{viewX + viewW + scrollbarPx * 0.2f, y, scrollbarPx * 0.6f, len};
+    }
+
+    /** Horizontal thumb rect {x, y, w, h} in the bottom reserved strip. */
+    public float[] hThumbRect() {
+        float len = hThumbLen();
+        float max = Math.max(0f, contentW - viewW);
+        float frac = max > 0f ? scrollX / max : 0f;
+        float x = viewX + frac * (viewW - len);
+        return new float[]{x, viewY + viewH + scrollbarPx * 0.2f, len, scrollbarPx * 0.6f};
+    }
 }

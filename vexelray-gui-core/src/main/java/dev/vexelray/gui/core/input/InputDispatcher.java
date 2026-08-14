@@ -57,6 +57,10 @@ public final class InputDispatcher {
     // Pointer capture for dragging: while a drag is active, MOVE events route to this node's handler regardless of
     // what's under the pointer, until the button is released.
     private RetainedNode dragCapture;
+    // Scrollbar thumb drag: the grabbed container, its axis, and the pointer's offset within the thumb at grab.
+    private RetainedNode scrollDrag;
+    private boolean scrollDragVertical;
+    private float scrollDragGrab;
     // Pointer/button tracking for interaction state. hoverHit is the topmost node currently under the pointer;
     // pressHit is the topmost node the left button went down on (both null when none / button up).
     private RetainedNode hoverHit;
@@ -125,6 +129,10 @@ public final class InputDispatcher {
     private void handle(InputEvent e) {
         switch (e) {
             case InputEvent.PointerMoved m -> {
+                if (scrollDrag != null) {
+                    dragScrollbar(m.x(), m.y());
+                    return;
+                }
                 if (dragCapture != null) {
                     fireDrag(DragEvent.Phase.MOVE, m.x(), m.y());
                 }
@@ -133,6 +141,10 @@ public final class InputDispatcher {
             }
             case InputEvent.ButtonPressed b when b.button() == MouseButton.LEFT -> {
                 RetainedNode hit = HitTest.at(currentRoot, b.x(), b.y());
+                // A press on a scrollbar thumb starts a thumb drag and consumes the press (no click/hover/drag).
+                if (grabScrollbar(hit, b.x(), b.y())) {
+                    return;
+                }
                 pressTargetId = hit == null ? -1 : hit.id;
                 pressHit = hit;
                 hoverHit = hit;
@@ -145,6 +157,10 @@ public final class InputDispatcher {
                 refreshStates();
             }
             case InputEvent.ButtonReleased b when b.button() == MouseButton.LEFT -> {
+                if (scrollDrag != null) {
+                    scrollDrag = null;
+                    return;
+                }
                 if (dragCapture != null) {
                     fireDrag(DragEvent.Phase.END, b.x(), b.y());
                     dragCapture = null;
@@ -186,6 +202,44 @@ public final class InputDispatcher {
                 // Keys, focus: consumed here in later steps.
             }
         }
+    }
+
+    /** If the press landed on a scrollbar thumb (of the hit node or an ancestor), begin a thumb drag. */
+    private boolean grabScrollbar(RetainedNode hit, float x, float y) {
+        for (RetainedNode n = hit; n != null; n = n.parent) {
+            if (n.overflowY && inRect(n.vThumbRect(), x, y)) {
+                scrollDrag = n;
+                scrollDragVertical = true;
+                scrollDragGrab = y - n.vThumbRect()[1];
+                return true;
+            }
+            if (n.overflowX && inRect(n.hThumbRect(), x, y)) {
+                scrollDrag = n;
+                scrollDragVertical = false;
+                scrollDragGrab = x - n.hThumbRect()[0];
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Map the pointer to a scroll offset for the grabbed thumb, keeping the grab point under the cursor. */
+    private void dragScrollbar(float x, float y) {
+        RetainedNode n = scrollDrag;
+        if (scrollDragVertical) {
+            float travel = n.viewH - n.vThumbLen();
+            float frac = travel > 0f ? clamp((y - scrollDragGrab - n.viewY) / travel, 0f, 1f) : 0f;
+            n.scrollY = frac * Math.max(0f, n.contentH - n.viewH);
+        } else {
+            float travel = n.viewW - n.hThumbLen();
+            float frac = travel > 0f ? clamp((x - scrollDragGrab - n.viewX) / travel, 0f, 1f) : 0f;
+            n.scrollX = frac * Math.max(0f, n.contentW - n.viewW);
+        }
+        requestLayout.run();
+    }
+
+    private static boolean inRect(float[] r, float x, float y) {
+        return x >= r[0] && x < r[0] + r[2] && y >= r[1] && y < r[1] + r[3];
     }
 
     /** Nearest ancestor-or-self of {@code hit} that overflows on the given axis. */

@@ -49,24 +49,15 @@ public final class TreeRenderer {
     /** Draw the reserved-space scrollbars (outlined track + pill thumb) for an overflowing container — chrome. */
     private static void drawScrollbars(RetainedNode n, Canvas canvas) {
         float sb = n.scrollbarPx;
-        float minThumb = sb * 2f;
         if (n.overflowY) {
-            float trackX = n.viewX + n.viewW;
-            float th = Math.max(minThumb, n.viewH * (n.viewH / n.contentH));
-            float maxScroll = Math.max(0f, n.contentH - n.viewH);
-            float frac = maxScroll > 0f ? n.scrollY / maxScroll : 0f;
-            float thumbY = n.viewY + frac * (n.viewH - th);
-            track(canvas, trackX, n.viewY, sb, n.viewH);
-            canvas.fillRoundRect(trackX + sb * 0.2f, thumbY, sb * 0.6f, th, sb * 0.3f, SCROLL_THUMB);
+            track(canvas, n.viewX + n.viewW, n.viewY, sb, n.viewH);
+            float[] t = n.vThumbRect();
+            canvas.fillRoundRect(t[0], t[1], t[2], t[3], sb * 0.3f, SCROLL_THUMB);
         }
         if (n.overflowX) {
-            float trackY = n.viewY + n.viewH;
-            float tw = Math.max(minThumb, n.viewW * (n.viewW / n.contentW));
-            float maxScroll = Math.max(0f, n.contentW - n.viewW);
-            float frac = maxScroll > 0f ? n.scrollX / maxScroll : 0f;
-            float thumbX = n.viewX + frac * (n.viewW - tw);
-            track(canvas, n.viewX, trackY, n.viewW, sb);
-            canvas.fillRoundRect(thumbX, trackY + sb * 0.2f, tw, sb * 0.6f, sb * 0.3f, SCROLL_THUMB);
+            track(canvas, n.viewX, n.viewY + n.viewH, n.viewW, sb);
+            float[] t = n.hThumbRect();
+            canvas.fillRoundRect(t[0], t[1], t[2], t[3], sb * 0.3f, SCROLL_THUMB);
         }
     }
 

@@ -11,6 +11,10 @@ import sibarum.tactroller.api.InputEvent;
 import sibarum.tactroller.api.Key;
 import sibarum.tactroller.api.MouseButton;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.concurrent.Executor;
+
 /**
  * A headless, deterministic GUI for widget tests — the payoff of routing every device event through Atchung.
  * There is no window, no Vulkan, and (crucially) no worker threads: the {@link Gui} is built with a same-thread
@@ -27,8 +31,61 @@ final class HeadlessGui implements AutoCloseable {
     private static final float W = 800f;
     private static final float H = 600f;
 
+    /**
+     * An {@link Executor} that queues tasks instead of running them, so a test can release input handlers one at
+     * a time and interleave them with other work — reproducing a specific ordering / race deterministically.
+     */
+    static final class ManualExecutor implements Executor {
+        private final Deque<Runnable> queue = new ArrayDeque<>();
+
+        @Override
+        public void execute(Runnable r) {
+            queue.add(r);
+        }
+
+        /** Run the next queued task; @return false if the queue was empty. */
+        boolean runOne() {
+            Runnable r = queue.poll();
+            if (r == null) {
+                return false;
+            }
+            r.run();
+            return true;
+        }
+
+        /** Run all queued tasks (including any they enqueue); @return how many ran. */
+        int drain() {
+            int n = 0;
+            while (runOne()) {
+                n++;
+            }
+            return n;
+        }
+
+        int pending() {
+            return queue.size();
+        }
+    }
+
     final Atchung bus = Atchung.create();
-    final Gui gui = new Gui(bus, Runnable::run); // synchronous handlers → deterministic, no races
+    /** Non-null only in manual mode ({@link #manual()}); the queue of deferred input handlers. */
+    final ManualExecutor tasks;
+    final Gui gui;
+
+    HeadlessGui() {
+        this(false);
+    }
+
+    private HeadlessGui(boolean manual) {
+        this.tasks = manual ? new ManualExecutor() : null;
+        // Synchronous mode runs handlers inline during dispatch; manual mode queues them for the test to release.
+        this.gui = new Gui(bus, tasks != null ? tasks : Runnable::run);
+    }
+
+    /** A harness whose input handlers are queued, not run — for deterministic interleaving via {@link #tasks}. */
+    static HeadlessGui manual() {
+        return new HeadlessGui(true);
+    }
 
     private final TextMeasurer measurer = new TextMeasurer() {
         @Override
@@ -46,8 +103,22 @@ final class HeadlessGui implements AutoCloseable {
         }
     };
 
-    /** Drain the bus + dispatch input + lay out — one GUI frame. Handlers run inline (same thread). */
+    /**
+     * Drain the bus + dispatch input + lay out — one GUI frame. In synchronous mode handlers ran inline during
+     * dispatch; in manual mode this also drains the queued handlers (so the fluent helpers still work). For
+     * interleaving control in manual mode, use {@link #dispatchOnly()} + {@link #tasks} instead.
+     */
     HeadlessGui frame() {
+        gui.frame(W, H, measurer);
+        if (tasks != null) {
+            tasks.drain();
+        }
+        return this;
+    }
+
+    /** Manual mode: dispatch a frame but leave the input handlers <em>queued</em> in {@link #tasks} for the test
+     *  to release in a chosen order. */
+    HeadlessGui dispatchOnly() {
         gui.frame(W, H, measurer);
         return this;
     }

@@ -2,6 +2,7 @@ package dev.vexelray.gui.core;
 
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.layout.LayoutEnums;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
@@ -133,6 +134,15 @@ public final class Node {
     public Node scroll(boolean allowX, boolean allowY) {
         prop(PropKey.SCROLL_X, allowX);
         return prop(PropKey.SCROLL_Y, allowY);
+    }
+
+    /**
+     * Lock the vertical scroll to an edge (§8.5): {@link LayoutEnums.ScrollLock#BOTTOM} tails the content (stays
+     * pinned to the bottom as it grows, e.g. a log) and {@code TOP} pins to the top; {@code NONE} scrolls freely.
+     * While locked the container detaches when the user scrolls away from the edge and re-attaches on return.
+     */
+    public Node scrollLock(LayoutEnums.ScrollLock lock) {
+        return prop(PropKey.SCROLL_LOCK, lock);
     }
 
     // --- structure ---

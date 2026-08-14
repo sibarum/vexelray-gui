@@ -36,7 +36,9 @@ public enum PropKey {
     GAP(true),
     // Per-axis overflow scrolling: enabled by default (auto scrollbars on overflow); set false to disable an axis.
     SCROLL_X(true),
-    SCROLL_Y(true);
+    SCROLL_Y(true),
+    // Scroll-edge lock (LayoutEnums.ScrollLock): pins the offset to top/bottom while attached (log tailing).
+    SCROLL_LOCK(true);
 
     private final boolean layoutAffecting;
 

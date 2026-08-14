@@ -6,6 +6,7 @@ import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.TextClipboard;
 import dev.vexelray.gui.core.app.GuiApp;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.layout.LayoutEnums;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.widget.Slider;
@@ -154,7 +155,9 @@ public final class Demo {
                 .width(Length.FILL).height(Length.rem(4)).background(PANEL).textSize(Length.rem(1.75f)).textColor(INK)
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
 
-        Node log = gui.column().width(Length.FILL).height(Length.FILL).gap(Length.rem(0.375f));
+        // Tail the log: pinned to the bottom as the worker appends lines, until the user scrolls up (§8.5).
+        Node log = gui.column().width(Length.FILL).height(Length.FILL).gap(Length.rem(0.375f))
+                .scrollLock(LayoutEnums.ScrollLock.BOTTOM);
         // Pre-fill enough lines to overflow the panel, so the auto vertical scrollbar appears (and reserves space).
         for (int i = 1; i <= 16; i++) {
             log.append(gui.text("log line " + i + " — overflows, scrolls")

@@ -156,8 +156,8 @@ public final class TextField {
                 case RIGHT -> moveCaret(ctrl ? nextWord(caret) : stepRight(caret), shift);
                 case HOME -> moveCaret(0, shift);
                 case END -> moveCaret(content.length(), shift);
-                case BACKSPACE -> edited = backspace();
-                case DELETE -> edited = deleteForward();
+                case BACKSPACE -> edited = ctrl ? deleteWordBack() : backspace();
+                case DELETE -> edited = ctrl ? deleteWordForward() : deleteForward();
                 case ENTER -> { /* handled outside the lock */ }
                 default -> {
                     return; // not an edit command; typed text arrives via onChar
@@ -333,6 +333,37 @@ public final class TextField {
         return false;
     }
 
+    /** Ctrl+Backspace: delete from the previous word boundary to the caret (or the selection, if any). */
+    private boolean deleteWordBack() {
+        if (hasSelection()) {
+            deleteSelection();
+            return true;
+        }
+        int start = prevWord(caret);
+        if (start < caret) {
+            content.delete(start, caret);
+            caret = start;
+            anchor = start;
+            return true;
+        }
+        return false;
+    }
+
+    /** Ctrl+Delete: delete from the caret to the next word boundary (or the selection, if any). */
+    private boolean deleteWordForward() {
+        if (hasSelection()) {
+            deleteSelection();
+            return true;
+        }
+        int end = nextWord(caret);
+        if (end > caret) {
+            content.delete(caret, end);
+            anchor = caret;
+            return true;
+        }
+        return false;
+    }
+
     private int stepLeft(int c) {
         return c > 0 ? content.offsetByCodePoints(c, -1) : 0;
     }
@@ -366,27 +397,54 @@ public final class TextField {
         }
     }
 
-    /** Nearest word boundary to the left of {@code from} (skip whitespace, then word chars). */
+    /**
+     * A <em>word character</em>: letter, digit, {@code -} or {@code _}. Everything else (whitespace and other
+     * punctuation) is a separator, so identifiers like {@code foo_bar-baz} count as a single word.
+     */
+    private static boolean isWordChar(char c) {
+        return Character.isLetterOrDigit(c) || c == '-' || c == '_';
+    }
+
+    /**
+     * Nearest word boundary to the left of {@code from}: skip leading whitespace, then consume one run of
+     * <em>either</em> word chars <em>or</em> non-space separators — so it stops at punctuation clusters rather
+     * than leaping the whole gap (§8.2).
+     */
     private int prevWord(int from) {
         int i = from;
         while (i > 0 && Character.isWhitespace(content.charAt(i - 1))) {
             i--;
         }
-        while (i > 0 && !Character.isWhitespace(content.charAt(i - 1))) {
-            i--;
+        if (i > 0 && isWordChar(content.charAt(i - 1))) {
+            while (i > 0 && isWordChar(content.charAt(i - 1))) {
+                i--;
+            }
+        } else {
+            while (i > 0 && !isWordChar(content.charAt(i - 1)) && !Character.isWhitespace(content.charAt(i - 1))) {
+                i--;
+            }
         }
         return i;
     }
 
-    /** Nearest word boundary to the right of {@code from} (skip word chars, then whitespace). */
+    /**
+     * Nearest word boundary to the right of {@code from}: skip leading whitespace, then consume one run of
+     * <em>either</em> word chars <em>or</em> non-space separators (§8.2).
+     */
     private int nextWord(int from) {
         int i = from;
         int n = content.length();
-        while (i < n && !Character.isWhitespace(content.charAt(i))) {
-            i++;
-        }
         while (i < n && Character.isWhitespace(content.charAt(i))) {
             i++;
+        }
+        if (i < n && isWordChar(content.charAt(i))) {
+            while (i < n && isWordChar(content.charAt(i))) {
+                i++;
+            }
+        } else {
+            while (i < n && !isWordChar(content.charAt(i)) && !Character.isWhitespace(content.charAt(i))) {
+                i++;
+            }
         }
         return i;
     }

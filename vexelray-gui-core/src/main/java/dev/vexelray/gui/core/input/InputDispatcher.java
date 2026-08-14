@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core.input;
 
+import dev.vexelray.gui.core.layout.LayoutEnums.ScrollLock;
 import dev.vexelray.gui.core.layout.TextMeasurer;
 import dev.vexelray.gui.core.model.RetainedNode;
 import sibarum.atchung.Atchung;
@@ -72,6 +73,13 @@ public final class InputDispatcher {
     private final EnumSet<Modifier> heldMods = EnumSet.noneOf(Modifier.class);
     private long focusedId = -1;
     private Topic<FocusEvent> focusTopic;
+
+    // Held-key auto-repeat (§8.4): the last non-modifier key routed to a focused node, and when it next
+    // re-fires. Synthesised on the per-frame dispatch() clock, since tactroller reports only the OS key edge.
+    private static final long REPEAT_DELAY_NANOS = 400_000_000L;   // wait before the first repeat
+    private static final long REPEAT_INTERVAL_NANOS = 40_000_000L; // ~25 repeats/second thereafter
+    private Key repeatKey;
+    private long repeatNextNanos;
 
     private RetainedNode currentRoot;
     // The text measurer for this frame (caret-from-click geometry); null when unavailable (e.g. in tests).
@@ -212,6 +220,7 @@ public final class InputDispatcher {
         this.currentRoot = root;
         this.measurer = measurer;
         pump.drain();
+        pumpKeyRepeat();
     }
 
     /** Release the bus subscription. */
@@ -289,6 +298,7 @@ public final class InputDispatcher {
                     if (t != null) {
                         t.scrollY = clamp(t.scrollY - (float) s.yOffset() * WHEEL_STEP, 0f,
                                 Math.max(0f, t.contentH - t.viewH));
+                        refreshScrollLock(t);
                         changed = true;
                     }
                 }
@@ -319,6 +329,8 @@ public final class InputDispatcher {
                 Modifier mod = modifierOf(k.key());
                 if (mod != null) {
                     heldMods.remove(mod);
+                } else if (k.key() == repeatKey) {
+                    repeatKey = null; // stop auto-repeat when the held key is lifted
                 }
             }
             default -> {
@@ -351,7 +363,28 @@ public final class InputDispatcher {
                 KeyEvent e = new KeyEvent(key, Set.copyOf(heldMods));
                 handlerExecutor.execute(() -> handler.accept(e));
             }
+            // Arm auto-repeat: this key re-fires after the initial delay until released (§8.4).
+            repeatKey = key;
+            repeatNextNanos = System.nanoTime() + REPEAT_DELAY_NANOS;
         }
+    }
+
+    /** Re-fire the held key's route at the repeat rate — called once per frame from {@link #dispatch}. */
+    private void pumpKeyRepeat() {
+        if (repeatKey == null || focusedId == -1) {
+            return;
+        }
+        long now = System.nanoTime();
+        if (now < repeatNextNanos) {
+            return;
+        }
+        Consumer<KeyEvent> handler = keyHandlers.get(focusedId);
+        if (handler != null) {
+            // Use the live modifier set so pressing Ctrl mid-hold upgrades e.g. arrow-repeat to word-jump.
+            KeyEvent e = new KeyEvent(repeatKey, Set.copyOf(heldMods));
+            handlerExecutor.execute(() -> handler.accept(e));
+        }
+        repeatNextNanos = now + REPEAT_INTERVAL_NANOS; // frame-rate-bounded; no burst catch-up
     }
 
     private static Modifier modifierOf(Key key) {
@@ -467,6 +500,7 @@ public final class InputDispatcher {
             float travel = n.viewH - n.vThumbLen();
             float frac = travel > 0f ? clamp((y - scrollDragGrab - n.viewY) / travel, 0f, 1f) : 0f;
             n.scrollY = frac * Math.max(0f, n.contentH - n.viewH);
+            refreshScrollLock(n);
         } else {
             float travel = n.viewW - n.hThumbLen();
             float frac = travel > 0f ? clamp((x - scrollDragGrab - n.viewX) / travel, 0f, 1f) : 0f;
@@ -491,6 +525,24 @@ public final class InputDispatcher {
 
     private static float clamp(float v, float lo, float hi) {
         return v < lo ? lo : (v > hi ? hi : v);
+    }
+
+    /** Within this many px of the locked edge, a scroll counts as "at the edge" and re-attaches the lock. */
+    private static final float LOCK_EDGE_EPS = 4f;
+
+    /**
+     * Re-evaluate a scroll-locked container's attachment after the user scrolls it (§8.5): attached while the
+     * offset sits at the locked edge, detached once the user scrolls away. A no-op for unlocked containers.
+     */
+    private static void refreshScrollLock(RetainedNode n) {
+        ScrollLock lock = n.scrollLock();
+        if (lock == ScrollLock.NONE) {
+            return;
+        }
+        float maxY = Math.max(0f, n.contentH - n.viewH);
+        n.scrollAttached = lock == ScrollLock.BOTTOM
+                ? n.scrollY >= maxY - LOCK_EDGE_EPS
+                : n.scrollY <= LOCK_EDGE_EPS;
     }
 
     /** Recompute each registered node's interaction state and fire the handler on any change. */

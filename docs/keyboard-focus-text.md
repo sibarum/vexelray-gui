@@ -174,3 +174,35 @@ Ship faux first; add real faces with the multi-atlas work.
 6. **Hyperlink / tooltip spans** — hover/click emission with the editable/Control gating; tooltip needs
    the overlay layer (§6).
 7. **Multiline polish** — hard tabs, horizontal scroll vs. wrap, PageUp/Down, code-editor niceties.
+
+---
+
+## 8. Refinements (post-slice requirements)
+
+Landed on top of the single-line editable field + selection/clipboard slices:
+
+8.1 **`Ctrl+Backspace` / `Ctrl+Delete` = word delete.** Ctrl+Backspace deletes to the previous word
+   boundary and Ctrl+Delete to the next — the same boundaries `Ctrl+←/→` navigate (§8.2). Widget-level.
+
+8.2 **Word motion is boundary-stopping, not greedy.** A *word char* is a letter, digit, `-`, or `_`;
+   everything else (whitespace, punctuation) is a separator. `Ctrl+←/→` moves to the nearest boundary:
+   it skips leading whitespace, then consumes a single run of *either* word chars *or* non-space
+   separators — so it stops at punctuation clusters instead of leaping over them. `-` and `_` are kept
+   inside words on purpose (identifiers like `foo_bar-baz` are one word).
+
+8.3 **I-beam cursor over selectable/editable text.** While the pointer is over a selectable or editable
+   text node, the OS cursor becomes the text-placement I-beam; elsewhere it is the default arrow. The GUI
+   computes the desired shape from the hovered node and drives it through a cursor seam (`CursorShape` +
+   an app-installed setter over the window); honors the pointer-target rule (appearance only).
+
+8.4 **Held-key auto-repeat.** Holding a command key (arrows, Backspace, Delete, Home/End, …) fires once,
+   waits an initial delay, then auto-repeats at a fixed interval until release — synthesized by the
+   dispatcher off its held-key state and the per-frame `dispatch()` clock (tactroller reports the OS key
+   *edge*, not repeats, since it polls state). Repeats replay only the focused-node key route, never
+   one-shot shortcuts or Tab traversal.
+
+8.5 **Scroll-lock (log tailing) on non-editable scrollers.** A scroll container can be locked to TOP or
+   BOTTOM. While *attached*, it stays pinned to that edge as content grows (the tail-the-log case). If the
+   user scrolls away from the edge it *detaches*; scrolling back onto the edge re-attaches. Purely a
+   scroll-offset behavior over the existing overflow/scroll model — no geometry change (pointer-target
+   rule).

@@ -5,6 +5,7 @@ import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
+import dev.vexelray.gui.core.layout.LayoutEnums.ScrollLock;
 import dev.vexelray.text.TextLayout;
 
 import java.util.ArrayList;
@@ -53,6 +54,10 @@ public final class RetainedNode {
     public float contentW;
     public float contentH;
     public float scrollbarPx;
+    // Scroll-lock (§8.5) runtime state: whether the offset is currently pinned to the locked edge. Starts
+    // attached so a freshly-built locked scroller opens at its edge; the dispatcher detaches/re-attaches it
+    // as the user scrolls away from and back onto the edge.
+    public boolean scrollAttached = true;
 
     public RetainedNode(long id, NodeKind kind) {
         this.id = id;
@@ -197,6 +202,12 @@ public final class RetainedNode {
     public boolean scrollYAllowed() {
         Object v = props.get(PropKey.SCROLL_Y);
         return !(v instanceof Boolean b) || b;
+    }
+
+    /** The scroll-edge lock for this container (default {@link ScrollLock#NONE}). */
+    public ScrollLock scrollLock() {
+        Object v = props.get(PropKey.SCROLL_LOCK);
+        return v instanceof ScrollLock s ? s : ScrollLock.NONE;
     }
 
     private Length len(PropKey key, Length dflt) {

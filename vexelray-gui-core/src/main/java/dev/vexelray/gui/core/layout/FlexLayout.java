@@ -90,7 +90,17 @@ public final class FlexLayout {
 
         // Clamp the persisted scroll to the new content, then record the viewport/content/overflow for the renderer.
         n.scrollX = clamp(n.scrollX, 0f, Math.max(0f, neededW - viewW));
-        n.scrollY = clamp(n.scrollY, 0f, Math.max(0f, neededH - viewH));
+        float maxScrollY = Math.max(0f, neededH - viewH);
+        n.scrollY = clamp(n.scrollY, 0f, maxScrollY);
+        // Scroll-lock (§8.5): while attached, pin the vertical offset to the locked edge so growth keeps the
+        // edge in view (log tailing). The dispatcher toggles scrollAttached as the user scrolls off/onto the edge.
+        if (n.scrollAttached) {
+            switch (n.scrollLock()) {
+                case TOP -> n.scrollY = 0f;
+                case BOTTOM -> n.scrollY = maxScrollY;
+                case NONE -> { }
+            }
+        }
         n.overflowX = overX;
         n.overflowY = overY;
         n.scrollbarPx = sb;

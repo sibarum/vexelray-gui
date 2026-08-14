@@ -19,4 +19,10 @@ public final class LayoutEnums {
 
     /** Cross-axis placement of each child (STRETCH fills the cross extent). */
     public enum AlignItems { START, CENTER, END, STRETCH }
+
+    /**
+     * Scroll-edge lock for a scrollable container (§8.5): while <em>attached</em>, the scroll offset stays
+     * pinned to this edge as content grows (log tailing). {@link #NONE} is normal free scrolling.
+     */
+    public enum ScrollLock { NONE, TOP, BOTTOM }
 }

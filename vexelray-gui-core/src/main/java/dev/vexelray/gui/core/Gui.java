@@ -11,9 +11,14 @@ import dev.vexelray.gui.core.model.PropKey;
 import dev.vexelray.gui.core.model.Reconciler;
 import dev.vexelray.gui.core.input.ClickEvent;
 import dev.vexelray.gui.core.input.DragEvent;
+import dev.vexelray.gui.core.input.FocusEvent;
 import dev.vexelray.gui.core.input.InputDispatcher;
 import dev.vexelray.gui.core.input.InteractionState;
+import dev.vexelray.gui.core.input.KeyEvent;
+import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.model.RetainedNode;
+import sibarum.tactroller.api.Key;
+import sibarum.tactroller.api.Modifier;
 import sibarum.atchung.Atchung;
 import sibarum.atchung.Backpressure;
 import sibarum.atchung.Committer;
@@ -57,6 +62,9 @@ public final class Gui implements AutoCloseable {
     /** Framework click events, resolved from raw input by the dispatcher; workers subscribe here. */
     private static final Topic<ClickEvent> CLICKS = Topic.of("vexelray.gui.clicks", ClickEvent.class);
 
+    /** Keyboard focus changes (gained/lost per node). */
+    private static final Topic<FocusEvent> FOCUS = Topic.of("vexelray.gui.focus", FocusEvent.class);
+
     private final AtomicLong ids = new AtomicLong(1);
     private final Atchung bus;
     private final MutationSink sink;
@@ -98,6 +106,7 @@ public final class Gui implements AutoCloseable {
         // Framework input dispatch on the same bus; click handlers run on the worker executor (off the GUI thread).
         // Wheel scrolling mutates scroll offsets on the GUI thread and asks for a relayout next frame.
         this.input = new InputDispatcher(bus, CLICKS, workers, reconciler::markLayoutDirty);
+        this.input.focusTopic(FOCUS);
 
         // Window size as a coalesced, latest-wins State on the bus — the framework relays out from it and workers
         // can observe resizes without coupling to the window.
@@ -155,6 +164,43 @@ public final class Gui implements AutoCloseable {
     public Gui onDrag(Node node, java.util.function.Consumer<DragEvent> handler) {
         input.onDrag(node.id(), handler);
         return this;
+    }
+
+    /**
+     * Register a key handler for {@code node} (which becomes focusable). Fires with each key press while the node
+     * holds focus, after shortcuts and Tab traversal have had first refusal. Runs on a worker thread.
+     */
+    public Gui onKey(Node node, java.util.function.Consumer<KeyEvent> handler) {
+        input.onKey(node.id(), handler);
+        return this;
+    }
+
+    /** Make {@code node} focusable (reachable by click and Tab) without a key handler — e.g. a button. */
+    public Gui focusable(Node node, boolean canFocus) {
+        input.setFocusable(node.id(), canFocus);
+        return this;
+    }
+
+    /** Move keyboard focus to {@code node}. */
+    public Gui focus(Node node) {
+        input.focus(node.id());
+        return this;
+    }
+
+    /** Register a global keyboard shortcut. The command runs on a worker thread. */
+    public Gui shortcut(Shortcut shortcut, Runnable command) {
+        input.registerShortcut(shortcut, command);
+        return this;
+    }
+
+    /** Convenience: {@code gui.shortcut(Key.S, save, Modifier.CONTROL)}. */
+    public Gui shortcut(Key key, Runnable command, Modifier... mods) {
+        return shortcut(Shortcut.of(key, mods), command);
+    }
+
+    /** The focus-change topic: {@code gui.bus().subscribe(gui.focusEvents(), ...)}. */
+    public Topic<FocusEvent> focusEvents() {
+        return FOCUS;
     }
 
     /** The root node (fills the viewport). Append the UI to it. */

@@ -7,9 +7,15 @@ import sibarum.atchung.Pump;
 import sibarum.atchung.Subscription;
 import sibarum.atchung.Topic;
 import sibarum.tactroller.api.InputEvent;
+import sibarum.tactroller.api.Key;
+import sibarum.tactroller.api.Modifier;
 import sibarum.tactroller.api.MouseButton;
 
+import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
@@ -50,7 +56,15 @@ public final class InputDispatcher {
     private final Map<Long, Runnable> clickHandlers = new ConcurrentHashMap<>();
     private final Map<Long, Consumer<InteractionState>> stateHandlers = new ConcurrentHashMap<>();
     private final Map<Long, Consumer<DragEvent>> dragHandlers = new ConcurrentHashMap<>();
+    private final Map<Long, Consumer<KeyEvent>> keyHandlers = new ConcurrentHashMap<>();
+    private final Map<Shortcut, Runnable> shortcuts = new ConcurrentHashMap<>();
+    private final Set<Long> focusable = ConcurrentHashMap.newKeySet();
     private final Map<Long, InteractionState> reportedState = new ConcurrentHashMap<>();
+
+    // Keyboard/focus state (GUI-thread only, mutated during dispatch).
+    private final EnumSet<Modifier> heldMods = EnumSet.noneOf(Modifier.class);
+    private long focusedId = -1;
+    private Topic<FocusEvent> focusTopic;
 
     private RetainedNode currentRoot;
     private long pressTargetId = -1;
@@ -102,12 +116,52 @@ public final class InputDispatcher {
         dragHandlers.put(nodeId, handler);
     }
 
-    /** Drop {@code nodeId}'s click, state and drag handlers (call when the node is removed). */
+    /** Register a key handler for {@code nodeId} (also makes it focusable). Fires when the node holds focus. */
+    public void onKey(long nodeId, Consumer<KeyEvent> handler) {
+        keyHandlers.put(nodeId, handler);
+        focusable.add(nodeId);
+    }
+
+    /** Explicitly mark a node focusable (e.g. a button) even without a key handler. */
+    public void setFocusable(long nodeId, boolean canFocus) {
+        if (canFocus) {
+            focusable.add(nodeId);
+        } else {
+            focusable.remove(nodeId);
+        }
+    }
+
+    /** Register a global shortcut command. */
+    public void registerShortcut(Shortcut shortcut, Runnable command) {
+        shortcuts.put(shortcut, command);
+    }
+
+    /** The topic focus changes publish on (set by Gui). */
+    public void focusTopic(Topic<FocusEvent> topic) {
+        this.focusTopic = topic;
+    }
+
+    /** Programmatically move focus to {@code nodeId} (or -1 to clear). */
+    public void focus(long nodeId) {
+        setFocus(nodeId);
+    }
+
+    /** The currently focused node id, or -1. */
+    public long focused() {
+        return focusedId;
+    }
+
+    /** Drop {@code nodeId}'s handlers and focusability (call when the node is removed). */
     public void clearHandlers(long nodeId) {
         clickHandlers.remove(nodeId);
         stateHandlers.remove(nodeId);
         dragHandlers.remove(nodeId);
+        keyHandlers.remove(nodeId);
+        focusable.remove(nodeId);
         reportedState.remove(nodeId);
+        if (focusedId == nodeId) {
+            setFocus(-1);
+        }
     }
 
     /**
@@ -145,6 +199,8 @@ public final class InputDispatcher {
                 if (grabScrollbar(hit, b.x(), b.y())) {
                     return;
                 }
+                // Click focuses the nearest focusable node (or clears focus on empty space).
+                setFocus(ancestorFocusableId(hit));
                 pressTargetId = hit == null ? -1 : hit.id;
                 pressHit = hit;
                 hoverHit = hit;
@@ -198,10 +254,106 @@ public final class InputDispatcher {
                     requestLayout.run();
                 }
             }
+            case InputEvent.KeyPressed k -> handleKeyDown(k.key());
+            case InputEvent.KeyReleased k -> {
+                Modifier mod = modifierOf(k.key());
+                if (mod != null) {
+                    heldMods.remove(mod);
+                }
+            }
             default -> {
-                // Keys, focus: consumed here in later steps.
+                // Other events (focus-change edges from tactroller) are not routed here.
             }
         }
+    }
+
+    private void handleKeyDown(Key key) {
+        Modifier mod = modifierOf(key);
+        if (mod != null) {
+            heldMods.add(mod);
+            return; // a modifier keypress is not itself a shortcut or a command
+        }
+        // 1. Shortcuts get first refusal (before text input / Tab).
+        Runnable command = shortcuts.get(new Shortcut(heldMods, key));
+        if (command != null) {
+            handlerExecutor.execute(command);
+            return;
+        }
+        // 2. Tab / Shift+Tab traverse focus.
+        if (key == Key.TAB) {
+            moveFocus(heldMods.contains(Modifier.SHIFT) ? -1 : 1);
+            return;
+        }
+        // 3. Otherwise the focused node's key handler (caret motion, backspace, ...).
+        if (focusedId != -1) {
+            Consumer<KeyEvent> handler = keyHandlers.get(focusedId);
+            if (handler != null) {
+                KeyEvent e = new KeyEvent(key, Set.copyOf(heldMods));
+                handlerExecutor.execute(() -> handler.accept(e));
+            }
+        }
+    }
+
+    private static Modifier modifierOf(Key key) {
+        return switch (key) {
+            case LEFT_SHIFT, RIGHT_SHIFT -> Modifier.SHIFT;
+            case LEFT_CONTROL, RIGHT_CONTROL -> Modifier.CONTROL;
+            case LEFT_ALT, RIGHT_ALT -> Modifier.ALT;
+            case LEFT_SUPER, RIGHT_SUPER -> Modifier.SUPER;
+            default -> null;
+        };
+    }
+
+    private void moveFocus(int dir) {
+        List<Long> order = new ArrayList<>();
+        collectFocusable(currentRoot, order);
+        if (order.isEmpty()) {
+            return;
+        }
+        int idx = order.indexOf(focusedId);
+        int next = idx < 0
+                ? (dir > 0 ? 0 : order.size() - 1)
+                : ((idx + dir) % order.size() + order.size()) % order.size();
+        setFocus(order.get(next));
+    }
+
+    /** Focusable node ids in tree (DFS pre-order) — the Tab order. */
+    private void collectFocusable(RetainedNode n, List<Long> out) {
+        if (n == null) {
+            return;
+        }
+        if (focusable.contains(n.id)) {
+            out.add(n.id);
+        }
+        for (RetainedNode c : n.children) {
+            collectFocusable(c, out);
+        }
+    }
+
+    private void setFocus(long id) {
+        if (id == focusedId) {
+            return;
+        }
+        long old = focusedId;
+        focusedId = id;
+        if (focusTopic != null) {
+            if (old != -1) {
+                bus.publish(focusTopic, new FocusEvent(old, false));
+            }
+            if (id != -1) {
+                bus.publish(focusTopic, new FocusEvent(id, true));
+            }
+        }
+    }
+
+    /** Nearest focusable ancestor-or-self of {@code hit}, or -1. */
+    private long ancestorFocusableId(RetainedNode hit) {
+        for (RetainedNode n = hit; n != null; n = n.parent) {
+            if (focusable.contains(n.id)) {
+                return n.id;
+            }
+        }
+        return -1;
     }
 
     /** If the press landed on a scrollbar thumb (of the hit node or an ancestor), begin a thumb drag. */

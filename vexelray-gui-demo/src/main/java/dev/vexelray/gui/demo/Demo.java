@@ -166,9 +166,25 @@ public final class Demo {
                     .textSize(Length.rem(1)).textColor(DIM));
         }
 
-        Node leftCard = card(gui, "Retained tree", ACCENT,
-                "Built through Node handles, mutated by messages, laid out by flex - no hard-coded rects.")
-                .width(Length.FILL).height(Length.FILL);
+        // An editable *multiline* field: word-wrapped, Enter inserts a newline, Up/Down move by visual line and
+        // keep a sticky column across short ones, and the view scrolls vertically to follow the caret. All of it
+        // is widget code over the published layout read-model — core gained exactly one seam for it
+        // (TextMeasurer.lineSpans) and no caret plumbing at all. Height comes from the card via FILL, so the
+        // field is a fixed box that scrolls internally rather than growing (docs/layout-read-model.md §11.8).
+        TextField notes = new TextField(gui,
+                "Built through Node handles, mutated by messages, laid out by flex — no hard-coded rects.\n\n"
+                        + "This paragraph is editable. It wraps at the card's width, Enter starts a new line, and "
+                        + "Up/Down keep your column across short lines. Keep typing and the view follows the caret.")
+                .multiline(true).wordWrap(true);
+        notes.node().width(Length.FILL).height(Length.FILL);
+
+        Node leftCard = gui.column().width(Length.FILL).height(Length.FILL)
+                .background(PANEL).corner(Length.rem(1)).border(Length.rem(0.1f), LINE)
+                .padding(Length.rem(1.25f)).gap(Length.rem(0.625f))
+                .children(
+                        gui.text("Editable, multiline").height(Length.rem(1.875f)).textSize(Length.rem(1.375f))
+                                .textColor(ACCENT),
+                        notes.node());
         Node rightCard = gui.column().width(Length.FILL).height(Length.FILL)
                 .background(PANEL).corner(Length.rem(1)).border(Length.rem(0.1f), LINE)
                 .padding(Length.rem(1.25f)).gap(Length.rem(0.625f))
@@ -229,16 +245,6 @@ public final class Demo {
 
         gui.root().background(BG).children(header, body, controls, fieldRow, footer);
         return new Refs(header, log);
-    }
-
-    /** A bordered card: coloured title row + a wrapped body paragraph. */
-    private static Node card(Gui gui, String title, Color titleColor, String body) {
-        return gui.column().background(PANEL).corner(Length.rem(1)).border(Length.rem(0.1f), LINE)
-                .padding(Length.rem(1.25f)).gap(Length.rem(0.625f))
-                .children(
-                        gui.text(title).height(Length.rem(1.875f)).textSize(Length.rem(1.375f)).textColor(titleColor),
-                        gui.text(body).height(Length.FILL).textSize(Length.rem(1.0625f)).textColor(DIM)
-                                .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.TOP));
     }
 
     /** A fixed-size labelled button that lightens on hover and darkens while pressed. */

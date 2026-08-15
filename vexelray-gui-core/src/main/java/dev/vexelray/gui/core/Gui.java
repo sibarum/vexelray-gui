@@ -375,28 +375,59 @@ public final class Gui implements AutoCloseable {
             lastViewportH = viewportH;
             // Publish the computed-layout read-model (docs/layout-read-model.md) — only when layout actually ran,
             // so the coalesced State commits on change and static frames allocate nothing.
-            publishLayout(r);
+            publishLayout(r, tm);
         }
         return r;
     }
 
     /** Snapshot the freshly laid-out tree into an immutable {@link LayoutSnapshot} and publish it. */
-    private void publishLayout(RetainedNode root) {
+    private void publishLayout(RetainedNode root, TextMeasurer tm) {
         Map<Long, NodeLayout> nodes = new HashMap<>();
-        collectLayout(root, nodes);
+        collectLayout(root, nodes, tm);
         LayoutSnapshot snap = new LayoutSnapshot(++layoutVersion, nodes);
         latestLayout = snap;             // volatile: Node.layout() reads this lock-free from any thread
         layoutState.commit(setLayout, snap);
     }
 
-    private static void collectLayout(RetainedNode n, Map<Long, NodeLayout> out) {
+    private static void collectLayout(RetainedNode n, Map<Long, NodeLayout> out, TextMeasurer tm) {
         out.put(n.id, new NodeLayout(true,
                 new Rect(n.x, n.y, n.w, n.h),
                 new Rect(n.viewX, n.viewY, n.viewW, n.viewH),
-                n.scrollX, n.scrollY, n.contentW, n.contentH, n.overflowX, n.overflowY, n.textSizePx));
+                n.scrollX, n.scrollY, n.contentW, n.contentH, n.overflowX, n.overflowY, n.textSizePx,
+                textMetrics(n, tm)));
         for (RetainedNode c : n.children) {
-            collectLayout(c, out);
+            collectLayout(c, out, tm);
         }
+    }
+
+    /**
+     * Bake a text node's caret geometry into the read-model as absolute-space data (single visual line for now;
+     * wrapped/multiline lines come with that feature). Returns null for non-text nodes or when the measurer has
+     * no glyph metrics (e.g. a headless stub without an atlas).
+     */
+    private static dev.vexelray.gui.core.text.TextMetrics textMetrics(RetainedNode n, TextMeasurer tm) {
+        if (n.kind != NodeKind.TEXT) {
+            return null;
+        }
+        String s = n.textString();
+        if (s == null || s.isEmpty()) {
+            return null;
+        }
+        float px = n.textSizePx;
+        float[] adv = tm.caretAdvances(s, px);
+        if (adv == null) {
+            return null;
+        }
+        float pad = Math.min(dev.vexelray.gui.core.text.TextMetrics.PAD_X, n.w * 0.25f);
+        float originX = n.x + pad - n.scrollX;
+        float[] xs = new float[adv.length];
+        for (int i = 0; i < adv.length; i++) {
+            xs[i] = originX + adv[i];
+        }
+        float lineH = tm.intrinsic(n, dev.vexelray.gui.core.layout.LayoutEnums.Axis.VERTICAL, px);
+        float top = n.y + (n.h - lineH) * 0.5f;
+        var line = new dev.vexelray.gui.core.text.TextMetrics.VisualLine(0, s.length(), top, lineH, xs);
+        return new dev.vexelray.gui.core.text.TextMetrics(java.util.List.of(line));
     }
 
     @Override

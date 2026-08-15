@@ -22,11 +22,17 @@ public record NodeLayout(
         float contentH,
         boolean overflowX,
         boolean overflowY,
-        float textSizePx) {
+        float textSizePx,
+        dev.vexelray.gui.core.text.TextMetrics text) {
 
     /** The value returned for a node that has no computed layout yet. */
     public static final NodeLayout ABSENT =
-            new NodeLayout(false, Rect.ZERO, Rect.ZERO, 0f, 0f, 0f, 0f, false, false, 0f);
+            new NodeLayout(false, Rect.ZERO, Rect.ZERO, 0f, 0f, 0f, 0f, false, false, 0f, null);
+
+    /** Caret geometry for a text node (line boxes + per-boundary x), or {@code null} for a non-text node. */
+    public dev.vexelray.gui.core.text.TextMetrics text() {
+        return text;
+    }
 
     /** The content viewport size (visible area inside border/padding/scrollbars). */
     public float viewW() {

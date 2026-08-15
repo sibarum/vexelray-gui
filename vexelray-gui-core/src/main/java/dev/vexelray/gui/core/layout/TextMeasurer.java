@@ -21,4 +21,14 @@ public interface TextMeasurer {
     default int offsetAt(String text, float localX, float textSizePx) {
         return 0;
     }
+
+    /**
+     * The cumulative advance (px) of {@code text} at each character boundary: an array of length
+     * {@code text.length() + 1} where element {@code i} is the width of {@code text[0..i)} (so {@code [0] == 0}).
+     * Used to bake caret geometry into the layout read-model's {@code TextMetrics}. The default returns
+     * {@code null} (no metrics available); an app over a real glyph atlas overrides it.
+     */
+    default float[] caretAdvances(String text, float textSizePx) {
+        return null;
+    }
 }

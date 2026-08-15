@@ -215,6 +215,29 @@ public final class GuiApp implements AutoCloseable {
                 }
                 return s.length();
             }
+
+            @Override
+            public float[] caretAdvances(String s, float textSizePx) {
+                if (s == null) {
+                    return new float[] {0f};
+                }
+                // Cumulative advance at each character boundary (xs[0] = 0). Uses the glyph layout's per-codepoint
+                // advance so this is O(n), not O(n^2).
+                float[] xs = new float[s.length() + 1];
+                float x = 0f;
+                int i = 0;
+                while (i < s.length()) {
+                    int cp = s.codePointAt(i);
+                    int next = i + Character.charCount(cp);
+                    x += gl.advance(cp, textSizePx);
+                    // Fill the boundary for each char index the codepoint spans (surrogate pairs share an advance).
+                    for (int j = i + 1; j <= next; j++) {
+                        xs[j] = x;
+                    }
+                    i = next;
+                }
+                return xs;
+            }
         };
     }
 

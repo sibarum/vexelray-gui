@@ -101,6 +101,16 @@ final class HeadlessGui implements AutoCloseable {
             }
             return Math.max(0, Math.min(text.length(), Math.round(localX / CELL)));
         }
+
+        @Override
+        public float[] caretAdvances(String text, float px) {
+            int len = text == null ? 0 : text.length();
+            float[] xs = new float[len + 1];
+            for (int i = 0; i <= len; i++) {
+                xs[i] = i * CELL;
+            }
+            return xs;
+        }
     };
 
     /**

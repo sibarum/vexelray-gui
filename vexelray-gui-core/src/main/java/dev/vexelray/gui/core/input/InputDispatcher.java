@@ -1,7 +1,6 @@
 package dev.vexelray.gui.core.input;
 
 import dev.vexelray.gui.core.layout.LayoutEnums.ScrollLock;
-import dev.vexelray.gui.core.layout.TextMeasurer;
 import dev.vexelray.gui.core.model.RetainedNode;
 import sibarum.atchung.Atchung;
 import sibarum.atchung.Backpressure;
@@ -63,8 +62,6 @@ public final class InputDispatcher {
     // Typed-text handlers (CharTyped → codepoint) and caret-placement handlers (click → offset), both for
     // editable text nodes; registering either makes the node focusable.
     private final Map<Long, IntConsumer> charHandlers = new ConcurrentHashMap<>();
-    private final Map<Long, IntConsumer> caretHandlers = new ConcurrentHashMap<>();
-    private final Map<Long, IntConsumer> caretDragHandlers = new ConcurrentHashMap<>();
     private final Map<Shortcut, Runnable> shortcuts = new ConcurrentHashMap<>();
     private final Set<Long> focusable = ConcurrentHashMap.newKeySet();
     private final Map<Long, InteractionState> reportedState = new ConcurrentHashMap<>();
@@ -82,10 +79,6 @@ public final class InputDispatcher {
     private long repeatNextNanos;
 
     private RetainedNode currentRoot;
-    // The text measurer for this frame (caret-from-click geometry); null when unavailable (e.g. in tests).
-    private TextMeasurer measurer;
-    // Text selection drag: the editable node grabbed on press; subsequent motion extends its selection.
-    private RetainedNode caretDrag;
     private long pressTargetId = -1;
     // Pointer capture for dragging: while a drag is active, MOVE events route to this node's handler regardless of
     // what's under the pointer, until the button is released.
@@ -160,20 +153,6 @@ public final class InputDispatcher {
         focusable.add(nodeId);
     }
 
-    /** Register a caret-placement handler for {@code nodeId} (also makes it focusable): a click on the node
-     *  delivers the nearest character offset, so an editable field can move its caret to the pointer. */
-    public void onCaretHit(long nodeId, IntConsumer handler) {
-        caretHandlers.put(nodeId, handler);
-        focusable.add(nodeId);
-    }
-
-    /** Register a caret-drag handler for {@code nodeId}: while the pointer is held down after a press on the
-     *  node, each motion delivers the character offset under the pointer, so the field can extend a selection. */
-    public void onCaretDrag(long nodeId, IntConsumer handler) {
-        caretDragHandlers.put(nodeId, handler);
-        focusable.add(nodeId);
-    }
-
     /** Register a global shortcut command. */
     public void registerShortcut(Shortcut shortcut, Runnable command) {
         shortcuts.put(shortcut, command);
@@ -206,8 +185,6 @@ public final class InputDispatcher {
         dragHandlers.remove(nodeId);
         keyHandlers.remove(nodeId);
         charHandlers.remove(nodeId);
-        caretHandlers.remove(nodeId);
-        caretDragHandlers.remove(nodeId);
         focusable.remove(nodeId);
         reportedState.remove(nodeId);
         if (focusedId == nodeId) {
@@ -220,13 +197,7 @@ public final class InputDispatcher {
      * Runs on the GUI thread: {@link Pump#drain()} delivers queued edges to {@link #handle} on this thread.
      */
     public void dispatch(RetainedNode root) {
-        dispatch(root, null);
-    }
-
-    /** As {@link #dispatch(RetainedNode)}, with the frame's {@link TextMeasurer} for caret-from-click geometry. */
-    public void dispatch(RetainedNode root, TextMeasurer measurer) {
         this.currentRoot = root;
-        this.measurer = measurer;
         pump.drain();
         pumpKeyRepeat();
     }
@@ -245,9 +216,6 @@ public final class InputDispatcher {
                     dragScrollbar(m.x(), m.y());
                     return;
                 }
-                if (caretDrag != null) {
-                    extendSelection(caretDrag, m.x());
-                }
                 if (dragCapture != null) {
                     fireDrag(DragEvent.Phase.MOVE, m.x(), m.y());
                 }
@@ -263,10 +231,6 @@ public final class InputDispatcher {
                 // Click focuses the nearest focusable node (or clears focus on empty space).
                 RetainedNode focusTarget = ancestorFocusable(hit);
                 setFocus(focusTarget == null ? -1 : focusTarget.id);
-                // On an editable field, place the caret at the clicked character offset and arm selection drag.
-                placeCaret(focusTarget, b.x());
-                caretDrag = focusTarget != null && caretDragHandlers.containsKey(focusTarget.id)
-                        ? focusTarget : null;
                 pressTargetId = hit == null ? -1 : hit.id;
                 pressHit = hit;
                 hoverHit = hit;
@@ -279,7 +243,6 @@ public final class InputDispatcher {
                 refreshStates();
             }
             case InputEvent.ButtonReleased b when b.button() == MouseButton.LEFT -> {
-                caretDrag = null;
                 if (scrollDrag != null) {
                     scrollDrag = null;
                     return;
@@ -455,31 +418,6 @@ public final class InputDispatcher {
             }
         }
         return null;
-    }
-
-    /** Text inset used by the renderer for text nodes — kept in sync so caret hit-testing matches drawing. */
-    private static final float TEXT_PAD_X = 10f;
-
-    /** Place the caret of an editable field at the character nearest pointer x (client space). */
-    private void placeCaret(RetainedNode node, float pointerX) {
-        deliverOffset(node, caretHandlers.get(node == null ? -1 : node.id), pointerX);
-    }
-
-    /** Extend the selection of the drag-captured field to the character nearest pointer x. */
-    private void extendSelection(RetainedNode node, float pointerX) {
-        deliverOffset(node, caretDragHandlers.get(node.id), pointerX);
-    }
-
-    /** Compute the character offset under {@code pointerX} for {@code node} and hand it to {@code handler}. */
-    private void deliverOffset(RetainedNode node, IntConsumer handler, float pointerX) {
-        if (node == null || handler == null || measurer == null) {
-            return;
-        }
-        String text = node.textString() == null ? "" : node.textString();
-        float pad = Math.min(TEXT_PAD_X, node.w * 0.25f);
-        float localX = pointerX - (node.x + pad) + node.scrollX;
-        int offset = measurer.offsetAt(text, localX, node.textSizePx);
-        handlerExecutor.execute(() -> handler.accept(offset));
     }
 
     /** If the press landed on a scrollbar thumb (of the hit node or an ancestor), begin a thumb drag. */

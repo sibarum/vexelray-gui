@@ -66,68 +66,7 @@ class TextInputTest {
         assertEquals("", typed.toString(), "no focus means no text delivery");
     }
 
-    @Test
-    void clickPlacesCaretAtNearestOffset() {
-        Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS, Runnable::run);
-        RetainedNode field = textNode(1, "abcdef", 0, 100);
-
-        // Fixed 10px-per-char measurer; text starts at x = node.x + pad (pad = min(10, w*0.25) = 10).
-        TextMeasurer m = new TextMeasurer() {
-            @Override
-            public float intrinsic(RetainedNode n, Axis axis, float px) {
-                return 0f;
-            }
-
-            @Override
-            public int offsetAt(String text, float localX, float px) {
-                return Math.max(0, Math.min(text.length(), Math.round(localX / 10f)));
-            }
-        };
-
-        List<Integer> caretHits = new ArrayList<>();
-        d.onCaretHit(1, caretHits::add);
-
-        // Click at x=44: localX = 44 - (0 + 10) = 34 -> round(3.4) = offset 3.
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, 44, 5, 0));
-        d.dispatch(field, m);
-
-        assertEquals(List.of(3), caretHits, "click maps to the nearest character offset");
-        assertEquals(1, d.focused(), "clicking the field also focuses it");
-    }
-
-    @Test
-    void dragAfterPressExtendsSelectionToPointer() {
-        Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS, Runnable::run);
-        RetainedNode field = textNode(1, "abcdef", 0, 100);
-
-        TextMeasurer m = new TextMeasurer() {
-            @Override
-            public float intrinsic(RetainedNode n, Axis axis, float px) {
-                return 0f;
-            }
-
-            @Override
-            public int offsetAt(String text, float localX, float px) {
-                return Math.max(0, Math.min(text.length(), Math.round(localX / 10f)));
-            }
-        };
-
-        List<Integer> anchors = new ArrayList<>();
-        List<Integer> drags = new ArrayList<>();
-        d.onCaretHit(1, anchors::add);
-        d.onCaretDrag(1, drags::add);
-
-        // Press at x=14 (localX=4 -> offset 0), drag to x=54 (localX=44 -> offset 4), release.
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, 14, 5, 0));
-        bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(54, 5, 40, 0, 0));
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, 54, 5, 0));
-        // A move after release must not extend anymore.
-        bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(94, 5, 40, 0, 0));
-        d.dispatch(field, m);
-
-        assertEquals(List.of(0), anchors, "press sets the selection anchor at the pressed offset");
-        assertEquals(List.of(4), drags, "drag extends to the pointer offset; the post-release move is ignored");
-    }
+    // Note: caret placement from a click/drag is no longer a dispatcher concern — it moved to the widget, which
+    // maps the pointer to an offset via the layout read-model (node.layout().text()). See TextFieldTest /
+    // TextMetricsTest in the widget module. The dispatcher just delivers raw pointer events (onDrag) and focus.
 }

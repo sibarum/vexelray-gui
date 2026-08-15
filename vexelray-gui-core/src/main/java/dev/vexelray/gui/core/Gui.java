@@ -231,25 +231,6 @@ public final class Gui implements AutoCloseable {
         return this;
     }
 
-    /**
-     * Register a caret-placement handler for {@code node}: a click into the (editable) node delivers the
-     * character offset nearest the pointer, so the field can move its caret there. Runs on a worker thread.
-     */
-    public Gui onCaretHit(Node node, java.util.function.IntConsumer handler) {
-        input.onCaretHit(node.id(), handler);
-        return this;
-    }
-
-    /**
-     * Register a caret-drag handler for {@code node}: while the pointer is held down after pressing the node,
-     * each motion delivers the character offset under the pointer, so the field can extend a selection. Runs
-     * on a worker thread.
-     */
-    public Gui onCaretDrag(Node node, java.util.function.IntConsumer handler) {
-        input.onCaretDrag(node.id(), handler);
-        return this;
-    }
-
     /** Make {@code node} focusable (reachable by click and Tab) without a key handler — e.g. a button. */
     public Gui focusable(Node node, boolean canFocus) {
         input.setFocusable(node.id(), canFocus);
@@ -357,7 +338,7 @@ public final class Gui implements AutoCloseable {
     public RetainedNode frame(float viewportW, float viewportH, TextMeasurer tm) {
         // Dispatch this frame's input first, against the previous frame's laid-out tree (§8, §10): a click may
         // register a mutation, which the drain below then applies in the same frame.
-        input.dispatch(reconciler.root(), tm);
+        input.dispatch(reconciler.root());
         // Drain the mutation pump on the GUI thread: the subscriber applies each Mutation to the reconciler in
         // FIFO order (single writer). The tree is up to date afterward.
         pump.drain();

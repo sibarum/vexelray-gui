@@ -91,8 +91,10 @@ public final class TextField {
 
         gui.onChar(node, this::onCodePoint);
         gui.onKey(node, this::onKey);
-        gui.onCaretHit(node, this::placeCaret);
-        gui.onCaretDrag(node, this::extendTo);
+        // Pointer caret placement + drag-select, computed from this node's published layout read-model
+        // (docs/layout-read-model.md) — press sets the caret, drag extends the selection. Uses the general
+        // onDrag seam; no special caret plumbing in core.
+        gui.onDrag(node, this::onPointer);
         gui.bus().subscribe(gui.focusEvents(), this::onFocus);
 
         startBlink();
@@ -220,6 +222,20 @@ public final class TextField {
             onSubmit.accept(text());
         } else if (changed != null) {
             onChange.accept(changed);
+        }
+    }
+
+    /** Map a pointer press/drag to a caret offset via this node's published text metrics, then place/extend. */
+    private void onPointer(dev.vexelray.gui.core.input.DragEvent e) {
+        dev.vexelray.gui.core.text.TextMetrics m = node.layout().text();
+        if (m == null) {
+            return; // not laid out yet, or no glyph metrics available
+        }
+        int offset = m.offsetAt(e.x(), e.y());
+        switch (e.phase()) {
+            case START -> placeCaret(offset);   // press positions the caret, collapsing any selection
+            case MOVE -> extendTo(offset);       // drag extends the selection to the pointer
+            case END -> { }
         }
     }
 

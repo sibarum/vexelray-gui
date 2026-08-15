@@ -29,6 +29,9 @@
         <module>vexelray-gui-nfd</module>
         <!-- Canonical showcase / reference app. -->
         <module>vexelray-gui-demo</module>
+        <!-- Test-only: the automated separation-of-concerns guard (docs/architecture-proof-plan.md M0).
+             Last, so it inspects the compiled output of everything above it. -->
+        <module>vexelray-gui-architecture</module>
     </modules>
 
     <properties>
@@ -47,6 +50,8 @@
         <tactroller.version>1.0-SNAPSHOT</tactroller.version>
         <joml.version>1.10.7</joml.version>
         <junit.version>5.11.4</junit.version>
+        <!-- ASM: bytecode reading for the architecture guard only (test scope, one module). -->
+        <asm.version>9.9.1</asm.version>
     </properties>
 
     <dependencyManagement>
@@ -144,6 +149,11 @@
                 <groupId>org.joml</groupId>
                 <artifactId>joml</artifactId>
                 <version>${joml.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.ow2.asm</groupId>
+                <artifactId>asm</artifactId>
+                <version>${asm.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.junit</groupId>

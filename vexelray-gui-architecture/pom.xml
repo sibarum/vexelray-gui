@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>dev.vexelray.gui</groupId>
+        <artifactId>vexelray-gui</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>vexelray-gui-architecture</artifactId>
+
+    <description>
+        Test-only module: the automated separation-of-concerns guard (docs/architecture-proof-plan.md M0).
+        It ships no main sources. It reads the *compiled* classes of the modules it inspects, so the rules
+        hold against what the compiler actually produced rather than against a source convention. Depends
+        on the inspected modules at test scope only, so nothing here can leak into a runtime or a native image.
+    </description>
+
+    <dependencies>
+        <!-- The inspected modules. The guards read their target/classes by path rather than off the classpath
+             (see Bytecode), so these are declared for *reactor ordering*: they guarantee both modules are
+             compiled before this one runs. Removing them would let the guard run against a missing or stale
+             target/classes. -->
+        <dependency>
+            <groupId>dev.vexelray.gui</groupId>
+            <artifactId>vexelray-gui-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>dev.vexelray.gui</groupId>
+            <artifactId>vexelray-gui-widget</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.ow2.asm</groupId>
+            <artifactId>asm</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

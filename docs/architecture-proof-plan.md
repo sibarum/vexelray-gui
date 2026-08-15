@@ -50,10 +50,11 @@ Rules the architecture test asserts:
    to/from them. This keeps `gui-core` decoupled from the wire and lets the DTOs version independently.
 3. **`atchung-core` has no dependency on `elektroq`** and vice-versa — the bridge is the only meeting point, so
    "the fast in-VM path never pays for the network" is structural, not disciplined.
-4. **Only the compute phase writes derived geometry** (layout-read-model.md §2.1): `TreeRenderer` and the widget
-   module never assign to a `RetainedNode` field, and `publishLayout` only copies. Partly mechanical — the test
-   can assert that no class outside the geometry pass writes `RetainedNode` state — and it is what keeps C1
-   honest, since behaviour that lives in the renderer cannot survive a host that has no renderer.
+4. **Only the declared stages write the retained model** (layout-read-model.md §2.1): `TreeRenderer` and the
+   widget module never assign to a `RetainedNode` field, and `publishLayout` only copies. Enforced by
+   `ModelWriterGuardTest` (M0), which is what keeps C1 honest: behaviour that lives in the renderer cannot
+   survive a host that has no renderer. The one part that stays a convention is "publish performs no
+   arithmetic" — not mechanically checkable, so it lives in layout-read-model.md §9 as a rule.
 
 The test is cheap (parse module POMs / package imports) and, once in place, guards C5 permanently.
 
@@ -64,10 +65,23 @@ The test is cheap (parse module POMs / package imports) and, once in place, guar
 Each milestone states what it **proves**, its **deliverable**, and its **automated acceptance**. They build in
 order; every one leaves the tree green.
 
-### M0 — Contracts & the architecture guard *(proves C5, cheaply, first)*
-- **Deliverable:** an `architecture` test module (or a test in the reactor root) that reads the dependency graph
-  and fails on any violation of §2 rules 1–3.
-- **Acceptance:** the test is green now and goes red if `gui-core` gains an `elektroq` import.
+### M0 — Contracts & the architecture guard *(proves C5, cheaply, first)* — **LANDED**
+- **Deliverable:** `vexelray-gui-architecture`, a test-only module (no main sources, test-scope deps only, so
+  nothing reaches a runtime or a native image). It reads the **compiled classes** of `gui-core` and `gui-widget`
+  rather than their source: a source scan is defeated by an alias, a fully-qualified name or a wildcard import,
+  whereas the constant pool records what the compiler actually emitted.
+  - `LayeringGuardTest` — §2 rules 1 and 3: no GUI class references `sibarum/elektro` or `sibarum/atchung/elektroq`.
+  - `ModelWriterGuardTest` — §2 rule 4: only the five declared stages write `RetainedNode` fields, detected as
+    `PUTFIELD`/`PUTSTATIC` against that owner. The allowlist is the phase list of `Gui.frame`; widening it is an
+    architectural decision, never a way to fix a red build.
+- **Acceptance:** green, and *demonstrated* red. Each guard carries self-tests that run its detector over
+  synthesized bytecode — a violation must be reported, a legitimate write must not — because a detector that
+  silently matches nothing is indistinguishable from a clean codebase. Verified end-to-end by reintroducing
+  `n.scrollX = 0f` into `TreeRenderer`: the guard failed with
+  `TreeRenderer.drawSelf() writes RetainedNode.scrollX`, naming the exact method of the original bug.
+- **Anti-vacuity:** `Bytecode.classFiles` throws when a scan finds no classes, and modules resolve by path from
+  the reactor root rather than off the classpath — otherwise the guard could quietly inspect a stale installed
+  jar and pass while the working tree violates the rule.
 - **Why first:** it makes every later step's separation claim self-enforcing instead of aspirational.
 
 ### M1 — Wire contract for the bus types *(foundation for C4)*
@@ -166,6 +180,6 @@ to ship a production remote GUI.
 ---
 
 ## 8. Suggested order
-`M0` (guard) → `M1` (wire types) → `M2` (transport conformance) → `M3` (bridge) → `M4` (headless remote — the
-proof) → `M-perf` + native steps 1–2 in parallel → `M5`/native step 3 as corroboration. Each is independently
-green and independently useful.
+~~`M0` (guard)~~ **done** → `M1` (wire types) → `M2` (transport conformance) → `M3` (bridge) → `M4` (headless
+remote — the proof) → `M-perf` + native steps 1–2 in parallel → `M5`/native step 3 as corroboration. Each is
+independently green and independently useful.

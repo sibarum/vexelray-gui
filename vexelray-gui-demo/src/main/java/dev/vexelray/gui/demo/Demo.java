@@ -159,9 +159,11 @@ public final class Demo {
         Node log = gui.column().width(Length.FILL).height(Length.FILL).gap(Length.rem(0.375f))
                 .scrollLock(LayoutEnums.ScrollLock.BOTTOM);
         // Pre-fill enough lines to overflow the panel, so the auto vertical scrollbar appears (and reserves space).
+        // Log lines set no height on purpose: a text node sizes to its *wrapped* content, so a long message that
+        // wraps onto two lines reserves two lines. Pinning a height here would opt back out of that.
         for (int i = 1; i <= 16; i++) {
             log.append(gui.text("log line " + i + " — overflows, scrolls")
-                    .height(Length.rem(1.5f)).textSize(Length.rem(1)).textColor(DIM));
+                    .textSize(Length.rem(1)).textColor(DIM));
         }
 
         Node leftCard = card(gui, "Retained tree", ACCENT,
@@ -204,7 +206,7 @@ public final class Demo {
                 dev.vexelray.gui.core.text.Span.background(5, 9, LINE),         // "here"
                 dev.vexelray.gui.core.text.Span.underline(11, 16)));           // "Enter"
         field.onSubmit(s -> log.append(gui.text("submitted: " + s)
-                .height(Length.rem(1.5f)).textSize(Length.rem(1)).textColor(INK)));
+                .textSize(Length.rem(1)).textColor(INK)));
 
         // Per-axis padding: small vertically so 44px buttons fit a 64px bar, but full horizontally (rem(1.5) = 24px)
         // so the first button aligns with the cards' left edge (body padding is also rem(1.5)).
@@ -266,7 +268,7 @@ public final class Demo {
                     refs.header().text("VexelRay GUI    tick " + n);
                     if (n <= 8) {
                         refs.log().append(gui.text("event " + n + " from worker thread")
-                                .height(Length.rem(1.5f)).textSize(Length.rem(1)).textColor(INK));
+                                .textSize(Length.rem(1)).textColor(INK));
                     }
                 }
             } catch (InterruptedException e) {

@@ -241,8 +241,9 @@ public final class TextField {
                 case LEFT -> { moveCaret(ctrl ? prevWord(caret) : stepLeft(caret), shift); syncNode(); }
                 case RIGHT -> { moveCaret(ctrl ? nextWord(caret) : stepRight(caret), shift); syncNode(); }
                 // Home/End are *visual* line ends on the read-model, so they stop at a wrap, not at a newline.
-                case HOME -> { moveCaret(visualLineStart(), shift); syncNode(); }
-                case END -> { moveCaret(visualLineEnd(), shift); syncNode(); }
+                // With Ctrl they address the whole document instead, as everywhere else.
+                case HOME -> { moveCaret(ctrl ? 0 : visualLineStart(), shift); syncNode(); }
+                case END -> { moveCaret(ctrl ? content.length() : visualLineEnd(), shift); syncNode(); }
                 case UP -> moveByLines(-1, shift);
                 case DOWN -> moveByLines(1, shift);
                 case PAGE_UP -> moveByLines(-pageLines(), shift);
@@ -253,7 +254,12 @@ public final class TextField {
                     if (multiline) {
                         int at = hasSelection() ? selLo() : caret;
                         int removeLen = hasSelection() ? selHi() - selLo() : 0;
+                        // A newline is an undo boundary on both sides: without the barriers it is just another
+                        // one-character insert continuing the typing run, and a whole multi-line burst collapses
+                        // into a single Ctrl+Z. Undo steps read "cd", then the newline, then "ab".
+                        coalesceBarrier = true;
                         changed = applyEdit(at, removeLen, "\n");
+                        coalesceBarrier = true;
                     }
                     // single-line: submitted outside the lock
                 }

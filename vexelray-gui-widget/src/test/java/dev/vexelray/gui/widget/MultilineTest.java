@@ -87,6 +87,46 @@ class MultilineTest {
         }
     }
 
+    /**
+     * A newline is an undo boundary. Without one it is just another single-character insert continuing the
+     * typing run, so an entire multi-line burst collapses into a single Ctrl+Z — which is not what any editor
+     * does, and is very annoying to discover after the fact.
+     */
+    @Test
+    void aNewlineIsItsOwnUndoStep() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TextField f = field(h, false);
+            h.type("ab");
+            h.tap(Key.ENTER);
+            h.type("cd");
+            assertEquals("ab\ncd", f.text());
+
+            h.chord(Key.Z, Key.LEFT_CONTROL);
+            assertEquals("ab\n", f.text(), "the run after the newline undoes on its own");
+            h.chord(Key.Z, Key.LEFT_CONTROL);
+            assertEquals("ab", f.text(), "then the newline itself");
+            h.chord(Key.Z, Key.LEFT_CONTROL);
+            assertEquals("", f.text(), "then the run before it");
+        }
+    }
+
+    /** Plain Home/End are visual-line; with Ctrl they address the whole document, as everywhere else. */
+    @Test
+    void ctrlHomeAndEndReachTheWholeDocument() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TextField f = field(h, false);
+            typeLines(h, "aaa", "bbb");
+
+            h.chord(Key.HOME, Key.LEFT_CONTROL);
+            h.type("X");
+            assertEquals("Xaaa\nbbb", f.text(), "Ctrl+Home goes to the document start, not the line start");
+
+            h.chord(Key.END, Key.LEFT_CONTROL);
+            h.type("Y");
+            assertEquals("Xaaa\nbbbY", f.text(), "and Ctrl+End to the document end");
+        }
+    }
+
     @Test
     void upAndDownMoveBetweenLines() {
         try (HeadlessGui h = new HeadlessGui()) {

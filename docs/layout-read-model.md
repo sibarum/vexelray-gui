@@ -355,8 +355,10 @@ remotely, but out of scope for 4a because it changes how every existing label re
   height the canvas would have used.
 
 ### 11.8 Open decisions (resolve in implementation)
-- **Tab in multiline:** soft tabs (N spaces) first per keyboard-focus-text.md §4.2; focus-traversal vs. insert is
-  the modifier question there.
+- ~~**Tab in multiline**~~ — **resolved: soft tabs inside a multiline field, focus traversal everywhere else.**
+  No modifier distinction: the focused node decides. Not yet implemented, and note it is *not* purely a widget
+  change — `InputDispatcher` consumes Tab for focus traversal before `onKey` ever sees it, so traversal has to
+  skip a focused multiline node. That is a core change, so it belongs with 4b rather than with the widget.
 - ~~**Auto-grow vs. fixed height + scroll**~~ — **resolved: both, and the coupling was not optional.** An
   *editable* field keeps an app-set height and scrolls (unchanged). A *label* auto-grows, because it always
   wrapped and a wrapped label that reserves one line overlaps its neighbours and truncates its container's scroll

@@ -170,3 +170,93 @@ share what `TreeRenderer` already computes for drawing.
 2. **Text metrics.** Add `NodeLayout.text()` (line spans + advances as data), computed at publish via the measurer.
 3. **Refactor click** onto `node.layout().text().offsetAt(...)`; delete `onCaretHit`/`onCaretDrag`.
 4. **Multiline + wrap + Up/Down** as pure widget code on the read-model — the original goal, with no ad-hoc seams.
+   See §11 for the concrete build spec.
+
+---
+
+## 11. Step 4 build spec — multiline + word wrap + line numbers
+
+Status: **ready to implement** (steps 1–3 landed: read-model boxes, text metrics, click via `onDrag`). This is
+the execution plan so a fresh session needs no re-derivation. Build order is 4a (multiline + wrap) → 4b (line
+numbers); font selection stays parked behind the multi-atlas engine work
+([[project-font-atlas-registry]] / keyboard-focus-text.md §5).
+
+### 11.1 Model (core)
+- New props (all layout-affecting): `MULTILINE`, `WORD_WRAP`. (`LINE_NUMBERS` in 4b.) Add `Node` setters +
+  `RetainedNode` accessors, mirroring the existing text props.
+- Single-line stays the default; a `TextField` opts into multiline.
+
+### 11.2 The one new seam: line breaking as a measurer query
+`TreeRenderer` and the read-model must agree on line breaks, so both go through the measurer (which already owns
+the atlas). Add to `TextMeasurer`:
+```java
+default java.util.List<dev.vexelray.text.TextLayout.LineSpan> lineSpans(String text, float wrapWidth, float px) {
+    return List.of(new TextLayout.LineSpan(0, text == null ? 0 : text.length(), true)); // one line by default
+}
+```
+- `GuiApp` implements it via `textLayout.breakLineSpans(text, px, wrapWidth, WrapMode.WORD_CHAR)` (built in the
+  `393b276` commit). `wrapWidth <= 0` ⇒ no wrap (split on `\n` only).
+- `HeadlessGui` stub implements a monospace version (split on `\n`, wrap by `floor(width / CELL)`), so multiline
+  is testable headless.
+
+### 11.3 Multi-line `TextMetrics` at publish (core) — the crux
+Rewrite `Gui.textMetrics(n, tm)` (currently single-line) to build one `VisualLine` per `lineSpans` entry, and to
+**resolve caret-follow scroll here** (not in the renderer — see 11.4). Sequence per text node:
+1. `pad = min(TextMetrics.PAD_X, w*0.25)`; `gutter = 0` (4a) or line-number width (4b); `contentLeft = x + pad +
+   gutter`; `viewW = w - 2*pad - gutter`; `viewH = h - 2*pad_v` (top-aligned for multiline).
+2. `wrapWidth = wordWrap ? viewW : 0`; `lines = tm.lineSpans(text, wrapWidth, px)`; `adv = tm.caretAdvances(text, px)`
+   (whole-string cumulative); `lineH = tm.intrinsic(n, VERTICAL, px)`.
+3. Find the caret's visual line (`last line with start ≤ caret`) and its x (`contentLeft + adv[caret] -
+   adv[line.start]`).
+4. **Resolve scroll** on the node (mutating `n.scrollX/scrollY`):
+   - vertical (multiline): keep caret line in `[0, viewH)` → `scrollY` clamps so `caretLineIndex*lineH` is visible.
+   - horizontal: only when **not** wrapping → keep caret x in `[0, viewW)`; when wrapping, `scrollX = 0`.
+5. Bake absolute geometry: for line *i*, `top = contentTop + i*lineH - scrollY`; `xs[j] = contentLeft +
+   (adv[start+j] - adv[start]) - scrollX`. Single-line keeps its centered `top` (unchanged behavior).
+6. Emit `TextMetrics(lines)`; store on `RetainedNode.textMetrics` (new transient field) **and** in the snapshot.
+   The multi-line query methods (`offsetAt`, `offsetAbove/Below`, `lineStart/End`) already exist on `TextMetrics`.
+
+### 11.4 Renderer unification (core) — one source of truth
+Rewrite `TreeRenderer`'s text section to draw **from `n.textMetrics`** instead of recomputing:
+- Draw each `VisualLine`'s substring at `(line.xs[0], line.top)`, `WrapMode.NONE`, `HAlign.LEFT`, height `line.height`.
+- Spans / selection / caret use the line `xs` (already absolute), extended to multi-line (per-line rects).
+- **Delete `updateHScroll` from the renderer** — scroll is now resolved in publish (11.3), so the renderer is a
+  pure consumer. This removes the last place the renderer mutates model state, and removes the h/v-scroll
+  inconsistency flagged in this session.
+- Keep the content-box `pushClip`; add the vertical clip for multiline.
+
+### 11.5 Widget (TextField)
+- `multiline(boolean)`: when true, `Enter` inserts `\n` (via `applyEdit`) instead of `onSubmit`.
+- Vertical nav via the read-model + a **widget-owned sticky desired-column**:
+  - On Up/Down: `m = node.layout().text()`; `caret = m.offsetAbove/Below(caret, desiredX)`; set `desiredX` from
+    `m.caretX(caret)` only on horizontal moves (typing, Left/Right, click), not on Up/Down, so it stays sticky.
+  - Home/End become **visual**-line start/end via `m.lineStart/lineEnd(caret)` (falls back to string ends when
+    metrics absent).
+  - PageUp/PageDown: move by `floor(viewH / lineH)` lines (viewH from `node.layout().content()`).
+- Click/drag already works unchanged (2D `offsetAt` is multi-line-ready).
+- Selection rendering across lines is handled by 11.4.
+
+### 11.6 Line numbers (4b)
+- `LINE_NUMBERS` prop. Gutter width = `digits(hardLineCount+1) * digitWidth + padding`, `digitWidth =
+  caretAdvances("0", px)[1]`. `hardLineCount` counts `\n` (numbers are per hard line, not per wrapped line).
+- Gutter shifts `contentLeft` (11.3 step 1) and narrows `wrapWidth`. `TreeRenderer` draws right-aligned numbers
+  in the gutter; wrapped continuation lines get no number.
+
+### 11.7 Tests (headless harness — deterministic)
+- `Enter` inserts a newline in multiline; is ignored / submits in single-line.
+- Up/Down move between lines; desired-column sticks across a short line (type `long`\n`x`\n`long`, Up from end of
+  line 3 lands past `x`).
+- Visual Home/End with wrap on.
+- Click on line 2 positions the caret there (2D `offsetAt`).
+- Word wrap: a string wider than `viewW` produces >1 `VisualLine`; caret offset↔point round-trips across the wrap.
+- Selection spanning lines.
+- Then a `--capture` visual check of a multiline field (+ gutter in 4b).
+
+### 11.8 Open decisions (resolve in implementation)
+- **Tab in multiline:** soft tabs (N spaces) first per keyboard-focus-text.md §4.2; focus-traversal vs. insert is
+  the modifier question there.
+- **Auto-grow vs. fixed height + scroll:** spec assumes app-set height + vertical scroll (simplest, matches
+  read-model). Auto-grow (intrinsic height = lineCount·lineH) is a later option and reintroduces the
+  intrinsic-wrap-height coupling — defer.
+- **Large documents:** `caretAdvances`/`lineSpans` over the whole string is O(n) per changed frame; fine for
+  fields/small editors. Visible-range windowing is a later optimization (note in §9 already).

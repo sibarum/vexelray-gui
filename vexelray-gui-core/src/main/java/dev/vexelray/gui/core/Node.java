@@ -4,6 +4,7 @@ import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.LayoutEnums;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
+import dev.vexelray.gui.core.layout.NodeLayout;
 import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.core.model.Mutation;
@@ -19,14 +20,30 @@ public final class Node {
 
     private final long id;
     private final MutationSink sink;
+    private final LayoutReader reads;
 
     Node(long id, MutationSink sink) {
+        this(id, sink, null);
+    }
+
+    Node(long id, MutationSink sink, LayoutReader reads) {
         this.id = id;
         this.sink = sink;
+        this.reads = reads;
     }
 
     public long id() {
         return id;
+    }
+
+    /**
+     * This node's computed layout from the latest published snapshot (docs/layout-read-model.md) — position,
+     * size, scroll and overflow. Synchronous and lock-free, and <b>one frame stale</b> (the latency the framework
+     * already accepts for input); returns {@link NodeLayout#ABSENT} before the node's first layout. This is a read
+     * of a published snapshot, not a live poke into the model — the handle stays write-only for mutations.
+     */
+    public NodeLayout layout() {
+        return reads == null ? NodeLayout.ABSENT : reads.snapshot().node(id);
     }
 
     // --- visual ---

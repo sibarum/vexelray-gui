@@ -3,7 +3,10 @@ package dev.vexelray.gui.core;
 import dev.vexelray.gui.core.layout.FlexLayout;
 import dev.vexelray.gui.core.layout.LayoutContext;
 import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
+import dev.vexelray.gui.core.layout.LayoutSnapshot;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.layout.NodeLayout;
+import dev.vexelray.gui.core.layout.Rect;
 import dev.vexelray.gui.core.layout.TextMeasurer;
 import dev.vexelray.gui.core.model.Mutation;
 import dev.vexelray.gui.core.model.NodeKind;
@@ -29,6 +32,7 @@ import sibarum.atchung.Subscription;
 import sibarum.atchung.Topic;
 
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
@@ -77,6 +81,13 @@ public final class Gui implements AutoCloseable {
     private final Node root;
     private final State<Viewport> viewport;
     private final Committer<Viewport, Viewport> setViewport;
+    // Computed-layout read-model (docs/layout-read-model.md): the latest snapshot workers read via Node.layout(),
+    // and the coalesced State observers subscribe to. Published after each layout pass.
+    private final State<LayoutSnapshot> layoutState;
+    private final Committer<LayoutSnapshot, LayoutSnapshot> setLayout;
+    private volatile LayoutSnapshot latestLayout = LayoutSnapshot.EMPTY;
+    private long layoutVersion;
+    private final LayoutReader layoutReader = () -> latestLayout;
     private float lastViewportW = -1f;
     private float lastViewportH = -1f;
     private volatile TextClipboard clipboard = new TextClipboard.InMemory();
@@ -129,12 +140,17 @@ public final class Gui implements AutoCloseable {
         this.setViewport = vb.mutation("set", (current, next) -> next);
         this.viewport = vb.build();
 
+        // Computed-layout read-model as a coalesced State (mirrors the viewport State): published on change.
+        State.Builder<LayoutSnapshot> lb = State.of(LayoutSnapshot.EMPTY);
+        this.setLayout = lb.mutation("set", (current, next) -> next);
+        this.layoutState = lb.build();
+
         Map<PropKey, Object> init = new EnumMap<>(PropKey.class);
         init.put(PropKey.DIRECTION, Direction.COLUMN);
         init.put(PropKey.WIDTH, Length.FILL);
         init.put(PropKey.HEIGHT, Length.FILL);
         sink.post(new Mutation.Create(rootId, NodeKind.BOX, init));
-        this.root = new Node(rootId, sink);
+        this.root = new Node(rootId, sink, layoutReader);
     }
 
     /** The Atchung bus this GUI publishes mutations, events, and (via a bridge) input on. */
@@ -145,6 +161,20 @@ public final class Gui implements AutoCloseable {
     /** The live window size as a bus {@code State} — subscribe with {@code gui.viewport().onCommit(...)}. */
     public State<Viewport> viewport() {
         return viewport;
+    }
+
+    /**
+     * The computed-layout read-model as a coalesced {@code State} (docs/layout-read-model.md): every node's
+     * position/size/scroll after layout, republished per changed frame. Subscribe to react to layout changes, or
+     * read a node's own via {@link Node#layout()}. The value is one frame stale (the framework's input latency).
+     */
+    public State<LayoutSnapshot> layout() {
+        return layoutState;
+    }
+
+    /** The latest computed-layout snapshot (never null). Backs {@link Node#layout()}; also useful to tests/tools. */
+    public LayoutSnapshot layoutSnapshot() {
+        return latestLayout;
     }
 
     /**
@@ -294,7 +324,7 @@ public final class Gui implements AutoCloseable {
         Map<PropKey, Object> init = new EnumMap<>(PropKey.class);
         init.put(PropKey.TEXT, s);
         sink.post(new Mutation.Create(id, NodeKind.TEXT, init));
-        return new Node(id, sink);
+        return new Node(id, sink, layoutReader);
     }
 
     private Node create(NodeKind kind, Direction dir) {
@@ -304,7 +334,7 @@ public final class Gui implements AutoCloseable {
             init.put(PropKey.DIRECTION, dir);
         }
         sink.post(new Mutation.Create(id, kind, init));
-        return new Node(id, sink);
+        return new Node(id, sink, layoutReader);
     }
 
     /** Run {@code work} on a worker thread (app logic stays off the GUI thread). */
@@ -343,8 +373,30 @@ public final class Gui implements AutoCloseable {
             reconciler.clearDirty();
             lastViewportW = viewportW;
             lastViewportH = viewportH;
+            // Publish the computed-layout read-model (docs/layout-read-model.md) — only when layout actually ran,
+            // so the coalesced State commits on change and static frames allocate nothing.
+            publishLayout(r);
         }
         return r;
+    }
+
+    /** Snapshot the freshly laid-out tree into an immutable {@link LayoutSnapshot} and publish it. */
+    private void publishLayout(RetainedNode root) {
+        Map<Long, NodeLayout> nodes = new HashMap<>();
+        collectLayout(root, nodes);
+        LayoutSnapshot snap = new LayoutSnapshot(++layoutVersion, nodes);
+        latestLayout = snap;             // volatile: Node.layout() reads this lock-free from any thread
+        layoutState.commit(setLayout, snap);
+    }
+
+    private static void collectLayout(RetainedNode n, Map<Long, NodeLayout> out) {
+        out.put(n.id, new NodeLayout(true,
+                new Rect(n.x, n.y, n.w, n.h),
+                new Rect(n.viewX, n.viewY, n.viewW, n.viewH),
+                n.scrollX, n.scrollY, n.contentW, n.contentH, n.overflowX, n.overflowY, n.textSizePx));
+        for (RetainedNode c : n.children) {
+            collectLayout(c, out);
+        }
     }
 
     @Override

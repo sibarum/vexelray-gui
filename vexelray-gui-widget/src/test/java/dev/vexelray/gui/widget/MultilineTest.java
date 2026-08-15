@@ -256,6 +256,40 @@ class MultilineTest {
         }
     }
 
+    /**
+     * The scrollbar/wrap circularity: reserving a vertical scrollbar narrows the content width, which makes
+     * wrapped children taller, which is more content to scroll. {@code contentH} must describe the children at
+     * the width they are actually laid out at — otherwise the scroll range stops short of the last line.
+     *
+     * <p>Harmless before text height depended on width; a real bug after it.
+     */
+    @Test
+    void aScrollContainerMeasuresItsChildrenAtTheWidthTheyAreLaidOutAt() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            dev.vexelray.gui.core.Node col = h.gui.column()
+                    .width(Length.vw(12.5f))     // 100px
+                    .height(Length.rem(2.5f));   // 40px — three wrapped labels will overflow it
+            var labels = new java.util.ArrayList<dev.vexelray.gui.core.Node>();
+            for (int i = 0; i < 3; i++) {
+                labels.add(h.gui.text("abcdefghijklmnop"));   // 16 chars
+            }
+            col.children(labels.toArray(new dev.vexelray.gui.core.Node[0]));
+            h.gui.root().children(col);
+            h.frame();
+
+            var box = col.layout();
+            assertTrue(box.overflowY(), "precondition: the column overflows and reserves a vertical scrollbar");
+
+            float drawn = 0f;
+            for (var child : labels) {
+                drawn += child.layout().rect().h();
+            }
+            assertTrue(box.contentH() >= drawn - 0.5f,
+                    "contentH=" + box.contentH() + " must cover the children's actual laid-out height " + drawn
+                            + " — the scroll range stops short otherwise");
+        }
+    }
+
     @Test
     void aTallDocumentScrollsVerticallyToFollowTheCaret() {
         try (HeadlessGui h = new HeadlessGui()) {

@@ -89,6 +89,16 @@ public final class FlexLayout {
         viewW = Math.max(0f, baseW - (overY ? sb : 0f));
         viewH = Math.max(0f, baseH - (overX ? sb : 0f));
 
+        // Re-measure at the reserved width. Wrapped text is height-for-width, so narrowing the box to make room
+        // for a scrollbar makes the content *taller* — measuring it at the pre-scrollbar width leaves the scroll
+        // range short by exactly the lines the narrowing added. This cannot oscillate: narrowing never shortens
+        // wrapped content, so a box that overflowed at the full width still overflows at the reserved one.
+        if (viewW < baseW - EPS || viewH < baseH - EPS) {
+            float[] reNeed = place(n, baseX, baseY, row ? viewW : viewH, row ? viewH : viewW, row, gap, ctx, tm);
+            neededW = row ? reNeed[0] : reNeed[1];
+            neededH = row ? reNeed[1] : reNeed[0];
+        }
+
         // Clamp the persisted scroll to the new content, then record the viewport/content/overflow for the renderer.
         n.scrollX = clamp(n.scrollX, 0f, Math.max(0f, neededW - viewW));
         float maxScrollY = Math.max(0f, neededH - viewH);

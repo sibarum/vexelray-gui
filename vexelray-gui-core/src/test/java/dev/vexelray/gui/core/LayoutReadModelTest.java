@@ -58,4 +58,39 @@ class LayoutReadModelTest {
             assertTrue(seen[0] >= 1, "observers receive the computed-layout snapshot via the State");
         }
     }
+
+    /**
+     * A resize relays out even with a clean tree, so it must also re-run the compute phase and republish — the
+     * geometry moved without any mutation to mark it dirty (docs/layout-read-model.md §2.3).
+     */
+    @Test
+    void resizingACleanTreeRepublishesTheSnapshot() {
+        try (Gui gui = new Gui(Atchung.create())) {
+            Node a = gui.box().width(Length.percent(50)).height(Length.rem(1));
+            gui.root().children(a);
+            gui.frame(200f, 100f, LayoutReadModelTest::noText);
+
+            long v1 = gui.layoutSnapshot().version();
+            assertEquals(100f, a.layout().rect().w(), 0.5f, "50% of a 200px viewport");
+
+            gui.frame(400f, 100f, LayoutReadModelTest::noText);   // resize only — no mutation, tree is clean
+
+            assertTrue(gui.layoutSnapshot().version() > v1, "a resize republishes the read-model");
+            assertEquals(200f, a.layout().rect().w(), 0.5f, "and the republished box reflects the new viewport");
+        }
+    }
+
+    /** A static frame publishes nothing: the coalesced State still commits only on change. */
+    @Test
+    void staticFramePublishesNothing() {
+        try (Gui gui = new Gui(Atchung.create())) {
+            gui.root().children(gui.box().width(Length.rem(1)).height(Length.rem(1)));
+            gui.frame(200f, 100f, LayoutReadModelTest::noText);
+
+            long v = gui.layoutSnapshot().version();
+            gui.frame(200f, 100f, LayoutReadModelTest::noText);
+
+            assertEquals(v, gui.layoutSnapshot().version(), "nothing changed, so nothing is republished");
+        }
+    }
 }

@@ -46,6 +46,56 @@ Two flows, one fabric, separated by direction:
 
 This is command/query separation: commands go up, a computed read-model comes down, both as bus traffic.
 
+### 2.1 Three tiers, one writer each
+
+Command/query separation answers *who may write the model*. It does not by itself say *who **computes** derived
+values* — and that gap is where every ad-hoc seam has appeared: caret-follow scroll wrote from the renderer, and
+the first draft of §11.3 merely moved that write into publish. Naming the missing tier closes the gap:
+
+| Tier | Contents | Written by | Phase |
+|---|---|---|---|
+| **Authored props** | text, caret, selection, editable, **scroll intent** | worker → `Mutation` → `pump.drain()` | command |
+| **Derived geometry** | `rect`, `content`, `contentW/H`, `overflow`, **effective scroll**, **text metrics**, gutter width | the layout pass | compute |
+| **Read-model** | `LayoutSnapshot` | `publishLayout` — a pure copy | publish |
+
+**Compute in the layout phase, copy in the publish phase, read everywhere else.** Renderers and widgets never
+write; `publishLayout` never computes.
+
+This adds no new concept. `FlexLayout.layout()` already writes `x/y/w/h`, `viewX/viewY`, `contentW/H` and
+`overflow` into `RetainedNode` — on the GUI thread, in the write phase, and nobody calls that a violation.
+"Derived geometry" is simply that category, named. Anything that is a pure function of (authored props +
+viewport + measurer) belongs to it, so "where does this new computed value go?" has a mechanical answer instead
+of a judgement call.
+
+### 2.2 Scroll is a staged pipeline value, not a second model
+
+Scroll looks like it has two owners — the user (wheel, scrollbar drag) and the caret (follow-to-keep-in-view) —
+which is what made it feel homeless. It doesn't. Both writers run **on the GUI thread, in a fixed phase order**,
+and the model already works this way:
+
+```
+ dispatch ─proposes─▶ scrollX ─constrains─▶ scrollX ─copies─▶ snapshot ─reads─▶ renderer
+ (InputDispatcher)              (layout/compute)              (publish)
+```
+
+`InputDispatcher` writes the offset on a wheel or scrollbar drag; `FlexLayout` then clamps it to the content and
+applies scroll-lock. One field, written by successive stages, each narrowing the last — no concurrency, no
+ambiguity. Caret-follow is simply another constraint belonging to the compute stage, and the renderer's only
+error was acting as a stage at all.
+
+So there is **no intent/effective split and no feedback `Mutation`**: an earlier draft of this section proposed
+both, before it was clear that `FlexLayout` already clamps in place. A second field and a convergence argument
+would buy nothing over the pipeline the code already has. The rule is just: *scroll is written by the dispatch
+and compute stages, in that order, and by nobody else.*
+
+### 2.3 `layoutDirty` splits in two
+
+Scroll, caret and selection changes must re-run compute + publish **without** re-running flex; text, size and
+structure changes must re-run both. The reconciler therefore carries two flags: `geometryDirty` (recompute
+derived geometry, republish) and `layoutDirty` (relayout, which implies `geometryDirty`). This makes "static
+frames allocate nothing" finer-grained rather than coarser — a caret move republishes geometry without a
+relayout, and a genuinely static frame still does neither.
+
 ---
 
 ## 3. What a widget sees
@@ -160,6 +210,9 @@ share what `TreeRenderer` already computes for drawing.
   it.
 - **Never** leak a live `RetainedNode` or a measurer into the snapshot — that breaks both the single-writer model
   and transport.
+- **Never** compute in `publishLayout`, and never write the model from a renderer or a widget (§2.1). If a value
+  needs computing it belongs to the compute phase; arithmetic appearing in publish is arithmetic in the wrong
+  phase. This is the rule that would have caught the caret-follow scroll seam before it was written twice.
 
 ---
 
@@ -170,15 +223,20 @@ share what `TreeRenderer` already computes for drawing.
 2. **Text metrics.** Add `NodeLayout.text()` (line spans + advances as data), computed at publish via the measurer.
 3. **Refactor click** onto `node.layout().text().offsetAt(...)`; delete `onCaretHit`/`onCaretDrag`.
 4. **Multiline + wrap + Up/Down** as pure widget code on the read-model — the original goal, with no ad-hoc seams.
-   See §11 for the concrete build spec.
+   Preceded by **4·0, the compute phase** (§2.1–2.3) — *landed*: `Gui.resolveGeometry` now owns all derived
+   geometry, `publishLayout` is a pure copy, `TreeRenderer.updateHScroll` is gone, and `geometryDirty` lets a
+   caret move republish without a reflow. See §11 for the concrete build spec.
 
 ---
 
 ## 11. Step 4 build spec — multiline + word wrap + line numbers
 
-Status: **ready to implement** (steps 1–3 landed: read-model boxes, text metrics, click via `onDrag`). This is
-the execution plan so a fresh session needs no re-derivation. Build order is 4a (multiline + wrap) → 4b (line
-numbers); font selection stays parked behind the multi-atlas engine work
+Status: **ready to implement** (steps 1–3 and **4·0** landed: read-model boxes, text metrics, click via `onDrag`,
+and the compute phase). This is
+the execution plan so a fresh session needs no re-derivation. Build order is **4·0 (the compute phase — §2.1–2.3:
+`resolveGeometry`, scroll intent/effective split, `geometryDirty`) → 4a (multiline + wrap) → 4b (line numbers)**.
+4·0 came first because it was separately provable: `CaretScrollTest` was red before it and green after, with no
+multiline code involved. Font selection stays parked behind the multi-atlas engine work
 ([[project-font-atlas-registry]] / keyboard-focus-text.md §5).
 
 ### 11.1 Model (core)
@@ -199,30 +257,50 @@ default java.util.List<dev.vexelray.text.TextLayout.LineSpan> lineSpans(String t
 - `HeadlessGui` stub implements a monospace version (split on `\n`, wrap by `floor(width / CELL)`), so multiline
   is testable headless.
 
-### 11.3 Multi-line `TextMetrics` at publish (core) — the crux
-Rewrite `Gui.textMetrics(n, tm)` (currently single-line) to build one `VisualLine` per `lineSpans` entry, and to
-**resolve caret-follow scroll here** (not in the renderer — see 11.4). Sequence per text node:
+### 11.3 Multi-line `TextMetrics` in the compute phase (core) — the crux
+Derived geometry gets its own pass: `resolveGeometry(root, tm)`, run immediately after `FlexLayout.layout(...)`
+in `Gui.frame`, writing effective scroll and `n.textMetrics` onto the retained tree (§2.1). `collectLayout` then
+becomes a pure copy — it reads `n.textMetrics` instead of calling `Gui.textMetrics(n, tm)`.
+
+Within that pass, rewrite the metrics builder (currently single-line) to emit one `VisualLine` per `lineSpans`
+entry. Sequence per text node:
 1. `pad = min(TextMetrics.PAD_X, w*0.25)`; `gutter = 0` (4a) or line-number width (4b); `contentLeft = x + pad +
    gutter`; `viewW = w - 2*pad - gutter`; `viewH = h - 2*pad_v` (top-aligned for multiline).
 2. `wrapWidth = wordWrap ? viewW : 0`; `lines = tm.lineSpans(text, wrapWidth, px)`; `adv = tm.caretAdvances(text, px)`
    (whole-string cumulative); `lineH = tm.intrinsic(n, VERTICAL, px)`.
 3. Find the caret's visual line (`last line with start ≤ caret`) and its x (`contentLeft + adv[caret] -
    adv[line.start]`).
-4. **Resolve scroll** on the node (mutating `n.scrollX/scrollY`):
-   - vertical (multiline): keep caret line in `[0, viewH)` → `scrollY` clamps so `caretLineIndex*lineH` is visible.
+4. **Constrain scroll** (§2.2) — narrow whatever the dispatch stage left on the node, then clamp:
+   - vertical (multiline): keep caret line in `[0, viewH)` → clamps so `caretLineIndex*lineH` is visible.
    - horizontal: only when **not** wrapping → keep caret x in `[0, viewW)`; when wrapping, `scrollX = 0`.
+   - Once multiline makes a text node genuinely wheel-scrollable, follow must run **on caret change only**
+     (`geometryDirty`, §2.3), or the view snaps back to the caret the instant the user wheels away from it,
+     which no editor does. Clamping runs always. This is deferred to 4a rather than built in 4·0: a single-line
+     field has no other scroll source, so unconditional follow and follow-on-caret-change are observationally
+     identical today, and the refinement would ship untestable.
 5. Bake absolute geometry: for line *i*, `top = contentTop + i*lineH - scrollY`; `xs[j] = contentLeft +
    (adv[start+j] - adv[start]) - scrollX`. Single-line keeps its centered `top` (unchanged behavior).
-6. Emit `TextMetrics(lines)`; store on `RetainedNode.textMetrics` (new transient field) **and** in the snapshot.
-   The multi-line query methods (`offsetAt`, `offsetAbove/Below`, `lineStart/End`) already exist on `TextMetrics`.
+6. Emit `TextMetrics(lines)` onto `RetainedNode.textMetrics` (new transient field); publish then *copies* it into
+   the snapshot (§2.1). The multi-line query methods (`offsetAt`, `offsetAbove/Below`, `lineStart/End`) already
+   exist on `TextMetrics`.
 
 ### 11.4 Renderer unification (core) — one source of truth
 Rewrite `TreeRenderer`'s text section to draw **from `n.textMetrics`** instead of recomputing:
 - Draw each `VisualLine`'s substring at `(line.xs[0], line.top)`, `WrapMode.NONE`, `HAlign.LEFT`, height `line.height`.
 - Spans / selection / caret use the line `xs` (already absolute), extended to multi-line (per-line rects).
-- **Delete `updateHScroll` from the renderer** — scroll is now resolved in publish (11.3), so the renderer is a
-  pure consumer. This removes the last place the renderer mutates model state, and removes the h/v-scroll
-  inconsistency flagged in this session.
+- ~~**Delete `updateHScroll` from the renderer**~~ — **done in 4·0.** Scroll is resolved in the compute phase
+  (`Gui.resolveTextGeometry`), so the renderer is a pure consumer and no longer mutates model state.
+
+  This was not a tidiness change. `TreeRenderer.emit` is called only from `GuiApp`, so caret-follow scroll had
+  existed *only when a Vulkan renderer was attached* — a headless host or a remote client ran a field that never
+  scrolled. `CaretScrollTest` pinned two consequences, both red before the move and green after:
+  - a field with 20 chars in an 80px box reported its caret at x=210, outside its own box;
+  - clicking at x=40 in that field returned offset **3** where the pointer was over offset **17** — the published
+    `xs` were baked with scroll S₀ while the renderer drew at S₁, and with layout clean it never republished.
+
+  The second was a live click-to-caret bug in any horizontally scrolled field, not just a headless artifact.
+  Both are the C1 claim of `architecture-proof-plan.md` ("widget code unchanged across hosts") made concrete, so
+  they must stay green through M4.
 - Keep the content-box `pushClip`; add the vertical clip for multiline.
 
 ### 11.5 Widget (TextField)
@@ -243,6 +321,14 @@ Rewrite `TreeRenderer`'s text section to draw **from `n.textMetrics`** instead o
   in the gutter; wrapped continuation lines get no number.
 
 ### 11.7 Tests (headless harness — deterministic)
+- **4·0 (landed, green):** `CaretScrollTest` — the caret stays inside an overflowing field; a click in a scrolled
+  field hits the character under the pointer; a caret move republishes geometry with no reflow. Plus
+  `LayoutReadModelTest.resizingACleanTreeRepublishesTheSnapshot` / `staticFramePublishesNothing`, which pin the
+  two edges of the `geometryDirty` condition — a resize has no dirty mutation to ride on, and a static frame must
+  still publish nothing.
+- **4a:** wheel-scrolling away from the caret is *not* undone on the next frame, but *is* on the next caret move
+  (the follow-on-caret-change rule, 11.3 step 4) — writable once multiline gives a text node a second scroll
+  source.
 - `Enter` inserts a newline in multiline; is ignored / submits in single-line.
 - Up/Down move between lines; desired-column sticks across a short line (type `long`\n`x`\n`long`, Up from end of
   line 3 lands past `x`).

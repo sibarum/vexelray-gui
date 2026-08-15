@@ -50,4 +50,15 @@ public enum PropKey {
     public boolean layoutAffecting() {
         return layoutAffecting;
     }
+
+    /**
+     * Whether a change to this prop invalidates <b>derived geometry</b> (docs/layout-read-model.md §2.1–2.3) — so
+     * the compute phase must re-run and the read-model republish, even when the flex layout itself is unchanged.
+     * Every layout-affecting prop qualifies. {@link #CARET} additionally does, because caret-follow scroll (and
+     * therefore the baked caret x positions) is a function of it: moving the caret with an arrow key reflows
+     * nothing, but it does move the view.
+     */
+    public boolean geometryAffecting() {
+        return layoutAffecting || this == CARET;
+    }
 }

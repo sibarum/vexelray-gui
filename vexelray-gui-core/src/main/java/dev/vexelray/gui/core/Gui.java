@@ -2,6 +2,7 @@ package dev.vexelray.gui.core;
 
 import dev.vexelray.gui.core.layout.FlexLayout;
 import dev.vexelray.gui.core.layout.LayoutContext;
+import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
 import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
 import dev.vexelray.gui.core.layout.LayoutSnapshot;
 import dev.vexelray.gui.core.layout.Length;
@@ -21,6 +22,7 @@ import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.input.KeyEvent;
 import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.model.RetainedNode;
+import dev.vexelray.gui.core.text.TextMetrics;
 import sibarum.tactroller.api.Key;
 import sibarum.tactroller.api.Modifier;
 import sibarum.atchung.Atchung;
@@ -33,6 +35,7 @@ import sibarum.atchung.Topic;
 
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
@@ -349,66 +352,106 @@ public final class Gui implements AutoCloseable {
             // see the same value this frame.
             viewport.commit(setViewport, new Viewport(Math.round(viewportW), Math.round(viewportH)));
         }
-        if (r != null && (reconciler.layoutDirty() || viewportChanged)) {
-            FlexLayout.layout(r, viewportW, viewportH, LayoutContext.of(viewportW, viewportH), tm);
+        if (r != null) {
+            boolean layoutRan = reconciler.layoutDirty() || viewportChanged;
+            if (layoutRan) {
+                FlexLayout.layout(r, viewportW, viewportH, LayoutContext.of(viewportW, viewportH), tm);
+                lastViewportW = viewportW;
+                lastViewportH = viewportH;
+            }
+            // The compute phase (docs/layout-read-model.md §2.1): resolve everything that is a pure function of the
+            // laid-out tree — caret-follow scroll, text metrics — then publish. It runs whenever the geometry could
+            // have moved, which includes a caret move that reflows nothing, and it runs in *every* host: this is
+            // what makes a field behave identically headless, on screen, and over the wire. Static frames do
+            // neither, so the coalesced State still commits only on change.
+            if (layoutRan || reconciler.geometryDirty()) {
+                resolveGeometry(r, tm);
+                publishLayout(r);
+            }
             reconciler.clearDirty();
-            lastViewportW = viewportW;
-            lastViewportH = viewportH;
-            // Publish the computed-layout read-model (docs/layout-read-model.md) — only when layout actually ran,
-            // so the coalesced State commits on change and static frames allocate nothing.
-            publishLayout(r, tm);
         }
         return r;
     }
 
-    /** Snapshot the freshly laid-out tree into an immutable {@link LayoutSnapshot} and publish it. */
-    private void publishLayout(RetainedNode root, TextMeasurer tm) {
-        Map<Long, NodeLayout> nodes = new HashMap<>();
-        collectLayout(root, nodes, tm);
-        LayoutSnapshot snap = new LayoutSnapshot(++layoutVersion, nodes);
-        latestLayout = snap;             // volatile: Node.layout() reads this lock-free from any thread
-        layoutState.commit(setLayout, snap);
-    }
-
-    private static void collectLayout(RetainedNode n, Map<Long, NodeLayout> out, TextMeasurer tm) {
-        out.put(n.id, new NodeLayout(true,
-                new Rect(n.x, n.y, n.w, n.h),
-                new Rect(n.viewX, n.viewY, n.viewW, n.viewH),
-                n.scrollX, n.scrollY, n.contentW, n.contentH, n.overflowX, n.overflowY, n.textSizePx,
-                textMetrics(n, tm)));
+    /**
+     * The compute phase: walk the laid-out tree and write each node's derived geometry onto it. Runs on the GUI
+     * thread, after layout and before publish, and is the <b>only</b> stage allowed to compute it — publish copies,
+     * renderers and widgets read (docs/layout-read-model.md §2.1).
+     */
+    private static void resolveGeometry(RetainedNode n, TextMeasurer tm) {
+        if (n.kind == NodeKind.TEXT) {
+            resolveTextGeometry(n, tm);
+        }
         for (RetainedNode c : n.children) {
-            collectLayout(c, out, tm);
+            resolveGeometry(c, tm);
         }
     }
 
     /**
-     * Bake a text node's caret geometry into the read-model as absolute-space data (single visual line for now;
-     * wrapped/multiline lines come with that feature). Returns null for non-text nodes or when the measurer has
-     * no glyph metrics (e.g. a headless stub without an atlas).
+     * Resolve one text node's scroll and caret geometry. Scroll is narrowed first — an editable field keeps its
+     * caret in view, then clamps to the content — and the caret x positions are baked afterwards <em>with that
+     * scroll applied</em>, so the metrics a widget reads describe exactly what the renderer draws. Getting that
+     * order wrong is what made click-to-caret miss in a scrolled field (CaretScrollTest).
      */
-    private static dev.vexelray.gui.core.text.TextMetrics textMetrics(RetainedNode n, TextMeasurer tm) {
-        if (n.kind != NodeKind.TEXT) {
-            return null;
-        }
+    private static void resolveTextGeometry(RetainedNode n, TextMeasurer tm) {
+        n.textMetrics = null;
         String s = n.textString();
         if (s == null || s.isEmpty()) {
-            return null;
+            n.scrollX = 0f;   // a field emptied after scrolling must snap back to its origin
+            return;
         }
-        float px = n.textSizePx;
-        float[] adv = tm.caretAdvances(s, px);
+        float[] adv = tm.caretAdvances(s, n.textSizePx);
         if (adv == null) {
-            return null;
+            return;           // a measurer with no glyph metrics (an atlas-less stub) — nothing to resolve
         }
-        float pad = Math.min(dev.vexelray.gui.core.text.TextMetrics.PAD_X, n.w * 0.25f);
+        float pad = Math.min(TextMetrics.PAD_X, n.w * 0.25f);
+        float viewW = Math.max(1f, n.w - 2f * pad);
+
+        // Caret-follow scroll. This lived in TreeRenderer.updateHScroll, which only ever ran from GuiApp — so the
+        // behaviour existed only when a Vulkan renderer was attached, and neither a headless host nor a remote
+        // client had it. It is derived geometry, so it belongs here, where every host reaches it.
+        if (n.editable()) {
+            int caret = n.caret();
+            if (caret >= 0) {
+                float caretRel = adv[Math.max(0, Math.min(caret, s.length()))];
+                if (caretRel - n.scrollX > viewW) {
+                    n.scrollX = caretRel - viewW;
+                }
+                if (caretRel - n.scrollX < 0f) {
+                    n.scrollX = caretRel;
+                }
+            }
+            n.scrollX = Math.max(0f, Math.min(n.scrollX, Math.max(0f, adv[s.length()] - viewW)));
+        }
+
         float originX = n.x + pad - n.scrollX;
         float[] xs = new float[adv.length];
         for (int i = 0; i < adv.length; i++) {
             xs[i] = originX + adv[i];
         }
-        float lineH = tm.intrinsic(n, dev.vexelray.gui.core.layout.LayoutEnums.Axis.VERTICAL, px);
-        float top = n.y + (n.h - lineH) * 0.5f;
-        var line = new dev.vexelray.gui.core.text.TextMetrics.VisualLine(0, s.length(), top, lineH, xs);
-        return new dev.vexelray.gui.core.text.TextMetrics(java.util.List.of(line));
+        float lineH = tm.intrinsic(n, Axis.VERTICAL, n.textSizePx);
+        float top = n.y + (n.h - lineH) * 0.5f;   // single line, vertically centred; multiline tops out (§11.3)
+        n.textMetrics = new TextMetrics(List.of(new TextMetrics.VisualLine(0, s.length(), top, lineH, xs)));
+    }
+
+    /** Copy the resolved tree into an immutable {@link LayoutSnapshot} and publish it. A pure copy — no arithmetic. */
+    private void publishLayout(RetainedNode root) {
+        Map<Long, NodeLayout> nodes = new HashMap<>();
+        collectLayout(root, nodes);
+        LayoutSnapshot snap = new LayoutSnapshot(++layoutVersion, nodes);
+        latestLayout = snap;             // volatile: Node.layout() reads this lock-free from any thread
+        layoutState.commit(setLayout, snap);
+    }
+
+    private static void collectLayout(RetainedNode n, Map<Long, NodeLayout> out) {
+        out.put(n.id, new NodeLayout(true,
+                new Rect(n.x, n.y, n.w, n.h),
+                new Rect(n.viewX, n.viewY, n.viewW, n.viewH),
+                n.scrollX, n.scrollY, n.contentW, n.contentH, n.overflowX, n.overflowY, n.textSizePx,
+                n.textMetrics));
+        for (RetainedNode c : n.children) {
+            collectLayout(c, out);
+        }
     }
 
     @Override

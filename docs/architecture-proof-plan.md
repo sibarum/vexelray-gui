@@ -15,7 +15,7 @@ test, automated, with a hard separation-of-concerns contract and a native-image 
 
 | # | Claim | How it's proven |
 |---|---|---|
-| **C1** | **Transport-agnostic.** Widget + GUI-core code is *unchanged* whether the bus is in-VM or bridged to a remote peer. | The same headless TextField scenarios pass with events crossing an `ElektroBridge` (M4). |
+| **C1** | **Transport-agnostic.** Widget + GUI-core code is *unchanged* whether the bus is in-VM or bridged to a remote peer. | The same headless TextField scenarios pass with events crossing an `ElektroBridge` (M4). **Precondition:** no behaviour may live in the renderer — `CaretScrollTest` currently proves some does (layout-read-model.md §11.4), and must be green before M4 means anything. |
 | **C2** | **Always-fastest.** Enabling remote transport adds *zero* cost to the in-VM path. | Structural (dependency test, M0) + a micro-benchmark: in-VM publish/deliver latency is unchanged with a bridge attached to unrelated topics (M-perf). |
 | **C3** | **Transports are logically correct**, including under adverse networks. | One conformance suite run against every transport (`local`/`uds`/`tcp`/`udp`), and under `SimTransport` loss/latency/reorder (M2). |
 | **C4** | **The read-model reconstructs over the wire** — a peer with no atlas rebuilds GUI state and round-trips input. | A remote consumer rebuilds `LayoutSnapshot` and drives the field via bridged input (M4); visual thin client (M5). |
@@ -50,6 +50,10 @@ Rules the architecture test asserts:
    to/from them. This keeps `gui-core` decoupled from the wire and lets the DTOs version independently.
 3. **`atchung-core` has no dependency on `elektroq`** and vice-versa — the bridge is the only meeting point, so
    "the fast in-VM path never pays for the network" is structural, not disciplined.
+4. **Only the compute phase writes derived geometry** (layout-read-model.md §2.1): `TreeRenderer` and the widget
+   module never assign to a `RetainedNode` field, and `publishLayout` only copies. Partly mechanical — the test
+   can assert that no class outside the geometry pass writes `RetainedNode` state — and it is what keeps C1
+   honest, since behaviour that lives in the renderer cannot survive a host that has no renderer.
 
 The test is cheap (parse module POMs / package imports) and, once in place, guards C5 permanently.
 

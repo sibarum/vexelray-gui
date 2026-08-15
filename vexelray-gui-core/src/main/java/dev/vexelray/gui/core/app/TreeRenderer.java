@@ -94,13 +94,13 @@ public final class TreeRenderer {
         java.util.List<Span> spans = hasText ? n.spans() : java.util.List.of();
 
         // A single-line editable field masks overflow and scrolls horizontally to keep the caret in view — it
-        // never grows a scrollbar or spills past its edge, i.e. it behaves like a normal text field. The scroll
-        // offset persists on the node (nothing else touches a text leaf's scrollX).
+        // never grows a scrollbar or spills past its edge, i.e. it behaves like a normal text field. The offset
+        // is resolved by the compute phase (Gui.resolveTextGeometry, docs/layout-read-model.md §2.1-2.2); the
+        // renderer only reads it, so the field scrolls the same way with no renderer attached at all.
         boolean clip = n.editable();
         float viewW = Math.max(1f, n.w - 2 * pad);
         float originX = n.x + pad;
         if (clip) {
-            updateHScroll(n, s == null ? "" : s, viewW, text);
             originX -= n.scrollX;
             canvas.pushClip(n.x + pad, n.y, viewW, n.h, 0f);
         }
@@ -157,28 +157,6 @@ public final class TreeRenderer {
         if (clip) {
             canvas.popClip();
         }
-    }
-
-    /**
-     * Keep the caret within the view of an editable single-line field by adjusting the persisted horizontal
-     * scroll: scroll right when the caret runs past the right edge, left when it precedes the origin, and clamp
-     * so the field never scrolls past its content.
-     */
-    private static void updateHScroll(RetainedNode n, String s, float viewW, TextLayout text) {
-        float px = n.textSizePx;
-        int caret = n.caret();
-        if (caret >= 0) {
-            int c = Math.max(0, Math.min(caret, s.length()));
-            float caretX = text.glyphLayout().measure(s.substring(0, c), px);
-            if (caretX - n.scrollX > viewW) {
-                n.scrollX = caretX - viewW;
-            }
-            if (caretX - n.scrollX < 0) {
-                n.scrollX = caretX;
-            }
-        }
-        float maxScroll = Math.max(0f, text.glyphLayout().measure(s, px) - viewW);
-        n.scrollX = Math.max(0f, Math.min(n.scrollX, maxScroll));
     }
 
     /** X (px, absolute) of the caret position before character {@code offset}, from the (scrolled) text origin. */

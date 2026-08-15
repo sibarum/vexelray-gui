@@ -41,8 +41,10 @@ public final class RetainedNode {
     public float cornerPx;
     public float textSizePx = 16f;
 
-    // Scroll state: scrollX/Y persist across frames (adjusted by wheel + scrollbar drag, clamped by layout). The
-    // rest is layout-computed: whether each axis overflows, the clipped content viewport, and the full content size.
+    // Scroll state: scrollX/Y persist across frames. A staged pipeline value (docs/layout-read-model.md §2.2) —
+    // the dispatch stage proposes an offset (wheel, scrollbar drag), the compute stage narrows it (caret-follow,
+    // clamp to content, scroll-lock), and everything downstream only reads. The rest is layout-computed: whether
+    // each axis overflows, the clipped content viewport, and the full content size.
     public float scrollX;
     public float scrollY;
     public boolean overflowX;
@@ -58,6 +60,12 @@ public final class RetainedNode {
     // attached so a freshly-built locked scroller opens at its edge; the dispatcher detaches/re-attaches it
     // as the user scrolls away from and back onto the edge.
     public boolean scrollAttached = true;
+
+    // Derived geometry for a text node: the caret/line metrics the compute phase bakes each changed frame, which
+    // publish then copies into the read-model verbatim (docs/layout-read-model.md §2.1). Null for a non-text node,
+    // for empty text, or when the measurer has no glyph metrics. Never serialized from here — it is model-side
+    // scratch, and the snapshot's copy is the transport-visible one.
+    public dev.vexelray.gui.core.text.TextMetrics textMetrics;
 
     public RetainedNode(long id, NodeKind kind) {
         this.id = id;

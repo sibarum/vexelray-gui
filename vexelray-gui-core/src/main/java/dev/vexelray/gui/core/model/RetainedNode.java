@@ -67,6 +67,11 @@ public final class RetainedNode {
     // scratch, and the snapshot's copy is the transport-visible one.
     public dev.vexelray.gui.core.text.TextMetrics textMetrics;
 
+    // The caret offset the view last scrolled to follow. Caret-follow runs only when the caret has *moved*, so a
+    // user who scrolls the field away from the caret (wheel, dragging the scrollbar) keeps their position instead
+    // of being snapped back every frame. Clamping still runs unconditionally.
+    public int caretFollowed = Integer.MIN_VALUE;
+
     public RetainedNode(long id, NodeKind kind) {
         this.id = id;
         this.kind = kind;
@@ -232,6 +237,11 @@ public final class RetainedNode {
 
     /** Whether horizontal overflow may scroll (default true = auto scrollbar). */
     public boolean scrollXAllowed() {
+        // Wrapped text never scrolls horizontally: there is nothing to the right of a wrapped line to reach, so
+        // an h-scrollbar there would be chrome for an axis that cannot move.
+        if (kind == NodeKind.TEXT && wrapsText()) {
+            return false;
+        }
         Object v = props.get(PropKey.SCROLL_X);
         return !(v instanceof Boolean b) || b;
     }

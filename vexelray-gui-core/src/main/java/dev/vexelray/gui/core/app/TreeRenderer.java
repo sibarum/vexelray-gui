@@ -142,9 +142,9 @@ public final class TreeRenderer {
      */
     private static void drawField(RetainedNode n, String s, boolean hasText, java.util.List<Span> spans, float pad,
                                   Canvas canvas, TextLayout text) {
-        // Mask overflow: a field never grows a scrollbar or spills past its edge. Multi-line clips vertically too.
-        float viewW = Math.max(1f, n.w - 2 * pad);
-        canvas.pushClip(n.x + pad, n.y, viewW, n.h, 0f);
+        // Mask overflow to the viewport the layout resolved — which excludes the h-scrollbar strip when there is
+        // one, so text never draws underneath the bar. Multi-line clips vertically too.
+        canvas.pushClip(n.viewX, n.viewY, Math.max(1f, n.viewW), Math.max(1f, n.viewH), 0f);
 
         TextMetrics m = n.textMetrics;
         if (hasText && m != null) {

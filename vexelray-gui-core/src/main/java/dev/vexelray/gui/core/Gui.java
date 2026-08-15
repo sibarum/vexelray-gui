@@ -408,7 +408,9 @@ public final class Gui implements AutoCloseable {
             return;           // a measurer with no glyph metrics (an atlas-less stub) — nothing to resolve
         }
         float pad = Math.min(TextMetrics.PAD_X, n.w * 0.25f);
-        float viewW = TextMetrics.contentWidth(n.w);
+        // The viewport layout resolved for this node (FlexLayout.layoutTextLeaf) — viewH excludes any h-scrollbar
+        // strip, so text never runs underneath the bar.
+        float viewW = n.viewW > 0f ? n.viewW : TextMetrics.contentWidth(n.w);
         float lineH = tm.intrinsic(n, Axis.VERTICAL, px);
         boolean multiline = n.multiline();
         boolean wraps = n.wrapsText();
@@ -419,7 +421,8 @@ public final class Gui implements AutoCloseable {
         // Where the caret sits, in line-relative terms: everything below is expressed against this.
         int caret = n.caret();
         int caretLine = caret < 0 ? 0 : lineIndexOf(spans, caret);
-        float viewH = Math.max(1f, n.h - 2f * TextMetrics.PAD_Y);
+        float boxH = n.viewH > 0f ? n.viewH : n.h;
+        float viewH = Math.max(1f, boxH - 2f * TextMetrics.PAD_Y);
 
         if (n.editable()) {
             resolveTextScroll(n, adv, spans, caret, caretLine, lineH, viewW, viewH, wraps, multiline);
@@ -431,7 +434,7 @@ public final class Gui implements AutoCloseable {
         float contentLeft = n.x + pad - n.scrollX;
         float contentTop = multiline
                 ? n.y + TextMetrics.PAD_Y - n.scrollY
-                : n.y + (n.h - spans.size() * lineH) * 0.5f;
+                : n.y + (boxH - spans.size() * lineH) * 0.5f;
         List<TextMetrics.VisualLine> lines = new ArrayList<>(spans.size());
         for (int i = 0; i < spans.size(); i++) {
             var span = spans.get(i);
@@ -453,10 +456,16 @@ public final class Gui implements AutoCloseable {
                                           List<dev.vexelray.text.TextLayout.LineSpan> spans, int caret,
                                           int caretLine, float lineH, float viewW, float viewH,
                                           boolean wraps, boolean multiline) {
+        // Follow the caret only when it has *moved*. A field that reports overflow is wheel- and drag-scrollable
+        // like any other scroller, so following every frame would drag the view back to the caret the instant the
+        // user scrolled away from it. Clamping still runs unconditionally.
+        boolean caretMoved = caret != n.caretFollowed;
+        n.caretFollowed = caret;
+
         if (wraps) {
             n.scrollX = 0f;
         } else {
-            if (caret >= 0) {
+            if (caret >= 0 && caretMoved) {
                 var line = spans.get(caretLine);
                 float caretRel = adv[clamp(caret, line.start(), line.end())] - adv[line.start()];
                 if (caretRel - n.scrollX > viewW) {
@@ -477,7 +486,7 @@ public final class Gui implements AutoCloseable {
             n.scrollY = 0f;
             return;
         }
-        if (caret >= 0) {
+        if (caret >= 0 && caretMoved) {
             float caretTop = caretLine * lineH;
             if (caretTop + lineH - n.scrollY > viewH) {
                 n.scrollY = caretTop + lineH - viewH;

@@ -205,6 +205,12 @@ final class HeadlessGui implements AutoCloseable {
         return frame();
     }
 
+    /** Publish a wheel scroll of {@code (dx, dy)} notches with the pointer at (x, y), then step a frame. */
+    HeadlessGui wheel(double dx, double dy, float x, float y) {
+        bus.publish(InputTopics.INPUT, new InputEvent.Scrolled(dx, dy, (int) x, (int) y, 0));
+        return frame();
+    }
+
     /** Left-click at absolute (x, y): press + release, dispatched over a frame. */
     HeadlessGui click(float x, float y) {
         bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, (int) x, (int) y, 0));

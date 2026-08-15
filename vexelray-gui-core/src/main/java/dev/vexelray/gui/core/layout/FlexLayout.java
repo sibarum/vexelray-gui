@@ -51,6 +51,10 @@ public final class FlexLayout {
 
         List<RetainedNode> kids = n.children;
         if (kids.isEmpty()) {
+            if (n.kind == NodeKind.TEXT) {
+                layoutTextLeaf(n, ctx, tm);
+                return;
+            }
             n.overflowX = false;
             n.overflowY = false;
             n.viewX = n.x;
@@ -247,6 +251,54 @@ public final class FlexLayout {
             cursor += 2f * mMain + ms + gap + extraGap;
         }
         return new float[]{used, neededCross};
+    }
+
+    /**
+     * A text leaf's own viewport, content extent and overflow — the same job {@link #layoutBox} does for a
+     * container, for the one leaf kind that has content of its own.
+     *
+     * <p>Only <b>unwrapped</b> text can overflow horizontally: wrapping means there is nothing to the right of a
+     * line to scroll to, so {@code scrollXAllowed} is already false there. Vertical text scrolling remains
+     * caret-follow only — {@code contentH} stays 0 until text leaves become vertical scroll citizens too.
+     */
+    private static void layoutTextLeaf(RetainedNode n, LayoutContext ctx, TextMeasurer tm) {
+        float pad = Math.min(TextMetrics.PAD_X, n.w * 0.25f);
+        float textW = TextMetrics.contentWidth(n.w);
+        float widest = widestLine(n, textW, n.textSizePx, tm);
+        boolean overX = n.scrollXAllowed() && widest > textW + EPS;
+        float sb = scrollbarThickness(ctx);
+
+        n.overflowX = overX;
+        n.overflowY = false;
+        n.scrollbarPx = sb;
+        n.viewX = n.x + pad;
+        n.viewY = n.y;
+        n.viewW = textW;
+        // The h-scrollbar takes its strip from this node's own height for now; moving that cost out to the parent
+        // is the separate change (rule 2) that stops one scrollbar from ever inducing the other.
+        n.viewH = Math.max(0f, n.h - (overX ? sb : 0f));
+        n.contentW = widest;
+        n.contentH = 0f;
+    }
+
+    /**
+     * The widest visual line in px, measured through the same {@code lineSpans} seam the compute phase and the
+     * renderer use — so the overflow decision and the lines actually drawn cannot disagree.
+     */
+    private static float widestLine(RetainedNode n, float textW, float px, TextMeasurer tm) {
+        String s = n.textString();
+        if (s == null || s.isEmpty()) {
+            return 0f;
+        }
+        float[] adv = tm.caretAdvances(s, px);
+        if (adv == null) {
+            return Math.max(0f, tm.intrinsic(n, Axis.HORIZONTAL, px));   // no glyph metrics: whole-run estimate
+        }
+        float widest = 0f;
+        for (var span : tm.lineSpans(s, n.wrapsText() ? textW : 0f, px)) {
+            widest = Math.max(widest, adv[span.end()] - adv[span.start()]);
+        }
+        return widest;
     }
 
     /** Scrollbar thickness in px — scales with the root em so it tracks zoom/DPI like everything else. */

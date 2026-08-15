@@ -357,8 +357,20 @@ remotely, but out of scope for 4a because it changes how every existing label re
 ### 11.8 Open decisions (resolve in implementation)
 - **Tab in multiline:** soft tabs (N spaces) first per keyboard-focus-text.md §4.2; focus-traversal vs. insert is
   the modifier question there.
-- **Auto-grow vs. fixed height + scroll:** spec assumes app-set height + vertical scroll (simplest, matches
-  read-model). Auto-grow (intrinsic height = lineCount·lineH) is a later option and reintroduces the
-  intrinsic-wrap-height coupling — defer.
+- ~~**Auto-grow vs. fixed height + scroll**~~ — **resolved: both, and the coupling was not optional.** An
+  *editable* field keeps an app-set height and scrolls (unchanged). A *label* auto-grows, because it always
+  wrapped and a wrapped label that reserves one line overlaps its neighbours and truncates its container's scroll
+  range — which is exactly what the demo showed.
+
+  The resolution: **text height is height-for-width, not an intrinsic.** `TextMeasurer.intrinsic(VERTICAL)` can
+  only ever answer "one line", so `FlexLayout.textBlockHeight` asks `lineSpans` — the same seam that decides
+  where the lines actually break — for the count. No new seam; the deferred "coupling" turned out to be a
+  dependency-*order* problem, not a new dependency:
+  - in a **column**, a child's width is settled by the container before its height matters, so `place` resolves
+    the cross axis first and feeds each width into the height measure;
+  - in a **row**, the dependency runs the other way and the existing cross pass already has the resolved width.
+
+  `TextMetrics.contentWidth(nodeW)` and `RetainedNode.wrapsText()` exist so the layout, the compute phase and the
+  renderer share one formula and one wrap rule rather than three copies.
 - **Large documents:** `caretAdvances`/`lineSpans` over the whole string is O(n) per changed frame; fine for
   fields/small editors. Visible-range windowing is a later optimization (note in §9 already).

@@ -18,6 +18,18 @@ public record TextMetrics(List<VisualLine> lines) {
     public static final float PAD_Y = 6f;
 
     /**
+     * The width available to glyphs in a text node whose border-box width is {@code nodeW} — the inset shrinks on
+     * a very narrow node so text never vanishes entirely.
+     *
+     * <p>Lives here because three stages need the identical number: the layout (to know how many lines the text
+     * wraps onto, and therefore how tall the node is), the compute phase (to break lines and bake caret x), and
+     * the renderer (to clip). A formula copied into three places is a drift waiting to happen.
+     */
+    public static float contentWidth(float nodeW) {
+        return Math.max(1f, nodeW - 2f * Math.min(PAD_X, nodeW * 0.25f));
+    }
+
+    /**
      * One visual line: its character range {@code [start, end]} (end inclusive of the caret-after-last position),
      * its top and height in root space, and {@code xs} — the absolute x of the caret before each character in the
      * line, length {@code (end - start) + 1} (so {@code xs[0]} is the line's left caret x and the last entry is

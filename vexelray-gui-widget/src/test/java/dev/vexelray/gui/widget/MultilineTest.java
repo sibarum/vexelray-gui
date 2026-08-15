@@ -205,6 +205,57 @@ class MultilineTest {
         }
     }
 
+    /**
+     * A wrapped label is as tall as the number of lines it wraps onto. Text height is <em>height-for-width</em>,
+     * not an intrinsic: {@code TextMeasurer.intrinsic(VERTICAL)} can only report one line, so the layout asks
+     * {@code lineSpans} — the same seam that decides where the lines actually break — for the count.
+     *
+     * <p>Without this a wrapped label reserved one line of space: neighbours overlapped it and a scroll container
+     * stopped short of its last line, both of which the demo showed.
+     */
+    @Test
+    void aWrappedLabelIsAsTallAsItsWrappedLineCount() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            // 80px wide => 60px of text => 6 monospace characters per line.
+            dev.vexelray.gui.core.Node oneLine = h.gui.text("abc").width(Length.vw(10));
+            dev.vexelray.gui.core.Node twoLines = h.gui.text("abcdefghij").width(Length.vw(10));
+            dev.vexelray.gui.core.Node fourLines = h.gui.text("abcdefghijklmnopqrstuvw").width(Length.vw(10));
+            h.gui.root().children(oneLine, twoLines, fourLines);
+            h.frame();
+
+            assertEquals(HeadlessGui.CELL, oneLine.layout().rect().h(), 0.5f, "3 chars fit on one line");
+            assertEquals(2 * HeadlessGui.CELL, twoLines.layout().rect().h(), 0.5f, "10 chars wrap onto two");
+            assertEquals(4 * HeadlessGui.CELL, fourLines.layout().rect().h(), 0.5f, "23 chars wrap onto four");
+        }
+    }
+
+    /**
+     * The invariant behind the demo's overlap: a label's reserved box must contain every line it draws. Asserting
+     * that stacked boxes merely don't overlap is too weak — the boxes never overlapped, the <em>text</em> spilled
+     * out of a box that was one line tall.
+     */
+    @Test
+    void aLabelsBoxContainsEveryLineItDraws() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            dev.vexelray.gui.core.Node first = h.gui.text("abcdefghij").width(Length.vw(10));
+            dev.vexelray.gui.core.Node second = h.gui.text("klmnopqrst").width(Length.vw(10));
+            h.gui.root().children(first, second);
+            h.frame();
+
+            for (var node : java.util.List.of(first, second)) {
+                var box = node.layout().rect();
+                TextMetrics m = node.layout().text();
+                assertNotNull(m);
+                var last = m.lines().get(m.lines().size() - 1);
+                assertTrue(last.bottom() <= box.y() + box.h() + 0.5f,
+                        "the last drawn line ends at y=" + last.bottom()
+                                + " but the box ends at y=" + (box.y() + box.h()));
+                assertTrue(m.lines().get(0).top() >= box.y() - 0.5f,
+                        "and the first drawn line starts inside the box");
+            }
+        }
+    }
+
     @Test
     void aTallDocumentScrollsVerticallyToFollowTheCaret() {
         try (HeadlessGui h = new HeadlessGui()) {

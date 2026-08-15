@@ -408,12 +408,12 @@ public final class Gui implements AutoCloseable {
             return;           // a measurer with no glyph metrics (an atlas-less stub) — nothing to resolve
         }
         float pad = Math.min(TextMetrics.PAD_X, n.w * 0.25f);
-        float viewW = Math.max(1f, n.w - 2f * pad);
+        float viewW = TextMetrics.contentWidth(n.w);
         float lineH = tm.intrinsic(n, Axis.VERTICAL, px);
         boolean multiline = n.multiline();
-        // A label always wraps to its box (that is how a caption behaves); an editable field wraps only when
-        // asked, because the alternative — scrolling horizontally — is what a single-line field is for.
-        boolean wraps = n.editable() ? (multiline && n.wordWrap()) : true;
+        boolean wraps = n.wrapsText();
+        // The same call the layout made when it sized this node (FlexLayout.textBlockHeight), so the line count
+        // the box was built for and the lines drawn into it cannot disagree.
         List<dev.vexelray.text.TextLayout.LineSpan> spans = tm.lineSpans(s, wraps ? viewW : 0f, px);
 
         // Where the caret sits, in line-relative terms: everything below is expressed against this.
@@ -425,10 +425,13 @@ public final class Gui implements AutoCloseable {
             resolveTextScroll(n, adv, spans, caret, caretLine, lineH, viewW, viewH, wraps, multiline);
         }
 
-        // Bake absolute geometry. Multi-line tops out (a growing document grows downward); a single line stays
-        // vertically centred in its box, which is what a text field has always looked like.
+        // Bake absolute geometry. A multiline node tops out (a growing document grows downward); everything else
+        // centres its text *block* in the box — the whole block, not one line, or a label the layout sized for
+        // three wrapped lines would draw them starting a line down and spill out the bottom.
         float contentLeft = n.x + pad - n.scrollX;
-        float contentTop = multiline ? n.y + TextMetrics.PAD_Y - n.scrollY : n.y + (n.h - lineH) * 0.5f;
+        float contentTop = multiline
+                ? n.y + TextMetrics.PAD_Y - n.scrollY
+                : n.y + (n.h - spans.size() * lineH) * 0.5f;
         List<TextMetrics.VisualLine> lines = new ArrayList<>(spans.size());
         for (int i = 0; i < spans.size(); i++) {
             var span = spans.get(i);

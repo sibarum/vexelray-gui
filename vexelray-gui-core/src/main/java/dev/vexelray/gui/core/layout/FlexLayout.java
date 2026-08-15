@@ -6,6 +6,7 @@ import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.core.model.NodeKind;
 import dev.vexelray.gui.core.model.RetainedNode;
+import dev.vexelray.gui.core.text.TextMetrics;
 
 import java.util.List;
 
@@ -133,11 +134,23 @@ public final class FlexLayout {
         float[] marginMain = new float[count];
         float sumBasis = 0f;
         float sumGrow = 0f;
+        // Wrapped text is height-for-width, not an intrinsic: a label that wraps onto three lines is three lines
+        // tall. The two axes therefore resolve in opposite orders. In a COLUMN the child's width is settled by the
+        // container before its height matters, so resolve the cross axis first and feed each width into the height
+        // measure below. In a ROW the dependency runs the other way — width is the main size — and the cross pass
+        // further down already has it.
+        float[] crossPre = new float[count];
+        if (!row) {
+            for (int i = 0; i < count; i++) {
+                crossPre[i] = crossSize(n, kids.get(i), availCross, ctx, tm, true);
+            }
+        }
         for (int i = 0; i < count; i++) {
             RetainedNode c = kids.get(i);
             Length mainLen = row ? c.width() : c.height();
             float fixed = mainLen.resolve(ctx, availMain);
-            basis[i] = fixed >= 0f ? fixed : (mainLen.growFactor() > 0f ? 0f : measure(c, main, ctx, tm));
+            basis[i] = fixed >= 0f ? fixed
+                    : (mainLen.growFactor() > 0f ? 0f : measure(c, main, ctx, tm, row ? -1f : crossPre[i]));
             growF[i] = mainLen.growFactor();
             marginMain[i] = c.margin().scalarPx(ctx, availMain);
             sumBasis += basis[i] + 2f * marginMain[i];
@@ -186,8 +199,16 @@ public final class FlexLayout {
             if (stretched) {
                 cs = availC;
                 crossPos = mCross;
+            } else if (!row) {
+                cs = crossPre[i];   // already resolved above, and the height basis was measured against it
+                crossPos = switch (n.alignItems()) {
+                    case START, STRETCH -> mCross;
+                    case CENTER -> mCross + Math.max(0f, (availC - cs) / 2f);
+                    case END -> mCross + Math.max(0f, availC - cs);
+                };
             } else {
-                cs = Math.max(0f, crossFixed >= 0f ? crossFixed : measure(c, cross, ctx, tm));
+                // Row: the cross axis is height, so this is the height-for-width measure — ms is the width.
+                cs = Math.max(0f, crossFixed >= 0f ? crossFixed : measure(c, cross, ctx, tm, ms));
                 crossPos = switch (n.alignItems()) {
                     case START, STRETCH -> mCross;
                     case CENTER -> mCross + Math.max(0f, (availC - cs) / 2f);
@@ -234,6 +255,15 @@ public final class FlexLayout {
      * content. Always ≥ 0.
      */
     public static float measure(RetainedNode n, Axis axis, LayoutContext ctx, TextMeasurer tm) {
+        return measure(n, axis, ctx, tm, -1f);
+    }
+
+    /**
+     * As {@link #measure(RetainedNode, Axis, LayoutContext, TextMeasurer)}, but with the node's already-resolved
+     * <b>border-box width</b> when the caller knows it ({@code -1} when it does not). Measuring a text node's
+     * height without it can only assume one line; with it, wrapped text reports its true height.
+     */
+    public static float measure(RetainedNode n, Axis axis, LayoutContext ctx, TextMeasurer tm, float knownWidth) {
         Length along = axis == Axis.HORIZONTAL ? n.width() : n.height();
         if (isBasisFree(along)) {
             return Math.max(0f, along.resolve(ctx, 0f));
@@ -242,26 +272,69 @@ public final class FlexLayout {
         float inset = n.borderWidth().scalarPx(ctx, 0f) + padAxis.scalarPx(ctx, 0f);
         if (n.kind == NodeKind.TEXT) {
             float textPx = Math.max(1f, n.textSize().scalarPx(ctx, emBasis(ctx)));
-            return Math.max(0f, tm.intrinsic(n, axis, textPx)) + 2f * inset;
+            float size = axis == Axis.VERTICAL && knownWidth >= 0f
+                    ? textBlockHeight(n, knownWidth, textPx, tm)
+                    : tm.intrinsic(n, axis, textPx);
+            return Math.max(0f, size) + 2f * inset;
         }
         List<RetainedNode> kids = n.children;
         if (kids.isEmpty()) {
             return 2f * inset;
         }
         Axis mainAxis = n.direction() == Direction.ROW ? Axis.HORIZONTAL : Axis.VERTICAL;
+        // A column stacked inside a known width hands that width (less its own inset) to its children, so text
+        // nested a level down still measures height-for-width. A row cannot: its children's widths come out of
+        // flex distribution, which has not happened at measure time.
+        float childWidth = knownWidth >= 0f && mainAxis == Axis.VERTICAL
+                ? Math.max(0f, knownWidth - 2f * n.borderWidth().scalarPx(ctx, 0f)
+                        - 2f * n.paddingX().scalarPx(ctx, 0f))
+                : -1f;
         if (axis == mainAxis) {
             float gap = n.gap().scalarPx(ctx, 0f);
             float sum = gap * Math.max(0, kids.size() - 1);
             for (RetainedNode c : kids) {
-                sum += measure(c, axis, ctx, tm) + 2f * c.margin().scalarPx(ctx, 0f);
+                sum += measure(c, axis, ctx, tm, childWidth) + 2f * c.margin().scalarPx(ctx, 0f);
             }
             return sum + 2f * inset;
         }
         float max = 0f;
         for (RetainedNode c : kids) {
-            max = Math.max(max, measure(c, axis, ctx, tm) + 2f * c.margin().scalarPx(ctx, 0f));
+            max = Math.max(max, measure(c, axis, ctx, tm, childWidth) + 2f * c.margin().scalarPx(ctx, 0f));
         }
         return max + 2f * inset;
+    }
+
+    /**
+     * How tall a text node's content is at a border-box width of {@code nodeW}: its wrapped line count times the
+     * line height. Line breaking goes through {@code TextMeasurer.lineSpans} — the same seam the compute phase
+     * and the renderer use — so the height a node is given always matches the lines that end up drawn in it.
+     */
+    private static float textBlockHeight(RetainedNode n, float nodeW, float textPx, TextMeasurer tm) {
+        float lineH = tm.intrinsic(n, Axis.VERTICAL, textPx);
+        String s = n.textString();
+        if (s == null || s.isEmpty()) {
+            return lineH;   // an empty field is still one line tall
+        }
+        float wrapWidth = n.wrapsText() ? TextMetrics.contentWidth(nodeW) : 0f;
+        int lineCount = Math.max(1, tm.lineSpans(s, wrapWidth, textPx).size());
+        return lineCount * lineH;
+    }
+
+    /**
+     * The cross-axis size {@code c} will take inside {@code parent}. Extracted so a column can resolve it before
+     * the main-axis basis loop (text height depends on it) and reuse the identical value when placing.
+     */
+    private static float crossSize(RetainedNode parent, RetainedNode c, float availCross, LayoutContext ctx,
+                                   TextMeasurer tm, boolean column) {
+        float mCross = c.margin().scalarPx(ctx, availCross);
+        float availC = Math.max(0f, availCross - 2f * mCross);
+        Length crossLen = column ? c.width() : c.height();
+        float crossFixed = crossLen.resolve(ctx, availCross);
+        if (parent.alignItems() == AlignItems.STRETCH && crossFixed < 0f) {
+            return availC;
+        }
+        return Math.max(0f, crossFixed >= 0f ? crossFixed
+                : measure(c, column ? Axis.HORIZONTAL : Axis.VERTICAL, ctx, tm));
     }
 
     /** Basis-free fixed units resolve to a concrete size with no containing extent; percents and flex keywords don't. */

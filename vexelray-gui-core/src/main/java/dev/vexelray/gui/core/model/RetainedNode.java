@@ -140,6 +140,18 @@ public final class RetainedNode {
         return Boolean.TRUE.equals(props.get(PropKey.WORD_WRAP));
     }
 
+    /**
+     * Whether this text node's lines wrap to its content width. A label always does — that is how a caption
+     * behaves — while an editable field wraps only when asked, because the alternative (scrolling horizontally)
+     * is what a single-line field is for.
+     *
+     * <p>Both the layout (which needs the wrapped line count to size the node) and the compute phase (which
+     * breaks the lines) ask this, so the rule has one home.
+     */
+    public boolean wrapsText() {
+        return !editable() || (multiline() && wordWrap());
+    }
+
     /** Caret offset into the text, or {@code -1} for no caret. */
     public int caret() {
         Object c = props.get(PropKey.CARET);

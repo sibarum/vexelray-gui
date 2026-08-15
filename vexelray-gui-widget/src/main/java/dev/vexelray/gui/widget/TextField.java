@@ -19,11 +19,18 @@ import java.util.List;
 import java.util.function.Consumer;
 
 /**
- * A single-line editable text field built on the framework's input seams: typed text arrives through
- * {@link Gui#onChar} (the layout-resolved {@code CharTyped} channel), edit commands (caret motion, backspace,
- * delete, Home/End, selection, clipboard, submit) through {@link Gui#onKey}, click-to-position through
- * {@link Gui#onCaretHit}, and drag-to-select through {@link Gui#onCaretDrag}. The field owns the authoritative
- * content, caret and selection anchor; it mirrors them onto the retained node ({@link Node#text},
+ * An editable text field — single-line by default, {@link #multiline} on request — built on the framework's
+ * input seams: typed text arrives through {@link Gui#onChar} (the layout-resolved {@code CharTyped} channel),
+ * edit commands (caret motion, backspace, delete, Home/End, selection, clipboard, submit) through
+ * {@link Gui#onKey}, and click-to-position plus drag-to-select through the general {@link Gui#onDrag} seam.
+ *
+ * <p>Everything geometric — where a click lands, where the line above is, how far a page scrolls — is a pure
+ * lookup on this node's published layout read-model ({@code node.layout().text()}, docs/layout-read-model.md).
+ * The widget never sees a measurer or a glyph atlas, which is what lets the identical code drive a field on
+ * screen, headless in a test, or on a remote client with no fonts of its own.
+ *
+ * <p>The field owns the authoritative content, caret and selection anchor; it mirrors them onto the retained
+ * node ({@link Node#text},
  * {@link Node#caret}, {@link Node#selection}) so the renderer draws the text, the selection highlight and the
  * blinking caret.
  *
@@ -62,6 +69,12 @@ public final class TextField {
     // so they stay attached to their text. Guarded by `this`.
     private List<Span> spans = new ArrayList<>();
 
+    // Vertical navigation's sticky desired column (absolute px). NaN means "recompute from the caret": every
+    // horizontal move invalidates it, and Up/Down deliberately does not, so a run of Up/Down through short lines
+    // returns to the original column instead of walking left. Guarded by `this`.
+    private float desiredX = Float.NaN;
+
+    private volatile boolean multiline;
     private volatile boolean focused;
     private volatile boolean blinkOn;
     private volatile Consumer<String> onChange = s -> { };
@@ -130,9 +143,29 @@ public final class TextField {
         return this;
     }
 
-    /** React to Enter being pressed in the field. Runs on a worker thread. */
+    /** React to Enter being pressed in the field. Runs on a worker thread. Never fires on a multiline field. */
     public TextField onSubmit(Consumer<String> handler) {
         this.onSubmit = handler == null ? s -> { } : handler;
+        return this;
+    }
+
+    /**
+     * Let the field hold multiple lines: Enter inserts a newline instead of submitting, pasted newlines survive,
+     * and the field scrolls vertically to keep the caret in view. Size it with {@code node().height(...)} — a
+     * multiline field does not grow to fit its content.
+     */
+    public TextField multiline(boolean multiline) {
+        this.multiline = multiline;
+        node.multiline(multiline);
+        return this;
+    }
+
+    /**
+     * Wrap long lines at the field's content width instead of scrolling horizontally. Only meaningful together
+     * with {@link #multiline}; a wrapped field never scrolls horizontally.
+     */
+    public TextField wordWrap(boolean wrap) {
+        node.wordWrap(wrap);
         return this;
     }
 
@@ -207,22 +240,85 @@ public final class TextField {
             switch (k) {
                 case LEFT -> { moveCaret(ctrl ? prevWord(caret) : stepLeft(caret), shift); syncNode(); }
                 case RIGHT -> { moveCaret(ctrl ? nextWord(caret) : stepRight(caret), shift); syncNode(); }
-                case HOME -> { moveCaret(0, shift); syncNode(); }
-                case END -> { moveCaret(content.length(), shift); syncNode(); }
+                // Home/End are *visual* line ends on the read-model, so they stop at a wrap, not at a newline.
+                case HOME -> { moveCaret(visualLineStart(), shift); syncNode(); }
+                case END -> { moveCaret(visualLineEnd(), shift); syncNode(); }
+                case UP -> moveByLines(-1, shift);
+                case DOWN -> moveByLines(1, shift);
+                case PAGE_UP -> moveByLines(-pageLines(), shift);
+                case PAGE_DOWN -> moveByLines(pageLines(), shift);
                 case BACKSPACE -> changed = ctrl ? deleteWordBack() : backspace();
                 case DELETE -> changed = ctrl ? deleteWordForward() : deleteForward();
-                case ENTER -> { /* handled outside the lock */ }
+                case ENTER -> {
+                    if (multiline) {
+                        int at = hasSelection() ? selLo() : caret;
+                        int removeLen = hasSelection() ? selHi() - selLo() : 0;
+                        changed = applyEdit(at, removeLen, "\n");
+                    }
+                    // single-line: submitted outside the lock
+                }
                 default -> {
                     return; // not an edit command; typed text arrives via onChar
                 }
             }
         }
         wake();
-        if (k == Key.ENTER) {
+        if (k == Key.ENTER && !multiline) {
             onSubmit.accept(text());
         } else if (changed != null) {
             onChange.accept(changed);
         }
+    }
+
+    // --- vertical navigation, as pure widget code over the layout read-model (docs/layout-read-model.md §11.5) ---
+
+    /**
+     * Move the caret {@code lines} visual lines (negative = up), keeping the sticky desired column. Call while
+     * holding the lock. Does nothing when the node has no published metrics yet.
+     */
+    private void moveByLines(int lines, boolean extend) {
+        dev.vexelray.gui.core.text.TextMetrics m = node.layout().text();
+        if (m == null || lines == 0) {
+            return;
+        }
+        if (Float.isNaN(desiredX)) {
+            desiredX = m.caretX(clamp(caret));
+        }
+        float column = desiredX;   // moveCaret clears it; vertical motion must keep it
+        int target = clamp(caret);
+        for (int i = 0; i < Math.abs(lines); i++) {
+            int next = lines < 0 ? m.offsetAbove(target, column) : m.offsetBelow(target, column);
+            if (next == target) {
+                break;   // already at the first/last visual line
+            }
+            target = next;
+        }
+        moveCaret(target, extend);
+        syncNode();
+        desiredX = column;   // re-assert after syncNode cleared it: this move was vertical
+    }
+
+    /** How many visual lines fit in the field, for PageUp/PageDown. At least one, so a tiny field still moves. */
+    private int pageLines() {
+        dev.vexelray.gui.core.text.TextMetrics m = node.layout().text();
+        if (m == null) {
+            return 1;
+        }
+        float lineH = m.caretHeight(clamp(caret));
+        float viewH = node.layout().viewH() - 2 * dev.vexelray.gui.core.text.TextMetrics.PAD_Y;
+        return lineH > 0f ? Math.max(1, (int) Math.floor(viewH / lineH)) : 1;
+    }
+
+    /** Start of the caret's visual line, falling back to the string start when metrics aren't published yet. */
+    private int visualLineStart() {
+        dev.vexelray.gui.core.text.TextMetrics m = node.layout().text();
+        return m == null ? 0 : m.lineStart(clamp(caret));
+    }
+
+    /** End of the caret's visual line, falling back to the string end when metrics aren't published yet. */
+    private int visualLineEnd() {
+        dev.vexelray.gui.core.text.TextMetrics m = node.layout().text();
+        return m == null ? content.length() : m.lineEnd(clamp(caret));
     }
 
     /** Map a pointer press/drag to a caret offset via this node's published text metrics, then place/extend. */
@@ -313,13 +409,16 @@ public final class TextField {
         if (clip == null || clip.isEmpty()) {
             return;
         }
-        String oneLine = clip.replace('\n', ' ').replace('\r', ' '); // single-line field: no embedded newlines
+        // A single-line field flattens embedded newlines; a multiline one keeps them (normalising CRLF first).
+        String insert = multiline
+                ? clip.replace("\r\n", "\n").replace('\r', '\n')
+                : clip.replace('\n', ' ').replace('\r', ' ');
         String changed;
         synchronized (this) {
             int at = hasSelection() ? selLo() : caret;
             int removeLen = hasSelection() ? selHi() - selLo() : 0;
             coalesceBarrier = true; // a paste is its own undo entry, never merged with adjacent typing
-            changed = applyEdit(at, removeLen, oneLine);
+            changed = applyEdit(at, removeLen, insert);
         }
         wake();
         if (changed != null) {
@@ -546,8 +645,16 @@ public final class TextField {
         return caret;
     }
 
-    /** Mirror content + caret + selection onto the retained node (call while holding the lock). */
+    /**
+     * Mirror content + caret + selection onto the retained node (call while holding the lock).
+     *
+     * <p>This is also the one place the sticky desired column is dropped. Every caret or content change funnels
+     * through here, so invalidating once here cannot be forgotten at a new call site — and {@link #moveByLines}
+     * simply re-asserts the column immediately afterwards, which is exactly what makes it sticky across a run of
+     * Up/Down and not across anything else.
+     */
     private void syncNode() {
+        desiredX = Float.NaN;
         node.text(content.toString());
         node.caret(caret);
         node.selection(anchor, caret);

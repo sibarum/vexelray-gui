@@ -86,6 +86,22 @@ public final class Node {
         return prop(PropKey.EDITABLE, editable);
     }
 
+    /**
+     * Let this text node hold multiple lines: Enter inserts a newline instead of submitting, and the node scrolls
+     * vertically to keep the caret in view rather than horizontally.
+     */
+    public Node multiline(boolean multiline) {
+        return prop(PropKey.MULTILINE, multiline);
+    }
+
+    /**
+     * Wrap long lines at the content width instead of scrolling horizontally. Only meaningful with
+     * {@link #multiline}; a wrapped node never scrolls horizontally.
+     */
+    public Node wordWrap(boolean wrap) {
+        return prop(PropKey.WORD_WRAP, wrap);
+    }
+
     /** Set the caret offset into the text (character index), or {@code -1} to hide the caret. */
     public Node caret(int offset) {
         return prop(PropKey.CARET, offset);

@@ -4,6 +4,7 @@ import dev.vexelray.canvas.Canvas;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.model.RetainedNode;
 import dev.vexelray.gui.core.text.Span;
+import dev.vexelray.gui.core.text.TextMetrics;
 import dev.vexelray.text.TextLayout;
 
 /**
@@ -93,32 +94,21 @@ public final class TreeRenderer {
         boolean hasText = s != null && !s.isEmpty();
         java.util.List<Span> spans = hasText ? n.spans() : java.util.List.of();
 
-        // A single-line editable field masks overflow and scrolls horizontally to keep the caret in view — it
-        // never grows a scrollbar or spills past its edge, i.e. it behaves like a normal text field. The offset
-        // is resolved by the compute phase (Gui.resolveTextGeometry, docs/layout-read-model.md §2.1-2.2); the
-        // renderer only reads it, so the field scrolls the same way with no renderer attached at all.
-        boolean clip = n.editable();
-        float viewW = Math.max(1f, n.w - 2 * pad);
-        float originX = n.x + pad;
-        if (clip) {
-            originX -= n.scrollX;
-            canvas.pushClip(n.x + pad, n.y, viewW, n.h, 0f);
+        if (n.editable()) {
+            drawField(n, s, hasText, spans, pad, canvas, text);
+            return;
         }
 
-        // 1. Formatting-span backgrounds, then the selection highlight, all behind the glyphs.
+        // A label keeps the canvas's own wrapping and alignment: its metrics are published for reading, but its
+        // *drawing* is not unified onto them yet, because that needs per-line h/v alignment baked into
+        // TextMetrics (docs/layout-read-model.md §11.4, remaining work).
+        float originX = n.x + pad;
         if (hasText) {
             for (Span sp : spans) {
                 if (sp.bg() != null) {
                     fillRangeRect(n, s, originX, sp.start(), sp.end(), sp.bg(), canvas, text);
                 }
             }
-        }
-        if (hasText && n.selectStart() != n.selectEnd()) {
-            drawSelection(n, s, originX, canvas, text);
-        }
-
-        // 2. The text itself — split into foreground-colour runs when any fg span applies, else one draw.
-        if (hasText) {
             boolean anyFg = false;
             for (Span sp : spans) {
                 if (sp.fg() != null) {
@@ -129,17 +119,11 @@ public final class TreeRenderer {
             if (anyFg) {
                 drawSpannedText(n, s, originX, spans, canvas, text);
             } else {
-                // Editable fields draw unwrapped/left from the scrolled origin; labels keep wrap + their align.
-                TextLayout.WrapMode wrap = clip ? TextLayout.WrapMode.NONE : TextLayout.WrapMode.WORD_CHAR;
-                TextLayout.HAlign ha = clip ? TextLayout.HAlign.LEFT : n.hAlign();
-                float drawW = clip
-                        ? text.glyphLayout().measure(s, n.textSizePx) + viewW
-                        : Math.max(1f, n.w - 2 * pad);
-                TextLayout.TextStyle style = TextLayout.TextStyle.of(n.textSizePx).withWrap(wrap)
-                        .withAlign(ha, n.vAlign());
-                canvas.text(text, s, originX, n.y, Math.max(1f, drawW), n.h, style, n.textColor());
+                TextLayout.TextStyle style = TextLayout.TextStyle.of(n.textSizePx)
+                        .withWrap(TextLayout.WrapMode.WORD_CHAR)
+                        .withAlign(n.hAlign(), n.vAlign());
+                canvas.text(text, s, originX, n.y, Math.max(1f, n.w - 2 * pad), n.h, style, n.textColor());
             }
-            // 3. Underlines on top of the glyphs.
             for (Span sp : spans) {
                 if (sp.underline()) {
                     drawUnderline(n, s, originX, sp.start(), sp.end(),
@@ -147,16 +131,101 @@ public final class TreeRenderer {
                 }
             }
         }
+    }
 
-        // 4. Text-field caret: a thin vertical bar at the caret offset, only while shown this blink phase.
-        int caret = n.caret();
-        if (caret >= 0 && n.caretOn()) {
-            drawCaret(n, caret, s == null ? "" : s, originX, canvas, text);
+    /**
+     * Draw an editable field from its published {@link TextMetrics} — the single source of truth for where every
+     * glyph, selection rect and caret sits (docs/layout-read-model.md §11.4). The compute phase already resolved
+     * scroll and baked each visual line's absolute caret x positions, so the renderer measures nothing: it cannot
+     * disagree with the widget about what is under the pointer, and a multi-line field needs no separate code
+     * path here at all.
+     */
+    private static void drawField(RetainedNode n, String s, boolean hasText, java.util.List<Span> spans, float pad,
+                                  Canvas canvas, TextLayout text) {
+        // Mask overflow: a field never grows a scrollbar or spills past its edge. Multi-line clips vertically too.
+        float viewW = Math.max(1f, n.w - 2 * pad);
+        canvas.pushClip(n.x + pad, n.y, viewW, n.h, 0f);
+
+        TextMetrics m = n.textMetrics;
+        if (hasText && m != null) {
+            int selLo = Math.min(n.selectStart(), n.selectEnd());
+            int selHi = Math.max(n.selectStart(), n.selectEnd());
+            for (TextMetrics.VisualLine line : m.lines()) {
+                for (Span sp : spans) {
+                    if (sp.bg() != null) {
+                        fillLineRange(line, sp.start(), sp.end(), sp.bg(), canvas);
+                    }
+                }
+                if (selHi > selLo) {
+                    fillLineRange(line, selLo, selHi, SELECTION, canvas);
+                }
+                drawLineText(n, s, line, spans, canvas, text);
+                for (Span sp : spans) {
+                    if (sp.underline()) {
+                        underlineLineRange(n, line, sp.start(), sp.end(),
+                                sp.fg() != null ? sp.fg() : n.textColor(), canvas, text);
+                    }
+                }
+            }
         }
 
-        if (clip) {
-            canvas.popClip();
+        // The caret: a thin bar on its own visual line, only while shown this blink phase.
+        if (m != null && n.caret() >= 0 && n.caretOn()) {
+            int caret = n.caret();
+            float w = Math.max(1f, n.textSizePx * 0.07f);
+            canvas.fillRoundRect(m.caretX(caret), m.caretTop(caret), w, m.caretHeight(caret), 0f, n.textColor());
         }
+        canvas.popClip();
+    }
+
+    /** Fill the part of character range {@code [start, end)} that falls on {@code line}, using its baked xs. */
+    private static void fillLineRange(TextMetrics.VisualLine line, int start, int end, Color color, Canvas canvas) {
+        int lo = Math.max(line.start(), Math.min(start, end));
+        int hi = Math.min(line.end(), Math.max(start, end));
+        if (hi <= lo) {
+            return;
+        }
+        float x0 = line.caretX(lo);
+        float x1 = line.caretX(hi);
+        canvas.fillRoundRect(x0, line.top(), Math.max(1f, x1 - x0), line.height(), 0f, color);
+    }
+
+    /** Draw one visual line's glyphs, split into maximal runs of a constant effective foreground colour. */
+    private static void drawLineText(RetainedNode n, String s, TextMetrics.VisualLine line,
+                                     java.util.List<Span> spans, Canvas canvas, TextLayout text) {
+        int from = Math.max(0, line.start());
+        int to = Math.min(s.length(), line.end());
+        int i = from;
+        while (i < to) {
+            Color fg = fgAt(spans, i, n.textColor());
+            int j = i + 1;
+            while (j < to && java.util.Objects.equals(fgAt(spans, j, n.textColor()), fg)) {
+                j++;
+            }
+            // Each run is drawn at its exact baked x, in a box exactly one line high, so the canvas does no
+            // alignment or wrapping of its own — the metrics already decided all of it.
+            TextLayout.TextStyle style = TextLayout.TextStyle.of(n.textSizePx)
+                    .withWrap(TextLayout.WrapMode.NONE)
+                    .withAlign(TextLayout.HAlign.LEFT, TextLayout.VAlign.TOP);
+            float x = line.caretX(i);
+            canvas.text(text, s.substring(i, j), x, line.top(),
+                    Math.max(1f, n.x + n.w - x), line.height(), style, fg);
+            i = j;
+        }
+    }
+
+    /** Underline the part of {@code [start, end)} falling on {@code line}, just below its baseline. */
+    private static void underlineLineRange(RetainedNode n, TextMetrics.VisualLine line, int start, int end,
+                                           Color color, Canvas canvas, TextLayout text) {
+        int lo = Math.max(line.start(), Math.min(start, end));
+        int hi = Math.min(line.end(), Math.max(start, end));
+        if (hi <= lo) {
+            return;
+        }
+        float thickness = Math.max(1f, n.textSizePx * 0.06f);
+        float baseline = line.top() + text.glyphLayout().ascent(n.textSizePx);
+        canvas.fillRoundRect(line.caretX(lo), baseline + thickness,
+                Math.max(1f, line.caretX(hi) - line.caretX(lo)), thickness, 0f, color);
     }
 
     /** X (px, absolute) of the caret position before character {@code offset}, from the (scrolled) text origin. */

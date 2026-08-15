@@ -130,6 +130,16 @@ public final class RetainedNode {
         return Boolean.TRUE.equals(props.get(PropKey.EDITABLE));
     }
 
+    /** Whether this text node holds multiple lines (Enter inserts '\n'; the node scrolls vertically). */
+    public boolean multiline() {
+        return Boolean.TRUE.equals(props.get(PropKey.MULTILINE));
+    }
+
+    /** Whether long lines wrap at the content width instead of scrolling horizontally. */
+    public boolean wordWrap() {
+        return Boolean.TRUE.equals(props.get(PropKey.WORD_WRAP));
+    }
+
     /** Caret offset into the text, or {@code -1} for no caret. */
     public int caret() {
         Object c = props.get(PropKey.CARET);

@@ -33,6 +33,7 @@ import sibarum.atchung.State;
 import sibarum.atchung.Subscription;
 import sibarum.atchung.Topic;
 
+import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
@@ -398,22 +399,63 @@ public final class Gui implements AutoCloseable {
         String s = n.textString();
         if (s == null || s.isEmpty()) {
             n.scrollX = 0f;   // a field emptied after scrolling must snap back to its origin
+            n.scrollY = 0f;
             return;
         }
-        float[] adv = tm.caretAdvances(s, n.textSizePx);
+        float px = n.textSizePx;
+        float[] adv = tm.caretAdvances(s, px);
         if (adv == null) {
             return;           // a measurer with no glyph metrics (an atlas-less stub) — nothing to resolve
         }
         float pad = Math.min(TextMetrics.PAD_X, n.w * 0.25f);
         float viewW = Math.max(1f, n.w - 2f * pad);
+        float lineH = tm.intrinsic(n, Axis.VERTICAL, px);
+        boolean multiline = n.multiline();
+        // A label always wraps to its box (that is how a caption behaves); an editable field wraps only when
+        // asked, because the alternative — scrolling horizontally — is what a single-line field is for.
+        boolean wraps = n.editable() ? (multiline && n.wordWrap()) : true;
+        List<dev.vexelray.text.TextLayout.LineSpan> spans = tm.lineSpans(s, wraps ? viewW : 0f, px);
 
-        // Caret-follow scroll. This lived in TreeRenderer.updateHScroll, which only ever ran from GuiApp — so the
-        // behaviour existed only when a Vulkan renderer was attached, and neither a headless host nor a remote
-        // client had it. It is derived geometry, so it belongs here, where every host reaches it.
+        // Where the caret sits, in line-relative terms: everything below is expressed against this.
+        int caret = n.caret();
+        int caretLine = caret < 0 ? 0 : lineIndexOf(spans, caret);
+        float viewH = Math.max(1f, n.h - 2f * TextMetrics.PAD_Y);
+
         if (n.editable()) {
-            int caret = n.caret();
+            resolveTextScroll(n, adv, spans, caret, caretLine, lineH, viewW, viewH, wraps, multiline);
+        }
+
+        // Bake absolute geometry. Multi-line tops out (a growing document grows downward); a single line stays
+        // vertically centred in its box, which is what a text field has always looked like.
+        float contentLeft = n.x + pad - n.scrollX;
+        float contentTop = multiline ? n.y + TextMetrics.PAD_Y - n.scrollY : n.y + (n.h - lineH) * 0.5f;
+        List<TextMetrics.VisualLine> lines = new ArrayList<>(spans.size());
+        for (int i = 0; i < spans.size(); i++) {
+            var span = spans.get(i);
+            float[] xs = new float[span.end() - span.start() + 1];
+            for (int j = 0; j < xs.length; j++) {
+                xs[j] = contentLeft + (adv[span.start() + j] - adv[span.start()]);
+            }
+            lines.add(new TextMetrics.VisualLine(span.start(), span.end(), contentTop + i * lineH, lineH, xs));
+        }
+        n.textMetrics = new TextMetrics(lines);
+    }
+
+    /**
+     * Narrow an editable node's scroll so the caret stays in view (docs/layout-read-model.md §2.2, §11.3 step 4).
+     * A wrapped node never scrolls horizontally — there is nothing to the right to reach — and a single-line node
+     * never scrolls vertically.
+     */
+    private static void resolveTextScroll(RetainedNode n, float[] adv,
+                                          List<dev.vexelray.text.TextLayout.LineSpan> spans, int caret,
+                                          int caretLine, float lineH, float viewW, float viewH,
+                                          boolean wraps, boolean multiline) {
+        if (wraps) {
+            n.scrollX = 0f;
+        } else {
             if (caret >= 0) {
-                float caretRel = adv[Math.max(0, Math.min(caret, s.length()))];
+                var line = spans.get(caretLine);
+                float caretRel = adv[clamp(caret, line.start(), line.end())] - adv[line.start()];
                 if (caretRel - n.scrollX > viewW) {
                     n.scrollX = caretRel - viewW;
                 }
@@ -421,17 +463,44 @@ public final class Gui implements AutoCloseable {
                     n.scrollX = caretRel;
                 }
             }
-            n.scrollX = Math.max(0f, Math.min(n.scrollX, Math.max(0f, adv[s.length()] - viewW)));
+            float widest = 0f;
+            for (var line : spans) {
+                widest = Math.max(widest, adv[line.end()] - adv[line.start()]);
+            }
+            n.scrollX = Math.max(0f, Math.min(n.scrollX, Math.max(0f, widest - viewW)));
         }
 
-        float originX = n.x + pad - n.scrollX;
-        float[] xs = new float[adv.length];
-        for (int i = 0; i < adv.length; i++) {
-            xs[i] = originX + adv[i];
+        if (!multiline) {
+            n.scrollY = 0f;
+            return;
         }
-        float lineH = tm.intrinsic(n, Axis.VERTICAL, n.textSizePx);
-        float top = n.y + (n.h - lineH) * 0.5f;   // single line, vertically centred; multiline tops out (§11.3)
-        n.textMetrics = new TextMetrics(List.of(new TextMetrics.VisualLine(0, s.length(), top, lineH, xs)));
+        if (caret >= 0) {
+            float caretTop = caretLine * lineH;
+            if (caretTop + lineH - n.scrollY > viewH) {
+                n.scrollY = caretTop + lineH - viewH;
+            }
+            if (caretTop - n.scrollY < 0f) {
+                n.scrollY = caretTop;
+            }
+        }
+        n.scrollY = Math.max(0f, Math.min(n.scrollY, Math.max(0f, spans.size() * lineH - viewH)));
+    }
+
+    /** The visual line containing {@code offset}: the last span whose start is at or before it. */
+    private static int lineIndexOf(List<dev.vexelray.text.TextLayout.LineSpan> spans, int offset) {
+        int found = 0;
+        for (int i = 0; i < spans.size(); i++) {
+            if (spans.get(i).start() <= offset) {
+                found = i;
+            } else {
+                break;
+            }
+        }
+        return found;
+    }
+
+    private static int clamp(int v, int lo, int hi) {
+        return v < lo ? lo : Math.min(v, hi);
     }
 
     /** Copy the resolved tree into an immutable {@link LayoutSnapshot} and publish it. A pure copy — no arithmetic. */

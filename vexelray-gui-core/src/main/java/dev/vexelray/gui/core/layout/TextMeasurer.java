@@ -31,4 +31,20 @@ public interface TextMeasurer {
     default float[] caretAdvances(String text, float textSizePx) {
         return null;
     }
+
+    /**
+     * Break {@code text} into visual lines at {@code textSizePx}, wrapping at {@code wrapWidth} px
+     * ({@code <= 0} disables wrapping, so only {@code '\n'} breaks a line). Spans are {@code [start, end)} offsets
+     * into the original string, so caret offsets map onto visual lines exactly.
+     *
+     * <p>This is the <b>only</b> seam through which line breaking enters the GUI: the compute phase and the
+     * renderer both read the resulting {@code TextMetrics}, so they cannot disagree about where a line broke.
+     * The default is a single unbroken line, which is what a single-line field wants; an app over a real glyph
+     * atlas overrides it (docs/layout-read-model.md §11.2).
+     */
+    default java.util.List<dev.vexelray.text.TextLayout.LineSpan> lineSpans(String text, float wrapWidth,
+                                                                           float textSizePx) {
+        int end = text == null ? 0 : text.length();
+        return java.util.List.of(new dev.vexelray.text.TextLayout.LineSpan(0, end, true));
+    }
 }

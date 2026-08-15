@@ -6,6 +6,7 @@ import dev.vexelray.gui.core.input.InputTopics;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
 import dev.vexelray.gui.core.layout.TextMeasurer;
 import dev.vexelray.gui.core.model.RetainedNode;
+import dev.vexelray.text.TextLayout;
 import sibarum.atchung.Atchung;
 import sibarum.tactroller.api.InputEvent;
 import sibarum.tactroller.api.Key;
@@ -110,6 +111,34 @@ final class HeadlessGui implements AutoCloseable {
                 xs[i] = i * CELL;
             }
             return xs;
+        }
+
+        /**
+         * Monospace line breaking: split on {@code '\n'}, then wrap every {@code floor(wrapWidth / CELL)}
+         * characters. Deliberately character-wrapping rather than word-wrapping — a test asserting where a line
+         * broke should be reading arithmetic it can do in its head, not the engine's word-break rules.
+         */
+        @Override
+        public java.util.List<TextLayout.LineSpan> lineSpans(String text, float wrapWidth, float px) {
+            String s = text == null ? "" : text;
+            int perLine = wrapWidth > 0f ? Math.max(1, (int) Math.floor(wrapWidth / CELL)) : Integer.MAX_VALUE;
+            java.util.List<TextLayout.LineSpan> out = new java.util.ArrayList<>();
+            int start = 0;
+            while (true) {
+                int hard = s.indexOf('\n', start);
+                int lineEnd = hard < 0 ? s.length() : hard;
+                // Emit as many wrapped segments as this hard line needs (at least one, so empty lines survive).
+                int at = start;
+                do {
+                    int end = Math.min(lineEnd, at > Integer.MAX_VALUE - perLine ? lineEnd : at + perLine);
+                    out.add(new TextLayout.LineSpan(at, end, end == lineEnd));
+                    at = end;
+                } while (at < lineEnd);
+                if (hard < 0) {
+                    return out;
+                }
+                start = hard + 1;   // the '\n' itself belongs to no line
+            }
         }
     };
 

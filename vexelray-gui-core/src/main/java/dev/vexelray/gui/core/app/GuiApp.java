@@ -217,6 +217,14 @@ public final class GuiApp implements AutoCloseable {
             }
 
             @Override
+            public List<TextLayout.LineSpan> lineSpans(String s, float wrapWidth, float textSizePx) {
+                // The engine already owns offset-aware line breaking; wrapWidth <= 0 disables wrapping there,
+                // so a single-line field falls through to "split on '\n' only".
+                return text.breakLineSpans(s == null ? "" : s, textSizePx, wrapWidth,
+                        TextLayout.WrapMode.WORD_CHAR);
+            }
+
+            @Override
             public float[] caretAdvances(String s, float textSizePx) {
                 if (s == null) {
                     return new float[] {0f};

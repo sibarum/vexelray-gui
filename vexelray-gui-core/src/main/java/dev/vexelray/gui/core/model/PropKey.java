@@ -23,6 +23,9 @@ public enum PropKey {
     SELECT_START(false), // selection range start (Integer char offset); == SELECT_END means no selection
     SELECT_END(false),   // selection range end (Integer char offset)
     SPANS(false),        // formatting spans (List<Span>): fg/bg/underline over character ranges
+    // Multiline (§11): both change how the text breaks into visual lines, so both reflow.
+    MULTILINE(true),     // Enter inserts '\n' instead of submitting; the field scrolls vertically
+    WORD_WRAP(true),     // wrap long lines at the content width instead of scrolling horizontally
     // Layout (border-box: border + padding inset the content, so border width is layout-affecting)
     DIRECTION(true),
     JUSTIFY(true),

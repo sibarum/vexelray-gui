@@ -14,6 +14,9 @@ public record TextMetrics(List<VisualLine> lines) {
     /** Horizontal text inset (px) the renderer uses; kept here so publish and render agree on the text origin. */
     public static final float PAD_X = 10f;
 
+    /** Vertical text inset (px) for a multi-line node, which tops out rather than centring its single line. */
+    public static final float PAD_Y = 6f;
+
     /**
      * One visual line: its character range {@code [start, end]} (end inclusive of the caret-after-last position),
      * its top and height in root space, and {@code xs} — the absolute x of the caret before each character in the

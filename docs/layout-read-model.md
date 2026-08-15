@@ -222,17 +222,20 @@ share what `TreeRenderer` already computes for drawing.
    Unblocks position/size for all widgets immediately. *(this step first)*
 2. **Text metrics.** Add `NodeLayout.text()` (line spans + advances as data), computed at publish via the measurer.
 3. **Refactor click** onto `node.layout().text().offsetAt(...)`; delete `onCaretHit`/`onCaretDrag`.
-4. **Multiline + wrap + Up/Down** as pure widget code on the read-model — the original goal, with no ad-hoc seams.
-   Preceded by **4·0, the compute phase** (§2.1–2.3) — *landed*: `Gui.resolveGeometry` now owns all derived
-   geometry, `publishLayout` is a pure copy, `TreeRenderer.updateHScroll` is gone, and `geometryDirty` lets a
-   caret move republish without a reflow. See §11 for the concrete build spec.
+4. **Multiline + wrap + Up/Down** as pure widget code on the read-model — the original goal, *landed*, with no
+   ad-hoc seams: the only thing added to core was `TextMeasurer.lineSpans`, and `TextField` does its own caret
+   arithmetic over `node.layout().text()` without ever seeing a measurer. Preceded by **4·0, the compute phase**
+   (§2.1–2.3): `Gui.resolveGeometry` owns all derived geometry, `publishLayout` is a pure copy,
+   `TreeRenderer.updateHScroll` is gone, and `geometryDirty` lets a caret move republish without a reflow.
+   See §11 for the build spec and what remains (4b line numbers, the label draw path).
 
 ---
 
 ## 11. Step 4 build spec — multiline + word wrap + line numbers
 
-Status: **ready to implement** (steps 1–3 and **4·0** landed: read-model boxes, text metrics, click via `onDrag`,
-and the compute phase). This is
+Status: **4a landed** (steps 1–3, **4·0** and **4a**: read-model boxes, text metrics, click via `onDrag`, the
+compute phase, and multiline + word wrap + vertical navigation). **4b (line numbers) remains**, plus the label
+draw path in §11.4. This is
 the execution plan so a fresh session needs no re-derivation. Build order is **4·0 (the compute phase — §2.1–2.3:
 `resolveGeometry`, scroll intent/effective split, `geometryDirty`) → 4a (multiline + wrap) → 4b (line numbers)**.
 4·0 came first because it was separately provable: `CaretScrollTest` was red before it and green after, with no
@@ -285,9 +288,18 @@ entry. Sequence per text node:
    exist on `TextMetrics`.
 
 ### 11.4 Renderer unification (core) — one source of truth
-Rewrite `TreeRenderer`'s text section to draw **from `n.textMetrics`** instead of recomputing:
-- Draw each `VisualLine`'s substring at `(line.xs[0], line.top)`, `WrapMode.NONE`, `HAlign.LEFT`, height `line.height`.
-- Spans / selection / caret use the line `xs` (already absolute), extended to multi-line (per-line rects).
+**Done for editable fields** (`TreeRenderer.drawField`), which now measure nothing: every glyph run, selection
+rect, underline and the caret are placed from `n.textMetrics`, so the renderer cannot disagree with the widget
+about what sits under the pointer, and multi-line needs no separate drawing path at all.
+- Each `VisualLine`'s runs draw at their baked `caretX`, `WrapMode.NONE`, `HAlign.LEFT`/`VAlign.TOP`, in a box
+  exactly `line.height()` tall — the canvas does no alignment or wrapping of its own.
+- Spans / selection / caret use the line `xs` (already absolute), clipped per line by `fillLineRange`.
+
+**Not done — labels.** A non-editable text node still draws through `canvas.text` with its own `hAlign`/`vAlign`
+and `WrapMode.WORD_CHAR`. Its metrics *are* published (and now carry real wrapped line spans), but they assume a
+left/top origin, so a centred label's published `xs` do not describe where it is drawn. Unifying it needs per-line
+alignment offsets baked into `TextMetrics` — worth doing, and a prerequisite for M4 reconstructing a label
+remotely, but out of scope for 4a because it changes how every existing label renders and wants a visual check.
 - ~~**Delete `updateHScroll` from the renderer**~~ — **done in 4·0.** Scroll is resolved in the compute phase
   (`Gui.resolveTextGeometry`), so the renderer is a pure consumer and no longer mutates model state.
 
@@ -329,14 +341,18 @@ Rewrite `TreeRenderer`'s text section to draw **from `n.textMetrics`** instead o
 - **4a:** wheel-scrolling away from the caret is *not* undone on the next frame, but *is* on the next caret move
   (the follow-on-caret-change rule, 11.3 step 4) — writable once multiline gives a text node a second scroll
   source.
-- `Enter` inserts a newline in multiline; is ignored / submits in single-line.
-- Up/Down move between lines; desired-column sticks across a short line (type `long`\n`x`\n`long`, Up from end of
-  line 3 lands past `x`).
-- Visual Home/End with wrap on.
-- Click on line 2 positions the caret there (2D `offsetAt`).
-- Word wrap: a string wider than `viewW` produces >1 `VisualLine`; caret offset↔point round-trips across the wrap.
-- Selection spanning lines.
-- Then a `--capture` visual check of a multiline field (+ gutter in 4b).
+- **4a (landed, green):** `MultilineTest` — 10 cases covering Enter (inserts in multiline, still submits in
+  single-line), Up/Down between lines, the sticky desired column across a short line *and* its reset on a
+  horizontal move, wrap producing >1 `VisualLine` with offset↔point round-trips across the boundary, visual
+  Home/End under wrap, click landing on the pointed-at line, selection spanning lines, and vertical
+  caret-follow scroll in a document taller than its field.
+- **Note for future multiline tests:** a newline cannot be *typed*. `'\n'` is a control character, so it rides
+  the key channel and `TextField.onCodePoint` filters it out of `CharTyped` — build multi-line text with
+  `Enter`, as a real keyboard does (`MultilineTest.typeLines`).
+- **Still to do:** a `--capture` visual check of a multiline field (+ gutter in 4b). 4a's renderer change is the
+  one part no headless test covers: the editable path now positions each line itself rather than letting the
+  canvas centre it, so single-line fields should look identical only if `intrinsic(VERTICAL)` matches the block
+  height the canvas would have used.
 
 ### 11.8 Open decisions (resolve in implementation)
 - **Tab in multiline:** soft tabs (N spaces) first per keyboard-focus-text.md §4.2; focus-traversal vs. insert is

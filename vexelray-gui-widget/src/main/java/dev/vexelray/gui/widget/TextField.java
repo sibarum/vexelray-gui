@@ -305,7 +305,8 @@ public final class TextField {
             return 1;
         }
         float lineH = m.caretHeight(clamp(caret));
-        float viewH = node.layout().viewH() - 2 * dev.vexelray.gui.core.text.TextMetrics.PAD_Y;
+        // viewH is already the text area — inset by the padding, less whatever the scrollbars reserved.
+        float viewH = node.layout().viewH();
         return lineH > 0f ? Math.max(1, (int) Math.floor(viewH / lineH)) : 1;
     }
 

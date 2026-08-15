@@ -238,12 +238,17 @@ public final class RetainedNode {
     /** Whether horizontal overflow may scroll (default true = auto scrollbar). */
     public boolean scrollXAllowed() {
         // Wrapped text never scrolls horizontally: there is nothing to the right of a wrapped line to reach, so
-        // an h-scrollbar there would be chrome for an axis that cannot move.
+        // an h-scrollbar there would be chrome for an axis that cannot move. Not overridable.
         if (kind == NodeKind.TEXT && wrapsText()) {
             return false;
         }
         Object v = props.get(PropKey.SCROLL_X);
-        return !(v instanceof Boolean b) || b;
+        if (v instanceof Boolean b) {
+            return b;   // an explicit choice always wins
+        }
+        // A single-line input masks its overflow at the edge and scrolls with the caret; a scrollbar under a
+        // one-line box is chrome nobody asked for. Multi-line editors and containers still default to scrolling.
+        return !(kind == NodeKind.TEXT && editable() && !multiline());
     }
 
     /** Whether vertical overflow may scroll (default true = auto scrollbar). */

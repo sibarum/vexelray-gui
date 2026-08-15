@@ -407,22 +407,21 @@ public final class Gui implements AutoCloseable {
         if (adv == null) {
             return;           // a measurer with no glyph metrics (an atlas-less stub) — nothing to resolve
         }
-        float pad = Math.min(TextMetrics.PAD_X, n.w * 0.25f);
-        // The viewport layout resolved for this node (FlexLayout.layoutTextLeaf) — viewH excludes any h-scrollbar
-        // strip, so text never runs underneath the bar.
+        // The text-area viewport the layout resolved for this node (FlexLayout.layoutTextLeaf). It is already
+        // inset by the padding and already excludes whatever the scrollbars reserved, so scroll offsets, thumb
+        // geometry and caret metrics are all expressed against the one rectangle.
         float viewW = n.viewW > 0f ? n.viewW : TextMetrics.contentWidth(n.w);
+        float viewH = Math.max(1f, n.viewH > 0f ? n.viewH : n.h - 2f * TextMetrics.padY(n));
         float lineH = tm.intrinsic(n, Axis.VERTICAL, px);
         boolean multiline = n.multiline();
         boolean wraps = n.wrapsText();
-        // The same call the layout made when it sized this node (FlexLayout.textBlockHeight), so the line count
-        // the box was built for and the lines drawn into it cannot disagree.
+        // The same call the layout made when it sized this node, so the line count the box was built for and the
+        // lines drawn into it cannot disagree.
         List<dev.vexelray.text.TextLayout.LineSpan> spans = tm.lineSpans(s, wraps ? viewW : 0f, px);
 
         // Where the caret sits, in line-relative terms: everything below is expressed against this.
         int caret = n.caret();
         int caretLine = caret < 0 ? 0 : lineIndexOf(spans, caret);
-        float boxH = n.viewH > 0f ? n.viewH : n.h;
-        float viewH = Math.max(1f, boxH - 2f * TextMetrics.PAD_Y);
 
         if (n.editable()) {
             resolveTextScroll(n, adv, spans, caret, caretLine, lineH, viewW, viewH, wraps, multiline);
@@ -431,10 +430,12 @@ public final class Gui implements AutoCloseable {
         // Bake absolute geometry. A multiline node tops out (a growing document grows downward); everything else
         // centres its text *block* in the box — the whole block, not one line, or a label the layout sized for
         // three wrapped lines would draw them starting a line down and spill out the bottom.
-        float contentLeft = n.x + pad - n.scrollX;
+        float viewX = n.viewW > 0f ? n.viewX : n.x + Math.min(TextMetrics.PAD_X, n.w * 0.25f);
+        float viewY = n.viewW > 0f ? n.viewY : n.y + TextMetrics.padY(n);
+        float contentLeft = viewX - n.scrollX;
         float contentTop = multiline
-                ? n.y + TextMetrics.PAD_Y - n.scrollY
-                : n.y + (boxH - spans.size() * lineH) * 0.5f;
+                ? viewY - n.scrollY
+                : viewY + (viewH - spans.size() * lineH) * 0.5f;
         List<TextMetrics.VisualLine> lines = new ArrayList<>(spans.size());
         for (int i = 0; i < spans.size(); i++) {
             var span = spans.get(i);

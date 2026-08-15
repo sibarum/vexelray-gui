@@ -30,6 +30,15 @@ public record TextMetrics(List<VisualLine> lines) {
     }
 
     /**
+     * The vertical inset of a text node's text area. An editable field is a <em>box</em> with text inside it, so
+     * its text sits in from the border; a label is the text block itself and gets no inset — which is what lets
+     * the layout size a wrapped label at exactly {@code lineCount · lineHeight}.
+     */
+    public static float padY(dev.vexelray.gui.core.model.RetainedNode n) {
+        return n.editable() ? PAD_Y : 0f;
+    }
+
+    /**
      * One visual line: its character range {@code [start, end]} (end inclusive of the caret-after-last position),
      * its top and height in root space, and {@code xs} — the absolute x of the caret before each character in the
      * line, length {@code (end - start) + 1} (so {@code xs[0]} is the line's left caret x and the last entry is

@@ -11,14 +11,19 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Horizontal scrolling of text nodes.
+ * Which text nodes scroll, on which axis, and what moves them.
  *
- * <p>Two rules, and they are complementary: <b>wrapped text never scrolls horizontally</b> — a wrapped line has
- * nothing to its right to reach, so an h-scrollbar would be chrome for an axis that cannot move — and
- * <b>unwrapped text overflows horizontally when it is wider than its box</b>, like any other content.
+ * <ul>
+ *   <li><b>Wrapped text never scrolls horizontally</b> — a wrapped line has nothing to its right to reach.</li>
+ *   <li><b>A single-line input does not either</b>, by default: it masks at its edge and slides with the caret,
+ *       because a scrollbar under a one-line box is chrome nobody asked for. Overridable per node.</li>
+ *   <li><b>An unwrapped multi-line editor does</b>, when its widest line exceeds the text area.</li>
+ *   <li><b>A multi-line editor scrolls vertically</b> when its lines exceed the visible height.</li>
+ * </ul>
  *
- * <p>Geometry: an 80px-wide field at the origin with the {@value HeadlessGui#CELL}px monospace stub leaves 60px
- * of text area, so 6 characters are visible and a 20-character string is 200px wide.
+ * <p>Geometry: an 80px-wide field at the origin with the {@value HeadlessGui#CELL}px monospace stub gives 60px of
+ * text area (6 characters); {@code rem(2.5)} = 40px tall less the 6px vertical inset each side leaves 28px, so
+ * 2 whole lines are visible out of however many exist.
  */
 class TextScrollTest {
 
@@ -30,14 +35,26 @@ class TextScrollTest {
         h.gui.root().children(f.node());
         h.frame();
         h.focus(f.node());
-        h.type(LONG);
         return f;
     }
+
+    /** Type lines, pressing Enter between them — '\n' rides the key channel, never CharTyped. */
+    private static void typeLines(HeadlessGui h, String... lines) {
+        for (int i = 0; i < lines.length; i++) {
+            if (i > 0) {
+                h.tap(Key.ENTER);
+            }
+            h.type(lines[i]);
+        }
+    }
+
+    // --- horizontal ---
 
     @Test
     void wrappedTextNeverScrollsHorizontally() {
         try (HeadlessGui h = new HeadlessGui()) {
             TextField f = field(h, true, true);
+            h.type(LONG);
 
             NodeLayout L = f.node().layout();
             assertFalse(L.overflowX(), "a wrapped field has nothing to the right to scroll to");
@@ -57,52 +74,79 @@ class TextScrollTest {
     }
 
     @Test
-    void unwrappedTextOverflowsHorizontallyWhenWiderThanItsBox() {
+    void aSingleLineInputMasksAtItsEdgeInsteadOfGrowingAScrollbar() {
         try (HeadlessGui h = new HeadlessGui()) {
             TextField f = field(h, false, false);
+            h.type(LONG);
 
             NodeLayout L = f.node().layout();
-            assertTrue(L.overflowX(), "20 characters (200px) do not fit in 60px of text area");
-            assertEquals(200f, L.contentW(), 0.5f, "the content extent is the widest line");
-            assertEquals(60f, L.viewW(), 0.5f, "against a 60px viewport, so the field is scrollable by 140px");
+            assertFalse(L.overflowX(), "no scrollbar under a one-line input");
+            assertTrue(L.scrollX() > 0f, "but it still slid along to keep the caret visible");
+            assertTrue(f.node().layout().text().caretX(LONG.length()) <= L.content().x() + L.viewW() + 0.5f,
+                    "with the caret inside the visible text area");
         }
     }
 
     @Test
-    void aShortStringDoesNotOverflow() {
+    void anUnwrappedEditorOverflowsHorizontallyWhenWiderThanItsBox() {
         try (HeadlessGui h = new HeadlessGui()) {
-            TextField f = new TextField(h.gui, "abc");
-            f.node().width(Length.vw(10)).height(Length.rem(2.5f));
-            h.gui.root().children(f.node());
-            h.frame();
+            TextField f = field(h, true, false);   // multiline, wrap off
+            h.type(LONG);
 
-            assertFalse(f.node().layout().overflowX(), "3 characters fit in 6 columns");
+            NodeLayout L = f.node().layout();
+            assertTrue(L.overflowX(), "20 characters (200px) do not fit in 60px of text area");
+            assertEquals(200f, L.contentW(), 0.5f, "the content extent is the widest line");
+        }
+    }
+
+    // --- vertical ---
+
+    @Test
+    void aMultilineEditorOverflowsVerticallyWhenItsLinesExceedTheBox() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TextField f = field(h, true, false);
+            typeLines(h, "a", "b", "c", "d", "e");   // 5 lines of 10px in 28px of visible height
+
+            NodeLayout L = f.node().layout();
+            assertTrue(L.overflowY(), "5 lines do not fit in 28px");
+            assertEquals(50f, L.contentH(), 0.5f, "the content extent is lineCount * lineHeight");
+            assertEquals(28f, L.viewH(), 0.5f, "against the text area's height");
+        }
+    }
+
+    @Test
+    void aSingleLineInputNeverScrollsVertically() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TextField f = field(h, false, false);
+            h.type(LONG);
+
+            assertFalse(f.node().layout().overflowY(), "one line cannot overflow its own box");
         }
     }
 
     /**
-     * Now that an overflowing field is a real scroll target, the wheel and the scrollbar can move it — so
+     * Now that an overflowing editor is a real scroll target, the wheel and the scrollbar move it — so
      * caret-follow must run on caret <em>movement</em>, not every frame. Following unconditionally would drag the
      * view back to the caret the instant the user scrolled away from it.
      */
     @Test
     void scrollingAwayFromTheCaretSticksUntilTheCaretMoves() {
         try (HeadlessGui h = new HeadlessGui()) {
-            TextField f = field(h, false, false);
-            float followed = f.node().layout().scrollX();
-            assertTrue(followed > 0f, "precondition: typing to the end scrolled the view right");
+            TextField f = field(h, true, false);
+            typeLines(h, "a", "b", "c", "d", "e");
+            float followed = f.node().layout().scrollY();
+            assertTrue(followed > 0f, "precondition: typing to the last line scrolled the view down");
 
-            h.wheel(-1, 0, 40f, 20f);                       // one notch left, pointer over the field
-            float scrolled = f.node().layout().scrollX();
-            assertTrue(scrolled < followed, "the wheel moved the view left, away from the caret");
+            h.wheel(0, 1, 40f, 20f);                        // one notch up, pointer over the field
+            float scrolled = f.node().layout().scrollY();
+            assertTrue(scrolled < followed, "the wheel moved the view up, away from the caret");
 
             h.frame();
-            assertEquals(scrolled, f.node().layout().scrollX(), 0.01f,
+            assertEquals(scrolled, f.node().layout().scrollY(), 0.01f,
                     "and a frame with no caret movement leaves it exactly where the user put it");
 
-            h.tap(Key.LEFT);                                 // the caret moves: following resumes
-            assertTrue(f.node().layout().scrollX() > scrolled,
-                    "moving the caret brings the view back to it");
+            h.tap(Key.UP);                                   // the caret moves: following resumes
+            assertTrue(f.node().layout().scrollY() > scrolled, "moving the caret brings the view back to it");
         }
     }
 }

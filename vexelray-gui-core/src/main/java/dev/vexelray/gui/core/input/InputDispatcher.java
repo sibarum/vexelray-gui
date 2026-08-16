@@ -62,6 +62,23 @@ public final class InputDispatcher {
     // Typed-text handlers (CharTyped → codepoint) and caret-placement handlers (click → offset), both for
     // editable text nodes; registering either makes the node focusable.
     private final Map<Long, IntConsumer> charHandlers = new ConcurrentHashMap<>();
+
+    /**
+     * Handlers registered as an <b>ordered stage</b> rather than as application logic: they run inline on the GUI
+     * thread during {@link #dispatch}, in arrival order, instead of being handed to the worker executor.
+     *
+     * <p>The distinction is what the handler <em>is</em>. An observer reacts to an event and has no ordering
+     * requirement, so it belongs off-thread where a slow one cannot stall rendering. A command performs a state
+     * transition that depends on arrival order — and handing each event to a pool separately orders the
+     * invocations but not the effects, so a burst of typed characters can apply scrambled. Serialising delivery
+     * would fix it by rebuilding the bus's own delivery machinery inside the dispatcher (architecture.md §0), and
+     * would spend exactly the asynchrony the design went to some trouble to get. Running the transition here
+     * instead costs nothing: the drain is already a total order, and applying an edit to a document is bounded
+     * model work, not application logic — the same reason the reconciler runs here.
+     */
+    private final Map<Long, IntConsumer> charStages = new ConcurrentHashMap<>();
+    private final Map<Long, Consumer<KeyEvent>> keyStages = new ConcurrentHashMap<>();
+    private final Map<Long, Consumer<DragEvent>> dragStages = new ConcurrentHashMap<>();
     /**
      * Declared preemption (see {@link ClaimScope}). Ordered only by scope precedence, never by registration, so
      * a focused element always outranks a global default. {@code inline} marks the framework's own claims, whose
@@ -86,6 +103,17 @@ public final class InputDispatcher {
     private static final long REPEAT_INTERVAL_NANOS = 40_000_000L; // ~25 repeats/second thereafter
     private Key repeatKey;
     private long repeatNextNanos;
+
+    /**
+     * The dispatch conduit: every input edge drained is stamped with its position here, on the one thread that
+     * drains. The order was always this — the drain is single-threaded — but it was implicit, recoverable only by
+     * knowing which thread ran what. Stated explicitly, an observer downstream can tell a dropped edge from a
+     * reordered one, which is the difference between a gap and a bug.
+     */
+    private final dev.vexelray.gui.core.Conduit conduit = new dev.vexelray.gui.core.Conduit();
+
+    /** The stamp for the edge currently being routed; set once per {@link #handle} call. */
+    private dev.vexelray.gui.core.Provenance current = new dev.vexelray.gui.core.Provenance(0L, -1L, 0L);
 
     private RetainedNode currentRoot;
     private long pressTargetId = -1;
@@ -167,6 +195,34 @@ public final class InputDispatcher {
         focusable.add(nodeId);
     }
 
+    // --- ordered stages: run on the GUI thread during dispatch, in arrival order (see charStages) ---
+
+    /** Register {@code nodeId}'s typed-text stage, run in arrival order on the GUI thread. */
+    public void onCharUi(long nodeId, IntConsumer stage) {
+        charStages.put(nodeId, stage);
+        focusable.add(nodeId);
+    }
+
+    /** Register {@code nodeId}'s key-command stage, run in arrival order on the GUI thread. */
+    public void onKeyUi(long nodeId, Consumer<KeyEvent> stage) {
+        keyStages.put(nodeId, stage);
+        focusable.add(nodeId);
+    }
+
+    /** Register {@code nodeId}'s drag stage, run in arrival order on the GUI thread. */
+    public void onDragUi(long nodeId, Consumer<DragEvent> stage) {
+        dragStages.put(nodeId, stage);
+    }
+
+    /**
+     * Claim {@code chord} for {@code nodeId}, running the command on the GUI thread in arrival order — the
+     * variant a claim that performs an edit needs, so it sequences against typed text rather than racing it.
+     */
+    public void claimUi(long nodeId, Shortcut chord, ClaimScope scope, Runnable command) {
+        claims.removeIf(c -> c.nodeId() == nodeId && c.scope() == scope && c.chord().equals(chord));
+        claims.add(new Claim(chord, scope, nodeId, command, true));
+    }
+
     /** Register a global shortcut command — a {@link ClaimScope#GLOBAL} claim owned by no node. */
     public void registerShortcut(Shortcut shortcut, Runnable command) {
         claim(-1L, shortcut, ClaimScope.GLOBAL, command);
@@ -225,6 +281,10 @@ public final class InputDispatcher {
         dragHandlers.remove(nodeId);
         keyHandlers.remove(nodeId);
         charHandlers.remove(nodeId);
+        charStages.remove(nodeId);
+        keyStages.remove(nodeId);
+        dragStages.remove(nodeId);
+        claims.removeIf(c -> c.nodeId() == nodeId);
         focusable.remove(nodeId);
         reportedState.remove(nodeId);
         if (focusedId == nodeId) {
@@ -250,6 +310,9 @@ public final class InputDispatcher {
     // --- delivered on the GUI thread during dispatch() ---
 
     private void handle(InputEvent e) {
+        // Sequence every edge, not just the ones that publish an observation: a consumer that only ever sees key
+        // routes still needs the gaps between them to be countable.
+        current = conduit.next();
         switch (e) {
             case InputEvent.PointerMoved m -> {
                 if (scrollDrag != null) {
@@ -328,9 +391,15 @@ public final class InputDispatcher {
             case InputEvent.CharTyped c -> {
                 // Typed text goes only to the focused, editable node — never conflated with the key command.
                 if (focusedId != -1) {
+                    int cp = c.codepoint();
+                    // The ordered stage runs here, on the drain thread, so a burst of characters applies in the
+                    // order it was typed. An async handler is still offered the code point afterwards.
+                    IntConsumer stage = charStages.get(focusedId);
+                    if (stage != null) {
+                        stage.accept(cp);
+                    }
                     IntConsumer handler = charHandlers.get(focusedId);
                     if (handler != null) {
-                        int cp = c.codepoint();
                         handlerExecutor.execute(() -> handler.accept(cp));
                     }
                 }
@@ -375,6 +444,10 @@ public final class InputDispatcher {
         // 2. Otherwise the focused node's key handler (caret motion, backspace, ...). Core takes nothing for
         //    itself here — if nobody claimed the chord, the focused element hears it.
         if (focusedId != -1) {
+            Consumer<KeyEvent> stage = keyStages.get(focusedId);
+            if (stage != null) {
+                stage.accept(e);   // ordered: a caret move must sequence against the typing around it
+            }
             Consumer<KeyEvent> handler = keyHandlers.get(focusedId);
             if (handler != null) {
                 handlerExecutor.execute(() -> handler.accept(e));
@@ -426,7 +499,7 @@ public final class InputDispatcher {
     /** Report a routed key press to observers. Never consulted for routing — see {@link KeyRouted}. */
     private void report(KeyEvent e, boolean claimed) {
         if (keyRoutedTopic != null) {
-            bus.publish(keyRoutedTopic, new KeyRouted(e, focusedId, claimed));
+            bus.publish(keyRoutedTopic, new KeyRouted(e, focusedId, claimed, current));
         }
     }
 
@@ -439,10 +512,14 @@ public final class InputDispatcher {
         if (now < repeatNextNanos) {
             return;
         }
+        // Use the live modifier set so pressing Ctrl mid-hold upgrades e.g. arrow-repeat to word-jump.
+        KeyEvent e = new KeyEvent(repeatKey, Set.copyOf(heldMods));
+        Consumer<KeyEvent> stage = keyStages.get(focusedId);
+        if (stage != null) {
+            stage.accept(e);
+        }
         Consumer<KeyEvent> handler = keyHandlers.get(focusedId);
         if (handler != null) {
-            // Use the live modifier set so pressing Ctrl mid-hold upgrades e.g. arrow-repeat to word-jump.
-            KeyEvent e = new KeyEvent(repeatKey, Set.copyOf(heldMods));
             handlerExecutor.execute(() -> handler.accept(e));
         }
         repeatNextNanos = now + REPEAT_INTERVAL_NANOS; // frame-rate-bounded; no burst catch-up
@@ -630,7 +707,7 @@ public final class InputDispatcher {
     /** The nearest ancestor-or-self of {@code hit} with a drag handler, or {@code null}. */
     private RetainedNode ancestorWithDragHandler(RetainedNode hit) {
         for (RetainedNode n = hit; n != null; n = n.parent) {
-            if (dragHandlers.containsKey(n.id)) {
+            if (dragHandlers.containsKey(n.id) || dragStages.containsKey(n.id)) {
                 return n;
             }
         }
@@ -639,12 +716,16 @@ public final class InputDispatcher {
 
     private void fireDrag(DragEvent.Phase phase, float x, float y) {
         RetainedNode n = dragCapture;
-        Consumer<DragEvent> handler = dragHandlers.get(n.id);
-        if (handler == null) {
-            return;
-        }
         DragEvent e = new DragEvent(phase, x, y, n.x, n.y, n.w, n.h);
-        handlerExecutor.execute(() -> handler.accept(e));
+        // Ordered first: click-to-caret moves the same document typing does, so it has to sequence with it.
+        Consumer<DragEvent> stage = dragStages.get(n.id);
+        if (stage != null) {
+            stage.accept(e);
+        }
+        Consumer<DragEvent> handler = dragHandlers.get(n.id);
+        if (handler != null) {
+            handlerExecutor.execute(() -> handler.accept(e));
+        }
     }
 
     private void fireClick(RetainedNode target, float x, float y) {

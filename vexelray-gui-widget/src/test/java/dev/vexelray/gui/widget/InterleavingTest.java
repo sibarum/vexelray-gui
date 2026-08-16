@@ -1,14 +1,27 @@
 package dev.vexelray.gui.widget;
 
 import org.junit.jupiter.api.Test;
+import sibarum.tactroller.api.InputEvent;
 import sibarum.tactroller.api.Key;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Demonstrates deterministic control over when input handlers fire, using the manual-drain executor. Because all
- * input rides the bus and handlers run on an injected executor, a test can hold handlers in a queue and release
- * them one at a time — the hook for reproducing specific interleavings / races without any real threads.
+ * The line between what is ordered and what is deferred.
+ *
+ * <p>These tests used to assert the opposite: that a text edit sat in the handler queue until a test released it,
+ * so a specific interleaving of two inserts could be reproduced. That was a faithful description of the design and
+ * the reason it was wrong — if a test can choose the order two typed characters apply in, so can a thread pool, and
+ * in production one did. Applying an edit is now an ordered stage on the frame's input drain, so the interleaving
+ * the old tests reproduced no longer exists to reproduce.
+ *
+ * <p>What the manual executor still controls is everything that legitimately has no ordering requirement: the
+ * application-facing notifications. Those stay deferred, which is the whole point of dispatching them
+ * asynchronously.
  */
 class InterleavingTest {
 
@@ -20,54 +33,62 @@ class InterleavingTest {
         return f;
     }
 
+    private static void type(HeadlessGui h, char c) {
+        h.bus.publish(dev.vexelray.gui.core.input.InputTopics.INPUT, new InputEvent.CharTyped(c, 0));
+    }
+
     @Test
-    void handlersAreDeferredUntilExplicitlyReleased() {
+    void editsApplyDuringDispatchEvenWhenNoHandlerIsEverReleased() {
         try (HeadlessGui h = HeadlessGui.manual()) {
             TextField f = focusedField(h, "");
 
-            // Publish two characters and dispatch — the two insert handlers are queued, not yet applied.
-            h.bus.publish(dev.vexelray.gui.core.input.InputTopics.INPUT,
-                    new sibarum.tactroller.api.InputEvent.CharTyped('a', 0));
-            h.bus.publish(dev.vexelray.gui.core.input.InputTopics.INPUT,
-                    new sibarum.tactroller.api.InputEvent.CharTyped('b', 0));
+            type(h, 'a');
+            type(h, 'b');
             h.dispatchOnly();
 
-            assertEquals("", f.text(), "handlers are queued, not run");
-            assertEquals(2, h.tasks.pending());
-
-            h.tasks.runOne();
-            assertEquals("a", f.text(), "releasing one handler applies exactly one edit");
-
-            h.tasks.runOne();
-            assertEquals("ab", f.text(), "releasing the next applies in order");
-            assertEquals(0, h.tasks.pending());
+            assertEquals("ab", f.text(),
+                    "the edit is an ordered stage on the drain, so it does not wait on the handler executor");
         }
     }
 
     @Test
-    void interleavingAKeyCommandBetweenTwoQueuedInserts() {
+    void aKeyCommandBetweenTwoInsertsAppliesWhereItArrived() {
         try (HeadlessGui h = HeadlessGui.manual()) {
             TextField f = focusedField(h, "");
 
-            // Queue an insert of 'x'.
-            h.bus.publish(dev.vexelray.gui.core.input.InputTopics.INPUT,
-                    new sibarum.tactroller.api.InputEvent.CharTyped('x', 0));
-            h.dispatchOnly();          // 1 queued
-            h.tasks.runOne();          // "x", caret after it
+            type(h, 'x');
+            h.dispatchOnly();
+            assertEquals("x", f.text());
 
-            // Now a Backspace command and another insert are dispatched together; releasing the backspace first
-            // then the insert yields a specific, reproducible result.
+            // Backspace then 'y', published in that order, must apply in that order — there is no longer any way
+            // for a consumer to choose otherwise.
             h.down(Key.BACKSPACE);
-            h.bus.publish(dev.vexelray.gui.core.input.InputTopics.INPUT,
-                    new sibarum.tactroller.api.InputEvent.CharTyped('y', 0));
+            type(h, 'y');
             h.dispatchOnly();
             h.up(Key.BACKSPACE);
 
-            assertEquals(2, h.tasks.pending());
-            h.tasks.runOne();          // backspace → ""
-            assertEquals("", f.text());
-            h.tasks.runOne();          // insert 'y' → "y"
-            assertEquals("y", f.text());
+            assertEquals("y", f.text(), "backspace consumed the 'x', then 'y' was inserted");
+        }
+    }
+
+    @Test
+    void applicationNotificationsStayDeferredAndArriveInOrder() {
+        try (HeadlessGui h = HeadlessGui.manual()) {
+            TextField f = focusedField(h, "");
+            List<String> seen = new ArrayList<>();
+            f.onChange(seen::add);
+
+            type(h, 'a');
+            type(h, 'b');
+            h.dispatchOnly();
+
+            assertEquals("ab", f.text(), "the document is already current");
+            assertEquals(List.of(), seen, "but the application has not been told yet — that is the async part");
+            assertTrue(h.tasks.pending() >= 2, "one queued notification per change");
+
+            h.tasks.drain();
+            assertEquals(List.of("a", "ab"), seen,
+                    "notifications arrive as the versions that produced them, in commit order");
         }
     }
 }

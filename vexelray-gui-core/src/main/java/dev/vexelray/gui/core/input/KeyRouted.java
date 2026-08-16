@@ -13,6 +13,9 @@ package dev.vexelray.gui.core.input;
  * @param event         the key and the modifiers held with it
  * @param focusedNodeId the node holding keyboard focus at the time, or {@code -1} for none
  * @param claimed       whether a claim preempted delivery to the focused node
+ * @param from          the dispatch conduit and this event's position in it — the drain's order, stated rather
+ *                      than inferred, so an observer can tell a dropped key from a reordered one
  */
-public record KeyRouted(KeyEvent event, long focusedNodeId, boolean claimed) {
+public record KeyRouted(KeyEvent event, long focusedNodeId, boolean claimed,
+                        dev.vexelray.gui.core.Provenance from) {
 }

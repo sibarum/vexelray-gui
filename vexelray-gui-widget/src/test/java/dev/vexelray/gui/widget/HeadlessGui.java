@@ -74,18 +74,37 @@ final class HeadlessGui implements AutoCloseable {
     final Gui gui;
 
     HeadlessGui() {
-        this(false);
+        this(Mode.SYNCHRONOUS);
     }
 
-    private HeadlessGui(boolean manual) {
-        this.tasks = manual ? new ManualExecutor() : null;
-        // Synchronous mode runs handlers inline during dispatch; manual mode queues them for the test to release.
-        this.gui = new Gui(bus, tasks != null ? tasks : Runnable::run);
+    /** How input handlers reach their widget — the property under test in {@link HandlerOrderingTest}. */
+    private enum Mode { SYNCHRONOUS, MANUAL, THREADED }
+
+    private HeadlessGui(Mode mode) {
+        this.tasks = mode == Mode.MANUAL ? new ManualExecutor() : null;
+        // Synchronous mode runs handlers inline during dispatch; manual mode queues them for the test to release;
+        // threaded mode uses Gui's own worker pool — the production path, and the only one that can expose an
+        // ordering defect in the handoff (see HandlerOrderingTest).
+        this.gui = switch (mode) {
+            case MANUAL -> new Gui(bus, tasks);
+            case SYNCHRONOUS -> new Gui(bus, Runnable::run);
+            case THREADED -> new Gui(bus);
+        };
     }
 
     /** A harness whose input handlers are queued, not run — for deterministic interleaving via {@link #tasks}. */
     static HeadlessGui manual() {
-        return new HeadlessGui(true);
+        return new HeadlessGui(Mode.MANUAL);
+    }
+
+    /**
+     * A harness that dispatches input handlers on {@link Gui}'s <b>real worker pool</b>, exactly as an application
+     * does. Every other mode collapses the handoff onto one thread, which is what makes them deterministic — and
+     * also what makes them structurally unable to observe whether delivery order survives it. A widget whose state
+     * transitions depend on arrival order has to be tested here or not at all.
+     */
+    static HeadlessGui threaded() {
+        return new HeadlessGui(Mode.THREADED);
     }
 
     private final TextMeasurer measurer = new TextMeasurer() {

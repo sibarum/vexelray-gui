@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -158,5 +159,62 @@ class KeyClaimTest {
         assertTrue(seen.get(0).claimed(), "Tab was preempted by the claim");
         assertEquals(1, seen.get(0).focusedNodeId(), "and the report says who had focus");
         assertEquals(false, seen.get(1).claimed(), "A was not claimed");
+    }
+
+    /**
+     * The drain stamps its own order. It always had one — it is a single thread — but implicitly, so a consumer
+     * could not distinguish "I was never sent that key" from "I was sent it out of order". A gapless sequence
+     * from one conduit makes both answerable without a clock, and without agreeing anything with anyone.
+     */
+    @Test
+    void routedKeysCarryTheDrainsOrderAsAGaplessSequence() {
+        Atchung bus = Atchung.create();
+        InputDispatcher d = new InputDispatcher(bus, CLICKS, Runnable::run);
+        d.keyRoutedTopic(ROUTES);
+        RetainedNode root = tree();
+        d.setFocusable(1, true);
+        d.focus(1);
+
+        List<KeyRouted> seen = new ArrayList<>();
+        bus.subscribe(ROUTES, seen::add);
+
+        press(bus, Key.A);
+        press(bus, Key.B);
+        press(bus, Key.C);
+        d.dispatch(root);
+
+        assertEquals(3, seen.size());
+        long conduit = seen.get(0).from().conduitId();
+        for (int i = 1; i < seen.size(); i++) {
+            assertEquals(conduit, seen.get(i).from().conduitId(), "one drain is one conduit");
+            assertEquals(seen.get(i - 1).from().sequence() + 1, seen.get(i).from().sequence(),
+                    "consecutive edges are consecutive: a gap would mean a dropped edge, not a reordered one");
+        }
+    }
+
+    /** Two dispatchers are two ordering domains, and their sequences are deliberately not comparable. */
+    @Test
+    void separateDispatchersAreSeparateConduits() {
+        Atchung bus = Atchung.create();
+        InputDispatcher a = new InputDispatcher(bus, CLICKS, Runnable::run);
+        InputDispatcher b = new InputDispatcher(bus, CLICKS, Runnable::run);
+        a.keyRoutedTopic(ROUTES);
+        b.keyRoutedTopic(ROUTES);
+        RetainedNode root = tree();
+        a.setFocusable(1, true);
+        a.focus(1);
+        b.setFocusable(1, true);
+        b.focus(1);
+
+        List<KeyRouted> seen = new ArrayList<>();
+        bus.subscribe(ROUTES, seen::add);
+
+        press(bus, Key.A);
+        a.dispatch(root);
+        b.dispatch(root);
+
+        assertEquals(2, seen.size(), "both dispatchers drained the same edge");
+        assertNotEquals(seen.get(0).from().conduitId(), seen.get(1).from().conduitId(),
+                "so the two reports carry different conduits, and their sequences say nothing about each other");
     }
 }

@@ -100,6 +100,7 @@ public final class Gui implements AutoCloseable {
     private float lastViewportW = -1f;
     private float lastViewportH = -1f;
     private volatile TextClipboard clipboard = new TextClipboard.InMemory();
+    private final Executor handlers;
     private final ExecutorService workers = Executors.newCachedThreadPool(r -> {
         Thread t = new Thread(r, "vexelray-gui-worker");
         t.setDaemon(true);
@@ -139,7 +140,7 @@ public final class Gui implements AutoCloseable {
         this.mutationSub = pump.subscribe(MUTATIONS, reconciler::apply, MUTATION_MAILBOX, Backpressure.BLOCK);
         // Framework input dispatch on the same bus; click handlers run on the worker executor (off the GUI thread).
         // Wheel scrolling mutates scroll offsets on the GUI thread and asks for a relayout next frame.
-        Executor handlers = handlerExecutor != null ? handlerExecutor : workers;
+        this.handlers = handlerExecutor != null ? handlerExecutor : workers;
         this.input = new InputDispatcher(bus, CLICKS, handlers, reconciler::markLayoutDirty);
         this.input.focusTopic(FOCUS);
         this.input.keyRoutedTopic(KEY_ROUTES);
@@ -238,6 +239,58 @@ public final class Gui implements AutoCloseable {
      */
     public Gui onChar(Node node, java.util.function.IntConsumer handler) {
         input.onChar(node.id(), handler);
+        return this;
+    }
+
+    // --- ordered stages (§5): the GUI-thread variants of the seams above ---
+
+    /**
+     * Register {@code node}'s typed-text <b>stage</b>: like {@link #onChar}, but run on the GUI thread during the
+     * frame's input drain, <b>in arrival order</b>.
+     *
+     * <p>Use this — not {@link #onChar} — when the handler performs a state transition that depends on the order
+     * events arrived in. The worker executor orders the invocations but not their effects: a burst of typed
+     * characters handed to a pool one task at a time can apply scrambled, and because each individual edit is
+     * coherent, the result reads as a dropped keystroke rather than a race. Everything without an ordering
+     * requirement — application logic, notifications, anything slow — belongs on {@link #onChar}, where it still
+     * cannot stall rendering.
+     *
+     * <p>A stage runs inline on the frame loop, so it must be bounded model work (splice a document, move a
+     * caret) and never application logic or I/O. That is the same contract the reconciler runs under.
+     */
+    public Gui onCharUi(Node node, java.util.function.IntConsumer stage) {
+        input.onCharUi(node.id(), stage);
+        return this;
+    }
+
+    /** Register {@code node}'s key-command stage — the ordered counterpart of {@link #onKey}. */
+    public Gui onKeyUi(Node node, java.util.function.Consumer<KeyEvent> stage) {
+        input.onKeyUi(node.id(), stage);
+        return this;
+    }
+
+    /** Register {@code node}'s drag stage — the ordered counterpart of {@link #onDrag}. */
+    public Gui onDragUi(Node node, java.util.function.Consumer<DragEvent> stage) {
+        input.onDragUi(node.id(), stage);
+        return this;
+    }
+
+    /**
+     * Claim {@code chord} for {@code node}, running the command on the GUI thread in arrival order — the ordered
+     * counterpart of {@link #claim}, for a claim whose command edits state that typing also edits.
+     */
+    public Gui claimUi(Node node, Shortcut chord, ClaimScope scope, Runnable command) {
+        input.claimUi(node.id(), chord, scope, command);
+        return this;
+    }
+
+    /**
+     * Drop every input registration {@code node} holds — handlers, ordered stages, claims, focusability — and
+     * clear focus if it held it. Call when a node is removed; until the lifecycle FSM (§7) makes removal an
+     * observable event, this is manual.
+     */
+    public Gui releaseNode(Node node) {
+        input.clearHandlers(node.id());
         return this;
     }
 
@@ -361,6 +414,15 @@ public final class Gui implements AutoCloseable {
     /** Run {@code work} on a worker thread (app logic stays off the GUI thread). */
     public void async(Runnable work) {
         workers.submit(work);
+    }
+
+    /**
+     * The executor application handlers run on — the same lane clicks, keys and drags are delivered through, so a
+     * widget dispatching its own app-facing callbacks here gives them identical semantics (and identical
+     * determinism under a test harness that injected a same-thread executor).
+     */
+    public Executor handlers() {
+        return handlers;
     }
 
     /** Buffer a group of edits and post them as one atomic {@link Mutation.Batch}. */

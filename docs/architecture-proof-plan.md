@@ -46,9 +46,13 @@ Rules the architecture test asserts:
 1. **`vexelray-gui-core` and `-widget` never import `elektroq` or `atchung.elektroq`.** The GUI speaks only
    `atchung-core` topics/State. Transport is chosen at the application edge.
 2. **The wire contract is a dedicated set of message types**, not the internal model. Internal records
-   (`Mutation`, `RetainedNode`, `NodeLayout`, `TextMetrics`, `TextEdit`, tactroller `InputEvent`) stay free of
-   elektro-Q annotations; the application (or a small `*-wire` contract module) defines `@Message` DTOs and maps
-   to/from them. This keeps `gui-core` decoupled from the wire and lets the DTOs version independently.
+   (`Mutation`, `RetainedNode`, `NodeLayout`, `TextMetrics`, `TextEdit`, `Document`, tactroller `InputEvent`)
+   stay free of elektro-Q annotations; the application (or a small `*-wire` contract module) defines `@Message`
+   DTOs and maps to/from them. This keeps `gui-core` decoupled from the wire.
+   *Independent DTO versioning is explicitly **not** a goal* (architecture.md §13.13): the stack updates in
+   unison, so there is no rolling window in which two builds meet and no compatibility negotiation to design.
+   Adding a field is a recompile. That stops being true the moment anything in a wire format is persisted and
+   read back after an upgrade — the assumption's trigger is the first write to disk, not a peer running old code.
 3. **`atchung-core` has no dependency on `elektroq`** and vice-versa — the bridge is the only meeting point, so
    "the fast in-VM path never pays for the network" is structural, not disciplined.
 4. **Only the declared stages write the retained model** (layout-read-model.md §2.1): `TreeRenderer` and the
@@ -159,6 +163,12 @@ is a finding to fix (e.g., replace reflection with codegen), not something to pa
 - **Traffic sorts by transport class.** Mutations, input edges, and `TextEdit`s are lossless-required → reliable
   ordered channel. The read-model is a `State<T>` (latest-wins) → safe over lossy/`COALESCE_LATEST`, since a
   dropped intermediate snapshot is superseded; the `version` field is the replication + delta-encoding hook.
+- **`State.version` is an identity, not an order.** It counts commits to one value from one producer, so it is
+  exactly right for delta encoding (same producer, "what changed since v") and says nothing whatever about how
+  two producers' events interleave. Cross-component order is carried by `Provenance(conduitId, sequence, …)`
+  instead (architecture.md §13.12); `M1` should map that, not the version, when a message crosses a boundary.
+  A per-`State` counter that reads like a global order is the failure mode worth naming: it correlates well
+  enough to look right until there are two producers.
 - **Deterministic network testing.** `SimTransport` + the manual-drain headless executor = replay a scenario
   under injected loss/latency and assert the outcome, with no real threads or sockets. This is the automation the
   whole bet hinges on.

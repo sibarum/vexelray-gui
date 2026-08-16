@@ -472,8 +472,45 @@ exists as siblings, so those steps are *integration*, not construction.
    because `preventDefault` needs a synchronous handler answer that an async bus cannot give. Framework
    defaults (Tab traversal, global shortcuts) are themselves claims, so any focused element can outrank
    them. Observation (`gui.keyRoutes()`) is separate and can never veto.
+10. **Ordered state transitions run on the drain; notifications stay async (§5, §8).** You cannot have
+    concurrent unordered handlers and an order-dependent transition without a serialization point, and the
+    only three places to put one are the delivery, a reorder buffer at the consumer, or the transition
+    itself. The first two are the same queue — and building it inside the dispatcher would re-implement the
+    bus's own delivery machinery (§0) while spending exactly the asynchrony §5 exists to provide. So the
+    transition moves to the stage that is *already* a total order. `onCharUi`/`onKeyUi`/`onDragUi`/`claimUi`
+    are that seam; a stage must be bounded model work, never application logic. Everything without an
+    ordering requirement — `onChange`, app handlers, anything slow — stays on the worker executor, where it
+    still cannot stall rendering. Landed after a text field applied a 64-character burst scrambled: each
+    edit was individually coherent, so the result read as a dropped keystroke rather than a race
+    (`HandlerOrderingTest`, the module's only test that runs handlers on a real pool).
+11. **Widget state is a `State<T>`, not a private buffer behind a lock (§4).** A widget holding its own
+    authoritative model is the "retained tree on a shared, locked model" alternative §4 rejected,
+    reintroduced one layer up. `TextField` now owns a `State<Document>` changed by committing a *relative*
+    `Edit` the reducer resolves against the current value: readers on any thread get a coherent versioned
+    snapshot lock-free, and a concurrent programmatic change costs a CAS retry instead of a lost edit.
+    Absolute mutations are what made this invisible — recomputing the whole string from a stale read yields
+    a coherent document with a keystroke missing, and nothing reports it.
+12. **Order is `(conduit, sequence)`; time is evidence; conflict criteria are undefined.** A conduit is a
+    single-threaded ordering domain, so its counter is a plain increment — free, uncontended, and exact,
+    with none of the uncertainty interval that comparing clocks carries. The counter nobody can afford is a
+    *global* one. Across conduits the sequences are deliberately incomparable and timestamps are the only
+    evidence, bounded by sync error — which is why they cannot adjudicate events packed tighter than that
+    bound, and why ordering is never left to them. Resolving a genuine cross-conduit conflict has no general
+    answer at all: a winner is picked by criteria the domain chooses (a deterministic hash, an arbiter), the
+    only universal requirement being that every peer applies the same criteria. Left undefined, because the
+    topology is single-writer — one host owns the document, the bridge does not relay — so no conflict can
+    arise. **The trigger to revisit is a second writer, not a date.**
+13. **The stack updates in unison, so wire-format skew is not a case.** Every peer is one build, deployed
+    atomically; there is no rolling window, so DTOs need no independent versioning or optional-field
+    negotiation. This holds only while nothing in a wire format outlives the build — the moment a snapshot
+    or session is persisted and read back after an upgrade, the other peer is last month's build and the
+    assumption acquires an exception. **The trigger is the first `writeTo(file)`, not a peer running old
+    code.**
 
 Still open: layout-animation path (size/position via `onChange`) first-class vs. transform-layer-only
 for v1; group membership static vs. dynamic; choreographer interruption semantics; whether tree
 mutations ever share a bus instance with cross-component traffic or always use a private internal topic
-(currently: shared bus, private topic name).
+(currently: shared bus, private topic name); whether node removal releases input registrations
+automatically (today `Gui.releaseNode` is manual, and a removed focused node keeps focus and its claims —
+this wants the §7 lifecycle FSM, which would make removal an observable event rather than a private index
+deletion).

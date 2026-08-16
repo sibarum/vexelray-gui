@@ -4,13 +4,21 @@ import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.ClaimScope;
+import dev.vexelray.gui.core.input.DragEvent;
 import dev.vexelray.gui.core.input.FocusEvent;
 import dev.vexelray.gui.core.input.KeyEvent;
 import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.text.Document;
+import dev.vexelray.gui.core.text.Edit;
 import dev.vexelray.gui.core.text.Span;
 import dev.vexelray.gui.core.text.TextEdit;
+import dev.vexelray.gui.core.text.TextMetrics;
 import dev.vexelray.text.TextLayout;
+import sibarum.atchung.Committer;
+import sibarum.atchung.State;
+import sibarum.atchung.Subscription;
+import sibarum.atchung.Versioned;
 import sibarum.tactroller.api.Key;
 import sibarum.tactroller.api.Modifier;
 
@@ -21,37 +29,39 @@ import java.util.List;
 import java.util.function.Consumer;
 
 /**
- * An editable text field — single-line by default, {@link #multiline} on request — built on the framework's
- * input seams: typed text arrives through {@link Gui#onChar} (the layout-resolved {@code CharTyped} channel),
- * edit commands (caret motion, backspace, delete, Home/End, selection, clipboard, submit) through
- * {@link Gui#onKey}, and click-to-position plus drag-to-select through the general {@link Gui#onDrag} seam.
+ * An editable text field — single-line by default, {@link #multiline} on request.
  *
- * <p>Everything geometric — where a click lands, where the line above is, how far a page scrolls — is a pure
- * lookup on this node's published layout read-model ({@code node.layout().text()}, docs/layout-read-model.md).
- * The widget never sees a measurer or a glyph atlas, which is what lets the identical code drive a field on
- * screen, headless in a test, or on a remote client with no fonts of its own.
+ * <p><b>The content is an Atchung {@code State<Document>}, not a private buffer.</b> Text, caret, selection anchor
+ * and formatting spans are one immutable value carrying one version, changed by committing a relative
+ * {@link Edit} that the reducer resolves against whatever the document is at commit time. Readers on any thread
+ * get a coherent snapshot lock-free; a concurrent programmatic change costs a CAS retry rather than a lost edit;
+ * and the three-property mirror that could previously be split by a frame boundary is now a single atomic value.
  *
- * <p>The field owns the authoritative content, caret and selection anchor; it mirrors them onto the retained
- * node ({@link Node#text},
- * {@link Node#caret}, {@link Node#selection}) so the renderer draws the text, the selection highlight and the
- * blinking caret.
+ * <p><b>Edits are committed on the GUI thread's drain; notifications are delivered asynchronously.</b> Those are
+ * two different requirements and the field now treats them as such. Applying a keystroke to a document depends on
+ * arrival order and is bounded model work, so it runs as an ordered stage ({@link Gui#onCharUi},
+ * {@link Gui#onKeyUi}, {@link Gui#onDragUi}, {@link Gui#claimUi}) where a total order already exists. Telling the
+ * application what changed has no ordering requirement at all, so it goes to the handler executor carrying its
+ * version — a late delivery is detectably stale rather than silently out of sequence. Handing each input event to
+ * a worker pool separately, as this widget used to, orders the invocations but not their effects: a typed burst
+ * could apply scrambled, and because every individual edit stayed coherent the result read as a dropped keystroke
+ * (see {@code HandlerOrderingTest}).
+ *
+ * <p>Everything geometric — where a click lands, where the line above is, how far a page scrolls — remains a pure
+ * lookup on this node's published layout read-model ({@code node.layout().text()}, docs/layout-read-model.md). The
+ * widget never sees a measurer or a glyph atlas, which is what lets the identical code drive a field on screen,
+ * headless in a test, or on a remote client with no fonts of its own.
  *
  * <p>Selection spans {@code [min(anchor,caret), max(anchor,caret))}; {@code anchor == caret} means no selection.
- * Clipboard cut/copy/paste go through {@link Gui#clipboard()} (an OS clipboard when the app installs one, else a
- * process-local one). All input handlers run on worker threads, so every edit is serialised on this instance's
- * monitor and every tree change goes through the thread-safe {@link Node} handle; clipboard I/O happens outside
- * the lock. Reads flow out through {@link #onChange} (content edits) and {@link #onSubmit} (Enter).
+ * Clipboard cut/copy/paste go through {@link Gui#clipboard()}. Call {@link #close()} to release the field's
+ * subscriptions, claims and blink registration when it is removed from the tree.
  */
-public final class TextField {
+public final class TextField implements AutoCloseable {
 
     private static final Color FIELD_BG = Color.rgb(0x0e1220);
     private static final Color FIELD_BORDER = Color.rgb(0x2b3346);
     private static final Color FIELD_BORDER_FOCUS = Color.rgb(0x3aa0ff);
     private static final Color INK = Color.rgb(0xeef2f8);
-    private static final long BLINK_MILLIS = 530L;
-
-    private final Gui gui;
-    private final Node node;
 
     /** Cap on retained undo history, so a long editing session can't grow the stacks without bound. */
     private static final int UNDO_LIMIT = 1000;
@@ -59,29 +69,34 @@ public final class TextField {
     /** Spaces inserted by Tab in a multiline field (soft tabs — the document holds no tab characters). */
     private static final int SOFT_TAB_WIDTH = 4;
 
-    // Authoritative edit state, guarded by `this`. caret is the moving end; anchor the fixed end of a selection.
-    private final StringBuilder content = new StringBuilder();
-    private int caret;
-    private int anchor;
+    private final Gui gui;
+    private final Node node;
 
-    // Undo/redo over the edit-diff (§4.3). Each user edit pushes a TextEdit; a caret move or non-typing op sets
-    // a coalescing barrier so a fresh typing/deletion run starts its own undo entry instead of merging.
+    /** The document: one versioned value, read lock-free from any thread, written only by committing an Edit. */
+    private final State<Document> document;
+    private final Committer<Document, Edit> commit;
+
+    private final Subscription focusSub;
+    private final CaretBlink.Registration blink;
+
+    /**
+     * Undo/redo over the edit-diff (keyboard-focus-text.md §4.3). This is widget-local <em>history</em>, not the
+     * document, and it is the only mutable state left needing a monitor — held across commit-and-record so the
+     * recorded diff is the one that commit produced. The document itself needs no lock: it is a {@code State}.
+     */
     private final Deque<TextEdit> undo = new ArrayDeque<>();
     private final Deque<TextEdit> redo = new ArrayDeque<>();
     private boolean coalesceBarrier;
 
-    // Formatting spans (fg/bg/underline). Auto-diff: every edit and undo/redo remaps them through the TextEdit
-    // so they stay attached to their text. Guarded by `this`.
-    private List<Span> spans = new ArrayList<>();
-
-    // Vertical navigation's sticky desired column (absolute px). NaN means "recompute from the caret": every
-    // horizontal move invalidates it, and Up/Down deliberately does not, so a run of Up/Down through short lines
-    // returns to the original column instead of walking left. Guarded by `this`.
+    /**
+     * Vertical navigation's sticky desired column (absolute px). NaN means "recompute from the caret": every
+     * horizontal move invalidates it, and Up/Down deliberately does not, so a run of Up/Down through short lines
+     * returns to the original column instead of walking left. Touched only on the ordered stage (GUI thread).
+     */
     private float desiredX = Float.NaN;
 
     private volatile boolean multiline;
     private volatile boolean focused;
-    private volatile boolean blinkOn;
     private volatile Consumer<String> onChange = s -> { };
     private volatile Consumer<String> onSubmit = s -> { };
 
@@ -93,11 +108,14 @@ public final class TextField {
     /** Build a text field on {@code gui} pre-filled with {@code initial}; the caret starts at the end. */
     public TextField(Gui gui, String initial) {
         this.gui = gui;
-        this.content.append(initial == null ? "" : initial);
-        this.caret = content.length();
-        this.anchor = caret;
 
-        this.node = gui.text(content.toString())
+        State.Builder<Document> builder = State.of(Document.of(initial));
+        // One reducer for every change: the Edit is relative and Document.apply resolves it against the current
+        // value, so a retry under contention re-resolves rather than re-imposing a stale absolute result.
+        this.commit = builder.mutation("edit", Document::apply);
+        this.document = builder.build();
+
+        this.node = gui.text(text())
                 .editable(true)
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE)
                 .textColor(INK)
@@ -107,15 +125,14 @@ public final class TextField {
                 .border(Length.rem(0.1f), FIELD_BORDER)
                 .caret(-1);
 
-        gui.onChar(node, this::onCodePoint);
-        gui.onKey(node, this::onKey);
-        // Pointer caret placement + drag-select, computed from this node's published layout read-model
-        // (docs/layout-read-model.md) — press sets the caret, drag extends the selection. Uses the general
-        // onDrag seam; no special caret plumbing in core.
-        gui.onDrag(node, this::onPointer);
-        gui.bus().subscribe(gui.focusEvents(), this::onFocus);
+        // The edit path, all of it ordered: typed text, edit commands, and pointer caret placement are the three
+        // ways this document changes from input, and all three must sequence against each other.
+        gui.onCharUi(node, this::onCodePoint);
+        gui.onKeyUi(node, this::onKey);
+        gui.onDragUi(node, this::onPointer);
 
-        startBlink();
+        this.focusSub = gui.bus().subscribe(gui.focusEvents(), this::onFocus);
+        this.blink = CaretBlink.register(gui, node, () -> focused);
     }
 
     /** The node to place in a layout (style/size it further through this handle). */
@@ -123,32 +140,44 @@ public final class TextField {
         return node;
     }
 
-    /** Current text content. */
-    public synchronized String text() {
-        return content.toString();
+    /**
+     * The document as a versioned bus {@code State} — subscribe with {@code field.document().onCommit(...)} to
+     * observe every change with the version and the diff that produced it, or read {@code .value()} for a
+     * coherent snapshot from any thread without a lock.
+     */
+    public State<Document> document() {
+        return document;
+    }
+
+    /** Current text content — a lock-free read of the latest committed document. */
+    public String text() {
+        return document.value().text();
+    }
+
+    /** Current caret offset. */
+    public int caret() {
+        return document.value().caret();
     }
 
     /** Replace the content programmatically; the caret moves to the end, selection clears, and history resets. */
-    public synchronized TextField text(String s) {
-        content.setLength(0);
-        content.append(s == null ? "" : s);
-        caret = content.length();
-        anchor = caret;
-        undo.clear();
-        redo.clear();
-        coalesceBarrier = true;
-        syncNode();
-        onChange.accept(content.toString());
+    public TextField text(String s) {
+        synchronized (this) {
+            undo.clear();
+            redo.clear();
+            coalesceBarrier = true;
+            document.commit(commit, new Edit.SetText(s));
+        }
+        published();
         return this;
     }
 
-    /** React to content edits (typing, deletion, paste, programmatic set). Runs on a worker thread. */
+    /** React to content edits (typing, deletion, paste, programmatic set). Runs on the handler executor. */
     public TextField onChange(Consumer<String> handler) {
         this.onChange = handler == null ? s -> { } : handler;
         return this;
     }
 
-    /** React to Enter being pressed in the field. Runs on a worker thread. Never fires on a multiline field. */
+    /** React to Enter being pressed in the field. Runs on the handler executor. Never fires on a multiline field. */
     public TextField onSubmit(Consumer<String> handler) {
         this.onSubmit = handler == null ? s -> { } : handler;
         return this;
@@ -165,29 +194,14 @@ public final class TextField {
         // Tab indents inside a multiline editor, and traverses focus everywhere else. Expressed as a claim on the
         // chord while this field has focus, which outranks the framework's global Tab claim — rather than core
         // deciding on the field's behalf. Shift+Tab is deliberately left unclaimed, so it is still the way out.
+        // Ordered, because indenting edits the same document typing does.
         Shortcut tab = Shortcut.of(Key.TAB);
         if (multiline) {
-            gui.claim(node, tab, ClaimScope.FOCUSED, this::insertSoftTab);
+            gui.claimUi(node, tab, ClaimScope.FOCUSED, this::insertSoftTab);
         } else {
             gui.releaseClaim(node, tab);
         }
         return this;
-    }
-
-    /** Soft tabs: {@value #SOFT_TAB_WIDTH} spaces, so the document contains no tab characters to disagree over. */
-    private void insertSoftTab() {
-        String changed;
-        synchronized (this) {
-            int at = hasSelection() ? selLo() : caret;
-            int removeLen = hasSelection() ? selHi() - selLo() : 0;
-            coalesceBarrier = true;   // an indent is its own undo step, either side of it
-            changed = applyEdit(at, removeLen, " ".repeat(SOFT_TAB_WIDTH));
-            coalesceBarrier = true;
-        }
-        wake();
-        if (changed != null) {
-            onChange.accept(changed);
-        }
     }
 
     /**
@@ -208,53 +222,51 @@ public final class TextField {
         return this;
     }
 
+    /** Release this field's subscriptions, claims and blink registration. Call when removing it from the tree. */
+    @Override
+    public void close() {
+        focusSub.close();
+        blink.close();
+        gui.releaseNode(node);
+    }
+
     // --- formatting spans (§4.4) ---
 
     /** Replace the whole span set (bulk refresh — e.g. re-running a highlighter). Empty/null clears them. */
-    public synchronized TextField setSpans(List<Span> newSpans) {
-        spans = newSpans == null ? new ArrayList<>() : new ArrayList<>(newSpans);
-        node.spans(spans);
+    public TextField setSpans(List<Span> newSpans) {
+        document.commit(commit, new Edit.SetSpans(newSpans == null ? List.of() : List.copyOf(newSpans)));
+        published();
         return this;
     }
 
     /** Add a single span, keeping the rest (§4.4 single-span update). */
-    public synchronized TextField addSpan(Span span) {
+    public TextField addSpan(Span span) {
         if (span != null) {
-            spans.add(span);
-            node.spans(spans);
+            List<Span> next = new ArrayList<>(document.value().spans());
+            next.add(span);
+            document.commit(commit, new Edit.SetSpans(next));
+            published();
         }
         return this;
     }
 
     /** Remove all spans. */
-    public synchronized TextField clearSpans() {
-        spans.clear();
-        node.spans(List.of());
-        return this;
+    public TextField clearSpans() {
+        return setSpans(List.of());
     }
 
     /** A snapshot of the current spans. */
-    public synchronized List<Span> spans() {
-        return List.copyOf(spans);
+    public List<Span> spans() {
+        return document.value().spans();
     }
 
-    // --- input handlers (worker threads) ---
+    // --- ordered stages: these run on the GUI thread during the input drain, in arrival order ---
 
     private void onCodePoint(int cp) {
         if (cp < 0x20 || cp == 0x7F) {
             return; // control characters ride the key channel, never the text channel
         }
-        String s = new String(Character.toChars(cp));
-        String changed;
-        synchronized (this) {
-            int at = hasSelection() ? selLo() : caret;
-            int removeLen = hasSelection() ? selHi() - selLo() : 0;
-            changed = applyEdit(at, removeLen, s);
-        }
-        wake();
-        if (changed != null) {
-            onChange.accept(changed);
-        }
+        apply(new Edit.Insert(new String(Character.toChars(cp))), false);
     }
 
     private void onKey(KeyEvent e) {
@@ -264,7 +276,7 @@ public final class TextField {
 
         if (ctrl) {
             switch (k) {
-                case A -> { selectAll(); return; }
+                case A -> { apply(new Edit.SelectAll(), true); return; }
                 case C -> { copy(); return; }
                 case X -> { cut(); return; }
                 case V -> { paste(); return; }
@@ -274,63 +286,70 @@ public final class TextField {
             }
         }
 
-        String changed = null;
-        synchronized (this) {
-            switch (k) {
-                case LEFT -> { moveCaret(ctrl ? prevWord(caret) : stepLeft(caret), shift); syncNode(); }
-                case RIGHT -> { moveCaret(ctrl ? nextWord(caret) : stepRight(caret), shift); syncNode(); }
-                // Home/End are *visual* line ends on the read-model, so they stop at a wrap, not at a newline.
-                // With Ctrl they address the whole document instead, as everywhere else.
-                case HOME -> { moveCaret(ctrl ? 0 : visualLineStart(), shift); syncNode(); }
-                case END -> { moveCaret(ctrl ? content.length() : visualLineEnd(), shift); syncNode(); }
-                case UP -> moveByLines(-1, shift);
-                case DOWN -> moveByLines(1, shift);
-                case PAGE_UP -> moveByLines(-pageLines(), shift);
-                case PAGE_DOWN -> moveByLines(pageLines(), shift);
-                case BACKSPACE -> changed = ctrl ? deleteWordBack() : backspace();
-                case DELETE -> changed = ctrl ? deleteWordForward() : deleteForward();
-                case ENTER -> {
-                    if (multiline) {
-                        int at = hasSelection() ? selLo() : caret;
-                        int removeLen = hasSelection() ? selHi() - selLo() : 0;
-                        // A newline is an undo boundary on both sides: without the barriers it is just another
-                        // one-character insert continuing the typing run, and a whole multi-line burst collapses
-                        // into a single Ctrl+Z. Undo steps read "cd", then the newline, then "ab".
-                        coalesceBarrier = true;
-                        changed = applyEdit(at, removeLen, "\n");
-                        coalesceBarrier = true;
-                    }
-                    // single-line: submitted outside the lock
-                }
-                default -> {
-                    return; // not an edit command; typed text arrives via onChar
+        Document d = document.value();
+        switch (k) {
+            case LEFT -> moveCaret(ctrl ? d.previousWord(d.caret()) : d.stepLeft(d.caret()), shift);
+            case RIGHT -> moveCaret(ctrl ? d.nextWord(d.caret()) : d.stepRight(d.caret()), shift);
+            // Home/End are *visual* line ends on the read-model, so they stop at a wrap, not at a newline.
+            // With Ctrl they address the whole document instead, as everywhere else.
+            case HOME -> moveCaret(ctrl ? 0 : visualLineStart(d), shift);
+            case END -> moveCaret(ctrl ? d.length() : visualLineEnd(d), shift);
+            case UP -> moveByLines(-1, shift);
+            case DOWN -> moveByLines(1, shift);
+            case PAGE_UP -> moveByLines(-pageLines(), shift);
+            case PAGE_DOWN -> moveByLines(pageLines(), shift);
+            case BACKSPACE -> apply(new Edit.DeleteBack(ctrl), ctrl);
+            case DELETE -> apply(new Edit.DeleteForward(ctrl), ctrl);
+            case ENTER -> {
+                if (multiline) {
+                    // A newline is an undo boundary on both sides: without the barriers it is just another
+                    // one-character insert continuing the typing run, and a whole multi-line burst collapses
+                    // into a single Ctrl+Z. Undo steps read "cd", then the newline, then "ab".
+                    apply(new Edit.Insert("\n"), true);
+                    barrier();
+                } else {
+                    String current = d.text();
+                    gui.handlers().execute(() -> onSubmit.accept(current));
                 }
             }
+            default -> { /* not an edit command; typed text arrives via onCodePoint */ }
         }
-        wake();
-        if (k == Key.ENTER && !multiline) {
-            onSubmit.accept(text());
-        } else if (changed != null) {
-            onChange.accept(changed);
+    }
+
+    /** Map a pointer press/drag to a caret offset via this node's published text metrics, then place/extend. */
+    private void onPointer(DragEvent e) {
+        TextMetrics m = node.layout().text();
+        if (m == null) {
+            return; // not laid out yet, or no glyph metrics available
         }
+        int offset = m.offsetAt(e.x(), e.y());
+        switch (e.phase()) {
+            case START -> moveCaret(offset, false);  // press positions the caret, collapsing any selection
+            case MOVE -> moveCaret(offset, true);    // drag extends the selection to the pointer
+            case END -> { }
+        }
+    }
+
+    /** Soft tabs: {@value #SOFT_TAB_WIDTH} spaces, so the document contains no tab characters to disagree over. */
+    private void insertSoftTab() {
+        apply(new Edit.Insert(" ".repeat(SOFT_TAB_WIDTH)), true);
+        barrier();
     }
 
     // --- vertical navigation, as pure widget code over the layout read-model (docs/layout-read-model.md §11.5) ---
 
-    /**
-     * Move the caret {@code lines} visual lines (negative = up), keeping the sticky desired column. Call while
-     * holding the lock. Does nothing when the node has no published metrics yet.
-     */
+    /** Move the caret {@code lines} visual lines (negative = up), keeping the sticky desired column. */
     private void moveByLines(int lines, boolean extend) {
-        dev.vexelray.gui.core.text.TextMetrics m = node.layout().text();
+        TextMetrics m = node.layout().text();
         if (m == null || lines == 0) {
             return;
         }
+        Document d = document.value();
         if (Float.isNaN(desiredX)) {
-            desiredX = m.caretX(clamp(caret));
+            desiredX = m.caretX(d.caret());
         }
         float column = desiredX;   // moveCaret clears it; vertical motion must keep it
-        int target = clamp(caret);
+        int target = d.caret();
         for (int i = 0; i < Math.abs(lines); i++) {
             int next = lines < 0 ? m.offsetAbove(target, column) : m.offsetBelow(target, column);
             if (next == target) {
@@ -339,115 +358,49 @@ public final class TextField {
             target = next;
         }
         moveCaret(target, extend);
-        syncNode();
-        desiredX = column;   // re-assert after syncNode cleared it: this move was vertical
+        desiredX = column;   // re-assert after moveCaret cleared it: this move was vertical
     }
 
     /** How many visual lines fit in the field, for PageUp/PageDown. At least one, so a tiny field still moves. */
     private int pageLines() {
-        dev.vexelray.gui.core.text.TextMetrics m = node.layout().text();
+        TextMetrics m = node.layout().text();
         if (m == null) {
             return 1;
         }
-        float lineH = m.caretHeight(clamp(caret));
+        float lineH = m.caretHeight(document.value().caret());
         // viewH is already the text area — inset by the padding, less whatever the scrollbars reserved.
         float viewH = node.layout().viewH();
         return lineH > 0f ? Math.max(1, (int) Math.floor(viewH / lineH)) : 1;
     }
 
     /** Start of the caret's visual line, falling back to the string start when metrics aren't published yet. */
-    private int visualLineStart() {
-        dev.vexelray.gui.core.text.TextMetrics m = node.layout().text();
-        return m == null ? 0 : m.lineStart(clamp(caret));
+    private int visualLineStart(Document d) {
+        TextMetrics m = node.layout().text();
+        return m == null ? 0 : m.lineStart(d.caret());
     }
 
     /** End of the caret's visual line, falling back to the string end when metrics aren't published yet. */
-    private int visualLineEnd() {
-        dev.vexelray.gui.core.text.TextMetrics m = node.layout().text();
-        return m == null ? content.length() : m.lineEnd(clamp(caret));
+    private int visualLineEnd(Document d) {
+        TextMetrics m = node.layout().text();
+        return m == null ? d.length() : m.lineEnd(d.caret());
     }
 
-    /** Map a pointer press/drag to a caret offset via this node's published text metrics, then place/extend. */
-    private void onPointer(dev.vexelray.gui.core.input.DragEvent e) {
-        dev.vexelray.gui.core.text.TextMetrics m = node.layout().text();
-        if (m == null) {
-            return; // not laid out yet, or no glyph metrics available
-        }
-        int offset = m.offsetAt(e.x(), e.y());
-        switch (e.phase()) {
-            case START -> placeCaret(offset);   // press positions the caret, collapsing any selection
-            case MOVE -> extendTo(offset);       // drag extends the selection to the pointer
-            case END -> { }
-        }
-    }
-
-    /** Click: caret to the offset, selection collapsed there. */
-    private void placeCaret(int offset) {
-        synchronized (this) {
-            caret = clamp(offset);
-            anchor = caret;
-            coalesceBarrier = true;
-            syncNode();
-        }
-        wake();
-    }
-
-    /** Drag: caret to the offset, anchor kept — so the drag paints a selection. */
-    private void extendTo(int offset) {
-        synchronized (this) {
-            caret = clamp(offset);
-            coalesceBarrier = true;
-            syncNode();
-        }
-        wake();
-    }
-
-    private void onFocus(FocusEvent e) {
-        if (e.nodeId() != node.id()) {
-            return;
-        }
-        focused = e.gained();
-        if (focused) {
-            blinkOn = true;
-            node.caret(caretSnapshot());
-            node.caretOn(true);
-            node.border(Length.rem(0.1f), FIELD_BORDER_FOCUS);
-        } else {
-            node.caret(-1);
-            node.caretOn(false);
-            node.border(Length.rem(0.1f), FIELD_BORDER);
-        }
-    }
-
-    // --- clipboard (I/O kept off the edit lock) ---
+    // --- clipboard (I/O kept off the commit) ---
 
     private void copy() {
-        String sel;
-        synchronized (this) {
-            sel = selectionText();
-        }
+        String sel = document.value().selectedText();
         if (!sel.isEmpty()) {
             gui.clipboard().set(sel);
         }
     }
 
     private void cut() {
-        String sel;
-        String changed = null;
-        synchronized (this) {
-            sel = selectionText();
-            if (!sel.isEmpty()) {
-                coalesceBarrier = true;
-                changed = applyEdit(selLo(), selHi() - selLo(), "");
-            }
+        String sel = document.value().selectedText();
+        if (sel.isEmpty()) {
+            return;
         }
-        if (!sel.isEmpty()) {
-            gui.clipboard().set(sel);
-            wake();
-            if (changed != null) {
-                onChange.accept(changed);
-            }
-        }
+        gui.clipboard().set(sel);
+        apply(new Edit.Insert(""), true);   // Insert("") over a selection deletes it
     }
 
     private void paste() {
@@ -459,85 +412,52 @@ public final class TextField {
         String insert = multiline
                 ? clip.replace("\r\n", "\n").replace('\r', '\n')
                 : clip.replace('\n', ' ').replace('\r', ' ');
-        String changed;
-        synchronized (this) {
-            int at = hasSelection() ? selLo() : caret;
-            int removeLen = hasSelection() ? selHi() - selLo() : 0;
-            coalesceBarrier = true; // a paste is its own undo entry, never merged with adjacent typing
-            changed = applyEdit(at, removeLen, insert);
-        }
-        wake();
-        if (changed != null) {
-            onChange.accept(changed);
-        }
+        apply(new Edit.Insert(insert), true);   // a paste is its own undo entry, never merged with typing
     }
 
-    private void selectAll() {
-        synchronized (this) {
-            anchor = 0;
-            caret = content.length();
-            coalesceBarrier = true;
-            syncNode();
-        }
-        wake();
-    }
-
-    // --- edit primitives (call while holding the lock) ---
-
-    private boolean hasSelection() {
-        return anchor != caret;
-    }
-
-    private int selLo() {
-        return Math.min(anchor, caret);
-    }
-
-    private int selHi() {
-        return Math.max(anchor, caret);
-    }
-
-    private String selectionText() {
-        return hasSelection() ? content.substring(selLo(), selHi()) : "";
-    }
+    // --- commit + history ---
 
     /**
-     * The one content-mutation path: replace {@code [at, at+removeLen)} with {@code insert}, move the caret to the
-     * end of the insertion, record the resulting {@link TextEdit} for undo (coalescing typing/deletion runs), and
-     * mirror to the node. Returns the new content, or {@code null} if the edit was a no-op.
+     * Commit {@code edit} and record it for undo. The monitor spans commit-and-record so the diff pushed onto the
+     * history is the one this commit produced — it guards the <em>history</em>, not the document, which readers
+     * reach lock-free through the {@code State}.
+     *
+     * @param barrierBefore start a fresh undo entry rather than merging into the run in progress
      */
-    private String applyEdit(int at, int removeLen, String insert) {
-        String removed = content.substring(at, at + removeLen);
-        if (removed.isEmpty() && insert.isEmpty()) {
-            return null;
-        }
-        TextEdit edit = new TextEdit(at, removed, insert);
-        content.replace(at, at + removeLen, insert);
-        caret = at + insert.length();
-        anchor = caret;
-        recordEdit(edit);
-        remapSpans(edit);
-        syncNode();
-        return content.toString();
-    }
-
-    /** Auto-diff (§4.4): remap every span through {@code edit}, dropping any that collapsed, and push to the node. */
-    private void remapSpans(TextEdit edit) {
-        if (spans.isEmpty()) {
-            return;
-        }
-        List<Span> next = new ArrayList<>(spans.size());
-        for (Span sp : spans) {
-            Span r = sp.remap(edit);
-            if (r != null) {
-                next.add(r);
+    private void apply(Edit edit, boolean barrierBefore) {
+        synchronized (this) {
+            if (barrierBefore) {
+                coalesceBarrier = true;
+            }
+            Document before = document.value();
+            document.commit(commit, edit);
+            Document after = document.value();
+            if (after == before) {
+                return;   // a no-op edit burns no version and no history entry
+            }
+            TextEdit diff = after.lastEdit();
+            if (diff != null) {
+                record(diff);
+            } else {
+                coalesceBarrier = true;   // a caret/selection move ends the current typing run
             }
         }
-        spans = next;
-        node.spans(next);
+        published();
+    }
+
+    /** Move the caret (or extend the selection), which also ends the current undo run. */
+    private void moveCaret(int to, boolean extend) {
+        desiredX = Float.NaN;
+        apply(new Edit.Caret(to, extend), false);
+    }
+
+    /** Force the next edit to start its own undo entry. */
+    private synchronized void barrier() {
+        coalesceBarrier = true;
     }
 
     /** Push {@code e} onto the undo stack, merging into the previous entry when it continues a run (§4.3). */
-    private void recordEdit(TextEdit e) {
+    private void record(TextEdit e) {
         redo.clear();
         TextEdit top = undo.peek();
         if (!coalesceBarrier && top != null && canCoalesce(top, e)) {
@@ -583,204 +503,68 @@ public final class TextField {
     }
 
     private void undo() {
-        String changed = null;
         synchronized (this) {
             TextEdit e = undo.poll();
             if (e == null) {
                 return;
             }
-            content.replace(e.at(), e.insertedEnd(), e.removed());
-            caret = e.at() + e.removed().length();
-            anchor = caret;
+            // Replay the inverse in absolute coordinates: an undo restores a specific prior state, so unlike an
+            // input edit it must not be re-resolved against the caret.
+            document.commit(commit, new Edit.Replace(e.at(), e.inserted().length(), e.removed()));
             redo.push(e);
             coalesceBarrier = true;
-            remapSpans(e.inverse()); // undo maps spans from post-edit coords back to pre-edit
-            syncNode();
-            changed = content.toString();
         }
-        wake();
-        onChange.accept(changed);
+        published();
     }
 
     private void redo() {
-        String changed = null;
         synchronized (this) {
             TextEdit e = redo.poll();
             if (e == null) {
                 return;
             }
-            content.replace(e.at(), e.removedEnd(), e.inserted());
-            caret = e.insertedEnd();
-            anchor = caret;
+            document.commit(commit, new Edit.Replace(e.at(), e.removed().length(), e.inserted()));
             undo.push(e);
             coalesceBarrier = true;
-            remapSpans(e); // redo re-applies the edit, so spans map forward through it
-            syncNode();
-            changed = content.toString();
         }
-        wake();
-        onChange.accept(changed);
+        published();
     }
 
-    private void moveCaret(int newPos, boolean extend) {
-        caret = clamp(newPos);
-        if (!extend) {
-            anchor = caret;
-        }
-        coalesceBarrier = true; // a caret move ends the current typing/deletion run for undo grouping
-    }
-
-    /** @return the new content after the edit, or {@code null} if nothing changed. */
-    private String backspace() {
-        if (hasSelection()) {
-            return applyEdit(selLo(), selHi() - selLo(), "");
-        }
-        if (caret > 0) {
-            int start = content.offsetByCodePoints(caret, -1);
-            return applyEdit(start, caret - start, "");
-        }
-        return null;
-    }
-
-    private String deleteForward() {
-        if (hasSelection()) {
-            return applyEdit(selLo(), selHi() - selLo(), "");
-        }
-        if (caret < content.length()) {
-            int end = content.offsetByCodePoints(caret, 1);
-            return applyEdit(caret, end - caret, "");
-        }
-        return null;
-    }
-
-    /** Ctrl+Backspace: delete from the previous word boundary to the caret (or the selection, if any). */
-    private String deleteWordBack() {
-        if (hasSelection()) {
-            return applyEdit(selLo(), selHi() - selLo(), "");
-        }
-        int start = prevWord(caret);
-        coalesceBarrier = true; // word-delete is its own undo entry
-        return start < caret ? applyEdit(start, caret - start, "") : null;
-    }
-
-    /** Ctrl+Delete: delete from the caret to the next word boundary (or the selection, if any). */
-    private String deleteWordForward() {
-        if (hasSelection()) {
-            return applyEdit(selLo(), selHi() - selLo(), "");
-        }
-        int end = nextWord(caret);
-        coalesceBarrier = true;
-        return end > caret ? applyEdit(caret, end - caret, "") : null;
-    }
-
-    private int stepLeft(int c) {
-        return c > 0 ? content.offsetByCodePoints(c, -1) : 0;
-    }
-
-    private int stepRight(int c) {
-        return c < content.length() ? content.offsetByCodePoints(c, 1) : c;
-    }
-
-    private int clamp(int offset) {
-        return Math.max(0, Math.min(offset, content.length()));
-    }
-
-    // --- helpers ---
-
-    private synchronized int caretSnapshot() {
-        return caret;
-    }
+    // --- publication: mirror to the retained node, then notify the application ---
 
     /**
-     * Mirror content + caret + selection onto the retained node (call while holding the lock).
+     * Mirror the document onto the retained node and notify the application.
      *
-     * <p>This is also the one place the sticky desired column is dropped. Every caret or content change funnels
-     * through here, so invalidating once here cannot be forgotten at a new call site — and {@link #moveByLines}
-     * simply re-asserts the column immediately afterwards, which is exactly what makes it sticky across a run of
-     * Up/Down and not across anything else.
+     * <p>The mirror is one atomic value going onto three node props — the node model still carries them
+     * separately, but they are written from a single immutable snapshot, so they can no longer describe different
+     * versions of the document. The notification goes to the handler executor: it has no ordering requirement, and
+     * putting it there is what keeps a slow application callback from running on the frame loop.
      */
-    private void syncNode() {
-        desiredX = Float.NaN;
-        node.text(content.toString());
-        node.caret(caret);
-        node.selection(anchor, caret);
+    private void published() {
+        Versioned<Document> v = document.current();
+        Document d = v.value();
+        node.text(d.text());
+        node.caret(focused ? d.caret() : -1);
+        node.selection(d.anchor(), d.caret());
+        node.spans(d.spans());
+        blink.wake();
+        Consumer<String> handler = onChange;
+        gui.handlers().execute(() -> handler.accept(d.text()));
     }
 
-    /** Show the caret solid right after an action, so motion/typing feels responsive. */
-    private void wake() {
-        blinkOn = true;
+    private void onFocus(FocusEvent e) {
+        if (e.nodeId() != node.id()) {
+            return;
+        }
+        focused = e.gained();
         if (focused) {
+            node.caret(document.value().caret());
             node.caretOn(true);
-        }
-    }
-
-    /**
-     * A <em>word character</em>: letter, digit, {@code -} or {@code _}. Everything else (whitespace and other
-     * punctuation) is a separator, so identifiers like {@code foo_bar-baz} count as a single word.
-     */
-    private static boolean isWordChar(char c) {
-        return Character.isLetterOrDigit(c) || c == '-' || c == '_';
-    }
-
-    /**
-     * Nearest word boundary to the left of {@code from}: skip leading whitespace, then consume one run of
-     * <em>either</em> word chars <em>or</em> non-space separators — so it stops at punctuation clusters rather
-     * than leaping the whole gap (§8.2).
-     */
-    private int prevWord(int from) {
-        int i = from;
-        while (i > 0 && Character.isWhitespace(content.charAt(i - 1))) {
-            i--;
-        }
-        if (i > 0 && isWordChar(content.charAt(i - 1))) {
-            while (i > 0 && isWordChar(content.charAt(i - 1))) {
-                i--;
-            }
+            node.border(Length.rem(0.1f), FIELD_BORDER_FOCUS);
         } else {
-            while (i > 0 && !isWordChar(content.charAt(i - 1)) && !Character.isWhitespace(content.charAt(i - 1))) {
-                i--;
-            }
+            node.caret(-1);
+            node.caretOn(false);
+            node.border(Length.rem(0.1f), FIELD_BORDER);
         }
-        return i;
-    }
-
-    /**
-     * Nearest word boundary to the right of {@code from}: skip leading whitespace, then consume one run of
-     * <em>either</em> word chars <em>or</em> non-space separators (§8.2).
-     */
-    private int nextWord(int from) {
-        int i = from;
-        int n = content.length();
-        while (i < n && Character.isWhitespace(content.charAt(i))) {
-            i++;
-        }
-        if (i < n && isWordChar(content.charAt(i))) {
-            while (i < n && isWordChar(content.charAt(i))) {
-                i++;
-            }
-        } else {
-            while (i < n && !isWordChar(content.charAt(i)) && !Character.isWhitespace(content.charAt(i))) {
-                i++;
-            }
-        }
-        return i;
-    }
-
-    private void startBlink() {
-        Thread t = new Thread(() -> {
-            try {
-                while (true) {
-                    Thread.sleep(BLINK_MILLIS);
-                    if (focused) {
-                        blinkOn = !blinkOn;
-                        node.caretOn(blinkOn);
-                    }
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        }, "vexelray-textfield-blink");
-        t.setDaemon(true);
-        t.start();
     }
 }

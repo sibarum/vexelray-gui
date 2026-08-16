@@ -26,6 +26,7 @@ public enum PropKey {
     // Multiline (§11): both change how the text breaks into visual lines, so both reflow.
     MULTILINE(true),     // Enter inserts '\n' instead of submitting; the field scrolls vertically
     WORD_WRAP(true),     // wrap long lines at the content width instead of scrolling horizontally
+    LINE_NUMBERS(true),  // a gutter of hard-line numbers, which narrows the text area and so reflows the wrap
     // Layout (border-box: border + padding inset the content, so border width is layout-affecting)
     DIRECTION(true),
     JUSTIFY(true),

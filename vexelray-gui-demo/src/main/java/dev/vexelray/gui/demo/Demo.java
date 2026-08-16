@@ -175,7 +175,7 @@ public final class Demo {
                 "Built through Node handles, mutated by messages, laid out by flex — no hard-coded rects.\n\n"
                         + "This paragraph is editable. It wraps at the card's width, Enter starts a new line, and "
                         + "Up/Down keep your column across short lines. Keep typing and the view follows the caret.")
-                .multiline(true).wordWrap(true);
+                .multiline(true).wordWrap(true).lineNumbers(true);
         notes.node().width(Length.FILL).height(Length.FILL);
 
         Node leftCard = gui.column().width(Length.FILL).height(Length.FILL)

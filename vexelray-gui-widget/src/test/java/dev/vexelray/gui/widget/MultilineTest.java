@@ -168,6 +168,61 @@ class MultilineTest {
         }
     }
 
+    /** A focused multiline field with a line-number gutter. */
+    private static TextField numberedField(HeadlessGui h, boolean wrap) {
+        TextField f = new TextField(h.gui, "").multiline(true).wordWrap(wrap).lineNumbers(true);
+        f.node().width(Length.vw(10)).height(Length.rem(5));
+        h.gui.root().children(f.node());
+        h.frame();
+        h.focus(f.node());
+        return f;
+    }
+
+    /**
+     * The gutter narrows the text area, and therefore the wrap. Sized from the <em>hard</em> line count, which
+     * wrapping cannot change — so the gutter feeding the wrap is a dependency, not a cycle.
+     */
+    @Test
+    void theGutterNarrowsTheTextArea() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TextField plain = field(h, true);
+            assertEquals(60f, plain.node().layout().viewW(), 0.5f, "80px box, 10px padding either side");
+
+            TextField numbered = numberedField(h, true);
+            // One digit at CELL(10) wide, plus GUTTER_PAD(4) either side = 18px of gutter.
+            assertEquals(42f, numbered.node().layout().viewW(), 0.5f, "the gutter takes 18px of the 60");
+            assertEquals(28f, numbered.node().layout().content().x(), 0.5f, "and the text starts after it");
+        }
+    }
+
+    @Test
+    void numbersCountHardLinesNotWrappedRows() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TextField f = numberedField(h, true);
+            typeLines(h, "abcdefgh", "x");   // 8 chars wraps onto two 4-char rows, then a real second line
+
+            TextMetrics m = f.node().layout().text();
+            assertNotNull(m);
+            assertEquals(3, m.lines().size(), "two wrapped rows plus one more hard line");
+            assertEquals(1, m.lines().get(0).number(), "the first row begins hard line 1");
+            assertEquals(0, m.lines().get(1).number(), "its wrapped continuation carries no number");
+            assertEquals(2, m.lines().get(2).number(), "and the next hard line is 2, not 3");
+        }
+    }
+
+    @Test
+    void theGutterWidensForMoreDigits() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TextField f = numberedField(h, false);
+            typeLines(h, "a", "b", "c", "d", "e", "f", "g", "h", "i", "j");   // 10 hard lines
+
+            // Two digits now: 2*10 + 8 = 28px of gutter, so the text starts at 10 (padding) + 28. Asserted on the
+            // text origin rather than viewW, which this tall a document also loses to a vertical scrollbar.
+            assertEquals(38f, f.node().layout().content().x(), 0.5f, "a two-digit gutter takes more room");
+            assertEquals(10, f.node().layout().text().lines().get(9).number(), "and line 10 is numbered 10");
+        }
+    }
+
     @Test
     void upAndDownMoveBetweenLines() {
         try (HeadlessGui h = new HeadlessGui()) {

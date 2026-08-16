@@ -102,6 +102,14 @@ public final class Node {
         return prop(PropKey.WORD_WRAP, wrap);
     }
 
+    /**
+     * Show a gutter of hard-line numbers down the left edge. Numbers count {@code '\n'}s, not wrapped rows, so a
+     * line that wraps onto three rows is numbered once. The gutter narrows the text area, and therefore the wrap.
+     */
+    public Node lineNumbers(boolean show) {
+        return prop(PropKey.LINE_NUMBERS, show);
+    }
+
     /** Set the caret offset into the text (character index), or {@code -1} to hide the caret. */
     public Node caret(int offset) {
         return prop(PropKey.CARET, offset);

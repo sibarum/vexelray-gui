@@ -267,7 +267,12 @@ public final class FlexLayout {
         float lineH = tm.intrinsic(n, Axis.VERTICAL, px);
         float pad = Math.min(TextMetrics.PAD_X, n.w * 0.25f);
         float padY = TextMetrics.padY(n);
-        float boxW = TextMetrics.contentWidth(n.w);
+        // The gutter is resolved before anything measures: it narrows the text area, so it decides the wrap, which
+        // decides the line count, which is what the gutter is wide enough to number. Sized from the *hard* line
+        // count, which wrapping cannot change — so that is a dependency, not a cycle.
+        float gutter = gutterWidth(n, n.textSizePx, tm);
+        n.gutterPx = gutter;
+        float boxW = Math.max(1f, TextMetrics.contentWidth(n.w) - gutter);
         float boxH = Math.max(0f, n.h - 2f * padY);
 
         // Pass 1 at the full text width.
@@ -292,12 +297,26 @@ public final class FlexLayout {
         // The viewport is the *text area*: inset by the padding the metrics use, less whatever the bars reserve.
         // Keeping it in that space is what lets scrollX/scrollY, the thumb geometry and the caret metrics all be
         // expressed against the same rectangle.
-        n.viewX = n.x + pad;
+        n.viewX = n.x + pad + gutter;
         n.viewY = n.y + padY;
         n.viewW = Math.max(0f, viewW);
         n.viewH = Math.max(0f, boxH - (overX ? sb : 0f));
         n.contentW = lines[0];
         n.contentH = lines[1] * lineH;
+    }
+
+    /**
+     * Width of {@code n}'s line-number gutter, or 0 when it has none: wide enough for the highest hard-line
+     * number, plus a gap either side. Uses the digit advance rather than a guess, so it is right at any text size.
+     */
+    private static float gutterWidth(RetainedNode n, float px, TextMeasurer tm) {
+        if (!n.lineNumbers()) {
+            return 0f;
+        }
+        float[] zero = tm.caretAdvances("0", px);
+        float digitW = zero != null && zero.length > 1 ? zero[1] : px * 0.6f;
+        int digits = Integer.toString(Math.max(1, n.hardLineCount())).length();
+        return digits * digitW + 2f * TextMetrics.GUTTER_PAD;
     }
 
     /**

@@ -233,13 +233,13 @@ share what `TreeRenderer` already computes for drawing.
 
 ## 11. Step 4 build spec — multiline + word wrap + line numbers
 
-Status: **4a landed** (steps 1–3, **4·0** and **4a**: read-model boxes, text metrics, click via `onDrag`, the
-compute phase, and multiline + word wrap + vertical navigation). **4b (line numbers) remains**, plus the label
-draw path in §11.4. This is
-the execution plan so a fresh session needs no re-derivation. Build order is **4·0 (the compute phase — §2.1–2.3:
-`resolveGeometry`, scroll intent/effective split, `geometryDirty`) → 4a (multiline + wrap) → 4b (line numbers)**.
-4·0 came first because it was separately provable: `CaretScrollTest` was red before it and green after, with no
-multiline code involved. Font selection stays parked behind the multi-atlas engine work
+Status: **step 4 complete.** Steps 1–3 (read-model boxes, text metrics, click via `onDrag`), **4·0** (the compute
+phase, §2.1–2.3), **4a** (multiline + word wrap + vertical navigation) and **4b** (line numbers) have all landed.
+What remains from this section is the **label draw path** (§11.4) and the `--capture` visual check (§11.7).
+
+This is the execution plan so a fresh session needs no re-derivation. Build order was **4·0 → 4a → 4b**: 4·0 came
+first because it was separately provable — `CaretScrollTest` was red before it and green after, with no multiline
+code involved. Font selection stays parked behind the multi-atlas engine work
 ([[project-font-atlas-registry]] / keyboard-focus-text.md §5).
 
 ### 11.1 Model (core)
@@ -326,11 +326,17 @@ remotely, but out of scope for 4a because it changes how every existing label re
 - Click/drag already works unchanged (2D `offsetAt` is multi-line-ready).
 - Selection rendering across lines is handled by 11.4.
 
-### 11.6 Line numbers (4b)
-- `LINE_NUMBERS` prop. Gutter width = `digits(hardLineCount+1) * digitWidth + padding`, `digitWidth =
-  caretAdvances("0", px)[1]`. `hardLineCount` counts `\n` (numbers are per hard line, not per wrapped line).
-- Gutter shifts `contentLeft` (11.3 step 1) and narrows `wrapWidth`. `TreeRenderer` draws right-aligned numbers
-  in the gutter; wrapped continuation lines get no number.
+### 11.6 Line numbers (4b) — **landed**
+- `LINE_NUMBERS` prop. Gutter width = `digits(hardLineCount) * digitWidth + 2 * GUTTER_PAD`, with
+  `digitWidth = caretAdvances("0", px)[1]` so it is right at any text size. `hardLineCount` counts `\n`.
+- Resolved by `FlexLayout.layoutTextLeaf` *before* anything measures, onto `RetainedNode.gutterPx`: the gutter
+  narrows the text area, which decides the wrap, which decides the row count. Sized from the **hard** line count,
+  which wrapping cannot change — so gutter→wrap is a dependency, not a cycle. `viewX` includes it, so
+  `contentLeft` follows with no separate bookkeeping.
+- `VisualLine.number` carries the 1-based hard line a row *begins*, or 0 for a wrapped continuation. Baked at
+  publish rather than derived at draw time, so a remote client with no line-break data can still draw a gutter.
+- `TreeRenderer.drawGutter` draws right-aligned numbers under their own clip, outside the text viewport — so
+  they scroll vertically with the lines but never horizontally with them.
 
 ### 11.7 Tests (headless harness — deterministic)
 - **4·0 (landed, green):** `CaretScrollTest` — the caret stays inside an overflowing field; a click in a scrolled

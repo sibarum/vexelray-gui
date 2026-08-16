@@ -17,6 +17,9 @@ public record TextMetrics(List<VisualLine> lines) {
     /** Vertical text inset (px) for a multi-line node, which tops out rather than centring its single line. */
     public static final float PAD_Y = 6f;
 
+    /** Gap either side of the digits in a line-number gutter. */
+    public static final float GUTTER_PAD = 4f;
+
     /**
      * The width available to glyphs in a text node whose border-box width is {@code nodeW} — the inset shrinks on
      * a very narrow node so text never vanishes entirely.
@@ -43,8 +46,12 @@ public record TextMetrics(List<VisualLine> lines) {
      * its top and height in root space, and {@code xs} — the absolute x of the caret before each character in the
      * line, length {@code (end - start) + 1} (so {@code xs[0]} is the line's left caret x and the last entry is
      * the caret x after the final character).
+     *
+     * <p>{@code number} is the 1-based <em>hard</em> line this visual line begins, or {@code 0} when it is the
+     * continuation of a wrapped line and so carries no number. Baked in here rather than derived at draw time so
+     * a consumer with no line-break data — a remote client rendering a snapshot — can still show a gutter.
      */
-    public record VisualLine(int start, int end, float top, float height, float[] xs) {
+    public record VisualLine(int start, int end, float top, float height, float[] xs, int number) {
 
         public float bottom() {
             return top + height;

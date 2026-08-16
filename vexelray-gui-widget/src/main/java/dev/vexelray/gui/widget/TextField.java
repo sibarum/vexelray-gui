@@ -199,6 +199,15 @@ public final class TextField {
         return this;
     }
 
+    /**
+     * Show a gutter of hard-line numbers. Numbers count newlines, not wrapped rows, so a line that wraps onto
+     * three rows is numbered once — and the gutter narrows the text area, so turning it on reflows the wrap.
+     */
+    public TextField lineNumbers(boolean show) {
+        node.lineNumbers(show);
+        return this;
+    }
+
     // --- formatting spans (§4.4) ---
 
     /** Replace the whole span set (bulk refresh — e.g. re-running a highlighter). Empty/null clears them. */

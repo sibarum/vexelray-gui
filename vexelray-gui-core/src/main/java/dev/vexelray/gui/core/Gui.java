@@ -475,13 +475,19 @@ public final class Gui implements AutoCloseable {
                 ? viewY - n.scrollY
                 : viewY + (viewH - spans.size() * lineH) * 0.5f;
         List<TextMetrics.VisualLine> lines = new ArrayList<>(spans.size());
+        // Hard-line numbering: a visual line gets a number only when it *begins* a hard line — the first one, or
+        // one whose predecessor ended at a '\n'. Wrapped continuations get 0 and draw no number.
+        int hardLine = 1;
         for (int i = 0; i < spans.size(); i++) {
             var span = spans.get(i);
             float[] xs = new float[span.end() - span.start() + 1];
             for (int j = 0; j < xs.length; j++) {
                 xs[j] = contentLeft + (adv[span.start() + j] - adv[span.start()]);
             }
-            lines.add(new TextMetrics.VisualLine(span.start(), span.end(), contentTop + i * lineH, lineH, xs));
+            boolean startsHardLine = i == 0 || spans.get(i - 1).hardBreak();
+            int number = startsHardLine ? hardLine++ : 0;
+            lines.add(new TextMetrics.VisualLine(span.start(), span.end(), contentTop + i * lineH, lineH, xs,
+                    number));
         }
         n.textMetrics = new TextMetrics(lines);
     }

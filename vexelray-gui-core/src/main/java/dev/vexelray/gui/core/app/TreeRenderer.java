@@ -142,6 +142,13 @@ public final class TreeRenderer {
      */
     private static void drawField(RetainedNode n, String s, boolean hasText, java.util.List<Span> spans, float pad,
                                   Canvas canvas, TextLayout text) {
+        TextMetrics metrics = n.textMetrics;
+        // The gutter sits outside the text viewport, so it is drawn first, under its own clip: it scrolls
+        // vertically with the lines but never horizontally with them.
+        if (n.gutterPx > 0f && metrics != null) {
+            drawGutter(n, metrics, canvas, text);
+        }
+
         // Mask overflow to the viewport the layout resolved — which excludes the h-scrollbar strip when there is
         // one, so text never draws underneath the bar. Multi-line clips vertically too.
         canvas.pushClip(n.viewX, n.viewY, Math.max(1f, n.viewW), Math.max(1f, n.viewH), 0f);
@@ -174,6 +181,33 @@ public final class TreeRenderer {
             int caret = n.caret();
             float w = Math.max(1f, n.textSizePx * 0.07f);
             canvas.fillRoundRect(m.caretX(caret), m.caretTop(caret), w, m.caretHeight(caret), 0f, n.textColor());
+        }
+        canvas.popClip();
+    }
+
+    /** Dimmed line-number colour — present but never competing with the text it numbers. */
+    private static final Color GUTTER_INK = Color.rgb(0x6b7590);
+
+    /**
+     * Right-aligned hard-line numbers in the gutter. Only lines that <em>begin</em> a hard line carry a number
+     * (the metrics decided that, not the renderer), so wrapped continuations are blank — which is what makes a
+     * wrapped line read as one line.
+     */
+    private static void drawGutter(RetainedNode n, TextMetrics m, Canvas canvas, TextLayout text) {
+        float px = n.textSizePx;
+        float left = n.x + Math.min(TEXT_PAD_X, n.w * 0.25f);
+        float right = left + n.gutterPx - TextMetrics.GUTTER_PAD;
+        canvas.pushClip(left, n.viewY, Math.max(1f, n.gutterPx), Math.max(1f, n.viewH), 0f);
+        for (TextMetrics.VisualLine line : m.lines()) {
+            if (line.number() <= 0) {
+                continue;
+            }
+            String label = Integer.toString(line.number());
+            float w = text.glyphLayout().measure(label, px);
+            TextLayout.TextStyle style = TextLayout.TextStyle.of(px)
+                    .withWrap(TextLayout.WrapMode.NONE)
+                    .withAlign(TextLayout.HAlign.LEFT, TextLayout.VAlign.TOP);
+            canvas.text(text, label, right - w, line.top(), Math.max(1f, w), line.height(), style, GUTTER_INK);
         }
         canvas.popClip();
     }

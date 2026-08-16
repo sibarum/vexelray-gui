@@ -74,6 +74,10 @@ public final class RetainedNode {
     // line breaks depend only on text, width and text size, none of which can change without a relayout.
     public java.util.List<dev.vexelray.text.TextLayout.LineSpan> lineSpans;
 
+    // Width of the line-number gutter, resolved by the layout pass (0 when there is none). It narrows the text
+    // area, so it feeds the wrap width as well as the draw position — one value, computed once, read by all three.
+    public float gutterPx;
+
     // The caret offset the view last scrolled to follow. Caret-follow runs only when the caret has *moved*, so a
     // user who scrolls the field away from the caret (wheel, dragging the scrollbar) keeps their position instead
     // of being snapped back every frame. Clamping still runs unconditionally.
@@ -150,6 +154,26 @@ public final class RetainedNode {
     /** Whether long lines wrap at the content width instead of scrolling horizontally. */
     public boolean wordWrap() {
         return Boolean.TRUE.equals(props.get(PropKey.WORD_WRAP));
+    }
+
+    /** Whether this text node shows a gutter of hard-line numbers down its left edge. */
+    public boolean lineNumbers() {
+        return Boolean.TRUE.equals(props.get(PropKey.LINE_NUMBERS));
+    }
+
+    /** Hard lines in this node's text — {@code '\n'} count plus one. Wrapping does not add hard lines. */
+    public int hardLineCount() {
+        String s = textString();
+        if (s == null || s.isEmpty()) {
+            return 1;
+        }
+        int lines = 1;
+        for (int i = 0; i < s.length(); i++) {
+            if (s.charAt(i) == '\n') {
+                lines++;
+            }
+        }
+        return lines;
     }
 
     /**

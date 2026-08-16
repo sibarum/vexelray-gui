@@ -233,9 +233,10 @@ share what `TreeRenderer` already computes for drawing.
 
 ## 11. Step 4 build spec — multiline + word wrap + line numbers
 
-Status: **step 4 complete.** Steps 1–3 (read-model boxes, text metrics, click via `onDrag`), **4·0** (the compute
-phase, §2.1–2.3), **4a** (multiline + word wrap + vertical navigation) and **4b** (line numbers) have all landed.
-What remains from this section is the **label draw path** (§11.4) and the `--capture` visual check (§11.7).
+Status: **step 4 complete, and §11 is closed.** Steps 1–3 (read-model boxes, text metrics, click via `onDrag`),
+**4·0** (the compute phase, §2.1–2.3), **4a** (multiline + word wrap + vertical navigation), **4b** (line
+numbers) and the **label draw path** (§11.4) have all landed, and the `--capture` visual check (§11.7) is done.
+`TreeRenderer` now measures nothing: every glyph, rect, caret and line number comes from the read-model.
 
 This is the execution plan so a fresh session needs no re-derivation. Build order was **4·0 → 4a → 4b**: 4·0 came
 first because it was separately provable — `CaretScrollTest` was red before it and green after, with no multiline
@@ -368,10 +369,19 @@ someday-feature — `LabelGeometryTest` pins it, and three of its five cases wer
 - **Note for future multiline tests:** a newline cannot be *typed*. `'\n'` is a control character, so it rides
   the key channel and `TextField.onCodePoint` filters it out of `CharTyped` — build multi-line text with
   `Enter`, as a real keyboard does (`MultilineTest.typeLines`).
-- **Still to do:** a `--capture` visual check of a multiline field (+ gutter in 4b). 4a's renderer change is the
-  one part no headless test covers: the editable path now positions each line itself rather than letting the
-  canvas centre it, so single-line fields should look identical only if `intrinsic(VERTICAL)` matches the block
-  height the canvas would have used.
+- **Visual check (done).** `mvn -o -pl vexelray-gui-demo -am compile exec:exec "-Ddemo.args=--capture"` renders
+  the demo offscreen to `vexelray-gui-demo/gui.png` (gitignored) — no window, so it runs anywhere with a Vulkan
+  device. Confirmed the parts no headless test reaches:
+  - the gutter numbers hard lines only, leaving wrapped continuations blank, and the empty line from `\n\n` is
+    still numbered;
+  - labels through the unified path are unregressed — centred footer, centred button captions, card titles, the
+    `Field:` caption;
+  - a single-line field still masks at its edge with no bar, and its spans (fg / bg / underline) survive;
+  - **vertical centring held**, which was the specific risk: the editable path positions each line itself now
+    instead of letting the canvas centre it, so it only matches if `intrinsic(VERTICAL)` equals the block height
+    the canvas would have used. It does.
+
+  Re-run it after any change to text positioning; it is the only check that sees what the reader sees.
 
 ### 11.8 Open decisions (resolve in implementation)
 - ~~**Tab in multiline**~~ — **resolved: soft tabs inside a multiline field, focus traversal everywhere else.**

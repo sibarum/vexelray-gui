@@ -415,9 +415,11 @@ public final class Gui implements AutoCloseable {
         float lineH = tm.intrinsic(n, Axis.VERTICAL, px);
         boolean multiline = n.multiline();
         boolean wraps = n.wrapsText();
-        // The same call the layout made when it sized this node, so the line count the box was built for and the
-        // lines drawn into it cannot disagree.
-        List<dev.vexelray.text.TextLayout.LineSpan> spans = tm.lineSpans(s, wraps ? viewW : 0f, px);
+        // The breaks the layout already computed at the width it settled on — read, never recomputed, so the line
+        // count the box was sized for and the lines drawn into it are the same object. The fallback covers a node
+        // the layout has not reached yet.
+        List<dev.vexelray.text.TextLayout.LineSpan> spans =
+                n.lineSpans != null ? n.lineSpans : tm.lineSpans(s, wraps ? viewW : 0f, px);
 
         // Where the caret sits, in line-relative terms: everything below is expressed against this.
         int caret = n.caret();

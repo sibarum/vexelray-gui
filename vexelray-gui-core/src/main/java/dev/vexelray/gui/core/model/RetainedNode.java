@@ -67,6 +67,13 @@ public final class RetainedNode {
     // scratch, and the snapshot's copy is the transport-visible one.
     public dev.vexelray.gui.core.text.TextMetrics textMetrics;
 
+    // Where this node's text breaks into visual lines, at the width the layout settled on. Computed once, by the
+    // layout pass, and read by everything downstream — the compute phase bakes caret geometry from it and never
+    // re-breaks the text. Beyond halving the work, it removes the possibility of two stages disagreeing about the
+    // wrap width, which is a bug this codebase has now shipped twice. Safe to hold across a geometry-only frame:
+    // line breaks depend only on text, width and text size, none of which can change without a relayout.
+    public java.util.List<dev.vexelray.text.TextLayout.LineSpan> lineSpans;
+
     // The caret offset the view last scrolled to follow. Caret-follow runs only when the caret has *moved*, so a
     // user who scrolls the field away from the caret (wheel, dragging the scrollbar) keeps their position instead
     // of being snapped back every frame. Clamping still runs unconditionally.

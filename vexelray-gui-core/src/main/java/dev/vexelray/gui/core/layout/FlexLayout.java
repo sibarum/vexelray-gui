@@ -308,9 +308,11 @@ public final class FlexLayout {
     private static float[] measureLines(RetainedNode n, float textW, float px, TextMeasurer tm) {
         String s = n.textString();
         if (s == null || s.isEmpty()) {
+            n.lineSpans = null;
             return new float[]{0f, 1f};
         }
         var spans = tm.lineSpans(s, n.wrapsText() ? textW : 0f, px);
+        n.lineSpans = spans;   // the one break-up of this text; the compute phase reads it rather than redoing it
         float[] adv = tm.caretAdvances(s, px);
         float widest = 0f;
         if (adv == null) {

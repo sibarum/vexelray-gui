@@ -3,8 +3,10 @@ package dev.vexelray.gui.widget;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
+import dev.vexelray.gui.core.input.ClaimScope;
 import dev.vexelray.gui.core.input.FocusEvent;
 import dev.vexelray.gui.core.input.KeyEvent;
+import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.text.Span;
 import dev.vexelray.gui.core.text.TextEdit;
@@ -53,6 +55,9 @@ public final class TextField {
 
     /** Cap on retained undo history, so a long editing session can't grow the stacks without bound. */
     private static final int UNDO_LIMIT = 1000;
+
+    /** Spaces inserted by Tab in a multiline field (soft tabs — the document holds no tab characters). */
+    private static final int SOFT_TAB_WIDTH = 4;
 
     // Authoritative edit state, guarded by `this`. caret is the moving end; anchor the fixed end of a selection.
     private final StringBuilder content = new StringBuilder();
@@ -157,7 +162,32 @@ public final class TextField {
     public TextField multiline(boolean multiline) {
         this.multiline = multiline;
         node.multiline(multiline);
+        // Tab indents inside a multiline editor, and traverses focus everywhere else. Expressed as a claim on the
+        // chord while this field has focus, which outranks the framework's global Tab claim — rather than core
+        // deciding on the field's behalf. Shift+Tab is deliberately left unclaimed, so it is still the way out.
+        Shortcut tab = Shortcut.of(Key.TAB);
+        if (multiline) {
+            gui.claim(node, tab, ClaimScope.FOCUSED, this::insertSoftTab);
+        } else {
+            gui.releaseClaim(node, tab);
+        }
         return this;
+    }
+
+    /** Soft tabs: {@value #SOFT_TAB_WIDTH} spaces, so the document contains no tab characters to disagree over. */
+    private void insertSoftTab() {
+        String changed;
+        synchronized (this) {
+            int at = hasSelection() ? selLo() : caret;
+            int removeLen = hasSelection() ? selHi() - selLo() : 0;
+            coalesceBarrier = true;   // an indent is its own undo step, either side of it
+            changed = applyEdit(at, removeLen, " ".repeat(SOFT_TAB_WIDTH));
+            coalesceBarrier = true;
+        }
+        wake();
+        if (changed != null) {
+            onChange.accept(changed);
+        }
     }
 
     /**

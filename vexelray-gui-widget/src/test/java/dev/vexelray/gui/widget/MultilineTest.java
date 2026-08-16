@@ -127,6 +127,47 @@ class MultilineTest {
         }
     }
 
+    /**
+     * Tab indents inside a multiline editor and traverses focus everywhere else — and the field expresses that by
+     * <em>claiming</em> the chord while focused, not by core deciding on its behalf. Shift+Tab is deliberately
+     * left unclaimed, so there is always a way out of the field with the keyboard.
+     */
+    @Test
+    void tabInsertsSoftTabsInAMultilineField() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TextField f = field(h, false);
+            h.type("x");
+            h.tap(Key.TAB);
+
+            assertEquals("x    ", f.text(), "Tab inserts four spaces, not a tab character");
+        }
+    }
+
+    @Test
+    void shiftTabStillLeavesAMultilineField() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TextField f = field(h, false);
+            h.type("x");
+            h.chord(Key.TAB, Key.LEFT_SHIFT);
+
+            assertEquals("x", f.text(), "Shift+Tab is unclaimed, so it traverses instead of indenting");
+        }
+    }
+
+    @Test
+    void tabDoesNotIndentASingleLineField() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TextField f = new TextField(h.gui, "");
+            h.gui.root().children(f.node());
+            h.frame();
+            h.focus(f.node());
+            h.type("x");
+            h.tap(Key.TAB);
+
+            assertEquals("x", f.text(), "a single-line field claims nothing, so Tab traverses as always");
+        }
+    }
+
     @Test
     void upAndDownMoveBetweenLines() {
         try (HeadlessGui h = new HeadlessGui()) {

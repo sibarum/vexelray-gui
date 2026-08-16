@@ -13,7 +13,9 @@ import dev.vexelray.gui.core.model.Mutation;
 import dev.vexelray.gui.core.model.NodeKind;
 import dev.vexelray.gui.core.model.PropKey;
 import dev.vexelray.gui.core.model.Reconciler;
+import dev.vexelray.gui.core.input.ClaimScope;
 import dev.vexelray.gui.core.input.ClickEvent;
+import dev.vexelray.gui.core.input.KeyRouted;
 import dev.vexelray.gui.core.input.CursorShape;
 import dev.vexelray.gui.core.input.DragEvent;
 import dev.vexelray.gui.core.input.FocusEvent;
@@ -74,6 +76,9 @@ public final class Gui implements AutoCloseable {
 
     /** Keyboard focus changes (gained/lost per node). */
     private static final Topic<FocusEvent> FOCUS = Topic.of("vexelray.gui.focus", FocusEvent.class);
+
+    /** Every routed key press, whatever took it — the observation channel (see {@link KeyRouted}). */
+    private static final Topic<KeyRouted> KEY_ROUTES = Topic.of("vexelray.gui.keys", KeyRouted.class);
 
     private final AtomicLong ids = new AtomicLong(1);
     private final Atchung bus;
@@ -137,6 +142,7 @@ public final class Gui implements AutoCloseable {
         Executor handlers = handlerExecutor != null ? handlerExecutor : workers;
         this.input = new InputDispatcher(bus, CLICKS, handlers, reconciler::markLayoutDirty);
         this.input.focusTopic(FOCUS);
+        this.input.keyRoutedTopic(KEY_ROUTES);
 
         // Window size as a coalesced, latest-wins State on the bus — the framework relays out from it and workers
         // can observe resizes without coupling to the window.
@@ -256,6 +262,36 @@ public final class Gui implements AutoCloseable {
     /** Convenience: {@code gui.shortcut(Key.S, save, Modifier.CONTROL)}. */
     public Gui shortcut(Key key, Runnable command, Modifier... mods) {
         return shortcut(Shortcut.of(key, mods), command);
+    }
+
+    /**
+     * Claim {@code chord} for {@code node} at {@code scope} — preemption declared in advance. While the claim
+     * applies, that chord runs {@code command} and reaches nothing else: not the focused node's key handler, not
+     * another element's claim at a broader scope, not the framework's own defaults (which are themselves
+     * {@link ClaimScope#GLOBAL} claims, so a focused element outranks them).
+     *
+     * <p>This is what the framework offers in place of {@code preventDefault}, which it cannot: cancelling
+     * requires a handler to answer synchronously, and handlers here run on worker threads. Declaring the
+     * preemption up front lets the dispatcher decide on the GUI thread while the command runs wherever.
+     */
+    public Gui claim(Node node, Shortcut chord, ClaimScope scope, Runnable command) {
+        input.claim(node.id(), chord, scope, command);
+        return this;
+    }
+
+    /** Drop every claim {@code node} holds on {@code chord}. */
+    public Gui releaseClaim(Node node, Shortcut chord) {
+        input.releaseClaim(node.id(), chord);
+        return this;
+    }
+
+    /**
+     * Every key press and what became of it — which node had focus, and whether a claim preempted delivery.
+     * Fires for <b>all</b> keys including ones the framework or a claim handled, so an extension can see keys it
+     * would otherwise never be told about. Observation only: subscribing cannot cancel or redirect anything.
+     */
+    public Topic<KeyRouted> keyRoutes() {
+        return KEY_ROUTES;
     }
 
     /** The focus-change topic: {@code gui.bus().subscribe(gui.focusEvents(), ...)}. */

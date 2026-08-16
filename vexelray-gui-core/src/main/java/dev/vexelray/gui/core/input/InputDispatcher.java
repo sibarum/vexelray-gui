@@ -62,7 +62,15 @@ public final class InputDispatcher {
     // Typed-text handlers (CharTyped → codepoint) and caret-placement handlers (click → offset), both for
     // editable text nodes; registering either makes the node focusable.
     private final Map<Long, IntConsumer> charHandlers = new ConcurrentHashMap<>();
-    private final Map<Shortcut, Runnable> shortcuts = new ConcurrentHashMap<>();
+    /**
+     * Declared preemption (see {@link ClaimScope}). Ordered only by scope precedence, never by registration, so
+     * a focused element always outranks a global default. {@code inline} marks the framework's own claims, whose
+     * commands mutate GUI-thread state (focus) and so must not be handed to the worker executor.
+     */
+    private record Claim(Shortcut chord, ClaimScope scope, long nodeId, Runnable command, boolean inline) {
+    }
+
+    private final List<Claim> claims = new java.util.concurrent.CopyOnWriteArrayList<>();
     private final Set<Long> focusable = ConcurrentHashMap.newKeySet();
     private final Map<Long, InteractionState> reportedState = new ConcurrentHashMap<>();
 
@@ -70,6 +78,7 @@ public final class InputDispatcher {
     private final EnumSet<Modifier> heldMods = EnumSet.noneOf(Modifier.class);
     private long focusedId = -1;
     private Topic<FocusEvent> focusTopic;
+    private Topic<KeyRouted> keyRoutedTopic;
 
     // Held-key auto-repeat (§8.4): the last non-modifier key routed to a focused node, and when it next
     // re-fires. Synthesised on the per-frame dispatch() clock, since tactroller reports only the OS key edge.
@@ -107,6 +116,11 @@ public final class InputDispatcher {
         this.requestLayout = requestLayout;
         this.pump = bus.pump();
         this.sub = pump.subscribe(InputTopics.INPUT, this::handle, MAILBOX, Backpressure.DROP_OLDEST);
+        // Focus traversal is a framework *default*, not an interception: it is an ordinary global claim, so a
+        // focused element that claims Tab (a multiline editor indenting) simply outranks it. Shift+Tab is left
+        // unclaimed by such elements, which is what keeps a way out of the field.
+        claimInternal(Shortcut.of(Key.TAB), () -> moveFocus(1));
+        claimInternal(Shortcut.of(Key.TAB, Modifier.SHIFT), () -> moveFocus(-1));
     }
 
     /** Register a click handler for {@code nodeId}; replaces any prior handler for that node. */
@@ -153,9 +167,30 @@ public final class InputDispatcher {
         focusable.add(nodeId);
     }
 
-    /** Register a global shortcut command. */
+    /** Register a global shortcut command — a {@link ClaimScope#GLOBAL} claim owned by no node. */
     public void registerShortcut(Shortcut shortcut, Runnable command) {
-        shortcuts.put(shortcut, command);
+        claim(-1L, shortcut, ClaimScope.GLOBAL, command);
+    }
+
+    /** Claim {@code chord} for {@code nodeId} at {@code scope}; replaces any identical claim by the same node. */
+    public void claim(long nodeId, Shortcut chord, ClaimScope scope, Runnable command) {
+        claims.removeIf(c -> c.nodeId() == nodeId && c.scope() == scope && c.chord().equals(chord));
+        claims.add(new Claim(chord, scope, nodeId, command, false));
+    }
+
+    /** Drop every claim {@code nodeId} holds on {@code chord}. */
+    public void releaseClaim(long nodeId, Shortcut chord) {
+        claims.removeIf(c -> c.nodeId() == nodeId && c.chord().equals(chord));
+    }
+
+    /** A framework default, run on the GUI thread because it mutates dispatch state. */
+    private void claimInternal(Shortcut chord, Runnable command) {
+        claims.add(new Claim(chord, ClaimScope.GLOBAL, -1L, command, true));
+    }
+
+    /** The topic every routed key press is reported on (set by Gui). */
+    public void keyRoutedTopic(Topic<KeyRouted> topic) {
+        this.keyRoutedTopic = topic;
     }
 
     /** The topic focus changes publish on (set by Gui). */
@@ -171,6 +206,11 @@ public final class InputDispatcher {
     /** Programmatically move focus to {@code nodeId} (or -1 to clear). */
     public void focus(long nodeId) {
         setFocus(nodeId);
+    }
+
+    /** The node holding keyboard focus, or {@code -1} for none. */
+    public long focusedId() {
+        return focusedId;
     }
 
     /** The currently focused node id, or -1. */
@@ -314,29 +354,79 @@ public final class InputDispatcher {
         Modifier mod = modifierOf(key);
         if (mod != null) {
             heldMods.add(mod);
-            return; // a modifier keypress is not itself a shortcut or a command
+            return; // a modifier keypress is not itself a chord or a command
         }
-        // 1. Shortcuts get first refusal (before text input / Tab).
-        Runnable command = shortcuts.get(new Shortcut(heldMods, key));
-        if (command != null) {
-            handlerExecutor.execute(command);
+        KeyEvent e = new KeyEvent(key, Set.copyOf(heldMods));
+
+        // 1. A claim, if one applies — preemption that was declared in advance (ClaimScope). The framework's own
+        //    Tab traversal is registered this way rather than intercepted here, so a focused element that claims
+        //    Tab simply outranks it. Claims do not arm auto-repeat: a held Tab inserts one soft tab, not a stream.
+        Claim claimed = resolveClaim(new Shortcut(heldMods, key));
+        if (claimed != null) {
+            if (claimed.inline()) {
+                claimed.command().run();
+            } else {
+                handlerExecutor.execute(claimed.command());
+            }
+            report(e, true);
             return;
         }
-        // 2. Tab / Shift+Tab traverse focus.
-        if (key == Key.TAB) {
-            moveFocus(heldMods.contains(Modifier.SHIFT) ? -1 : 1);
-            return;
-        }
-        // 3. Otherwise the focused node's key handler (caret motion, backspace, ...).
+
+        // 2. Otherwise the focused node's key handler (caret motion, backspace, ...). Core takes nothing for
+        //    itself here — if nobody claimed the chord, the focused element hears it.
         if (focusedId != -1) {
             Consumer<KeyEvent> handler = keyHandlers.get(focusedId);
             if (handler != null) {
-                KeyEvent e = new KeyEvent(key, Set.copyOf(heldMods));
                 handlerExecutor.execute(() -> handler.accept(e));
             }
             // Arm auto-repeat: this key re-fires after the initial delay until released (§8.4).
             repeatKey = key;
             repeatNextNanos = System.nanoTime() + REPEAT_DELAY_NANOS;
+        }
+        report(e, false);
+    }
+
+    /** The applicable claim on {@code chord} with the most specific scope, or null if none applies. */
+    private Claim resolveClaim(Shortcut chord) {
+        Claim best = null;
+        for (Claim c : claims) {
+            if (!c.chord().equals(chord) || !applies(c)) {
+                continue;
+            }
+            if (best == null || c.scope().ordinal() < best.scope().ordinal()) {
+                best = c;
+            }
+        }
+        return best;
+    }
+
+    private boolean applies(Claim c) {
+        return switch (c.scope()) {
+            case FOCUSED -> c.nodeId() == focusedId;
+            case VISIBLE -> present(currentRoot, c.nodeId());
+            case GLOBAL -> true;
+        };
+    }
+
+    private static boolean present(RetainedNode n, long id) {
+        if (n == null) {
+            return false;
+        }
+        if (n.id == id) {
+            return true;
+        }
+        for (RetainedNode c : n.children) {
+            if (present(c, id)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Report a routed key press to observers. Never consulted for routing — see {@link KeyRouted}. */
+    private void report(KeyEvent e, boolean claimed) {
+        if (keyRoutedTopic != null) {
+            bus.publish(keyRoutedTopic, new KeyRouted(e, focusedId, claimed));
         }
     }
 

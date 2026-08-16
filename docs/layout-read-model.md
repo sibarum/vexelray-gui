@@ -289,15 +289,15 @@ entry. Sequence per text node:
    exist on `TextMetrics`.
 
 ### 11.4 Renderer unification (core) — one source of truth
-**Done for editable fields** (`TreeRenderer.drawField`), which now measure nothing: every glyph run, selection
-rect, underline and the caret are placed from `n.textMetrics`, so the renderer cannot disagree with the widget
-about what sits under the pointer, and multi-line needs no separate drawing path at all.
+**Done.** `TreeRenderer.drawText` is the only text path and it measures nothing: every glyph run, selection
+rect, underline, caret and line number is placed from `n.textMetrics`, so the renderer cannot disagree with the
+widget about what sits under the pointer, and multi-line needs no separate drawing path at all.
 - Each `VisualLine`'s runs draw at their baked `caretX`, `WrapMode.NONE`, `HAlign.LEFT`/`VAlign.TOP`, in a box
   exactly `line.height()` tall — the canvas does no alignment or wrapping of its own.
 - Spans / selection / caret use the line `xs` (already absolute), clipped per line by `fillLineRange`.
 
-**Labels too — done.** `drawText` is now the only text path; `drawField` and the whole `canvas.text` label branch
-are gone, along with the seven measure-at-draw-time helpers that supported it (`runX`, `lineTop`, `lineHeight`,
+Landed in two steps: editable fields first (4a), then labels. The `canvas.text` label branch is gone, along
+with the eight measure-at-draw-time helpers that supported it (`runX`, `lineTop`, `lineHeight`,
 `fillRangeRect`, `drawUnderline`, `drawSpannedText`, `drawSelection`, `drawCaret`).
 
 The compute phase bakes alignment, so the metrics describe what is drawn:

@@ -171,6 +171,21 @@ pointer) are `State<T>`. Workers subscribe; the app holds its own state and the 
 it. Unidirectional, Elm-shaped — and because it is all bus traffic, a subscriber on another thread,
 process, or machine is indistinguishable from a local one (req 13).
 
+**Computed geometry flows out the same way — the layout read-model.** A worker cannot read its node's
+laid-out rect, scroll or caret geometry off the write-only handle, and the answer is *not* a per-feature
+callback: core publishes an immutable, versioned `LayoutSnapshot` of the whole tree as a coalesced
+`State`, and `Node.layout()` reads its entry lock-free. Pure data, no captured measurer — so a widget, a
+test, a devtools overlay, or a remote client with no glyph atlas all answer the same questions the same
+way. **docs/layout-read-model.md is the full treatment**; the load-bearing parts to know here:
+
+- **Three tiers, one writer each** (§2.1 there): *authored props* written by the command phase,
+  *derived geometry* written by the compute phase, and the *read-model* which `publishLayout` only
+  copies. Compute in layout, copy in publish, read everywhere else — renderers and widgets never write.
+- Anything that is a pure function of (authored props + viewport + measurer) is derived geometry, so
+  "where does this computed value go?" has a mechanical answer rather than a judgement call.
+- The rule is machine-checked: `vexelray-gui-architecture` fails the build if any class outside the
+  declared stages writes a `RetainedNode` field (§11).
+
 ---
 
 ## 5. Threading — GUI thread + workers, unified on Atchung
@@ -207,8 +222,28 @@ all meet on it.
 Rows and columns with **border-box** sizing: padding, margin, border and gap, `justify` + `alignItems`,
 grow/fill. Not a full flex implementation (no wrap, no shrink-below-basis) but **bulletproof** — every
 size is clamped non-negative, every property defaults sensibly, nothing is ever left null or NaN, so a
-node can never land at an unexpected position or size. **One `measure(axis)` per node** derives
-intrinsic sizes; a second pass places everything.
+node can never land at an unexpected position or size. `measure(axis)` derives intrinsic sizes; a second
+pass places everything.
+
+**Text is the exception to "one measure pass", and deliberately so.** A wrapped node's height *is* its
+wrapped line count times the line height, so text height is **height-for-width**, not an intrinsic —
+`measure(VERTICAL)` alone can only ever answer "one line". Two consequences:
+
+- The axes resolve in opposite orders. In a **column** a child's width is settled by the container before
+  its height matters, so `place` resolves the cross axis first and feeds each width into the height
+  measure; in a **row** the dependency runs the other way and the existing cross pass already has it.
+- Reserving a scrollbar narrows the box, and narrower wrapped text is *taller*, so a scroll container
+  re-measures its content at the reserved width. That cannot oscillate: narrowing never shortens wrapped
+  content, so a box that overflowed at the full width still overflows at the reserved one.
+
+Line breaking enters through exactly one seam, `TextMeasurer.lineSpans`, and is computed **once** per
+changed frame onto `RetainedNode.lineSpans` — the layout sizes from it, the compute phase bakes caret
+geometry from it, and the renderer draws from that. Two stages independently re-breaking the same text is
+how the box stops matching the lines drawn in it.
+
+Layout runs only when structure or a layout-affecting prop changed (`layoutDirty`). Derived geometry has
+its own, weaker flag: `geometryDirty` re-runs the compute phase and republishes without a relayout, which
+is what a caret move needs — it moves the view without reflowing anything.
 
 **Border-box.** A node's rect (`x,y,w,h`) is its border-box: `w`/`h` include border + padding; the
 content box children occupy is inset by `border + padding` on every side. Margin is space *outside* the
@@ -228,8 +263,7 @@ the node's own border-box width (padding/border/gap/corner). `Auto` sizes to con
 share leftover main-axis space (on the cross axis they stretch like `Auto`). Every visual scalar — width,
 height, padding, margin, border width, gap, corner radius, **text size** — is a `Length`; there is no
 `px`. Layout resolves border/corner/text-size to px onto the node so the renderer needs no units or
-context. Layout runs only when structure or a layout-affecting prop changed (`layoutDirty`), never per
-animation frame (§7).
+context. Neither layout nor the compute phase runs per animation frame (§7).
 
 ---
 
@@ -255,11 +289,39 @@ is a **later** high-level layer; not v1.
 
 Consumes tactroller's `"tactroller.input"` topic and `State<PointerState>` from the bus. The framework
 does hit-testing (against the laid-out tree, using pointer position from the coalesced `State`),
-capture/focus routing, and leaf→root bubbling with consume semantics — no app-owned dispatch chain.
-`Shortcut(mods, key)` → a command registry (focus-scoped + global), dispatched before text input claims
-the key. Dispatch **re-publishes** high-level results (`ValueChanged/Click/FocusEvent/...`) as Atchung
-topics for workers — so raw device input and semantic UI events share one fabric, and either can cross
-to another process via the transport bridge.
+capture/focus routing, and leaf→root bubbling for pointer events — no app-owned dispatch chain. Dispatch
+**re-publishes** high-level results (`ValueChanged/Click/FocusEvent/...`) as Atchung topics for workers —
+so raw device input and semantic UI events share one fabric, and either can cross to another process via
+the transport bridge.
+
+**Keys: core eats nothing; preemption is declared in advance.** There is no `preventDefault` here, and
+there cannot be — cancelling requires a handler to answer *synchronously* that it consumed the event, and
+handlers run on worker threads through the bus, so by the time one could answer the frame is over. Every
+framework offering bubbling and cancellation is quietly paying for it with an isolated GUI thread. What
+replaces it is a **claim**: a node declares up front that it takes a chord, at a scope.
+
+```java
+enum ClaimScope { FOCUSED, VISIBLE, GLOBAL }   // most specific wins
+gui.claim(node, Shortcut.of(Key.TAB), ClaimScope.FOCUSED, editor::indent);
+```
+
+When a claim applies, its command runs and the key reaches nothing else. The dispatcher resolves claims
+on the GUI thread from state it can read immediately, while the command itself runs wherever it likes.
+Two consequences worth knowing:
+
+- **Framework defaults are ordinary claims, not interception.** Tab traversal is a `GLOBAL` claim, so a
+  focused multiline editor outranks it by claiming Tab at `FOCUSED` scope — no property, no special case,
+  and core needs no knowledge of what a text field is. `Gui.shortcut(...)` is likewise just a `GLOBAL`
+  claim owned by no node.
+- **Unclaimed keys go to the focused node**, and only then. Auto-repeat is armed on that path alone, so a
+  held Tab inserts one soft tab rather than a stream.
+
+**Everything is observable, whatever the routing decided.** The raw stream was never consumed —
+`"tactroller.input"` is a plain topic and the dispatcher is one subscriber among any number. What the
+dispatcher adds is the *resolved* view: `gui.keyRoutes()` reports every key press, who held focus, and
+whether a claim preempted delivery. Strictly observational — the moment observing could veto, it would be
+`preventDefault` again with the synchronous assumption in tow. Authority lives in claims; the channel only
+reports.
 
 Coordinate space and focus gating are tactroller's job (`attach`, `setCoordinateSpace(CLIENT)`,
 `setFocusGated`); the GUI consumes already-correct client-space coordinates.
@@ -268,12 +330,25 @@ Coordinate space and focus gating are tactroller's job (`attach`, `setCoordinate
 
 ## 9. Text + RichText
 
-Reuse `vexelray-text` wholesale (atlas, `GlyphLayout`, `TextLayout`, MSDF via `Canvas.text`). Add a
-`RichText` model on the node: an immutable rope of runs `{fg, bg/highlight, weight, outline}` with
-stable offsets so spans auto-adjust across edits (req 12); each edit publishes a new snapshot atomically
-(a natural `State<RichText>`). Weight/outline map to the MSDF edge-shift the engine exposes; a highlight
-is a background `fillRoundRect` emitted before the glyphs. Clipboard for text fields is
-`tactroller-clipboard` (standalone, no input-subsystem coupling).
+Reuse `vexelray-text` wholesale (atlas, `GlyphLayout`, `TextLayout`, MSDF via `Canvas.text`). Weight and
+outline map to the MSDF edge-shift the engine exposes; a highlight is a background `fillRoundRect`
+emitted before the glyphs. Clipboard for text fields is `tactroller-clipboard` (standalone, no
+input-subsystem coupling).
+
+**What shipped instead of the planned rope.** Spans are a plain `List<Span>` of `[start, end)` ranges
+carrying `{fg, bg, underline}`, and edits produce a `TextEdit(at, removed, inserted)` diff. That one diff
+does double duty exactly as intended (req 12): undo/redo replays it, and every span remaps its offsets
+through it, so formatting stays attached to its text across edits. A rope/piece-table is a later
+optimization for large documents, not a prerequisite — the diff was the load-bearing idea, not the
+storage.
+
+**Where text geometry lives.** Everything positional — visual line breaks, per-boundary caret x, line
+tops, the alignment indent, the hard-line number of each row — is baked into `TextMetrics` by the compute
+phase and published in the read-model (§4). The renderer measures **nothing**: it draws every glyph run,
+selection rect, underline, caret and line number from those baked coordinates. That is what makes the
+published geometry trustworthy — the only way to guarantee the read-model describes what is drawn is for
+the drawing to come from the read-model. Point↔offset, vertical navigation and visual Home/End are then
+pure lookups a widget (or a remote client with no atlas) performs itself.
 
 ---
 
@@ -288,9 +363,13 @@ GUI thread, per dirty/animating frame:
   2. window.pumpEvents();  inputBridge.pump()                      // tactroller snapshot -> bus
   3. inputPump.drain()  -> dispatch (§8) -> publish app events
   4. mutationPump.drain()  -> reconciler applies each (single writer)
-        structural/layout prop -> layoutDirty;  Remove w/ onExit -> lifecycle;  animatable -> animation
+        structural/layout prop -> layoutDirty;  caret -> geometryDirty;
+        Remove w/ onExit -> lifecycle;  animatable -> animation
   5. lifecycle.tick(now); animation.tick(now)
-  6. if layoutDirty: layout(root, viewport)                        // one measure pass
+  6. if layoutDirty: layout(root, viewport)                        // boxes, viewports, overflow
+  6b. if layoutRan || geometryDirty:                               // the compute phase (§4)
+        resolveGeometry(root, measurer)   // caret-follow scroll, text metrics, gutter -> onto the tree
+        publishLayout(root)               // pure copy -> LayoutSnapshot on the bus
   7. canvas.begin(); emit(tree, canvas)  // walk, apply transforms(§7) + clip(E3), fill*/text
   8. vertexBuffer.update(canvas.toVertexArray()); presenter.setVertexCount(...)   // native
   9. present                                                        // WindowedPresenter
@@ -315,8 +394,14 @@ vexelray-gui           parent (pom), groupId dev.vexelray.gui, Java 25
 ├─ vexelray-gui-widget widgets built on core: box, text, button, slider, list, scroll, text field, … -> -core
 ├─ vexelray-gui-nfd    the GUI's one native binding — a Panama nativefiledialog-extended facade;
 │                      results delivered back through Atchung.                                        -> -core
-└─ vexelray-gui-demo   canonical showcase app; wires tactroller-atchung for real input.
-                       -> -widget, -nfd, tactroller-api, tactroller-windows, tactroller-atchung
+├─ vexelray-gui-demo   canonical showcase app; wires tactroller-atchung for real input.
+│                      -> -widget, -nfd, tactroller-api, tactroller-windows, tactroller-atchung
+└─ vexelray-gui-architecture   test-only: the separation-of-concerns guard. No main sources, test-scope
+                       deps only, so nothing here reaches a runtime or a native image. Reads the compiled
+                       classes of -core and -widget (bytecode, not source — an alias or a wildcard import
+                       defeats a source scan). Fails the build if a GUI class references the wire stack,
+                       or if anything outside the declared stages writes a RetainedNode field.
+                       -> -core, -widget (test), asm (test)
 ```
 
 Core packages: `model · layout · anim · input · text · app`. **Dependencies on the siblings:** `-core`
@@ -341,24 +426,22 @@ exists as siblings, so those steps are *integration*, not construction.
    channel now migrating from the bespoke sink to an Atchung `Topic`/`Pump`]**
 5. `Length` + flex layout + `measure` (§6); the tree→Canvas emitter (§10 step 7). **[done]**
 6. **Input integration:** wire `tactroller-atchung` into the loop (steps 2–3); framework dispatch +
-   focus + shortcuts (§8); first interactive widgets (button, slider). **[in progress: pointer input is
-   live — tactroller → atchung `"tactroller.input"` → `InputDispatcher`, drained each frame in
-   `Gui.frame`. Clicks (hit-test + leaf→root bubbling → `onClick` + a `ClickEvent` topic) and
-   hover/pressed `InteractionState` (`onState`, ancestor-or-self coverage) both work; the demo buttons are
-   clickable and restyle on hover/press. Pointer **capture + drag** (`onDrag` → `DragEvent` START/MOVE/END,
-   tracking off-node until release) drives a first widget, the `Slider` (`vexelray-gui-widget`). Focus
-   routing, wheel, keyboard, and shortcuts remain.]**
-9. **Overflow + scroll (in progress):** reserve-space scrollbars on both axes (per-axis disable via
-   `Node.scroll(x,y)`), always visible when a container overflows (never hover-triggered; see the
-   pointer-target UX rule). **[done: engine E3 (Canvas rounded, antialiased clip via SDF coverage);
-   layout overflow detection + reserve + scroll-offset with clamp (`FlexLayout.place`); `TreeRenderer`
-   clips the viewport and draws the reserved track+thumb; mouse-wheel scrolls the container under the
-   pointer (`InputDispatcher`) and requests a relayout. Scroll offsets persist on `RetainedNode`, so a
-   resize/relayout keeps position. Remaining: dragging the scrollbar thumb (reuses `onDrag` capture).]**
-7. Application event/state publishing (§4) + `gui.on/onUi` over Atchung (§5); the E2 wake subscriber.
-8. Lifecycle FSM + animation transform layer (§7); `RichText` (§9).
-9. Scroll/clip views, text field (+ `tactroller-clipboard`); then (later) semantic-transaction
-   choreography; file dialog.
+   focus + keys (§8); first interactive widgets. **[done: clicks, hover/pressed `InteractionState`,
+   pointer capture + drag (`Slider`), wheel + scrollbar-thumb drag, focus + Tab traversal, keys and
+   `CharTyped`. Shortcuts became claims (§8, resolved decision 9).]**
+7. **Overflow + scroll.** Reserve-space scrollbars on both axes (per-axis disable via `Node.scroll(x,y)`),
+   visible only on overflow, never hover-triggered (pointer-target UX rule). **[done, containers and text
+   nodes alike: text leaves report their own content extent, so a multiline editor takes the wheel and the
+   thumb like any other scroller. A wrapped node never scrolls horizontally — nothing lies to the right of
+   a wrapped line — and a single-line input masks at its edge instead of growing a bar.]**
+8. **The layout read-model (§4)** and everything built on it: boxes → text metrics → click-to-caret → the
+   compute phase → multiline, wrap and vertical navigation → line numbers → the unified label draw path.
+   **[done — see docs/layout-read-model.md, which is closed.]**
+9. Application event/state publishing (§4) + `gui.on/onUi` over Atchung (§5); the E2 wake subscriber.
+10. Lifecycle FSM + animation transform layer (§7).
+11. Overlay/popup layer (tooltips, menus, dialogs); then (later) semantic-transaction choreography; file
+    dialog. Proving the architecture end-to-end — transports, bridge, a headless remote GUI — is its own
+    plan in docs/architecture-proof-plan.md (M0 landed).
 
 ---
 
@@ -377,6 +460,18 @@ exists as siblings, so those steps are *integration*, not construction.
    `subscribeAsync` on a worker executor; the E2 wake is a bus subscription, not a separate primitive.
 6. **Integration boundary (§11):** `-core` depends on `atchung-core`; tactroller enters at the app edge
    over a topic contract, keeping the core decoupled from any concrete input source.
+7. **Computed state is a read-model, never a callback (§4):** the single-writer rule was always about
+   *unordered writes*, not about reads. Geometry a worker needs flows back as a published snapshot; the
+   ad-hoc per-feature seams it replaced (`onCaretHit`/`onCaretDrag`) are deleted, and adding a new one is
+   the wrong answer by default. See docs/layout-read-model.md.
+8. **Derived geometry has one owner (§4, §6):** the compute phase computes, publish copies, renderers and
+   widgets read. Enforced by `vexelray-gui-architecture`, after a live instance of the opposite —
+   caret-follow scroll living in `TreeRenderer` meant a field behaved one way on screen and another way
+   headless, silently, for as long as nobody looked.
+9. **Input preemption is declared, not cancelled (§8):** claims with a scope, resolved on the GUI thread,
+   because `preventDefault` needs a synchronous handler answer that an async bus cannot give. Framework
+   defaults (Tab traversal, global shortcuts) are themselves claims, so any focused element can outrank
+   them. Observation (`gui.keyRoutes()`) is separate and can never veto.
 
 Still open: layout-animation path (size/position via `onChange`) first-class vs. transform-layer-only
 for v1; group membership static vs. dynamic; choreographer interruption semantics; whether tree

@@ -5,8 +5,14 @@ and the record of decisions; it builds on the input dispatch already in place (`
 `onClick`/`onState`/`onDrag`, wheel + scroll) and consumes tactroller over Atchung like everything else
 (architecture.md §8).
 
-Status: **design**. Keyboard events + focus + shortcuts are the foundation (mostly unblocked); the text
-input widget is the large payload, built incrementally on top.
+Status: **largely shipped.** Keyboard routing, focus, claims (§3), and the text field through multiline —
+wrap, vertical navigation, line numbers, spans, undo/redo, clipboard — are all in. What remains is called
+out per-section below; the short list is hyperlink/tooltip spans (needs an overlay layer), real
+bold/italic (needs multi-atlas), the `Disabled` property, and hard tabs.
+
+Two sections were **superseded by implementation** rather than merely completed, and are rewritten in
+place: §3 (shortcuts became claims) and §4.2 (the Tab question is resolved). Where this doc and
+docs/layout-read-model.md overlap on text geometry, that one is authoritative.
 
 ---
 
@@ -47,10 +53,17 @@ Framework-level, delivered off the raw tactroller key stream:
   Ctrl+C also inserts a character).
 
 Dispatch order per `KeyPressed`, on the GUI thread during the frame drain:
-1. **Shortcuts** (focus-scoped, then global) get first refusal — before text input claims the key.
-2. If unclaimed and a node is focused, route to the focused node's key handler (caret movement,
-   backspace, selection, …).
+1. **Claims** (§3) — the applicable claim with the most specific scope runs, and the key reaches nothing
+   else. Framework defaults (Tab traversal) are themselves claims, so a focused element can outrank them.
+2. If nothing claimed the chord, route to the focused node's key handler (caret movement, backspace,
+   selection, …). Core takes nothing for itself here.
 3. `CharTyped` (if any) goes only to the focused, editable node.
+4. Regardless of 1–3, the press is reported on `gui.keyRoutes()` — every key, who had focus, whether a
+   claim preempted it. Observation only (§3).
+
+Note that a newline cannot be *typed*: `'\n'` is a control character, so it rides the key channel and is
+filtered out of `CharTyped`. Multi-line text is built through Enter, which is the only path a real
+keyboard has.
 
 ---
 
@@ -68,44 +81,83 @@ Dispatch order per `KeyPressed`, on the GUI thread during the frame drain:
 
 ---
 
-## 3. Shortcuts
+## 3. Claims — preemption declared in advance
 
-- `Shortcut(Set<Modifier> mods, Key key)` → a command. Registered **global** (`Gui.shortcut(...)`) or
-  **focus-scoped** (active only while a subtree/node holds focus), the latter checked first so a focused
-  editor can override a global binding.
-- Dispatched from `KeyPressed` **before** text input (§1). A matched shortcut consumes the key.
-- Commands run on the worker executor by default (like other handlers), with a GUI-thread variant for the
-  rare command that must mutate on the GUI thread.
+*Supersedes the original "shortcuts get first refusal" design. Kept as a heading because the shortcut API
+survives; it is now one scope of a more general thing.*
+
+**Core does not eat input events.** A chord reaches the focused element unless something has *declared*,
+ahead of time, that it takes that chord:
+
+```java
+gui.claim(node, Shortcut.of(Key.TAB), ClaimScope.FOCUSED, editor::indent);
+gui.shortcut(Shortcut.of(Key.S, Modifier.CONTROL), app::save);   // == a GLOBAL claim owned by no node
+```
+
+- **Scopes, most specific first:** `FOCUSED` (only while the claiming node holds focus) → `VISIBLE` (while
+  it is in the tree — a dialog taking Esc while it is up) → `GLOBAL` (always). When a claim applies its
+  command runs and nothing else sees the key.
+- **Framework defaults are claims, not interception.** Tab/Shift+Tab traversal is registered as a `GLOBAL`
+  claim by the dispatcher, so a focused multiline editor overrides it simply by claiming Tab at `FOCUSED`
+  scope — no property, no special case, and core needs no knowledge of what a text field is.
+- Commands run on the worker executor like other handlers. The framework's own claims run inline on the
+  GUI thread because they mutate dispatch state (focus); that variant is internal, not offered to apps.
+- Claims do **not** arm auto-repeat (§8.4), so a held Tab inserts one soft tab rather than a stream.
+
+**Why declared rather than cancelled.** `preventDefault` requires a handler to answer *synchronously* that
+it consumed the event. Handlers here run on worker threads through the bus — by the time one could answer,
+the frame is over. Bubbling and cancellation are quietly paid for by an isolated GUI thread, which this
+framework gave up on purpose (architecture.md §5). Declaring preemption up front buys the same power back:
+the dispatcher reads claims on the GUI thread and decides immediately, while the command runs wherever.
+
+**Observation is separate and cannot veto.** `gui.keyRoutes()` reports every press with the focused node
+and whether a claim took it. If observing could cancel, this would be `preventDefault` again with the
+synchronous assumption in tow. Authority lives in claims; the channel only reports. (The *raw* stream was
+never consumed either — `"tactroller.input"` is a plain topic and the dispatcher is one subscriber among
+any number.)
 
 ---
 
 ## 4. Text input widget — requirements
 
-The user-facing spec. A `TextInput` widget over the RichText model (architecture.md §9), covering
-everything from a single-line field to a code editor.
+The user-facing spec, covering everything from a single-line field to a code editor. Shipped as
+`TextField` in `vexelray-gui-widget` — notably a *pure widget*: every geometric question (where a click
+landed, where the line above is, how far a page scrolls) is a lookup on the published read-model, so it
+never sees a measurer or a glyph atlas, and the same code drives a field on screen, headless in a test,
+or on a remote client with no fonts of its own.
 
 ### 4.1 Properties
 - **Selectable** — text can be selected (drag / shift+arrows) and copied, even when not editable.
+  *[selection + clipboard shipped for editable; non-editable selection not yet]*
 - **Editable** — content can be modified. When false, the widget is read-only (still selectable if
-  Selectable).
+  Selectable). *[shipped]*
 - **Disabled** — no focus, no interaction, dimmed. Distinct from read-only (a disabled field is inert).
+  *[not yet]*
 - **Multiline** — single-line (Enter submits / is ignored) vs. multi-line (Enter inserts a newline).
+  *[shipped: `TextField.multiline`, with vertical caret-follow scroll and Up/Down over the read-model]*
 - **Font (which atlas)** — the glyph atlas to render with. Implies **multi-atlas support** and a per-run
-  font selection (ties into formatting spans and bold/italic, §4.4 and §5).
-- **Size** — text size in **em/rem** (no px, per the layout rule); scales with root em/zoom/DPI.
-- **Display Line Numbers** — a gutter with line numbers (multi-line/code use).
+  font selection (ties into formatting spans and bold/italic, §4.4 and §5). *[parked behind multi-atlas]*
+- **Size** — text size in **em/rem** (no px, per the layout rule); scales with root em/zoom/DPI. *[shipped]*
+- **Display Line Numbers** — a gutter with line numbers (multi-line/code use). *[shipped: numbers count
+  hard lines, so a wrapped line is numbered once and its continuations are blank]*
 - **Word Wrap** — wrap long lines to the width (reusing `TextLayout` wrapping) vs. horizontal scroll.
+  *[shipped, and they are exclusive: a wrapped node never scrolls horizontally]*
 
-### 4.2 Tab key
-- Configurable: **insert N spaces** (soft tabs) or **insert a tab character** (hard tabs). Tab-as-character
-  and elastic tab stops can be **deferred**; ship soft tabs (N spaces) first.
-- Note: Tab is also focus traversal (§2). Inside a focused editable multiline field, Tab inserts;
-  focus-traversal Tab is then reachable via a modifier or an explicit "tab moves focus" mode — resolve
-  in implementation.
+### 4.2 Tab key — **resolved and shipped**
+- **Soft tabs inside a multiline field, focus traversal everywhere else.** Four spaces; the document holds
+  no tab characters, so nothing downstream has to agree about tab width. Hard tabs and elastic tab stops
+  stay deferred.
+- **No modifier distinction — the focused node decides.** A multiline `TextField` registers a `FOCUSED`
+  claim on Tab (§3); a single-line field claims nothing, so Tab traverses as always. This is why the
+  resolution needed the claim model rather than a widget-level flag: `InputDispatcher` used to consume Tab
+  before `onKey` ever saw it.
+- **Shift+Tab is deliberately left unclaimed**, so there is always a keyboard way out of the field.
+  (Shift+Tab as outdent is a later option, and would be a second claim.)
 
 ### 4.3 Text model, editing, undo/redo
-- Content is an **immutable rope/piece-table of runs** with **stable offsets** (architecture.md §9), so
-  edits publish a new snapshot atomically and existing anchors/spans shift correctly.
+- Content storage: the rope/piece-table is **deferred**, and shipped as a plain `StringBuilder` +
+  `List<Span>` (architecture.md §9). The load-bearing idea was the diff, not the storage; a rope is a
+  large-document optimization to add when there is a large document.
 - **Undo/redo** is built on a **diff** between snapshots. **The same diff drives auto-diff spans (§4.4)** —
   one edit-diff mechanism, reused: an edit produces a diff (inserted/removed ranges); undo/redo replay it,
   and every span remaps its offsets through it.
@@ -164,16 +216,18 @@ Ship faux first; add real faces with the multi-atlas work.
 
 ## 7. Build sequence
 
-1. **Keyboard routing + modifiers + focus + shortcuts** — the foundation (unblocked; §1–3). Focusable
-   flag, Tab order, click-to-focus, focus events, `Gui.shortcut`, `Gui.onKey`.
+1. **Keyboard routing + modifiers + focus + claims** — the foundation (§1–3). **[done]**
 2. **`CharTyped` seam** — interim US-layout translation now; swap to tactroller `WM_CHAR` when it lands.
-3. **Read-only RichText render** — runs, formatting spans (fg/bg/underline; faux bold/italic), word wrap,
-   line numbers, selectable + clipboard copy.
-4. **Editing** — caret, insert/delete, the rope + edit-diff, undo/redo.
-5. **Auto-diff spans** — remap all spans through the edit-diff; single + bulk span updates.
-6. **Hyperlink / tooltip spans** — hover/click emission with the editable/Control gating; tooltip needs
-   the overlay layer (§6).
-7. **Multiline polish** — hard tabs, horizontal scroll vs. wrap, PageUp/Down, code-editor niceties.
+   **[done, interim]**
+3. **Text render** — formatting spans (fg/bg/underline), word wrap, line numbers, clipboard copy.
+   **[done; faux bold/italic still pending §5]**
+4. **Editing** — caret, insert/delete, the edit-diff, undo/redo. **[done]**
+5. **Auto-diff spans** — remap all spans through the edit-diff; single + bulk span updates. **[done]**
+6. **Multiline** — Enter, wrap, Up/Down with a sticky desired column, visual Home/End, PageUp/Down,
+   vertical scroll, soft tabs, line numbers. **[done — docs/layout-read-model.md §11]**
+7. **Hyperlink / tooltip spans** — hover/click emission with the editable/Control gating; tooltip needs
+   the overlay layer (§6). **[not started — the overlay layer is the blocker]**
+8. **Remaining polish** — `Disabled`, non-editable selection, hard tabs, Shift+Tab outdent.
 
 ---
 

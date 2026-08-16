@@ -18,7 +18,7 @@ test, automated, with a hard separation-of-concerns contract and a native-image 
 | **C1** | **Transport-agnostic.** Widget + GUI-core code is *unchanged* whether the bus is in-VM or bridged to a remote peer. | The same headless TextField scenarios pass with events crossing an `ElektroBridge` (M4). **Precondition:** no behaviour may live in the renderer — `CaretScrollTest` currently proves some does (layout-read-model.md §11.4), and must be green before M4 means anything. |
 | **C2** | **Always-fastest.** Enabling remote transport adds *zero* cost to the in-VM path. | Structural (dependency test, M0) + a micro-benchmark: in-VM publish/deliver latency is unchanged with a bridge attached to unrelated topics (M-perf). |
 | **C3** | **Transports are logically correct**, including under adverse networks. | One conformance suite run against every transport (`local`/`uds`/`tcp`/`udp`), and under `SimTransport` loss/latency/reorder (M2). |
-| **C4** | **The read-model reconstructs over the wire** — a peer with no atlas rebuilds GUI state and round-trips input. | A remote consumer rebuilds `LayoutSnapshot` and drives the field via bridged input (M4); visual thin client (M5). |
+| **C4** | **The read-model reconstructs over the wire** — a peer with no atlas rebuilds GUI state and round-trips input. | A remote consumer rebuilds `LayoutSnapshot` and drives the field via bridged input (M4); visual thin client (M5). **Now materially closer:** every text node — labels included — has its glyph positions, alignment, caret geometry and line numbers baked into `TextMetrics` at publish, and `TreeRenderer` measures nothing. A peer with no atlas has, in principle, everything it needs to draw. |
 | **C5** | **Separation of concerns** holds: each layer builds/tests without the layers above it; only bus message types cross. | An automated architecture (dependency) test that fails on an upward or illegal dependency (M0), enforced forever. |
 | **C6** | **Native-image is easy** — a representative binary builds native with no hand-written reachability config and passes the conformance suite. | `mvn -Pnative verify` on the host/conformance target (M6), reusing elektro-Q's proven approach. |
 
@@ -35,6 +35,7 @@ Dependencies flow strictly downward; the **only** things that cross a process bo
  application (demo / host / client)   ── owns transport choice + bridge wiring
    ├─ vexelray-gui-widget             ── depends on gui-core only
    ├─ vexelray-gui-core               ── depends on atchung-core, vexelray, tactroller-api  (NOT elektroq)
+   ├─ vexelray-gui-architecture       ── test-only; reads the compiled classes of the two above (M0)
    ├─ tactroller-*                    ── input; knows nothing of the GUI
    ├─ atchung-core                    ── pure in-VM bus; zero deps
    ├─ elektroq-*                      ── wire stack; knows nothing of the GUI or atchung

@@ -295,11 +295,24 @@ about what sits under the pointer, and multi-line needs no separate drawing path
   exactly `line.height()` tall — the canvas does no alignment or wrapping of its own.
 - Spans / selection / caret use the line `xs` (already absolute), clipped per line by `fillLineRange`.
 
-**Not done — labels.** A non-editable text node still draws through `canvas.text` with its own `hAlign`/`vAlign`
-and `WrapMode.WORD_CHAR`. Its metrics *are* published (and now carry real wrapped line spans), but they assume a
-left/top origin, so a centred label's published `xs` do not describe where it is drawn. Unifying it needs per-line
-alignment offsets baked into `TextMetrics` — worth doing, and a prerequisite for M4 reconstructing a label
-remotely, but out of scope for 4a because it changes how every existing label renders and wants a visual check.
+**Labels too — done.** `drawText` is now the only text path; `drawField` and the whole `canvas.text` label branch
+are gone, along with the seven measure-at-draw-time helpers that supported it (`runX`, `lineTop`, `lineHeight`,
+`fillRangeRect`, `drawUnderline`, `drawSpannedText`, `drawSelection`, `drawCaret`).
+
+The compute phase bakes alignment, so the metrics describe what is drawn:
+- **horizontal, per line** — each row is indented by its own slack (`viewW − lineWidth`, floored at 0, so an
+  overflowing line pins left and scrolls). `JUSTIFY` deliberately resolves to left: real justification stretches
+  gaps *within* a line, which would have to be baked into `xs` per word, and reporting it as an indent would be
+  geometry that lies.
+- **vertical, per block** — `vAlign` places the whole block, not the first row.
+
+Only an editable node clips; clipping a label would newly hide text that a too-short fixed height has always been
+allowed to spill.
+
+This was a **compliance failure, not a missing feature** (§2.1): a centred label's published `xs` described a
+left-aligned line while the renderer drew a centred one, so the read-model was true only for the one consumer
+that ignored it. Provable today with no second consumer present, which is what made it a condition rather than a
+someday-feature — `LabelGeometryTest` pins it, and three of its five cases were verified red beforehand.
 - ~~**Delete `updateHScroll` from the renderer**~~ — **done in 4·0.** Scroll is resolved in the compute phase
   (`Gui.resolveTextGeometry`), so the renderer is a pure consumer and no longer mutates model state.
 

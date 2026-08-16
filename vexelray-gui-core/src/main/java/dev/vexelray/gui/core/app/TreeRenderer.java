@@ -94,95 +94,69 @@ public final class TreeRenderer {
         boolean hasText = s != null && !s.isEmpty();
         java.util.List<Span> spans = hasText ? n.spans() : java.util.List.of();
 
-        if (n.editable()) {
-            drawField(n, s, hasText, spans, pad, canvas, text);
-            return;
-        }
-
-        // A label keeps the canvas's own wrapping and alignment: its metrics are published for reading, but its
-        // *drawing* is not unified onto them yet, because that needs per-line h/v alignment baked into
-        // TextMetrics (docs/layout-read-model.md §11.4, remaining work).
-        float originX = n.x + pad;
-        if (hasText) {
-            for (Span sp : spans) {
-                if (sp.bg() != null) {
-                    fillRangeRect(n, s, originX, sp.start(), sp.end(), sp.bg(), canvas, text);
-                }
-            }
-            boolean anyFg = false;
-            for (Span sp : spans) {
-                if (sp.fg() != null) {
-                    anyFg = true;
-                    break;
-                }
-            }
-            if (anyFg) {
-                drawSpannedText(n, s, originX, spans, canvas, text);
-            } else {
-                TextLayout.TextStyle style = TextLayout.TextStyle.of(n.textSizePx)
-                        .withWrap(TextLayout.WrapMode.WORD_CHAR)
-                        .withAlign(n.hAlign(), n.vAlign());
-                canvas.text(text, s, originX, n.y, Math.max(1f, n.w - 2 * pad), n.h, style, n.textColor());
-            }
-            for (Span sp : spans) {
-                if (sp.underline()) {
-                    drawUnderline(n, s, originX, sp.start(), sp.end(),
-                            sp.fg() != null ? sp.fg() : n.textColor(), canvas, text);
-                }
-            }
-        }
+        drawText(n, s, hasText, spans, pad, canvas, text);
     }
 
     /**
-     * Draw an editable field from its published {@link TextMetrics} — the single source of truth for where every
-     * glyph, selection rect and caret sits (docs/layout-read-model.md §11.4). The compute phase already resolved
-     * scroll and baked each visual line's absolute caret x positions, so the renderer measures nothing: it cannot
-     * disagree with the widget about what is under the pointer, and a multi-line field needs no separate code
-     * path here at all.
+     * Draw a text node from its published {@link TextMetrics} — the single source of truth for where every glyph,
+     * selection rect and caret sits (docs/layout-read-model.md §11.4). The compute phase resolved scroll and
+     * alignment and baked each visual line's absolute caret x, so the renderer measures and aligns nothing.
+     *
+     * <p>Labels and fields share this path. They used to differ: a label drew through {@code canvas.text} with
+     * its own align and wrap while its metrics described a left-aligned block, so a centred label's published
+     * geometry was a lie to every consumer except this renderer. That was a broken invariant, not a missing
+     * feature — the read-model is supposed to describe what is drawn, and the only way to guarantee it is for the
+     * drawing to come from the read-model.
      */
-    private static void drawField(RetainedNode n, String s, boolean hasText, java.util.List<Span> spans, float pad,
-                                  Canvas canvas, TextLayout text) {
-        TextMetrics metrics = n.textMetrics;
+    private static void drawText(RetainedNode n, String s, boolean hasText, java.util.List<Span> spans, float pad,
+                                 Canvas canvas, TextLayout text) {
+        TextMetrics m = n.textMetrics;
+        if (!hasText || m == null) {
+            return;   // nothing to draw, or a measurer with no glyph metrics resolved none
+        }
         // The gutter sits outside the text viewport, so it is drawn first, under its own clip: it scrolls
         // vertically with the lines but never horizontally with them.
-        if (n.gutterPx > 0f && metrics != null) {
-            drawGutter(n, metrics, canvas, text);
+        if (n.gutterPx > 0f) {
+            drawGutter(n, m, canvas, text);
         }
 
-        // Mask overflow to the viewport the layout resolved — which excludes the h-scrollbar strip when there is
-        // one, so text never draws underneath the bar. Multi-line clips vertically too.
-        canvas.pushClip(n.viewX, n.viewY, Math.max(1f, n.viewW), Math.max(1f, n.viewH), 0f);
+        // Only an editable node masks: it is the one that scrolls, and clipping a label would newly hide text
+        // that a too-short fixed height has always been allowed to spill. The viewport excludes the h-scrollbar
+        // strip when there is one, so text never draws underneath the bar.
+        boolean clip = n.editable();
+        if (clip) {
+            canvas.pushClip(n.viewX, n.viewY, Math.max(1f, n.viewW), Math.max(1f, n.viewH), 0f);
+        }
 
-        TextMetrics m = n.textMetrics;
-        if (hasText && m != null) {
-            int selLo = Math.min(n.selectStart(), n.selectEnd());
-            int selHi = Math.max(n.selectStart(), n.selectEnd());
-            for (TextMetrics.VisualLine line : m.lines()) {
-                for (Span sp : spans) {
-                    if (sp.bg() != null) {
-                        fillLineRange(line, sp.start(), sp.end(), sp.bg(), canvas);
-                    }
+        int selLo = Math.min(n.selectStart(), n.selectEnd());
+        int selHi = Math.max(n.selectStart(), n.selectEnd());
+        for (TextMetrics.VisualLine line : m.lines()) {
+            for (Span sp : spans) {
+                if (sp.bg() != null) {
+                    fillLineRange(line, sp.start(), sp.end(), sp.bg(), canvas);
                 }
-                if (selHi > selLo) {
-                    fillLineRange(line, selLo, selHi, SELECTION, canvas);
-                }
-                drawLineText(n, s, line, spans, canvas, text);
-                for (Span sp : spans) {
-                    if (sp.underline()) {
-                        underlineLineRange(n, line, sp.start(), sp.end(),
-                                sp.fg() != null ? sp.fg() : n.textColor(), canvas, text);
-                    }
+            }
+            if (selHi > selLo) {
+                fillLineRange(line, selLo, selHi, SELECTION, canvas);
+            }
+            drawLineText(n, s, line, spans, canvas, text);
+            for (Span sp : spans) {
+                if (sp.underline()) {
+                    underlineLineRange(n, line, sp.start(), sp.end(),
+                            sp.fg() != null ? sp.fg() : n.textColor(), canvas, text);
                 }
             }
         }
 
         // The caret: a thin bar on its own visual line, only while shown this blink phase.
-        if (m != null && n.caret() >= 0 && n.caretOn()) {
+        if (n.caret() >= 0 && n.caretOn()) {
             int caret = n.caret();
             float w = Math.max(1f, n.textSizePx * 0.07f);
             canvas.fillRoundRect(m.caretX(caret), m.caretTop(caret), w, m.caretHeight(caret), 0f, n.textColor());
         }
-        canvas.popClip();
+        if (clip) {
+            canvas.popClip();
+        }
     }
 
     /** Dimmed line-number colour — present but never competing with the text it numbers. */
@@ -262,75 +236,6 @@ public final class TreeRenderer {
                 Math.max(1f, line.caretX(hi) - line.caretX(lo)), thickness, 0f, color);
     }
 
-    /** X (px, absolute) of the caret position before character {@code offset}, from the (scrolled) text origin. */
-    private static float runX(float originX, String s, int offset, float px, TextLayout text) {
-        int clamped = Math.max(0, Math.min(offset, s.length()));
-        return originX + text.glyphLayout().measure(s.substring(0, clamped), px);
-    }
-
-    /** Top y (px) of the single text line within the node, vertically centred. */
-    private static float lineTop(RetainedNode n, TextLayout text) {
-        return n.y + (n.h - lineHeight(n, text)) * 0.5f;
-    }
-
-    private static float lineHeight(RetainedNode n, TextLayout text) {
-        return text.glyphLayout().ascent(n.textSizePx) + text.glyphLayout().descent(n.textSizePx);
-    }
-
-    /** Fill a rect over the character range [start, end) from {@code originX} — used for span backgrounds. */
-    private static void fillRangeRect(RetainedNode n, String s, float originX, int start, int end, Color color,
-                                      Canvas canvas, TextLayout text) {
-        int lo = Math.max(0, Math.min(start, end));
-        int hi = Math.min(s.length(), Math.max(start, end));
-        if (hi <= lo) {
-            return;
-        }
-        float x0 = runX(originX, s, lo, n.textSizePx, text);
-        float x1 = runX(originX, s, hi, n.textSizePx, text);
-        canvas.fillRoundRect(x0, lineTop(n, text), Math.max(1f, x1 - x0), lineHeight(n, text), 0f, color);
-    }
-
-    /** Underline the character range [start, end) just below the baseline. */
-    private static void drawUnderline(RetainedNode n, String s, float originX, int start, int end, Color color,
-                                      Canvas canvas, TextLayout text) {
-        int lo = Math.max(0, Math.min(start, end));
-        int hi = Math.min(s.length(), Math.max(start, end));
-        if (hi <= lo) {
-            return;
-        }
-        float px = n.textSizePx;
-        float x0 = runX(originX, s, lo, px, text);
-        float x1 = runX(originX, s, hi, px, text);
-        float baseline = lineTop(n, text) + text.glyphLayout().ascent(px);
-        float thickness = Math.max(1f, px * 0.06f);
-        canvas.fillRoundRect(x0, baseline + thickness, Math.max(1f, x1 - x0), thickness, 0f, color);
-    }
-
-    /**
-     * Draw {@code s} split into maximal runs of a constant effective foreground colour (the topmost fg span at
-     * each character, else the node colour), from the (scrolled) origin. Single-line, left-origin — the case for
-     * editable fields and simple labels; wrapped/centred spanned text is a later refinement.
-     */
-    private static void drawSpannedText(RetainedNode n, String s, float originX, java.util.List<Span> spans,
-                                        Canvas canvas, TextLayout text) {
-        float px = n.textSizePx;
-        int len = s.length();
-        int i = 0;
-        while (i < len) {
-            Color fg = fgAt(spans, i, n.textColor());
-            int j = i + 1;
-            while (j < len && java.util.Objects.equals(fgAt(spans, j, n.textColor()), fg)) {
-                j++;
-            }
-            float x = runX(originX, s, i, px, text);
-            TextLayout.TextStyle style = TextLayout.TextStyle.of(px)
-                    .withWrap(TextLayout.WrapMode.NONE)
-                    .withAlign(TextLayout.HAlign.LEFT, n.vAlign());
-            canvas.text(text, s.substring(i, j), x, n.y, Math.max(1f, n.x + n.w - x), n.h, style, fg);
-            i = j;
-        }
-    }
-
     /** The effective foreground colour at character {@code i}: the last fg span covering it, else {@code base}. */
     private static Color fgAt(java.util.List<Span> spans, int i, Color base) {
         Color fg = base;
@@ -345,26 +250,4 @@ public final class TreeRenderer {
     /** Translucent selection background, sized text-color-neutral so glyphs stay legible on top. */
     private static final Color SELECTION = Color.withAlpha(Color.rgb(0x3aa0ff), 0.35f);
 
-    /** Draw the selection highlight from {@code selectStart} to {@code selectEnd} (order-independent). */
-    private static void drawSelection(RetainedNode n, String s, float originX, Canvas canvas, TextLayout text) {
-        int lo = Math.max(0, Math.min(n.selectStart(), n.selectEnd()));
-        int hi = Math.min(s.length(), Math.max(n.selectStart(), n.selectEnd()));
-        if (hi <= lo) {
-            return;
-        }
-        float px = n.textSizePx;
-        float x0 = runX(originX, s, lo, px, text);
-        float x1 = runX(originX, s, hi, px, text);
-        canvas.fillRoundRect(x0, lineTop(n, text), Math.max(1f, x1 - x0), lineHeight(n, text), 0f, SELECTION);
-    }
-
-    /** Draw the caret bar for an editable field at character {@code caret}, measuring the prefix advance. */
-    private static void drawCaret(RetainedNode n, int caret, String s, float originX, Canvas canvas, TextLayout text) {
-        float px = n.textSizePx;
-        float caretX = runX(originX, s, caret, px, text);
-        float lineH = lineHeight(n, text);
-        float caretY = n.y + (n.h - lineH) * 0.5f;
-        float w = Math.max(1f, px * 0.07f);
-        canvas.fillRoundRect(caretX, caretY, w, lineH, 0f, n.textColor());
-    }
 }

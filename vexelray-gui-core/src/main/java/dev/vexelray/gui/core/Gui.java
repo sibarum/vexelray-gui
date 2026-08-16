@@ -471,18 +471,38 @@ public final class Gui implements AutoCloseable {
         float viewX = n.viewW > 0f ? n.viewX : n.x + Math.min(TextMetrics.PAD_X, n.w * 0.25f);
         float viewY = n.viewW > 0f ? n.viewY : n.y + TextMetrics.padY(n);
         float contentLeft = viewX - n.scrollX;
-        float contentTop = multiline
-                ? viewY - n.scrollY
-                : viewY + (viewH - spans.size() * lineH) * 0.5f;
+        // Vertical placement of the whole block. A multiline node tops out and scrolls (a growing document grows
+        // downward); everything else honours the node's vAlign against the *block*, not one line — a label the
+        // layout sized for three wrapped rows must not place them as though there were one.
+        float blockH = spans.size() * lineH;
+        float contentTop = multiline ? viewY - n.scrollY : viewY + switch (n.vAlign()) {
+            case TOP -> 0f;
+            case MIDDLE -> Math.max(0f, (viewH - blockH) * 0.5f);
+            case BOTTOM -> Math.max(0f, viewH - blockH);
+        };
         List<TextMetrics.VisualLine> lines = new ArrayList<>(spans.size());
         // Hard-line numbering: a visual line gets a number only when it *begins* a hard line — the first one, or
         // one whose predecessor ended at a '\n'. Wrapped continuations get 0 and draw no number.
         int hardLine = 1;
         for (int i = 0; i < spans.size(); i++) {
             var span = spans.get(i);
+            // Horizontal placement, per line: a centred or right-aligned node indents each row by its own slack.
+            // Baking it here is what lets a label be *read* correctly — before this, the published xs described a
+            // left-aligned line while the renderer drew a centred one, so nothing but the renderer could trust
+            // the geometry. A line wider than the view has no slack, so it pins to the left and scrolls.
+            float slack = Math.max(0f, viewW - (adv[span.end()] - adv[span.start()]));
+            float indent = switch (n.hAlign()) {
+                case LEFT -> 0f;
+                case CENTER -> slack * 0.5f;
+                case RIGHT -> slack;
+                // Real justification stretches the gaps *within* a line, so it cannot be an indent — it would
+                // have to be baked into xs per word. Not modelled, so it starts at the left rather than
+                // pretending: better a known-left line than geometry that lies about where the glyphs are.
+                case JUSTIFY -> 0f;
+            };
             float[] xs = new float[span.end() - span.start() + 1];
             for (int j = 0; j < xs.length; j++) {
-                xs[j] = contentLeft + (adv[span.start() + j] - adv[span.start()]);
+                xs[j] = contentLeft + indent + (adv[span.start() + j] - adv[span.start()]);
             }
             boolean startsHardLine = i == 0 || spans.get(i - 1).hardBreak();
             int number = startsHardLine ? hardLine++ : 0;

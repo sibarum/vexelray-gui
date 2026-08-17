@@ -74,9 +74,10 @@ public final class Gui implements AutoCloseable {
     /** The flat root em, in px, before zoom and DPI (§6 — no cascade). */
     private static final float ROOT_EM_PX = 16f;
 
-    /** Zoom bounds: far enough either way to be useful, close enough that layout stays sane. */
-    private static final float MIN_ZOOM = 0.25f;
-    private static final float MAX_ZOOM = 4f;
+    /** Default zoom bounds and step; override with {@link #zoomRange}. */
+    private static final float DEFAULT_MIN_ZOOM = 0.25f;
+    private static final float DEFAULT_MAX_ZOOM = 4f;
+    private static final float DEFAULT_ZOOM_STEP = 1.25f;
 
     /** Density bounds: 1.0 conventional, 2.0 Retina-class, 3.0 exists; below 1 is not a real display. */
     private static final float MIN_DPI = 1f;
@@ -113,6 +114,14 @@ public final class Gui implements AutoCloseable {
     private final State<Float> dpi;
     private final Committer<Float, Float> setDpi;
     private float lastDpi = -1f;
+    // Zoom limits and step, configurable (see zoomRange). Read on the GUI thread and by zoomIn/zoomOut, which
+    // may be called from a worker — volatile is enough, since a stale bound only misses by one step.
+    private volatile float minZoom = DEFAULT_MIN_ZOOM;
+    private volatile float maxZoom = DEFAULT_MAX_ZOOM;
+    private volatile float zoomStep = DEFAULT_ZOOM_STEP;
+    // The smallest canvas the UI is laid out on, whatever the window does (see minSize).
+    private volatile Length minWidth = Length.ZERO;
+    private volatile Length minHeight = Length.ZERO;
     // Computed-layout read-model (docs/layout-read-model.md): the latest snapshot workers read via Node.layout(),
     // and the coalesced State observers subscribe to. Published after each layout pass.
     private final State<LayoutSnapshot> layoutState;
@@ -122,6 +131,8 @@ public final class Gui implements AutoCloseable {
     private final LayoutReader layoutReader = () -> latestLayout;
     private float lastViewportW = -1f;
     private float lastViewportH = -1f;
+    private float lastLayoutW = -1f;
+    private float lastLayoutH = -1f;
     private volatile TextClipboard clipboard = new TextClipboard.InMemory();
     private final Executor handlers;
     /**
@@ -243,8 +254,59 @@ public final class Gui implements AutoCloseable {
      * the reconciler off the GUI thread.
      */
     public Gui zoom(float factor) {
-        float clamped = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, factor));
-        zoom.commit(setZoom, clamped);
+        zoom.commit(setZoom, Math.max(minZoom, Math.min(maxZoom, factor)));
+        return this;
+    }
+
+    /**
+     * Set the zoom limits and the step {@link #zoomIn}/{@link #zoomOut} move by. The step is a <b>factor</b>, not
+     * an increment: zoom is perceived as a ratio, so a fixed increment is a huge jump at the bottom of the range
+     * and an imperceptible one at the top. 1.25 means each press is 25% more.
+     *
+     * <p>Re-clamps the current factor immediately, so narrowing the range cannot leave the UI outside it.
+     */
+    public Gui zoomRange(float min, float max, float step) {
+        this.minZoom = Math.max(0.01f, min);
+        this.maxZoom = Math.max(this.minZoom, max);
+        this.zoomStep = Math.max(1.0001f, step);
+        return zoom(zoom.value());
+    }
+
+    /** Zoom in one step, clamped to the configured maximum. */
+    public Gui zoomIn() {
+        return zoom(zoom.value() * zoomStep);
+    }
+
+    /** Zoom out one step, clamped to the configured minimum. */
+    public Gui zoomOut() {
+        return zoom(zoom.value() / zoomStep);
+    }
+
+    /** Back to 1.0 — unscaled. */
+    public Gui resetZoom() {
+        return zoom(1f);
+    }
+
+    /**
+     * The smallest canvas the UI is laid out on. When the window is smaller than this, the layout still runs at
+     * the minimum and the window shows part of it, rather than the UI being squeezed into a size it cannot
+     * represent — where a flexible region absorbs the whole deficit and disappears.
+     *
+     * <p><b>In {@code em}, the minimum scales with zoom</b>, which is the point: a zoomed UI genuinely needs more
+     * room, so the smallest canvas it can be laid out on grows with it. That is what makes one setting cover both
+     * a small window and a high zoom factor.
+     *
+     * <p>{@code vw}/{@code vh} resolve against this clamped canvas rather than the window, since that is the area
+     * actually laid out. {@link #viewport()} continues to report the real window size.
+     *
+     * <p><b>Not an OS window minimum.</b> The window can still be dragged smaller; it simply shows less of the
+     * UI. Stopping the drag itself needs a min-size on {@code NativeWindow}, which the engine does not expose
+     * (architecture.md §3) — and the overflow is currently cropped rather than scrollable, which wants the root
+     * to become a scroll viewport.
+     */
+    public Gui minSize(Length width, Length height) {
+        this.minWidth = width == null ? Length.ZERO : width;
+        this.minHeight = height == null ? Length.ZERO : height;
         return this;
     }
 
@@ -581,18 +643,28 @@ public final class Gui implements AutoCloseable {
         float d = dpi.value();
         boolean zoomChanged = z != lastZoom || d != lastDpi;
         boolean viewportChanged = viewportW != lastViewportW || viewportH != lastViewportH;
+        // The canvas the layout actually runs on: never smaller than the configured minimum. Resolved against a
+        // context built from the *window* size, because a minimum in vw/vh against the clamped size would define
+        // itself; em/dp — the units this is for — do not consult the viewport at all.
+        LayoutContext windowCtx = new LayoutContext(ROOT_EM_PX, z, d, viewportW, viewportH);
+        float layoutW = Math.max(viewportW, minWidth.scalarPx(windowCtx, viewportW));
+        float layoutH = Math.max(viewportH, minHeight.scalarPx(windowCtx, viewportH));
+        boolean clampChanged = layoutW != lastLayoutW || layoutH != lastLayoutH;
         if (viewportChanged) {
             // Publish the new size on the bus (coalesced State) before relaying out, so observers and the layout
             // see the same value this frame.
             viewport.commit(setViewport, new Viewport(Math.round(viewportW), Math.round(viewportH)));
         }
         if (r != null) {
-            boolean layoutRan = reconciler.layoutDirty() || viewportChanged || zoomChanged;
+            boolean layoutRan = reconciler.layoutDirty() || viewportChanged || zoomChanged || clampChanged;
             if (layoutRan) {
-                FlexLayout.layout(r, viewportW, viewportH,
-                        new LayoutContext(ROOT_EM_PX, z, d, viewportW, viewportH), tm);
+                // vw/vh resolve against the laid-out canvas, which is the area that actually exists to fill.
+                FlexLayout.layout(r, layoutW, layoutH,
+                        new LayoutContext(ROOT_EM_PX, z, d, layoutW, layoutH), tm);
                 lastViewportW = viewportW;
                 lastViewportH = viewportH;
+                lastLayoutW = layoutW;
+                lastLayoutH = layoutH;
                 lastZoom = z;
                 lastDpi = d;
             }

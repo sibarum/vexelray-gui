@@ -53,6 +53,9 @@ public final class Demo {
         args = java.util.Arrays.stream(args).filter(s -> !s.isBlank()).toArray(String[]::new);
 
         Gui gui = new Gui();
+        // The smallest canvas this UI is coherent on. In em, so it grows with zoom — a 3x UI needs three times
+        // the room, and below that the layout is cropped rather than crushed.
+        gui.minSize(Length.em(56), Length.em(35));   // 896 x 560 at 1x
         Refs refs = buildUi(gui);
         zoomShortcuts(gui);
 
@@ -92,7 +95,7 @@ public final class Demo {
         System.out.println("clean shutdown");
     }
 
-    /** The zoom ladder Ctrl+= / Ctrl+- steps through. Exact ratios, so scaling is easy to check by eye. */
+    /** Zoom levels the capture ladder walks; the interactive shortcuts use {@link Gui#zoomRange} instead. */
     private static final float[] ZOOM_STEPS = {0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f, 3f};
 
     /**
@@ -104,26 +107,14 @@ public final class Demo {
      * and relays out.
      */
     private static void zoomShortcuts(Gui gui) {
-        gui.shortcut(Key.EQUAL, () -> stepZoom(gui, +1), Modifier.CONTROL);
-        gui.shortcut(Key.MINUS, () -> stepZoom(gui, -1), Modifier.CONTROL);
-        gui.shortcut(Key.DIGIT_0, () -> gui.zoom(1f), Modifier.CONTROL);
+        gui.zoomRange(0.5f, 3f, 1.25f);
+        gui.shortcut(Key.EQUAL, gui::zoomIn, Modifier.CONTROL);
+        gui.shortcut(Key.MINUS, gui::zoomOut, Modifier.CONTROL);
+        gui.shortcut(Key.DIGIT_0, gui::resetZoom, Modifier.CONTROL);
         // Numpad equivalents, for keyboards where the main row needs a modifier to reach + at all.
-        gui.shortcut(Key.NUMPAD_ADD, () -> stepZoom(gui, +1), Modifier.CONTROL);
-        gui.shortcut(Key.NUMPAD_SUBTRACT, () -> stepZoom(gui, -1), Modifier.CONTROL);
-        gui.shortcut(Key.NUMPAD_0, () -> gui.zoom(1f), Modifier.CONTROL);
-    }
-
-    /** Move one rung along {@link #ZOOM_STEPS} from wherever the current factor sits. */
-    private static void stepZoom(Gui gui, int direction) {
-        float current = gui.zoom().value();
-        int nearest = 0;
-        for (int i = 1; i < ZOOM_STEPS.length; i++) {
-            if (Math.abs(ZOOM_STEPS[i] - current) < Math.abs(ZOOM_STEPS[nearest] - current)) {
-                nearest = i;
-            }
-        }
-        int next = Math.max(0, Math.min(ZOOM_STEPS.length - 1, nearest + direction));
-        gui.zoom(ZOOM_STEPS[next]);
+        gui.shortcut(Key.NUMPAD_ADD, gui::zoomIn, Modifier.CONTROL);
+        gui.shortcut(Key.NUMPAD_SUBTRACT, gui::zoomOut, Modifier.CONTROL);
+        gui.shortcut(Key.NUMPAD_0, gui::resetZoom, Modifier.CONTROL);
     }
 
     /**

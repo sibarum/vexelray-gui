@@ -181,7 +181,13 @@ is a finding to fix (e.g., replace reflection with codegen), not something to pa
   document precisely.
 - **DTO duplication:** wire DTOs + adapters add boilerplate. Mitigate by generating/deriving them where possible;
   accept a little duplication as the price of keeping `gui-core` off the wire (§2).
-- **Coordinate space / DPI** differ between a thin client and host; input must be mapped at the edge (M5 concern).
+- **Coordinate space / DPI** differ between a thin client and host; input must be mapped at the edge. **No longer
+  an M5 concern — it is a now concern.** The host lays out in the viewport it is handed and hit-tests input against
+  those rects, so the two must be one space; on a dense display points and pixels differ by the content scale and a
+  mismatch puts every press out by that factor. It is invisible on a 1:1 display, which is what makes deferring it
+  expensive: the bug is found during a port, at the worst moment, and the last framework this team built died of
+  it. It is also fully reproducible without dense hardware (`DpiTest`), so there is nothing to wait for. See
+  architecture.md §3 E4 for the engine half.
 
 ## 7. Non-goals (for this proof)
 Performance tuning, wire security/auth, multi-peer fan-out/relay (the bridge deliberately doesn't relay), and

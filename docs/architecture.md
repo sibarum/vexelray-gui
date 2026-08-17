@@ -111,13 +111,39 @@ input topics — not to build the machinery.
 ## 3. Engine prerequisites (work lands in VexelRay, not here)
 
 The earlier draft listed three engine gaps (E1 input, E2 wait-loop, E3 clip). **E1 is gone** — input is
-tactroller-over-atchung, so nothing about input is added to the engine. Two remain, and both are
-genuine *rendering / OS-loop* concerns no sibling covers:
+tactroller-over-atchung, so nothing about input is added to the engine. Three remain: E2 and E3 as before, plus
+**E4**, added after finding that `NativeWindow` cannot express the difference between a window's point extent and
+its pixel extent at all. All three are genuine *rendering / OS-loop* concerns no sibling covers:
 
 | # | Gap | Add to | Shape |
 |---|-----|--------|-------|
 | E2 | **Idle-blocking loop** — `waitEvents(timeoutMillis)` + `postWake()` | `vexelray-os` | Block at 0% CPU until an OS message or timeout (`MsgWaitForMultipleObjectsEx`); `postWake()` posts a message-only wake. Lets the GUI wake exactly on input, a mutation, or an animation deadline. |
 | E3 | **Canvas clip rectangle** | `vexelray-canvas` | A clip-rect stack (`pushClip/popClip`); the current clip is stamped per-vertex into the fat vertex and the fragment zeroes coverage outside it. Stays single-draw — no scissor state. Needed for scroll/overflow. |
+| E4 | **Framebuffer extent + content scale** | `vexelray-os` | `framebufferWidth()/Height()` (pixels) alongside `width()/height()` (points), and `contentScale()`. Both must track live monitor changes — dragging a window between a dense and a conventional display changes the factor while running. |
+
+**E4 is the one that breaks a framework rather than merely limiting it.** `NativeWindow` currently exposes a
+single `width()`/`height()` and no scale at all, and `GuiApp` feeds that one number to three consumers that do
+not all want the same space: the Vulkan swapchain extent (pixels, non-negotiable — surface capabilities are in
+pixels), the `Canvas` (must match the framebuffer), and the layout viewport (what `vw`/`vh` resolve against, and
+the space input is hit-tested in). On a conventional display points and pixels are the same number and all three
+agree by coincidence. On a dense one they differ by the scale factor and at least one of the three is wrong,
+*whichever* space `width()` returns — so this is not a question about the implementation, it is a gap in the API's
+expressiveness.
+
+Two consequences worth stating, because both are non-obvious:
+
+- **DPI awareness is declared by packaging, not by code.** `NSHighResolutionCapable` in a macOS bundle's
+  Info.plist; the manifest or `SetProcessDpiAwarenessContext` on Windows. A JVM launch inherits the JVM's
+  declaration and a native-image binary has its own, or none — so identical source behaves differently purely by
+  how it was built. That makes it a native-image concern (proof-plan §4) as much as an engine one.
+- **Density is testable without a dense display.** The confusion is arithmetic, not hardware: laying out at
+  `dpi = 2` and delivering input in point space reproduces it exactly, on any machine (`DpiTest`). There is no
+  reason to discover this during a port.
+
+Until E4 lands, the *layout and input* half is solvable at the application edge — `Tactroller.contentScale()`
+reports the ratio and `CoordinateSpace.FRAMEBUFFER` delivers input in the space the layout ran in, which is what
+the demo now does. The *rendering* half still needs the engine: nothing but `NativeWindow` can say how many pixels
+the drawable actually has.
 
 `postWake()` is the one OS primitive the threading model needs (§5): a worker publishing a mutation
 while the GUI thread sleeps in `waitEvents` must wake it. Until E2 lands, the loop polls every frame
@@ -416,7 +442,7 @@ the bus.
 
 ## 12. Build sequence
 
-Engine gaps first (now only two), then the framework bottom-up; the messaging/input substrate already
+Engine gaps first (three: E2, E3, E4), then the framework bottom-up; the messaging/input substrate already
 exists as siblings, so those steps are *integration*, not construction.
 
 1. **E3** Canvas clip-rect (smallest, unblocks scroll/overflow) — in VexelRay.
@@ -452,8 +478,9 @@ exists as siblings, so those steps are *integration*, not construction.
    events all ride it. The GUI builds **no** bespoke queue, wake CAS, or delivery machinery; the prior
    `MutationSink`/`PENDING_WAKE` is replaced by an Atchung `Topic`/`Pump`.
 3. **Input (§0, §3, §8):** input is **tactroller-over-atchung**. The prior "E1 = add input to the
-   engine" is dropped; nothing input-related is added to VexelRay. Engine prerequisites shrink to E2
-   (idle wait-loop) + E3 (clip-rect).
+   engine" is dropped; nothing input-related is added to VexelRay. Engine prerequisites are E2 (idle wait-loop),
+   E3 (clip-rect) and E4 (framebuffer extent + content scale) — E4 added later, once it was clear the window API
+   cannot distinguish points from pixels and so cannot be made correct on a dense display from this side.
 4. **Retained-tree model (§4):** kept, justified from reqs (immediate-mode and locked-tree rejected).
    Only the *transport* changed (bespoke sink → Atchung).
 5. **Threading (§5):** GUI thread drains pumps (mutation + input) per frame; app handlers are

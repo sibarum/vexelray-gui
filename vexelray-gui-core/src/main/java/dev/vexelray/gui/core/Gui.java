@@ -78,6 +78,10 @@ public final class Gui implements AutoCloseable {
     private static final float MIN_ZOOM = 0.25f;
     private static final float MAX_ZOOM = 4f;
 
+    /** Density bounds: 1.0 conventional, 2.0 Retina-class, 3.0 exists; below 1 is not a real display. */
+    private static final float MIN_DPI = 1f;
+    private static final float MAX_DPI = 4f;
+
     /** Framework click events, resolved from raw input by the dispatcher; workers subscribe here. */
     private static final Topic<ClickEvent> CLICKS = Topic.of("vexelray.gui.clicks", ClickEvent.class);
 
@@ -103,6 +107,12 @@ public final class Gui implements AutoCloseable {
     private final State<Float> zoom;
     private final Committer<Float, Float> setZoom;
     private float lastZoom = -1f;
+    // Display density (points -> pixels), the other ambient factor every Length resolves through. Separate from
+    // zoom because they answer different questions: density keeps a UI the same *physical* size on a denser
+    // screen, zoom is the user asking for bigger. Conflating them is why a unit can honour one and not the other.
+    private final State<Float> dpi;
+    private final Committer<Float, Float> setDpi;
+    private float lastDpi = -1f;
     // Computed-layout read-model (docs/layout-read-model.md): the latest snapshot workers read via Node.layout(),
     // and the coalesced State observers subscribe to. Published after each layout pass.
     private final State<LayoutSnapshot> layoutState;
@@ -185,6 +195,10 @@ public final class Gui implements AutoCloseable {
         this.setZoom = zb.mutation("set", (current, next) -> next);
         this.zoom = zb.build();
 
+        State.Builder<Float> db = State.of(1f);
+        this.setDpi = db.mutation("set", (current, next) -> next);
+        this.dpi = db.build();
+
         // Computed-layout read-model as a coalesced State (mirrors the viewport State): published on change.
         State.Builder<LayoutSnapshot> lb = State.of(LayoutSnapshot.EMPTY);
         this.setLayout = lb.mutation("set", (current, next) -> next);
@@ -231,6 +245,35 @@ public final class Gui implements AutoCloseable {
     public Gui zoom(float factor) {
         float clamped = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, factor));
         zoom.commit(setZoom, clamped);
+        return this;
+    }
+
+    /**
+     * The display density as a bus {@code State} — the points-to-pixels ratio of the surface being drawn to
+     * (1.0 on a conventional display, 2.0 on a Retina-class one).
+     *
+     * <p>Distinct from {@link #zoom} on purpose, even though both currently multiply into the same em. Density
+     * keeps a UI the same <em>physical</em> size on a denser screen; zoom is the user asking for bigger. A length
+     * can sensibly honour one and not the other, and that is only expressible while the two stay separate
+     * factors.
+     */
+    public State<Float> dpi() {
+        return dpi;
+    }
+
+    /**
+     * Set the display density (see {@link #dpi()}), clamped to [{@value #MIN_DPI}, {@value #MAX_DPI}].
+     *
+     * <p><b>Feed this from the real surface scale, and lay out in the same space input arrives in.</b> The
+     * framework lays out in whatever viewport {@link #frame} is handed and hit-tests input against those rects,
+     * so the two must be the same coordinate space. On a Retina-class display, points and pixels differ by this
+     * factor: lay out in framebuffer pixels and deliver input in {@code CLIENT} (point) space and every hit test
+     * is out by it. On a 1:1 display the two spaces coincide, which is exactly why the mismatch survives
+     * development on such a machine and surfaces on the first dense one.
+     */
+    public Gui dpi(float scale) {
+        float clamped = Math.max(MIN_DPI, Math.min(MAX_DPI, scale));
+        dpi.commit(setDpi, clamped);
         return this;
     }
 
@@ -535,7 +578,8 @@ public final class Gui implements AutoCloseable {
         // Zoom is read here rather than pushed: a worker's shortcut commits to the State from its own thread, and
         // the frame notices — so nothing outside this thread ever writes the reconciler's dirty flags.
         float z = zoom.value();
-        boolean zoomChanged = z != lastZoom;
+        float d = dpi.value();
+        boolean zoomChanged = z != lastZoom || d != lastDpi;
         boolean viewportChanged = viewportW != lastViewportW || viewportH != lastViewportH;
         if (viewportChanged) {
             // Publish the new size on the bus (coalesced State) before relaying out, so observers and the layout
@@ -546,10 +590,11 @@ public final class Gui implements AutoCloseable {
             boolean layoutRan = reconciler.layoutDirty() || viewportChanged || zoomChanged;
             if (layoutRan) {
                 FlexLayout.layout(r, viewportW, viewportH,
-                        new LayoutContext(ROOT_EM_PX, z, 1f, viewportW, viewportH), tm);
+                        new LayoutContext(ROOT_EM_PX, z, d, viewportW, viewportH), tm);
                 lastViewportW = viewportW;
                 lastViewportH = viewportH;
                 lastZoom = z;
+                lastDpi = d;
             }
             // The compute phase (docs/layout-read-model.md §2.1): resolve everything that is a pure function of the
             // laid-out tree — caret-follow scroll, text metrics — then publish. It runs whenever the geometry could

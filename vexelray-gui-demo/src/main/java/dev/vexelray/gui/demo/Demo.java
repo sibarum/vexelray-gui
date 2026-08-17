@@ -127,15 +127,28 @@ public final class Demo {
     }
 
     /**
-     * Open tactroller and attach it to the app window for client-space coordinates + focus gating. Returns
-     * {@code null} (input disabled) if no backend is present, so the showcase still renders headless/in CI.
+     * Open tactroller, attach it to the app window, and settle the two things that must agree about density.
+     * Returns {@code null} (input disabled) if no backend is present, so the showcase still renders headless/in CI.
+     *
+     * <p><b>Coordinate space.</b> {@code FRAMEBUFFER}, not {@code CLIENT}. The GUI hit-tests input against the
+     * rects it laid out, and it lays out in the viewport {@code GuiApp} hands it — which is the drawable the
+     * Canvas and swapchain are sized to, i.e. pixels. On a Retina-class display a window's point extent is half
+     * its pixel extent, so client-space coordinates would land at half their true position and every press would
+     * hit the control above the one aimed at. On a 1:1 display the two spaces are the same number, which is
+     * exactly why picking the wrong one survives development on Windows and fails on the first Mac
+     * (DpiTest reproduces it by arithmetic).
+     *
+     * <p><b>Density.</b> Fed from {@code contentScale()}, so every {@code Length} resolves through the real
+     * points-to-pixels ratio and the UI keeps its physical size on a dense screen. This comes from tactroller
+     * because {@code NativeWindow} cannot answer it — it exposes one size and no scale (architecture.md §3, E4).
      */
     private static Tactroller openInput(GuiApp app, Gui gui) {
         try {
             Tactroller t = Tactroller.open();
             t.attach(NativeWindow.ofHwnd(app.windowHandle()));
-            t.setCoordinateSpace(CoordinateSpace.CLIENT);
-            System.out.println("input: " + t.backendName());
+            t.setCoordinateSpace(CoordinateSpace.FRAMEBUFFER);
+            gui.dpi((float) t.contentScale());
+            System.out.println("input: " + t.backendName() + " @ " + t.contentScale() + "x");
             return t;
         } catch (BackendException e) {
             System.out.println("input unavailable (" + e.getMessage() + "); running without pointer input");

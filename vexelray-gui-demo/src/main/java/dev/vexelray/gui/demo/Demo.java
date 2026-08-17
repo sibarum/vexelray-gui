@@ -35,8 +35,21 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public final class Demo {
 
+    /** Capture size, in pixels — headless, so density is 1 and these are the design dimensions. */
     private static final int W = 900;
     private static final int H = 560;
+
+    /**
+     * The interactive window, in <b>pixels</b>, deliberately larger than {@link #W}x{@link #H}.
+     *
+     * <p>The window has to be created before its display scale can be read (see {@code attachInput}), so it
+     * cannot be sized in the density-independent units its content uses. On a 125% display the UI is laid out
+     * 25% larger — correctly, that is what the setting asks for — and a 900x560 window would then show about
+     * three quarters of it. Asking for room to spare is the compensation available until E4 lets a window be
+     * sized in, or report, its own scale.
+     */
+    private static final int WINDOW_W = 1280;
+    private static final int WINDOW_H = 800;
 
     private static final Color BG = Color.rgb(0x11141b);
     private static final Color PANEL = Color.rgb(0x1b2130);
@@ -53,9 +66,10 @@ public final class Demo {
         args = java.util.Arrays.stream(args).filter(s -> !s.isBlank()).toArray(String[]::new);
 
         Gui gui = new Gui();
-        // The smallest canvas this UI is coherent on. In em, so it grows with zoom — a 3x UI needs three times
-        // the room, and below that the layout is cropped rather than crushed.
-        gui.minSize(Length.em(56), Length.em(35));   // 896 x 560 at 1x
+        // The smallest canvas this UI is still coherent on — a *floor*, not the design size. Setting it to the
+        // design size leaves no headroom, so any window even slightly smaller starts cropping; this is the point
+        // below which the layout would stop making sense, which is a good deal lower.
+        gui.minSize(Length.em(40), Length.em(25));   // 640 x 400 at 1x
         Refs refs = buildUi(gui);
         zoomShortcuts(gui);
 
@@ -85,9 +99,13 @@ public final class Demo {
 
         int maxFrames = args.length > 0 ? Integer.parseInt(args[0]) : 0;
         startWorker(gui, refs);        // app logic off the GUI thread, mutating via the bus
-        try (GuiApp app = new GuiApp("VexelRay GUI", W, H);
-             Tactroller input = openInput(app, gui);
+        // W and H are density-independent: the window is created at their *pixel* size on this display, so a UI
+        // that honours density gets a window that honours it too. Sizing the window in raw pixels while the
+        // content scales is the mismatch that leaves a 125% display showing three quarters of the UI.
+        try (Tactroller input = openInput(gui);
+             GuiApp app = new GuiApp("VexelRay GUI", WINDOW_W, WINDOW_H);
              Clipboard clipboard = openClipboard(gui)) {
+            attachInput(input, gui, app);
             TactrollerInputBridge bridge = input == null ? null : bridgeFor(input, gui);
             app.run(gui, maxFrames, () -> pump(bridge));
         }
@@ -133,17 +151,38 @@ public final class Demo {
      * points-to-pixels ratio and the UI keeps its physical size on a dense screen. This comes from tactroller
      * because {@code NativeWindow} cannot answer it — it exposes one size and no scale (architecture.md §3, E4).
      */
-    private static Tactroller openInput(GuiApp app, Gui gui) {
+    private static Tactroller openInput(Gui gui) {
         try {
             Tactroller t = Tactroller.open();
-            t.attach(NativeWindow.ofHwnd(app.windowHandle()));
-            t.setCoordinateSpace(CoordinateSpace.FRAMEBUFFER);
-            gui.dpi((float) t.contentScale());
-            System.out.println("input: " + t.backendName() + " @ " + t.contentScale() + "x");
+            System.out.println("input: " + t.backendName());
             return t;
         } catch (BackendException e) {
             System.out.println("input unavailable (" + e.getMessage() + "); running without pointer input");
             return null;
+        }
+    }
+
+    /**
+     * Attach input to the window, settle the coordinate space, and feed the real display density.
+     *
+     * <p><b>The density can only be read here, not earlier.</b> {@code contentScale()} is a property of the
+     * window's monitor, so before {@code attach} it reports 1.0 — which means a window cannot be created at the
+     * pixel size its own scale calls for. That is the same E4 gap from the other side: {@code NativeWindow}
+     * neither reports its scale nor accepts a density-independent size, so an application cannot size its window
+     * in the units its content is laid out in. The demo compensates by asking for a window with room to spare
+     * (see {@link #W}/{@link #H}); a real fix belongs in the engine.
+     */
+    private static void attachInput(Tactroller input, Gui gui, GuiApp app) {
+        if (input == null) {
+            return;
+        }
+        try {
+            input.attach(NativeWindow.ofHwnd(app.windowHandle()));
+            input.setCoordinateSpace(CoordinateSpace.FRAMEBUFFER);
+            gui.dpi((float) input.contentScale());
+            System.out.println("display scale: " + input.contentScale() + "x");
+        } catch (BackendException e) {
+            System.out.println("input attach failed (" + e.getMessage() + "); pointer input disabled");
         }
     }
 

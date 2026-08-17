@@ -71,6 +71,13 @@ public final class Gui implements AutoCloseable {
     /** Mailbox bound for the mutation pump. BLOCK makes this a throttle, not a drop threshold (see class doc). */
     private static final int MUTATION_MAILBOX = 1 << 16;
 
+    /** The flat root em, in px, before zoom and DPI (§6 — no cascade). */
+    private static final float ROOT_EM_PX = 16f;
+
+    /** Zoom bounds: far enough either way to be useful, close enough that layout stays sane. */
+    private static final float MIN_ZOOM = 0.25f;
+    private static final float MAX_ZOOM = 4f;
+
     /** Framework click events, resolved from raw input by the dispatcher; workers subscribe here. */
     private static final Topic<ClickEvent> CLICKS = Topic.of("vexelray.gui.clicks", ClickEvent.class);
 
@@ -90,6 +97,12 @@ public final class Gui implements AutoCloseable {
     private final Node root;
     private final State<Viewport> viewport;
     private final Committer<Viewport, Viewport> setViewport;
+    // User zoom, as a coalesced State on the bus (mirroring the viewport): every Length resolves through it, so
+    // changing it rescales the whole UI rather than any one property. Read at the top of each frame; a change
+    // triggers a relayout the same way a resize does, with no cross-thread write to the reconciler.
+    private final State<Float> zoom;
+    private final Committer<Float, Float> setZoom;
+    private float lastZoom = -1f;
     // Computed-layout read-model (docs/layout-read-model.md): the latest snapshot workers read via Node.layout(),
     // and the coalesced State observers subscribe to. Published after each layout pass.
     private final State<LayoutSnapshot> layoutState;
@@ -168,6 +181,10 @@ public final class Gui implements AutoCloseable {
         this.setViewport = vb.mutation("set", (current, next) -> next);
         this.viewport = vb.build();
 
+        State.Builder<Float> zb = State.of(1f);
+        this.setZoom = zb.mutation("set", (current, next) -> next);
+        this.zoom = zb.build();
+
         // Computed-layout read-model as a coalesced State (mirrors the viewport State): published on change.
         State.Builder<LayoutSnapshot> lb = State.of(LayoutSnapshot.EMPTY);
         this.setLayout = lb.mutation("set", (current, next) -> next);
@@ -189,6 +206,32 @@ public final class Gui implements AutoCloseable {
     /** The live window size as a bus {@code State} — subscribe with {@code gui.viewport().onCommit(...)}. */
     public State<Viewport> viewport() {
         return viewport;
+    }
+
+    /**
+     * The user zoom factor as a bus {@code State} (1.0 = unscaled). Read it with {@code gui.zoom().value()} or
+     * subscribe to observe changes.
+     *
+     * <p>Zoom is not a property of any node: it is one of the ambient factors every {@link Length} resolves
+     * against ({@code em = v · rootEmPx · zoom · dpi}, §6), so changing it rescales the entire UI — box sizes,
+     * padding, border, corner radius, text size, the scrollbar thickness, the text insets and the wheel step —
+     * in one step and in proportion. That is the whole point of §6's "no pixel unit", and zooming is the cheapest
+     * way to see whether it actually holds: anything that fails to move with the rest is still pinned to device
+     * pixels.
+     */
+    public State<Float> zoom() {
+        return zoom;
+    }
+
+    /**
+     * Set the zoom factor, clamped to [{@value #MIN_ZOOM}, {@value #MAX_ZOOM}]. Safe from any thread — it commits
+     * to the {@code State}, and the next {@link #frame} notices the change and relays out, so nothing writes to
+     * the reconciler off the GUI thread.
+     */
+    public Gui zoom(float factor) {
+        float clamped = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, factor));
+        zoom.commit(setZoom, clamped);
+        return this;
     }
 
     /**
@@ -489,6 +532,10 @@ public final class Gui implements AutoCloseable {
         // FIFO order (single writer). The tree is up to date afterward.
         pump.drain();
         RetainedNode r = reconciler.root();
+        // Zoom is read here rather than pushed: a worker's shortcut commits to the State from its own thread, and
+        // the frame notices — so nothing outside this thread ever writes the reconciler's dirty flags.
+        float z = zoom.value();
+        boolean zoomChanged = z != lastZoom;
         boolean viewportChanged = viewportW != lastViewportW || viewportH != lastViewportH;
         if (viewportChanged) {
             // Publish the new size on the bus (coalesced State) before relaying out, so observers and the layout
@@ -496,11 +543,13 @@ public final class Gui implements AutoCloseable {
             viewport.commit(setViewport, new Viewport(Math.round(viewportW), Math.round(viewportH)));
         }
         if (r != null) {
-            boolean layoutRan = reconciler.layoutDirty() || viewportChanged;
+            boolean layoutRan = reconciler.layoutDirty() || viewportChanged || zoomChanged;
             if (layoutRan) {
-                FlexLayout.layout(r, viewportW, viewportH, LayoutContext.of(viewportW, viewportH), tm);
+                FlexLayout.layout(r, viewportW, viewportH,
+                        new LayoutContext(ROOT_EM_PX, z, 1f, viewportW, viewportH), tm);
                 lastViewportW = viewportW;
                 lastViewportH = viewportH;
+                lastZoom = z;
             }
             // The compute phase (docs/layout-read-model.md §2.1): resolve everything that is a pure function of the
             // laid-out tree — caret-follow scroll, text metrics — then publish. It runs whenever the geometry could

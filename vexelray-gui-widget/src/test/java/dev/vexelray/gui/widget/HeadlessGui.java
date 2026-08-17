@@ -119,11 +119,24 @@ final class HeadlessGui implements AutoCloseable {
         return new HeadlessGui(Mode.THREADED);
     }
 
+    /** The default text size in px, at which one cell is exactly {@link #CELL} wide. */
+    private static final float BASE_TEXT_PX = 16f;
+
+    /**
+     * Cell width at text size {@code px}. A real glyph advance scales with the text size, and the stub has to as
+     * well or it silently contradicts the thing it stands in for: under zoom the boxes and insets would grow while
+     * the glyphs stayed put, and a test asserting proportion would fail on the harness rather than the code.
+     * At the default 16px this is exactly {@link #CELL}, so unzoomed geometry is unchanged.
+     */
+    private static float cell(float px) {
+        return CELL * px / BASE_TEXT_PX;
+    }
+
     private final TextMeasurer measurer = new TextMeasurer() {
         @Override
         public float intrinsic(RetainedNode node, Axis axis, float px) {
             String s = node.textString() == null ? "" : node.textString();
-            return axis == Axis.HORIZONTAL ? s.length() * CELL : CELL;
+            return axis == Axis.HORIZONTAL ? s.length() * cell(px) : cell(px);
         }
 
         @Override
@@ -131,7 +144,7 @@ final class HeadlessGui implements AutoCloseable {
             if (text == null || text.isEmpty()) {
                 return 0;
             }
-            return Math.max(0, Math.min(text.length(), Math.round(localX / CELL)));
+            return Math.max(0, Math.min(text.length(), Math.round(localX / cell(px))));
         }
 
         @Override
@@ -139,7 +152,7 @@ final class HeadlessGui implements AutoCloseable {
             int len = text == null ? 0 : text.length();
             float[] xs = new float[len + 1];
             for (int i = 0; i <= len; i++) {
-                xs[i] = i * CELL;
+                xs[i] = i * cell(px);
             }
             return xs;
         }
@@ -152,7 +165,9 @@ final class HeadlessGui implements AutoCloseable {
         @Override
         public java.util.List<TextLayout.LineSpan> lineSpans(String text, float wrapWidth, float px) {
             String s = text == null ? "" : text;
-            int perLine = wrapWidth > 0f ? Math.max(1, (int) Math.floor(wrapWidth / CELL)) : Integer.MAX_VALUE;
+            // Both the width and the cell scale with zoom, so the wrap point is invariant under it — which is
+            // itself the right behaviour, and worth the stub getting right.
+            int perLine = wrapWidth > 0f ? Math.max(1, (int) Math.floor(wrapWidth / cell(px))) : Integer.MAX_VALUE;
             java.util.List<TextLayout.LineSpan> out = new java.util.ArrayList<>();
             int start = 0;
             while (true) {

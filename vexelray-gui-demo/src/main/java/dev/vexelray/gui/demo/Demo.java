@@ -14,6 +14,8 @@ import dev.vexelray.gui.widget.TextField;
 import dev.vexelray.text.TextLayout;
 import sibarum.tactroller.api.BackendException;
 import sibarum.tactroller.api.CoordinateSpace;
+import sibarum.tactroller.api.Key;
+import sibarum.tactroller.api.Modifier;
 import sibarum.tactroller.api.NativeWindow;
 import sibarum.tactroller.api.Tactroller;
 import sibarum.tactroller.atchung.TactrollerInputBridge;
@@ -52,7 +54,19 @@ public final class Demo {
 
         Gui gui = new Gui();
         Refs refs = buildUi(gui);
+        zoomShortcuts(gui);
 
+        if (args.length >= 1 && args[0].equals("--capture-zoom")) {
+            // One run, the same tree captured at each step of the ladder: the em check, as a strip of images.
+            // Every length in the UI resolves through zoom, so each file should be the previous one scaled —
+            // any element that holds its pixel size while the rest grow is still pinned to device pixels (§6).
+            for (float z : ZOOM_STEPS) {
+                gui.zoom(z);
+                GuiApp.capture(gui, W, H, 0.06f, 0.07f, 0.09f, "gui-zoom-" + z + "x.png");
+            }
+            System.out.println("captured " + ZOOM_STEPS.length + " zoom levels");
+            return;
+        }
         if (args.length >= 1 && args[0].equals("--capture")) {
             GuiApp.capture(gui, W, H, 0.06f, 0.07f, 0.09f, args.length >= 2 ? args[1] : "gui.png");
             System.out.println("captured");
@@ -76,6 +90,40 @@ public final class Demo {
         }
         gui.close();
         System.out.println("clean shutdown");
+    }
+
+    /** The zoom ladder Ctrl+= / Ctrl+- steps through. Exact ratios, so scaling is easy to check by eye. */
+    private static final float[] ZOOM_STEPS = {0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f, 3f};
+
+    /**
+     * Ctrl+= / Ctrl+- / Ctrl+0 — zoom in, out, reset. Registered here rather than in core because which chord
+     * zooms (or whether zooming exists at all) is an application decision; {@code gui.shortcut} is an ordinary
+     * {@code GLOBAL} claim, so a focused element that wants these chords can outrank them (§8).
+     *
+     * <p>The commands run on a worker thread and only commit to the zoom {@code State}; the next frame reads it
+     * and relays out.
+     */
+    private static void zoomShortcuts(Gui gui) {
+        gui.shortcut(Key.EQUAL, () -> stepZoom(gui, +1), Modifier.CONTROL);
+        gui.shortcut(Key.MINUS, () -> stepZoom(gui, -1), Modifier.CONTROL);
+        gui.shortcut(Key.DIGIT_0, () -> gui.zoom(1f), Modifier.CONTROL);
+        // Numpad equivalents, for keyboards where the main row needs a modifier to reach + at all.
+        gui.shortcut(Key.NUMPAD_ADD, () -> stepZoom(gui, +1), Modifier.CONTROL);
+        gui.shortcut(Key.NUMPAD_SUBTRACT, () -> stepZoom(gui, -1), Modifier.CONTROL);
+        gui.shortcut(Key.NUMPAD_0, () -> gui.zoom(1f), Modifier.CONTROL);
+    }
+
+    /** Move one rung along {@link #ZOOM_STEPS} from wherever the current factor sits. */
+    private static void stepZoom(Gui gui, int direction) {
+        float current = gui.zoom().value();
+        int nearest = 0;
+        for (int i = 1; i < ZOOM_STEPS.length; i++) {
+            if (Math.abs(ZOOM_STEPS[i] - current) < Math.abs(ZOOM_STEPS[nearest] - current)) {
+                nearest = i;
+            }
+        }
+        int next = Math.max(0, Math.min(ZOOM_STEPS.length - 1, nearest + direction));
+        gui.zoom(ZOOM_STEPS[next]);
     }
 
     /**

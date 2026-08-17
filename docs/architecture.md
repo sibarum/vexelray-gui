@@ -275,21 +275,37 @@ is what a caret move needs — it moves the view without reflowing anything.
 content box children occupy is inset by `border + padding` on every side. Margin is space *outside* the
 border-box separating a node from its siblings and its parent's content edge.
 
-**Units — no pixel unit.** Every length is relative, so a UI scales with font size, zoom, DPI and window
-size rather than being pinned to device pixels. Resolved only at layout time against a
+**Units — no device-pixel unit.** Every length is relative, so a UI scales with font size, zoom, DPI and
+window size rather than being pinned to the device grid. Resolved only at layout time against a
 `LayoutContext{ rootEmPx, zoom, dpi, viewportW/H }`:
 
 ```java
-sealed interface Length permits Em, Rem, Percent, Vw, Vh, Grow /*flex*/, Auto, Fill { }
+sealed interface Length permits Em, Rem, Dp, Percent, Vw, Vh, Grow /*flex*/, Auto, Fill { }
 ```
 
-`em = rem = v·rootEmPx·zoom·dpi` (flat root, no cascade); `vw/vh = v/100·viewport`;
+`em = rem = v·rootEmPx·zoom·dpi` (flat root, no cascade); **`dp = v·dpi`**; `vw/vh = v/100·viewport`;
 `percent = v/100·basis`, where the basis is the parent content extent along the axis (width/height) or
 the node's own border-box width (padding/border/gap/corner). `Auto` sizes to content; `Fill`/`Grow`
 share leftover main-axis space (on the cross axis they stretch like `Auto`). Every visual scalar — width,
-height, padding, margin, border width, gap, corner radius, **text size** — is a `Length`; there is no
-`px`. Layout resolves border/corner/text-size to px onto the node so the renderer needs no units or
-context. Neither layout nor the compute phase runs per animation frame (§7).
+height, padding, margin, border width, gap, corner radius, **text size** — is a `Length`. Layout resolves
+border/corner/text-size/text-insets to px onto the node so the renderer needs no units or context.
+Neither layout nor the compute phase runs per animation frame (§7).
+
+**Why `dp` is not the pixel unit returning.** The original rule was doing two jobs at once, and they are
+separable:
+
+1. *Never pin to the device grid* — density must be honoured, or the UI breaks on a dense display.
+2. *Scale with the user's zoom* — a good default, not a law.
+
+`em`/`rem` satisfy both. `dp` keeps (1), which is the one whose violation is fatal, and opts out of (2).
+The same split as Android's `dp` vs `sp`. It exists because **zoom is a request to make content legible,
+and tripling the frame around the content to match means seeing less of what you zoomed in to read.**
+
+The boundary, which is where this will go wrong if it goes wrong: `dp` is for chrome that is not
+proportional to text — panel padding, gaps, margins, separators, hairlines. Anything that *sizes or
+contains glyphs* stays in `em`, including the text insets in `TextMetrics`; make those `dp` and at 3× you
+get triple-height text inside an unchanged inset, all but touching its border. A row whose height must fit
+a label is likewise `em`, not `dp`, even though a toolbar feels like chrome.
 
 ---
 
@@ -527,7 +543,15 @@ exists as siblings, so those steps are *integration*, not construction.
     only universal requirement being that every peer applies the same criteria. Left undefined, because the
     topology is single-writer — one host owns the document, the bridge does not relay — so no conflict can
     arise. **The trigger to revisit is a second writer, not a date.**
-13. **The stack updates in unison, so wire-format skew is not a case.** Every peer is one build, deployed
+13. **`dp` — density-independent chrome (§6).** A length that honours DPI and ignores zoom, added after
+    observing that scaling the frame with the content is self-defeating: at 3× the demo's chrome consumed the
+    window and starved the content region it surrounds. Justified as *splitting* §6's original rule rather than
+    breaching it — never-pin-to-device-pixels is kept, scale-with-zoom is opted out of. Restricted by convention
+    to chrome that is not proportional to text; `TextMetrics`' insets stay `em` precisely because they are.
+    Verified with the 2×2 that is the unit's entire contract: density moves `dp`, zoom does not, `em` answers
+    both. **Not yet machine-checked** — the natural guard is that `dp` may not appear in `gui-core`, which is a
+    rule worth having once there is a second use of it.
+14. **The stack updates in unison, so wire-format skew is not a case.** Every peer is one build, deployed
     atomically; there is no rolling window, so DTOs need no independent versioning or optional-field
     negotiation. This holds only while nothing in a wire format outlives the build — the moment a snapshot
     or session is persisted and read back after an upgrade, the other peer is last month's build and the

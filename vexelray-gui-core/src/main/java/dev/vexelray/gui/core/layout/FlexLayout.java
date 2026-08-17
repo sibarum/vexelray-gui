@@ -454,7 +454,8 @@ public final class FlexLayout {
 
     /** Basis-free fixed units resolve to a concrete size with no containing extent; percents and flex keywords don't. */
     private static boolean isBasisFree(Length l) {
-        return l instanceof Length.Em || l instanceof Length.Rem || l instanceof Length.Vw || l instanceof Length.Vh;
+        return l instanceof Length.Em || l instanceof Length.Rem || l instanceof Length.Dp
+                || l instanceof Length.Vw || l instanceof Length.Vh;
     }
 
     /** The pixel value of one em: {@code rootEmPx · zoom · dpi} — the basis for a percent text size. */

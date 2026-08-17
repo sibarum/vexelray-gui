@@ -18,11 +18,28 @@ package dev.vexelray.gui.core.layout;
  * properties (padding, margin, border, gap, corner, text size) the flex keywords are meaningless and resolve to 0.
  */
 public sealed interface Length
-        permits Length.Em, Length.Rem, Length.Percent, Length.Vw, Length.Vh,
+        permits Length.Em, Length.Rem, Length.Dp, Length.Percent, Length.Vw, Length.Vh,
                 Length.Grow, Length.Auto, Length.FillT {
 
     record Em(float v) implements Length { }
     record Rem(float v) implements Length { }
+
+    /**
+     * Density-independent pixels: {@code v · dpi}, honouring display density but <b>not</b> zoom. One dp is one
+     * pixel at density 1.
+     *
+     * <p>This is not a pixel unit sneaking back in. §6's rule was doing two jobs at once — never pin to the device
+     * grid, <em>and</em> scale with the user's zoom — and those are separable. {@code Dp} keeps the first, which is
+     * the one whose violation breaks a UI on a dense display, and opts out of the second. Same distinction as
+     * Android's {@code dp} vs {@code sp}.
+     *
+     * <p><b>For chrome that is not proportional to text</b>: card padding, gaps between panels, margins,
+     * separators. Zoom is a request to make <em>content</em> legible, and tripling the frame around the content to
+     * match means the user sees less of what they zoomed in to read. Text is the other case entirely — anything
+     * sizing or containing glyphs stays in {@link Em}, or at 3× you get triple-height text inside an unchanged
+     * inset, nearly touching its border.
+     */
+    record Dp(float v) implements Length { }
     /** Percentage of a caller-supplied basis (see the interface doc for which basis applies where). */
     record Percent(float v) implements Length { }
     record Vw(float v) implements Length { }
@@ -45,6 +62,11 @@ public sealed interface Length
 
     static Length rem(float v) {
         return new Rem(v);
+    }
+
+    /** Density-independent pixels — honours DPI, ignores zoom. See {@link Dp} for when to reach for it. */
+    static Length dp(float v) {
+        return new Dp(v);
     }
 
     /** A percentage (0..100+) of the relevant basis; see the interface doc. */
@@ -73,6 +95,7 @@ public sealed interface Length
         return switch (this) {
             case Em e -> e.v() * ctx.rootEmPx() * ctx.zoom() * ctx.dpi();
             case Rem r -> r.v() * ctx.rootEmPx() * ctx.zoom() * ctx.dpi();
+            case Dp d -> d.v() * ctx.dpi();   // density only: no root em, and deliberately no zoom
             case Percent p -> p.v() / 100f * basisPx;
             case Vw w -> w.v() / 100f * ctx.viewportW();
             case Vh h -> h.v() / 100f * ctx.viewportH();

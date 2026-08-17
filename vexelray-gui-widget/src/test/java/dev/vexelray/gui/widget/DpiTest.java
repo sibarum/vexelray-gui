@@ -54,6 +54,56 @@ class DpiTest {
         }
     }
 
+    /**
+     * The whole {@code dp} contract, as a 2x2: density moves it, zoom does not, and {@code em} answers both.
+     * That difference is the only reason the unit exists, so it is the thing to pin down.
+     */
+    @Test
+    void dpHonoursDensityAndIgnoresZoom() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Node dp = h.gui.box().width(Length.dp(20)).height(Length.dp(20));
+            Node em = h.gui.box().width(Length.rem(1.25f)).height(Length.rem(1.25f));   // also 20px at 1x/1x
+            h.gui.root().children(dp, em);
+            h.frame();
+            assertEquals(20f, dp.layout().rect().w(), 0.5f, "they start the same size");
+            assertEquals(20f, em.layout().rect().w(), 0.5f);
+
+            h.gui.zoom(2f);
+            h.frame();
+            assertEquals(20f, dp.layout().rect().w(), 0.5f, "zoom does not move dp — this is the point of it");
+            assertEquals(40f, em.layout().rect().w(), 0.5f, "while em follows the user's zoom");
+
+            h.gui.zoom(1f);
+            h.gui.dpi(2f);
+            h.frame();
+            assertEquals(40f, dp.layout().rect().w(), 0.5f,
+                    "but density does move it: dp is density-independent, not device pixels");
+            assertEquals(40f, em.layout().rect().w(), 0.5f, "and em honours density too");
+
+            h.gui.zoom(2f);
+            h.frame();
+            assertEquals(40f, dp.layout().rect().w(), 0.5f, "density only, at any zoom");
+            assertEquals(80f, em.layout().rect().w(), 0.5f, "em takes both factors");
+        }
+    }
+
+    /**
+     * dp is a fixed unit, so it resolves with no containing basis — a dp width is a real size, not
+     * measure-to-content. Checked through a parent that sizes to its child rather than stretching over it.
+     */
+    @Test
+    void dpResolvesWithoutABasis() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Node inner = h.gui.box().width(Length.dp(50)).height(Length.dp(10));
+            Node outer = h.gui.column().children(inner);
+            h.gui.root().alignItems(dev.vexelray.gui.core.layout.LayoutEnums.AlignItems.START).children(outer);
+            h.frame();
+            assertEquals(50f, inner.layout().rect().w(), 0.5f, "the dp child is 50px");
+            assertEquals(50f, outer.layout().rect().w(), 0.5f,
+                    "and an auto parent measures to it, so dp carries an intrinsic size like em does");
+        }
+    }
+
     /** A density change relays out, the same way zoom and a resize do. */
     @Test
     void changingDensityRepublishesTheReadModel() {

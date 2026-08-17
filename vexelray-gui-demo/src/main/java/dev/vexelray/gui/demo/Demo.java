@@ -241,20 +241,20 @@ public final class Demo {
 
         Node leftCard = gui.column().width(Length.FILL).height(Length.FILL)
                 .background(PANEL).corner(Length.rem(1)).border(Length.rem(0.1f), LINE)
-                .padding(Length.rem(1.25f)).gap(Length.rem(0.625f))
+                .padding(Length.dp(20)).gap(Length.rem(0.625f))
                 .children(
                         gui.text("Editable, multiline").height(Length.rem(1.875f)).textSize(Length.rem(1.375f))
                                 .textColor(ACCENT),
                         notes.node());
         Node rightCard = gui.column().width(Length.FILL).height(Length.FILL)
                 .background(PANEL).corner(Length.rem(1)).border(Length.rem(0.1f), LINE)
-                .padding(Length.rem(1.25f)).gap(Length.rem(0.625f))
+                .padding(Length.dp(20)).gap(Length.rem(0.625f))
                 .children(
                         gui.text("Live from a worker").height(Length.rem(1.875f)).textSize(Length.rem(1.375f))
                                 .textColor(ACCENT),
                         log);
 
-        Node body = gui.row().width(Length.FILL).height(Length.FILL).padding(Length.rem(1.5f)).gap(Length.rem(1.5f))
+        Node body = gui.row().width(Length.FILL).height(Length.FILL).padding(Length.dp(24)).gap(Length.rem(1.5f))
                 .children(leftCard, rightCard);
 
         Node getStarted = button(gui, "Get started", Color.WHITE, ACCENT, ACCENT_HOVER, ACCENT_PRESSED, false);
@@ -285,15 +285,16 @@ public final class Demo {
         field.onSubmit(s -> log.append(gui.text("submitted: " + s)
                 .textSize(Length.rem(1)).textColor(INK)));
 
-        // Per-axis padding: small vertically so 44px buttons fit a 64px bar, but full horizontally (rem(1.5) = 24px)
-        // so the first button aligns with the cards' left edge (body padding is also rem(1.5)).
-        Node controls = gui.row().width(Length.FILL).height(Length.rem(4)).padding(Length.rem(0.5f), Length.rem(1.5f))
+        // Per-axis padding: small vertically so 44px buttons fit a 64px bar, but full horizontally (dp(24)) so the
+        // first button aligns with the cards' left edge (body padding is also dp(24)). These are dp rather than
+        // rem because they are frame, not content: zoom should grow what you are reading, not the gutter round it.
+        Node controls = gui.row().width(Length.FILL).height(Length.rem(4)).padding(Length.dp(8), Length.dp(24))
                 .gap(Length.rem(0.75f)).justify(Justify.START).alignItems(AlignItems.CENTER)
                 .children(getStarted, button(gui, "Docs", DIM, PANEL, PANEL_HOVER, PANEL_PRESSED, true),
                         slider.node(), valueLabel);
 
         Node fieldRow = gui.row().width(Length.FILL).height(Length.rem(3.25f))
-                .padding(Length.rem(0.375f), Length.rem(1.5f)).gap(Length.rem(0.75f))
+                .padding(Length.dp(6), Length.dp(24)).gap(Length.rem(0.75f))
                 .alignItems(AlignItems.CENTER).scroll(false, false)
                 .children(
                         gui.text("Field:").width(Length.rem(4)).textSize(Length.rem(1)).textColor(DIM)

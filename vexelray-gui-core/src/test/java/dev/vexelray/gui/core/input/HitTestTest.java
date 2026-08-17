@@ -43,6 +43,37 @@ class HitTestTest {
         assertNull(HitTest.at(null, 5, 5));
     }
 
+    /**
+     * A scrolling container clips its children to the viewport, which excludes the strips its scrollbars
+     * reserved. Hit-testing has to agree, or a press in the region under a scrollbar addresses content the clip
+     * had just hidden — invisible, and in a text field enough to fling the caret to the end of the document.
+     */
+    @Test
+    void aClippingNodeIsNotDescendedOutsideItsViewport() {
+        RetainedNode root = node(0, 0, 0, 100, 100);
+        root.overflowY = true;
+        root.viewX = 0;
+        root.viewY = 0;
+        root.viewW = 90;    // the right 10px are the reserved v-scrollbar strip
+        root.viewH = 100;
+        RetainedNode child = node(1, 0, 0, 100, 100);   // spans the full width, under the bar too
+        attach(root, child);
+
+        assertSame(child, HitTest.at(root, 50, 50), "inside the viewport the child is hit as usual");
+        assertSame(root, HitTest.at(root, 95, 50),
+                "in the scrollbar strip the container is hit, not the child the clip removed");
+    }
+
+    /** Without overflow there is no clip, so the viewport fields are irrelevant and children hit everywhere. */
+    @Test
+    void aNonClippingNodeIgnoresItsViewport() {
+        RetainedNode root = node(0, 0, 0, 100, 100);
+        RetainedNode child = node(1, 0, 0, 100, 100);
+        attach(root, child);
+
+        assertSame(child, HitTest.at(root, 95, 50));
+    }
+
     @Test
     void rightAndBottomEdgesAreExclusive() {
         RetainedNode root = node(0, 0, 0, 100, 100);

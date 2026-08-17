@@ -48,6 +48,11 @@ public final class FlexLayout {
         n.borderPx = n.borderWidth().scalarPx(ctx, n.w);
         n.cornerPx = n.corner().scalarPx(ctx, n.w);
         n.textSizePx = Math.max(1f, n.textSize().scalarPx(ctx, emBasis(ctx)));
+        // The text insets and the em basis, resolved here so no later stage needs a LayoutContext to know them.
+        n.emPx = emBasis(ctx);
+        n.textPadXPx = TextMetrics.resolvePadX(ctx, n.w);
+        n.textPadYPx = TextMetrics.PAD_Y.scalarPx(ctx, n.w);
+        n.gutterPadPx = TextMetrics.GUTTER_PAD.scalarPx(ctx, n.w);
 
         List<RetainedNode> kids = n.children;
         if (kids.isEmpty()) {
@@ -265,14 +270,14 @@ public final class FlexLayout {
         float px = n.textSizePx;
         float sb = scrollbarThickness(ctx);
         float lineH = tm.intrinsic(n, Axis.VERTICAL, px);
-        float pad = Math.min(TextMetrics.PAD_X, n.w * 0.25f);
+        float pad = n.textPadXPx;      // resolved in layoutBox, just above
         float padY = TextMetrics.padY(n);
         // The gutter is resolved before anything measures: it narrows the text area, so it decides the wrap, which
         // decides the line count, which is what the gutter is wide enough to number. Sized from the *hard* line
         // count, which wrapping cannot change — so that is a dependency, not a cycle.
         float gutter = gutterWidth(n, n.textSizePx, tm);
         n.gutterPx = gutter;
-        float boxW = Math.max(1f, TextMetrics.contentWidth(n.w) - gutter);
+        float boxW = Math.max(1f, TextMetrics.contentWidth(n) - gutter);
         float boxH = Math.max(0f, n.h - 2f * padY);
 
         // Pass 1 at the full text width.
@@ -316,7 +321,7 @@ public final class FlexLayout {
         float[] zero = tm.caretAdvances("0", px);
         float digitW = zero != null && zero.length > 1 ? zero[1] : px * 0.6f;
         int digits = Integer.toString(Math.max(1, n.hardLineCount())).length();
-        return digits * digitW + 2f * TextMetrics.GUTTER_PAD;
+        return digits * digitW + 2f * n.gutterPadPx;
     }
 
     /**
@@ -378,7 +383,7 @@ public final class FlexLayout {
         if (n.kind == NodeKind.TEXT) {
             float textPx = Math.max(1f, n.textSize().scalarPx(ctx, emBasis(ctx)));
             float size = axis == Axis.VERTICAL && knownWidth >= 0f
-                    ? textBlockHeight(n, knownWidth, textPx, tm)
+                    ? textBlockHeight(n, knownWidth, textPx, ctx, tm)
                     : tm.intrinsic(n, axis, textPx);
             return Math.max(0f, size) + 2f * inset;
         }
@@ -414,17 +419,20 @@ public final class FlexLayout {
      * line height. Line breaking goes through {@code TextMeasurer.lineSpans} — the same seam the compute phase
      * and the renderer use — so the height a node is given always matches the lines that end up drawn in it.
      */
-    private static float textBlockHeight(RetainedNode n, float nodeW, float textPx, TextMeasurer tm) {
+    private static float textBlockHeight(RetainedNode n, float nodeW, float textPx, LayoutContext ctx,
+                                         TextMeasurer tm) {
         float lineH = tm.intrinsic(n, Axis.VERTICAL, textPx);
         String s = n.textString();
         if (s == null || s.isEmpty()) {
             return lineH;   // an empty field is still one line tall
         }
-        float wrapWidth = n.wrapsText() ? TextMetrics.contentWidth(nodeW) : 0f;
+        // Measure runs before this node's own layoutBox, so the insets are resolved here from ctx rather than read
+        // off the node — same Lengths, same numbers, just not yet stored.
+        float wrapWidth = n.wrapsText() ? TextMetrics.contentWidth(ctx, nodeW) : 0f;
         int lineCount = Math.max(1, tm.lineSpans(s, wrapWidth, textPx).size());
         // An editable field's text sits inside a vertical inset, so an auto-sized one must be tall enough for
         // both; a label is the block itself (see TextMetrics.padY).
-        return lineCount * lineH + 2f * TextMetrics.padY(n);
+        return lineCount * lineH + 2f * TextMetrics.resolvePadY(ctx, n);
     }
 
     /**

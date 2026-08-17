@@ -1,5 +1,8 @@
 package dev.vexelray.gui.core.text;
 
+import dev.vexelray.gui.core.layout.LayoutContext;
+import dev.vexelray.gui.core.layout.Length;
+
 import java.util.List;
 
 /**
@@ -11,34 +14,58 @@ import java.util.List;
  */
 public record TextMetrics(List<VisualLine> lines) {
 
-    /** Horizontal text inset (px) the renderer uses; kept here so publish and render agree on the text origin. */
-    public static final float PAD_X = 10f;
+    /**
+     * The text insets, as {@link Length}s rather than pixels — §6 admits no pixel unit, and these were the last
+     * scalars pinned to device pixels while everything around them (scrollbar thickness, border, corner, text
+     * size) already scaled. The visible effect of the old constants was a field whose padding stayed 10px while
+     * its scrollbar grew with zoom, so the proportions drifted apart the further you got from 100%.
+     *
+     * <p>Flat root, no cascade (§6), so these track {@code rootEmPx · zoom · dpi} and not the node's own text
+     * size. At the default context they resolve to the 10/6/4 px they replace.
+     */
+    public static final Length PAD_X = Length.em(0.625f);
 
-    /** Vertical text inset (px) for a multi-line node, which tops out rather than centring its single line. */
-    public static final float PAD_Y = 6f;
+    /** Vertical text inset for an editable node, which is a box with text in it rather than the text itself. */
+    public static final Length PAD_Y = Length.em(0.375f);
 
     /** Gap either side of the digits in a line-number gutter. */
-    public static final float GUTTER_PAD = 4f;
+    public static final Length GUTTER_PAD = Length.em(0.25f);
 
     /**
-     * The width available to glyphs in a text node whose border-box width is {@code nodeW} — the inset shrinks on
-     * a very narrow node so text never vanishes entirely.
+     * Resolve the horizontal text inset for a node {@code nodeW} wide. The inset shrinks on a very narrow node so
+     * text never vanishes entirely.
      *
-     * <p>Lives here because three stages need the identical number: the layout (to know how many lines the text
-     * wraps onto, and therefore how tall the node is), the compute phase (to break lines and bake caret x), and
-     * the renderer (to clip). A formula copied into three places is a drift waiting to happen.
+     * <p>Called by the layout, which then stores the result on the node ({@code RetainedNode.textPadXPx}) for
+     * every later stage to read. Three stages need the identical number — the layout to know how many lines the
+     * text wraps onto, the compute phase to break lines and bake caret x, and the renderer to clip — and resolving
+     * it once onto the node is what stops them drifting, the same way border and corner are already handled.
      */
-    public static float contentWidth(float nodeW) {
-        return Math.max(1f, nodeW - 2f * Math.min(PAD_X, nodeW * 0.25f));
+    public static float resolvePadX(LayoutContext ctx, float nodeW) {
+        return Math.min(PAD_X.scalarPx(ctx, nodeW), nodeW * 0.25f);
+    }
+
+    /** Resolve the vertical text inset: an editable node gets one, a label is the text block itself and gets none. */
+    public static float resolvePadY(LayoutContext ctx, dev.vexelray.gui.core.model.RetainedNode n) {
+        return n.editable() ? PAD_Y.scalarPx(ctx, n.w) : 0f;
+    }
+
+    /** The width available to glyphs, from the inset the layout already resolved onto {@code n}. */
+    public static float contentWidth(dev.vexelray.gui.core.model.RetainedNode n) {
+        return Math.max(1f, n.w - 2f * n.textPadXPx);
+    }
+
+    /** The width available to glyphs at {@code nodeW}, resolving the inset — for callers running before layout. */
+    public static float contentWidth(LayoutContext ctx, float nodeW) {
+        return Math.max(1f, nodeW - 2f * resolvePadX(ctx, nodeW));
     }
 
     /**
-     * The vertical inset of a text node's text area. An editable field is a <em>box</em> with text inside it, so
-     * its text sits in from the border; a label is the text block itself and gets no inset — which is what lets
-     * the layout size a wrapped label at exactly {@code lineCount · lineHeight}.
+     * The vertical inset of a text node's text area, as the layout resolved it. An editable field is a <em>box</em>
+     * with text inside it, so its text sits in from the border; a label is the text block itself and gets no inset
+     * — which is what lets the layout size a wrapped label at exactly {@code lineCount · lineHeight}.
      */
     public static float padY(dev.vexelray.gui.core.model.RetainedNode n) {
-        return n.editable() ? PAD_Y : 0f;
+        return n.editable() ? n.textPadYPx : 0f;
     }
 
     /**

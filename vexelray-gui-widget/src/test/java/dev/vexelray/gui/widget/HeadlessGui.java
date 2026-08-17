@@ -32,6 +32,18 @@ final class HeadlessGui implements AutoCloseable {
     private static final float W = 800f;
     private static final float H = 600f;
 
+    /** The layout context this harness's frames resolve {@link dev.vexelray.gui.core.layout.Length}s against. */
+    private static final dev.vexelray.gui.core.layout.LayoutContext CTX =
+            dev.vexelray.gui.core.layout.LayoutContext.of(W, H);
+
+    /**
+     * The text insets in px, resolved from their {@code Length}s at this harness's context — so a test that needs
+     * to click "at the start of the text" says so, rather than repeating a pixel value that only happens to be
+     * right at 100% zoom.
+     */
+    static final float PAD_X = dev.vexelray.gui.core.text.TextMetrics.PAD_X.scalarPx(CTX, 0f);
+    static final float PAD_Y = dev.vexelray.gui.core.text.TextMetrics.PAD_Y.scalarPx(CTX, 0f);
+
     /**
      * An {@link Executor} that queues tasks instead of running them, so a test can release input handlers one at
      * a time and interleave them with other work — reproducing a specific ordering / race deterministically.

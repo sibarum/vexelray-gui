@@ -19,9 +19,6 @@ import dev.vexelray.text.TextLayout;
  */
 public final class TreeRenderer {
 
-    /** Horizontal inset, in px, so text doesn't kiss rounded corners. */
-    private static final float TEXT_PAD_X = 10f;
-
     private static final Color SCROLL_OUTLINE = Color.rgb(0x39415a); // track border, visible against any panel
     private static final Color SCROLL_TRACK = Color.rgb(0x181d28);   // subtle inner fill
     private static final Color SCROLL_THUMB = Color.rgb(0x5a6685);   // clearly visible thumb
@@ -90,7 +87,7 @@ public final class TreeRenderer {
         }
 
         String s = n.textString();
-        float pad = Math.min(TEXT_PAD_X, n.w * 0.25f);
+        float pad = n.textPadXPx;   // resolved by the layout — the renderer resolves no units of its own
         boolean hasText = s != null && !s.isEmpty();
         java.util.List<Span> spans = hasText ? n.spans() : java.util.List.of();
 
@@ -169,8 +166,8 @@ public final class TreeRenderer {
      */
     private static void drawGutter(RetainedNode n, TextMetrics m, Canvas canvas, TextLayout text) {
         float px = n.textSizePx;
-        float left = n.x + Math.min(TEXT_PAD_X, n.w * 0.25f);
-        float right = left + n.gutterPx - TextMetrics.GUTTER_PAD;
+        float left = n.x + n.textPadXPx;
+        float right = left + n.gutterPx - n.gutterPadPx;
         canvas.pushClip(left, n.viewY, Math.max(1f, n.gutterPx), Math.max(1f, n.viewH), 0f);
         for (TextMetrics.VisualLine line : m.lines()) {
             if (line.number() <= 0) {

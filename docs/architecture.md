@@ -510,7 +510,15 @@ exists as siblings, so those steps are *integration*, not construction.
 Still open: layout-animation path (size/position via `onChange`) first-class vs. transform-layer-only
 for v1; group membership static vs. dynamic; choreographer interruption semantics; whether tree
 mutations ever share a bus instance with cross-component traffic or always use a private internal topic
-(currently: shared bus, private topic name); whether node removal releases input registrations
-automatically (today `Gui.releaseNode` is manual, and a removed focused node keeps focus and its claims —
-this wants the §7 lifecycle FSM, which would make removal an observable event rather than a private index
-deletion).
+(currently: shared bus, private topic name).
+
+**Open, and needs a sibling change — the input topic mixes two loss classes.** `"tactroller.input"`
+carries pointer motion (coalesces harmlessly) alongside key, char and button edges (must not be dropped),
+under one `DROP_OLDEST` mailbox. Under a stall that sheds the *oldest*, which is the keystrokes, while the
+newest motion survives — backwards for half the traffic. Nothing in the GUI can fix it well: `BLOCK`
+deadlocks, because the bridge publishes from the frame loop and the pump drains on that same thread, so a
+full mailbox has the GUI thread waiting on itself; `COALESCE_LATEST` discards keys outright; and splitting
+into two class-filtered mailboxes protects the keys but reorders them against motion, which breaks drag.
+Atchung also exposes no dropped count, so a shed edge is undetectable from this side. The fix is the one
+§5 already describes — pointer *position* on the coalesced `State<PointerState>`, leaving this channel
+carrying only what must not be dropped — and it belongs in `tactroller-atchung`.

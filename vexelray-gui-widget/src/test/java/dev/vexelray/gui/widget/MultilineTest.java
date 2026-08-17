@@ -33,7 +33,7 @@ class MultilineTest {
 
     /** Centre-of-line y for visual line {@code i}, for click tests. */
     private static float lineY(int i) {
-        return TextMetrics.PAD_Y + i * HeadlessGui.CELL + HeadlessGui.CELL * 0.5f;
+        return HeadlessGui.PAD_Y + i * HeadlessGui.CELL + HeadlessGui.CELL * 0.5f;
     }
 
     /**
@@ -319,7 +319,7 @@ class MultilineTest {
             TextField f = field(h, false);
             typeLines(h, "long", "x", "long");
 
-            h.click(TextMetrics.PAD_X, lineY(1));   // start of visual line 2
+            h.click(HeadlessGui.PAD_X, lineY(1));   // start of visual line 2
             h.type("Z");
 
             assertEquals("long\nZx\nlong", f.text(), "the click lands on line 2, where the pointer was");

@@ -40,6 +40,14 @@ public final class RetainedNode {
     public float borderPx;
     public float cornerPx;
     public float textSizePx = 16f;
+    // Text insets and the em basis, resolved from Lengths by the layout pass (TextMetrics.PAD_X/PAD_Y/GUTTER_PAD).
+    // Stored here for the same reason border and corner are: every later stage — the compute phase, the renderer,
+    // input dispatch — needs the identical number and none of them has a LayoutContext to resolve it from.
+    public float textPadXPx;
+    public float textPadYPx;
+    public float gutterPadPx;
+    /** One em in px at this node's layout ({@code rootEmPx · zoom · dpi}) — lets a later stage size relatively. */
+    public float emPx = 16f;
 
     // Scroll state: scrollX/Y persist across frames. A staged pipeline value (docs/layout-read-model.md §2.2) —
     // the dispatch stage proposes an offset (wheel, scrollbar drag), the compute stage narrows it (caret-follow,

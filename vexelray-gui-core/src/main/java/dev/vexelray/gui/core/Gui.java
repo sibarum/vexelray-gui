@@ -101,6 +101,12 @@ public final class Gui implements AutoCloseable {
     private float lastViewportH = -1f;
     private volatile TextClipboard clipboard = new TextClipboard.InMemory();
     private final Executor handlers;
+    /**
+     * Mutations buffered by an in-progress {@link #batch} on this thread, or null when not batching. Thread-local
+     * because a batch is one thread's group of edits: two workers batching at once must not braid their ops into
+     * each other's group, and per-producer FIFO already keeps each thread's own order.
+     */
+    private final ThreadLocal<List<Mutation>> batching = new ThreadLocal<>();
     private final ExecutorService workers = Executors.newCachedThreadPool(r -> {
         Thread t = new Thread(r, "vexelray-gui-worker");
         t.setDaemon(true);
@@ -130,11 +136,22 @@ public final class Gui implements AutoCloseable {
     public Gui(Atchung bus, java.util.concurrent.Executor handlerExecutor) {
         this.bus = bus;
         this.pump = bus.pump();
-        // Publisher seam for Node handles: every setter publishes a Mutation onto the bus from any thread.
-        this.sink = m -> bus.publish(MUTATIONS, m);
+        // Publisher seam for Node handles: every setter publishes a Mutation onto the bus from any thread — unless
+        // this thread is inside a batch, in which case the op joins the group and the whole group publishes once.
+        this.sink = m -> {
+            List<Mutation> group = batching.get();
+            if (group != null) {
+                group.add(m);
+            } else {
+                bus.publish(MUTATIONS, m);
+            }
+        };
 
         long rootId = ids.getAndIncrement();
-        this.reconciler = new Reconciler(rootId);
+        // A node leaving the tree releases everything keyed by its id. Without this, a removed node kept its
+        // handlers, its claims and — if it had it — focus, so a deleted focused editor went on preempting the
+        // chords it claimed forever.
+        this.reconciler = new Reconciler(rootId, this::releaseNodeId);
         // The GUI thread drains this pump each frame; the subscriber runs on that (drain) thread, so applying to
         // the single-writer reconciler here is the GUI-thread write the model requires.
         this.mutationSub = pump.subscribe(MUTATIONS, reconciler::apply, MUTATION_MAILBOX, Backpressure.BLOCK);
@@ -286,12 +303,17 @@ public final class Gui implements AutoCloseable {
 
     /**
      * Drop every input registration {@code node} holds — handlers, ordered stages, claims, focusability — and
-     * clear focus if it held it. Call when a node is removed; until the lifecycle FSM (§7) makes removal an
-     * observable event, this is manual.
+     * clear focus if it held it. Removing a node does this automatically; this is for releasing a node's
+     * registrations while keeping the node.
      */
     public Gui releaseNode(Node node) {
-        input.clearHandlers(node.id());
+        releaseNodeId(node.id());
         return this;
+    }
+
+    /** The reconciler's removal seam: everything keyed by a node id is dropped when the node leaves the tree. */
+    private void releaseNodeId(long id) {
+        input.clearHandlers(id);
     }
 
     /** Make {@code node} focusable (reachable by click and Tab) without a key handler — e.g. a button. */
@@ -425,11 +447,33 @@ public final class Gui implements AutoCloseable {
         return handlers;
     }
 
-    /** Buffer a group of edits and post them as one atomic {@link Mutation.Batch}. */
+    /**
+     * Buffer a group of edits and post them as one atomic {@link Mutation.Batch} — one publish, so no frame
+     * boundary can split the group and no drain can observe it half-applied (§4).
+     *
+     * <p>Posting the ops individually is <em>not</em> equivalent, which is what this used to do. A drain applies
+     * everything queued, so a single producer's edits usually land together by luck; but the drain runs
+     * concurrently with the producer, and a frame that fires midway through the group renders the half of it that
+     * had been published. Batching removes the luck.
+     *
+     * <p>Nested calls join the enclosing batch rather than publishing early, so a helper that batches internally
+     * composes into a caller's larger group.
+     */
     public void batch(Runnable edits) {
-        // For now edits post individually (already atomic per-frame within a drain); a true buffering Batch is a
-        // small follow-up. Kept as the API seam so call sites are stable.
-        edits.run();
+        if (batching.get() != null) {
+            edits.run();   // nested: the ops join the outer group, which publishes them
+            return;
+        }
+        List<Mutation> group = new ArrayList<>();
+        batching.set(group);
+        try {
+            edits.run();
+        } finally {
+            batching.remove();
+        }
+        if (!group.isEmpty()) {
+            bus.publish(MUTATIONS, new Mutation.Batch(List.copyOf(group)));
+        }
     }
 
     /**
@@ -508,7 +552,7 @@ public final class Gui implements AutoCloseable {
         // The text-area viewport the layout resolved for this node (FlexLayout.layoutTextLeaf). It is already
         // inset by the padding and already excludes whatever the scrollbars reserved, so scroll offsets, thumb
         // geometry and caret metrics are all expressed against the one rectangle.
-        float viewW = n.viewW > 0f ? n.viewW : TextMetrics.contentWidth(n.w);
+        float viewW = n.viewW > 0f ? n.viewW : TextMetrics.contentWidth(n);
         float viewH = Math.max(1f, n.viewH > 0f ? n.viewH : n.h - 2f * TextMetrics.padY(n));
         float lineH = tm.intrinsic(n, Axis.VERTICAL, px);
         boolean multiline = n.multiline();
@@ -530,7 +574,7 @@ public final class Gui implements AutoCloseable {
         // Bake absolute geometry. A multiline node tops out (a growing document grows downward); everything else
         // centres its text *block* in the box — the whole block, not one line, or a label the layout sized for
         // three wrapped lines would draw them starting a line down and spill out the bottom.
-        float viewX = n.viewW > 0f ? n.viewX : n.x + Math.min(TextMetrics.PAD_X, n.w * 0.25f);
+        float viewX = n.viewW > 0f ? n.viewX : n.x + n.textPadXPx;
         float viewY = n.viewW > 0f ? n.viewY : n.y + TextMetrics.padY(n);
         float contentLeft = viewX - n.scrollX;
         // Vertical placement of the whole block. A multiline node tops out and scrolls (a growing document grows

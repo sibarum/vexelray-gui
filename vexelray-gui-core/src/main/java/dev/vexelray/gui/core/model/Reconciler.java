@@ -13,6 +13,16 @@ public final class Reconciler {
 
     private final long rootId;
     private final Map<Long, RetainedNode> index = new HashMap<>();
+    /**
+     * Notified with each node id as it leaves the tree, so state hung off a node elsewhere can be dropped with it.
+     *
+     * <p>Removal was previously a private index deletion that nothing could observe, and everything keyed by node
+     * id therefore outlived the node: input handlers, claims, focusability, and focus itself. A removed node that
+     * held focus kept holding it, so its claims kept applying — deleting a focused multiline editor left its
+     * FOCUSED claim on Tab preempting traversal for the rest of the process. This is the seam the §7 lifecycle FSM
+     * will publish from; for now it is a direct callback, because the fix should not wait on the FSM.
+     */
+    private final java.util.function.LongConsumer onRemoved;
     private RetainedNode root;
     private boolean layoutDirty = true;
     // Derived geometry (caret-follow scroll, text metrics) can go stale without the flex layout changing — moving
@@ -21,7 +31,13 @@ public final class Reconciler {
     private boolean geometryDirty = true;
 
     public Reconciler(long rootId) {
+        this(rootId, id -> { });
+    }
+
+    /** As {@link #Reconciler(long)}, notifying {@code onRemoved} for every node that leaves the tree. */
+    public Reconciler(long rootId, java.util.function.LongConsumer onRemoved) {
         this.rootId = rootId;
+        this.onRemoved = onRemoved == null ? id -> { } : onRemoved;
     }
 
     public RetainedNode root() {
@@ -109,10 +125,13 @@ public final class Reconciler {
         }
     }
 
+    /** Drop {@code n} and everything under it from the index, announcing each id as it goes. */
     private void removeSubtree(RetainedNode n) {
         index.remove(n.id);
+        n.parent = null;
         for (RetainedNode c : n.children) {
             removeSubtree(c);
         }
+        onRemoved.accept(n.id);   // after the descendants, so a listener sees children released before parents
     }
 }

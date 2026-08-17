@@ -15,18 +15,33 @@ public final class HitTest {
         if (root == null || !contains(root, x, y)) {
             return null;
         }
-        // Later children paint on top, so search them front-to-back (reverse) for the topmost hit.
-        for (int i = root.children.size() - 1; i >= 0; i--) {
-            RetainedNode hit = at(root.children.get(i), x, y);
-            if (hit != null) {
-                return hit;
+        // Descend only where the children are actually drawn. A scrolling container clips them to its viewport,
+        // which excludes the strips its scrollbars reserved — so without this the region under a scrollbar hit
+        // whatever content the clip had just hidden, and a press there addressed something invisible.
+        if (!clips(root) || withinViewport(root, x, y)) {
+            // Later children paint on top, so search them front-to-back (reverse) for the topmost hit.
+            for (int i = root.children.size() - 1; i >= 0; i--) {
+                RetainedNode hit = at(root.children.get(i), x, y);
+                if (hit != null) {
+                    return hit;
+                }
             }
         }
         return root;
     }
 
+    /** Whether {@code n} clips its children — the same condition {@code TreeRenderer} pushes a clip for. */
+    private static boolean clips(RetainedNode n) {
+        return n.overflowX || n.overflowY;
+    }
+
     private static boolean contains(RetainedNode n, float x, float y) {
         return x >= n.x && x < n.x + n.w && y >= n.y && y < n.y + n.h;
+    }
+
+    /** Whether the point is inside {@code n}'s content viewport — the rect its children are clipped to. */
+    private static boolean withinViewport(RetainedNode n, float x, float y) {
+        return x >= n.viewX && x < n.viewX + n.viewW && y >= n.viewY && y < n.viewY + n.viewH;
     }
 
     private HitTest() {

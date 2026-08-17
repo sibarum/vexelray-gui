@@ -43,11 +43,44 @@ import java.util.concurrent.Executor;
  */
 public final class InputDispatcher {
 
-    /** Input edges are drained every frame; a generous mailbox with drop-oldest never sheds under real rates. */
+    /**
+     * Input edges are drained every frame into a bounded mailbox.
+     *
+     * <p><b>The policy is a compromise, and the constraint that forces it is not obvious.</b> This one topic
+     * carries traffic of two different loss classes: pointer motion, which coalesces harmlessly, and key, char and
+     * button edges, which do not — a shed keystroke is gone, and reads downstream as a key that never arrived.
+     * {@code DROP_OLDEST} sheds the oldest, which under a stall is exactly the keystrokes, while the newest motion
+     * survives. That is backwards for half the traffic.
+     *
+     * <p>It is nonetheless the least-bad option available here. {@link Backpressure#BLOCK} would <b>deadlock</b>:
+     * in the standard wiring the input bridge publishes from the frame loop and this pump drains on the same
+     * thread, so a full mailbox would have the GUI thread waiting on itself. {@code COALESCE_LATEST} would discard
+     * keys outright. Two mailboxes filtered by class would protect the keys but reorder them against motion, which
+     * breaks drag (press, move, release must stay in sequence).
+     *
+     * <p>The real fix is upstream and matches what §5 already describes: pointer <em>position</em> belongs on the
+     * coalesced {@code State<PointerState>} rather than as edges on the lossless topic, leaving this channel
+     * carrying only traffic that must not be dropped. That is a {@code tactroller-atchung} change, so it is
+     * recorded as open (architecture.md §13) rather than worked around here. Note also that Atchung exposes no
+     * dropped-message count, so a shed edge is currently undetectable from this side — which is why the honest
+     * move is to stop sharing the channel, not to widen the buffer and hope.
+     */
     private static final int MAILBOX = 4096;
 
-    /** Pixels scrolled per wheel notch. */
-    private static final float WHEEL_STEP = 48f;
+    /**
+     * Wheel travel per notch, in ems of the target's layout — three lines, the platform convention. Relative
+     * rather than a pixel count because a notch should move the same amount of <em>content</em> at any zoom or
+     * DPI; pinned to 48px it moved a third as far through a 3× zoomed document.
+     */
+    private static final float WHEEL_STEP_EM = 3f;
+
+    /** Within this much of the locked edge (in ems), a scroll counts as "at the edge" and re-attaches the lock. */
+    private static final float LOCK_EDGE_EPS_EM = 0.25f;
+
+    /** One em for {@code n}, from the layout; the default context's 16px if the node has not been laid out. */
+    private static float em(RetainedNode n) {
+        return n != null && n.emPx > 0f ? n.emPx : 16f;
+    }
 
     private final Atchung bus;
     private final Topic<ClickEvent> clicks;
@@ -290,6 +323,23 @@ public final class InputDispatcher {
         if (focusedId == nodeId) {
             setFocus(-1);
         }
+        // Drop live pointer references to the node too, or a drag/scroll in progress keeps steering a node that
+        // is no longer in the tree — and hit-test ancestry walks a parent chain the reconciler has already cut.
+        if (dragCapture != null && dragCapture.id == nodeId) {
+            dragCapture = null;
+        }
+        if (scrollDrag != null && scrollDrag.id == nodeId) {
+            scrollDrag = null;
+        }
+        if (hoverHit != null && hoverHit.id == nodeId) {
+            hoverHit = null;
+        }
+        if (pressHit != null && pressHit.id == nodeId) {
+            pressHit = null;
+        }
+        if (pressTargetId == nodeId) {
+            pressTargetId = -1;
+        }
     }
 
     /**
@@ -370,7 +420,7 @@ public final class InputDispatcher {
                 if (s.yOffset() != 0) {
                     RetainedNode t = ancestorScrollable(hit, false);
                     if (t != null) {
-                        t.scrollY = clamp(t.scrollY - (float) s.yOffset() * WHEEL_STEP, 0f,
+                        t.scrollY = clamp(t.scrollY - (float) s.yOffset() * WHEEL_STEP_EM * em(t), 0f,
                                 Math.max(0f, t.contentH - t.viewH));
                         refreshScrollLock(t);
                         changed = true;
@@ -379,7 +429,7 @@ public final class InputDispatcher {
                 if (s.xOffset() != 0) {
                     RetainedNode t = ancestorScrollable(hit, true);
                     if (t != null) {
-                        t.scrollX = clamp(t.scrollX + (float) s.xOffset() * WHEEL_STEP, 0f,
+                        t.scrollX = clamp(t.scrollX + (float) s.xOffset() * WHEEL_STEP_EM * em(t), 0f,
                                 Math.max(0f, t.contentW - t.viewW));
                         changed = true;
                     }
@@ -587,23 +637,64 @@ public final class InputDispatcher {
         return null;
     }
 
-    /** If the press landed on a scrollbar thumb (of the hit node or an ancestor), begin a thumb drag. */
+    /**
+     * Handle a press that landed on a scrollbar (of the hit node or an ancestor): on the thumb it begins a drag,
+     * on the track either side of the thumb it pages toward the click. Either way the press is <b>consumed</b>.
+     *
+     * <p>Consuming the track matters as much as handling it. The strip is reserved space the content is clipped
+     * out of, so a press there addresses the bar and nothing else — previously only the thumb was claimed and a
+     * press on the track fell through to whatever lay beneath, which in a text field meant the caret jumped to
+     * the end of the document because the point mapped past the last line.
+     */
     private boolean grabScrollbar(RetainedNode hit, float x, float y) {
         for (RetainedNode n = hit; n != null; n = n.parent) {
-            if (n.overflowY && inRect(n.vThumbRect(), x, y)) {
-                scrollDrag = n;
-                scrollDragVertical = true;
-                scrollDragGrab = y - n.vThumbRect()[1];
+            if (n.overflowY && inStripV(n, x, y)) {
+                float[] thumb = n.vThumbRect();
+                if (inRect(thumb, x, y)) {
+                    scrollDrag = n;
+                    scrollDragVertical = true;
+                    scrollDragGrab = y - thumb[1];
+                } else {
+                    pageScroll(n, true, y < thumb[1] ? -1 : 1);
+                }
                 return true;
             }
-            if (n.overflowX && inRect(n.hThumbRect(), x, y)) {
-                scrollDrag = n;
-                scrollDragVertical = false;
-                scrollDragGrab = x - n.hThumbRect()[0];
+            if (n.overflowX && inStripH(n, x, y)) {
+                float[] thumb = n.hThumbRect();
+                if (inRect(thumb, x, y)) {
+                    scrollDrag = n;
+                    scrollDragVertical = false;
+                    scrollDragGrab = x - thumb[0];
+                } else {
+                    pageScroll(n, false, x < thumb[0] ? -1 : 1);
+                }
                 return true;
             }
         }
         return false;
+    }
+
+    /** Scroll {@code n} by one viewport in {@code dir} along an axis — what a press on the track does. */
+    private void pageScroll(RetainedNode n, boolean vertical, int dir) {
+        if (vertical) {
+            n.scrollY = clamp(n.scrollY + dir * n.viewH, 0f, Math.max(0f, n.contentH - n.viewH));
+            refreshScrollLock(n);
+        } else {
+            n.scrollX = clamp(n.scrollX + dir * n.viewW, 0f, Math.max(0f, n.contentW - n.viewW));
+        }
+        requestLayout.run();
+    }
+
+    /** The vertical scrollbar's reserved strip: to the right of the viewport, its full height. */
+    private static boolean inStripV(RetainedNode n, float x, float y) {
+        return x >= n.viewX + n.viewW && x < n.viewX + n.viewW + n.scrollbarPx
+                && y >= n.viewY && y < n.viewY + n.viewH;
+    }
+
+    /** The horizontal scrollbar's reserved strip: below the viewport, its full width. */
+    private static boolean inStripH(RetainedNode n, float x, float y) {
+        return y >= n.viewY + n.viewH && y < n.viewY + n.viewH + n.scrollbarPx
+                && x >= n.viewX && x < n.viewX + n.viewW;
     }
 
     /** Map the pointer to a scroll offset for the grabbed thumb, keeping the grab point under the cursor. */
@@ -640,9 +731,6 @@ public final class InputDispatcher {
         return v < lo ? lo : (v > hi ? hi : v);
     }
 
-    /** Within this many px of the locked edge, a scroll counts as "at the edge" and re-attaches the lock. */
-    private static final float LOCK_EDGE_EPS = 4f;
-
     /**
      * Re-evaluate a scroll-locked container's attachment after the user scrolls it (§8.5): attached while the
      * offset sits at the locked edge, detached once the user scrolls away. A no-op for unlocked containers.
@@ -653,9 +741,10 @@ public final class InputDispatcher {
             return;
         }
         float maxY = Math.max(0f, n.contentH - n.viewH);
+        float eps = LOCK_EDGE_EPS_EM * em(n);
         n.scrollAttached = lock == ScrollLock.BOTTOM
-                ? n.scrollY >= maxY - LOCK_EDGE_EPS
-                : n.scrollY <= LOCK_EDGE_EPS;
+                ? n.scrollY >= maxY - eps
+                : n.scrollY <= eps;
     }
 
     /** Recompute each registered node's interaction state and fire the handler on any change. */

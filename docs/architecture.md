@@ -549,8 +549,11 @@ exists as siblings, so those steps are *integration*, not construction.
     breaching it — never-pin-to-device-pixels is kept, scale-with-zoom is opted out of. Restricted by convention
     to chrome that is not proportional to text; `TextMetrics`' insets stay `em` precisely because they are.
     Verified with the 2×2 that is the unit's entire contract: density moves `dp`, zoom does not, `em` answers
-    both. **Not yet machine-checked** — the natural guard is that `dp` may not appear in `gui-core`, which is a
-    rule worth having once there is a second use of it.
+    both. **Deliberately not machine-checked.** The obvious guard — "`dp` may not appear in `gui-core`" — is
+    wrong: it bans the legitimate uses along with the bad one. Scrollbar thickness lives in `FlexLayout` and is
+    chrome, so it is a reasonable `dp` candidate; `TextMetrics`' insets live one package over and must stay `em`.
+    The distinction is *is this proportional to text*, which no package boundary tracks, so it stays a documented
+    rule rather than a guard that would be wrong in both directions.
 14. **The stack updates in unison, so wire-format skew is not a case.** Every peer is one build, deployed
     atomically; there is no rolling window, so DTOs need no independent versioning or optional-field
     negotiation. This holds only while nothing in a wire format outlives the build — the moment a snapshot

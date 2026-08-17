@@ -140,10 +140,25 @@ Two consequences worth stating, because both are non-obvious:
   `dpi = 2` and delivering input in point space reproduces it exactly, on any machine (`DpiTest`). There is no
   reason to discover this during a port.
 
-Until E4 lands, the *layout and input* half is solvable at the application edge — `Tactroller.contentScale()`
-reports the ratio and `CoordinateSpace.FRAMEBUFFER` delivers input in the space the layout ran in, which is what
-the demo now does. The *rendering* half still needs the engine: nothing but `NativeWindow` can say how many pixels
-the drawable actually has.
+**Until E4 lands, density cannot be switched on at all** — this was tried at the application edge and had to be
+backed out, which is worth recording because each half of it fails in a differently misleading way:
+
+- The engine's window and `Canvas` are in **logical** coordinates, so the OS is already scaling their output on a
+  scaled display. Feeding `contentScale()` into `Gui.dpi` therefore scales the content a *second* time — 1.56× on
+  a 125% display — which reads as "everything is too big" rather than as a units bug.
+- `CoordinateSpace.FRAMEBUFFER` is `CLIENT × contentScale`, so against a logical canvas it puts every press
+  down and to the right of the cursor by the scale factor. `CLIENT` is correct while the canvas is logical.
+- `contentScale()` is a property of the window's monitor, so it reads 1.0 before `attach`. A window therefore
+  cannot be created at the pixel size its own scale calls for — and sizing it from that 1.0 leaves density pinned
+  at 1.0, which *looks entirely correct* while silently disabling the thing it was meant to enable.
+
+All three flip together the moment the process is DPI-aware and the canvas is in pixels; none of them can flip
+before that. Note that DPI awareness is declared by **packaging** — a manifest or `SetProcessDpiAwarenessContext`
+on Windows, `NSHighResolutionCapable` on macOS — and the engine owns window creation, so this is not something an
+application can opt into from its own code.
+
+The framework half is done and tested regardless (`Gui.dpi`, `Length.dp`, `DpiTest`): the arithmetic is exercised
+headlessly at density 2, so E4 is a wiring task when it lands, not a design one.
 
 `postWake()` is the one OS primitive the threading model needs (§5): a worker publishing a mutation
 while the GUI thread sleeps in `waitEvents` must wake it. Until E2 lands, the loop polls every frame

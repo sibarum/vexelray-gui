@@ -35,21 +35,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public final class Demo {
 
-    /** Capture size, in pixels — headless, so density is 1 and these are the design dimensions. */
+    /** Window and capture size, in the engine's logical coordinates (see {@code attachInput} on why not pixels). */
     private static final int W = 900;
     private static final int H = 560;
-
-    /**
-     * The interactive window, in <b>pixels</b>, deliberately larger than {@link #W}x{@link #H}.
-     *
-     * <p>The window has to be created before its display scale can be read (see {@code attachInput}), so it
-     * cannot be sized in the density-independent units its content uses. On a 125% display the UI is laid out
-     * 25% larger — correctly, that is what the setting asks for — and a 900x560 window would then show about
-     * three quarters of it. Asking for room to spare is the compensation available until E4 lets a window be
-     * sized in, or report, its own scale.
-     */
-    private static final int WINDOW_W = 1280;
-    private static final int WINDOW_H = 800;
 
     private static final Color BG = Color.rgb(0x11141b);
     private static final Color PANEL = Color.rgb(0x1b2130);
@@ -103,7 +91,7 @@ public final class Demo {
         // that honours density gets a window that honours it too. Sizing the window in raw pixels while the
         // content scales is the mismatch that leaves a 125% display showing three quarters of the UI.
         try (Tactroller input = openInput(gui);
-             GuiApp app = new GuiApp("VexelRay GUI", WINDOW_W, WINDOW_H);
+             GuiApp app = new GuiApp("VexelRay GUI", W, H);
              Clipboard clipboard = openClipboard(gui)) {
             attachInput(input, gui, app);
             TactrollerInputBridge bridge = input == null ? null : bridgeFor(input, gui);
@@ -163,14 +151,25 @@ public final class Demo {
     }
 
     /**
-     * Attach input to the window, settle the coordinate space, and feed the real display density.
+     * Attach input to the window and settle the coordinate space.
      *
-     * <p><b>The density can only be read here, not earlier.</b> {@code contentScale()} is a property of the
-     * window's monitor, so before {@code attach} it reports 1.0 — which means a window cannot be created at the
-     * pixel size its own scale calls for. That is the same E4 gap from the other side: {@code NativeWindow}
-     * neither reports its scale nor accepts a density-independent size, so an application cannot size its window
-     * in the units its content is laid out in. The demo compensates by asking for a window with room to spare
-     * (see {@link #W}/{@link #H}); a real fix belongs in the engine.
+     * <p><b>{@code CLIENT}, and density deliberately left at 1.0.</b> Both follow from one fact: the engine's
+     * window and {@code Canvas} are in <em>logical</em> (client) coordinates, not framebuffer pixels. On a 125%
+     * display that has two consequences, and getting either wrong is visible immediately:
+     *
+     * <ul>
+     *   <li>{@code FRAMEBUFFER} coordinates are {@code CLIENT × contentScale}, so input would arrive 25% further
+     *       right and further down than the cursor actually is, and every press would land past its target.</li>
+     *   <li>The OS is already scaling a logical-space window's output. Feeding {@code contentScale()} into
+     *       {@link Gui#dpi} scales the content <em>again</em> — 1.56x in total — which reads as "everything is
+     *       too big" and overflows the window.</li>
+     * </ul>
+     *
+     * <p>So the framework's density support is correct and tested ({@code DpiTest}, {@code Length.dp}) but cannot
+     * be switched on here yet: it becomes live only once the process is DPI-aware and the engine reports a real
+     * framebuffer extent, at which point the canvas is in pixels and both settings above flip together. That is
+     * E4, and its packaging half — DPI awareness is declared by a manifest or {@code SetProcessDpiAwarenessContext}
+     * rather than by code, and the engine owns window creation.
      */
     private static void attachInput(Tactroller input, Gui gui, GuiApp app) {
         if (input == null) {
@@ -178,9 +177,9 @@ public final class Demo {
         }
         try {
             input.attach(NativeWindow.ofHwnd(app.windowHandle()));
-            input.setCoordinateSpace(CoordinateSpace.FRAMEBUFFER);
-            gui.dpi((float) input.contentScale());
-            System.out.println("display scale: " + input.contentScale() + "x");
+            input.setCoordinateSpace(CoordinateSpace.CLIENT);
+            System.out.println("display scale: " + input.contentScale()
+                    + "x (not applied — see attachInput; the canvas is logical, the OS already scales it)");
         } catch (BackendException e) {
             System.out.println("input attach failed (" + e.getMessage() + "); pointer input disabled");
         }

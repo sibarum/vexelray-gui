@@ -48,6 +48,11 @@ public final class Demo {
     private static final Color ACCENT = Color.rgb(0x3aa0ff);
     private static final Color ACCENT_HOVER = Color.rgb(0x57b1ff);
     private static final Color ACCENT_PRESSED = Color.rgb(0x2b86e0);
+    // Button blue: deeper than the text accent, so filled controls sit into the page rather than glowing on it
+    // (and the letterpress glint has somewhere darker to catch).
+    private static final Color BTN_BLUE = Color.rgb(0x2668b3);
+    private static final Color BTN_BLUE_HOVER = Color.rgb(0x2f78c9);
+    private static final Color BTN_BLUE_PRESSED = Color.rgb(0x1d548f);
     private static final Color INK = Color.rgb(0xeef2f8);
     private static final Color DIM = Color.rgb(0x93a0b4);
 
@@ -244,6 +249,7 @@ public final class Demo {
     private static Refs buildUi(Gui gui) {
         Node header = gui.text("VexelRay GUI")
                 .width(Length.FILL).height(Length.rem(4)).background(PANEL).textSize(Length.rem(1.75f)).textColor(INK)
+                .lit(true).elevation(Length.rem(0.5f))
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
 
         // Tail the log: pinned to the bottom as the worker appends lines, until the user scrolls up (§8.5).
@@ -287,12 +293,16 @@ public final class Demo {
         tabs.add("Editor", notes.node());
         tabs.add("About", about);
 
+        // Cards float: a lit fill (top-left edge light + faint vertical gradient) over a soft analytic shadow.
+        // Both are transfer functions of the same rounded-box SDF the fill already evaluates — no textures.
         Node leftCard = gui.column().width(Length.FILL).height(Length.FILL)
                 .background(PANEL).corner(Length.rem(1)).border(Length.rem(0.1f), LINE)
+                .lit(true).elevation(Length.rem(1.25f))
                 .padding(Length.dp(20)).gap(Length.rem(0.625f))
                 .children(tabs.node());
         Node rightCard = gui.column().width(Length.FILL).height(Length.FILL)
                 .background(PANEL).corner(Length.rem(1)).border(Length.rem(0.1f), LINE)
+                .lit(true).elevation(Length.rem(1.25f))
                 .padding(Length.dp(20)).gap(Length.rem(0.625f))
                 .children(
                         gui.text("Live from a worker").height(Length.rem(1.875f)).textSize(Length.rem(1.375f))
@@ -302,7 +312,8 @@ public final class Demo {
         Node body = gui.row().width(Length.FILL).height(Length.FILL).padding(Length.dp(24)).gap(Length.rem(1.5f))
                 .children(leftCard, rightCard);
 
-        Node getStarted = button(gui, "Get started", Color.WHITE, ACCENT, ACCENT_HOVER, ACCENT_PRESSED, false);
+        Node getStarted = button(gui, "Get started", Color.WHITE, BTN_BLUE, BTN_BLUE_HOVER, BTN_BLUE_PRESSED, false)
+                .textSunken(true);   // white on accent: letterpress the label for contrast
         // The click vertical: tactroller -> atchung -> dispatch -> this handler (on a worker thread), which
         // mutates the tree through handles just like the background worker does.
         AtomicInteger clicks = new AtomicInteger();
@@ -334,12 +345,42 @@ public final class Demo {
         // report content wider than its box, which is what grows an h-scrollbar — a text leaf is a scroll
         // citizen like any container. A wrapped node never scrolls horizontally, because nothing lies to the
         // right of a wrapped line to reach.
+        // A toggle, not a button: its base palette depends on its own state (accent while on, panel while off),
+        // and hover/press shade whichever palette is current. One handler owns all restyling, reading the toggle
+        // state plus the last interaction state, so a flip mid-hover repaints correctly.
         boolean[] wrapping = {true};
-        Node wrapToggle = button(gui, "Wrap: on", DIM, PANEL, PANEL_HOVER, PANEL_PRESSED, true);
+        Node wrapToggle = gui.text("Wrap: on").width(Length.rem(10)).height(Length.rem(2.75f))
+                .corner(Length.rem(0.625f)).border(Length.rem(0.1f), LINE)
+                .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE)
+                .lit(true);
+        var lastState = new java.util.concurrent.atomic.AtomicReference<>(
+                dev.vexelray.gui.core.input.InteractionState.NORMAL);
+        Runnable restyleWrap = () -> {
+            boolean on = wrapping[0];
+            var state = lastState.get();
+            wrapToggle.text(on ? "Wrap: on" : "Wrap: off").textColor(on ? Color.WHITE : DIM)
+                    .textSunken(on);   // letterpress only while white-on-accent; the off state is low-contrast
+
+            wrapToggle.background(switch (state) {
+                case NORMAL -> on ? BTN_BLUE : PANEL;
+                case HOVER -> on ? BTN_BLUE_HOVER : PANEL_HOVER;
+                case PRESSED -> on ? BTN_BLUE_PRESSED : PANEL_PRESSED;
+            });
+            wrapToggle.elevation(switch (state) {
+                case NORMAL -> Length.rem(0.375f);
+                case HOVER -> Length.rem(0.625f);
+                case PRESSED -> Length.ZERO;
+            });
+        };
+        restyleWrap.run();
+        gui.onState(wrapToggle, state -> {
+            lastState.set(state);
+            restyleWrap.run();
+        });
         gui.onClick(wrapToggle, () -> {
             wrapping[0] = !wrapping[0];
             notes.wordWrap(wrapping[0]);
-            wrapToggle.text(wrapping[0] ? "Wrap: on" : "Wrap: off");
+            restyleWrap.run();
         });
 
         // Per-axis padding: small vertically so 44px buttons fit a 64px bar, but full horizontally (dp(24)) so the
@@ -370,16 +411,25 @@ public final class Demo {
     private static Node button(Gui gui, String label, Color fg, Color base, Color hover, Color pressed,
                                boolean bordered) {
         Node b = gui.text(label).width(Length.rem(10)).height(Length.rem(2.75f)).background(base)
-                .corner(Length.rem(0.625f)).textColor(fg).align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE);
+                .corner(Length.rem(0.625f)).textColor(fg).align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE)
+                .lit(true).elevation(Length.rem(0.375f));
         if (bordered) {
             b.border(Length.rem(0.1f), LINE);
         }
         // Restyle on pointer interaction — the handler runs on a worker thread and mutates via the handle.
-        gui.onState(b, state -> b.background(switch (state) {
-            case NORMAL -> base;
-            case HOVER -> hover;
-            case PRESSED -> pressed;
-        }));
+        // Depth is part of the feedback: hover lifts the button a little, pressing sets it down flush.
+        gui.onState(b, state -> {
+            b.background(switch (state) {
+                case NORMAL -> base;
+                case HOVER -> hover;
+                case PRESSED -> pressed;
+            });
+            b.elevation(switch (state) {
+                case NORMAL -> Length.rem(0.375f);
+                case HOVER -> Length.rem(0.625f);
+                case PRESSED -> Length.ZERO;
+            });
+        });
         return b;
     }
 

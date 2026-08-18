@@ -521,6 +521,19 @@ public final class Gui implements AutoCloseable {
     public Topic<FocusEvent> focusEvents() {
         return FOCUS;
     }
+    /**
+     * Declare the cursor shape over {@code node} and its descendants ({@code null} to clear).
+     *
+     * <p>Most affordances need no declaration: the framework already knows a node is clickable because it has
+     * a click handler, that a text node is editable, and where its scrollbars are — so those cursors follow
+     * from registering the behaviour rather than from remembering to describe it. This is for what it cannot
+     * infer: a slider and a text field both use the drag seam, so only the slider can say it is grabbable.
+     */
+    public Gui cursor(Node node, CursorShape shape) {
+        input.setCursor(node.id(), shape);
+        return this;
+    }
+
 
     /**
      * Install the sink notified when the desired pointer cursor changes (§8.3) — e.g. the I-beam over editable

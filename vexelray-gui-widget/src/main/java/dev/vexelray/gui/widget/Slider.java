@@ -42,6 +42,9 @@ public final class Slider {
                 .alignItems(AlignItems.CENTER).scroll(false, false) // a slider never scrolls
                 .children(leftSpacer, thumb, rightSpacer);
         gui.onDrag(track, e -> set(e.fractionX()));
+        // The one thing the framework cannot infer here: a drag handler alone does not mean "grabbable" -- a text
+        // field registers one too, for click-to-caret, and wants the I-beam. So the slider says so.
+        gui.cursor(track, dev.vexelray.gui.core.input.CursorShape.GRAB);
     }
 
     /** The node to place in a layout (the track). */

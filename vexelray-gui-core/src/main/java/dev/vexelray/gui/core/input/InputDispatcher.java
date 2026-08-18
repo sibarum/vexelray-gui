@@ -162,6 +162,12 @@ public final class InputDispatcher {
     private RetainedNode hoverHit;
     private RetainedNode pressHit;
     private boolean leftDown;
+    // Last pointer position, kept so the cursor rule can ask whether it is over a scrollbar strip -- that is a
+    // geometric question about chrome, not about a node, so a hit-test result alone cannot answer it.
+    private float pointerX;
+    private float pointerY;
+    /** Cursor shapes declared per node (see {@link #setCursor}); consulted ancestor-or-self. */
+    private final Map<Long, CursorShape> nodeCursors = new ConcurrentHashMap<>();
     // Cursor shape reporting (§8.3): the app-installed sink and the last shape reported (to fire only on change).
     private Consumer<CursorShape> cursorSink = s -> { };
     private CursorShape reportedCursor = CursorShape.DEFAULT;
@@ -287,6 +293,22 @@ public final class InputDispatcher {
         this.focusTopic = topic;
     }
 
+    /**
+     * Declare the cursor shape for {@code nodeId} and its descendants, overriding the inferred rules.
+     *
+     * <p>Needed where the affordance cannot be read off the registrations. A slider and a text field both use the
+     * drag seam, so "has a drag handler" would put a grab hand over an editable field; the slider says
+     * {@link CursorShape#GRAB} and the field says nothing. Everything the framework can infer -- clickable,
+     * editable, scrollbar -- it infers, so this stays the exception.
+     */
+    public void setCursor(long nodeId, CursorShape shape) {
+        if (shape == null) {
+            nodeCursors.remove(nodeId);
+        } else {
+            nodeCursors.put(nodeId, shape);
+        }
+    }
+
     /** Install the sink notified (on the GUI thread) when the desired cursor shape changes (§8.3). */
     public void cursorSink(Consumer<CursorShape> sink) {
         this.cursorSink = sink == null ? s -> { } : sink;
@@ -315,6 +337,7 @@ public final class InputDispatcher {
         keyHandlers.remove(nodeId);
         charHandlers.remove(nodeId);
         charStages.remove(nodeId);
+        nodeCursors.remove(nodeId);
         keyStages.remove(nodeId);
         dragStages.remove(nodeId);
         claims.removeIf(c -> c.nodeId() == nodeId);
@@ -366,19 +389,27 @@ public final class InputDispatcher {
         switch (e) {
             case InputEvent.PointerMoved m -> {
                 if (scrollDrag != null) {
+                    pointerX = m.x();
+                    pointerY = m.y();
                     dragScrollbar(m.x(), m.y());
+                    updateCursor();   // stays closed while the grab is live, wherever the pointer has gone
                     return;
                 }
                 if (dragCapture != null) {
                     fireDrag(DragEvent.Phase.MOVE, m.x(), m.y());
                 }
+                pointerX = m.x();
+                pointerY = m.y();
                 hoverHit = HitTest.at(currentRoot, m.x(), m.y());
                 refreshStates();
             }
             case InputEvent.ButtonPressed b when b.button() == MouseButton.LEFT -> {
+                pointerX = b.x();
+                pointerY = b.y();
                 RetainedNode hit = HitTest.at(currentRoot, b.x(), b.y());
                 // A press on a scrollbar thumb starts a thumb drag and consumes the press (no click/hover/drag).
                 if (grabScrollbar(hit, b.x(), b.y())) {
+                    updateCursor();   // the scrollbar took the press: the hand closes on it
                     return;
                 }
                 // Click focuses the nearest focusable node (or clears focus on empty space).
@@ -398,12 +429,18 @@ public final class InputDispatcher {
             case InputEvent.ButtonReleased b when b.button() == MouseButton.LEFT -> {
                 if (scrollDrag != null) {
                     scrollDrag = null;
+                    pointerX = b.x();
+                    pointerY = b.y();
+                    hoverHit = HitTest.at(currentRoot, b.x(), b.y());
+                    updateCursor();   // the hand opens again, over whatever the release landed on
                     return;
                 }
                 if (dragCapture != null) {
                     fireDrag(DragEvent.Phase.END, b.x(), b.y());
                     dragCapture = null;
                 }
+                pointerX = b.x();
+                pointerY = b.y();
                 RetainedNode hit = HitTest.at(currentRoot, b.x(), b.y());
                 if (hit != null && hit.id == pressTargetId) {
                     fireClick(hit, b.x(), b.y());
@@ -769,13 +806,67 @@ public final class InputDispatcher {
         updateCursor();
     }
 
-    /** Report the desired cursor shape for whatever is under the pointer — I-beam over editable text (§8.3). */
+    /**
+     * Report the desired cursor for what the pointer is over, and what it is doing. Precedence is defined by
+     * {@link CursorShape} -- a grab in progress beats a grab available, which beats a click, which beats text.
+     *
+     * <p>The affordance rules are inferred, not declared: a node is "clickable" because it has a click handler,
+     * by the same ancestor-or-self walk clicks bubble by. That is what makes this a rule rather than a property
+     * every widget has to remember to set -- registering the behaviour is what advertises it.
+     */
     private void updateCursor() {
-        CursorShape desired = isTextTarget(hoverHit) ? CursorShape.TEXT : CursorShape.DEFAULT;
+        CursorShape desired = desiredCursor();
         if (desired != reportedCursor) {
             reportedCursor = desired;
             cursorSink.accept(desired);
         }
+    }
+
+    private CursorShape desiredCursor() {
+        // Something is being grabbed: the pointer is captured and still driving it, wherever it has wandered to.
+        if (scrollDrag != null) {
+            return CursorShape.GRABBING;
+        }
+        if (leftDown && dragCapture != null && declaredCursor(dragCapture) == CursorShape.GRAB) {
+            return CursorShape.GRABBING;
+        }
+        // A scrollbar under the pointer is grabbable -- framework chrome, so the framework knows it without
+        // anyone declaring anything.
+        for (RetainedNode n = hoverHit; n != null; n = n.parent) {
+            if ((n.overflowY && inStripV(n, pointerX, pointerY)) || (n.overflowX && inStripH(n, pointerX, pointerY))) {
+                return CursorShape.GRAB;
+            }
+        }
+        // An explicit declaration on the node or an ancestor (a slider says GRAB), then the inferred rules.
+        CursorShape declared = declaredCursor(hoverHit);
+        if (declared != null) {
+            return declared;
+        }
+        if (isClickable(hoverHit)) {
+            return CursorShape.POINTER;
+        }
+        return isTextTarget(hoverHit) ? CursorShape.TEXT : CursorShape.DEFAULT;
+    }
+
+    /** The nearest declared cursor on {@code hit} or an ancestor, or null if none declared one. */
+    private CursorShape declaredCursor(RetainedNode hit) {
+        for (RetainedNode n = hit; n != null; n = n.parent) {
+            CursorShape s = nodeCursors.get(n.id);
+            if (s != null) {
+                return s;
+            }
+        }
+        return null;
+    }
+
+    /** Whether {@code hit} or an ancestor has a click handler -- the same walk {@link #fireClick} uses. */
+    private boolean isClickable(RetainedNode hit) {
+        for (RetainedNode n = hit; n != null; n = n.parent) {
+            if (clickHandlers.containsKey(n.id)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Whether {@code n} is a text node that takes the text-placement cursor (editable, or selectable later). */

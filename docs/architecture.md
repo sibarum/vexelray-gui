@@ -119,6 +119,7 @@ its pixel extent at all. All three are genuine *rendering / OS-loop* concerns no
 |---|-----|--------|-------|
 | E2 | **Idle-blocking loop** — `waitEvents(timeoutMillis)` + `postWake()` | `vexelray-os` | Block at 0% CPU until an OS message or timeout (`MsgWaitForMultipleObjectsEx`); `postWake()` posts a message-only wake. Lets the GUI wake exactly on input, a mutation, or an animation deadline. |
 | E3 | **Canvas clip rectangle** | `vexelray-canvas` | A clip-rect stack (`pushClip/popClip`); the current clip is stamped per-vertex into the fat vertex and the fragment zeroes coverage outside it. Stays single-draw — no scissor state. Needed for scroll/overflow. |
+| E5 | **Cursor shapes** | `vexelray-os` | `NativeWindow.Cursor` offers only `ARROW` and `TEXT`. The pointer rule (§8.3) also asks for a hand over anything clickable and open/closed hands over anything grabbable; those fall back to the arrow until the enum and its OS handles exist. Cosmetic, unlike E2-E4, and the rule that decides them is framework-side and already tested. |
 | E4 | **Framebuffer extent + content scale** | `vexelray-os` | `framebufferWidth()/Height()` (pixels) alongside `width()/height()` (points), and `contentScale()`. Both must track live monitor changes — dragging a window between a dense and a conventional display changes the factor while running. |
 
 **E4 is the one that breaks a framework rather than merely limiting it.** `NativeWindow` currently exposes a
@@ -350,6 +351,17 @@ capture/focus routing, and leaf→root bubbling for pointer events — no app-ow
 **re-publishes** high-level results (`ValueChanged/Click/FocusEvent/...`) as Atchung topics for workers —
 so raw device input and semantic UI events share one fabric, and either can cross to another process via
 the transport bridge.
+
+**The cursor advertises what the pointer can do, and it is inferred rather than declared.** A node takes the
+hand because it has a click handler — the same ancestor-or-self walk clicks bubble by, so a button label is part
+of its button; a text node takes the I-beam because it is editable; the framework knows where its own scrollbars
+are. The affordance therefore falls out of registering the behaviour, and no widget can forget to describe itself.
+Precedence runs most-specific-first: a grab in progress, then something grabbable, then something clickable, then
+text — so a control inside an editable field reads as a control, and a scrollbar over text reads as a scrollbar.
+
+Declaration (`gui.cursor(node, GRAB)`) exists only for what cannot be inferred: a slider and a text field both use
+the drag seam, so a drag handler alone is not an affordance and only the slider can say it is grabbable. That
+asymmetry is the whole reason the seam exists, and it is pinned down by a test rather than left to convention.
 
 **Keys: core eats nothing; preemption is declared in advance.** There is no `preventDefault` here, and
 there cannot be — cancelling requires a handler to answer *synchronously* that it consumed the event, and

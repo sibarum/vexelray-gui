@@ -105,9 +105,7 @@ public final class GuiApp implements AutoCloseable {
      */
     public void run(Gui gui, int maxFrames, Runnable beforeFrame) {
         // Map the GUI's desired cursor shape onto the OS window (I-beam over editable text, §8.3).
-        gui.onCursorChange(shape -> window.setCursor(
-                shape == dev.vexelray.gui.core.input.CursorShape.TEXT
-                        ? NativeWindow.Cursor.TEXT : NativeWindow.Cursor.ARROW));
+        gui.onCursorChange(shape -> window.setCursor(osCursor(shape)));
         presenter.configureDraw(vertexBuffer.handle(), atlas.descriptorSet(), 0);
         presenter.run(maxFrames, 0, (dt, pushConstants) -> {
             beforeFrame.run();
@@ -185,6 +183,22 @@ public final class GuiApp implements AutoCloseable {
     }
 
     // --- native-API glue ---
+
+    /**
+     * Map a requested {@link dev.vexelray.gui.core.input.CursorShape} onto the window API.
+     *
+     * <p><b>The engine offers only {@code ARROW} and {@code TEXT}</b>, so the hand shapes -- pointer over
+     * anything clickable, open and closed hands over anything grabbable -- currently fall back to the arrow. The
+     * rule that decides them is framework-side and fully exercised ({@code CursorRuleTest}); what is missing is
+     * three cursor constants and their OS handles, which is an engine concern like E2-E4. Degrading to the arrow
+     * is the right fallback: a wrong-looking cursor is a cosmetic loss, where guessing at a shape the platform
+     * has no standard for would not be.
+     */
+    private static NativeWindow.Cursor osCursor(dev.vexelray.gui.core.input.CursorShape shape) {
+        return shape == dev.vexelray.gui.core.input.CursorShape.TEXT
+                ? NativeWindow.Cursor.TEXT
+                : NativeWindow.Cursor.ARROW;
+    }
 
     /** Text intrinsic sizing over VexelRay's glyph layout: width = measured advance, height = line height. */
     private static TextMeasurer measurer(TextLayout text) {

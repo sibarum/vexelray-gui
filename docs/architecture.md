@@ -50,9 +50,16 @@ Verified against the current libraries.
 **VexelRay — rendering, text, runtime, window.**
 - *2D drawing (`vexelray-canvas`).* `Canvas(w,h)` immediate-mode: `fillRect`, `fillRoundRect`,
   `fillCircle`, `strokeLine`, `text(...)` (via `TextLayout`), `Color`. Everything batches into one fat
-  vertex stream drawn by one uber-shader that branches per primitive (analytic rounded-box SDF for
-  shapes, MSDF median + per-vertex `screenPxRange` for glyphs). Submission order = paint order.
-  `toVertexArray()` / `vertexCount()` feed a vertex buffer.
+  vertex stream drawn by one uber-shader that branches per primitive kind — **one analytic rounded-box
+  SDF, several transfer functions over its distance**: flat fill, soft shadow/glow (`shadowRoundRect`),
+  inside-edge stroke (`strokeRoundRect`), and an edge-lit fill with a vertical luminance gradient
+  (`litRoundRect`, two-sample emboss toward a fixed top-left light); glyphs are MSDF median +
+  per-vertex `screenPxRange`, with `textSunken` composing three glyph passes into letterpress text
+  (a reduced px range *is* a soft edge). Corner radii are per vertical half — a tab is `(r, 0)`.
+  Clipping is the same SDF as coverage (`pushClip`/`popClip`), so it antialiases and honours rounded
+  corners with no scissor state. Submission order = paint order. `toVertexArray()` / `vertexCount()`
+  feed a vertex buffer. The uber-shader itself is authored as SupirVast core IR and **pre-compiled to
+  SPIR-V at build time** (supirvast-maven-plugin); at runtime, pipeline creation is a resource read.
 - *Text (`vexelray-text`).* `AtlasData` (msdf-atlas-gen JSON, baked by `vexelray-msdf-maven-plugin`),
   `GlyphLayout`, `TextLayout`: line breaking + wrapping, H/V alignment (incl. justify), `measure` →
   bounds, fit queries, anchor placement.
@@ -95,8 +102,12 @@ retained model, layout, dispatch, and motion that sit on top.
 
 1. One language for layout definition **and** updates. 2. Message passing; app logic off the GUI
 thread; GUI owns the main thread. 3. Animations bound to a visibility lifecycle; per-node and
-per-group. 4. Flexbox essentials. 5. `em/rem/vw/vh`. 6. Rich renderer effects — *deferred* (engine
-seam). 7. Native file dialog. 8. MSDF fonts via VexelRay atlases. 9. Dynamic frames; lower FPS
+per-group. 4. Flexbox essentials. 5. `em/rem/vw/vh`. 6. Rich renderer effects — *largely landed*: every
+effect that is a transfer function of the SDF the engine already evaluates (shadows/elevation, strokes,
+edge-lit fills, letterpress text, per-half corners) ships in the single-pass batch, surfaced as
+renderer-only props (`ELEVATION`, `LIT`, `TEXT_SUNKEN`, `CORNER_BOTTOM`); only multi-pass effects that
+sample neighbouring pixels (backdrop blur, bloom) remain *deferred* at the engine seam.
+7. Native file dialog. 8. MSDF fonts via VexelRay atlases. 9. Dynamic frames; lower FPS
 unfocused. 10. Panama for native bindings. 11. Keyboard, mouse, full shortcuts. 12. Rich-text spans
 that auto-adjust to edits. 13. **Seamless integration** — components on other threads, processes, or
 machines join by speaking Atchung, never by coupling to the GUI's internals.
@@ -303,8 +314,9 @@ sealed interface Length permits Em, Rem, Dp, Percent, Vw, Vh, Grow /*flex*/, Aut
 `percent = v/100·basis`, where the basis is the parent content extent along the axis (width/height) or
 the node's own border-box width (padding/border/gap/corner). `Auto` sizes to content; `Fill`/`Grow`
 share leftover main-axis space (on the cross axis they stretch like `Auto`). Every visual scalar — width,
-height, padding, margin, border width, gap, corner radius, **text size** — is a `Length`. Layout resolves
-border/corner/text-size/text-insets to px onto the node so the renderer needs no units or context.
+height, padding, margin, border width, gap, corner radius, elevation, **text size** — is a `Length`. Layout
+resolves border/corner (top and bottom)/elevation/text-size/text-insets to px onto the node so the renderer
+needs no units or context.
 Neither layout nor the compute phase runs per animation frame (§7).
 
 **Why `dp` is not the pixel unit returning.** The original rule was doing two jobs at once, and they are
@@ -411,9 +423,13 @@ Coordinate space and focus gating are tactroller's job (`attach`, `setCoordinate
 
 ## 9. Text + RichText
 
-Reuse `vexelray-text` wholesale (atlas, `GlyphLayout`, `TextLayout`, MSDF via `Canvas.text`). Weight and
-outline map to the MSDF edge-shift the engine exposes; a highlight is a background `fillRoundRect`
-emitted before the glyphs. Clipboard for text fields is `tactroller-clipboard` (standalone, no
+Reuse `vexelray-text` wholesale (atlas, `GlyphLayout`, `TextLayout`, MSDF via `Canvas.text`). Weight maps
+to the MSDF edge-shift the engine exposes; a highlight is a background `fillRoundRect` emitted before the
+glyphs; letterpress (`TEXT_SUNKEN` → `Canvas.textSunken`) is three glyph passes — shade nudged up, glint
+nudged down, crisp fill — lit consistently with the panels' top-left light. The lesson from its first
+implementation is worth keeping: a symmetric outline kind was added to the shader and then deleted, because
+depth is directional — lighting-shaped effects should be composed as offsets against the global light, not
+grown as new geometry decorations. Clipboard for text fields is `tactroller-clipboard` (standalone, no
 input-subsystem coupling).
 
 **What shipped instead of the planned rope.** Spans are a plain `List<Span>` of `[start, end)` ranges

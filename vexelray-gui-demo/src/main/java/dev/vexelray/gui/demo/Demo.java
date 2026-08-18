@@ -10,6 +10,7 @@ import dev.vexelray.gui.core.layout.LayoutEnums;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.widget.Slider;
+import dev.vexelray.gui.widget.Tabs;
 import dev.vexelray.gui.widget.TextField;
 import dev.vexelray.text.TextLayout;
 import sibarum.tactroller.api.BackendException;
@@ -275,13 +276,21 @@ public final class Demo {
                 dev.vexelray.gui.core.text.Span.underline(39, 47),            // "messages"
                 dev.vexelray.gui.core.text.Span.background(61, 65, LINE)));   // "flex"
 
+        // A tabbed panel. Pages are hidden rather than removed, so the editor on the first tab keeps its content,
+        // its caret and its handlers while another tab is up: switch away mid-sentence and come back to it.
+        Node about = gui.text("Two pages, one panel. This page is a plain label; the other is the live editor.\n\n"
+                        + "Switching hides a page rather than removing it, so nothing on it is rebuilt -- type in "
+                        + "the editor, come back here, go back, and the caret is where you left it.")
+                .textSize(Length.rem(1)).textColor(DIM)
+                .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.TOP);
+        Tabs tabs = new Tabs(gui);
+        tabs.add("Editor", notes.node());
+        tabs.add("About", about);
+
         Node leftCard = gui.column().width(Length.FILL).height(Length.FILL)
                 .background(PANEL).corner(Length.rem(1)).border(Length.rem(0.1f), LINE)
                 .padding(Length.dp(20)).gap(Length.rem(0.625f))
-                .children(
-                        gui.text("Editable, multiline").height(Length.rem(1.875f)).textSize(Length.rem(1.375f))
-                                .textColor(ACCENT),
-                        notes.node());
+                .children(tabs.node());
         Node rightCard = gui.column().width(Length.FILL).height(Length.FILL)
                 .background(PANEL).corner(Length.rem(1)).border(Length.rem(0.1f), LINE)
                 .padding(Length.dp(20)).gap(Length.rem(0.625f))

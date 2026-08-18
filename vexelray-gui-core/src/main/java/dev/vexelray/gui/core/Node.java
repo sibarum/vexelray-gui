@@ -179,6 +179,15 @@ public final class Node {
         return prop(PropKey.GAP, g);
     }
 
+    /**
+     * Show or hide this node and its subtree. A hidden node is skipped by layout, drawing and hit-testing while
+     * keeping its identity and everything attached to it -- handlers, focus registrations, widget state -- so it
+     * comes back exactly as it was. Removing it instead would release those, since they are keyed by node id.
+     */
+    public Node visible(boolean visible) {
+        return prop(PropKey.VISIBLE, visible);
+    }
+
     /** Enable/disable overflow scrolling per axis (both default on — auto scrollbars appear on overflow). */
     public Node scroll(boolean allowX, boolean allowY) {
         prop(PropKey.SCROLL_X, allowX);

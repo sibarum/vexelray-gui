@@ -352,6 +352,18 @@ capture/focus routing, and leaf→root bubbling for pointer events — no app-ow
 so raw device input and semantic UI events share one fabric, and either can cross to another process via
 the transport bridge.
 
+**Visibility is a prop, not a structural edit.** `Node.visible(false)` takes a node and its subtree out of layout,
+drawing, hit-testing and the compute phase while leaving everything attached to it alone. The distinction from
+removal is not cosmetic: registrations are keyed by node id and released when a node leaves the tree (§13), so a
+page rebuilt by remove/insert comes back drawn but inert — a text field on it would no longer take a keystroke.
+Anything showing one of several children at a time therefore wants this rather than structural churn, and `Tabs`
+is built on exactly that.
+
+Two consequences that are easy to miss, both found by getting them wrong first: a hidden node must be skipped by
+the *compute phase* as well, because a text node draws from its baked `TextMetrics` rather than from its rect, so
+metrics baked against a zeroed rect will happily draw the hidden text at the window origin. And its rect is zeroed
+rather than left stale, so nothing downstream reads last frame geometry for something no longer shown.
+
 **The cursor advertises what the pointer can do, and it is inferred rather than declared.** A node takes the
 hand because it has a click handler — the same ancestor-or-self walk clicks bubble by, so a button label is part
 of its button; a text node takes the I-beam because it is editable; the framework knows where its own scrollbars

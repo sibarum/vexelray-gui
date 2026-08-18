@@ -28,6 +28,9 @@ public final class TreeRenderer {
 
     /** Emit the whole tree rooted at {@code node} into {@code canvas}, laying text with {@code text}. */
     public static void emit(RetainedNode node, Canvas canvas, TextLayout text) {
+        if (!node.visible()) {
+            return;   // hidden: nothing drawn, and the subtree is not walked
+        }
         drawSelf(node, canvas, text);
         boolean clip = node.overflowX || node.overflowY;
         if (clip) {

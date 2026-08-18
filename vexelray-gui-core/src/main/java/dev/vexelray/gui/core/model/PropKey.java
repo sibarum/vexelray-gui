@@ -43,7 +43,15 @@ public enum PropKey {
     SCROLL_X(true),
     SCROLL_Y(true),
     // Scroll-edge lock (LayoutEnums.ScrollLock): pins the offset to top/bottom while attached (log tailing).
-    SCROLL_LOCK(true);
+    SCROLL_LOCK(true),
+    /**
+     * Whether the node and its subtree take part at all. A hidden node is skipped by layout, by the renderer and
+     * by hit-testing, but keeps its identity and everything attached to it -- handlers, claims, focusability,
+     * widget state. That is the difference from removing it: removal releases those (they are keyed by node id
+     * and the node is gone), so a page rebuilt by remove/insert would come back inert. Anything that shows one
+     * of several children at a time needs this rather than structural churn.
+     */
+    VISIBLE(true);
 
     private final boolean layoutAffecting;
 

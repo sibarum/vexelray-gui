@@ -54,7 +54,7 @@ public final class FlexLayout {
         n.textPadYPx = TextMetrics.PAD_Y.scalarPx(ctx, n.w);
         n.gutterPadPx = TextMetrics.GUTTER_PAD.scalarPx(ctx, n.w);
 
-        List<RetainedNode> kids = n.children;
+        List<RetainedNode> kids = visibleChildren(n);
         if (kids.isEmpty()) {
             if (n.kind == NodeKind.TEXT) {
                 layoutTextLeaf(n, ctx, tm);
@@ -144,7 +144,7 @@ public final class FlexLayout {
      */
     private static float[] place(RetainedNode n, float originX, float originY, float availMain, float availCross,
                                  boolean row, float gap, LayoutContext ctx, TextMeasurer tm) {
-        List<RetainedNode> kids = n.children;
+        List<RetainedNode> kids = visibleChildren(n);
         Axis main = row ? Axis.HORIZONTAL : Axis.VERTICAL;
         Axis cross = row ? Axis.VERTICAL : Axis.HORIZONTAL;
         int count = kids.size();
@@ -349,6 +349,33 @@ public final class FlexLayout {
         return new float[]{widest, Math.max(1, spans.size())};
     }
 
+    /**
+     * The children that take part in layout. A hidden child is not placed, not measured and not counted toward
+     * gaps or overflow -- it occupies no space at all, rather than occupying space invisibly.
+     *
+     * <p>Its rect is zeroed so nothing downstream reads last frame geometry for a node that is no longer shown;
+     * everything else about it survives untouched, which is the whole point of hiding rather than removing.
+     */
+    private static List<RetainedNode> visibleChildren(RetainedNode n) {
+        for (RetainedNode c : n.children) {
+            if (!c.visible()) {
+                List<RetainedNode> shown = new java.util.ArrayList<>(n.children.size());
+                for (RetainedNode k : n.children) {
+                    if (k.visible()) {
+                        shown.add(k);
+                    } else {
+                        k.x = 0f;
+                        k.y = 0f;
+                        k.w = 0f;
+                        k.h = 0f;
+                    }
+                }
+                return shown;
+            }
+        }
+        return n.children;   // the common case allocates nothing
+    }
+
     /** Scrollbar thickness in px — scales with the root em so it tracks zoom/DPI like everything else. */
     private static float scrollbarThickness(LayoutContext ctx) {
         return 0.85f * emBasis(ctx);
@@ -387,7 +414,7 @@ public final class FlexLayout {
                     : tm.intrinsic(n, axis, textPx);
             return Math.max(0f, size) + 2f * inset;
         }
-        List<RetainedNode> kids = n.children;
+        List<RetainedNode> kids = visibleChildren(n);
         if (kids.isEmpty()) {
             return 2f * inset;
         }

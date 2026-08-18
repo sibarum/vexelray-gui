@@ -701,6 +701,13 @@ public final class Gui implements AutoCloseable {
      * renderers and widgets read (docs/layout-read-model.md §2.1).
      */
     private static void resolveGeometry(RetainedNode n, TextMeasurer tm) {
+        if (!n.visible()) {
+            // A hidden subtree is not laid out, so baking metrics from its stale rect would publish geometry
+            // describing a position it does not occupy -- and a text node draws from those metrics, not from
+            // its rect, so that geometry would be drawn if anything ever read it.
+            n.textMetrics = null;
+            return;
+        }
         if (n.kind == NodeKind.TEXT) {
             resolveTextGeometry(n, tm);
         }

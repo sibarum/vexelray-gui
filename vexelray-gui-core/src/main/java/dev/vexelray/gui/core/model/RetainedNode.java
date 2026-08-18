@@ -296,6 +296,11 @@ public final class RetainedNode {
         return !(v instanceof Boolean b) || b;
     }
 
+    /** Whether this node takes part in layout, drawing and hit-testing (default true). See {@link PropKey#VISIBLE}. */
+    public boolean visible() {
+        return !Boolean.FALSE.equals(props.get(PropKey.VISIBLE));
+    }
+
     /** The scroll-edge lock for this container (default {@link ScrollLock#NONE}). */
     public ScrollLock scrollLock() {
         Object v = props.get(PropKey.SCROLL_LOCK);

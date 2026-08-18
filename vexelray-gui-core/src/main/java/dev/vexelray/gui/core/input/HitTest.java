@@ -12,6 +12,9 @@ public final class HitTest {
 
     /** @return the topmost node containing {@code (x, y)}, or {@code null} if the point is outside {@code root}. */
     public static RetainedNode at(RetainedNode root, float x, float y) {
+        if (root != null && !root.visible()) {
+            return null;   // hidden nodes are not pointer targets, whatever geometry they still carry
+        }
         if (root == null || !contains(root, x, y)) {
             return null;
         }

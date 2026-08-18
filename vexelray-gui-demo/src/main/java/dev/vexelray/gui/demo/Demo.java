@@ -267,6 +267,13 @@ public final class Demo {
                         + "Up/Down keep your column across short lines. Keep typing and the view follows the caret.")
                 .multiline(true).wordWrap(true).lineNumbers(true);
         notes.node().width(Length.FILL).height(Length.FILL);
+        // Formatting spans on a multiline field, set once and never touched again. The point is what happens
+        // next: type before or inside them and they follow their text, because every edit remaps them through
+        // its own TextEdit diff (req 12). Nothing re-runs a highlighter — the spans are not recomputed at all.
+        notes.setSpans(java.util.List.of(
+                dev.vexelray.gui.core.text.Span.foreground(14, 26, ACCENT),   // "Node handles"
+                dev.vexelray.gui.core.text.Span.underline(39, 47),            // "messages"
+                dev.vexelray.gui.core.text.Span.background(61, 65, LINE)));   // "flex"
 
         Node leftCard = gui.column().width(Length.FILL).height(Length.FILL)
                 .background(PANEL).corner(Length.rem(1)).border(Length.rem(0.1f), LINE)
@@ -314,13 +321,25 @@ public final class Demo {
         field.onSubmit(s -> log.append(gui.text("submitted: " + s)
                 .textSize(Length.rem(1)).textColor(INK)));
 
+        // Wrap vs horizontal scroll, toggled live. Both are the same field: turning wrap off makes the node
+        // report content wider than its box, which is what grows an h-scrollbar — a text leaf is a scroll
+        // citizen like any container. A wrapped node never scrolls horizontally, because nothing lies to the
+        // right of a wrapped line to reach.
+        boolean[] wrapping = {true};
+        Node wrapToggle = button(gui, "Wrap: on", DIM, PANEL, PANEL_HOVER, PANEL_PRESSED, true);
+        gui.onClick(wrapToggle, () -> {
+            wrapping[0] = !wrapping[0];
+            notes.wordWrap(wrapping[0]);
+            wrapToggle.text(wrapping[0] ? "Wrap: on" : "Wrap: off");
+        });
+
         // Per-axis padding: small vertically so 44px buttons fit a 64px bar, but full horizontally (dp(24)) so the
-        // first button aligns with the cards' left edge (body padding is also dp(24)). These are dp rather than
+        // first button aligns with the cards. left edge (body padding is also dp(24)). These are dp rather than
         // rem because they are frame, not content: zoom should grow what you are reading, not the gutter round it.
         Node controls = gui.row().width(Length.FILL).height(Length.rem(4)).padding(Length.dp(8), Length.dp(24))
                 .gap(Length.rem(0.75f)).justify(Justify.START).alignItems(AlignItems.CENTER)
                 .children(getStarted, button(gui, "Docs", DIM, PANEL, PANEL_HOVER, PANEL_PRESSED, true),
-                        slider.node(), valueLabel);
+                        wrapToggle, slider.node(), valueLabel);
 
         Node fieldRow = gui.row().width(Length.FILL).height(Length.rem(3.25f))
                 .padding(Length.dp(6), Length.dp(24)).gap(Length.rem(0.75f))

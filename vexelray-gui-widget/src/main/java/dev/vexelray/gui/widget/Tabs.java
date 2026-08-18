@@ -91,6 +91,7 @@ public final class Tabs {
                 .textSize(Length.rem(1))
                 .textColor(DIM)
                 .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE)
+                .corner(Length.rem(0.5f), Length.ZERO)   // tab silhouette: rounded shoulders, flat seat
                 .background(TAB_IDLE);
 
         gui.onClick(header, () -> select(index));
@@ -126,10 +127,11 @@ public final class Tabs {
         selected = next;
         if (previous >= 0) {
             bodies.get(previous).visible(false);
-            headers.get(previous).background(TAB_IDLE).textColor(DIM);
+            headers.get(previous).background(TAB_IDLE).textColor(DIM).lit(false).elevation(Length.ZERO);
         }
         bodies.get(next).visible(true);
-        headers.get(next).background(TAB_ACTIVE).textColor(ACCENT);
+        // The active tab is physically forward: lit and floating a little above the bar the idle tabs sit flush in.
+        headers.get(next).background(TAB_ACTIVE).textColor(ACCENT).lit(true).elevation(Length.rem(0.25f));
         int delivered = next;
         gui.handlers().execute(() -> onSelect.accept(delivered));
         return this;

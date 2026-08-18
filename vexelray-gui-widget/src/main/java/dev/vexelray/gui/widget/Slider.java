@@ -36,8 +36,11 @@ public final class Slider {
         // thumb's centre tracks the value and never pushes past the track edge.
         this.leftSpacer = gui.box().width(Length.grow(this.value)).height(Length.percent(100));
         this.rightSpacer = gui.box().width(Length.grow(1f - this.value)).height(Length.percent(100));
+        // The thumb is the grabbable thing, so it gets the physicality: a lit fill and a small drop shadow lift
+        // it off the sunken track. Both are SDF transfer functions — no extra geometry, still one draw.
         Node thumb = gui.box().width(Length.rem(1.1f)).height(Length.percent(100))
-                .background(THUMB).corner(Length.rem(0.55f));
+                .background(THUMB).corner(Length.rem(0.55f))
+                .lit(true).elevation(Length.rem(0.25f));
         this.track = gui.row().height(Length.rem(1.1f)).background(TRACK).corner(Length.rem(0.55f))
                 .alignItems(AlignItems.CENTER).scroll(false, false) // a slider never scrolls
                 .children(leftSpacer, thumb, rightSpacer);

@@ -56,9 +56,32 @@ public final class Node {
         return prop(PropKey.CORNER, radius);
     }
 
+    /** Independent top and bottom corner radii — a tab is {@code corner(r, Length.ZERO)}. */
+    public Node corner(Length top, Length bottom) {
+        prop(PropKey.CORNER, top);
+        return prop(PropKey.CORNER_BOTTOM, bottom);
+    }
+
     public Node border(Length width, Color color) {
         prop(PropKey.BORDER_WIDTH, width);
         return prop(PropKey.BORDER_COLOR, color);
+    }
+
+    /**
+     * Float this node above its surroundings: a soft drop shadow of this blur radius under its background.
+     * Purely visual — the shadow reserves no space and moves no layout. {@code Length.ZERO} removes it.
+     */
+    public Node elevation(Length blur) {
+        return prop(PropKey.ELEVATION, blur);
+    }
+
+    /**
+     * Light this node's background: an embossed edge highlight from a fixed top-left light plus a subtle vertical
+     * luminance gradient, both analytic functions of the background's own SDF. The colour props are untouched —
+     * the light modulates whatever {@link #background} is set to, so hover/press restyles keep working.
+     */
+    public Node lit(boolean lit) {
+        return prop(PropKey.LIT, lit);
     }
 
     // --- text ---
@@ -74,6 +97,15 @@ public final class Node {
 
     public Node textColor(Color c) {
         return prop(PropKey.TEXT_COLOR, c);
+    }
+
+    /**
+     * Draw this node's text sunken into the surface (letterpress): a soft shadow dropped below the glyphs and a
+     * sharp black outline around them, for contrast on strong backgrounds (white on accent). Renderer-only —
+     * glyph geometry is unchanged, so nothing reflows.
+     */
+    public Node textSunken(boolean sunken) {
+        return prop(PropKey.TEXT_SUNKEN, sunken);
     }
 
     public Node align(TextLayout.HAlign h, TextLayout.VAlign v) {

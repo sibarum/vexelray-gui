@@ -39,6 +39,8 @@ public final class RetainedNode {
     // Layout-computed, resolved-to-px render inputs (filled each layout pass so the renderer needs no units/ctx).
     public float borderPx;
     public float cornerPx;
+    public float cornerBottomPx;
+    public float elevationPx;
     public float textSizePx = 16f;
     // Text insets and the em basis, resolved from Lengths by the layout pass (TextMetrics.PAD_X/PAD_Y/GUTTER_PAD).
     // Stored here for the same reason border and corner are: every later stage — the compute phase, the renderer,
@@ -118,8 +120,27 @@ public final class RetainedNode {
         return len(PropKey.CORNER, Length.ZERO);
     }
 
+    /** The bottom corner radius; defaults to {@link #corner()} so a uniform rounding stays one prop. */
+    public Length cornerBottom() {
+        return len(PropKey.CORNER_BOTTOM, corner());
+    }
+
     public Length borderWidth() {
         return len(PropKey.BORDER_WIDTH, Length.ZERO);
+    }
+
+    public Length elevation() {
+        return len(PropKey.ELEVATION, Length.ZERO);
+    }
+
+    /** Whether the background fill is drawn lit (SDF edge light + vertical luminance gradient). */
+    public boolean lit() {
+        return Boolean.TRUE.equals(props.get(PropKey.LIT));
+    }
+
+    /** Whether this node's text is drawn sunken: soft under-shadow + sharp black outline (letterpress). */
+    public boolean textSunken() {
+        return Boolean.TRUE.equals(props.get(PropKey.TEXT_SUNKEN));
     }
 
     public Color borderColor() {

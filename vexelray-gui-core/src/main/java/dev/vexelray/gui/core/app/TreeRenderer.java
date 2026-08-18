@@ -13,15 +13,17 @@ import dev.vexelray.text.TextLayout;
  * its children on top, depth-first. There is no Vulkan, shader, or vertex code here (nor anywhere in the GUI);
  * this only translates model props into {@code Canvas} calls.
  *
- * <p>Borders use the fill-then-inset trick (VexelRay's {@code Canvas} has no stroke-rect primitive): draw the
- * rounded rect in the border colour, then the fill inset by the border width. Clipping children to their parent
- * awaits the engine's clip-rect (architecture.md E3); for now children are trusted to sit within their bounds.
+ * <p>Depth and light are translated the same way: {@code elevation} becomes a {@code shadowRoundRect} under the
+ * background, {@code lit} swaps the background fill for a {@code litRoundRect}, and borders are a real
+ * {@code strokeRoundRect} ring — all of them transfer functions over the one rounded-box SDF the engine already
+ * evaluates, so a whole lit, shadowed, outlined panel is still zero extra textures and one draw.
  */
 public final class TreeRenderer {
 
     private static final Color SCROLL_OUTLINE = Color.rgb(0x39415a); // track border, visible against any panel
     private static final Color SCROLL_TRACK = Color.rgb(0x181d28);   // subtle inner fill
     private static final Color SCROLL_THUMB = Color.rgb(0x5a6685);   // clearly visible thumb
+    private static final Color SHADOW = Color.withAlpha(Color.rgb(0x05070c), 0.55f); // elevation shadow ink
 
     private TreeRenderer() {
     }
@@ -53,14 +55,19 @@ public final class TreeRenderer {
         float sb = n.scrollbarPx;
         if (n.overflowY) {
             track(canvas, n.viewX + n.viewW, n.viewY, sb, n.viewH);
-            float[] t = n.vThumbRect();
-            canvas.fillRoundRect(t[0], t[1], t[2], t[3], sb * 0.3f, SCROLL_THUMB);
+            thumb(canvas, n.vThumbRect(), sb);
         }
         if (n.overflowX) {
             track(canvas, n.viewX, n.viewY + n.viewH, n.viewW, sb);
-            float[] t = n.hThumbRect();
-            canvas.fillRoundRect(t[0], t[1], t[2], t[3], sb * 0.3f, SCROLL_THUMB);
+            thumb(canvas, n.hThumbRect(), sb);
         }
+    }
+
+    /** A lit pill floating just off its track: small shadow underneath, edge light on top — grabbable at a glance. */
+    private static void thumb(Canvas canvas, float[] t, float sb) {
+        float r = sb * 0.3f;
+        canvas.shadowRoundRect(t[0], t[1] + 1f, t[2], t[3], r, 2.5f, SHADOW);
+        canvas.litRoundRect(t[0], t[1], t[2], t[3], r, 2f, 0.08f, SCROLL_THUMB);
     }
 
     /** An outlined track: a border-coloured rounded rect with a subtle inner fill, so it reads against any panel. */
@@ -75,18 +82,25 @@ public final class TreeRenderer {
         // Border width, corner radius and text size were resolved to px by the layout pass (border-box), so the
         // renderer needs no units or layout context — it just paints the computed rect.
         Color bg = n.background();
-        float radius = n.cornerPx;
+        float rTop = n.cornerPx;
+        float rBottom = n.cornerBottomPx;
         float bw = n.borderPx;
         Color border = n.borderColor();
-        if (bw > 0f && border != null) {
-            canvas.fillRoundRect(n.x, n.y, n.w, n.h, radius, border);
-            if (bg != null) {
-                float innerR = Math.max(0f, radius - bw);
-                canvas.fillRoundRect(n.x + bw, n.y + bw, Math.max(0f, n.w - 2 * bw),
-                        Math.max(0f, n.h - 2 * bw), innerR, bg);
+        // Elevation: an analytic soft shadow under the border-box, dropped slightly with the light overhead.
+        if (n.elevationPx > 0f && (bg != null || border != null)) {
+            float e = n.elevationPx;
+            canvas.shadowRoundRect(n.x, n.y + e * 0.5f, n.w, n.h, rTop, rBottom, e, SHADOW);
+        }
+        if (bg != null) {
+            if (n.lit()) {
+                // Bevel scales with the type size so the edge light stays proportionate under zoom.
+                canvas.litRoundRect(n.x, n.y, n.w, n.h, rTop, rBottom, Math.max(2f, n.emPx * 0.22f), 0.05f, bg);
+            } else {
+                canvas.fillRoundRect(n.x, n.y, n.w, n.h, rTop, rBottom, bg);
             }
-        } else if (bg != null) {
-            canvas.fillRoundRect(n.x, n.y, n.w, n.h, radius, bg);
+        }
+        if (bw > 0f && border != null) {
+            canvas.strokeRoundRect(n.x, n.y, n.w, n.h, rTop, rBottom, bw, border);
         }
 
         String s = n.textString();
@@ -216,8 +230,14 @@ public final class TreeRenderer {
                     .withWrap(TextLayout.WrapMode.NONE)
                     .withAlign(TextLayout.HAlign.LEFT, TextLayout.VAlign.TOP);
             float x = line.caretX(i);
-            canvas.text(text, s.substring(i, j), x, line.top(),
-                    Math.max(1f, n.x + n.w - x), line.height(), style, fg);
+            float wRun = Math.max(1f, n.x + n.w - x);
+            if (n.textSunken()) {
+                // Letterpress: the press depth scales with the type size, so the effect survives zoom.
+                canvas.textSunken(text, s.substring(i, j), x, line.top(), wRun, line.height(), style, fg,
+                        Math.max(1f, n.textSizePx * 0.07f));
+            } else {
+                canvas.text(text, s.substring(i, j), x, line.top(), wRun, line.height(), style, fg);
+            }
             i = j;
         }
     }

@@ -47,6 +47,8 @@ public final class FlexLayout {
         // padding/border/corner use the node's own border-box width as the basis (CSS convention).
         n.borderPx = n.borderWidth().scalarPx(ctx, n.w);
         n.cornerPx = n.corner().scalarPx(ctx, n.w);
+        n.cornerBottomPx = n.cornerBottom().scalarPx(ctx, n.w);
+        n.elevationPx = n.elevation().scalarPx(ctx, n.w);
         n.textSizePx = Math.max(1f, n.textSize().scalarPx(ctx, emBasis(ctx)));
         // The text insets and the em basis, resolved here so no later stage needs a LayoutContext to know them.
         n.emPx = emBasis(ctx);

@@ -9,8 +9,19 @@ public enum PropKey {
     // Visual
     BACKGROUND(false),
     CORNER(false),
+    // Bottom corner radius, when it differs from CORNER (which then serves as the top): a tab is (r, 0).
+    // Absent means "same as CORNER" — the uniform rounded rect stays the one-prop case.
+    CORNER_BOTTOM(false),
     BORDER_COLOR(false),
     TEXT_COLOR(false),
+    // Depth & light (renderer-only; neither moves a rect). ELEVATION is a Length — a drop shadow of that blur
+    // radius under the node's background. LIT modulates the background fill with an SDF edge light + vertical
+    // luminance gradient in the engine's uber-shader; the node's colour props are unchanged.
+    ELEVATION(false),
+    LIT(false),
+    // Sunken ("letterpress") text: glyphs drop a soft shadow below themselves and carry a sharp black outline,
+    // reading as set into the surface. Renderer-only — the glyph rects are unchanged, so nothing reflows.
+    TEXT_SUNKEN(false),
     // Text (size affects layout via intrinsic measure)
     TEXT(true),
     TEXT_SIZE(true),

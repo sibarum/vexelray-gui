@@ -75,6 +75,43 @@
     </build>
 
     <profiles>
+        <!--
+          GraalVM native image: mvn -Pnative -pl vexelray-gui-demo -am package  ->  target/vexelray-demo(.exe)
+          Profile-gated because native-image takes minutes and needs a GraalVM JDK; an ordinary `package` on a
+          stock JDK must not pay for (or fail on) it. FFM downcall metadata is expected under
+          src/main/resources/META-INF/native-image/ (generate with a -agentlib:native-image-agent run).
+        -->
+        <profile>
+            <id>native</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.graalvm.buildtools</groupId>
+                        <artifactId>native-maven-plugin</artifactId>
+                        <version>0.10.6</version>
+                        <extensions>true</extensions>
+                        <executions>
+                            <execution>
+                                <id>build-native</id>
+                                <goals><goal>compile-no-fork</goal></goals>
+                                <phase>package</phase>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <imageName>vexelray-demo</imageName>
+                            <mainClass>dev.vexelray.gui.demo.Demo</mainClass>
+                            <buildArgs>
+                                <buildArg>--no-fallback</buildArg>
+                                <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
+                                <buildArg>-H:+ForeignAPISupport</buildArg>
+                                <buildArg>--enable-native-access=ALL-UNNAMED</buildArg>
+                                <buildArg>-H:IncludeResources=META-INF/supirvast/shaders/.*</buildArg>
+                            </buildArgs>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
         <!-- Build-time platform selection: exactly one activates from the host OS, adding VexelRay's
              matching provider module at runtime (ServiceLoader picks it up via NativePlatform.current()). -->
         <profile>

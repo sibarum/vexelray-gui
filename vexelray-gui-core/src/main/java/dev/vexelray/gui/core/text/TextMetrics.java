@@ -15,38 +15,50 @@ import java.util.List;
 public record TextMetrics(List<VisualLine> lines) {
 
     /**
-     * The text insets, as {@link Length}s rather than pixels — §6 admits no pixel unit, and these were the last
-     * scalars pinned to device pixels while everything around them (scrollbar thickness, border, corner, text
-     * size) already scaled. The visible effect of the old constants was a field whose padding stayed 10px while
-     * its scrollbar grew with zoom, so the proportions drifted apart the further you got from 100%.
+     * The editable field's caret gutter, as {@link Length}s rather than pixels — §6 admits no pixel unit, and
+     * these were the last scalars pinned to device pixels while everything around them (scrollbar thickness,
+     * border, corner, text size) already scaled. Flat root, no cascade (§6), so these track
+     * {@code rootEmPx · zoom · dpi} and not the node's own text size. At the default context they resolve to the
+     * 10/6/4 px they replace.
      *
-     * <p>Flat root, no cascade (§6), so these track {@code rootEmPx · zoom · dpi} and not the node's own text
-     * size. At the default context they resolve to the 10/6/4 px they replace.
+     * <p><b>These apply to editable nodes only.</b> An editable field is a <em>box</em> with a document inside
+     * it — the gutter keeps the caret off the border on both axes. A label is the text block itself and gets
+     * neither: its text area is its border box less its own declared border and padding, exactly like a
+     * container's content box. Anything else makes a label's intrinsic width a lie — the layout would size it to
+     * its glyphs while the wrap ran at glyphs-minus-gutter, guaranteeing a wrap inside the last word of every
+     * auto-sized label. A label that wants breathing room says {@code padding(...)}, the prop that already means
+     * that, rather than inheriting an inset it cannot remove.
      */
     public static final Length PAD_X = Length.em(0.625f);
 
-    /** Vertical text inset for an editable node, which is a box with text in it rather than the text itself. */
+    /** Vertical caret gutter for an editable node; see {@link #PAD_X} for why labels get none. */
     public static final Length PAD_Y = Length.em(0.375f);
 
     /** Gap either side of the digits in a line-number gutter. */
     public static final Length GUTTER_PAD = Length.em(0.25f);
 
     /**
-     * Resolve the horizontal text inset for a node {@code nodeW} wide. The inset shrinks on a very narrow node so
-     * text never vanishes entirely.
+     * Resolve the full horizontal text inset for {@code n} at border-box width {@code nodeW}: its border, its
+     * declared padding, and — for an editable node only — the {@link #PAD_X} caret gutter, which shrinks on a
+     * very narrow field so text never vanishes entirely.
      *
      * <p>Called by the layout, which then stores the result on the node ({@code RetainedNode.textPadXPx}) for
      * every later stage to read. Three stages need the identical number — the layout to know how many lines the
      * text wraps onto, the compute phase to break lines and bake caret x, and the renderer to clip — and resolving
      * it once onto the node is what stops them drifting, the same way border and corner are already handled.
+     * The measure pass calls it too (with the width it is probing), so the width a text node reports is a width
+     * its text actually fits in.
      */
-    public static float resolvePadX(LayoutContext ctx, float nodeW) {
-        return Math.min(PAD_X.scalarPx(ctx, nodeW), nodeW * 0.25f);
+    public static float resolveInsetX(LayoutContext ctx, dev.vexelray.gui.core.model.RetainedNode n, float nodeW) {
+        float declared = n.borderWidth().scalarPx(ctx, nodeW) + n.paddingX().scalarPx(ctx, nodeW);
+        float gutter = n.editable() ? Math.min(PAD_X.scalarPx(ctx, nodeW), nodeW * 0.25f) : 0f;
+        return declared + gutter;
     }
 
-    /** Resolve the vertical text inset: an editable node gets one, a label is the text block itself and gets none. */
-    public static float resolvePadY(LayoutContext ctx, dev.vexelray.gui.core.model.RetainedNode n) {
-        return n.editable() ? PAD_Y.scalarPx(ctx, n.w) : 0f;
+    /** The vertical counterpart of {@link #resolveInsetX}: border + declared padding + the editable gutter. */
+    public static float resolveInsetY(LayoutContext ctx, dev.vexelray.gui.core.model.RetainedNode n, float nodeW) {
+        float declared = n.borderWidth().scalarPx(ctx, nodeW) + n.paddingY().scalarPx(ctx, nodeW);
+        return declared + (n.editable() ? PAD_Y.scalarPx(ctx, nodeW) : 0f);
     }
 
     /** The width available to glyphs, from the inset the layout already resolved onto {@code n}. */
@@ -55,17 +67,17 @@ public record TextMetrics(List<VisualLine> lines) {
     }
 
     /** The width available to glyphs at {@code nodeW}, resolving the inset — for callers running before layout. */
-    public static float contentWidth(LayoutContext ctx, float nodeW) {
-        return Math.max(1f, nodeW - 2f * resolvePadX(ctx, nodeW));
+    public static float contentWidth(LayoutContext ctx, dev.vexelray.gui.core.model.RetainedNode n, float nodeW) {
+        return Math.max(1f, nodeW - 2f * resolveInsetX(ctx, n, nodeW));
     }
 
     /**
-     * The vertical inset of a text node's text area, as the layout resolved it. An editable field is a <em>box</em>
-     * with text inside it, so its text sits in from the border; a label is the text block itself and gets no inset
-     * — which is what lets the layout size a wrapped label at exactly {@code lineCount · lineHeight}.
+     * The vertical inset of a text node's text area, as the layout resolved it: border + declared padding, plus
+     * the caret gutter on an editable field. A bare label's is zero — the text block is the box — which is what
+     * lets the layout size a wrapped label at exactly {@code lineCount · lineHeight}.
      */
     public static float padY(dev.vexelray.gui.core.model.RetainedNode n) {
-        return n.editable() ? n.textPadYPx : 0f;
+        return n.textPadYPx;
     }
 
     /**

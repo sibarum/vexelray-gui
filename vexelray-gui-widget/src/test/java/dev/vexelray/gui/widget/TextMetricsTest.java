@@ -26,15 +26,16 @@ class TextMetricsTest {
             TextMetrics T = L.text();
             assertNotNull(T, "a text node carries caret metrics");
 
-            // Field intrinsic width = 4 chars * CELL(10) = 40; pad = min(10, 40*0.25) = 10; origin x = 0 + 10.
-            // Monospace, so caret x for offset k is 10 + k*10.
-            assertEquals(10f, T.caretX(0), 0.5f);
-            assertEquals(30f, T.caretX(2), 0.5f);
-            assertEquals(50f, T.caretX(4), 0.5f);
+            // The text origin is the field's full inset — its border plus the editable caret gutter,
+            // FIELD_PAD_X = 11.6. Monospace, so caret x for offset k is FIELD_PAD_X + k*10.
+            float origin = HeadlessGui.FIELD_PAD_X;
+            assertEquals(origin, T.caretX(0), 0.5f);
+            assertEquals(origin + 20f, T.caretX(2), 0.5f);
+            assertEquals(origin + 40f, T.caretX(4), 0.5f);
 
-            // point → offset: a click near x=31 lands on offset 2 (nearest boundary), within the line's y-band.
+            // point → offset: a click just past the offset-2 boundary lands on 2 (nearest), in the line's y-band.
             float y = T.caretTop(0) + T.caretHeight(0) * 0.5f;
-            assertEquals(2, T.offsetAt(31f, y));
+            assertEquals(2, T.offsetAt(origin + 21f, y));
             assertEquals(4, T.offsetAt(999f, y), "past the end clamps to the last offset");
         }
     }

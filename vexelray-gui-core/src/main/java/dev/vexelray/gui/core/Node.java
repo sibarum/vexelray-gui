@@ -62,6 +62,15 @@ public final class Node {
         return prop(PropKey.CORNER_BOTTOM, bottom);
     }
 
+    /**
+     * Select the atlas face this node's text measures and renders with: 0 (default) is the primary UI font,
+     * 1+ are the extra faces the atlas was built with (e.g. a monospace face for code). An index the atlas
+     * doesn't carry degrades to the primary font.
+     */
+    public Node font(int face) {
+        return prop(PropKey.FONT, face);
+    }
+
     public Node border(Length width, Color color) {
         prop(PropKey.BORDER_WIDTH, width);
         return prop(PropKey.BORDER_COLOR, color);
@@ -205,6 +214,33 @@ public final class Node {
 
     public Node margin(Length m) {
         return prop(PropKey.MARGIN, m);
+    }
+
+    /**
+     * Float this node out of its parent's flow, at {@code (x, y)} from the parent's border-box origin. A floating
+     * node takes no space from its siblings and adds nothing to its parent's overflow; it is sized to its own
+     * width/height (or its content), clamped to stay inside the parent, and — being an ordinary child for painting
+     * and hit-testing — draws on top of and is hit before every sibling that precedes it. This is the overlay
+     * primitive: a context menu, a tooltip, a toast is a floating last child of the root.
+     */
+    public Node floatAt(Length x, Length y) {
+        prop(PropKey.FLOAT_X, x);
+        return prop(PropKey.FLOAT_Y, y);
+    }
+
+    /** Return this node to normal flow. */
+    public Node unfloat() {
+        prop(PropKey.FLOAT_X, null);
+        return prop(PropKey.FLOAT_Y, null);
+    }
+
+    /**
+     * Make this node (and its subtree) pointer-transparent: it still lays out and draws, but hit-testing passes
+     * straight through it, so it is never the pointer target and never steals a hover, click or wheel from what
+     * lies beneath. An informational overlay — a tooltip, a drag ghost, a toast — is hit-inert; a menu is not.
+     */
+    public Node hitInert(boolean inert) {
+        return prop(PropKey.HIT_INERT, inert ? Boolean.TRUE : null);
     }
 
     public Node gap(Length g) {

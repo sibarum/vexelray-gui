@@ -63,15 +63,17 @@ class WheelScrollTest {
         n.viewY = 0;
         n.viewW = 90;      // content area; scrollbar strip to the right
         n.scrollbarPx = 10;
-        // viewH=100, contentH=200 -> thumb length = max(20, 100*100/200)=50, travel=50.
+        // viewH=100, contentH=200 -> thumb length = max(20, 100*100/200)=50; the thumb travels inside the
+        // rail's end insets (thumbInsetPx each side), so travel = viewH - 2*inset - 50 = vThumbTravel().
+        int halfTravel = Math.round(n.vThumbTravel() / 2f);
 
-        // Grab the thumb near its top (thumb starts at y=0 when scrollY=0) and drag halfway down its travel.
+        // Grab the thumb near its top (thumb starts inset from y=0 when scrollY=0) and drag half its travel.
         float[] thumb = n.vThumbRect();
         int grabY = Math.round(thumb[1] + 5);            // inside the thumb
         int grabX = Math.round(thumb[0] + 1);
         bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(sibarum.tactroller.api.MouseButton.LEFT,
                 grabX, grabY, 0));
-        bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(grabX, grabY + 25, 0, 25, 0)); // +25 of 50 travel
+        bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(grabX, grabY + halfTravel, 0, halfTravel, 0));
         dispatcher.dispatch(n);
 
         assertEquals(50f, n.scrollY, 0.5f, "half the thumb travel -> half of maxScroll (100)");

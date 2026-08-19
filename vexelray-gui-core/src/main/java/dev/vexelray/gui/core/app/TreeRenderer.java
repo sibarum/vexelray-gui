@@ -28,12 +28,21 @@ public final class TreeRenderer {
     private TreeRenderer() {
     }
 
-    /** Emit the whole tree rooted at {@code node} into {@code canvas}, laying text with {@code text}. */
+    /** Single-face convenience: everything renders with {@code text} regardless of node font indices. */
     public static void emit(RetainedNode node, Canvas canvas, TextLayout text) {
+        emit(node, canvas, new TextLayout[]{text});
+    }
+
+    /**
+     * Emit the whole tree rooted at {@code node} into {@code canvas}. {@code faces} holds one {@link TextLayout}
+     * per atlas face, index-aligned with {@code RetainedNode.font()}; each text node draws with its own face
+     * (out-of-range indices degrade to face 0, matching the measurer).
+     */
+    public static void emit(RetainedNode node, Canvas canvas, TextLayout[] faces) {
         if (!node.visible()) {
             return;   // hidden: nothing drawn, and the subtree is not walked
         }
-        drawSelf(node, canvas, text);
+        drawSelf(node, canvas, faceFor(faces, node));
         boolean clip = node.overflowX || node.overflowY;
         if (clip) {
             // Clip children to the scroll viewport, honouring the container's (inset) rounded corner.
@@ -42,12 +51,17 @@ public final class TreeRenderer {
             canvas.pushClip(node.viewX, node.viewY, node.viewW, node.viewH, radius);
         }
         for (RetainedNode child : node.children) {
-            emit(child, canvas, text);
+            emit(child, canvas, faces);
         }
         if (clip) {
             canvas.popClip();
             drawScrollbars(node, canvas);
         }
+    }
+
+    private static TextLayout faceFor(TextLayout[] faces, RetainedNode n) {
+        int f = n.font();
+        return faces[f <= 0 ? 0 : Math.min(f, faces.length - 1)];
     }
 
     /** Draw the reserved-space scrollbars (outlined track + pill thumb) for an overflowing container — chrome. */
@@ -142,10 +156,21 @@ public final class TreeRenderer {
             canvas.pushClip(n.viewX, n.viewY, Math.max(1f, n.viewW), Math.max(1f, n.viewH), 0f);
         }
 
+        // Cull lines outside the scroll viewport: the clip would mask them anyway, but their glyph quads would
+        // still be generated — an unbounded document must not translate into unbounded per-frame vertex data.
+        float cullLo = clip ? n.viewY : Float.NEGATIVE_INFINITY;
+        float cullHi = clip ? n.viewY + n.viewH : Float.POSITIVE_INFINITY;
         int selLo = Math.min(n.selectStart(), n.selectEnd());
         int selHi = Math.max(n.selectStart(), n.selectEnd());
         for (TextMetrics.VisualLine line : m.lines()) {
-            for (Span sp : spans) {
+            if (line.top() + line.height() < cullLo || line.top() > cullHi) {
+                continue;
+            }
+            // Narrow the span set to this line once: drawLineText consults the spans per character run, so
+            // handing it the whole document's spans makes a densely highlighted document O(chars x spans)
+            // per frame. Intersecting here keeps that inner loop proportional to what is on the line.
+            java.util.List<Span> lineSpans = spansOn(spans, line);
+            for (Span sp : lineSpans) {
                 if (sp.bg() != null) {
                     fillLineRange(line, sp.start(), sp.end(), sp.bg(), canvas);
                 }
@@ -153,8 +178,8 @@ public final class TreeRenderer {
             if (selHi > selLo) {
                 fillLineRange(line, selLo, selHi, SELECTION, canvas);
             }
-            drawLineText(n, s, line, spans, canvas, text);
-            for (Span sp : spans) {
+            drawLineText(n, s, line, lineSpans, canvas, text);
+            for (Span sp : lineSpans) {
                 if (sp.underline()) {
                     underlineLineRange(n, line, sp.start(), sp.end(),
                             sp.fg() != null ? sp.fg() : n.textColor(), canvas, text);
@@ -187,8 +212,9 @@ public final class TreeRenderer {
         float right = left + n.gutterPx - n.gutterPadPx;
         canvas.pushClip(left, n.viewY, Math.max(1f, n.gutterPx), Math.max(1f, n.viewH), 0f);
         for (TextMetrics.VisualLine line : m.lines()) {
-            if (line.number() <= 0) {
-                continue;
+            if (line.number() <= 0
+                    || line.top() + line.height() < n.viewY || line.top() > n.viewY + n.viewH) {
+                continue; // unnumbered continuation, or culled outside the gutter's viewport (same as the text)
             }
             String label = Integer.toString(line.number());
             float w = text.glyphLayout().measure(label, px);
@@ -198,6 +224,20 @@ public final class TreeRenderer {
             canvas.text(text, label, right - w, line.top(), Math.max(1f, w), line.height(), style, GUTTER_INK);
         }
         canvas.popClip();
+    }
+
+    /** The spans whose range intersects {@code line} — the only ones any per-line drawing can need. */
+    private static java.util.List<Span> spansOn(java.util.List<Span> spans, TextMetrics.VisualLine line) {
+        if (spans.isEmpty()) {
+            return spans;
+        }
+        java.util.List<Span> out = new java.util.ArrayList<>();
+        for (Span sp : spans) {
+            if (sp.start() < line.end() && sp.end() > line.start()) {
+                out.add(sp);
+            }
+        }
+        return out;
     }
 
     /** Fill the part of character range {@code [start, end)} that falls on {@code line}, using its baked xs. */

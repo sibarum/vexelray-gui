@@ -362,7 +362,19 @@ public final class Gui implements AutoCloseable {
         return this;
     }
 
-    /** The click topic: {@code gui.bus().subscribe(gui.clicks(), ...)} to react to clicks anywhere. */
+    /**
+     * Register a context-click handler for {@code node} — fired when a <em>right</em> press and release land on it
+     * (bubbling to the nearest ancestor with a handler). The handler receives the {@link ClickEvent} because a
+     * context action almost always needs the pointer position, to anchor a menu at it. A right click changes
+     * nothing else — no focus move, no PRESSED state, no drag capture; what it means is the widget's decision.
+     * Runs on a worker thread, so it may freely mutate the tree via handles.
+     */
+    public Gui onContextClick(Node node, java.util.function.Consumer<ClickEvent> handler) {
+        input.onContextClick(node.id(), handler);
+        return this;
+    }
+
+    /** The click topic: {@code gui.bus().subscribe(gui.clicks(), ...)} to react to clicks anywhere (any button). */
     public Topic<ClickEvent> clicks() {
         return CLICKS;
     }
@@ -731,7 +743,7 @@ public final class Gui implements AutoCloseable {
             return;
         }
         float px = n.textSizePx;
-        float[] adv = tm.caretAdvances(s, px);
+        float[] adv = tm.caretAdvances(n.font(), s, px);
         if (adv == null) {
             return;           // a measurer with no glyph metrics (an atlas-less stub) — nothing to resolve
         }
@@ -747,7 +759,7 @@ public final class Gui implements AutoCloseable {
         // count the box was sized for and the lines drawn into it are the same object. The fallback covers a node
         // the layout has not reached yet.
         List<dev.vexelray.text.TextLayout.LineSpan> spans =
-                n.lineSpans != null ? n.lineSpans : tm.lineSpans(s, wraps ? viewW : 0f, px);
+                n.lineSpans != null ? n.lineSpans : tm.lineSpans(n.font(), s, wraps ? viewW : 0f, px);
 
         // Where the caret sits, in line-relative terms: everything below is expressed against this.
         int caret = n.caret();

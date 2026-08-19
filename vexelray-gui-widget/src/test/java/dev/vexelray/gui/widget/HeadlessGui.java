@@ -45,6 +45,15 @@ final class HeadlessGui implements AutoCloseable {
     static final float PAD_Y = dev.vexelray.gui.core.text.TextMetrics.PAD_Y.scalarPx(CTX, 0f);
 
     /**
+     * A {@link TextField}'s full text inset: the text inset is the box-model one (border + declared padding +
+     * the editable caret gutter), and a TextField carries a {@code rem(0.1)} border, so its glyphs start that
+     * much further in than the bare gutter. Tests about field geometry measure from these.
+     */
+    static final float FIELD_BORDER = dev.vexelray.gui.core.layout.Length.rem(0.1f).scalarPx(CTX, 0f);
+    static final float FIELD_PAD_X = PAD_X + FIELD_BORDER;
+    static final float FIELD_PAD_Y = PAD_Y + FIELD_BORDER;
+
+    /**
      * An {@link Executor} that queues tasks instead of running them, so a test can release input handlers one at
      * a time and interleave them with other work — reproducing a specific ordering / race deterministically.
      */
@@ -262,6 +271,20 @@ final class HeadlessGui implements AutoCloseable {
         bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, (int) x, (int) y, 0));
         frame();
         bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, (int) x, (int) y, 0));
+        return frame();
+    }
+
+    /** Move the pointer to absolute (x, y) and dispatch — drives hover and interaction state. */
+    HeadlessGui hover(float x, float y) {
+        bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved((int) x, (int) y, 0, 0, 0));
+        return frame();
+    }
+
+    /** Right-click at absolute (x, y): press + release, dispatched over a frame — the context-click gesture. */
+    HeadlessGui rightClick(float x, float y) {
+        bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.RIGHT, (int) x, (int) y, 0));
+        frame();
+        bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.RIGHT, (int) x, (int) y, 0));
         return frame();
     }
 

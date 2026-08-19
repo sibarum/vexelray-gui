@@ -25,7 +25,8 @@ class ZoomTest {
             h.frame();
 
             float inset1x = f.node().layout().text().caretX(0) - f.node().layout().rect().x();
-            assertEquals(HeadlessGui.PAD_X, inset1x, 0.5f, "at 1x the inset is the resolved PAD_X");
+            assertEquals(HeadlessGui.FIELD_PAD_X, inset1x, 0.5f,
+                    "at 1x the inset is the field's border plus the resolved PAD_X gutter");
 
             h.gui.zoom(2f);
             h.frame();
@@ -109,9 +110,10 @@ class ZoomTest {
             TextField f = new TextField(h.gui, "abc");
             h.gui.root().children(f.node());
             h.frame();
-            // TextMetrics.PAD_X is the single declaration; the layout resolves it and everyone reads that.
-            assertEquals(TextMetrics.PAD_X.scalarPx(
-                            dev.vexelray.gui.core.layout.LayoutContext.of(800f, 600f), 0f),
+            // TextMetrics.PAD_X is the single gutter declaration; the layout resolves it (plus the field's own
+            // border) into one inset and everyone reads that.
+            var ctx = dev.vexelray.gui.core.layout.LayoutContext.of(800f, 600f);
+            assertEquals(TextMetrics.PAD_X.scalarPx(ctx, 0f) + Length.rem(0.1f).scalarPx(ctx, 0f),
                     f.node().layout().text().caretX(0) - f.node().layout().rect().x(), 0.5f);
         }
     }

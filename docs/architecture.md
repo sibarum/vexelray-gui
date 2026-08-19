@@ -92,6 +92,14 @@ Verified against the current libraries.
   publishes via `InputPublisher` — discrete edges (key/button/scroll/motion/focus) onto a lossless
   `Topic<InputEvent>` (`"tactroller.input"`), and pointer position onto a coalesced, versioned
   `State<PointerState>`. Render-thread polling; no background daemon.
+- **Multi-window input.** One `Tactroller` per OS window, each bridged to its own window's `Gui` (see §11's
+  popup seam: `GuiApp.requestPopup(..., onCreated, onClosed)` hands the app the new window's handle to attach
+  a backend, and a hook to release it). Beware the scope trap this feature exposes: several OS input channels
+  are **process-wide**, not per-window, so every backend receives every window's share of them. Tactroller
+  corrects that in two places — a process-scoped hub owns those channels and fans them out, and
+  `InputPublisher` gates delivery by event kind (keys/text by focus, wheel/pointer by cursor-in-client). The
+  GUI therefore needs no multi-window input logic of its own: each window's bus already carries only its own
+  events. See tactroller's README, "Channel scope", before adding an input channel.
 
 The split is clean: **VexelRay is pixels, Atchung is messages, Tactroller is input.** The GUI is the
 retained model, layout, dispatch, and motion that sit on top.

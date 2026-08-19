@@ -51,12 +51,14 @@ public final class FlexLayout {
         n.elevationPx = n.elevation().scalarPx(ctx, n.w);
         n.textSizePx = Math.max(1f, n.textSize().scalarPx(ctx, emBasis(ctx)));
         // The text insets and the em basis, resolved here so no later stage needs a LayoutContext to know them.
+        // The inset is the full box-model one — border + declared padding + (editable-only) caret gutter — so a
+        // text leaf insets its glyphs by the same accounting a container insets its children.
         n.emPx = emBasis(ctx);
-        n.textPadXPx = TextMetrics.resolvePadX(ctx, n.w);
-        n.textPadYPx = TextMetrics.PAD_Y.scalarPx(ctx, n.w);
+        n.textPadXPx = TextMetrics.resolveInsetX(ctx, n, n.w);
+        n.textPadYPx = TextMetrics.resolveInsetY(ctx, n, n.w);
         n.gutterPadPx = TextMetrics.GUTTER_PAD.scalarPx(ctx, n.w);
 
-        List<RetainedNode> kids = visibleChildren(n);
+        List<RetainedNode> kids = flowChildren(n);
         if (kids.isEmpty()) {
             if (n.kind == NodeKind.TEXT) {
                 layoutTextLeaf(n, ctx, tm);
@@ -70,6 +72,7 @@ public final class FlexLayout {
             n.viewH = n.h;
             n.contentW = 0f;
             n.contentH = 0f;
+            placeFloating(n, ctx, tm);   // a box whose only children float is empty *flow*, not empty
             return;
         }
 
@@ -137,6 +140,9 @@ public final class FlexLayout {
         if (overX || overY || n.scrollX != 0f || n.scrollY != 0f) {
             place(n, baseX - n.scrollX, baseY - n.scrollY, row ? viewW : viewH, row ? viewH : viewW, row, gap, ctx, tm);
         }
+
+        // Floating children last, against the settled frame — out of the flow above, on top of it on screen.
+        placeFloating(n, ctx, tm);
     }
 
     /**
@@ -146,7 +152,7 @@ public final class FlexLayout {
      */
     private static float[] place(RetainedNode n, float originX, float originY, float availMain, float availCross,
                                  boolean row, float gap, LayoutContext ctx, TextMeasurer tm) {
-        List<RetainedNode> kids = visibleChildren(n);
+        List<RetainedNode> kids = flowChildren(n);
         Axis main = row ? Axis.HORIZONTAL : Axis.VERTICAL;
         Axis cross = row ? Axis.VERTICAL : Axis.HORIZONTAL;
         int count = kids.size();
@@ -320,7 +326,7 @@ public final class FlexLayout {
         if (!n.lineNumbers()) {
             return 0f;
         }
-        float[] zero = tm.caretAdvances("0", px);
+        float[] zero = tm.caretAdvances(n.font(), "0", px);
         float digitW = zero != null && zero.length > 1 ? zero[1] : px * 0.6f;
         int digits = Integer.toString(Math.max(1, n.hardLineCount())).length();
         return digits * digitW + 2f * n.gutterPadPx;
@@ -337,9 +343,9 @@ public final class FlexLayout {
             n.lineSpans = null;
             return new float[]{0f, 1f};
         }
-        var spans = tm.lineSpans(s, n.wrapsText() ? textW : 0f, px);
+        var spans = tm.lineSpans(n.font(), s, n.wrapsText() ? textW : 0f, px);
         n.lineSpans = spans;   // the one break-up of this text; the compute phase reads it rather than redoing it
-        float[] adv = tm.caretAdvances(s, px);
+        float[] adv = tm.caretAdvances(n.font(), s, px);
         float widest = 0f;
         if (adv == null) {
             widest = Math.max(0f, tm.intrinsic(n, Axis.HORIZONTAL, px));   // no glyph metrics: whole-run estimate
@@ -352,30 +358,63 @@ public final class FlexLayout {
     }
 
     /**
-     * The children that take part in layout. A hidden child is not placed, not measured and not counted toward
-     * gaps or overflow -- it occupies no space at all, rather than occupying space invisibly.
+     * The children that take part in the flex flow. A hidden child is not placed, not measured and not counted
+     * toward gaps or overflow -- it occupies no space at all, rather than occupying space invisibly. A
+     * <b>floating</b> child is likewise out of the flow — it takes no space and adds no overflow — but unlike a
+     * hidden one it is very much laid out: {@link #placeFloating} sizes and positions it after the flow settles.
      *
-     * <p>Its rect is zeroed so nothing downstream reads last frame geometry for a node that is no longer shown;
-     * everything else about it survives untouched, which is the whole point of hiding rather than removing.
+     * <p>A hidden child's rect is zeroed so nothing downstream reads last frame geometry for a node that is no
+     * longer shown; everything else about it survives untouched, which is the whole point of hiding rather than
+     * removing.
      */
-    private static List<RetainedNode> visibleChildren(RetainedNode n) {
+    private static List<RetainedNode> flowChildren(RetainedNode n) {
         for (RetainedNode c : n.children) {
-            if (!c.visible()) {
+            if (!c.visible() || c.floating()) {
                 List<RetainedNode> shown = new java.util.ArrayList<>(n.children.size());
                 for (RetainedNode k : n.children) {
-                    if (k.visible()) {
-                        shown.add(k);
-                    } else {
+                    if (!k.visible()) {
                         k.x = 0f;
                         k.y = 0f;
                         k.w = 0f;
                         k.h = 0f;
+                    } else if (!k.floating()) {
+                        shown.add(k);
                     }
                 }
                 return shown;
             }
         }
         return n.children;   // the common case allocates nothing
+    }
+
+    /**
+     * Size and place {@code n}'s floating children, after the flow has settled. A floating child is sized to its
+     * own width/height props when fixed, otherwise to its intrinsic content (flex keywords have no distribution
+     * to draw from out of flow), capped at the parent; its offsets resolve against the parent's border box and
+     * are clamped so the whole node stays inside it — a menu opened near an edge slides in rather than cropping.
+     * Scroll deliberately does not move it: a floating node is anchored to the parent's frame, not its content.
+     */
+    private static void placeFloating(RetainedNode n, LayoutContext ctx, TextMeasurer tm) {
+        for (RetainedNode c : n.children) {
+            if (!c.visible() || !c.floating()) {
+                continue;
+            }
+            float w = c.width().resolve(ctx, n.w);
+            if (w < 0f) {
+                w = measure(c, Axis.HORIZONTAL, ctx, tm);
+            }
+            w = Math.min(Math.max(0f, w), n.w);
+            float h = c.height().resolve(ctx, n.h);
+            if (h < 0f) {
+                h = measure(c, Axis.VERTICAL, ctx, tm, w);
+            }
+            h = Math.min(Math.max(0f, h), n.h);
+            c.w = w;
+            c.h = h;
+            c.x = n.x + clamp(c.floatX().scalarPx(ctx, n.w), 0f, Math.max(0f, n.w - w));
+            c.y = n.y + clamp(c.floatY().scalarPx(ctx, n.h), 0f, Math.max(0f, n.h - h));
+            layoutBox(c, ctx, tm);
+        }
     }
 
     /** Scrollbar thickness in px — scales with the root em so it tracks zoom/DPI like everything else. */
@@ -411,12 +450,18 @@ public final class FlexLayout {
         float inset = n.borderWidth().scalarPx(ctx, 0f) + padAxis.scalarPx(ctx, 0f);
         if (n.kind == NodeKind.TEXT) {
             float textPx = Math.max(1f, n.textSize().scalarPx(ctx, emBasis(ctx)));
+            // An editable node adds its caret gutter, so an auto-sized field measures to a width its text
+            // actually fits in — the same invariant the label case gets from the inset being border+padding
+            // alone. (Unclamped: the narrow-node clamp needs the final width, and over-reporting by the clamped
+            // sliver is safe where under-reporting would re-open the wrap-inside-the-last-word bug.)
+            float gutter = !n.editable() ? 0f
+                    : (axis == Axis.HORIZONTAL ? TextMetrics.PAD_X : TextMetrics.PAD_Y).scalarPx(ctx, 0f);
             float size = axis == Axis.VERTICAL && knownWidth >= 0f
                     ? textBlockHeight(n, knownWidth, textPx, ctx, tm)
-                    : tm.intrinsic(n, axis, textPx);
+                    : tm.intrinsic(n, axis, textPx) + 2f * gutter;
             return Math.max(0f, size) + 2f * inset;
         }
-        List<RetainedNode> kids = visibleChildren(n);
+        List<RetainedNode> kids = flowChildren(n);
         if (kids.isEmpty()) {
             return 2f * inset;
         }
@@ -457,11 +502,13 @@ public final class FlexLayout {
         }
         // Measure runs before this node's own layoutBox, so the insets are resolved here from ctx rather than read
         // off the node — same Lengths, same numbers, just not yet stored.
-        float wrapWidth = n.wrapsText() ? TextMetrics.contentWidth(ctx, nodeW) : 0f;
-        int lineCount = Math.max(1, tm.lineSpans(s, wrapWidth, textPx).size());
-        // An editable field's text sits inside a vertical inset, so an auto-sized one must be tall enough for
-        // both; a label is the block itself (see TextMetrics.padY).
-        return lineCount * lineH + 2f * TextMetrics.resolvePadY(ctx, n);
+        float wrapWidth = n.wrapsText() ? TextMetrics.contentWidth(ctx, n, nodeW) : 0f;
+        int lineCount = Math.max(1, tm.lineSpans(n.font(), s, wrapWidth, textPx).size());
+        // An editable field's text sits inside a vertical caret gutter, so an auto-sized one must be tall enough
+        // for both; a label is the block itself. Border and declared padding are the caller's to add — this is
+        // content height only.
+        float gutterY = n.editable() ? TextMetrics.PAD_Y.scalarPx(ctx, nodeW) : 0f;
+        return lineCount * lineH + 2f * gutterY;
     }
 
     /**

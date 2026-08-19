@@ -21,9 +21,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *   <li><b>A multi-line editor scrolls vertically</b> when its lines exceed the visible height.</li>
  * </ul>
  *
- * <p>Geometry: an 80px-wide field at the origin with the {@value HeadlessGui#CELL}px monospace stub gives 60px of
- * text area (6 characters); {@code rem(2.5)} = 40px tall less the 6px vertical inset each side leaves 28px, so
- * 2 whole lines are visible out of however many exist.
+ * <p>Geometry: an 80px-wide field at the origin with the {@value HeadlessGui#CELL}px monospace stub gives
+ * {@code 80 − 2·FIELD_PAD_X} = 56.8px of text area (5 whole characters); {@code rem(2.5)} = 40px tall less the
+ * {@code FIELD_PAD_Y} = 7.6px vertical inset each side leaves 24.8px, so 2 whole lines are visible.
  */
 class TextScrollTest {
 
@@ -110,7 +110,7 @@ class TextScrollTest {
             NodeLayout L = f.node().layout();
             assertTrue(L.overflowY(), "5 lines do not fit in 28px");
             assertEquals(50f, L.contentH(), 0.5f, "the content extent is lineCount * lineHeight");
-            assertEquals(28f, L.viewH(), 0.5f, "against the text area's height");
+            assertEquals(40f - 2f * HeadlessGui.FIELD_PAD_Y, L.viewH(), 0.5f, "against the text area's height");
         }
     }
 

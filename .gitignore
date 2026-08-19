@@ -8,3 +8,5 @@ cp-*.txt
 gui.png
 gui-live.png
 gui-zoom-*.png
+win-main-*.png
+win-popup.png

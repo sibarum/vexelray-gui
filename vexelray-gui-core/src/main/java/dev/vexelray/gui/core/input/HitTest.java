@@ -15,6 +15,9 @@ public final class HitTest {
         if (root != null && !root.visible()) {
             return null;   // hidden nodes are not pointer targets, whatever geometry they still carry
         }
+        if (root != null && root.hitInert()) {
+            return null;   // pointer-transparent: drawn, but never under the pointer (subtree included)
+        }
         if (root == null || !contains(root, x, y)) {
             return null;
         }

@@ -89,7 +89,12 @@ public final class InputDispatcher {
     private final Pump pump;
     private final Subscription sub;
     private final Map<Long, Runnable> clickHandlers = new ConcurrentHashMap<>();
-    private final Map<Long, Consumer<InteractionState>> stateHandlers = new ConcurrentHashMap<>();
+    private final Map<Long, Consumer<ClickEvent>> contextHandlers = new ConcurrentHashMap<>();
+    // Interaction state has *observers*, plural: a widget restyling itself and a tooltip watching the same node
+    // are independent concerns, and neither should have to know the other exists. Every other handler map here
+    // replaces on re-registration; this one accumulates, because state is a fact about the node, not a command
+    // channel with a single owner.
+    private final Map<Long, java.util.List<Consumer<InteractionState>>> stateHandlers = new ConcurrentHashMap<>();
     private final Map<Long, Consumer<DragEvent>> dragHandlers = new ConcurrentHashMap<>();
     private final Map<Long, Consumer<KeyEvent>> keyHandlers = new ConcurrentHashMap<>();
     // Typed-text handlers (CharTyped → codepoint) and caret-placement handlers (click → offset), both for
@@ -150,6 +155,10 @@ public final class InputDispatcher {
 
     private RetainedNode currentRoot;
     private long pressTargetId = -1;
+    // The right button's own press/release pairing. It shares nothing with the left button's on purpose: a right
+    // press never focuses, never sets PRESSED, never captures a drag — it either becomes a context click (press
+    // and release on the same node) or it becomes nothing.
+    private long contextPressTargetId = -1;
     // Pointer capture for dragging: while a drag is active, MOVE events route to this node's handler regardless of
     // what's under the pointer, until the button is released.
     private RetainedNode dragCapture;
@@ -196,11 +205,22 @@ public final class InputDispatcher {
     }
 
     /**
-     * Register an interaction-state handler for {@code nodeId}, invoked whenever the node's {@link InteractionState}
-     * changes (NORMAL/HOVER/PRESSED). Replaces any prior handler for that node.
+     * Register a context-click (right-button) handler for {@code nodeId}; replaces any prior handler for that
+     * node. The handler receives the full {@link ClickEvent} — a context action almost always needs the pointer
+     * position (to anchor a menu), where a plain click almost never does.
+     */
+    public void onContextClick(long nodeId, Consumer<ClickEvent> handler) {
+        contextHandlers.put(nodeId, handler);
+    }
+
+    /**
+     * Register an interaction-state observer for {@code nodeId}, invoked whenever the node's
+     * {@link InteractionState} changes (NORMAL/HOVER/PRESSED). Observers accumulate — a restyle and a tooltip on
+     * the same node are independent concerns — and are all released together when the node leaves the tree.
      */
     public void onState(long nodeId, Consumer<InteractionState> handler) {
-        stateHandlers.put(nodeId, handler);
+        stateHandlers.computeIfAbsent(nodeId, id -> new java.util.concurrent.CopyOnWriteArrayList<>())
+                .add(handler);
     }
 
     /**
@@ -332,6 +352,7 @@ public final class InputDispatcher {
     /** Drop {@code nodeId}'s handlers and focusability (call when the node is removed). */
     public void clearHandlers(long nodeId) {
         clickHandlers.remove(nodeId);
+        contextHandlers.remove(nodeId);
         stateHandlers.remove(nodeId);
         dragHandlers.remove(nodeId);
         keyHandlers.remove(nodeId);
@@ -450,6 +471,24 @@ public final class InputDispatcher {
                 hoverHit = hit;
                 leftDown = false;
                 refreshStates();
+            }
+            case InputEvent.ButtonPressed b when b.button() == MouseButton.RIGHT -> {
+                // A right press pairs with its release and nothing more: no focus move, no PRESSED state, no drag
+                // capture. What a context click *does* — select the row under it, open a menu — belongs to the
+                // widget that receives it, not to the dispatcher.
+                pointerX = b.x();
+                pointerY = b.y();
+                RetainedNode hit = HitTest.at(currentRoot, b.x(), b.y());
+                contextPressTargetId = hit == null ? -1 : hit.id;
+            }
+            case InputEvent.ButtonReleased b when b.button() == MouseButton.RIGHT -> {
+                pointerX = b.x();
+                pointerY = b.y();
+                RetainedNode hit = HitTest.at(currentRoot, b.x(), b.y());
+                if (hit != null && hit.id == contextPressTargetId) {
+                    fireContextClick(hit, b.x(), b.y());
+                }
+                contextPressTargetId = -1;
             }
             case InputEvent.Scrolled s -> {
                 RetainedNode hit = HitTest.at(currentRoot, s.x(), s.y());
@@ -738,13 +777,15 @@ public final class InputDispatcher {
     private void dragScrollbar(float x, float y) {
         RetainedNode n = scrollDrag;
         if (scrollDragVertical) {
-            float travel = n.viewH - n.vThumbLen();
-            float frac = travel > 0f ? clamp((y - scrollDragGrab - n.viewY) / travel, 0f, 1f) : 0f;
+            float travel = n.vThumbTravel();
+            float frac = travel > 0f
+                    ? clamp((y - scrollDragGrab - n.viewY - n.thumbInsetPx()) / travel, 0f, 1f) : 0f;
             n.scrollY = frac * Math.max(0f, n.contentH - n.viewH);
             refreshScrollLock(n);
         } else {
-            float travel = n.viewW - n.hThumbLen();
-            float frac = travel > 0f ? clamp((x - scrollDragGrab - n.viewX) / travel, 0f, 1f) : 0f;
+            float travel = n.hThumbTravel();
+            float frac = travel > 0f
+                    ? clamp((x - scrollDragGrab - n.viewX - n.thumbInsetPx()) / travel, 0f, 1f) : 0f;
             n.scrollX = frac * Math.max(0f, n.contentW - n.viewW);
         }
         requestLayout.run();
@@ -784,9 +825,9 @@ public final class InputDispatcher {
                 : n.scrollY <= eps;
     }
 
-    /** Recompute each registered node's interaction state and fire the handler on any change. */
+    /** Recompute each observed node's interaction state and tell every observer on any change. */
     private void refreshStates() {
-        for (Map.Entry<Long, Consumer<InteractionState>> entry : stateHandlers.entrySet()) {
+        for (Map.Entry<Long, java.util.List<Consumer<InteractionState>>> entry : stateHandlers.entrySet()) {
             long id = entry.getKey();
             InteractionState now;
             if (leftDown && covers(id, pressHit) && covers(id, hoverHit)) {
@@ -800,7 +841,9 @@ public final class InputDispatcher {
             if (now != prev) {
                 reportedState.put(id, now);
                 InteractionState delivered = now;
-                handlerExecutor.execute(() -> entry.getValue().accept(delivered));
+                for (Consumer<InteractionState> observer : entry.getValue()) {
+                    handlerExecutor.execute(() -> observer.accept(delivered));
+                }
             }
         }
         updateCursor();
@@ -916,6 +959,19 @@ public final class InputDispatcher {
                 break; // consumed; bubbling stops at the first handler
             }
         }
-        bus.publish(clicks, new ClickEvent(target.id, x, y));
+        bus.publish(clicks, new ClickEvent(target.id, MouseButton.LEFT, x, y));
+    }
+
+    /** The right-button twin of {@link #fireClick}: bubble to the first context handler, then publish. */
+    private void fireContextClick(RetainedNode target, float x, float y) {
+        ClickEvent e = new ClickEvent(target.id, MouseButton.RIGHT, x, y);
+        for (RetainedNode n = target; n != null; n = n.parent) {
+            Consumer<ClickEvent> handler = contextHandlers.get(n.id);
+            if (handler != null) {
+                handlerExecutor.execute(() -> handler.accept(e));
+                break; // consumed; bubbling stops at the first handler
+            }
+        }
+        bus.publish(clicks, e);
     }
 }

@@ -94,14 +94,16 @@ public final class Tabs {
                 .corner(Length.rem(0.5f), Length.ZERO)   // tab silhouette: rounded shoulders, flat seat
                 .background(TAB_IDLE);
 
-        gui.onClick(header, () -> select(index));
+        // Handlers resolve the header to its index at event time, not add time: tabs can be removed, so a
+        // baked-in index would aim every surviving closure one tab off. The node's identity is the stable key.
+        gui.onClick(header, () -> select(headers.indexOf(header)));
         gui.focusable(header, true);
         // Arrow keys walk the bar while a header holds focus. A claim rather than a key handler, so it preempts
         // anything else bound to those chords for exactly as long as this header is focused.
-        gui.claim(header, Shortcut.of(Key.LEFT), ClaimScope.FOCUSED, () -> select(index - 1));
-        gui.claim(header, Shortcut.of(Key.RIGHT), ClaimScope.FOCUSED, () -> select(index + 1));
+        gui.claim(header, Shortcut.of(Key.LEFT), ClaimScope.FOCUSED, () -> select(headers.indexOf(header) - 1));
+        gui.claim(header, Shortcut.of(Key.RIGHT), ClaimScope.FOCUSED, () -> select(headers.indexOf(header) + 1));
         // Hover shading, except on the selected tab, which keeps its active colour.
-        gui.onState(header, state -> header.background(background(index, state)));
+        gui.onState(header, state -> header.background(background(headers.indexOf(header), state)));
 
         bar.append(header);
         pages.append(body.width(Length.FILL).height(Length.FILL).visible(false));
@@ -134,6 +136,37 @@ public final class Tabs {
         headers.get(next).background(TAB_ACTIVE).textColor(ACCENT).lit(true).elevation(Length.rem(0.25f));
         int delivered = next;
         gui.handlers().execute(() -> onSelect.accept(delivered));
+        return this;
+    }
+
+    /** Rename tab {@code index}'s header (e.g. an editor tab following a save-as). */
+    public Tabs title(int index, String title) {
+        if (index >= 0 && index < headers.size()) {
+            headers.get(index).text(title);
+        }
+        return this;
+    }
+
+    /**
+     * Remove tab {@code index}: header and body leave the tree via {@link Node#remove()} — the one real removal
+     * primitive. (Re-setting the parents' child lists with {@code children(...)} would be wrong twice over: that
+     * method only <em>appends</em>, and an insert of an already-parented node leaves it in both parents, so the
+     * survivors would render duplicated.) Removal releases every input registration in both subtrees, so the
+     * page's widgets come back dead, not dormant — the caller closes them, it cannot re-home them. Selection
+     * moves to the nearest surviving tab.
+     */
+    public Tabs remove(int index) {
+        if (index < 0 || index >= headers.size()) {
+            return this;
+        }
+        headers.remove(index).remove();
+        bodies.remove(index).remove();
+
+        int previous = selected;
+        selected = -1;   // force select() to restyle: surviving indices shifted under the old value
+        if (!headers.isEmpty()) {
+            select(Math.min(previous > index ? previous - 1 : previous, headers.size() - 1));
+        }
         return this;
     }
 

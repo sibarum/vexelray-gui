@@ -53,12 +53,12 @@ final class GuiWindow implements AutoCloseable {
     private final GraphicsPipeline pipeline;
     private final WindowedPresenter presenter;
     private final Canvas canvas;
-    private final TextLayout text;
+    private final TextLayout[] text;
     private final TextMeasurer measurer;
 
     /** Create a fresh OS window (popups). Must run on the main thread. */
     GuiWindow(NativePlatform platform, VulkanInstance instance, VulkanDevice device, AtlasTexture atlas,
-              TextLayout text, TextMeasurer measurer, Gui gui, WindowConfig config) {
+              TextLayout[] text, TextMeasurer measurer, Gui gui, WindowConfig config) {
         this(platform, instance, device, atlas, text, measurer, gui,
                 platform.createWindow(config), 0L);
     }
@@ -68,7 +68,7 @@ final class GuiWindow implements AutoCloseable {
      * selection needs its surface to prove present support). {@code existingSurface} of 0 creates one here.
      */
     GuiWindow(NativePlatform platform, VulkanInstance instance, VulkanDevice device, AtlasTexture atlas,
-              TextLayout text, TextMeasurer measurer, Gui gui, NativeWindow window, long existingSurface) {
+              TextLayout[] text, TextMeasurer measurer, Gui gui, NativeWindow window, long existingSurface) {
         this.instance = instance;
         this.gui = gui;
         this.text = text;

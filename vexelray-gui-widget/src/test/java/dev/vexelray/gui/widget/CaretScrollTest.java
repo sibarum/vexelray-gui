@@ -19,9 +19,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * resolved where the rest of the derived geometry is.
  *
  * <p>Geometry (monospace {@value HeadlessGui#CELL}px stub, 800px headless viewport): the field is {@code vw(10)} =
- * 80px wide at x=0, {@code pad = min(PAD_X, w*0.25) = 10}, so the text origin is x=10 and the visible band is
- * x∈[10,70]. Twenty characters measure 200px — far past the right edge — so the caret at the end is only reachable
- * with a resolved scroll of 140px.
+ * 80px wide at x=0 with the full field inset ({@code FIELD_PAD_X} = 11.6: border + caret gutter), so the text
+ * origin is x=11.6 and the visible band is 56.8px wide. Twenty characters measure 200px — far past the right
+ * edge — so the caret at the end is only reachable with a resolved scroll.
  */
 class CaretScrollTest {
 
@@ -93,7 +93,7 @@ class CaretScrollTest {
 
             assertTrue(h.gui.layoutSnapshot().version() > scrolled,
                     "a caret move republishes the read-model even though the flex layout is unchanged");
-            assertEquals(10f, f.node().layout().text().caretX(0), 0.5f,
+            assertEquals(HeadlessGui.FIELD_PAD_X, f.node().layout().text().caretX(0), 0.5f,
                     "the view scrolled back, so offset 0 sits at the text origin again");
         }
     }

@@ -15,16 +15,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * the published read-model, with no measurer or atlas at the call site and no seam added to core.
  *
  * <p>Geometry, with the monospace {@value HeadlessGui#CELL}px stub on an 800×600 headless viewport: the field is
- * {@code vw(10)} = 80px wide and {@code rem(5)} = 80px tall at the origin. {@code pad = min(PAD_X, w*0.25) = 10},
- * so text starts at x=10 and the visible width is 60px — exactly 6 characters. Lines are {@code CELL} = 10px
- * tall and the first tops out at {@code y = PAD_Y = 6}, so visual line <i>i</i> spans y ∈ [6+10i, 16+10i).
+ * {@code vw(10.5)} = 84px wide and {@code rem(5)} = 80px tall at the origin. The text inset is the box-model
+ * one — the field's {@code rem(0.1)} border plus the {@code PAD_X} caret gutter, {@code FIELD_PAD_X} = 11.6 —
+ * so text starts at x=11.6 and the visible width is 60.8px: 6 whole characters. Lines are {@code CELL} = 10px
+ * tall and the first tops out at {@code y = FIELD_PAD_Y = 7.6}, so visual line <i>i</i> spans 10px from there.
  */
 class MultilineTest {
 
     /** A focused multiline field, 6 characters wide and 6 lines tall, optionally wrapping. */
     private static TextField field(HeadlessGui h, boolean wrap) {
         TextField f = new TextField(h.gui, "").multiline(true).wordWrap(wrap);
-        f.node().width(Length.vw(10)).height(Length.rem(5));
+        f.node().width(Length.vw(10.5f)).height(Length.rem(5));
         h.gui.root().children(f.node());
         h.frame();
         h.focus(f.node());
@@ -33,7 +34,7 @@ class MultilineTest {
 
     /** Centre-of-line y for visual line {@code i}, for click tests. */
     private static float lineY(int i) {
-        return HeadlessGui.PAD_Y + i * HeadlessGui.CELL + HeadlessGui.CELL * 0.5f;
+        return HeadlessGui.FIELD_PAD_Y + i * HeadlessGui.CELL + HeadlessGui.CELL * 0.5f;
     }
 
     /**
@@ -171,7 +172,7 @@ class MultilineTest {
     /** A focused multiline field with a line-number gutter. */
     private static TextField numberedField(HeadlessGui h, boolean wrap) {
         TextField f = new TextField(h.gui, "").multiline(true).wordWrap(wrap).lineNumbers(true);
-        f.node().width(Length.vw(10)).height(Length.rem(5));
+        f.node().width(Length.vw(10.5f)).height(Length.rem(5));
         h.gui.root().children(f.node());
         h.frame();
         h.focus(f.node());
@@ -186,12 +187,13 @@ class MultilineTest {
     void theGutterNarrowsTheTextArea() {
         try (HeadlessGui h = new HeadlessGui()) {
             TextField plain = field(h, true);
-            assertEquals(60f, plain.node().layout().viewW(), 0.5f, "80px box, 10px padding either side");
+            assertEquals(60.8f, plain.node().layout().viewW(), 0.5f, "84px box, 11.6px inset either side");
 
             TextField numbered = numberedField(h, true);
             // One digit at CELL(10) wide, plus GUTTER_PAD(4) either side = 18px of gutter.
-            assertEquals(42f, numbered.node().layout().viewW(), 0.5f, "the gutter takes 18px of the 60");
-            assertEquals(28f, numbered.node().layout().content().x(), 0.5f, "and the text starts after it");
+            assertEquals(42.8f, numbered.node().layout().viewW(), 0.5f, "the gutter takes 18px of the 60.8");
+            assertEquals(HeadlessGui.FIELD_PAD_X + 18f, numbered.node().layout().content().x(), 0.5f,
+                    "and the text starts after it");
         }
     }
 
@@ -216,9 +218,10 @@ class MultilineTest {
             TextField f = numberedField(h, false);
             typeLines(h, "a", "b", "c", "d", "e", "f", "g", "h", "i", "j");   // 10 hard lines
 
-            // Two digits now: 2*10 + 8 = 28px of gutter, so the text starts at 10 (padding) + 28. Asserted on the
-            // text origin rather than viewW, which this tall a document also loses to a vertical scrollbar.
-            assertEquals(38f, f.node().layout().content().x(), 0.5f, "a two-digit gutter takes more room");
+            // Two digits now: 2*10 + 8 = 28px of gutter, so the text starts at the field inset + 28. Asserted on
+            // the text origin rather than viewW, which this tall a document also loses to a vertical scrollbar.
+            assertEquals(HeadlessGui.FIELD_PAD_X + 28f, f.node().layout().content().x(), 0.5f,
+                    "a two-digit gutter takes more room");
             assertEquals(10, f.node().layout().text().lines().get(9).number(), "and line 10 is numbered 10");
         }
     }
@@ -319,7 +322,7 @@ class MultilineTest {
             TextField f = field(h, false);
             typeLines(h, "long", "x", "long");
 
-            h.click(HeadlessGui.PAD_X, lineY(1));   // start of visual line 2
+            h.click(HeadlessGui.FIELD_PAD_X, lineY(1));   // start of visual line 2
             h.type("Z");
 
             assertEquals("long\nZx\nlong", f.text(), "the click lands on line 2, where the pointer was");
@@ -352,10 +355,15 @@ class MultilineTest {
     @Test
     void aWrappedLabelIsAsTallAsItsWrappedLineCount() {
         try (HeadlessGui h = new HeadlessGui()) {
-            // 80px wide => 60px of text => 6 monospace characters per line.
-            dev.vexelray.gui.core.Node oneLine = h.gui.text("abc").width(Length.vw(10));
-            dev.vexelray.gui.core.Node twoLines = h.gui.text("abcdefghij").width(Length.vw(10));
-            dev.vexelray.gui.core.Node fourLines = h.gui.text("abcdefghijklmnopqrstuvw").width(Length.vw(10));
+            // 80px wide with 10px of declared padding => 60px of text => 6 monospace characters per line. The
+            // padding is the prop — a bare label's text area is its whole box.
+            Length padH = Length.dp(10);
+            dev.vexelray.gui.core.Node oneLine = h.gui.text("abc")
+                    .width(Length.vw(10)).padding(Length.ZERO, padH);
+            dev.vexelray.gui.core.Node twoLines = h.gui.text("abcdefghij")
+                    .width(Length.vw(10)).padding(Length.ZERO, padH);
+            dev.vexelray.gui.core.Node fourLines = h.gui.text("abcdefghijklmnopqrstuvw")
+                    .width(Length.vw(10)).padding(Length.ZERO, padH);
             h.gui.root().children(oneLine, twoLines, fourLines);
             h.frame();
 

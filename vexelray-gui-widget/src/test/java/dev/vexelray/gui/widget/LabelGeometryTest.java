@@ -20,12 +20,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * height, so the geometry was true only for the one renderer that ignored it. That is checkable today, with no
  * second consumer present, which is exactly what makes it a condition rather than a someday-feature.
  *
- * <p>Geometry: 80px wide leaves 60px of text area at 10px padding, so six {@value HeadlessGui#CELL}px columns.
+ * <p>Geometry: 80px wide with 10px of <em>declared</em> horizontal padding leaves 60px of text area, so six
+ * {@value HeadlessGui#CELL}px columns. The padding is the prop, not an inherited inset: a bare label's text area
+ * is its whole box, and these tests also pin that a label's padding actually moves its glyphs.
  */
 class LabelGeometryTest {
 
     private static Node label(HeadlessGui h, String s, TextLayout.HAlign ha, TextLayout.VAlign va) {
-        Node n = h.gui.text(s).width(Length.vw(10)).align(ha, va);
+        Node n = h.gui.text(s).width(Length.vw(10)).padding(Length.ZERO, Length.dp(10)).align(ha, va);
         h.gui.root().children(n);
         h.frame();
         return n;
@@ -71,6 +73,7 @@ class LabelGeometryTest {
         try (HeadlessGui h = new HeadlessGui()) {
             // Two wrapped rows (20px of text) in a 60px-tall box: MIDDLE leaves 20px above.
             Node n = h.gui.text("abcdefgh").width(Length.vw(10)).height(Length.rem(3.75f))
+                    .padding(Length.ZERO, Length.dp(10))
                     .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
             h.gui.root().children(n);
             h.frame();

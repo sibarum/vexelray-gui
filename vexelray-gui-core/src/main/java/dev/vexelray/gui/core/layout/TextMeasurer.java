@@ -47,4 +47,21 @@ public interface TextMeasurer {
         int end = text == null ? 0 : text.length();
         return java.util.List.of(new dev.vexelray.text.TextLayout.LineSpan(0, end, true));
     }
+
+    // --- font-aware variants: {@code font} is the node's atlas face index (RetainedNode.font()). The defaults
+    // delegate to the face-less methods so single-font measurers (tests, stubs) keep working unchanged; a
+    // measurer over a multi-face atlas overrides these to measure with the face the node renders with.
+
+    default int offsetAt(int font, String text, float localX, float textSizePx) {
+        return offsetAt(text, localX, textSizePx);
+    }
+
+    default float[] caretAdvances(int font, String text, float textSizePx) {
+        return caretAdvances(text, textSizePx);
+    }
+
+    default java.util.List<dev.vexelray.text.TextLayout.LineSpan> lineSpans(int font, String text, float wrapWidth,
+                                                                            float textSizePx) {
+        return lineSpans(text, wrapWidth, textSizePx);
+    }
 }

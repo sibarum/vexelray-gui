@@ -12,6 +12,9 @@ import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.widget.Slider;
 import dev.vexelray.gui.widget.Tabs;
 import dev.vexelray.gui.widget.TextField;
+import dev.vexelray.gui.widget.ContextMenu;
+import dev.vexelray.gui.widget.Tooltip;
+import dev.vexelray.gui.widget.TreeView;
 import dev.vexelray.text.TextLayout;
 import sibarum.tactroller.api.BackendException;
 import sibarum.tactroller.api.CoordinateSpace;
@@ -276,9 +279,12 @@ public final class Demo {
 
     /** Build the dashboard with flex; return the handles the worker will mutate. */
     private static Refs buildUi(Gui gui) {
+        // The horizontal padding is declared: a label's text area is its whole box (the phantom text inset is
+        // editable-only now), so a left-aligned label that wants a margin says so.
         Node header = gui.text("VexelRay GUI")
                 .width(Length.FILL).height(Length.rem(4)).background(PANEL).textSize(Length.rem(1.75f)).textColor(INK)
                 .lit(true).elevation(Length.rem(0.5f))
+                .padding(Length.ZERO, Length.em(0.625f))
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
 
         // Tail the log: pinned to the bottom as the worker appends lines, until the user scrolls up (§8.5).
@@ -318,8 +324,58 @@ public final class Demo {
                         + "the editor, come back here, go back, and the caret is where you left it.")
                 .textSize(Length.rem(1)).textColor(DIM)
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.TOP);
+        // A tree explorer over the real filesystem: hasChildren answers from the directory bit without listing,
+        // and children() runs its directory listing on the handler executor the first time a folder opens — the
+        // ordered input stages never touch the disk. Collapse hides the subtree; re-opening it is free.
+        TreeView<java.nio.file.Path> files = new TreeView<>(gui, new TreeView.Source<>() {
+            @Override
+            public java.util.List<java.nio.file.Path> roots() {
+                return java.util.List.of(java.nio.file.Path.of(".").toAbsolutePath().normalize());
+            }
+
+            @Override
+            public String label(java.nio.file.Path p) {
+                java.nio.file.Path name = p.getFileName();
+                return name == null ? p.toString() : name.toString();
+            }
+
+            @Override
+            public boolean hasChildren(java.nio.file.Path p) {
+                return java.nio.file.Files.isDirectory(p);
+            }
+
+            @Override
+            public java.util.List<java.nio.file.Path> children(java.nio.file.Path p) {
+                try (var kids = java.nio.file.Files.list(p)) {
+                    return kids.sorted(java.util.Comparator
+                                    .comparing((java.nio.file.Path k) -> !java.nio.file.Files.isDirectory(k))
+                                    .thenComparing(k -> k.getFileName().toString().toLowerCase()))
+                            .toList();
+                } catch (java.io.IOException e) {
+                    return java.util.List.of();   // an unreadable directory shows as empty, not as a crash
+                }
+            }
+        });
+        files.node().width(Length.FILL).height(Length.FILL);
+
+        // A context menu on the tree: right-click a row and it opens at the pointer, floating over the page (a
+        // floating last child of the root — no layer machinery, no reflow). Esc or a click elsewhere dismisses.
+        var contextTarget = new java.util.concurrent.atomic.AtomicReference<java.nio.file.Path>();
+        ContextMenu fileMenu = new ContextMenu(gui)
+                .item("Open", () -> log.append(gui.text("open: " + contextTarget.get())
+                        .textSize(Length.rem(1)).textColor(INK)))
+                .item("Copy path", () -> gui.clipboard().set(String.valueOf(contextTarget.get())))
+                .separator()
+                .item("Properties", () -> log.append(gui.text("properties: " + contextTarget.get())
+                        .textSize(Length.rem(1)).textColor(DIM)));
+        files.onContext((path, e) -> {
+            contextTarget.set(path);
+            fileMenu.show(e.x(), e.y());
+        });
+
         Tabs tabs = new Tabs(gui);
         tabs.add("Editor", notes.node());
+        tabs.add("Files", files.node());
         tabs.add("About", about);
 
         // Cards float: a lit fill (top-left edge light + faint vertical gradient) over a soft analytic shadow.
@@ -432,6 +488,14 @@ public final class Demo {
         Node footer = gui.text("flex layout: rows/columns, padding/margin/border, border-box, relative units")
                 .width(Length.FILL).height(Length.rem(2.25f)).textSize(Length.rem(0.9375f)).textColor(DIM)
                 .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE);
+
+        // Tooltips: hover a control and a hit-inert bubble appears below it — drawn over the page, invisible to
+        // the pointer, so nothing about the hover target changes. It coexists with each button's own hover
+        // restyle because interaction-state observers accumulate.
+        new Tooltip(gui)
+                .attach(getStarted, "Append a line to the live log")
+                .attach(popupButton, "Open a true OS popup window")
+                .attach(wrapToggle, "Toggle word wrap in the editor");
 
         gui.root().background(BG).children(header, body, controls, fieldRow, footer);
         return new Refs(header, log, popupButton);

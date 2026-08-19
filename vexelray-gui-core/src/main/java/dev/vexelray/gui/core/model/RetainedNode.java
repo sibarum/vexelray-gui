@@ -42,7 +42,8 @@ public final class RetainedNode {
     public float cornerBottomPx;
     public float elevationPx;
     public float textSizePx = 16f;
-    // Text insets and the em basis, resolved from Lengths by the layout pass (TextMetrics.PAD_X/PAD_Y/GUTTER_PAD).
+    // Text insets and the em basis, resolved by the layout pass. The insets are the full box-model ones —
+    // border + declared padding + (editable-only) PAD_X/PAD_Y caret gutter (TextMetrics.resolveInsetX/Y).
     // Stored here for the same reason border and corner are: every later stage — the compute phase, the renderer,
     // input dispatch — needs the identical number and none of them has a LayoutContext to resolve it from.
     public float textPadXPx;
@@ -175,6 +176,12 @@ public final class RetainedNode {
         return Boolean.TRUE.equals(props.get(PropKey.EDITABLE));
     }
 
+    /** Atlas face index this node's text renders and measures with (0 = primary/UI font). */
+    public int font() {
+        Object v = props.get(PropKey.FONT);
+        return v instanceof Integer i ? i : 0;
+    }
+
     /** Whether this text node holds multiple lines (Enter inserts '\n'; the node scrolls vertically). */
     public boolean multiline() {
         return Boolean.TRUE.equals(props.get(PropKey.MULTILINE));
@@ -291,6 +298,26 @@ public final class RetainedNode {
         return len(PropKey.MARGIN, Length.ZERO);
     }
 
+    /** Whether this node (and its subtree) is pointer-transparent (see {@link PropKey#HIT_INERT}). */
+    public boolean hitInert() {
+        return Boolean.TRUE.equals(props.get(PropKey.HIT_INERT));
+    }
+
+    /** Whether this node floats out of its parent's flow (see {@link PropKey#FLOAT_X}). */
+    public boolean floating() {
+        return props.get(PropKey.FLOAT_X) instanceof Length && props.get(PropKey.FLOAT_Y) instanceof Length;
+    }
+
+    /** The floating x offset from the parent's border-box origin (only meaningful when {@link #floating()}). */
+    public Length floatX() {
+        return len(PropKey.FLOAT_X, Length.ZERO);
+    }
+
+    /** The floating y offset from the parent's border-box origin (only meaningful when {@link #floating()}). */
+    public Length floatY() {
+        return len(PropKey.FLOAT_Y, Length.ZERO);
+    }
+
     public Length gap() {
         return len(PropKey.GAP, Length.ZERO);
     }
@@ -335,31 +362,56 @@ public final class RetainedNode {
 
     // --- scrollbar thumb geometry (shared by the renderer and input dispatch so grab-testing matches drawing) ---
 
+    /**
+     * Inset of the thumb from the ends of its rail, matching the 0.2·scrollbar side inset — so the pill sits
+     * inside the track's border at the extremes instead of overlapping it. Shared by the rects below and the
+     * dispatcher's drag math, which must agree on the travel range.
+     */
+    public float thumbInsetPx() {
+        return scrollbarPx * 0.2f;
+    }
+
     /** Vertical thumb length in px (proportional to the visible fraction, floored so it stays grabbable). */
     public float vThumbLen() {
-        return contentH <= 0f ? 0f : Math.max(scrollbarPx * 2f, viewH * (viewH / contentH));
+        if (contentH <= 0f) {
+            return 0f;
+        }
+        float available = Math.max(0f, viewH - 2f * thumbInsetPx());
+        return Math.min(available, Math.max(scrollbarPx * 2f, viewH * (viewH / contentH)));
     }
 
     /** Horizontal thumb length in px. */
     public float hThumbLen() {
-        return contentW <= 0f ? 0f : Math.max(scrollbarPx * 2f, viewW * (viewW / contentW));
+        if (contentW <= 0f) {
+            return 0f;
+        }
+        float available = Math.max(0f, viewW - 2f * thumbInsetPx());
+        return Math.min(available, Math.max(scrollbarPx * 2f, viewW * (viewW / contentW)));
+    }
+
+    /** Vertical thumb travel in px — the y range the thumb's top moves through as scrollY spans its range. */
+    public float vThumbTravel() {
+        return Math.max(0f, viewH - 2f * thumbInsetPx() - vThumbLen());
+    }
+
+    /** Horizontal thumb travel in px. */
+    public float hThumbTravel() {
+        return Math.max(0f, viewW - 2f * thumbInsetPx() - hThumbLen());
     }
 
     /** Vertical thumb rect {x, y, w, h} in the right-hand reserved strip. */
     public float[] vThumbRect() {
-        float len = vThumbLen();
         float max = Math.max(0f, contentH - viewH);
         float frac = max > 0f ? scrollY / max : 0f;
-        float y = viewY + frac * (viewH - len);
-        return new float[]{viewX + viewW + scrollbarPx * 0.2f, y, scrollbarPx * 0.6f, len};
+        float y = viewY + thumbInsetPx() + frac * vThumbTravel();
+        return new float[]{viewX + viewW + scrollbarPx * 0.2f, y, scrollbarPx * 0.6f, vThumbLen()};
     }
 
     /** Horizontal thumb rect {x, y, w, h} in the bottom reserved strip. */
     public float[] hThumbRect() {
-        float len = hThumbLen();
         float max = Math.max(0f, contentW - viewW);
         float frac = max > 0f ? scrollX / max : 0f;
-        float x = viewX + frac * (viewW - len);
-        return new float[]{x, viewY + viewH + scrollbarPx * 0.2f, len, scrollbarPx * 0.6f};
+        float x = viewX + thumbInsetPx() + frac * hThumbTravel();
+        return new float[]{x, viewY + viewH + scrollbarPx * 0.2f, hThumbLen(), scrollbarPx * 0.6f};
     }
 }

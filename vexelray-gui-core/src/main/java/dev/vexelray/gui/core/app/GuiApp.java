@@ -52,17 +52,21 @@ public final class GuiApp implements AutoCloseable {
     private final VulkanInstance instance;
     private final VulkanDevice device;
     private final AtlasTexture atlas;
-    private final TextLayout text;
+    private final TextLayout[] text;
     private final TextMeasurer measurer;
 
     // The main window, plus any open popups. All of them live on the main thread and are pumped/presented by the
     // one loop in run(); a popup closing removes only its own bundle, the main window closing ends the loop.
     private final GuiWindow main;
-    private final List<GuiWindow> popups = new ArrayList<>();
+    private final List<PopupEntry> popups = new ArrayList<>();
     private final java.util.concurrent.ConcurrentLinkedQueue<PopupRequest> popupRequests =
             new java.util.concurrent.ConcurrentLinkedQueue<>();
 
-    private record PopupRequest(String title, int width, int height, Gui gui) {
+    private record PopupRequest(String title, int width, int height, Gui gui,
+                                java.util.function.LongConsumer onCreated, Runnable onClosed) {
+    }
+
+    private record PopupEntry(GuiWindow window, Runnable onClosed) {
     }
 
     public GuiApp(String title, int width, int height) {
@@ -82,7 +86,7 @@ public final class GuiApp implements AutoCloseable {
         int[] atlasSize = new int[2];
         byte[] atlasRgba = loadAtlasRgba(atlasSize);
         this.atlas = new AtlasTexture(device, atlasSize[0], atlasSize[1], atlasRgba);
-        this.text = new TextLayout(AtlasData.loadFromResource(ATLAS_JSON));
+        this.text = faces(AtlasData.loadFromResource(ATLAS_JSON));
         this.measurer = measurer(text);
 
         this.main = new GuiWindow(platform, instance, device, atlas, text, measurer, null,
@@ -106,7 +110,18 @@ public final class GuiApp implements AutoCloseable {
      * window today) and programmatic close/parenting (always-on-top, modal) are follow-ups.
      */
     public void requestPopup(String title, int width, int height, Gui popupGui) {
-        popupRequests.add(new PopupRequest(title, width, height, popupGui));
+        requestPopup(title, width, height, popupGui, h -> { }, () -> { });
+    }
+
+    /**
+     * As {@link #requestPopup(String, int, int, Gui)}, with the two seams a popup with real input needs:
+     * {@code onCreated} receives the new window's OS handle on the main thread once the window exists (attach a
+     * per-window input backend to it there), and {@code onClosed} runs on the main thread after the window is
+     * torn down (release that backend there). Both windows then pump on the one loop — two OS windows, one GUI.
+     */
+    public void requestPopup(String title, int width, int height, Gui popupGui,
+                             java.util.function.LongConsumer onCreated, Runnable onClosed) {
+        popupRequests.add(new PopupRequest(title, width, height, popupGui, onCreated, onClosed));
     }
 
     /** Drive {@code gui} until the window closes (or {@code maxFrames} presented if positive). */
@@ -131,22 +146,26 @@ public final class GuiApp implements AutoCloseable {
         while (open && (maxFrames <= 0 || frame < maxFrames)) {
             open = main.frame(beforeFrame);
             for (PopupRequest r; (r = popupRequests.poll()) != null; ) {
-                popups.add(new GuiWindow(platform, instance, device, atlas, text, measurer, r.gui(),
-                        new WindowConfig(r.title(), r.width(), r.height(), true)));
+                GuiWindow w = new GuiWindow(platform, instance, device, atlas, text, measurer, r.gui(),
+                        new WindowConfig(r.title(), r.width(), r.height(), true));
+                popups.add(new PopupEntry(w, r.onClosed()));
+                r.onCreated().accept(w.osHandle());
             }
             popups.removeIf(p -> {
-                if (p.frame(() -> { })) {
+                if (p.window().frame(() -> { })) {
                     return false;
                 }
-                p.close();   // the popup's own resources only; the device and loop keep running
+                p.window().close();   // the popup's own resources only; the device and loop keep running
+                p.onClosed().run();
                 return true;
             });
             frame++;
         }
         device.waitIdle();
         // Main window gone (or frame cap hit): the popups' loop is gone with it, so close them too.
-        for (GuiWindow p : popups) {
-            p.close();
+        for (PopupEntry p : popups) {
+            p.window().close();
+            p.onClosed().run();
         }
         popups.clear();
     }
@@ -158,8 +177,9 @@ public final class GuiApp implements AutoCloseable {
     @Override
     public void close() {
         device.waitIdle();
-        for (GuiWindow p : popups) {
-            p.close();
+        for (PopupEntry p : popups) {
+            p.window().close();
+            p.onClosed().run();
         }
         popups.clear();
         main.close();
@@ -170,12 +190,21 @@ public final class GuiApp implements AutoCloseable {
 
     // --- headless capture ---
 
+    /** One {@link TextLayout} per face the atlas carries — index-aligned with {@code RetainedNode.font()}. */
+    private static TextLayout[] faces(AtlasData data) {
+        TextLayout[] faces = new TextLayout[data.faceCount()];
+        for (int i = 0; i < faces.length; i++) {
+            faces[i] = new TextLayout(data.face(i));
+        }
+        return faces;
+    }
+
     /** Reconcile + lay out {@code gui} at {@code width}×{@code height}, render one frame, and write a PNG. */
     public static void capture(Gui gui, int width, int height, float bgR, float bgG, float bgB, String path)
             throws IOException {
         int[] atlasSize = new int[2];
         byte[] atlasRgba = loadAtlasRgba(atlasSize);
-        TextLayout text = new TextLayout(AtlasData.loadFromResource(ATLAS_JSON));
+        TextLayout[] text = faces(AtlasData.loadFromResource(ATLAS_JSON));
         RetainedNode root = gui.frame(width, height, measurer(text));
         Canvas canvas = new Canvas(width, height);
         canvas.begin();
@@ -223,12 +252,24 @@ public final class GuiApp implements AutoCloseable {
                 : NativeWindow.Cursor.ARROW;
     }
 
-    /** Text intrinsic sizing over VexelRay's glyph layout: width = measured advance, height = line height. */
-    private static TextMeasurer measurer(TextLayout text) {
-        GlyphLayout gl = text.glyphLayout();
+    /**
+     * Text intrinsic sizing over VexelRay's glyph layout: width = measured advance, height = line height.
+     * Measures with the face the node renders with ({@code RetainedNode.font()}); the face-less methods keep
+     * working against face 0, and out-of-range face indices degrade to face 0 the same way rendering does.
+     */
+    private static TextMeasurer measurer(TextLayout[] faces) {
         return new TextMeasurer() {
+            private TextLayout tl(int font) {
+                return faces[font <= 0 ? 0 : Math.min(font, faces.length - 1)];
+            }
+
+            private GlyphLayout gl(int font) {
+                return tl(font).glyphLayout();
+            }
+
             @Override
             public float intrinsic(RetainedNode node, Axis axis, float textSizePx) {
+                GlyphLayout gl = gl(node.font());
                 String s = node.textString() == null ? "" : node.textString();
                 return axis == Axis.HORIZONTAL
                         ? gl.measure(s, textSizePx)
@@ -237,9 +278,15 @@ public final class GuiApp implements AutoCloseable {
 
             @Override
             public int offsetAt(String s, float localX, float textSizePx) {
+                return offsetAt(0, s, localX, textSizePx);
+            }
+
+            @Override
+            public int offsetAt(int font, String s, float localX, float textSizePx) {
                 if (s == null || s.isEmpty() || localX <= 0f) {
                     return 0;
                 }
+                GlyphLayout gl = gl(font);
                 // Walk character boundaries, returning the offset whose caret-x is nearest localX. O(n^2) over the
                 // prefix measures, but a single line is short; a prefix-advance scan is a later optimisation.
                 float prev = 0f;
@@ -255,17 +302,28 @@ public final class GuiApp implements AutoCloseable {
 
             @Override
             public List<TextLayout.LineSpan> lineSpans(String s, float wrapWidth, float textSizePx) {
+                return lineSpans(0, s, wrapWidth, textSizePx);
+            }
+
+            @Override
+            public List<TextLayout.LineSpan> lineSpans(int font, String s, float wrapWidth, float textSizePx) {
                 // The engine already owns offset-aware line breaking; wrapWidth <= 0 disables wrapping there,
                 // so a single-line field falls through to "split on '\n' only".
-                return text.breakLineSpans(s == null ? "" : s, textSizePx, wrapWidth,
+                return tl(font).breakLineSpans(s == null ? "" : s, textSizePx, wrapWidth,
                         TextLayout.WrapMode.WORD_CHAR);
             }
 
             @Override
             public float[] caretAdvances(String s, float textSizePx) {
+                return caretAdvances(0, s, textSizePx);
+            }
+
+            @Override
+            public float[] caretAdvances(int font, String s, float textSizePx) {
                 if (s == null) {
                     return new float[] {0f};
                 }
+                GlyphLayout gl = gl(font);
                 // Cumulative advance at each character boundary (xs[0] = 0). Uses the glyph layout's per-codepoint
                 // advance so this is O(n), not O(n^2).
                 float[] xs = new float[s.length() + 1];

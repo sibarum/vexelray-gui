@@ -36,6 +36,7 @@ public enum PropKey {
     SPANS(false),        // formatting spans (List<Span>): fg/bg/underline over character ranges
     // Multiline (§11): both change how the text breaks into visual lines, so both reflow.
     MULTILINE(true),     // Enter inserts '\n' instead of submitting; the field scrolls vertically
+    FONT(true),          // atlas face index (Integer): 0 = primary/UI, 1+ = extra faces (e.g. monospace)
     WORD_WRAP(true),     // wrap long lines at the content width instead of scrolling horizontally
     LINE_NUMBERS(true),  // a gutter of hard-line numbers, which narrows the text area and so reflows the wrap
     // Layout (border-box: border + padding inset the content, so border width is layout-affecting)
@@ -55,6 +56,24 @@ public enum PropKey {
     SCROLL_Y(true),
     // Scroll-edge lock (LayoutEnums.ScrollLock): pins the offset to top/bottom while attached (log tailing).
     SCROLL_LOCK(true),
+    /**
+     * Out-of-flow placement (both Lengths, or absent for a normal in-flow child). A floating node does not take
+     * part in its parent's flex distribution, measurement or overflow — it is sized to its own props/content and
+     * placed at these offsets from the parent's border-box origin, clamped so it stays inside the parent. It is
+     * still an ordinary child for painting and hit-testing, and children paint in order, so a floating node
+     * appended last draws on top of and is hit before its siblings: that is the framework's overlay primitive
+     * (context menus, tooltips, toasts), with no second tree and no z-order bookkeeping.
+     */
+    FLOAT_X(true),
+    FLOAT_Y(true),
+    /**
+     * Pointer transparency: a hit-inert node (and its whole subtree) is never a pointer target — hit-testing
+     * passes straight through it to whatever lies beneath. This is what lets an overlay be informational rather
+     * than interactive: a tooltip floats over a button without ever becoming the thing under the pointer, so
+     * hovering it changes nothing (the rule that chrome must never alter the pointer target on hover). Purely a
+     * dispatch fact — the node still lays out and draws exactly as before.
+     */
+    HIT_INERT(false),
     /**
      * Whether the node and its subtree take part at all. A hidden node is skipped by layout, by the renderer and
      * by hit-testing, but keeps its identity and everything attached to it -- handlers, claims, focusability,

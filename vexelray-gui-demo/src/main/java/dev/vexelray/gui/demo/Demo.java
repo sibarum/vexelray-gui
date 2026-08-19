@@ -100,6 +100,12 @@ public final class Demo {
              GuiApp app = new GuiApp("VexelRay GUI", W, H);
              Clipboard clipboard = openClipboard(gui)) {
             attachInput(input, gui, app);
+            // The popup vertical: a click handler (worker thread) *requests* a window; the main thread creates it
+            // at the top of the next frame and folds it into the one loop every window shares.
+            gui.onClick(refs.popupButton(), () -> app.requestPopup("VexelRay popup", 420, 280, popupGui()));
+            if (maxFrames > 0) {
+                app.requestPopup("VexelRay popup", 420, 280, popupGui());   // frames-capped runs exercise it
+            }
             TactrollerInputBridge bridge = input == null ? null : bridgeFor(input, gui);
             app.run(gui, maxFrames, () -> pump(bridge));
         }
@@ -242,7 +248,30 @@ public final class Demo {
         }
     }
 
-    private record Refs(Node header, Node log) {
+    private record Refs(Node header, Node log, Node popupButton) {
+    }
+
+    /**
+     * A self-contained {@link Gui} for a popup window: its own tree, laid out against the popup's own viewport.
+     * The handles are as thread-safe as any other, so a worker could mutate this tree live, exactly like the main
+     * window's.
+     */
+    private static Gui popupGui() {
+        Gui p = new Gui();
+        Node card = p.column().width(Length.FILL).height(Length.FILL)
+                .background(PANEL).corner(Length.rem(1)).border(Length.rem(0.1f), LINE)
+                .lit(true).elevation(Length.rem(1.25f))
+                .padding(Length.dp(16)).gap(Length.rem(0.5f))
+                .children(
+                        p.text("A true OS window").height(Length.rem(2)).textSize(Length.rem(1.375f))
+                                .textColor(ACCENT),
+                        p.text("Created on the main thread, presented by the same frame loop as the main "
+                                        + "window, drawn by the same shared device and SDF pipeline. Close it "
+                                        + "with the title-bar button; the app keeps running.")
+                                .textSize(Length.rem(1)).textColor(DIM)
+                                .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.TOP));
+        p.root().background(BG).padding(Length.dp(16)).children(card);
+        return p;
     }
 
     /** Build the dashboard with flex; return the handles the worker will mutate. */
@@ -386,10 +415,11 @@ public final class Demo {
         // Per-axis padding: small vertically so 44px buttons fit a 64px bar, but full horizontally (dp(24)) so the
         // first button aligns with the cards. left edge (body padding is also dp(24)). These are dp rather than
         // rem because they are frame, not content: zoom should grow what you are reading, not the gutter round it.
+        Node popupButton = button(gui, "Popup", DIM, PANEL, PANEL_HOVER, PANEL_PRESSED, true);
         Node controls = gui.row().width(Length.FILL).height(Length.rem(4)).padding(Length.dp(8), Length.dp(24))
                 .gap(Length.rem(0.75f)).justify(Justify.START).alignItems(AlignItems.CENTER)
                 .children(getStarted, button(gui, "Docs", DIM, PANEL, PANEL_HOVER, PANEL_PRESSED, true),
-                        wrapToggle, slider.node(), valueLabel);
+                        wrapToggle, popupButton, slider.node(), valueLabel);
 
         Node fieldRow = gui.row().width(Length.FILL).height(Length.rem(3.25f))
                 .padding(Length.dp(6), Length.dp(24)).gap(Length.rem(0.75f))
@@ -404,7 +434,7 @@ public final class Demo {
                 .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE);
 
         gui.root().background(BG).children(header, body, controls, fieldRow, footer);
-        return new Refs(header, log);
+        return new Refs(header, log, popupButton);
     }
 
     /** A fixed-size labelled button that lightens on hover and darkens while pressed. */

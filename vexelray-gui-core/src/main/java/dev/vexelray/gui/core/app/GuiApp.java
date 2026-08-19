@@ -46,52 +46,67 @@ public final class GuiApp implements AutoCloseable {
 
     private static final String ATLAS_JSON = "/dev/vexelray/text/atlas/primary.json";
     private static final String ATLAS_PNG = "/dev/vexelray/text/atlas/primary.png";
-    private static final int CAPACITY_FLOATS = 512 * 1024;
 
-    private final NativeWindow window;
+    // Shared engine context — one GPU bring-up serves every window.
+    private final NativePlatform platform;
     private final VulkanInstance instance;
-    private final long surface;
     private final VulkanDevice device;
-    private final VulkanSwapchain swapchain;
-    private final VulkanRenderPass renderPass;
     private final AtlasTexture atlas;
-    private final VertexBuffer vertexBuffer;
-    private final GraphicsPipeline pipeline;
-    private final WindowedPresenter presenter;
-    private final Canvas canvas;
     private final TextLayout text;
     private final TextMeasurer measurer;
 
+    // The main window, plus any open popups. All of them live on the main thread and are pumped/presented by the
+    // one loop in run(); a popup closing removes only its own bundle, the main window closing ends the loop.
+    private final GuiWindow main;
+    private final List<GuiWindow> popups = new ArrayList<>();
+    private final java.util.concurrent.ConcurrentLinkedQueue<PopupRequest> popupRequests =
+            new java.util.concurrent.ConcurrentLinkedQueue<>();
+
+    private record PopupRequest(String title, int width, int height, Gui gui) {
+    }
+
     public GuiApp(String title, int width, int height) {
-        NativePlatform platform = NativePlatform.current();
-        this.window = platform.createWindow(new WindowConfig(title, width, height, true));
+        this.platform = NativePlatform.current();
         this.instance = new VulkanInstance(title, platform.requiredVulkanInstanceExtensions());
-        this.surface = window.createVulkanSurface(instance.handleAddress(), VkLoader.getInstanceProcAddrPointer());
-        VulkanInstance.DeviceSelection selection = instance.selectGraphicsPresentDevice(surface)
+
+        // Device selection needs a surface to prove present support, so the main window is created first and its
+        // surface probed; popups then reuse the same device (scaffold caveat: same-queue present support for
+        // sibling surfaces holds on every real platform, but is asserted per-surface only for this first one).
+        NativeWindow probe = platform.createWindow(new WindowConfig(title, width, height, true));
+        long probeSurface = probe.createVulkanSurface(instance.handleAddress(),
+                VkLoader.getInstanceProcAddrPointer());
+        VulkanInstance.DeviceSelection selection = instance.selectGraphicsPresentDevice(probeSurface)
                 .orElseThrow(() -> new IllegalStateException("no graphics+present device"));
         this.device = new VulkanDevice(instance.handle(), selection);
-        this.swapchain = new VulkanSwapchain(instance.handle(), device, surface, window.width(), window.height());
-        this.renderPass = new VulkanRenderPass(device, swapchain.format(), Vk.IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
         int[] atlasSize = new int[2];
         byte[] atlasRgba = loadAtlasRgba(atlasSize);
         this.atlas = new AtlasTexture(device, atlasSize[0], atlasSize[1], atlasRgba);
         this.text = new TextLayout(AtlasData.loadFromResource(ATLAS_JSON));
         this.measurer = measurer(text);
-        this.canvas = new Canvas(swapchain.width(), swapchain.height());
-        this.vertexBuffer = new VertexBuffer(device, CAPACITY_FLOATS);
 
-        ComposedShader vs = CanvasShader.vertex();
-        ComposedShader fs = CanvasShader.fragment();
-        this.pipeline = new GraphicsPipeline(device, renderPass.handle(), swapchain.width(), swapchain.height(),
-                vs.spirv(), "main", fs.spirv(), "main", canvasConfig(atlas, true)); // dynamic viewport: resizable
-        this.presenter = new WindowedPresenter(device, swapchain, renderPass.handle(), pipeline, window);
+        this.main = new GuiWindow(platform, instance, device, atlas, text, measurer, null,
+                probe, probeSurface);
     }
 
     /** The OS window handle (an {@code HWND} on Windows) — used to attach input (tactroller) for client-space
      *  coordinates and focus gating at the application edge. */
     public long windowHandle() {
-        return window.osHandle();
+        return main.osHandle();
+    }
+
+    /**
+     * Request an OS-level popup window showing {@code popupGui}'s tree. <b>Callable from any thread</b> — this
+     * only enqueues; the main thread creates the actual window at the top of its next frame, which is the portable
+     * contract (macOS requires window creation and event pumping on the main thread; Win32 binds a window to its
+     * creating thread). The popup joins the existing frame loop — it never gets a loop or thread of its own — and
+     * closes via its OS close button, releasing only its own resources.
+     *
+     * <p>Scaffold: the popup renders, resizes, and closes; routing <i>input</i> to it (tactroller attaches to one
+     * window today) and programmatic close/parenting (always-on-top, modal) are follow-ups.
+     */
+    public void requestPopup(String title, int width, int height, Gui popupGui) {
+        popupRequests.add(new PopupRequest(title, width, height, popupGui));
     }
 
     /** Drive {@code gui} until the window closes (or {@code maxFrames} presented if positive). */
@@ -102,28 +117,38 @@ public final class GuiApp implements AutoCloseable {
     /**
      * Drive {@code gui}, running {@code beforeFrame} at the top of each frame — the app-edge hook for pumping input
      * onto the bus (e.g. {@code TactrollerInputBridge::pump}) before {@link Gui#frame} drains and dispatches it.
+     *
+     * <p>This loop is the one thread all windows share: each iteration pumps and presents the main window, then
+     * materialises any pending {@link #requestPopup} calls, then pumps and presents each open popup. A popup that
+     * was closed is torn down here (its window, surface, swapchain — never the shared device).
      */
     public void run(Gui gui, int maxFrames, Runnable beforeFrame) {
+        main.gui = gui;
         // Map the GUI's desired cursor shape onto the OS window (I-beam over editable text, §8.3).
-        gui.onCursorChange(shape -> window.setCursor(osCursor(shape)));
-        presenter.configureDraw(vertexBuffer.handle(), atlas.descriptorSet(), 0);
-        presenter.run(maxFrames, 0, (dt, pushConstants) -> {
-            beforeFrame.run();
-            // Follow the window: on resize, rebuild the Canvas at the new size so its pixel→NDC mapping matches the
-            // (dynamic) viewport, and feed the live size to the GUI, which relays out and republishes the Viewport.
-            int ww = window.width();
-            int wh = window.height();
-            if (ww > 0 && wh > 0 && (ww != canvas.width() || wh != canvas.height())) {
-                canvas.resize(ww, wh); // keeps the vertex buffer — no per-resize allocation
+        gui.onCursorChange(shape -> main.window.setCursor(osCursor(shape)));
+        int frame = 0;
+        boolean open = true;
+        while (open && (maxFrames <= 0 || frame < maxFrames)) {
+            open = main.frame(beforeFrame);
+            for (PopupRequest r; (r = popupRequests.poll()) != null; ) {
+                popups.add(new GuiWindow(platform, instance, device, atlas, text, measurer, r.gui(),
+                        new WindowConfig(r.title(), r.width(), r.height(), true)));
             }
-            RetainedNode root = gui.frame(canvas.width(), canvas.height(), measurer);
-            canvas.begin();
-            if (root != null) {
-                TreeRenderer.emit(root, canvas, text);
-            }
-            vertexBuffer.update(canvas.toVertexArray());
-            presenter.setVertexCount(canvas.vertexCount());
-        });
+            popups.removeIf(p -> {
+                if (p.frame(() -> { })) {
+                    return false;
+                }
+                p.close();   // the popup's own resources only; the device and loop keep running
+                return true;
+            });
+            frame++;
+        }
+        device.waitIdle();
+        // Main window gone (or frame cap hit): the popups' loop is gone with it, so close them too.
+        for (GuiWindow p : popups) {
+            p.close();
+        }
+        popups.clear();
     }
 
     public void run(Gui gui) {
@@ -133,16 +158,14 @@ public final class GuiApp implements AutoCloseable {
     @Override
     public void close() {
         device.waitIdle();
-        presenter.close();
-        pipeline.close();
-        vertexBuffer.close();
+        for (GuiWindow p : popups) {
+            p.close();
+        }
+        popups.clear();
+        main.close();
         atlas.close();
-        renderPass.close();
-        swapchain.close();
         device.close();
-        instance.destroySurface(surface);
         instance.close();
-        window.close();
     }
 
     // --- headless capture ---
@@ -263,7 +286,7 @@ public final class GuiApp implements AutoCloseable {
         };
     }
 
-    private static GraphicsPipeline.Config canvasConfig(AtlasTexture atlas, boolean dynamicViewport) {
+    static GraphicsPipeline.Config canvasConfig(AtlasTexture atlas, boolean dynamicViewport) {
         List<GraphicsPipeline.VertexAttribute> attrs = new ArrayList<>();
         for (CanvasVertex.Attr a : CanvasVertex.ATTRIBUTES) {
             attrs.add(new GraphicsPipeline.VertexAttribute(a.location(), vkFormat(a.components()), a.offset()));

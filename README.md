@@ -16,9 +16,9 @@ It is the top of a three-sibling stack, each its own repo:
 
 | Repo | Role |
 | --- | --- |
-| **[vexelray](../vexelray)** | Pixels: Vulkan runtime, the 2D `Canvas`, MSDF text, the SDF uber-shader (pre-compiled to SPIR-V at build time via [SupirVast](../supirvast)) |
-| **[tactroller](../tactroller)** | Input: keyboard/pointer/clipboard middleware — *every* device event flows through it |
-| **[atchung](../atchung)** | Messages: the typed bus that carries input in and mutations through |
+| **[vexelray](https://github.com/sibarum/vexelray)** | Pixels: Vulkan runtime, the 2D `Canvas`, MSDF text, the SDF uber-shader (pre-compiled to SPIR-V at build time via [SupirVast](https://github.com/sibarum/supirvast)) |
+| **[tactroller](https://github.com/sibarum/tactroller)** | Input: keyboard/pointer/clipboard middleware — *every* device event flows through it |
+| **[atchung](https://github.com/sibarum/atchung)** | Messages: the typed bus that carries input in and mutations through |
 
 The GUI's job is what sits above pixels and wire: **identity, layout, dispatch, motion**
 ([docs/architecture.md](docs/architecture.md) is the deep version of this document).
@@ -117,7 +117,8 @@ Input arrives tactroller → atchung → the framework's dispatch; you subscribe
 
 ```java
 gui.onClick(button, () -> log.append(gui.text("clicked")));       // worker thread
-gui.onState(button, state -> button.background(colorFor(state))); // NORMAL / HOVER / PRESSED
+gui.onContextClick(row, e -> menu.show(e.x(), e.y()));            // right-click, with the pointer position
+gui.onState(button, state -> button.background(colorFor(state))); // NORMAL / HOVER / PRESSED (observers add up)
 gui.onDrag(slider, e -> set(e.fractionX()));                      // pointer-captured
 gui.shortcut(Key.EQUAL, gui::zoomIn, Modifier.CONTROL);           // global chords
 gui.claim(node, Shortcut.of(Key.LEFT), ClaimScope.FOCUSED, cmd);  // focused-only chords
@@ -143,9 +144,35 @@ Widgets are ordinary framework users — built entirely on public `Node`/`Gui` A
 - **`Tabs`** — headers over a page stack. Pages are hidden, never removed, so switching away and
   back returns the page exactly as it was — caret and all. Arrow keys walk the bar while a header
   has focus; the active tab floats forward (lit + elevated, rounded shoulders, flat seat).
+- **`TreeView<T>`** — a generic explorer for hierarchical data (a filesystem, an AST) over a
+  four-method `Source<T>`. Children fetch lazily off the frame loop, exactly once per item;
+  collapse hides the subtree rather than discarding it; one tab stop drives the whole tree
+  (Up/Down/Left/Right/Home/End/PageUp/PageDown/Enter).
+- **`ContextMenu`** — commands at the pointer, built on two core primitives: right-click dispatch
+  (`gui.onContextClick`) and floating placement (`Node.floatAt` — an out-of-flow last child of the
+  root paints over the page and is hit first: the overlay primitive). Escape and click-away
+  dismiss; opening reflows nothing; an edge open slides on-screen.
+- **`Tooltip`** — hover help that is admissible under the hover rule by construction: the bubble is
+  `hitInert` (drawn, never a pointer target), anchored to the control's box (never follows the
+  pointer), and coexists with the control's own hover restyle because state observers accumulate.
 
 The demo ([Demo.java](vexelray-gui-demo/src/main/java/dev/vexelray/gui/demo/Demo.java)) exercises
 all of it end to end — worth reading top to bottom as the canonical example.
+
+## The application edge
+
+What sits between the GUI and the OS, all driven from the one main-thread loop:
+
+- **Windows** — `GuiApp(WindowConfig)` creates the main window (at persisted bounds, if you pass
+  them); `requestPopup(...)` is callable from any thread and materialises a true OS window into
+  the shared frame loop. Popups are **owned** by the main window: one taskbar icon for the whole
+  application, always above the main window, raised and minimized together with it.
+- **`Settings`** — per-user persistence at `~/.appname/settings.properties`: typed get/put
+  (including ordered lists, e.g. the open files), explicit atomic `save()`, and every failure mode
+  (missing, malformed, corrupt) degrades to defaults — never an exception at launch. The demo
+  round-trips its window bounds through it.
+- **Native file dialogs** (`vexelray-gui-nfd`) — open/save/pick-folder as `Optional<Path>`, bound
+  straight to the window handle.
 
 ## Going deeper
 

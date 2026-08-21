@@ -39,4 +39,54 @@ class TextMetricsTest {
             assertEquals(4, T.offsetAt(999f, y), "past the end clamps to the last offset");
         }
     }
+
+    /**
+     * An empty document is a document with one empty visual line, not "no text": a focused empty field must have
+     * somewhere for its blinking caret to be, and that somewhere must come from the same published read-model
+     * everything else reads. Metrics that go null on empty are a field that looks dead exactly when it is
+     * inviting the first keystroke.
+     */
+    @Test
+    void anEmptyFieldStillPublishesCaretGeometry() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TextField f = new TextField(h.gui, "");
+            h.gui.root().children(f.node());
+            h.frame();
+            h.focus(f.node());
+            h.frame();
+
+            NodeLayout L = f.node().layout();
+            TextMetrics T = L.text();
+            assertNotNull(T, "an empty document still carries metrics — one empty visual line");
+            assertEquals(1, T.lines().size());
+            assertEquals(HeadlessGui.FIELD_PAD_X, T.caretX(0), 0.5f, "the caret boundary sits at the text origin");
+            assertTrue(T.caretTop(0) >= L.rect().y() && T.caretTop(0) + T.caretHeight(0)
+                            <= L.rect().y() + L.rect().h() + 0.5f,
+                    "and inside the field's own box");
+            assertEquals(1, T.lines().get(0).number(), "the empty line is hard line 1, so a gutter can number it");
+        }
+    }
+
+    /** Typing into the empty field, then deleting back to empty, round-trips the geometry rather than losing it. */
+    @Test
+    void emptyingAFieldKeepsItsCaretGeometry() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TextField f = new TextField(h.gui, "");
+            h.gui.root().children(f.node());
+            h.frame();
+            h.focus(f.node());
+            h.type("ab");
+            h.frame();
+            h.tap(sibarum.tactroller.api.Key.BACKSPACE);
+            h.frame();
+            h.tap(sibarum.tactroller.api.Key.BACKSPACE);
+            h.frame();
+
+            assertEquals("", f.text());
+            TextMetrics T = f.node().layout().text();
+            assertNotNull(T, "emptied, not dead");
+            assertEquals(HeadlessGui.FIELD_PAD_X, T.caretX(0), 0.5f,
+                    "the caret is back at the origin, with the scroll snapped back too");
+        }
+    }
 }

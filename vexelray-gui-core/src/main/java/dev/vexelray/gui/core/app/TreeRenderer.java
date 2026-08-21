@@ -139,8 +139,13 @@ public final class TreeRenderer {
     private static void drawText(RetainedNode n, String s, boolean hasText, java.util.List<Span> spans, float pad,
                                  Canvas canvas, TextLayout text) {
         TextMetrics m = n.textMetrics;
-        if (!hasText || m == null) {
-            return;   // nothing to draw, or a measurer with no glyph metrics resolved none
+        if (m == null) {
+            return;   // not a text node, or a measurer with no glyph metrics resolved none
+        }
+        // An empty document still publishes metrics — one empty visual line — so a focused empty field draws its
+        // caret and a numbered editor its "1". The glyph/selection/span loops below are naturally no-ops on "".
+        if (!hasText) {
+            s = "";
         }
         // The gutter sits outside the text viewport, so it is drawn first, under its own clip: it scrolls
         // vertically with the lines but never horizontally with them.

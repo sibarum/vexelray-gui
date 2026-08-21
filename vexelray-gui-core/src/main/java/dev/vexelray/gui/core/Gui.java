@@ -740,6 +740,28 @@ public final class Gui implements AutoCloseable {
         if (s == null || s.isEmpty()) {
             n.scrollX = 0f;   // a field emptied after scrolling must snap back to its origin
             n.scrollY = 0f;
+            // An empty document is not "no text" — it is a document with one empty visual line: a caret boundary
+            // at offset 0, and hard line number 1. Publishing that geometry is what lets a focused empty field
+            // draw its blinking caret from the same read-model everything else reads, and an empty numbered
+            // editor still show a "1" in its gutter. Without it the metrics were null, so the caret had nowhere
+            // to be — a field looked dead precisely when it was inviting the first keystroke.
+            float lineH = tm.intrinsic(n, Axis.VERTICAL, n.textSizePx);
+            float viewW = n.viewW > 0f ? n.viewW : TextMetrics.contentWidth(n);
+            float viewH = Math.max(1f, n.viewH > 0f ? n.viewH : n.h - 2f * TextMetrics.padY(n));
+            float viewX = n.viewW > 0f ? n.viewX : n.x + n.textPadXPx;
+            float viewY = n.viewW > 0f ? n.viewY : n.y + TextMetrics.padY(n);
+            float top = n.multiline() ? viewY : viewY + switch (n.vAlign()) {
+                case TOP -> 0f;
+                case MIDDLE -> Math.max(0f, (viewH - lineH) * 0.5f);
+                case BOTTOM -> Math.max(0f, viewH - lineH);
+            };
+            float left = viewX + switch (n.hAlign()) {
+                case LEFT, JUSTIFY -> 0f;
+                case CENTER -> viewW * 0.5f;
+                case RIGHT -> viewW;
+            };
+            n.textMetrics = new TextMetrics(List.of(
+                    new TextMetrics.VisualLine(0, 0, top, lineH, new float[]{left}, 1)));
             return;
         }
         float px = n.textSizePx;

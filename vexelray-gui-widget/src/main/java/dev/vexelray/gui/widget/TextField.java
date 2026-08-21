@@ -171,6 +171,30 @@ public final class TextField implements AutoCloseable {
         return this;
     }
 
+    /**
+     * Insert {@code s} at the caret, replacing the selection if there is one, exactly as typing it would — the
+     * caret lands after the insertion and the edit joins the undo history. This is the programmatic entry a
+     * palette, keypad or completion popup wants; {@link #text(String)} replaces the whole content instead.
+     */
+    public TextField insert(String s) {
+        if (s != null && !s.isEmpty()) {
+            apply(new Edit.Insert(s), true);   // its own undo entry: a programmatic insert is not a typing run
+        }
+        return this;
+    }
+
+    /** Delete backwards from the caret, or delete the selection — the Backspace key's edit, driven programmatically. */
+    public TextField deleteBack() {
+        apply(new Edit.DeleteBack(false), true);
+        return this;
+    }
+
+    /** Move the caret to {@code offset} (clamped into the content) and collapse any selection. */
+    public TextField caret(int offset) {
+        moveCaret(offset, false);
+        return this;
+    }
+
     /** React to content edits (typing, deletion, paste, programmatic set). Runs on the handler executor. */
     public TextField onChange(Consumer<String> handler) {
         this.onChange = handler == null ? s -> { } : handler;

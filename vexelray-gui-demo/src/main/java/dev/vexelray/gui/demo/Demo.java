@@ -5,6 +5,8 @@ import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.TextClipboard;
 import dev.vexelray.gui.core.app.GuiApp;
+import dev.vexelray.gui.core.app.Settings;
+import dev.vexelray.os.WindowConfig;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.LayoutEnums;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
@@ -99,18 +101,33 @@ public final class Demo {
         // W and H are density-independent: the window is created at their *pixel* size on this display, so a UI
         // that honours density gets a window that honours it too. Sizing the window in raw pixels while the
         // content scales is the mismatch that leaves a 125% display showing three quarters of the UI.
+        //
+        // Placement persists across runs (~/.vexelray-demo/settings.properties): the window is *created* at its
+        // last bounds — outer rect on both sides of the round trip — rather than appearing and then jumping.
+        Settings settings = Settings.open("vexelray-demo");
+        WindowConfig windowConfig = WindowConfig
+                .of("VexelRay GUI", settings.getInt("window.w", W), settings.getInt("window.h", H))
+                .at(settings.getInt("window.x", WindowConfig.UNPOSITIONED),
+                        settings.getInt("window.y", WindowConfig.UNPOSITIONED));
         try (Tactroller input = openInput(gui);
-             GuiApp app = new GuiApp("VexelRay GUI", W, H);
+             GuiApp app = new GuiApp(windowConfig);
              Clipboard clipboard = openClipboard(gui)) {
             attachInput(input, gui, app);
             // The popup vertical: a click handler (worker thread) *requests* a window; the main thread creates it
-            // at the top of the next frame and folds it into the one loop every window shares.
+            // at the top of the next frame and folds it into the one loop every window shares. Popups are owned
+            // by the main window: one taskbar icon, raised and minimized together.
             gui.onClick(refs.popupButton(), () -> app.requestPopup("VexelRay popup", 420, 280, popupGui()));
             if (maxFrames > 0) {
                 app.requestPopup("VexelRay popup", 420, 280, popupGui());   // frames-capped runs exercise it
             }
             TactrollerInputBridge bridge = input == null ? null : bridgeFor(input, gui);
             app.run(gui, maxFrames, () -> pump(bridge));
+            // The window still exists here (close only *requested* the exit), so its final bounds are readable.
+            settings.putInt("window.x", app.window().screenX())
+                    .putInt("window.y", app.window().screenY())
+                    .putInt("window.w", app.window().outerWidth())
+                    .putInt("window.h", app.window().outerHeight())
+                    .save();
         }
         gui.close();
         System.out.println("clean shutdown");

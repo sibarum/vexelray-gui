@@ -70,13 +70,22 @@ public final class GuiApp implements AutoCloseable {
     }
 
     public GuiApp(String title, int width, int height) {
+        this(WindowConfig.of(title, width, height));
+    }
+
+    /**
+     * As {@link #GuiApp(String, int, int)}, but with the full window request — the overload an app restoring
+     * persisted bounds uses, so the window is <em>created</em> where it was last left rather than jumping there
+     * after appearing (see {@code Settings}).
+     */
+    public GuiApp(WindowConfig config) {
         this.platform = NativePlatform.current();
-        this.instance = new VulkanInstance(title, platform.requiredVulkanInstanceExtensions());
+        this.instance = new VulkanInstance(config.title(), platform.requiredVulkanInstanceExtensions());
 
         // Device selection needs a surface to prove present support, so the main window is created first and its
         // surface probed; popups then reuse the same device (scaffold caveat: same-queue present support for
         // sibling surfaces holds on every real platform, but is asserted per-surface only for this first one).
-        NativeWindow probe = platform.createWindow(new WindowConfig(title, width, height, true));
+        NativeWindow probe = platform.createWindow(config);
         long probeSurface = probe.createVulkanSurface(instance.handleAddress(),
                 VkLoader.getInstanceProcAddrPointer());
         VulkanInstance.DeviceSelection selection = instance.selectGraphicsPresentDevice(probeSurface)
@@ -100,14 +109,27 @@ public final class GuiApp implements AutoCloseable {
     }
 
     /**
+     * The main OS window — for reading and restoring placement ({@code screenX/screenY/outerWidth/outerHeight},
+     * {@code setPosition}), typically persisted through {@code Settings}. The window's lifecycle stays this
+     * class's business: don't close it through this handle.
+     */
+    public NativeWindow window() {
+        return main.window;
+    }
+
+    /**
      * Request an OS-level popup window showing {@code popupGui}'s tree. <b>Callable from any thread</b> — this
      * only enqueues; the main thread creates the actual window at the top of its next frame, which is the portable
      * contract (macOS requires window creation and event pumping on the main thread; Win32 binds a window to its
      * creating thread). The popup joins the existing frame loop — it never gets a loop or thread of its own — and
      * closes via its OS close button, releasing only its own resources.
      *
+     * <p>Popups are <b>owned</b> by the main window: no taskbar button of their own (one icon for the whole
+     * application), always above the main window, raised together with it when any window of the group is
+     * activated, and minimized/destroyed with it. Ownership is not modality — the main window stays interactive.
+     *
      * <p>Scaffold: the popup renders, resizes, and closes; routing <i>input</i> to it (tactroller attaches to one
-     * window today) and programmatic close/parenting (always-on-top, modal) are follow-ups.
+     * window today) and programmatic close/modality are follow-ups.
      */
     public void requestPopup(String title, int width, int height, Gui popupGui) {
         requestPopup(title, width, height, popupGui, h -> { }, () -> { });
@@ -146,8 +168,12 @@ public final class GuiApp implements AutoCloseable {
         while (open && (maxFrames <= 0 || frame < maxFrames)) {
             open = main.frame(beforeFrame);
             for (PopupRequest r; (r = popupRequests.poll()) != null; ) {
+                // Owned by the main window: one taskbar icon for the whole application, the popup always above
+                // its owner, and the group raised together when any of its windows is activated — the OS does all
+                // of that from this one argument. Ownership also destroys the popup with the owner; that arrives
+                // here as the popup's own pump reporting closed, the same path as its close button.
                 GuiWindow w = new GuiWindow(platform, instance, device, atlas, text, measurer, r.gui(),
-                        new WindowConfig(r.title(), r.width(), r.height(), true));
+                        new WindowConfig(r.title(), r.width(), r.height(), true).ownedBy(main.osHandle()));
                 popups.add(new PopupEntry(w, r.onClosed()));
                 r.onCreated().accept(w.osHandle());
             }

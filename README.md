@@ -152,6 +152,11 @@ Widgets are ordinary framework users — built entirely on public `Node`/`Gui` A
   (`gui.onContextClick`) and floating placement (`Node.floatAt` — an out-of-flow last child of the
   root paints over the page and is hit first: the overlay primitive). Escape and click-away
   dismiss; opening reflows nothing; an edge open slides on-screen.
+- **`TitleBar`** — the window's own chrome as ordinary widgets: a draggable strip, a title, and
+  minimize/maximize/close buttons. Two declarations do the work — the strip is `WindowRegion.DRAG`,
+  each button punches an `INTERACTIVE` hole in it — so the window manager still moves, snaps and
+  maximizes the window while the clicks reach the buttons. The maximize icon is re-derived from the
+  window on every viewport change, because Win+Up and a caption double-click change it too.
 - **`Tooltip`** — hover help that is admissible under the hover rule by construction: the bubble is
   `hitInert` (drawn, never a pointer target), anchored to the control's box (never follows the
   pointer), and coexists with the control's own hover restyle because state observers accumulate.
@@ -167,6 +172,14 @@ What sits between the GUI and the OS, all driven from the one main-thread loop:
   them); `requestPopup(...)` is callable from any thread and materialises a true OS window into
   the shared frame loop. Popups are **owned** by the main window: one taskbar icon for the whole
   application, always above the main window, raised and minimized together with it.
+- **Window chrome** — `WindowConfig.decorations(Decorations.CLIENT)` hands the frame to the GUI:
+  the client area covers the whole window, so a `TitleBar` draws where the system title bar was.
+  The window keeps its overlapped frame, so dragging, snapping, Win+arrow, double-click-to-maximize,
+  the system menu and the maximize clamp to the work area stay the window manager's. What the GUI
+  supplies is geometry, not behaviour: nodes declare `WindowRegion.DRAG` / `INTERACTIVE` /
+  `MAXIMIZE_BUTTON`, the host derives the rectangles from each laid-out frame and pushes them to
+  the OS, and the window answers its own hit-test from them. `GuiApp.controls()` is the other half —
+  minimize, maximize/restore, close, for the buttons to call.
 - **`Settings`** — per-user persistence at `~/.appname/settings.properties`: typed get/put
   (including ordered lists, e.g. the open files), explicit atomic `save()`, and every failure mode
   (missing, malformed, corrupt) degrades to defaults — never an exception at launch. The demo

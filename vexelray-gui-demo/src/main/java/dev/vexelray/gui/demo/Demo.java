@@ -4,8 +4,10 @@ import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.TextClipboard;
+import dev.vexelray.gui.core.WindowControls;
 import dev.vexelray.gui.core.app.GuiApp;
 import dev.vexelray.gui.core.app.Settings;
+import dev.vexelray.os.Decorations;
 import dev.vexelray.os.WindowConfig;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.LayoutEnums;
@@ -13,6 +15,7 @@ import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.widget.Slider;
 import dev.vexelray.gui.widget.Tabs;
+import dev.vexelray.gui.widget.TitleBar;
 import dev.vexelray.gui.widget.TextField;
 import dev.vexelray.gui.widget.ContextMenu;
 import dev.vexelray.gui.widget.Tooltip;
@@ -108,11 +111,16 @@ public final class Demo {
         WindowConfig windowConfig = WindowConfig
                 .of("VexelRay GUI", settings.getInt("window.w", W), settings.getInt("window.h", H))
                 .at(settings.getInt("window.x", WindowConfig.UNPOSITIONED),
-                        settings.getInt("window.y", WindowConfig.UNPOSITIONED));
+                        settings.getInt("window.y", WindowConfig.UNPOSITIONED))
+                // The GUI draws the frame. The window keeps every window-manager behaviour it had — the bounds
+                // above still describe the same outer rect, so placement saved by an OS-framed run restores here
+                // unchanged — and gains a title bar made of the same widgets as the rest of the UI.
+                .decorations(Decorations.CLIENT);
         try (Tactroller input = openInput(gui);
              GuiApp app = new GuiApp(windowConfig);
              Clipboard clipboard = openClipboard(gui)) {
             attachInput(input, gui, app);
+            refs.titleBar().controls(app.controls());   // the window exists now; point the chrome at it
             // The popup vertical: a click handler (worker thread) *requests* a window; the main thread creates it
             // at the top of the next frame and folds it into the one loop every window shares. Popups are owned
             // by the main window: one taskbar icon, raised and minimized together.
@@ -268,7 +276,7 @@ public final class Demo {
         }
     }
 
-    private record Refs(Node header, Node log, Node popupButton) {
+    private record Refs(Node header, Node log, Node popupButton, TitleBar titleBar) {
     }
 
     /**
@@ -514,8 +522,14 @@ public final class Demo {
                 .attach(popupButton, "Open a true OS popup window")
                 .attach(wrapToggle, "Toggle word wrap in the editor");
 
-        gui.root().background(BG).children(header, body, controls, fieldRow, footer);
-        return new Refs(header, log, popupButton);
+        // The window's own chrome, drawn by the GUI: a title bar that is a row of widgets, and two declarations
+        // (WindowRegion.DRAG on the strip, INTERACTIVE on each button) that tell the window manager which of
+        // those pixels are caption. Dragging, snapping, double-click-to-maximize and the system menu stay
+        // Windows'. Bound to the real window in main(), once there is one.
+        TitleBar titleBar = new TitleBar(gui, WindowControls.NONE, "VexelRay GUI");
+
+        gui.root().background(BG).children(titleBar.node(), header, body, controls, fieldRow, footer);
+        return new Refs(header, log, popupButton, titleBar);
     }
 
     /** A fixed-size labelled button that lightens on hover and darkens while pressed. */

@@ -349,6 +349,15 @@ public final class RetainedNode {
         return !Boolean.FALSE.equals(props.get(PropKey.VISIBLE));
     }
 
+    /**
+     * What this node is to the window manager ({@link PropKey#WINDOW_REGION}), or {@code null} for ordinary UI —
+     * read off the laid-out tree by the host each frame in a window with application-drawn chrome.
+     */
+    public dev.vexelray.gui.core.WindowRegion windowRegion() {
+        Object v = props.get(PropKey.WINDOW_REGION);
+        return v instanceof dev.vexelray.gui.core.WindowRegion r ? r : null;
+    }
+
     /** The scroll-edge lock for this container (default {@link ScrollLock#NONE}). */
     public ScrollLock scrollLock() {
         Object v = props.get(PropKey.SCROLL_LOCK);

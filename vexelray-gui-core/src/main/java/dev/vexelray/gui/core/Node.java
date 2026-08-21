@@ -243,6 +243,20 @@ public final class Node {
         return prop(PropKey.HIT_INERT, inert ? Boolean.TRUE : null);
     }
 
+
+    /**
+     * Declare what this node is to the window manager — the one thing a GUI drawing its own window chrome has to
+     * say. {@link WindowRegion#DRAG} makes the node a title bar (drag to move, double-click to maximize,
+     * right-click for the system menu); a control drawn on top of one must declare
+     * {@link WindowRegion#INTERACTIVE} or the window manager takes its clicks. Pass {@code null} to clear.
+     *
+     * <p>Affects nothing else: the node lays out, draws and hit-tests exactly as it did. Only a window created
+     * with client decorations consults these at all.
+     */
+    public Node windowRegion(WindowRegion region) {
+        return prop(PropKey.WINDOW_REGION, region);
+    }
+
     public Node gap(Length g) {
         return prop(PropKey.GAP, g);
     }

@@ -81,7 +81,15 @@ public enum PropKey {
      * and the node is gone), so a page rebuilt by remove/insert would come back inert. Anything that shows one
      * of several children at a time needs this rather than structural churn.
      */
-    VISIBLE(true);
+    VISIBLE(true),
+    /**
+     * What this node is to the <b>window manager</b> ({@link dev.vexelray.gui.core.WindowRegion}) — a title bar
+     * to drag the window by, a hole in one for a control drawn on it, or the maximize button. Only meaningful in
+     * a window whose chrome the application draws; the host reads these off the laid-out tree each frame and
+     * publishes the rectangles to the OS. Changes nothing about layout, drawing or hit-testing: the node is
+     * ordinary UI, and this is a fact stated about it.
+     */
+    WINDOW_REGION(false);
 
     private final boolean layoutAffecting;
 

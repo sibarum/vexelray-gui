@@ -4,6 +4,7 @@ import dev.vexelray.canvas.Canvas;
 import dev.vexelray.canvas.CanvasShader;
 import dev.vexelray.canvas.CanvasVertex;
 import dev.vexelray.gui.core.Gui;
+import dev.vexelray.gui.core.WindowControls;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
 import dev.vexelray.gui.core.layout.TextMeasurer;
 import dev.vexelray.gui.core.model.RetainedNode;
@@ -58,6 +59,7 @@ public final class GuiApp implements AutoCloseable {
     // The main window, plus any open popups. All of them live on the main thread and are pumped/presented by the
     // one loop in run(); a popup closing removes only its own bundle, the main window closing ends the loop.
     private final GuiWindow main;
+    private final WindowControls controls;
     private final List<PopupEntry> popups = new ArrayList<>();
     private final java.util.concurrent.ConcurrentLinkedQueue<PopupRequest> popupRequests =
             new java.util.concurrent.ConcurrentLinkedQueue<>();
@@ -99,7 +101,8 @@ public final class GuiApp implements AutoCloseable {
         this.measurer = measurer(text);
 
         this.main = new GuiWindow(platform, instance, device, atlas, text, measurer, null,
-                probe, probeSurface);
+                probe, probeSurface, config.decorations());
+        this.controls = new NativeWindowControls(main.window);
     }
 
     /** The OS window handle (an {@code HWND} on Windows) — used to attach input (tactroller) for client-space
@@ -115,6 +118,19 @@ public final class GuiApp implements AutoCloseable {
      */
     public NativeWindow window() {
         return main.window;
+    }
+
+    /**
+     * Window commands for an application-drawn title bar — minimize, maximize/restore, close — bound to the main
+     * window. Hand this to a chrome widget ({@code TitleBar}); it is the only thing such a widget needs from the
+     * host, which is what keeps it a widget rather than a piece of the application edge.
+     *
+     * <p>Meaningful whatever the window's decorations are: a window with a system title bar simply has two ways
+     * to be minimized. What decides whether the GUI's own chrome is <em>drawn</em> is the {@link WindowConfig}
+     * this app was constructed with.
+     */
+    public WindowControls controls() {
+        return controls;
     }
 
     /**
@@ -425,5 +441,37 @@ public final class GuiApp implements AutoCloseable {
             }
         }
         return image;
+    }
+
+    /**
+     * {@link WindowControls} over a real OS window. Close is a <em>request</em>, not a teardown: it travels the
+     * same route the system close button's does, so the frame loop observes it and releases this window's
+     * resources in the order it always does, rather than having them pulled out from under a frame in flight.
+     */
+    private record NativeWindowControls(NativeWindow window) implements WindowControls {
+
+        @Override
+        public void minimize() {
+            window.minimize();
+        }
+
+        @Override
+        public void toggleMaximize() {
+            if (window.isMaximized()) {
+                window.restore();
+            } else {
+                window.maximize();
+            }
+        }
+
+        @Override
+        public boolean maximized() {
+            return window.isMaximized();
+        }
+
+        @Override
+        public void close() {
+            window.requestClose();
+        }
     }
 }

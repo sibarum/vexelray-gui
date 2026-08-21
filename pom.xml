@@ -29,6 +29,9 @@
         <module>vexelray-gui-nfd</module>
         <!-- Canonical showcase / reference app. -->
         <module>vexelray-gui-demo</module>
+        <!-- Kronometer integration: the strongly-timed scheduling and animation substrate, plus
+             interpolation for the GUI's own value types. Enters at the application edge, never in -core. -->
+        <module>vexelray-gui-krono</module>
         <!-- Test-only: the automated separation-of-concerns guard (docs/architecture-proof-plan.md M0).
              Last, so it inspects the compiled output of everything above it. -->
         <module>vexelray-gui-architecture</module>
@@ -48,6 +51,8 @@
         <!-- Tactroller: keyboard/mouse/pointer/clipboard input, delivered as Atchung traffic. Enters at
              the application edge (the demo), not in -core. -->
         <tactroller.version>1.0-SNAPSHOT</tactroller.version>
+        <!-- Kronometer: logical time, rate domains, the signal graph. Application edge only. -->
+        <kronometer.version>1.0-SNAPSHOT</kronometer.version>
         <joml.version>1.10.7</joml.version>
         <junit.version>5.11.4</junit.version>
         <!-- ASM: bytecode reading for the architecture guard only (test scope, one module). -->

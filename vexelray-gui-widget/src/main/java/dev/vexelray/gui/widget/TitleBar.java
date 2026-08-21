@@ -89,15 +89,17 @@ public final class TitleBar {
                         restoreFront.floatAt(Length.dp(1), Length.dp(4)))
                 .visible(false);
 
-        // The handlers resolve the controls at click time, not here, so rebinding later rewires every button.
+        // The handlers read the field, not the constructor argument, so they resolve the controls at click
+        // time and rebinding later rewires every button. Closing over the argument would capture what the
+        // window did not exist yet to be -- WindowControls.NONE, for every application, permanently.
         Node minimize = button(gui.box().size(Length.dp(10), Length.dp(1)).background(INK),
-                WindowRegion.INTERACTIVE, HOVER, () -> controls.minimize());
+                WindowRegion.INTERACTIVE, HOVER, () -> this.controls.minimize());
         Node maximize = button(gui.box().size(Length.dp(14), Length.dp(14)).scroll(false, false)
                         .children(maximizeIcon, restoreIcon),
-                WindowRegion.MAXIMIZE_BUTTON, HOVER, () -> controls.toggleMaximize());
+                WindowRegion.MAXIMIZE_BUTTON, HOVER, () -> this.controls.toggleMaximize());
         Node close = button(gui.text("×").textSize(Length.rem(1.4f)).textColor(INK)
                         .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE),
-                WindowRegion.INTERACTIVE, CLOSE_HOVER, () -> controls.close());
+                WindowRegion.INTERACTIVE, CLOSE_HOVER, () -> this.controls.close());
 
         Node buttons = gui.row().height(Length.FILL).alignItems(AlignItems.STRETCH).scroll(false, false)
                 .children(minimize, maximize, close);

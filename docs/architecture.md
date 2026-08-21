@@ -347,9 +347,10 @@ a label is likewise `em`, not `dp`, even though a toolbar feels like chrome.
 
 ## 7. Animation — a visual-transform layer, GUI-side
 
-> Forward-looking: docs/reactive-timing.md is a design note on making animation a function of logical
-> time rather than accumulated `dt`, alongside auto-tracked derivation and per-conduit dependency
-> tracking. Not implemented; read it before changing how motion or event timing works.
+> Forward-looking: motion is expected to move onto Kronometer (strongly-timed kernel + signal graph;
+> animation as a function of logical time rather than accumulated `dt`). See docs/reactive-timing.md
+> for the seam and what must land first. Not implemented; read it before changing how motion or event
+> timing works.
 
 Opt-in per node; nothing fires unless an animation is attached. Animatable properties are a
 **post-layout visual transform** — `OPACITY, TRANSLATE_X/Y, SCALE, ROTATION, TINT` — **not** layout

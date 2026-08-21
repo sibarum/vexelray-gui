@@ -1,210 +1,110 @@
-# Reactive timing — derivation, conduits, and logical time
+# Reactive timing — how this GUI meets Kronometer
 
-> **Status: design note. None of this is implemented.** It records decisions reached in discussion,
-> separates the ones that must be made *now* from the ones that can wait, and names the open questions
-> honestly rather than pretending they are settled. Nothing here changes current behaviour.
+> **Status: design note. Nothing here is implemented.** Kronometer is the substrate that owns this
+> problem; this note records only what is left for the GUI and input side, and how the seams meet.
+> See `kronometer/docs/architecture.md` for the model itself — it is the source of truth.
 
-## Why this exists
+## What this note is now
 
-A two-window bug motivated it. A chord (`Ctrl+Shift+O`) opened a modal native dialog, which blocks the
-frame loop; the user released both modifiers while it was open; a second window took focus before polling
-next ran, so the *release* edges were attributed to a frame in which this window was already unfocused, and
-the focal gate discarded them. `CONTROL` and `SHIFT` stayed latched forever, and from then on every
-Ctrl-only global shortcut silently stopped matching — while the focused text field's own `Ctrl+A/C/V` kept
-working, because a shortcut compares its modifier set *exactly* and a widget merely asks whether `CONTROL`
-is *among* them.
+An earlier revision derived a design from first principles: Vue's dependency graph for *what depends on
+what*, ChucK's strong timing for *when things happen*. That design already exists and is further along
+than the derivation was — Kronometer's own tagline is "**ChucK's clock, Vue's graph**", and M0–M4 are
+done with tests. The model sections have therefore been replaced by pointers, and what remains is the
+**residue**: the parts Kronometer deliberately does not cover, which are ours.
 
-That is not really a focus bug. **The temporal truth was destroyed before any logic ran:** the release
-happened at a time when the window *was* focused, and nothing in the system could say so. Edge detection by
-polling can only report "different from last glance" — never *when*, and never a transition that begins and
-ends between two glances.
+Recording that here rather than quietly deleting it, because the residue is easy to lose sight of once a
+substrate looks like it covers everything.
 
-So the target is a model in which that class of bug is unrepresentable rather than patched.
+## Answered by Kronometer
 
-## The two parents
+| Question we were carrying | Kronometer's answer |
+|---|---|
+| Where the instantaneous/scheduled line falls | Sharper than we framed it: nothing is *declared*. The graph classifies a value **predictable** or **effectful** from its inputs, and computes a **horizon** (how far it is determined) and **varyingUntil** (how far it still changes). The baton guards side effects, not computation. |
+| Time-debt policy (our hardest open question) | `Settlement` per rate domain — `SLIP`, `CATCH_UP`, `SKIP`, `STRETCH`, over `wall(m) = m + slip`, with `maxSlip` → hard resync and `degrade()` as the real remedy. It also reaches our conclusion independently: **slip on an input-driven signal *is* input lag**, so pointer-following motion must not slip while audio must not skip. |
+| Clock authority, locally | The `Clock` seam: `Kron.realtime()`, `Kron.virtual()`, `Kron.driven()`. |
+| Deterministic tests | `Kron.virtual()` makes a ten-minute scenario a microsecond test, and determinism is *enforced* — anything nondeterministic must declare its logical arrival time or be rejected. `Trace` is the assertion target. |
+| Animation as a function of time | `Curve`/`Interp`/`Ease`, plus a distinction we had not drawn: **closed-form** motion is precomputed in one shot, **integrated** motion has a horizon of `now` and is framerate-dependent, so binding it to a dynamic domain is *rejected* rather than merely discouraged. |
+| Shreds | Implemented, with the cost measured (577 ns per baton handoff under native-image) and the guidance that follows from it: **anything pure should be a `Signal`, not a `Shred`** — ten thousand simultaneous animations cost zero handoffs. |
+| Multi-rate sampling | `Rate` domains with independent grids, `Tempo`/`Ratio` for nested and scaled time, and `Sampled` for cross-domain reads with its one-step latency stated rather than hidden. |
+| Per-conduit tracking with MVCC snapshot reads | **Superseded in-process.** One timeline, one baton, one slip means domains cannot drift apart at all, which is a stronger guarantee than snapshot consistency between conduits. The conduit/MVCC model becomes relevant only across processes — see the residue below. |
 
-- **Vue** answers *what depends on what* — fine-grained reactivity, automatic dependency tracking,
-  derivation you never invalidate by hand.
-- **ChucK** answers *when things happen* — time as a first-class value, advanced explicitly, with
-  computation taking zero logical time.
+## The residue — what is ours
 
-Neither answers the other's question, which is why the pair covers the space.
+### 1. True source timestamps for input
 
-## What already exists here
+Kronometer can stamp when an event was *observed*; it cannot recover when the key physically went down.
+Tactroller currently derives key edges by diffing polled `GetAsyncKeyState`, which can only report
+"different from last glance" — never *when*, and never a transition that begins and ends between two
+glances.
 
-The spine both parents need is largely built:
+Feeding a strongly-timed kernel from poll-derived edges wastes its precision, and this is not
+theoretical: it is exactly how a modifier latched. Message-based keyboard input (`WM_KEYDOWN`/`WM_KEYUP`
+or RawInput with timestamps) in the Windows backend is a **prerequisite for the GUI getting value from
+Kronometer's timing**, not an optimisation.
 
-| Piece | Today | Reads as |
-|---|---|---|
-| `State<T>` + declared mutations + bounded history | atchung-core | a `ref`, and an MVCC version store |
-| Mutation `Topic` drained once per frame | vexelray-gui-core | a batched scheduler (`nextTick`) |
-| `Document.apply(Edit)` over *relative* edits | vexelray-gui-core | a reducer whose edits commute |
-| Broadcast subscribe/publish | atchung-core | record and replay, for free |
+### 2. Paired-edge invariants
 
-Two organs are missing: **auto-tracked derivation** (today consumers subscribe by hand and layout
-recomputes wholesale) and **logical time** (with shreds). This is an addition to an existing structure, not
-a rewrite.
+That `KeyPressed`/`KeyReleased` are a pair, and that focus gates them, is domain semantics. Neither the
+bus nor the kernel should learn it, and neither will. A gate on *delivery* must not desynchronise
+*state* — the rule that the latch bug broke — and the invariant that enforces it belongs in tactroller.
 
-Note also that glitch-freedom has already been discovered the hard way: `Document` groups text, caret,
-anchor and spans into one atomic value precisely because publishing them separately let a frame boundary
-observe a half-updated state. A topologically flushed dependency graph is that fix generalised.
+### 3. Distributed time
 
-## The model: two rules
+Kronometer is explicitly one timeline: one `m`, one slip, so domains cannot drift. Across processes that
+premise fails — there is no global time, only order relative to peers. The representational rules from
+the earlier revision survive, but they are **atchung/elektro-Q concerns, not GUI ones**:
 
-1. **Intra-conduit — Vue semantics.** Derivation is instantaneous and glitch-free, flushed in dependency
-   order. Reading a derived value inside a conduit always yields a consistent one. This is exactly ChucK's
-   "computation takes zero virtual time", so the two models agree here rather than compete.
-2. **Inter-conduit — MVCC snapshot reads.** No ambient tracking crosses a conduit boundary. A read is
-   recorded as an explicit edge: *conduit A read conduit B as of T*, carrying `(conduit, version, stamp)`.
+1. stamps are opaque and comparable, never arithmetic on raw longs;
+2. every stamp carries its origin;
+3. expose `happensBefore`, never `compareTo`, so concurrency stays representable;
+4. cross-process reads go through an explicit "as of" call from the start;
+5. physical for magnitude, logical for order — **the rule that rots silently**, because nothing local
+   ever punishes a violation.
 
-Consequence to state plainly: **glitch-freedom is per-conduit; across conduits you get snapshot consistency
-instead.** You never observe a torn value, but you may observe a stale one. Global glitch-freedom across
-threads and machines would require global barriers, and is not on offer.
+None of this is needed while everything is same-machine. It is listed so the door stays open, and so
+rule 5 is written down somewhere before it is quietly violated.
 
-## Cross-conduit reads are strictly in the past
+### 4. Two standing test rules, learned expensively
 
-`T_read < T_now`. Same-time cross-conduit reads are forbidden. This single rule buys three things:
-
-- boundary glitches become unrepresentable, rather than being scheduled around;
-- **feedback loops become well-founded** — `A@T` depending on `B@T−1` is how you express a spring, a
-  simulation step, or two windows observing each other, and it cannot deadlock;
-- **the local design and the distributed design are the same design.** A remote read is *necessarily* in the
-  past, because latency. Going over the wire does not change the discipline; it only widens epsilon.
-
-That last point is what makes "ready for the network later" achievable cheaply instead of aspirational.
-
-## Conduits
-
-A conduit is the unit of *consistency*, of *scheduling*, and of *tracking confinement*. Ambient dependency
-tracking works by a "currently evaluating" stack, so it needs confinement — but only to whoever is
-**advancing that conduit**, one advancer at a time. It does **not** need a single global GUI thread, which
-means conduits may advance in parallel (this matters for a game engine, and is a weaker constraint than it
-first appears).
-
-Windows, workers, input devices and — eventually — remote peers are all conduits, described by one
-abstraction.
-
-## Decide now
-
-These five are representational. Each is cheap today and diffuses to every call site later.
-
-1. **Stamps are opaque, not arithmetic.** The moment code writes `t2 - t1 < 100ms` over raw longs, a single
-   global scalar clock is baked into every call site. A `Stamp` type whose only cross-conduit operation is
-   *ordering* is the type-level encoding of "there is no global time".
-2. **Every stamp carries its origin conduit.** A stamp without provenance cannot be interpreted relative to
-   a peer later, and adding the field afterwards means touching every event and every commit.
-   `(conduitId, counter, wallHint)` is HLC-shaped without being an HLC yet.
-3. **Expose `happensBefore`, never `compareTo`.** Publish a total order and callers will assume totality,
-   making *concurrency* unrepresentable exactly when it starts to exist. Partial-order API now; a totally
-   ordered implementation underneath is fine.
-4. **Cross-conduit reads go through an explicit "as of" call from day one**, even while the answer is
-   trivially at hand in-process. Lock the shape; keep the body dumb. An implicit read today is a migration
-   site tomorrow.
-5. **Physical for magnitude, logical for order.** Animation and input genuinely need real durations;
-   *ordering* must never depend on them. In-process the two coincide — which is precisely why this has to be
-   written down, because nothing local will ever punish a violation. **This is the rule that rots
-   silently.**
-
-## Deliberately deferred
-
-Everything is in-process or same-machine, so none of this is needed yet, and the five rules above are what
-keep the door open:
-
-- hybrid logical clocks, clock skew, drift;
-- cross-peer retention and distributed low-water marks;
-- conflict *resolution* beyond single-writer (in-process, each `State` has one writer);
-- rollback / re-simulation (later, the same machinery as netcode).
-
-## Open questions
-
-- **Clock authority.** In-process the frame loop can be the single authority — ChucK's VM model, simple and
-  exact. Across processes it cannot be, and stamps need an HLC to stay comparable. Deciding this late means
-  retrofitting every timestamp comparison, so decide it *before the wire* — not before now.
-- **Time-debt policy — the hard one.** ChucK may pretend computation is instantaneous; a GUI laying out a
-  large tree, tokenising a big file, or blocking on a native modal dialog may not. When logical time falls
-  behind real time, the correct response *differs per concern*: input wants **order preserved** (replay the
-  buffered interval in true order), animation wants **catch-up** (sample at real time; do not replay three
-  seconds of easing in one frame). Conflating them would create a fresh bug class.
-- **Retention.** Answering "B as of T" requires B to still hold T, so retention must be reader-driven — a
-  low-water mark over the oldest timestamp any conduit might still read — not a fixed depth. And **"read too
-  old" must fail loudly**; silently clamping to the oldest retained version produces exactly the
-  intermittent-staleness bug that is hardest to diagnose.
-- **Conflict policy per state.** Last-write-wins is right for pointer position or an animation target, and
-  wrong for anything a human authored, where it discards intent. `Document`'s relative `Edit`s already
-  commute, which is the better answer where it applies.
-
-## Staging
-
-Each stage is independently useful; nothing here requires the whole vision to land first.
-
-| # | Work | Payoff on its own |
-|---|---|---|
-| 1 | Logical clock; events carry stamps; delivered in stamp order within a frame | Fixes the attribution class that caused the latch bug |
-| 2 | Message-based keyboard input in the Windows backend | Retires edge-loss; makes stage 1's stamps *true* |
-| 3 | Animation as `f(logical time)` | No drift, frame-rate independence, assertable motion |
-| 4 | Shreds (virtual threads + `advance(dur)`) | Gestures as straight-line code **and** the virtual-user harness |
-| 5 | Stamps on `State<T>` commits | Multi-window/remote ordering; later, rollback |
-
-Stage 2 is not an optimisation. Polling destroyed the input conduit's history before any reader could ask
-"as of T" — `GetAsyncKeyState` diffing cannot answer that question in principle, so without stage 2 there is
-no input conduit to read.
-
-Java 25 is what makes stage 4 practical: a shred is a virtual thread parked until the scheduler's clock
-reaches its wake time, cheap enough to have thousands, with structured concurrency scoping its lifetime to a
-widget or window. The discipline it inherits from ChucK is that a shred must not block on real I/O, or it
-breaks timing for everyone.
-
-## Consequences for testing
-
-This is where the model pays for itself soonest, because a virtual user *is* a shred:
-
-```
-press(CTRL); advance(120::ms); press(W); advance(200::ms); release(W)
-```
-
-The same primitive expresses the app's gesture recognisers and the test's synthetic user. With a **virtual**
-clock, `advance` is instantaneous and exact — no sleeps, no flakes, and the "press and release faster than
-the poll can see" failure mode cannot exist, because there is no poll.
-
-Two further mechanisms, which fail differently and are both wanted:
-
-- **A model-based virtual user catches what you thought to model.** It would have caught the latch bug —
-  *if* the model included "the user releases modifiers while another window has focus", which is exactly the
-  scenario nobody writes by hand.
-- **An invariant watchdog catches what you did not think to model.** A subscriber asserting paired-edge
-  sanity (no release without a press; nothing latched across a focus transition) fires on every harness run
-  whatever the test was about. This is the backstop, and it is why example-based gate tests were not enough:
-  they asserted steady states, and the corruption happened *at the transition*.
-
-Two standing notes, learned expensively:
-
-- **`HeadlessGui` currently publishes events past tactroller**, so the routing gates are not in the test path
-  at all — which is precisely how the latch bug slipped through a green suite. A virtual user must drive
+- **`HeadlessGui` publishes events past tactroller**, so the routing gates are not in the test path at
+  all — which is precisely how the latch bug slipped through a green suite. A scripted user must drive
   `InputPublisher`, not the bus directly.
 - **Tests must never inject desktop-wide input.** `SendInput` delivers to whatever window has focus — the
-  developer's, not the test's — so it can operate other applications. `RawInputFanoutTest` is therefore
-  opt-in behind `-Dtactroller.injectInput=true`.
+  developer's, not the test's — so it can operate other applications. `RawInputFanoutTest` is opt-in
+  behind `-Dtactroller.injectInput=true` for that reason.
 
-## Where the pieces would live
+## Integration shape (Kronometer M8)
 
-| Layer | Home | Why there |
-|---|---|---|
-| Record/replay of a topic | `atchung-core` (or test scope until proven) | Generic and semantics-free; a recorder is just a subscriber |
-| `Stamp`, conduit identity, `happensBefore` | `atchung-core` | Both the bus and `State` need them; no domain knowledge |
-| Paired-edge invariants; `VirtualUser` / `VirtualDesktop` | tactroller | Owns input semantics; the gates must be in the test path |
-| Logical clock driven by the frame loop; derivation; shreds | vexelray-gui-core | Owns the frame, the retained tree, the single-writer reconciler |
-| "Why didn't this fire?" reporting | vexelray-gui-core | Builds on the `KeyRouted` observation channel |
+Kronometer's §13 already specifies the seam, and nothing here needs a `kronometer-vexelray` module:
 
-The bus must not learn that `KeyPressed`/`KeyReleased` are a pair, or that focus gates them. That is domain
-semantics, and keeping the core a dumb transport is why it is fast and portable.
+- this repo constructs the `Kron`, ticks it once per presented frame in `INLINE` (so effects have run
+  before the frame is submitted), exposes `gui.kron()`, and closes it with the window;
+- live input enters the graph through `kronometer-atchung`: a `Topic` **drives a `Cell`**, whose horizon
+  is `now`, which is exactly right for input;
+- a shred may **await a `Topic`** as a yield point, which is what turns gesture recognition from a state
+  machine scattered across callbacks into straight-line code;
+- `State<T>` stays the answer to "what is true now"; Kronometer times *when* it changes.
 
-## The diagnostic payoff
+## On Kronometer §15.4 — which repo owns the scenario harness
 
-With read edges recorded as `(conduit, version, stamp)`, the dependency log *is* the diagnostic. "Why didn't
-this update?" stops being an afternoon of hypotheses and becomes a query:
+Recommendation: **split it**, on the evidence of the latch bug.
 
-> you read `files-window@1.20s`; it committed at `1.55s`; nothing invalidated you.
+- **Tactroller** owns the paired-edge invariants and the scripted user's model of the *physical* keyboard
+  and per-window focus, with `kronometer-core` as a **test-scope** dependency. Test scope answers the
+  hesitation in §15.4 — a shipping repo gains no runtime dependency. The reason it must live there: the
+  latch bug was a tactroller-internal invariant violation, and the invariant has to be able to fail a
+  tactroller build with no GUI installed. Downstream-only tests mean tactroller can ship broken and only
+  a consumer notices, which is what happened.
+- **This repo** owns scenarios that need widgets and windows — "open the folder window, focus it, press
+  Ctrl+W" — composing tactroller's scripted user with `HeadlessGui` and `Kron.virtual()`.
 
-Given how the motivating bug was actually found — by reading code after several wrong guesses, and one
-detour that injected keystrokes into the developer's desktop — that is the single largest improvement on
-offer here.
+The division follows the same rule as the invariants themselves: each layer tests what it can break alone.
+
+## What we should do before M8
+
+1. Message-based keyboard input in the Windows backend (residue 1). Without it the kernel's precision
+   stops at the process boundary.
+2. Paired-edge invariant watchdog in tactroller (residue 2), so the class stays extinct.
+3. Route `HeadlessGui` through `InputPublisher` (residue 4), closing the gap that hid the latch bug.
+4. Then adopt: `Kron.driven()` per frame, one real interaction moved onto the graph — which is exactly
+   what M8 asks a first consumer to prove.

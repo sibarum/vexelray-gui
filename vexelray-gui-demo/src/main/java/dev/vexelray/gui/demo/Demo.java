@@ -5,6 +5,7 @@ import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.TextClipboard;
 import dev.vexelray.gui.core.WindowControls;
+import dev.vexelray.gui.core.app.AppHome;
 import dev.vexelray.gui.core.app.GuiApp;
 import dev.vexelray.gui.core.app.Settings;
 import dev.vexelray.os.Decorations;
@@ -105,9 +106,11 @@ public final class Demo {
         // that honours density gets a window that honours it too. Sizing the window in raw pixels while the
         // content scales is the mismatch that leaves a 125% display showing three quarters of the UI.
         //
-        // Placement persists across runs (~/.vexelray-demo/settings.properties): the window is *created* at its
+        // Placement persists across runs (~/.vexelray-demo/session.properties): the window is *created* at its
         // last bounds — outer rect on both sides of the round trip — rather than appearing and then jumping.
-        Settings settings = Settings.open("vexelray-demo");
+        // AppHome is the directory, Settings a file in it; bounds go in "session" rather than the default
+        // "settings" store because they are where the user left the window, not a preference the user chose.
+        Settings settings = AppHome.of("vexelray-demo").settings("session");
         WindowConfig windowConfig = WindowConfig
                 .of("VexelRay GUI", settings.getInt("window.w", W), settings.getInt("window.h", H))
                 .at(settings.getInt("window.x", WindowConfig.UNPOSITIONED),

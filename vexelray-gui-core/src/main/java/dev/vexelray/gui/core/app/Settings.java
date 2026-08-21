@@ -18,8 +18,8 @@ import java.util.Properties;
  *
  * <p><b>Format and location are deliberately boring.</b> Java properties: zero dependencies, line-diffable,
  * hand-editable, and forgiving of unknown keys — an older build reading a newer file skips what it doesn't know
- * instead of failing. A dot-directory under the user's home is the convention every toolchain already follows,
- * and it gives the app a natural place for more than one file later (caches, logs) without inventing anything.
+ * instead of failing. The directory itself is {@link AppHome} — a dot-directory under the user's home, named for
+ * the application, holding this file and whatever else the application keeps between launches.
  *
  * <p><b>Explicit save, atomic write.</b> Mutations touch memory; {@link #save()} writes everything, via a
  * temporary file moved into place, so a crash mid-write leaves the previous settings intact rather than a
@@ -52,12 +52,12 @@ public final class Settings {
     /**
      * Open (or start empty) the settings for {@code appName}: {@code $HOME/.{appName}/settings.properties}.
      * The directory is created on the first {@link #save()}, not here — merely reading settings leaves no mark.
+     *
+     * <p>Shorthand for {@code AppHome.of(appName).settings()}; go through {@link AppHome} directly for a second
+     * store beside this one, for any other file in the directory, or to redirect where the directory lives.
      */
     public static Settings open(String appName) {
-        if (appName == null || appName.isBlank()) {
-            throw new IllegalArgumentException("appName must not be blank");
-        }
-        return new Settings(Path.of(System.getProperty("user.home"), "." + appName, "settings.properties"));
+        return AppHome.of(appName).settings();
     }
 
     /** Open (or start empty) a settings file at an explicit path — for tests, or a non-standard location. */

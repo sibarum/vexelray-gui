@@ -180,10 +180,15 @@ What sits between the GUI and the OS, all driven from the one main-thread loop:
   `MAXIMIZE_BUTTON`, the host derives the rectangles from each laid-out frame and pushes them to
   the OS, and the window answers its own hit-test from them. `GuiApp.controls()` is the other half —
   minimize, maximize/restore, close, for the buttons to call.
-- **`Settings`** — per-user persistence at `~/.appname/settings.properties`: typed get/put
-  (including ordered lists, e.g. the open files), explicit atomic `save()`, and every failure mode
-  (missing, malformed, corrupt) degrades to defaults — never an exception at launch. The demo
-  round-trips its window bounds through it.
+- **`AppHome` / `Settings`** — per-user persistence. `AppHome.of("appname")` is the directory the
+  application owns, `~/.appname/`, on every platform: `settings()` is `settings.properties`,
+  `settings("session")` a second store beside it, `file(...)`/`folder(...)` any other path inside it
+  (resolution that leaves the directory is rejected, not followed). Reading creates nothing — the
+  directory appears at the first write — and the location is redirectable for portable installs and
+  tests, by `AppHome.at(path)` or the `appname.home` system property. `Settings` itself is typed
+  get/put (including ordered lists, e.g. the open files), explicit atomic `save()`, and every failure
+  mode (missing, malformed, corrupt) degrades to defaults — never an exception at launch. The demo
+  round-trips its window bounds through `~/.vexelray-demo/session.properties`.
 - **Native file dialogs** (`vexelray-gui-nfd`) — open/save/pick-folder as `Optional<Path>`, bound
   straight to the window handle.
 

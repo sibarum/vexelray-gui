@@ -180,6 +180,23 @@ What sits between the GUI and the OS, all driven from the one main-thread loop:
   `MAXIMIZE_BUTTON`, the host derives the rectangles from each laid-out frame and pushes them to
   the OS, and the window answers its own hit-test from them. `GuiApp.controls()` is the other half —
   minimize, maximize/restore, close, for the buttons to call.
+- **Named windows** — `app.window("terminal", spec)` is one window however many times it is asked for:
+  `show()` creates it if it is closed and raises and focuses it if it is not, `hide()` takes it off
+  the screen without losing it, `toggle()` is the shortcut version, and the `Gui` outlives every
+  open/close cycle, so a window reopened is the window as it was left. Commands are safe from any
+  thread — they are performed at the top of the next frame. `app.input(factory)` is the other half:
+  supply once how a device backend attaches to a window, and every window the framework opens from
+  then on is interactive without further wiring.
+- **Modal dialogs** (`Modals`, `Modal`) — `Modals.show(Modal.of(title, message).button(...))` from
+  any thread, no class per question. Each dialog is a real OS window with the same chrome as the
+  rest of the application, and while it is up every other window is **disabled by the window
+  manager** (not merely ignoring events) and dimmed by a scrim that reflows nothing and takes no
+  clicks. Two questions asked at once are shown one after the other, never stacked.
+- **Close interception** — `app.onCloseRequest(request -> ...)` turns a close into a question the
+  application answers whenever it can: the window stays open and fully live (which is what lets the
+  answer come from a dialog), and `request.proceed()` / `request.cancel()` decide. Per window
+  through `WindowSpec.onCloseRequest`. A window that was *destroyed* rather than asked is never put
+  to a vote.
 - **`AppHome` / `Settings`** — per-user persistence. `AppHome.of("appname")` is the directory the
   application owns, `~/.appname/`, on every platform: `settings()` is `settings.properties`,
   `settings("session")` a second store beside it, `file(...)`/`folder(...)` any other path inside it

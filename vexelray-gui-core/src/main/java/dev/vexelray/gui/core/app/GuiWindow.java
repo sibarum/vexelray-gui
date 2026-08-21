@@ -40,10 +40,13 @@ import dev.vexelray.vulkan.vk.VulkanInstance;
  * window is given a frame sink, so the frames Windows asks for while it runs a modal move or resize are drawn
  * instead of the window freezing for the length of the drag.
  *
+ * <p><b>Input is per-window</b>, and the host attaches it: each window gets its own backend through
+ * {@link WindowInput}, pumped by {@link #frame} before that window's tree is laid out, so two windows hear their
+ * own pointers without either learning about the other.
+ *
  * <p><b>Scaffold caveat:</b> the shared device was selected for present support against the <i>first</i> window's
  * surface; every real platform presents to sibling windows of the same display stack from the same queue family,
- * but a per-surface support check at creation is a correctness follow-up. Input is also not yet routed per-window
- * (tactroller attaches to one window today), so a popup renders and resizes but does not hear the pointer.
+ * but a per-surface support check at creation is a correctness follow-up.
  */
 final class GuiWindow implements AutoCloseable {
 

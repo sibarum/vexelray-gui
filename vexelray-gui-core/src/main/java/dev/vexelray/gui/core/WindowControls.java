@@ -30,6 +30,41 @@ public interface WindowControls {
      */
     void close();
 
+    /**
+     * Controls bound to a real OS window — what an application-drawn title bar in <em>any</em> window commands,
+     * not just the main one. Close is a <em>request</em>, not a teardown: it travels the same route the system
+     * close button's does, so the frame loop observes it and releases the window's resources in the order it
+     * always does, rather than having them pulled out from under a frame in flight.
+     */
+    static WindowControls of(dev.vexelray.os.NativeWindow window) {
+        return new WindowControls() {
+
+            @Override
+            public void minimize() {
+                window.minimize();
+            }
+
+            @Override
+            public void toggleMaximize() {
+                if (window.isMaximized()) {
+                    window.restore();
+                } else {
+                    window.maximize();
+                }
+            }
+
+            @Override
+            public boolean maximized() {
+                return window.isMaximized();
+            }
+
+            @Override
+            public void close() {
+                window.requestClose();
+            }
+        };
+    }
+
     /** Controls that do nothing: for a headless render, a test, or a window that has no chrome to command. */
     WindowControls NONE = new WindowControls() {
 

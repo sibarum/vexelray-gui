@@ -6,8 +6,11 @@ import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.TextClipboard;
 import dev.vexelray.gui.core.WindowControls;
 import dev.vexelray.gui.core.app.AppHome;
+import dev.vexelray.gui.core.app.AppWindow;
 import dev.vexelray.gui.core.app.GuiApp;
 import dev.vexelray.gui.core.app.Settings;
+import dev.vexelray.gui.core.app.WindowInput;
+import dev.vexelray.gui.core.app.WindowSpec;
 import dev.vexelray.os.Decorations;
 import dev.vexelray.os.WindowConfig;
 import dev.vexelray.gui.core.layout.Length;
@@ -19,6 +22,8 @@ import dev.vexelray.gui.widget.Tabs;
 import dev.vexelray.gui.widget.TitleBar;
 import dev.vexelray.gui.widget.TextField;
 import dev.vexelray.gui.widget.ContextMenu;
+import dev.vexelray.gui.widget.Modal;
+import dev.vexelray.gui.widget.Modals;
 import dev.vexelray.gui.widget.Tooltip;
 import dev.vexelray.gui.widget.TreeView;
 import dev.vexelray.text.TextLayout;
@@ -124,12 +129,44 @@ public final class Demo {
              Clipboard clipboard = openClipboard(gui)) {
             attachInput(input, gui, app);
             refs.titleBar().controls(app.controls());   // the window exists now; point the chrome at it
-            // The popup vertical: a click handler (worker thread) *requests* a window; the main thread creates it
-            // at the top of the next frame and folds it into the one loop every window shares. Popups are owned
-            // by the main window: one taskbar icon, raised and minimized together.
-            gui.onClick(refs.popupButton(), () -> app.requestPopup("VexelRay popup", 420, 280, popupGui()));
+            // One seam, and every window the framework opens from here on can hear the user: its own backend,
+            // attached when the window is created, pumped by the loop, released with it. Dialogs and named
+            // windows need nothing further to be interactive.
+            app.input(Demo::windowInput);
+            Modals.install(app);
+
+            // The popup vertical, as a *named* window: "popup" is one window however many times it is asked for,
+            // so clicking the button (or pressing Ctrl+`) while it is open raises the window that exists instead
+            // of making a second one — and closing it does not lose its tree, which is waiting for the next show.
+            AppWindow popup = app.window("popup",
+                    () -> WindowSpec.of(WindowConfig.of("VexelRay popup", 420, 280), popupGui()));
+            gui.onClick(refs.popupButton(), popup::show);
+            gui.shortcut(Key.GRAVE_ACCENT, popup::toggle, Modifier.CONTROL);
             if (maxFrames > 0) {
-                app.requestPopup("VexelRay popup", 420, 280, popupGui());   // frames-capped runs exercise it
+                // Frames-capped runs exercise both window verticals: a named window, and a dialog that blocks
+                // and dims everything else while it is up.
+                popup.show();
+                Modals.info("Modal dialog", "Shown by a frames-capped run, over a dimmed application.");
+            }
+
+            // A dialog is a value, from any thread, with no class behind it. While it is up, every other window
+            // of this application is disabled by the window manager and dimmed.
+            gui.onClick(refs.dialogButton(), () -> Modals.show(
+                    Modal.of("A real window", "This dialog is an OS window of its own, owned by the main "
+                                    + "window and drawn with the same chrome. The application behind it is "
+                                    + "disabled and dimmed until you answer.\n\nAsk twice and the second "
+                                    + "question waits its turn.")
+                            .defaultButton("Ask again", () -> Modals.info("Second question",
+                                    "Queued behind the first, presented when it closed."))
+                            .cancelButton("Close", () -> { })));
+
+            // Closing the window is a *request* the application may refuse. Installed only when there is input
+            // to answer it with: a dialog nobody can click would be a window that cannot be closed at all.
+            if (input != null) {
+                app.onCloseRequest(request -> Modals.show(
+                        Modal.of("Quit the demo?", "Window placement is saved either way.")
+                                .defaultButton("Quit", request::proceed)
+                                .cancelButton("Stay", request::cancel)));
             }
             TactrollerInputBridge bridge = input == null ? null : bridgeFor(input, gui);
             app.run(gui, maxFrames, () -> pump(bridge));
@@ -267,6 +304,40 @@ public final class Demo {
         return new TactrollerInputBridge(input, gui.bus());
     }
 
+    /**
+     * Input for a window the framework opened on its own — a dialog, a named window: its own tactroller backend,
+     * attached to that window's handle, bridged onto that window's bus, and pumped by the frame loop. This is the
+     * whole of what an application has to say about input for every window it does not create itself
+     * ({@link GuiApp#input}); the main window is still wired by hand above because it exists before the app does.
+     *
+     * <p>A window whose backend will not open renders and hears nothing, which is a degraded window rather than a
+     * failed launch — the same policy as the main window's.
+     */
+    private static WindowInput windowInput(dev.vexelray.os.NativeWindow window, Gui windowGui) {
+        Tactroller backend;
+        try {
+            backend = Tactroller.open();
+            backend.attach(NativeWindow.ofHwnd(window.osHandle()));
+            backend.setCoordinateSpace(CoordinateSpace.CLIENT);
+        } catch (BackendException e) {
+            System.out.println("input unavailable for this window (" + e.getMessage() + ")");
+            return WindowInput.NONE;
+        }
+        TactrollerInputBridge bridge = new TactrollerInputBridge(backend, windowGui.bus());
+        return new WindowInput() {
+
+            @Override
+            public void pump() {
+                Demo.pump(bridge);
+            }
+
+            @Override
+            public void close() {
+                backend.close();
+            }
+        };
+    }
+
     /** Snapshot input onto the bus for this frame; a transient backend poll failure just skips the frame. */
     private static void pump(TactrollerInputBridge bridge) {
         if (bridge == null) {
@@ -279,7 +350,7 @@ public final class Demo {
         }
     }
 
-    private record Refs(Node header, Node log, Node popupButton, TitleBar titleBar) {
+    private record Refs(Node header, Node log, Node popupButton, Node dialogButton, TitleBar titleBar) {
     }
 
     /**
@@ -500,10 +571,11 @@ public final class Demo {
         // first button aligns with the cards. left edge (body padding is also dp(24)). These are dp rather than
         // rem because they are frame, not content: zoom should grow what you are reading, not the gutter round it.
         Node popupButton = button(gui, "Popup", DIM, PANEL, PANEL_HOVER, PANEL_PRESSED, true);
+        Node dialogButton = button(gui, "Dialog", DIM, PANEL, PANEL_HOVER, PANEL_PRESSED, true);
         Node controls = gui.row().width(Length.FILL).height(Length.rem(4)).padding(Length.dp(8), Length.dp(24))
                 .gap(Length.rem(0.75f)).justify(Justify.START).alignItems(AlignItems.CENTER)
                 .children(getStarted, button(gui, "Docs", DIM, PANEL, PANEL_HOVER, PANEL_PRESSED, true),
-                        wrapToggle, popupButton, slider.node(), valueLabel);
+                        wrapToggle, popupButton, dialogButton, slider.node(), valueLabel);
 
         Node fieldRow = gui.row().width(Length.FILL).height(Length.rem(3.25f))
                 .padding(Length.dp(6), Length.dp(24)).gap(Length.rem(0.75f))
@@ -522,7 +594,8 @@ public final class Demo {
         // restyle because interaction-state observers accumulate.
         new Tooltip(gui)
                 .attach(getStarted, "Append a line to the live log")
-                .attach(popupButton, "Open a true OS popup window")
+                .attach(popupButton, "Open a true OS popup window (Ctrl+`)")
+                .attach(dialogButton, "Ask a question in a modal dialog")
                 .attach(wrapToggle, "Toggle word wrap in the editor");
 
         // The window's own chrome, drawn by the GUI: a title bar that is a row of widgets, and two declarations
@@ -532,7 +605,7 @@ public final class Demo {
         TitleBar titleBar = new TitleBar(gui, WindowControls.NONE, "VexelRay GUI");
 
         gui.root().background(BG).children(titleBar.node(), header, body, controls, fieldRow, footer);
-        return new Refs(header, log, popupButton, titleBar);
+        return new Refs(header, log, popupButton, dialogButton, titleBar);
     }
 
     /** A fixed-size labelled button that lightens on hover and darkens while pressed. */

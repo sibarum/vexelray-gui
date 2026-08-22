@@ -8,7 +8,7 @@ a ratio and the renderer tone-maps the whole block into a legible range.
 | Module | `vexelray-gui-typeset` |
 | Depends on | `vexelray-gui-core` (only) |
 | Entry | application edge, optional |
-| Status | **P0 complete** — the vocabulary and the SPI are settled and proven; P1 next |
+| Status | **P0 + P1 complete** — vocabulary, SPI and tone map settled and proven; P2 next |
 
 ---
 
@@ -269,10 +269,32 @@ what makes the system total — always feasible, always legible.
 | contrast floor | **hard** | Two nesting levels rendering at the same size is worse than one being oversized. |
 | size ceiling | **yields** | Aesthetic. A deeply nested expression *is* large if every part of it must be readable; it overflows and scrolls. |
 
-**Where it breaks, concretely.** At `9pt–32pt` the display range is 1.83 stops. A script scale of `0.7` costs
-0.515 stops per level, and a `1.5:1` contrast floor pins `s ≥ 0.585`. The ceiling therefore yields past
-`1.83 / 0.585 / 0.515 ≈ 6` levels of nesting. A fraction whose numerator carries a script that carries its own
-script is three to four. Real headroom, and a known limit rather than a surprise.
+**Where it breaks, concretely.** With the shipped profile — 9–32px, script `0.7`, contrast floor `1.2:1`, base
+16px — this is what the solver actually produces (`ToneMapTest`, measured rather than estimated):
+
+| levels | slope | root px | min px | |
+|---|---|---|---|---|
+| 0 | 1.000 | 16.00 | 16.00 | |
+| 2 | 1.000 | 18.37 | 9.00 | |
+| 4 | 0.889 | 32.00 | 9.00 | |
+| 6 | 0.593 | 32.00 | 9.00 | |
+| 7 | 0.511 | 34.9 | 9.00 | ceiling yields |
+| 12 | 0.511 | 80.24 | 9.00 | ceiling yields |
+
+The crossover is `ln(32/9) / (ln(1.2)/|ln 0.7|) / |ln 0.7|` = **6.96 levels**. Note what never moves: the smallest
+glyph is 9.00px at every depth. The floor is hard, and the block grows instead.
+
+An earlier draft of this section had `1.5:1` and "≈6 levels", both wrong, and P1 is what caught it. The `0.585`
+was `log₂(1.5)` — the slope for an authored *2:1* step, not for this profile's `1/0.7 = 1.43:1` one. Worse, a
+`1.5:1` floor is **wider than the tightest ratio the profile authors**, so it asked to preserve contrast that was
+never declared; the shipped value is now `1.2`. Building the solver before the engine is exactly what surfaced
+this — a golden coordinate is equally golden whether the slope behind it was right or not.
+
+**A tuning note that falls out of the numbers.** At a 16px base, `16 × 0.7² = 7.84px`, so a superscript carrying
+its own superscript already trips the floor and the block starts growing at *two* levels. That is the mechanism
+working as specified rather than a fault — but the interaction of base, floor and script scale decides how often
+a block grows, and with 16/9/0.7 the answer is "usually". Lower the floor, raise the base, or soften the script
+scale if that is not wanted.
 
 The soft-knee variant — slope 1 near the root, compressing harder toward the extremes, exactly a photographic
 S-curve — is the natural v2 and buys a few more levels. Not first.
@@ -383,7 +405,7 @@ vexelray-gui-typeset        →  vexelray-gui-core   (only)
   FaceKeys       key → face index, supplied by the app                               [P0 ✓]
   Placed         draw list + metrics; the closed alphabet Glyphs | Bar               [P0 ✓]
   Arrangement    the layout service a box drives                                     [P0 ✓]
-  ToneMap        the solve — pure numbers, zero dependencies                         [P1]
+  ToneMap        the solve — pure numbers, zero dependencies                         [P1 ✓]
   Layouts        where the seven built-ins arrange themselves                        [P2]
   Typeset        the engine: walks the tree, implements Arrangement                  [P2]
   TypesetBlock   the component: Placed → a subtree of floating nodes                 [P4]
@@ -434,12 +456,33 @@ finding, and it is resolved before anything else exists.
 One thing the recipes settled: an `Attach` with no satellites returns its nucleus rather than an empty wrapper,
 so `script(base, null, null)` is `base`. A construct with nothing attached is not a construct.
 
-### P1 — ToneMap, standalone
+### P1 — ToneMap, standalone ✓
 
 Pure numbers, zero dependencies, fully testable before a tree exists.
 
 **Gate:** degenerate cases — single run, zero range, identical siblings. `s ≤ 1` holds. Yield order under
 infeasibility. The depth sweep matches the hand calculation.
+
+**Result: passed, and it earned its position in the order.** `ToneMapTest`, 15 assertions, green — and it caught a
+real defect in the shipped profile before any geometry existed to hide it (§4.2).
+
+- **Every leaf clears the floor at every depth 0–12**, asserted as a sweep rather than a spot check. The measured
+  minimum is 9.00px throughout, at every depth, including the ones where the ceiling has given way.
+- **Ordering is never inverted or collapsed** — a larger authored ratio always renders larger, so relative size
+  still means "what is nested in what" after compression. This is the property that makes the whole mechanism
+  safe, and it holds for any non-negative slope.
+- The yield order is asserted in both directions: past the crossover the slope sits *exactly* on the contrast
+  floor, and the largest glyph exceeds the ceiling.
+- The filter rule has its own test. A `1.05:1` step does not pin the slope, because a step already tighter than
+  the contrast floor was never distinguishable and must not forbid compressing everything else — otherwise one
+  near-unit ratio anywhere in a block forbids compression everywhere.
+- `Stats.of` walks `children()`, so an application-defined box participates in the tone map with no special
+  handling. The same property `VocabularyTest` asserts structurally, re-checked here in the solver.
+
+One thing settled while building it: the map returns **pixels** (`px`), because a legibility floor is physical and
+nothing else in the module is, with `relative` giving the same number as a multiple of `rootPx()` for a layout
+working in em of the block root. Which of the two P2 lays out in is still open — both are exact, and one is a
+division of the other.
 
 ### P2 — The engine
 
@@ -501,8 +544,8 @@ a guard that does not look at a module cannot fail for it.
 
 Tracked in docs/todo.md; repeated here only where a phase blocks on them.
 
-- Confirm a widget-facing accessor for the resolved layout context — `rootEmPx`, `zoom`, `dpi` — exists on `Gui`,
-  or add one. The tone map needs the pixel basis, and P4 blocks on it. **Unverified.**
+- Add a one-line `Gui.rootEmPx()` before P4. `zoom()` and `dpi()` are already `State<Float>` — the rebuild
+  trigger exists — and only the root em is private (`Gui.java:75`). Resolved: not a blocker (docs/todo.md §2).
 - Atlas budget: the primary face is roughly 1300 glyphs in a 2048 atlas at 32px, and the U+1D400 block adds about
   1000 more. Trim to italic and bold-italic; skip fraktur, script and double-struck.
 - Choose the hysteresis policy for `s` before P6.

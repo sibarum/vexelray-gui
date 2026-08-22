@@ -119,7 +119,10 @@ public record Profile(String defaultFace, Sizes sizes, Metrics metrics, Spacing 
      *
      * @param floorPx        no glyph renders smaller than this — hard
      * @param ceilPx         preferred upper bound — yields first
-     * @param ratioFloor     an authored size step must still render at least this ratio apart — hard
+     * @param ratioFloor     an authored size step must still render at least this ratio apart — hard. Set it
+     *                       <b>below</b> the tightest ratio in {@link Sizes}: it protects authored contrast from
+     *                       being crushed by compression, and cannot manufacture contrast that was never declared.
+     *                       A step already tighter than this is ignored when solving rather than pinning the slope
      * @param ratioCeil      an authored step must not render more than this ratio apart; only binds when
      *                       {@code allowExpansion} is set
      * @param allowExpansion whether the map may render ratios <em>wider</em> than authored. Off by default:
@@ -208,6 +211,12 @@ public record Profile(String defaultFace, Sizes sizes, Metrics metrics, Spacing 
                         0.35,   // gridRowGap
                         0.15),  // gridPad
                 new Spacing(table, names),
-                new ToneBounds(9.0, 32.0, 1.5, 4.0, false));
+                // ratioFloor must sit BELOW the tightest ratio the profile authors, or it asks to preserve
+                // contrast that was never declared. This profile's tightest step is the script scale, 1/0.7 =
+                // 1.43:1, so 1.2 leaves real headroom; the 1.5 first written here was larger than the step it was
+                // meant to protect, which left the radical's degree index setting the whole block's compression
+                // limit. With 1.2 the slope floor is ln(1.2)/|ln 0.7| = 0.511, and a 9–32px window yields the
+                // ceiling past about seven levels of nesting (ToneMapTest.depthSweep...).
+                new ToneBounds(9.0, 32.0, 1.2, 4.0, false));
     }
 }

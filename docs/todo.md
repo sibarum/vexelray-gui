@@ -153,8 +153,12 @@ Not open questions; decisions taken in P0 that later phases must honour. Listed 
   centralized, containment is currently a promise.
 - **Hysteresis policy for the tone map's slope, before P6.** `s` depends on the block's extremes, so a live edit
   resizes every glyph. Pick quantisation or a threshold; the demo's zoom control will show the jitter otherwise.
-- **Verify a widget-facing `LayoutContext` accessor** (`rootEmPx`, `zoom`, `dpi`) exists on `Gui`, or add one.
-  The tone map needs the pixel basis. **Unverified; P4 blocks on it.**
+- **A one-line `Gui.rootEmPx()` accessor.** Checked 2026-08-22, and the news is good: `Gui.zoom()` and
+  `Gui.dpi()` are already `State<Float>`, so the reactive rebuild trigger a typeset block needs already exists —
+  subscribe, re-solve, re-project. Only `rootEmPx` is missing, and it is a private `16f` constant
+  (`Gui.java:75`). Expose it rather than the whole `LayoutContext`, which is viewport-dependent and would couple a
+  widget to a layout type. If the root em ever becomes settable it can become a `State` like the other two.
+  **No longer a blocker; P4 needs the one-liner.**
 
 ---
 

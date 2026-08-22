@@ -139,18 +139,17 @@ Hand-reviewed today. Worth mechanising once there is a second module under `RULE
 
 Not open questions; decisions taken in P0 that later phases must honour. Listed so they are not rediscovered.
 
-- **No switching on `Extent`, `Align`, `Anchor.Kind` or `Slot` at P2.** An enum switched on for behaviour is the
-  same violation as a sealed switch. Give each the function: `Align.offset(contentWidth, columnWidth)`,
-  `Extent.resolve(natural, available)`, and so on. The signatures were not written at P0 because they need P2's
-  geometry to be real, not because the shape is undecided.
-- **`Layouts` must not survive P2 in its current form.** Every method throws `UnsupportedOperationException` with
-  a P2 pointer. That is scaffolding with a deadline, not a default case — but it is a throw, and it should be
-  gone the moment the engine lands.
-- **Containment must become an assertion at P2.** "Do not draw outside the box you declare" is the one rule the
-  framework enforces, and today it is enforced by nothing but this sentence. Once glyph metrics exist, every
-  `arrange` result in the test suite gets checked: every draw inside `width × (ascent + descent)`.
-  **This is the weakest leg of the design as it stands** — the tone map and the spacing table are genuinely
-  centralized, containment is currently a promise.
+- ~~No switching on `Extent`, `Align`, `Anchor.Kind` or `Slot` at P2.~~ **Done.** Each carries its own function:
+  `Align.offset(content, column)`, `Extent.resolve(natural, available)`, `Anchor.Kind.baseline(...)`, and `Slot`
+  answers `leading()` / `above()` / `stacked()` / `sideShift(metrics)`. No switch reads any of them.
+
+  A side effect worth knowing: an enum with constant-specific bodies compiles to a *sealed* class permitting its
+  anonymous constant subclasses, so `DispatchGuardTest` flagged the cure. `Sealing` now excludes enums, with a
+  test saying so on purpose — penalising a constant body would push authors back to the switch it replaced.
+- ~~`Layouts` must not survive P2.~~ **Done** — deleted. Each built-in arranges itself inline, which also makes
+  the seven look like what an application would write rather than like something with a framework helper.
+- ~~Containment must become an assertion at P2.~~ **Done** — `GeometryTest.everyConstructStaysInsideItsOwnBox`
+  checks every draw of every construct on both axes, measured with the atlas the engine used.
 - **Hysteresis policy for the tone map's slope, before P6.** `s` depends on the block's extremes, so a live edit
   resizes every glyph. Pick quantisation or a threshold; the demo's zoom control will show the jitter otherwise.
 - **A one-line `Gui.rootEmPx()` accessor.** Checked 2026-08-22, and the news is good: `Gui.zoom()` and
@@ -159,6 +158,12 @@ Not open questions; decisions taken in P0 that later phases must honour. Listed 
   (`Gui.java:75`). Expose it rather than the whole `LayoutContext`, which is viewport-dependent and would couple a
   widget to a layout type. If the root em ever becomes settable it can become a `State` like the other two.
   **No longer a blocker; P4 needs the one-liner.**
+- **Decide whether the engine memoises `lay`.** It does not today. `arrange` is contractually pure, so the option
+  stays open, but a box that iterates — a relaxation pass, a shrink-to-fit — will re-lay the same child many
+  times and pay for it every time. Worth measuring before P6 rather than assuming either way.
+- **The node projection must emit `Length.dp`, not `Length.em`.** `Placed` is in resolved pixels because the tone
+  map's floor is physical, and that basis already includes zoom and DPI. Resolving those coordinates as `em`
+  would apply both a second time. This is a P4 trap, written down before anyone falls in it.
 
 ---
 

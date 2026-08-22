@@ -49,7 +49,9 @@ public final class Recipes {
                 Box.rule(Extent.FILL, m.ruleThickness()),
                 denominator.withSize(p.sizes().denominator()));
         List<Double> gaps = List.of(m.fractionGapAbove(), m.fractionGapBelow());
-        return Box.stack(items, gaps, Anchor.axis()).withClass(MathClass.INNER);
+        // axisOn(1), not axis(): the bar is what the axis runs through, and centring the whole stack would only
+        // agree with that when the numerator and denominator happen to be the same height.
+        return Box.stack(items, gaps, Anchor.axisOn(1)).withClass(MathClass.INNER);
     }
 
     /** A base with a superscript and/or subscript to its right. Either satellite may be {@code null}. */

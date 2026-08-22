@@ -68,12 +68,34 @@ class DispatchGuardTest {
         assertFalse(Sealing.isSealed(openInterface()), "and an ordinary interface must not trip it");
     }
 
+    /**
+     * An enum whose constants carry bodies compiles to a sealed class permitting its anonymous constant
+     * subclasses. That shape is the rule's <em>cure</em>, not a violation — it is how an enum puts behaviour on
+     * the type instead of in a switch — so the guard must let it through, and must be seen to do so on purpose
+     * rather than by an accident of what the scan happens to look at.
+     */
+    @Test
+    void theGuardLetsAnEnumWithConstantBodiesThrough() {
+        assertFalse(Sealing.isSealed(enumWithConstantBodies()),
+                "penalising a constant-specific body would push authors back toward the switch it replaced");
+    }
+
     /** Bytecode for {@code sealed interface Probe permits Probe$A {}}. */
     private static byte[] sealedInterface() {
         ClassWriter cw = new ClassWriter(0);
         cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC | Opcodes.ACC_INTERFACE | Opcodes.ACC_ABSTRACT,
                 "dev/vexelray/gui/typeset/Probe", null, "java/lang/Object", null);
         cw.visitPermittedSubclass("dev/vexelray/gui/typeset/Probe$A");
+        cw.visitEnd();
+        return cw.toByteArray();
+    }
+
+    /** Bytecode for {@code enum Probe { A { … } }} — sealed by the compiler, not by its author. */
+    private static byte[] enumWithConstantBodies() {
+        ClassWriter cw = new ClassWriter(0);
+        cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC | Opcodes.ACC_ENUM | Opcodes.ACC_ABSTRACT,
+                "dev/vexelray/gui/typeset/Probe", null, "java/lang/Enum", null);
+        cw.visitPermittedSubclass("dev/vexelray/gui/typeset/Probe$1");
         cw.visitEnd();
         return cw.toByteArray();
     }

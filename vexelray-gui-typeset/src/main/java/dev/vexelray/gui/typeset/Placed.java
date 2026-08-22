@@ -11,9 +11,14 @@ import java.util.List;
  * nothing about. Violating it is a bug, not a rendering mode: it is asserted in tests, and at runtime the enclosing
  * block's clip contains the damage to visual overlap rather than corruption.
  *
- * <p>Coordinates are in <b>em of the laid box</b>: {@code x} grows right, the reference baseline is {@code y = 0},
- * and {@code y} grows <b>down</b> — so material above the baseline has negative y. {@link #ascent} is the extent
- * above the baseline as a positive number and {@link #descent} the extent below.
+ * <p>Coordinates are in <b>pixels</b>: {@code x} grows right, the reference baseline is {@code y = 0}, and
+ * {@code y} grows <b>down</b> — so material above the baseline has negative y. {@link #ascent} is the extent above
+ * the baseline as a positive number and {@link #descent} the extent below.
+ *
+ * <p>Pixels, and not the em this module otherwise insists on, because this is the stage where geometry is
+ * resolved: the tone map has already run, and its floor and ceiling are physical. The projection converts once,
+ * and it must use {@code Length.dp} rather than {@code Length.em} — the layout basis, zoom and DPI included, is
+ * already baked into these numbers, so resolving them as em would apply both a second time.
  *
  * <h2>Why there is a sink and not a sealed draw type</h2>
  * A consumer of a draw list — the node projection, a renderer, a remote client holding no atlas — needs a
@@ -61,8 +66,8 @@ public record Placed(double width, double ascent, double descent, List<Draw> dra
      */
     public interface Sink {
 
-        /** A run of glyphs with its baseline at {@code y}, at {@code size} em, in the face named by {@code face}
-         *  (a profile key — the consumer resolves it, since only the consumer knows its atlas). */
+        /** A run of glyphs with its baseline at {@code y}, drawn at {@code size} pixels, in the face named by
+         *  {@code face} (a profile key — the consumer resolves it, since only the consumer knows its atlas). */
         void glyphs(String text, String face, double x, double y, double size, Object sourceRef);
 
         /** A filled rectangle with its top-left at {@code (x, y)}. */

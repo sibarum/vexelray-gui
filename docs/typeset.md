@@ -8,7 +8,7 @@ a ratio and the renderer tone-maps the whole block into a legible range.
 | Module | `vexelray-gui-typeset` |
 | Depends on | `vexelray-gui-core` (only) |
 | Entry | application edge, optional |
-| Status | **P0 + P1 complete** — vocabulary, SPI and tone map settled and proven; P2 next |
+| Status | **P0–P2 complete** — vocabulary, SPI, tone map and engine, all against the real atlas; P3 next |
 
 ---
 
@@ -70,26 +70,28 @@ The second decision is what licenses the first — and it is the precise thing C
 why margin collapsing works in `block` and not `flex`, and why `align-items` does not mean quite the same thing
 twice. Each mode re-derived the invariants instead of inheriting them.
 
-The honest caveat: the property holds only while the invariants really are enforced. Two of the three are —
-one tone solve, one spacing table. **Containment is enforced by nothing but this document until P2** (docs/todo.md
-§2).
+The honest caveat: the property holds only while the invariants really are enforced. As of P2 all three are —
+one tone solve, one spacing table, and containment asserted for every construct in `GeometryTest` against the
+real atlas. That was the weakest leg of the design for two phases; it is not any more.
 
 | Built-in | What it is |
 |---|---|
 | `Run` | Glyphs plus a face key and a source ref |
 | `Row` | Horizontal sequence; inter-item gap decided by adjacent spacing classes |
-| `Stack` | Vertical sequence with explicit gaps and a named anchor — the baseline of child *n*, the axis, or its own centre |
+| `Stack` | Vertical sequence with explicit gaps and a named anchor — the baseline of child *n*, one child on the axis, the whole composite on the axis, or its own centre |
 | `Attach` | A nucleus with satellites at named corners: NE, SE, NW, SW, N, S |
 | `Rule` | A filled bar sized from its context |
 | `Stretch` | A glyph scaled — later, assembled — to a target extent, with its own kerns |
 | `Grid` | Cells with per-column alignment and explicit gaps |
 
-**Two properties are universal, carried by all seven** rather than by `Run` alone:
+**Three properties are universal, carried by all seven** rather than by `Run` alone:
 
 - `size` — the ratio relative to the parent, because a whole superscripted *subtree* scales as a unit, so the
   ratio has to attach to any node.
 - `spacingClass` — the index a `Row` looks up, because a fraction sitting in a row spaces as one atom. A
   composite needs a class just as much as a glyph run does. Recipes set theirs to `INNER`.
+- `fillsCrossExtent` — whether this box grows to its container's cross extent. Added in P2, and it exists so a
+  container can run the two-pass growable content needs *without asking what kind of box it holds*.
 
 Both were `Run`-only in the first sketch, and both had to be lifted for the same reason a custom box gets them
 too: a composite is a first-class box, not a second-class container.
@@ -110,6 +112,7 @@ public interface Box {
     int spacingClass();                         // index into the profile's table
     List<Box> children();                       // reading order — a mark with no logical position is absent
     Box with(double size, int spacingClass);
+    default boolean fillsCrossExtent() { return false; }
 
     Placed arrange(Arrangement a);              // the only method an implementation writes
 }
@@ -121,6 +124,9 @@ public interface Box {
 public interface Arrangement {
     Placed lay(Box child);                      // at its declared size
     Placed lay(Box child, double size);         // or at one you pick
+    Placed layFilling(Box child, double cross); // ...or with a cross extent to grow into
+    double sizePx();                            // this box's resolved size
+    double crossExtent();                       // what the container offered, or 0
     double toneMapped(double authored);         // the block's solved transfer — available, not mandatory
     Profile profile();
     double axis();
@@ -484,12 +490,50 @@ nothing else in the module is, with `relative` giving the same number as a multi
 working in em of the block root. Which of the two P2 lays out in is still open — both are exact, and one is a
 division of the other.
 
-### P2 — The engine
+### P2 — The engine ✓
 
 Primitives to `Placed`, against `dev.vexelray.text.AtlasData` — which is already shaped identically to the
 reference implementation's metrics API, so this is the least risky phase.
 
 **Gate:** golden geometry over hand-built trees, run against the real shipped atlas rather than a fixture.
+
+**Result: passed.** `GeometryTest`, 18 assertions, green against `primary.json` with no face bindings — which is
+exactly how the module behaves on today's atlas, before P5.
+
+Assertions are **relationships** wherever one exists: the bar centres on the axis, the numerator clears it by
+`fractionGapAbove`, the vinculum runs to the end of its radicand, a grown delimiter covers its content and
+straddles the axis evenly, row spacing equals two ORD/BIN table entries exactly. A relationship survives a
+profile being retuned; a golden number does not. Exact goldens are kept only where nothing else captures the
+intent — a lone run is exactly its atlas advance, an empty run occupies nothing.
+
+**Containment is now asserted**, for every construct, every draw, both axes, measured with the same atlas the
+engine laid it out from. That closes the design's weakest leg (§3).
+
+#### Two real bugs the gate caught
+
+**`Anchor.AXIS` conflated two meanings.** Centring the whole composite on the axis is what a matrix wants; a
+fraction needs its *bar* on the axis, and the two agree only when the numerator and denominator happen to be the
+same height. `a/b` was enough to separate them — the bar came out at −5.75px against an axis at −4.00px. Added
+`Anchor.axisOn(int)`, and `Recipes.fraction` now anchors on the bar.
+
+**A grown delimiter did not cover asymmetric content.** A row was offering `ascent + descent` as the cross
+extent, but a grower centres on the axis and content rarely sits symmetrically about it, so a paren merely as
+tall as its content poked out above and fell short below. A row now offers the axis-symmetric height —
+`2 · max(ascent − axis, descent + axis)` — which is what actually covers it.
+
+#### What the SPI was missing
+
+P0 locked the SPI's *shape* — a box declares, a box arranges, the container drives — and that held. Its accessor
+set did not: five things had to be added once real geometry needed them.
+
+- `Arrangement.sizePx()` — any box that draws needs its own resolved size.
+- `Arrangement.crossExtent()` and `layFilling(Box, double)` — how a container offers a grower its target, and how
+  a grower hears about it.
+- `Box.fillsCrossExtent()` — so a container knows which children to lay twice without inspecting their type.
+- `Anchor.axisOn(int)`, and `Anchor.Children` (baseline *and* centre) in place of the baseline-only callback.
+
+None of it changed the shape, and finding it in P2 rather than P4 is the ordering working. But "P0 locked the
+SPI" was too strong a claim at the time, and it is worth recording as such.
 
 ### P3 — Recipes and the spacing table
 

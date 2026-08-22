@@ -32,6 +32,10 @@
         <!-- Kronometer integration: the strongly-timed scheduling and animation substrate, plus
              interpolation for the GUI's own value types. Enters at the application edge, never in -core. -->
         <module>vexelray-gui-krono</module>
+        <!-- Structured, non-editable rich text: a seven-primitive composition IR, tone-mapped type sizes, and a
+             projection to floating nodes. A typeset block is an atom in flex layout, never inside a text field.
+             See docs/typeset.md. -->
+        <module>vexelray-gui-typeset</module>
         <!-- Test-only: the automated separation-of-concerns guard (docs/architecture-proof-plan.md M0).
              Last, so it inspects the compiled output of everything above it. -->
         <module>vexelray-gui-architecture</module>
@@ -75,6 +79,11 @@
             <dependency>
                 <groupId>dev.vexelray.gui</groupId>
                 <artifactId>vexelray-gui-nfd</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.vexelray.gui</groupId>
+                <artifactId>vexelray-gui-typeset</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

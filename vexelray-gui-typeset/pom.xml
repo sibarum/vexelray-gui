@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>dev.vexelray.gui</groupId>
+        <artifactId>vexelray-gui</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>vexelray-gui-typeset</artifactId>
+
+    <name>VexelRay GUI :: Typeset</name>
+    <description>
+        Structured, non-editable rich text: seven composition primitives, type sizes declared as ratios and
+        tone-mapped into a legible range per block, and a projection onto floating nodes. It complements the flex
+        layout engine rather than extending it — a typeset block is an atom with an intrinsic size, and its
+        interior is its own composition world. It holds no opinion about markup: the app builds the IR. See
+        docs/typeset.md.
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>dev.vexelray.gui</groupId>
+            <artifactId>vexelray-gui-core</artifactId>
+        </dependency>
+    </dependencies>
+</project>

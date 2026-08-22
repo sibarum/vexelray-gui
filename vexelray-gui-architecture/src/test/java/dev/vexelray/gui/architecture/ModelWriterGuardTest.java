@@ -42,7 +42,7 @@ class ModelWriterGuardTest {
     @Test
     void onlyTheDeclaredStagesWriteTheRetainedModel() {
         List<String> violations = new ArrayList<>();
-        for (String module : List.of(Bytecode.GUI_CORE, Bytecode.GUI_WIDGET)) {
+        for (String module : Bytecode.INSPECTED) {
             Path classes = Bytecode.classesOf(module);
             for (Path classFile : Bytecode.classFiles(classes)) {
                 violations.addAll(ModelWriters.writesOutside(STAGES, Bytecode.read(classFile)));

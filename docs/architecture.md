@@ -94,7 +94,9 @@ Verified against the current libraries.
   `State<PointerState>`. Render-thread polling; no background daemon.
 - **Multi-window input.** One `Tactroller` per OS window, each bridged to its own window's `Gui` (see §11's
   popup seam: `GuiApp.requestPopup(..., onCreated, onClosed)` hands the app the new window's handle to attach
-  a backend, and a hook to release it). Beware the scope trap this feature exposes: several OS input channels
+  a backend, and a hook to release it — or, in the `WindowConfig` overload, the popup's own `NativeWindow`, so
+  an app can create it at saved bounds, read its placement back, and close it via `requestClose()`). Beware the
+  scope trap this feature exposes: several OS input channels
   are **process-wide**, not per-window, so every backend receives every window's share of them. Tactroller
   corrects that in two places — a process-scoped hub owns those channels and fans them out, and
   `InputPublisher` gates delivery by event kind (keys/text by focus, wheel/pointer by cursor-in-client). The

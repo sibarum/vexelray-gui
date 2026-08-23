@@ -8,7 +8,7 @@ a ratio and the renderer tone-maps the whole block into a legible range.
 | Module | `vexelray-gui-typeset` |
 | Depends on | `vexelray-gui-core` (only) |
 | Entry | application edge, optional |
-| Status | **P0–P3 complete** — vocabulary, SPI, tone map, engine, recipes and style, all against the real atlas; P4 next |
+| Status | **P0–P4 complete** — vocabulary, SPI, tone map, engine, recipes, style and projection; P5 (atlas face) and P6 (demo) remain |
 
 ---
 
@@ -408,25 +408,65 @@ compose — building it now would be a layout DSL authored on speculation.
 
 ## 8. Projection to the node tree
 
-The engine's output is a flat draw list. Each draw becomes one floating node.
+The engine's output is a flat draw list. Each draw becomes one floating node. `TypesetBlock` is the whole of it,
+and the only file in the module that knows what a `Gui` is.
 
 ```
 Glyphs(text, x, y, size, face)
-    → Node.text(text).font(idx).textSize(em(size·k))
-          .floatAt(em(x·k), em((y − ascender·size)·k)).hitInert(true)
+    → Node.text(text).font(idx).textSize(dp(size)).textColor(ink)
+          .size(dp(advance·size), dp((ascender − descender)·size))
+          .floatAt(dp(x), dp(y − ascender·size − top)).hitInert(true)
 
 Bar(x, y, w, h)
-    → Node.background(ink).size(em(w·k), em(h·k))
-          .floatAt(em(x·k), em(y·k)).hitInert(true)
+    → Node.background(ink).size(dp(w), dp(h))
+          .floatAt(dp(x), dp(y − top)).hitInert(true)
 ```
 
 The `− ascender·size` term converts baseline-relative y to the node's top-left: a text node draws `VAlign.TOP`
-and the engine places the first baseline at `box.y + ascent`. `ascender` is a per-face constant from the same
-`AtlasData` the layout already holds. Keep it in one named helper — the moment a second backend exists it must
-use the identical conversion.
+and the renderer places the first baseline at `box.y + ascender·size`. `ascender` is a per-face constant from the
+same `AtlasData` the layout already holds, and it lives in one named helper (`Typeset.ascenderOf`) — the moment a
+second backend exists it must use the identical conversion. `top` is the container's own top edge, below.
 
-The container is sized `em(width·k) × em((ascent + descent)·k)`, and that box is exact, because a floating node
-takes no space from siblings and adds nothing to parent overflow.
+**`dp`, not `em`.** The tone map solves in pixels because the legibility floor is physical, so by the time there
+are coordinates the basis has been applied and applying it again would be a second multiplication. The block
+solves at `rootEmPx · zoom` and emits `dp`, which resolves as `v · dpi` — density and nothing else. Zoom is
+already inside the number; density is the one factor left, and it is exactly the one `dp` supplies. Emitting `em`
+would apply the root em, zoom *and* density a second time.
+
+**Sizes are set, never measured.** Every node carries an explicit width and height computed from the same atlas
+metrics the engine laid out with, so the block does not depend on the application having supplied a
+`TextMeasurer` that agrees with the atlas — and the container's box is arithmetically guaranteed to fit its
+children rather than merely expected to.
+
+### 8.1 The container's box, which is not what this section first said
+
+An earlier version of this section sized the container `width × (ascent + descent)` — the draw list's **ink** —
+and called that box exact. It is not a legal container, and P4 is where it showed.
+
+A text node's box is a **line** box. The renderer draws it `VAlign.TOP` and puts the baseline at
+`box.y + ascender·size`, so the box top sits a full ascender above the baseline while the ink reaches only as
+high as the tallest glyph actually is. Size the container to the ink and every glyph's box begins *above* it —
+where core clamps a floating child back inside (`FlexLayout.placeFloating`), sliding the whole block down by the
+difference. Silently: a clamp is a correction, not an error.
+
+So the two axes are bounded by different things, and each is the tight bound for what that axis means.
+
+**Vertically: the union of the projected boxes.** It contains the ink, and it is the better box on its own
+merits — it is what every other text box in this framework is, and it keeps a block's height from changing when
+its content gains or loses a descender. `a/b` and `a/c` are the same height; hugging ink they would not be.
+
+**Horizontally: exactly `0 .. width`, the block's advance** — which may be *wider* than anything drawn. A box may
+reserve advance it puts no mark in: `x²` carries `scriptGapAfter` past its exponent, so its drawn union stops
+0.8px short of its width at a 16px base. That trailing space is the block's advance, exactly as a trailing space
+is part of a text run's, and clipping to the drawn union would delete it and let a neighbour sit too close.
+Nothing clamps here either, and for a reason worth noticing: **containment already guarantees every draw lies
+inside `[0, width]`** (§3), so the one invariant the framework enforces on a box turns out to be precisely the
+precondition the projection needs.
+
+The other way out was widening core's float contract so a child may overhang its parent. Rejected — the clamp is
+right for the overlay case it was written for, this is not that case, and there was no need to make the two argue
+when the block's own box was the thing that was wrong. The ink box stays available through `TypesetBlock.placed()`
+for anything that wants to align to it.
 
 > **Nothing in core changes.** The module builds nodes through the public `Node` API, so it posts mutations like
 > any widget and never writes `RetainedNode`. The model-writer guard stays green by construction rather than by
@@ -452,7 +492,7 @@ vexelray-gui-typeset        →  vexelray-gui-core   (only)
   Arrangement    the layout service a box drives                                     [P0 ✓ P2 ✓ P3 ✓]
   ToneMap        the solve — pure numbers, zero dependencies                         [P1 ✓]
   Typeset        the engine: walks the tree, implements Arrangement                  [P2 ✓]
-  TypesetBlock   the component: Placed → a subtree of floating nodes                 [P4]
+  TypesetBlock   the component: Placed → a subtree of floating nodes               [P4 ✓]
 ```
 
 Depends on `-core` alone — the projection needs `Gui`, `Node`, `Length` and `Color`, and nothing else. It sits
@@ -617,12 +657,53 @@ draw by draw, read out through `Placed.Sink` so even the tripwire goes through t
 sees. Relationships are still the default — a relationship only catches what someone thought to relate, and this
 is the backstop for a change that moves everything consistently.
 
-### P4 — Projection and component
+### P4 — Projection and component ✓
 
 The draw list becomes a subtree of floating nodes, rebuilt on content or basis change.
 
 **Gate:** the container box exactly bounds the draw list; node counts are within budget; a headless snapshot
 renders.
+
+**Result: passed, with the gate's first clause rewritten because it was wrong.** `ProjectionTest`, 8 assertions,
+green against a real headless `Gui` — no window, no Vulkan, the geometry read back off the retained tree rather
+than taken on the projection's word.
+
+The budget is one node per draw and nothing else: no wrappers, no spacers, no grouping boxes, every child a leaf.
+`Gui.rootEmPx()` landed as the one-liner it was predicted to be.
+
+#### The container box is not the ink box
+
+"Exactly bounds the draw list" assumed the container could be the ink, and it cannot — a text node's box is a
+*line* box, so a glyph's box top sits above an ink-sized container and core clamps a floating child back inside.
+Silently, since a clamp is a correction rather than an error. §8.1 has the full account; the shape of the answer
+is that the two axes are bounded by different things: **vertically the union of the projected boxes, horizontally
+the block's advance.**
+
+Two things fell out that were better than the fix.
+
+The vertical union is the right box on its own merits, clamp or no clamp: a block's height no longer changes when
+its content gains or loses a descender, so `a/b` and `a/c` are the same height. And the horizontal bound needs no
+clamp precisely because **containment already guarantees every draw lies inside `[0, width]`** — the one
+invariant the framework enforces on a box turned out to be exactly the precondition the projection needs. That is
+the containment rule paying for itself a second time, in a phase that had no reason to expect it.
+
+The width is the block's *advance*, not the extent of its marks, and the two genuinely differ: `x²` reserves
+`scriptGapAfter` past its exponent and draws nothing in it. Tightening to the drawn union would have deleted
+that trailing advance and let a neighbour sit too close — a bug that would have looked like kerning.
+
+#### What the tests pin
+
+`densityIsAPureScaleAndZoomIsNot` is the §4.3 story end to end, and it is the assertion the whole `dp`-versus-`em`
+question reduces to. Density never reaches the solve, so doubling it doubles every coordinate exactly; zoom is
+inside the basis the map solves against, so doubling it re-solves against a floor that has not moved and a
+compressed block does *not* simply double. `aFlatBlockScalesTheSameWayUnderBoth` is the control: with no nesting
+there is no range to compress, the map is the identity, and the two agree. If they ever disagreed there, one of
+them would be applied twice — which is exactly what emitting `em` would do.
+
+The harness supplies a `TextMeasurer` that returns 9999 for everything, on purpose. The projection sets an
+explicit size on every node, so nothing should ever consult it; if something starts to, the geometry assertions
+fail loudly rather than the block quietly acquiring a dependency on the application's measurer agreeing with the
+atlas.
 
 ### P5 — Atlas face
 
@@ -662,8 +743,12 @@ a guard that does not look at a module cannot fail for it.
 
 Tracked in docs/todo.md; repeated here only where a phase blocks on them.
 
-- Add a one-line `Gui.rootEmPx()` before P4. `zoom()` and `dpi()` are already `State<Float>` — the rebuild
-  trigger exists — and only the root em is private (`Gui.java:75`). Resolved: not a blocker (docs/todo.md §2).
+- ~~Add a one-line `Gui.rootEmPx()` before P4.~~ **Done in P4**, and it stayed a one-liner. Not a `State` like
+  `zoom()` and `dpi()`, because nothing can change it; if it ever becomes settable it becomes one, and a caller
+  already subscribing to those two has somewhere obvious to add it.
+- **Hysteresis is now the last thing between here and a demo that looks right.** P4 made the jitter reachable:
+  a block re-solves on every zoom commit, `s` depends on the block's extremes, so a zoom drag resizes every glyph
+  continuously. Still scheduled for before P6 (below), but it is no longer theoretical.
 - Atlas budget: the primary face is roughly 1300 glyphs in a 2048 atlas at 32px, and the U+1D400 block adds about
   1000 more. Trim to italic and bold-italic; skip fraktur, script and double-struck.
 - Choose the hysteresis policy for `s` before P6.

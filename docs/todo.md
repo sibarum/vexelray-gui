@@ -162,18 +162,22 @@ Not open questions; decisions taken in P0 that later phases must honour. Listed 
   neither is worth it for the growth of one gap in a construct this rare. Revisit only if a real document shows it.
 - **Hysteresis policy for the tone map's slope, before P6.** `s` depends on the block's extremes, so a live edit
   resizes every glyph. Pick quantisation or a threshold; the demo's zoom control will show the jitter otherwise.
-- **A one-line `Gui.rootEmPx()` accessor.** Checked 2026-08-22, and the news is good: `Gui.zoom()` and
-  `Gui.dpi()` are already `State<Float>`, so the reactive rebuild trigger a typeset block needs already exists —
-  subscribe, re-solve, re-project. Only `rootEmPx` is missing, and it is a private `16f` constant
-  (`Gui.java:75`). Expose it rather than the whole `LayoutContext`, which is viewport-dependent and would couple a
-  widget to a layout type. If the root em ever becomes settable it can become a `State` like the other two.
-  **No longer a blocker; P4 needs the one-liner.**
+- ~~**A one-line `Gui.rootEmPx()` accessor.**~~ **Done in P4**, exactly as scoped: a plain `float` accessor, not
+  the whole `LayoutContext` (viewport-dependent, would couple a widget to a layout type) and not a `State`,
+  because nothing can change it. `TypesetBlock` subscribes to `zoom()` and `dpi()` for the rebuild trigger and
+  reads this for the basis.
 - **Decide whether the engine memoises `lay`.** It does not today. `arrange` is contractually pure, so the option
   stays open, but a box that iterates — a relaxation pass, a shrink-to-fit — will re-lay the same child many
   times and pay for it every time. Worth measuring before P6 rather than assuming either way.
-- **The node projection must emit `Length.dp`, not `Length.em`.** `Placed` is in resolved pixels because the tone
-  map's floor is physical, and that basis already includes zoom and DPI. Resolving those coordinates as `em`
-  would apply both a second time. This is a P4 trap, written down before anyone falls in it.
+- ~~**The node projection must emit `Length.dp`, not `Length.em`.**~~ **Done in P4** — and the conclusion was
+  right while the premise was not, which is worth keeping. The note said the solved basis "already includes zoom
+  and DPI". It includes zoom and must *not* include DPI: `dp` resolves as `v · dpi`, so a basis carrying density
+  would apply it twice, and a legibility floor expressed in device pixels shrinks physically on exactly the
+  displays where legibility is at stake. The block solves at `rootEmPx · zoom` and lets `dp` supply the one
+  remaining factor. `ProjectionTest.densityIsAPureScaleAndZoomIsNot` pins both halves.
+- **Hysteresis for the tone map's slope is now the nearest real gap.** Listed above as a P6 item, and P4 made it
+  reachable: a block re-solves on every zoom commit, and `s` depends on the block's extremes, so a zoom drag
+  resizes every glyph continuously rather than at steps. Quantise `s`, or threshold the re-solve.
 
 ---
 

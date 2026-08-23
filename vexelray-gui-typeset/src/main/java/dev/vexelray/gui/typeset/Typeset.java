@@ -63,6 +63,39 @@ public final class Typeset {
         return ToneMap.solve(ToneMap.Stats.of(root, profile.tone().ratioFloor()), profile.tone(), basePx);
     }
 
+    /**
+     * The face's ascender, in em — the distance from the top of a text node's box down to its first baseline.
+     * The projection needs it and only it to convert a baseline-relative {@code y} into a node's top edge, and
+     * keeping the conversion in one place matters: the moment a second backend exists it must use this one
+     * (docs/typeset.md §8).
+     */
+    public double ascenderOf(String faceKey) {
+        return atlas.face(faces.indexOf(faceKey)).metrics().ascender();
+    }
+
+    /** The face's descender, in em and <b>negative</b> — so a text box that exactly contains one line of this
+     *  face is {@code (ascenderOf - descenderOf) · size} tall. */
+    public double descenderOf(String faceKey) {
+        return atlas.face(faces.indexOf(faceKey)).metrics().descender();
+    }
+
+    /** The total advance of {@code text} in one face, in em. The projection needs a text node's width, and this
+     *  is the same sum a {@link Box.Run} lays itself out by — one place that iterates codepoints, not two. */
+    public double advanceOf(String faceKey, String text) {
+        double advance = 0;
+        for (int i = 0; i < text.length(); ) {
+            int cp = text.codePointAt(i);
+            i += Character.charCount(cp);
+            advance += glyphOf(faceKey, cp).advance();
+        }
+        return advance;
+    }
+
+    /** The atlas face index this profile's key binds to — what {@code Node.font(int)} wants. */
+    public int faceIndexOf(String faceKey) {
+        return faces.indexOf(faceKey);
+    }
+
     /** Metrics for one glyph of one face key, in em; never {@code null}. */
     public Arrangement.Glyph glyphOf(String faceKey, int codepoint) {
         AtlasData face = atlas.face(faces.indexOf(faceKey));

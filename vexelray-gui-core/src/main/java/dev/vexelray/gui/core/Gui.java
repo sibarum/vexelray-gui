@@ -324,6 +324,24 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
+     * The root em in pixels before zoom and DPI — the flat basis every {@link Length#em} resolves against
+     * ({@code em = v · rootEmPx · zoom · dpi}, §6). A constant today, and exposed rather than the whole
+     * {@link dev.vexelray.gui.core.layout.LayoutContext}, which is viewport-dependent and would couple a caller
+     * to a layout type.
+     *
+     * <p>Not a {@code State}, unlike {@link #zoom()} and {@link #dpi()}, because nothing can change it. If it ever
+     * becomes settable it becomes a {@code State} like the other two, and a caller that already subscribes to
+     * those has somewhere obvious to add it.
+     *
+     * <p><b>Who needs it:</b> anything that must solve in pixels before handing coordinates back as
+     * {@code Length}s. {@code vexelray-gui-typeset} is the case that asked for it — its tone map has a physical
+     * legibility floor, so it cannot work in em and defer (docs/typeset.md §4.3).
+     */
+    public float rootEmPx() {
+        return ROOT_EM_PX;
+    }
+
+    /**
      * Set the display density (see {@link #dpi()}), clamped to [{@value #MIN_DPI}, {@value #MAX_DPI}].
      *
      * <p><b>Feed this from the real surface scale, and lay out in the same space input arrives in.</b> The

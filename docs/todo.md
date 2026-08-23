@@ -160,8 +160,23 @@ Not open questions; decisions taken in P0 that later phases must honour. Listed 
   clamp reads their measured ascent, so anything they raised internally is already counted. An exact fix needs
   the nucleus's *unclamped* ascent as well as its actual one — two lays, or a second field on `Placed` — and
   neither is worth it for the growth of one gap in a construct this rare. Revisit only if a real document shows it.
-- **Hysteresis policy for the tone map's slope, before P6.** `s` depends on the block's extremes, so a live edit
-  resizes every glyph. Pick quantisation or a threshold; the demo's zoom control will show the jitter otherwise.
+- ~~**Hysteresis policy for the tone map's slope, before P6.**~~ **Closed — the policy is that there is none,
+  because the solve is already stable.** Four properties, each a test in `ToneMapTest`, written up in
+  docs/typeset.md §4.3.1: the slope does not depend on the pixel basis at all (so zoom cannot make it shimmer,
+  and P6's gate was watching an axis where jitter is not expressible); it is already a five-valued staircase over
+  thirteen depths, so there is nothing left to quantise; while it is compressing the block sits exactly at the
+  ceiling, so added nesting redistributes the interior and does not move the block; and it is Lipschitz in the
+  block's range with the legible window as the bound, which covers content the shipped profile does not author.
+
+  A 1/8 slope grid was built and measured before the staircase was noticed. It moved the ceiling crossover from
+  seven levels to four and bought nothing, and it is not in the tree. What is left is a real visible change when
+  a whole nesting level is added — the compressor responding to its input, which no policy should suppress and
+  no threshold could have caught anyway. Hysteresis would also have been *state*, so the same document would
+  render two ways depending on how it was reached: a headless snapshot, a remote client and any cold re-render
+  would all disagree. `solve` stays a pure function of `(Stats, bounds, basePx)`.
+
+  Also wrong in the old note: "ugly to retrofit". The quantising version was one line in `solve` and one field on
+  `ToneBounds` — which is a small argument for having looked at the numbers five phases earlier.
 - ~~**A one-line `Gui.rootEmPx()` accessor.**~~ **Done in P4**, exactly as scoped: a plain `float` accessor, not
   the whole `LayoutContext` (viewport-dependent, would couple a widget to a layout type) and not a `State`,
   because nothing can change it. `TypesetBlock` subscribes to `zoom()` and `dpi()` for the rebuild trigger and
@@ -175,9 +190,13 @@ Not open questions; decisions taken in P0 that later phases must honour. Listed 
   would apply it twice, and a legibility floor expressed in device pixels shrinks physically on exactly the
   displays where legibility is at stake. The block solves at `rootEmPx · zoom` and lets `dp` supply the one
   remaining factor. `ProjectionTest.densityIsAPureScaleAndZoomIsNot` pins both halves.
-- **Hysteresis for the tone map's slope is now the nearest real gap.** Listed above as a P6 item, and P4 made it
-  reachable: a block re-solves on every zoom commit, and `s` depends on the block's extremes, so a zoom drag
-  resizes every glyph continuously rather than at steps. Quantise `s`, or threshold the re-solve.
+- **The projection rebuilds every node on each basis change — measure it before P6.** This is what replaced
+  hysteresis as the live-behaviour concern, and unlike hysteresis it is real: `TypesetBlock.rebuild` removes and
+  re-creates the whole subtree on every zoom or DPI commit, so a zoom drag is a remove-plus-create per glyph per
+  commit. The tone map's slope cannot change with the basis (§4.3.1), so the draw list keeps its exact shape and
+  only its numbers move — which means node reuse needs no diffing: same content plus same draw count implies the
+  nodes are positionally interchangeable, and the rebuild becomes a prop update. Cheap to do, but measure first;
+  the whole-subtree rebuild was a deliberate P4 choice and a draw list is small.
 
 ---
 

@@ -139,6 +139,111 @@ class ToneMapTest {
         return ToneMap.solve(s, B, BASE).px(Math.exp(s.maxLog())) > B.ceilPx() + 1e-6;
     }
 
+    // --- stability, which needs no policy (docs/typeset.md §4.3) --------------------------------------------------
+    // These four are the answer to "choose a hysteresis policy": the solve is already stable, on every axis that
+    // could have made it jitter, and each reason is a property rather than an observation. Hysteresis would have
+    // been state — the same document rendering two ways depending on how it was reached — bought for nothing.
+
+    @Test
+    void theSlopeDoesNotDependOnThePixelBasisAtAll() {
+        // The finding that reframed the question. fit, lower and upper are functions of the tree and the profile
+        // only; the basis enters the solve nowhere but the gain. So zoom scales a block and cannot change its
+        // shape, and a zoom drag cannot make the compression shimmer. P6's gate was watching this axis, and it
+        // is discharged here as a property instead of left to the eye.
+        ToneMap.Stats s = ToneMap.Stats.of(nestedScripts(8), B.ratioFloor());
+        double slope = ToneMap.solve(s, B, 1.0).slope();
+
+        for (double base = 1; base <= 400; base *= 1.07) {
+            assertEquals(slope, ToneMap.solve(s, B, base).slope(), EPS, "at a " + base + "px basis");
+        }
+    }
+
+    @Test
+    void theSlopeIsAlreadyAStaircase() {
+        // Quantising the slope was the other candidate policy, and there is nothing left to quantise: over
+        // thirteen nesting depths the shipped profile produces five distinct slopes, constant below four levels
+        // (nothing to compress) and constant from seven up (the contrast floor pins it). Only the three depths in
+        // between move at all.
+        List<Double> distinct = new java.util.ArrayList<>();
+        for (int depth = 0; depth <= 12; depth++) {
+            double slope = solveAtDepth(depth).slope();
+            if (distinct.isEmpty() || Math.abs(distinct.get(distinct.size() - 1) - slope) > EPS) {
+                distinct.add(slope);
+            }
+        }
+        assertEquals(5, distinct.size(), "five slopes across thirteen depths: " + distinct);
+
+        for (int depth = 0; depth <= 3; depth++) {
+            assertEquals(1.0, solveAtDepth(depth).slope(), EPS, "nothing to compress at depth " + depth);
+        }
+        for (int depth = 7; depth <= 12; depth++) {
+            assertEquals(solveAtDepth(7).slope(), solveAtDepth(depth).slope(), EPS,
+                    "the contrast floor pins the slope from seven levels up, including at " + depth);
+        }
+    }
+
+    @Test
+    void aCompressingBlockDoesNotChangeSizeWhenItGetsDeeper() {
+        // The strongest form of the stability that was wanted, and it falls out of the fit rather than being
+        // imposed on it: while the fit is what binds, the block is exactly as large as the window allows, so
+        // adding a nesting level redistributes the interior and leaves the block's own size alone.
+        for (int depth = 4; depth <= 6; depth++) {
+            assertEquals(B.ceilPx(), solveAtDepth(depth).rootPx(), 1e-6,
+                    "at depth " + depth + " the block sits exactly at the ceiling");
+        }
+        assertTrue(solveAtDepth(6).px(0.7) > solveAtDepth(4).px(0.7),
+                "the interior does redistribute — the levels below the root spread out as depth grows");
+    }
+
+    @Test
+    void aSmallChangeInABlockCanOnlyMakeASmallChangeInTheSlope() {
+        // What rules out jitter for content the shipped profile does not author: a box may declare any size it
+        // likes, so a block's range can move continuously. The solve is Lipschitz in it, and the bound is the
+        // legible window itself — |dslope| <= |drange| / window, because in the only region where the fit binds,
+        // range is at least the window. Nothing can respond disproportionately to a small edit.
+        double window = Math.log(B.ceilPx() / B.floorPx());
+        double step = 1e-3;
+        for (double range = step; range < 6; range += step) {
+            double before = slopeForRange(range);
+            double after = slopeForRange(range + step);
+            assertTrue(Math.abs(after - before) <= step / window + EPS,
+                    "at range " + range + " the slope moved " + Math.abs(after - before));
+        }
+    }
+
+    @Test
+    void theDepthSweepInTheDocsIsWhatTheSolverActuallyProduces() {
+        // docs/typeset.md §4.2 prints this table, and a table in prose drifts. Pinning it here means the numbers
+        // a reader is given are the numbers the code computes — and it is how the 34.9px that was printed against
+        // seven levels was found to be wrong.
+        StringBuilder table = new StringBuilder();
+        for (int depth : new int[]{0, 2, 4, 6, 7, 12}) {
+            ToneMap m = solveAtDepth(depth);
+            double smallest = m.px(Math.pow(P.sizes().script(), depth));
+            // '\n', not '%n': a text block is always LF, and this test would otherwise pass on one OS only.
+            table.append(String.format("%2d  slope %.3f  root %6.2f  min %5.2f\n", depth, m.slope(),
+                    m.rootPx(), smallest));
+        }
+
+        assertEquals("""
+                 0  slope 1.000  root  16.00  min 16.00
+                 2  slope 1.000  root  18.37  min  9.00
+                 4  slope 0.889  root  32.00  min  9.00
+                 6  slope 0.593  root  32.00  min  9.00
+                 7  slope 0.511  root  32.25  min  9.00
+                12  slope 0.511  root  80.24  min  9.00
+                """, table.toString());
+    }
+
+    /** The solved slope for a block of a given authored log-range, with this profile's tightest authored step. */
+    private static double slopeForRange(double range) {
+        return ToneMap.solve(new ToneMap.Stats(-range, 0, SCRIPT_STEP, SCRIPT_STEP, 2), B, BASE).slope();
+    }
+
+    private static ToneMap solveAtDepth(int depth) {
+        return ToneMap.solve(ToneMap.Stats.of(nestedScripts(depth), B.ratioFloor()), B, BASE);
+    }
+
     // --- the contrast-floor filter ----------------------------------------------------------------------------------
 
     @Test
@@ -160,6 +265,7 @@ class ToneMapTest {
     void aProfileWhoseFloorExceedsItsOwnStepsLeavesNothingToProtect() {
         // ratioFloor above every authored ratio: every step is filtered, so the contrast floor stops constraining
         // and the fit alone decides. This is the misconfiguration the shipped profile originally had.
+        // Exact solve, no slope grid: what is under test is which constraint decides, not where it rounds to.
         Profile.ToneBounds tooTight = new Profile.ToneBounds(9.0, 32.0, 3.0, 4.0, false);
         ToneMap.Stats s = ToneMap.Stats.of(nestedScripts(9), tooTight.ratioFloor());
 
@@ -177,6 +283,8 @@ class ToneMapTest {
 
         assertEquals(1.0, ToneMap.solve(shallow, B, BASE).slope(), EPS, "off by default");
 
+        // Deliberately kept on the shipped slope grid: rounding up happens before the clamp, so this also says
+        // that quantisation cannot push an expanding profile past its own ratioCeil.
         Profile.ToneBounds opted = new Profile.ToneBounds(9.0, 32.0, 1.2, 2.0, true);
         ToneMap m = ToneMap.solve(shallow, opted, BASE);
         assertTrue(m.slope() > 1.0, "opted in, a shallow block may be expanded");

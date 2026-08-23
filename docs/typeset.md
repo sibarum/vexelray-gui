@@ -292,8 +292,12 @@ what makes the system total — always feasible, always legible.
 | 2 | 1.000 | 18.37 | 9.00 | |
 | 4 | 0.889 | 32.00 | 9.00 | |
 | 6 | 0.593 | 32.00 | 9.00 | |
-| 7 | 0.511 | 34.9 | 9.00 | ceiling yields |
+| 7 | 0.511 | 32.25 | 9.00 | ceiling yields |
 | 12 | 0.511 | 80.24 | 9.00 | ceiling yields |
+
+This table is now `ToneMapTest.theDepthSweepInTheDocsIsWhatTheSolverActuallyProduces`, so it is the solver's own
+output rather than a transcription of it. Which is how the `34.9` that stood in the seven-level row was found to
+be wrong — the real figure is `32.25`, and a table in prose drifts.
 
 The crossover is `ln(32/9) / (ln(1.2)/|ln 0.7|) / |ln 0.7|` = **6.96 levels**. Note what never moves: the smallest
 glyph is 9.00px at every depth. The floor is hard, and the block grows instead.
@@ -324,9 +328,53 @@ S-curve — is the natural v2 and buys a few more levels. Not first.
 - **Scope is the block, never the document.** A global solve would let a heading elsewhere on the page compress
   your equation. Each typeset block is its own scene.
 
-**Stability.** Because `s` depends on the block's extremes, adding a deeply nested subterm resizes every glyph in
-the block. Fine for static rendering; visible jitter for anything live. Apply hysteresis to the solve, or
-quantize `s` to steps. Cheap now, ugly to retrofit.
+### 4.3.1 Stability: no policy, and why none is needed
+
+This section used to end with an obligation: *"Because `s` depends on the block's extremes, adding a deeply
+nested subterm resizes every glyph in the block. Apply hysteresis to the solve, or quantize `s` to steps. Cheap
+now, ugly to retrofit."* It was carried as an open item through five phases. Discharged, by looking at what the
+solve actually does rather than at what a range-fitting compressor is assumed to do. **There is no policy, and
+four properties say why** — each one a test in `ToneMapTest`, not an observation.
+
+**The slope does not depend on the pixel basis at all.** `fit = window / range`, `lower = ln(ratioFloor)/minStep`
+and the cap at 1 are functions of the tree and the profile; the basis enters the solve nowhere but the gain. So
+zoom scales a block and cannot change its shape. This is the one that reframes the question, because P6's gate —
+*"if the zoom control shows jitter, the hysteresis policy was skipped"* — was watching an axis where jitter is not
+expressible. That gate is now discharged as a property instead of left to the eye.
+
+**The slope is already a staircase, so there is nothing to quantize.** Across thirteen nesting depths the shipped
+profile produces *five* distinct slopes. Below four levels there is no range to compress and it is exactly 1;
+from seven up the contrast floor pins it at 0.511. Only depths four, five and six move at all. Quantizing a
+five-valued function is not a stabilisation, it is a rounding error with a ceiling cost — a 1/8 grid was built
+and measured before this was noticed, and it moved the crossover from seven levels to four to buy nothing.
+
+**While it is compressing, the block does not change size at all.** In exactly the band where the slope moves,
+the fit is what binds — and "the fit binds" *means* the block is as large as the window allows, so `root` sits at
+`ceilPx` for depths four through six. Adding a nesting level redistributes the interior and leaves the block's
+own footprint untouched. That is the strongest form of the stability that was wanted, and it was already there,
+falling out of the fit rather than imposed on it.
+
+**A small change can only make a small change.** The remaining worry was content the shipped profile does not
+author: a box may declare any size, so a block's range can move continuously. The solve is Lipschitz in it, with
+the legible window itself as the bound — `|Δs| ≤ Δrange / window` — because in the only region where the fit
+binds, `range ≥ window`. Nothing responds disproportionately to a small edit. The other partial is bounded too,
+and by something already present for a different reason: the contrast-floor filter guarantees `minStep ≥
+ln(ratioFloor)`, which is what keeps `∂s/∂minStep` finite.
+
+**What remains is not jitter.** Adding a whole nesting level at depth four does move the interior — around 6% for
+the glyphs one level down. That is a real, visible change, and no policy should suppress it: the content genuinely
+gained a level, and the compressor responding is the mechanism working. Hysteresis would not have fixed it either;
+the jump is far larger than any sane threshold. What hysteresis *would* have cost is severe: it is state, so the
+same document would render two ways depending on how it was reached, breaking a headless snapshot, a remote
+client, and any re-render from cold. `solve` is a pure function of `(Stats, bounds, basePx)` and that is worth
+more than stickiness nobody needed.
+
+One honest correction to the old note: "ugly to retrofit" was wrong too. The quantizing version was one line in
+`solve` and one field on `ToneBounds`. It could have been added at any time, which is a small argument for having
+looked at the numbers five phases earlier.
+
+**Left over.** The tone map is stable; the *projection* still tears down and rebuilds every node on each zoom
+commit, and that is now the live-behaviour cost worth measuring (docs/todo.md §2).
 
 ### 4.4 What the map actually guarantees
 
@@ -718,8 +766,15 @@ pass variables through upright, so the module is useful on today's atlas.
 
 Hand-built trees, a profile switcher, and a zoom control.
 
-**Gate:** the tone map's response to a changing pixel basis is the thing worth demonstrating — if the zoom
-control shows jitter, the hysteresis policy was skipped.
+**Gate:** ~~the tone map's response to a changing pixel basis is the thing worth demonstrating — if the zoom
+control shows jitter, the hysteresis policy was skipped.~~ **Rewritten (§4.3.1).** The slope does not depend on
+the pixel basis, so a zoom control *cannot* show that kind of jitter and the gate could never have fired. What is
+worth demonstrating is the axis that does move: a **depth control** that adds and removes nesting levels, showing
+the block pinned at the ceiling through depths four to six while its interior redistributes, and then growing
+once the contrast floor takes over. That is the mechanism, and it is invisible on a zoom slider.
+
+Keep the zoom control anyway — not for the tone map, but for the projection. Every glyph is rebuilt on each zoom
+commit, so a zoom drag is where node churn will show if it is going to.
 
 ---
 
@@ -746,11 +801,12 @@ Tracked in docs/todo.md; repeated here only where a phase blocks on them.
 - ~~Add a one-line `Gui.rootEmPx()` before P4.~~ **Done in P4**, and it stayed a one-liner. Not a `State` like
   `zoom()` and `dpi()`, because nothing can change it; if it ever becomes settable it becomes one, and a caller
   already subscribing to those two has somewhere obvious to add it.
-- **Hysteresis is now the last thing between here and a demo that looks right.** P4 made the jitter reachable:
-  a block re-solves on every zoom commit, `s` depends on the block's extremes, so a zoom drag resizes every glyph
-  continuously. Still scheduled for before P6 (below), but it is no longer theoretical.
+- ~~Choose the hysteresis policy for `s` before P6.~~ **Closed: there is no policy, because the solve is already
+  stable** (§4.3.1). Four properties, all tested. The one that reframed it: the slope does not depend on the pixel
+  basis, so zoom cannot make it shimmer.
 - Atlas budget: the primary face is roughly 1300 glyphs in a 2048 atlas at 32px, and the U+1D400 block adds about
   1000 more. Trim to italic and bold-italic; skip fraktur, script and double-struck.
-- Choose the hysteresis policy for `s` before P6.
+- The projection rebuilds every node on each basis change. The tone map is stable; this is not yet measured, and
+  it is the live-behaviour cost that replaced hysteresis as the thing to watch (docs/todo.md §2).
 - No reference front-end ships. Test input is hand-built IR trees, which prove the primitives rather than a
   format — and leave the format question entirely open.

@@ -31,7 +31,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * value gets {@code emitTo(Sink)} and the consumer implements {@code Sink}. The set of operations stays closed,
  * the set of value types stays open, and neither side switches. {@code Placed.Draw} is the worked example.
  *
- * <p><b>Scope.</b> Enforced today on {@link Bytecode#GUI_TYPESET}, the module designed under the rule.
+ * <p><b>Scope.</b> Enforced on {@link Bytecode#GUI_TYPESET} and {@link Bytecode#GUI_PLOT}, the modules
+ * designed under the rule — {@code -plot} was ported into this repo under it, which is why its enclosure
+ * algebra is three types carrying the operations rather than the three-case switch it came from.
  * {@code -core} still has three sealed types predating it — {@code Length}, {@code Mutation}, {@code Edit},
  * dispatched from {@code Length} itself, {@code Reconciler}, {@code Document} and {@code InputDispatcher} — and
  * widening {@link #RULED} to include them is the conversion's definition of done, not a box to tick early.
@@ -39,7 +41,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class DispatchGuardTest {
 
     /** The modules the rule is enforced on. Widening this list is what converting a module means. */
-    private static final List<String> RULED = List.of(Bytecode.GUI_TYPESET);
+    private static final List<String> RULED = List.of(Bytecode.GUI_TYPESET, Bytecode.GUI_PLOT);
 
     @Test
     void noSealedTypes() {

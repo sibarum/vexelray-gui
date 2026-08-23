@@ -121,6 +121,16 @@ public final class Reconciler {
                     layoutDirty = true;
                 }
             }
+            case Mutation.ScrollToEdge e -> {
+                RetainedNode n = index.get(e.id());
+                // Attachment alone is the whole edit: the layout pins a locked container's offset to its edge on
+                // every pass while attached, so the next one puts it there. Writing the offset here as well would
+                // be guessing at a content height that has not been measured yet.
+                if (n != null && n.scrollLock() != dev.vexelray.gui.core.layout.LayoutEnums.ScrollLock.NONE) {
+                    n.scrollAttached = true;
+                    layoutDirty = true;
+                }
+            }
             case Mutation.Batch b -> applyAll(b.ops());
         }
     }

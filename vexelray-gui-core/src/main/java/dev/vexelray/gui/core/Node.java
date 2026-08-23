@@ -285,6 +285,23 @@ public final class Node {
         return prop(PropKey.SCROLL_LOCK, lock);
     }
 
+    /**
+     * Send a {@link #scrollLock}ed container back to its locked edge and re-attach it, so it resumes following
+     * the content as it grows.
+     *
+     * <p>{@link #scrollLock} already detaches when the user scrolls away from the edge and re-attaches when they
+     * scroll back onto it — that much needs no help, and taking it away from them would be the wrong fix. This is
+     * for the other way a reader signals they are done looking at history: by doing something. A shell where
+     * pressing Enter does not bring you back to the prompt is a shell that hides its own output, so the command
+     * that appends says so here, and the scroller catches up in the same frame the output lands.
+     *
+     * <p>A no-op on a container with no scroll lock: there is no edge to be at.
+     */
+    public Node scrollToEdge() {
+        sink.post(new Mutation.ScrollToEdge(id));
+        return this;
+    }
+
     // --- structure ---
 
     public Node append(Node child) {

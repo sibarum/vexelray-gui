@@ -10,7 +10,7 @@ import java.util.Map;
  */
 public sealed interface Mutation
         permits Mutation.Create, Mutation.Insert, Mutation.Remove, Mutation.SetProp, Mutation.SetText,
-                Mutation.Batch {
+                Mutation.ScrollToEdge, Mutation.Batch {
 
     /** The node this mutation targets (for coalescing / routing); {@code Batch} returns {@code 0}. */
     long targetId();
@@ -47,6 +47,21 @@ public sealed interface Mutation
     }
 
     record SetText(long id, String text) implements Mutation {
+        @Override
+        public long targetId() {
+            return id;
+        }
+    }
+
+    /**
+     * Re-attach a scroll-locked container to its locked edge (§8.5) — the one edit here that carries no state,
+     * because what it changes is not a property of the tree but where a scroller is looking.
+     *
+     * <p>It has to be a mutation and not a setter on the model, for the same reason every other edit is: the
+     * caller is on whatever thread it is on, and the retained tree has one writer. So "jump back to the tail"
+     * queues behind the appends that made the tail move, and lands in the same frame they do.
+     */
+    record ScrollToEdge(long id) implements Mutation {
         @Override
         public long targetId() {
             return id;

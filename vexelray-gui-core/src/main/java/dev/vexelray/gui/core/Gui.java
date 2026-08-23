@@ -125,6 +125,10 @@ public final class Gui implements AutoCloseable {
     // The smallest canvas the UI is laid out on, whatever the window does (see minSize).
     private volatile Length minWidth = Length.ZERO;
     private volatile Length minHeight = Length.ZERO;
+    // How far into its own dead space this GUI hands the window manager a resize grip (see resizeBorder), and
+    // that Length resolved against this frame's zoom and density — read by the host right after frame().
+    private volatile Length resizeBorder = Length.ZERO;
+    private int resizeBorderPx;
     // Computed-layout read-model (docs/layout-read-model.md): the latest snapshot workers read via Node.layout(),
     // and the coalesced State observers subscribe to. Published after each layout pass.
     private final State<LayoutSnapshot> layoutState;
@@ -316,6 +320,42 @@ public final class Gui implements AutoCloseable {
         this.minWidth = width == null ? Length.ZERO : width;
         this.minHeight = height == null ? Length.ZERO : height;
         return this;
+    }
+
+    /**
+     * How thick a resize grip the window manager gets inside each edge of the window, over the parts of it this
+     * GUI declares nothing about — its outer margin and padding.
+     *
+     * <p><b>What it is for.</b> A window drawn with a generous gutter has a ring of pixels around its content
+     * that exists to be looked at and nothing else. The system frame's own grip is two or three pixels, so the
+     * user aims at a hairline while a whole margin of dead space sits right beside it. Declaring the gutter here
+     * spends it: the pointer becomes a resize pointer as soon as it enters the margin, and the edge is as easy to
+     * hit as the margin is wide. Set it to the padding the root actually has, in the same {@link Length} — the
+     * two then scale together and cannot drift apart.
+     *
+     * <p><b>It only widens dead space.</b> Where the tree declares a {@link WindowRegion} — a title bar, a button
+     * drawn on one — the platform's own thin band still applies, so a bar keeps its drag surface and a close
+     * button keeps its corner. Nothing the GUI declares loses a pixel to this.
+     *
+     * <p><b>It does not know what you drew.</b> The framework cannot tell a margin from content that happens to
+     * reach the window edge: this is a promise that the outer {@code thickness} of the window is yours to give
+     * away. A root with no padding that declares one hands the window manager the first {@code thickness} of its
+     * content, and clicks there stop arriving.
+     *
+     * <p>{@link Length#ZERO} (the default) leaves the platform's own metric everywhere, which is what a window
+     * whose content runs to its edges wants.
+     */
+    public Gui resizeBorder(Length thickness) {
+        this.resizeBorder = thickness == null ? Length.ZERO : thickness;
+        return this;
+    }
+
+    /**
+     * {@link #resizeBorder} in pixels, as of the last {@link #frame} — resolved there so it answers for the same
+     * zoom and density that frame was laid out at. {@code 0} means "the platform's own".
+     */
+    public int resizeBorderPx() {
+        return resizeBorderPx;
     }
 
     /**
@@ -760,6 +800,8 @@ public final class Gui implements AutoCloseable {
         LayoutContext windowCtx = new LayoutContext(ROOT_EM_PX, z, d, viewportW, viewportH);
         float layoutW = Math.max(viewportW, minWidth.scalarPx(windowCtx, viewportW));
         float layoutH = Math.max(viewportH, minHeight.scalarPx(windowCtx, viewportH));
+        // Resolved every frame like everything else: a zoomed UI whose gutter grew has a grip that grew with it.
+        resizeBorderPx = Math.round(resizeBorder.scalarPx(windowCtx, viewportW));
         boolean clampChanged = layoutW != lastLayoutW || layoutH != lastLayoutH;
         if (viewportChanged) {
             // Publish the new size on the bus (coalesced State) before relaying out, so observers and the layout

@@ -36,9 +36,10 @@ import dev.vexelray.vulkan.vk.VulkanInstance;
  *
  * <p><b>Application-drawn chrome.</b> A window created with {@link Decorations#CLIENT} gets two extra things per
  * frame, and only then: its tree's {@link dev.vexelray.gui.core.WindowRegion} declarations are pushed to the OS
- * ({@link ChromeRegions}), so the window manager knows which of the GUI's own pixels are title bar; and the
- * window is given a frame sink, so the frames Windows asks for while it runs a modal move or resize are drawn
- * instead of the window freezing for the length of the drag.
+ * ({@link ChromeRegions}) along with {@link Gui#resizeBorder} — how far into the GUI's own dead space the resize
+ * grip reaches — so the window manager knows which of the GUI's own pixels are title bar and which are edge; and
+ * the window is given a frame sink, so the frames Windows asks for while it runs a modal move or resize are
+ * drawn instead of the window freezing for the length of the drag.
  *
  * <p><b>Input is per-window</b>, and the host attaches it: each window gets its own backend through
  * {@link WindowInput}, pumped by {@link #frame} before that window's tree is laid out, so two windows hear their
@@ -171,7 +172,9 @@ final class GuiWindow implements AutoCloseable {
         }
         RetainedNode root = gui == null ? null : gui.frame(canvas.width(), canvas.height(), measurer);
         if (clientChrome) {
-            window.setHitRegions(ChromeRegions.of(root));
+            // The tree's own declarations, plus how far into its dead space it hands over a resize grip — both
+            // derived from the frame just laid out, so the band scales with the gutter it was set from.
+            window.setHitRegions(ChromeRegions.of(root, gui == null ? 0 : gui.resizeBorderPx()));
         }
         return root;
     }

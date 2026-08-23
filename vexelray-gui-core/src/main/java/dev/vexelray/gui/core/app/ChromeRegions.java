@@ -24,17 +24,30 @@ final class ChromeRegions {
     private ChromeRegions() {
     }
 
-    /** The regions declared by {@code root}'s subtree, or {@link HitRegions#NONE} if it declares none. */
+    /** The regions declared by {@code root}'s subtree, with the platform's own resize band. */
     static HitRegions of(RetainedNode root) {
+        return of(root, 0);
+    }
+
+    /**
+     * The regions declared by {@code root}'s subtree, or {@link HitRegions#NONE} if it declares none and asks
+     * for no band of its own.
+     *
+     * @param resizeBorder the resize band, in pixels, over the parts of the window the tree declares nothing
+     *                     about — a GUI's margins and padding, handed to the window manager
+     *                     ({@link dev.vexelray.gui.core.Gui#resizeBorder}). {@code 0} keeps the platform's.
+     */
+    static HitRegions of(RetainedNode root, int resizeBorder) {
         if (root == null) {
             return HitRegions.NONE;
         }
         Collector collector = new Collector();
         collector.walk(root);
-        if (collector.caption.isEmpty() && collector.interactive.isEmpty() && collector.maximize == null) {
+        if (collector.caption.isEmpty() && collector.interactive.isEmpty() && collector.maximize == null
+                && resizeBorder == 0) {
             return HitRegions.NONE;
         }
-        return new HitRegions(collector.caption, collector.interactive, collector.maximize, 0);
+        return new HitRegions(collector.caption, collector.interactive, collector.maximize, resizeBorder);
     }
 
     private static final class Collector {

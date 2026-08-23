@@ -130,4 +130,50 @@ class ChromeRegionsTest {
     void nullRootIsNoRegions() {
         assertSame(HitRegions.NONE, ChromeRegions.of(null));
     }
+
+    @Test
+    void theGutterIsPublishedAlongsideTheRegions() {
+        // A GUI that pads its root by 16 can hand those 16 to the window manager; the host reads the resolved
+        // pixels off the Gui and they ride out with the caption rectangles.
+        try (Gui gui = new Gui(Atchung.create())) {
+            gui.resizeBorder(Length.dp(16));
+            gui.root().children(gui.box().width(Length.FILL).height(Length.dp(32))
+                    .windowRegion(WindowRegion.DRAG));
+
+            RetainedNode root = gui.frame(400f, 300f, ChromeRegionsTest::noText);
+            HitRegions regions = ChromeRegions.of(root, gui.resizeBorderPx());
+
+            assertEquals(16, gui.resizeBorderPx(), "dp resolves 1:1 at density 1");
+            assertEquals(16, regions.resizeBorder());
+            // And the rule it is worth having: the gutter resizes, the bar above it still drags.
+            assertEquals(HitRegions.Zone.LEFT, regions.zone(8, 200, 400, 300, false, 16, 4));
+            assertEquals(HitRegions.Zone.CAPTION, regions.zone(8, 16, 400, 300, false, 16, 4));
+        }
+    }
+
+    @Test
+    void aGutterAloneIsStillWorthPublishing() {
+        // No chrome declared anywhere, but the window still wants a fatter grip than the system frame's.
+        try (Gui gui = new Gui(Atchung.create())) {
+            gui.resizeBorder(Length.dp(12));
+            gui.root().children(gui.box().width(Length.FILL).height(Length.dp(32)));
+
+            HitRegions regions = ChromeRegions.of(gui.frame(400f, 300f, ChromeRegionsTest::noText),
+                    gui.resizeBorderPx());
+
+            assertEquals(12, regions.resizeBorder());
+            assertTrue(regions.caption().isEmpty());
+        }
+    }
+
+    @Test
+    void noGutterAskedForIsTheOldAnswer() {
+        try (Gui gui = new Gui(Atchung.create())) {
+            gui.root().children(gui.box().width(Length.FILL).height(Length.dp(32)));
+
+            assertEquals(0, gui.resizeBorderPx());
+            assertSame(HitRegions.NONE,
+                    ChromeRegions.of(gui.frame(400f, 300f, ChromeRegionsTest::noText), gui.resizeBorderPx()));
+        }
+    }
 }

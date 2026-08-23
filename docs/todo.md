@@ -220,6 +220,21 @@ Wanted eventually, deliberately not now.
 - **Global constraint solve across the tree.** Tree-local layout is free under the current SPI (multi-pass within
   a box, fixed-point over a subtree — a force-directed graph is one box). A constraint between a node in one box
   and a node in another needs collect-then-solve-then-place: a different engine shape, not an extension.
+- **A context menu the keyboard can reach.** Menus are pointer-only: a right click opens one, and the
+  pointer chooses from it. Two halves are missing, and they are separable. *Opening* one from the
+  keyboard (Shift+F10, the Menu key) needs a position, and the honest one is the focused node's box
+  from the layout read-model rather than the last pointer position — so it belongs next to
+  `Gui.onContextMenu` as a "open the menu for the focused node" dispatch path, not in the widget.
+  *Walking* one (Up/Down/Home/End, Enter to choose, Escape already works) belongs in `ContextMenu`,
+  which would claim those chords at `ClaimScope.VISIBLE` exactly as it claims Escape, and needs a
+  highlighted-row notion that hover and the keyboard share. Neither is hard; both were out of scope
+  the day the menu became declarative.
+- **Checkable and nested items.** `MenuItem` is a label, an action and an enabled flag. A tick ("Word
+  wrap ✓"), an accelerator hint ("Copy   Ctrl+C") and a submenu are the three things a real menu adds
+  next. The first two are fields on the record and rows in the presenter. A submenu is not: it is a
+  second panel, a hover-open delay, and a hit region that spans both — the overlay primitive handles
+  the drawing, but nothing in `MenuSink` can express "these items, under that one" yet, and the
+  temptation to model it as a `MenuItem` with children is exactly how a menu stops being a list.
 - **A theme swapped at runtime.** `Gui.theme(Theme)` is read when a widget writes a prop, so a swap after the tree
   is built reaches the renderer's chrome (scrollbars, gutter, selection, shadow) and everything that restyles on
   interaction, but not the props already written — a live dark/light toggle would leave stale colours behind. The

@@ -90,6 +90,12 @@ public final class InputDispatcher {
     private final Subscription sub;
     private final Map<Long, Runnable> clickHandlers = new ConcurrentHashMap<>();
     private final Map<Long, Consumer<ClickEvent>> contextHandlers = new ConcurrentHashMap<>();
+    // Context-menu sources, and the one thing that shows what they build. Sources accumulate like state observers
+    // and for the same reason: a widget's own defaults and the application's additions are independent concerns
+    // that share one menu. Which node's sources run is a leaf→root question (see openMenu), so it is dispatch's
+    // to answer -- the same walk as a click, with the same "the nearest one that has something wins" rule.
+    private final Map<Long, java.util.List<Consumer<MenuSink>>> menuSources = new ConcurrentHashMap<>();
+    private volatile MenuPresenter menuPresenter;
     // Interaction state has *observers*, plural: a widget restyling itself and a tooltip watching the same node
     // are independent concerns, and neither should have to know the other exists. Every other handler map here
     // replaces on re-registration; this one accumulates, because state is a fact about the node, not a command
@@ -211,6 +217,26 @@ public final class InputDispatcher {
      */
     public void onContextClick(long nodeId, Consumer<ClickEvent> handler) {
         contextHandlers.put(nodeId, handler);
+    }
+
+    /**
+     * Register a context-menu source for {@code nodeId}: a function that, at the moment of a right click, says
+     * what the menu should contain. Sources accumulate — a widget's defaults and the application's additions both
+     * write into the one menu, in registration order — and are released with the node.
+     */
+    public void onContextMenu(long nodeId, Consumer<MenuSink> source) {
+        menuSources.computeIfAbsent(nodeId, id -> new java.util.concurrent.CopyOnWriteArrayList<>())
+                .add(source);
+    }
+
+    /** Install what shows a context menu, replacing any prior one; {@code null} means no menus are shown. */
+    public void menuPresenter(MenuPresenter presenter) {
+        this.menuPresenter = presenter;
+    }
+
+    /** The installed presenter, or {@code null} — how a widget can tell whether it needs to install one. */
+    public MenuPresenter menuPresenter() {
+        return menuPresenter;
     }
 
     /**
@@ -353,6 +379,7 @@ public final class InputDispatcher {
     public void clearHandlers(long nodeId) {
         clickHandlers.remove(nodeId);
         contextHandlers.remove(nodeId);
+        menuSources.remove(nodeId);
         stateHandlers.remove(nodeId);
         dragHandlers.remove(nodeId);
         keyHandlers.remove(nodeId);
@@ -396,9 +423,14 @@ public final class InputDispatcher {
         pumpKeyRepeat();
     }
 
-    /** Release the bus subscription. */
+    /** Release the bus subscription, and the presenter installed on this tree (it holds nodes of its own). */
     public void close() {
         sub.close();
+        MenuPresenter presenter = menuPresenter;
+        if (presenter != null) {
+            menuPresenter = null;
+            presenter.close();
+        }
     }
 
     // --- delivered on the GUI thread during dispatch() ---
@@ -972,6 +1004,41 @@ public final class InputDispatcher {
                 break; // consumed; bubbling stops at the first handler
             }
         }
+        openMenu(target, e);
         bus.publish(clicks, e);
+    }
+
+    /**
+     * The menu half of a right click: the <b>nearest node with sources owns it</b>, exactly as the nearest node
+     * with a click handler owns a click. Walking leaf→root is what makes "a menu anywhere" composable — a row
+     * inside a panel inside a page can each have one, and the innermost thing the user actually pointed at is the
+     * one that answers, without any of them knowing the others exist.
+     *
+     * <p>The sources themselves run on the handler executor, not here: they read application state to decide what
+     * is on the menu, and the GUI thread is mid-frame. A node whose sources contribute nothing has no menu — an
+     * empty panel is never flashed — and with no presenter installed the walk does not happen at all.
+     */
+    private void openMenu(RetainedNode target, ClickEvent e) {
+        MenuPresenter presenter = menuPresenter;
+        if (presenter == null) {
+            return;
+        }
+        for (RetainedNode n = target; n != null; n = n.parent) {
+            java.util.List<Consumer<MenuSink>> sources = menuSources.get(n.id);
+            if (sources == null || sources.isEmpty()) {
+                continue;
+            }
+            handlerExecutor.execute(() -> {
+                MenuCollector collector = new MenuCollector(e);
+                for (Consumer<MenuSink> source : sources) {
+                    source.accept(collector);
+                }
+                java.util.List<MenuItem> items = collector.build();
+                if (!items.isEmpty()) {
+                    presenter.present(e, items);
+                }
+            });
+            return;   // consumed; the walk stops at the first node that has a menu
+        }
     }
 }

@@ -6,6 +6,7 @@ import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.ClaimScope;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.input.Shortcut;
+import dev.vexelray.gui.core.input.MenuSink;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
@@ -41,10 +42,23 @@ public final class Tabs {
 
     private volatile int selected = -1;
     private volatile IntConsumer onSelect = i -> { };
+    private volatile TabMenu contextMenu = (index, menu) -> { };
+
+    /**
+     * What an application adds to a tab's context menu, told which tab was right-clicked. A separate type rather
+     * than a {@code BiConsumer<Integer, MenuSink>} because the index is an {@code int} and the pair reads better
+     * named: {@code (index, menu) -> menu.item("Duplicate", () -> duplicate(index))}.
+     */
+    @FunctionalInterface
+    public interface TabMenu {
+        /** Add to the menu for tab {@code index}. Runs on a worker thread, at the moment of the click. */
+        void build(int index, MenuSink menu);
+    }
 
     /** Build an empty tab panel; add pages with {@link #add}. */
     public Tabs(Gui gui) {
         this.gui = gui;
+        ContextMenu.presentOn(gui);   // every header gets a Close menu; something has to be able to show it
         this.bar = gui.row().width(Length.FILL).height(Length.rem(2.25f)).background(gui.theme().color(Role.CHROME))
                 .gap(Length.dp(2)).alignItems(AlignItems.STRETCH).scroll(false, false);
         this.pages = gui.column().width(Length.FILL).height(Length.FILL);
@@ -97,6 +111,13 @@ public final class Tabs {
         gui.claim(header, Shortcut.of(Key.RIGHT), ClaimScope.FOCUSED, () -> select(headers.indexOf(header) + 1));
         // Hover shading, except on the selected tab, which keeps its active colour.
         gui.onState(header, state -> header.background(background(headers.indexOf(header), state)));
+        // The one thing every tab bar's menu has, and the same index-at-event-time rule as the handlers above:
+        // Close aims at wherever this header sits when the item is chosen, not where it sat when it was built.
+        gui.onContextMenu(header, menu -> {
+            int at = headers.indexOf(header);
+            menu.item("Close", () -> remove(at));
+            contextMenu.build(at, menu);
+        });
 
         bar.append(header);
         pages.append(body.width(Length.FILL).height(Length.FILL).visible(false));
@@ -162,6 +183,15 @@ public final class Tabs {
         if (!headers.isEmpty()) {
             select(Math.min(previous > index ? previous - 1 : previous, headers.size() - 1));
         }
+        return this;
+    }
+
+    /**
+     * Add to the context menu of every tab. Close comes first, then this — sources accumulate, so an application
+     * contributes "Close others", "Duplicate", "Pin" without restating the one the bar already knows how to do.
+     */
+    public Tabs onContextMenu(TabMenu source) {
+        this.contextMenu = source == null ? (index, menu) -> { } : source;
         return this;
     }
 

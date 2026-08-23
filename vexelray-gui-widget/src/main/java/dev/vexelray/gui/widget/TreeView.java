@@ -5,6 +5,7 @@ import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.FocusEvent;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.input.KeyEvent;
+import dev.vexelray.gui.core.input.MenuSink;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
@@ -129,13 +130,11 @@ public final class TreeView<T> implements AutoCloseable {
             // executor and both funnel into synchronized transitions, so a click and a keystroke can interleave
             // but never tear the state.
             gui.onClick(rowNode, () -> select(this, true));
-            // A context click selects first — the convention every explorer follows: the menu that opens is about
-            // the row under the pointer, so that row must visibly become the subject — then defers to the app.
-            gui.onContextClick(rowNode, e -> {
-                select(this, true);
-                java.util.function.BiConsumer<T, dev.vexelray.gui.core.input.ClickEvent> handler = onContext;
-                handler.accept(item, e);
-            });
+            // A context click selects first — the convention every explorer follows — and that is true whether or
+            // not anything ends up on the menu, so it stays a click handler rather than a side effect of building
+            // one. What goes *on* the menu is the application's, told which item it is about.
+            gui.onContextClick(rowNode, e -> select(this, true));
+            gui.onContextMenu(rowNode, menu -> contextMenu.accept(item, menu));
             if (canExpand) {
                 gui.onClick(disclosure, () -> {
                     select(this, true);
@@ -161,13 +160,13 @@ public final class TreeView<T> implements AutoCloseable {
     private volatile boolean focused;
     private volatile Consumer<T> onSelect = t -> { };
     private volatile Consumer<T> onActivate = t -> { };
-    private volatile java.util.function.BiConsumer<T, dev.vexelray.gui.core.input.ClickEvent> onContext =
-            (t, e) -> { };
+    private volatile java.util.function.BiConsumer<T, MenuSink> contextMenu = (item, menu) -> { };
 
     /** Build a tree over {@code source}; roots are listed immediately (on the calling thread), collapsed. */
     public TreeView(Gui gui, Source<T> source) {
         this.gui = gui;
         this.source = source;
+        ContextMenu.presentOn(gui);   // rows carry whatever menu the application declares; this shows it
         this.root = gui.column()
                 .width(Length.FILL)
                 .height(Length.FILL)
@@ -216,12 +215,15 @@ public final class TreeView<T> implements AutoCloseable {
     }
 
     /**
-     * React to a context (right) click on an item's row. The row is selected first — the menu that opens is about
-     * the row under the pointer — then the handler receives the item and the {@link dev.vexelray.gui.core.input.ClickEvent},
-     * whose x/y anchor a {@link ContextMenu#show}. Runs on the handler executor.
+     * Give every row a context menu. The row is selected first — the menu that opens is about the row under the
+     * pointer, so that row must visibly become the subject — and then this is asked what should be on it, with the
+     * item in hand. That is the context a tree can add that the framework cannot: which <em>thing</em> was clicked.
+     *
+     * <p>Runs on a worker thread at the moment of the click. Contributing nothing means no menu opens, so a tree
+     * that only offers commands for some kinds of item needs no special case for the rest.
      */
-    public TreeView<T> onContext(java.util.function.BiConsumer<T, dev.vexelray.gui.core.input.ClickEvent> handler) {
-        this.onContext = handler == null ? (t, e) -> { } : handler;
+    public TreeView<T> onContextMenu(java.util.function.BiConsumer<T, MenuSink> source) {
+        this.contextMenu = source == null ? (item, menu) -> { } : source;
         return this;
     }
 

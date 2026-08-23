@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.input.MenuItem;
 import org.junit.jupiter.api.Test;
 import sibarum.tactroller.api.Key;
 
@@ -301,16 +302,17 @@ class TreeViewTest {
 
     /** A context click selects the row first — the menu that opens is about the row under the pointer. */
     @Test
-    void aContextClickSelectsTheRowAndReportsItWithThePointer() {
+    void aContextClickSelectsTheRowAndBuildsItsMenuAroundTheItem() {
         try (HeadlessGui h = new HeadlessGui()) {
             MapSource source = new MapSource();
             String[] contextItem = {null};
             float[] at = {-1f, -1f};
             TreeView<String> tree = new TreeView<>(h.gui, source)
-                    .onContext((item, e) -> {
+                    .onContextMenu((item, menu) -> {
                         contextItem[0] = item;
-                        at[0] = e.x();
-                        at[1] = e.y();
+                        at[0] = menu.event().x();
+                        at[1] = menu.event().y();
+                        menu.item("Open " + item, () -> { });
                     });
             h.gui.root().children(tree.node());
             h.frame();
@@ -321,9 +323,12 @@ class TreeViewTest {
             h.frame();
 
             assertEquals("src", tree.selected(), "the row under the pointer became the selection");
-            assertEquals("src", contextItem[0], "and the app was told which item, with the pointer position");
+            assertEquals("src", contextItem[0], "and the app was asked for that item's menu, with the position");
             assertEquals(x, at[0], 0.5f);
             assertEquals(y, at[1], 0.5f);
+            assertEquals(List.of("Open src"),
+                    ((ContextMenu) h.gui.menus()).items().stream().map(MenuItem::label).toList(),
+                    "the tree installed a presenter of its own, so the menu is actually on screen");
             tree.close();
         }
     }

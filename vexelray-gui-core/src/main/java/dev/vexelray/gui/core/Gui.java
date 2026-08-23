@@ -22,6 +22,8 @@ import dev.vexelray.gui.core.input.FocusEvent;
 import dev.vexelray.gui.core.input.InputDispatcher;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.input.KeyEvent;
+import dev.vexelray.gui.core.input.MenuPresenter;
+import dev.vexelray.gui.core.input.MenuSink;
 import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.model.RetainedNode;
 import dev.vexelray.gui.core.style.Theme;
@@ -396,6 +398,48 @@ public final class Gui implements AutoCloseable {
     public Gui onContextClick(Node node, java.util.function.Consumer<ClickEvent> handler) {
         input.onContextClick(node.id(), handler);
         return this;
+    }
+
+    /**
+     * Give {@code node} a context menu: {@code source} is asked what should be on it at the moment of each right
+     * click, and the answer is shown by the installed {@link MenuPresenter}.
+     *
+     * {@snippet :
+     * gui.onContextMenu(row, menu -> menu
+     *         .item("Open", () -> open(path))
+     *         .item("Paste", clipboard.hasText(), () -> paste(path)));   // shown, greyed when it cannot apply
+     * }
+     *
+     * <p><b>The nearest node with a menu owns the click</b> — leaf→root, the same rule a click handler follows. So
+     * a row inside a panel inside a page may each declare one and the innermost thing the user pointed at answers,
+     * with none of them knowing the others exist.
+     *
+     * <p><b>Sources accumulate</b>, like {@link #onState} observers: a widget declares its own defaults (a text
+     * field's Copy/Cut/Paste) and the application adds what only it knows, in registration order, into one menu.
+     * That is why the menu is built per click rather than held: its contents are a fact about the current state,
+     * and only the source knows what that is. A source that adds nothing means no menu opens, so "sometimes there
+     * is nothing to offer here" needs no special case.
+     *
+     * <p>Sources run on a worker thread, so they may read application state freely.
+     */
+    public Gui onContextMenu(Node node, java.util.function.Consumer<MenuSink> source) {
+        input.onContextMenu(node.id(), source);
+        return this;
+    }
+
+    /**
+     * Install what draws context menus. {@code vexelray-gui-widget}'s {@code ContextMenu} installs itself the
+     * first time a widget with a default menu is built, so this is only for replacing it with something else —
+     * before the UI is built, since the widgets check for a presenter rather than replacing one.
+     */
+    public Gui menus(MenuPresenter presenter) {
+        input.menuPresenter(presenter);
+        return this;
+    }
+
+    /** The installed context-menu presenter, or {@code null} if nothing shows menus on this tree yet. */
+    public MenuPresenter menus() {
+        return input.menuPresenter();
     }
 
     /** The click topic: {@code gui.bus().subscribe(gui.clicks(), ...)} to react to clicks anywhere (any button). */

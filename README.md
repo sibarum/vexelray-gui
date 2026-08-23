@@ -150,6 +150,33 @@ Clickable nodes get the pointer cursor by inference; register `gui.cursor(node, 
 the affordance can't be inferred (a slider wants GRAB). Focus is `gui.focusable(node, true)` +
 `gui.focus(node)`; Tab order and focused-scope claims come with it.
 
+### Context menus
+
+A menu is not an object you build and keep — it is a question asked at the moment of the right click:
+
+```java
+gui.onContextMenu(row, menu -> menu
+        .item("Open", () -> open(path))
+        .item("Paste", clipboard.hasText(), () -> paste(path))   // shown, greyed when it cannot apply
+        .separator()
+        .item("Properties", () -> inspect(path)));
+```
+
+- **The nearest node with a menu owns the click** — leaf→root, the same rule a click handler follows,
+  so a row inside a panel inside a page may each declare one and the innermost answers.
+- **Sources accumulate**, like `onState` observers: the widget states its defaults and the
+  application adds what only it knows, into one menu, in registration order. Nothing is restated and
+  nothing has to agree on an order.
+- **A widget can hand its own context to the builder**: `TreeView.onContextMenu((item, menu) -> …)`
+  and `Tabs.onContextMenu((index, menu) -> …)` say *which* thing was clicked, which the framework has
+  no way to name.
+- **Contribute nothing and no menu opens** — "there is nothing to offer here" needs no special case.
+- **Defaults ship with the widgets**: a `TextField` offers Copy/Cut/Paste (Copy alone when
+  `readOnly(true)`, each greyed when it does not apply), a tab offers Close.
+
+`ContextMenu` draws them; `gui.menus(presenter)` replaces it with something else entirely
+(`MenuPresenter`), the same way `gui.clipboard(...)` replaces the clipboard.
+
 **Threading**: `gui.async(work)` runs app logic off the GUI thread; `gui.batch(edits)` groups
 mutations into one frame. Install the OS clipboard with `gui.clipboard(...)` (see the demo — the
 in-memory default keeps headless runs working).
@@ -161,7 +188,8 @@ Widgets are ordinary framework users — built entirely on public `Node`/`Gui` A
 - **`TextField`** — single or `multiline(true)` editing: word wrap, line numbers, caret-follow
   scroll, selection, cut/copy/paste, sticky-column Up/Down, `onSubmit`. Formatting `Span`s
   (fg/bg/underline over character ranges) auto-remap through every edit — set them once, they
-  follow their text.
+  follow their text. `readOnly(true)` closes the *user's* edit channel and keeps the caret, the
+  selection and Copy — a field to read out of, which the application still writes to.
 - **`Slider`** — a dragged track with a lit, elevated thumb; `value()`/`onChange`.
 - **`Tabs`** — headers over a page stack. Pages are hidden, never removed, so switching away and
   back returns the page exactly as it was — caret and all. Arrow keys walk the bar while a header
@@ -170,10 +198,11 @@ Widgets are ordinary framework users — built entirely on public `Node`/`Gui` A
   four-method `Source<T>`. Children fetch lazily off the frame loop, exactly once per item;
   collapse hides the subtree rather than discarding it; one tab stop drives the whole tree
   (Up/Down/Left/Right/Home/End/PageUp/PageDown/Enter).
-- **`ContextMenu`** — commands at the pointer, built on two core primitives: right-click dispatch
-  (`gui.onContextClick`) and floating placement (`Node.floatAt` — an out-of-flow last child of the
-  root paints over the page and is hit first: the overlay primitive). Escape and click-away
-  dismiss; opening reflows nothing; an edge open slides on-screen.
+- **`ContextMenu`** — the panel a menu is drawn as, and nothing more: what is *on* a menu and whose
+  menu it is are dispatch's (see **Context menus** below). Built on floating placement
+  (`Node.floatAt` — an out-of-flow last child of the root paints over the page and is hit first: the
+  overlay primitive). Escape and click-away dismiss; opening reflows nothing; an edge open slides
+  on-screen. It installs itself, so the default menus work without the application wiring anything.
 - **`TitleBar`** — the window's own chrome as ordinary widgets: a draggable strip, a title, and
   minimize/maximize/close buttons. Two declarations do the work — the strip is `WindowRegion.DRAG`,
   each button punches an `INTERACTIVE` hole in it — so the window manager still moves, snaps and

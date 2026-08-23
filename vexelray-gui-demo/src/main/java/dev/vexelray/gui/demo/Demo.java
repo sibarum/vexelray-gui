@@ -23,7 +23,6 @@ import dev.vexelray.gui.widget.Slider;
 import dev.vexelray.gui.widget.Tabs;
 import dev.vexelray.gui.widget.TitleBar;
 import dev.vexelray.gui.widget.TextField;
-import dev.vexelray.gui.widget.ContextMenu;
 import dev.vexelray.gui.widget.Modal;
 import dev.vexelray.gui.widget.Modals;
 import dev.vexelray.gui.widget.Tooltip;
@@ -464,18 +463,17 @@ public final class Demo {
 
         // A context menu on the tree: right-click a row and it opens at the pointer, floating over the page (a
         // floating last child of the root — no layer machinery, no reflow). Esc or a click elsewhere dismisses.
-        var contextTarget = new java.util.concurrent.atomic.AtomicReference<java.nio.file.Path>();
-        ContextMenu fileMenu = new ContextMenu(gui)
-                .item("Open", () -> log.append(gui.text("open: " + contextTarget.get())
+        // The menu is built at the moment of the click and handed the row's item, so nothing here has to remember
+        // which row was clicked — and what is on it can depend on what that row *is*: only a directory can be
+        // expanded, so only a directory is offered it.
+        files.onContextMenu((path, menu) -> menu
+                .item("Open", () -> log.append(gui.text("open: " + path)
                         .textSize(Length.rem(1)).textColor(theme.color(Role.INK))))
-                .item("Copy path", () -> gui.clipboard().set(String.valueOf(contextTarget.get())))
+                .item("Copy path", () -> gui.clipboard().set(String.valueOf(path)))
+                .item("Expand", java.nio.file.Files.isDirectory(path), () -> files.expand(path))
                 .separator()
-                .item("Properties", () -> log.append(gui.text("properties: " + contextTarget.get())
-                        .textSize(Length.rem(1)).textColor(theme.color(Role.DIM))));
-        files.onContext((path, e) -> {
-            contextTarget.set(path);
-            fileMenu.show(e.x(), e.y());
-        });
+                .item("Properties", () -> log.append(gui.text("properties: " + path)
+                        .textSize(Length.rem(1)).textColor(theme.color(Role.DIM)))));
 
         Tabs tabs = new Tabs(gui);
         tabs.add("Editor", notes.node());

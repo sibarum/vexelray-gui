@@ -6,6 +6,7 @@ import dev.vexelray.gui.core.input.ClaimScope;
 import dev.vexelray.gui.core.input.DragEvent;
 import dev.vexelray.gui.core.input.FocusEvent;
 import dev.vexelray.gui.core.input.KeyEvent;
+import dev.vexelray.gui.core.input.MenuSink;
 import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.style.Role;
@@ -91,7 +92,9 @@ public final class TextField implements AutoCloseable {
     private float desiredX = Float.NaN;
 
     private volatile boolean multiline;
+    private volatile boolean readOnly;
     private volatile boolean focused;
+    private volatile Consumer<MenuSink> contextMenu = menu -> { };
     private volatile Consumer<String> onChange = s -> { };
     private volatile Consumer<String> onSubmit = s -> { };
 
@@ -125,6 +128,11 @@ public final class TextField implements AutoCloseable {
         gui.onCharUi(node, this::onCodePoint);
         gui.onKeyUi(node, this::onKey);
         gui.onDragUi(node, this::onPointer);
+
+        // Clipboard actions on the right button, and a presenter to show them: a field with no menu is a field
+        // that answers the keyboard and not the mouse, which is not a decision an application should have to make.
+        ContextMenu.presentOn(gui);
+        gui.onContextMenu(node, this::defaultMenu);
 
         this.focusSub = gui.bus().subscribe(gui.focusEvents(), this::onFocus);
         this.blink = CaretBlink.register(gui, node, () -> focused);
@@ -193,6 +201,39 @@ public final class TextField implements AutoCloseable {
     /** React to content edits (typing, deletion, paste, programmatic set). Runs on the handler executor. */
     public TextField onChange(Consumer<String> handler) {
         this.onChange = handler == null ? s -> { } : handler;
+        return this;
+    }
+
+    /**
+     * Close the <b>user's</b> edit channel: typing, Backspace/Delete, Enter, cut, paste, undo and redo stop
+     * arriving, while the caret, selection, Ctrl+C and every motion key keep working — a field to read out of
+     * rather than write into (a log, a transcript, a computed result).
+     *
+     * <p>The node stays {@code editable} at the core level, because that prop is about being a <em>text input</em>
+     * — it is what gives the field an I-beam, a caret gutter and its own scrolling — and all of that is still true
+     * of something you can select in. Whether an edit is <em>accepted</em> is this widget's policy, not the
+     * model's shape.
+     *
+     * <p>The application's own writes ({@link #text}, {@link #insert}, {@link #deleteBack}) are unaffected: this
+     * says the user may not edit, not that the content cannot change.
+     */
+    public TextField readOnly(boolean readOnly) {
+        this.readOnly = readOnly;
+        return this;
+    }
+
+    /** Whether the user's edits are refused (see {@link #readOnly(boolean)}). */
+    public boolean readOnly() {
+        return readOnly;
+    }
+
+    /**
+     * Add to the field's context menu. The clipboard actions come first, then this — sources accumulate, so an
+     * application contributes what only it knows (Look up, Insert snippet) without restating Copy/Cut/Paste.
+     * Open the group with {@code menu.separator()}; a rule that would land at either end is dropped.
+     */
+    public TextField onContextMenu(Consumer<MenuSink> source) {
+        this.contextMenu = source == null ? menu -> { } : source;
         return this;
     }
 
@@ -282,6 +323,9 @@ public final class TextField implements AutoCloseable {
     // --- ordered stages: these run on the GUI thread during the input drain, in arrival order ---
 
     private void onCodePoint(int cp) {
+        if (readOnly) {
+            return; // a read-only field hears the keyboard for motion and copying, never for content
+        }
         if (cp < 0x20 || cp == 0x7F) {
             return; // control characters ride the key channel, never the text channel
         }
@@ -317,9 +361,12 @@ public final class TextField implements AutoCloseable {
             case DOWN -> moveByLines(1, shift);
             case PAGE_UP -> moveByLines(-pageLines(), shift);
             case PAGE_DOWN -> moveByLines(pageLines(), shift);
-            case BACKSPACE -> apply(new Edit.DeleteBack(ctrl), ctrl);
-            case DELETE -> apply(new Edit.DeleteForward(ctrl), ctrl);
+            case BACKSPACE -> { if (!readOnly) { apply(new Edit.DeleteBack(ctrl), ctrl); } }
+            case DELETE -> { if (!readOnly) { apply(new Edit.DeleteForward(ctrl), ctrl); } }
             case ENTER -> {
+                if (readOnly) {
+                    return;   // no newline to insert, and nothing to submit from a field the user cannot fill
+                }
                 if (multiline) {
                     // A newline is an undo boundary on both sides: without the barriers it is just another
                     // one-character insert continuing the typing run, and a whole multi-line burst collapses
@@ -404,6 +451,27 @@ public final class TextField implements AutoCloseable {
         return m == null ? d.length() : m.lineEnd(d.caret());
     }
 
+    // --- context menu ---
+
+    /**
+     * The field's own contribution to a right click: the clipboard, in the order every platform puts it, with each
+     * action greyed when it cannot apply — Copy and Cut without a selection, Paste with an empty clipboard. A
+     * read-only field offers Copy alone, because the other two are exactly the channel it closed.
+     *
+     * <p>Runs on a worker thread at the moment of the click, which is what lets it read the selection and the
+     * clipboard rather than guess: the menu is a statement about the field as it is right now.
+     */
+    private void defaultMenu(MenuSink menu) {
+        boolean hasSelection = !document.value().selectedText().isEmpty();
+        menu.item("Copy", hasSelection, this::copy);
+        if (!readOnly) {
+            String clip = gui.clipboard().get();
+            menu.item("Cut", hasSelection, this::cut)
+                    .item("Paste", clip != null && !clip.isEmpty(), this::paste);
+        }
+        contextMenu.accept(menu);
+    }
+
     // --- clipboard (I/O kept off the commit) ---
 
     private void copy() {
@@ -414,6 +482,9 @@ public final class TextField implements AutoCloseable {
     }
 
     private void cut() {
+        if (readOnly) {
+            return;
+        }
         String sel = document.value().selectedText();
         if (sel.isEmpty()) {
             return;
@@ -423,6 +494,9 @@ public final class TextField implements AutoCloseable {
     }
 
     private void paste() {
+        if (readOnly) {
+            return;
+        }
         String clip = gui.clipboard().get();
         if (clip == null || clip.isEmpty()) {
             return;
@@ -522,6 +596,9 @@ public final class TextField implements AutoCloseable {
     }
 
     private void undo() {
+        if (readOnly) {
+            return;   // nothing the user did can be undone, because nothing the user did was applied
+        }
         synchronized (this) {
             TextEdit e = undo.poll();
             if (e == null) {
@@ -537,6 +614,9 @@ public final class TextField implements AutoCloseable {
     }
 
     private void redo() {
+        if (readOnly) {
+            return;
+        }
         synchronized (this) {
             TextEdit e = redo.poll();
             if (e == null) {

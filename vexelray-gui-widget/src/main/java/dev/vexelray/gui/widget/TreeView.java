@@ -1,12 +1,13 @@
 package dev.vexelray.gui.widget;
 
-import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.FocusEvent;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.input.KeyEvent;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.style.Role;
+import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.text.TextLayout;
 import sibarum.atchung.Subscription;
 import sibarum.tactroller.api.Key;
@@ -67,15 +68,6 @@ public final class TreeView<T> implements AutoCloseable {
         List<T> children(T item);
     }
 
-    private static final Color TREE_BG = Color.rgb(0x0e1220);
-    private static final Color TREE_BORDER = Color.rgb(0x2b3346);
-    private static final Color TREE_BORDER_FOCUS = Color.rgb(0x3aa0ff);
-    private static final Color ROW_HOVER = Color.rgb(0x1b2130);
-    private static final Color ROW_SELECTED = Color.rgb(0x2b3346);
-    private static final Color INK = Color.rgb(0xeef2f8);
-    private static final Color DIM = Color.rgb(0x93a0b4);
-    private static final Color ACCENT = Color.rgb(0x3aa0ff);
-
     /** Indent per depth level, in em, so the stagger scales with the text it indents. */
     private static final float INDENT_EM = 1.2f;
 
@@ -113,14 +105,14 @@ public final class TreeView<T> implements AutoCloseable {
             this.disclosure = gui.text(canExpand ? GLYPH_COLLAPSED : GLYPH_LEAF)
                     .width(Length.em(1.2f))
                     .textSize(Length.rem(1))
-                    .textColor(DIM)
+                    .textColor(gui.theme().color(Role.DIM))
                     .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE);
             // grow(1), not auto: the label takes the row's remaining width, so the whole strip past the glyph
             // belongs to the name — and a name longer than the row wraps at the row edge instead of widening it.
             this.label = gui.text(source.label(item))
                     .width(Length.grow(1))
                     .textSize(Length.rem(1))
-                    .textColor(INK)
+                    .textColor(gui.theme().color(Role.INK))
                     .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
             this.rowNode = gui.row()
                     .width(Length.FILL)
@@ -179,9 +171,9 @@ public final class TreeView<T> implements AutoCloseable {
         this.root = gui.column()
                 .width(Length.FILL)
                 .height(Length.FILL)
-                .background(TREE_BG)
+                .background(gui.theme().color(Role.WELL))
                 .corner(Length.rem(0.5f))
-                .border(Length.rem(0.1f), TREE_BORDER)
+                .border(Length.rem(0.1f), gui.theme().color(Role.LINE))
                 .padding(Length.dp(4));
 
         // Navigation is an ordered stage: moving a cursor is order-dependent under key repeat, and it is pure
@@ -507,12 +499,14 @@ public final class TreeView<T> implements AutoCloseable {
     }
 
     private void styleLocked(Row row, InteractionState state) {
+        Theme theme = gui.theme();
         if (row == selected) {
-            row.rowNode.background(ROW_SELECTED);
-            row.label.textColor(ACCENT);
+            row.rowNode.background(theme.color(Role.SELECTION));
+            row.label.textColor(theme.color(Role.ACCENT));
         } else {
-            row.rowNode.background(state == InteractionState.NORMAL ? null : ROW_HOVER);
-            row.label.textColor(INK);
+            // Transparent at rest, so an unselected row is the well it sits in rather than a rectangle of its own.
+            row.rowNode.background(state == InteractionState.NORMAL ? null : theme.color(Role.PANEL));
+            row.label.textColor(theme.color(Role.INK));
         }
     }
 
@@ -521,6 +515,6 @@ public final class TreeView<T> implements AutoCloseable {
             return;
         }
         focused = e.gained();
-        root.border(Length.rem(0.1f), focused ? TREE_BORDER_FOCUS : TREE_BORDER);
+        root.border(Length.rem(0.1f), gui.theme().color(focused ? Role.ACCENT : Role.LINE));
     }
 }

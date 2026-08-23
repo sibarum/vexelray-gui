@@ -71,19 +71,21 @@ Three rules explain almost everything:
 ```java
 Gui gui = new Gui();
 
-Node title = gui.text("Hello").textSize(Length.rem(1.75f)).textColor(Color.rgb(0xeef2f8));
+Theme theme = gui.theme();          // colour is a role, never a literal (see Theme, below)
+
+Node title = gui.text("Hello").textSize(Length.rem(1.75f)).textColor(theme.color(Role.INK));
 
 Node card = gui.column()
         .width(Length.FILL).height(Length.FILL)
-        .background(Color.rgb(0x1b2130))
+        .background(theme.color(Role.PANEL))
         .corner(Length.rem(1))
-        .border(Length.rem(0.1f), Color.rgb(0x2b3346))
+        .border(Length.rem(0.1f), theme.color(Role.LINE))
         .lit(true)                          // SDF edge light + vertical gradient
         .elevation(Length.rem(1.25f))       // analytic soft shadow underneath
         .padding(Length.dp(20)).gap(Length.rem(0.625f))
         .children(title);
 
-gui.root().background(Color.rgb(0x11141b)).children(card);
+gui.root().background(theme.color(Role.PAGE)).children(card);
 ```
 
 **Containers**: `gui.row()`, `gui.column()`, `gui.box()`, `gui.text(s)`; compose with
@@ -95,6 +97,26 @@ and chrome that should *not* zoom), `percent`, `vw`/`vh`, `grow(f)` (flex weight
 (size to content). Corner radius, border, elevation, and text size are all `Length`s, so the whole
 UI scales coherently: `gui.zoomRange(0.5f, 3f, 1.25f)` plus `gui.zoomIn/zoomOut/resetZoom`.
 
+## Theme
+
+Colour is a **role**, resolved against the one `Theme` on `Gui` — no widget names a colour:
+
+```java
+gui.theme(Theme.LIGHT);                                            // before building; DARK is the default
+Node card = gui.box().background(gui.theme().color(Role.PANEL))    // PAGE / CHROME / PANEL / RAISED / WELL / LINE
+        .border(Length.rem(0.1f), gui.theme().color(Role.LINE));   // INK / DIM / FAINT / ACCENT / ACTION / DANGER
+gui.onState(card, s -> card.background(gui.theme().color(Role.PANEL, s)));   // hover and press are derived
+```
+
+A `Palette` is nine authored numbers, not a table of colours: a page, a lightness step, an ink, a
+fade, three chromatic anchors, and how depth reads. Surfaces are `n` steps from the page **towards
+the ink**, so one set of roles serves a dark and a light theme and a border keeps the same
+perceptual contrast in both — the theme never states a direction. Hover and press are one signed
+lightness step applied in Oklab to whatever the control already is, which is why there is no
+`PANEL_HOVER`. A role is a function (`Role mine = p -> p.surface(3)`), so an application extends the
+vocabulary without registering anything, and `PaletteGuardTest` fails the build if any framework
+class mints a `Color` of its own.
+
 ## Depth and light
 
 Every visual effect is a transfer function over the one rounded-box SDF the renderer already
@@ -104,7 +126,7 @@ evaluates — no textures, no extra passes, still one draw:
 | --- | --- |
 | `.elevation(Length)` | Soft drop shadow under the background; animate it per interaction state (the demo's buttons lift on hover and set down flush while pressed) |
 | `.lit(true)` | Edge light from the global top-left light + a faint vertical luminance gradient — modulates whatever `background` is set to, so state restyles keep working |
-| `.textSunken(true)` | Letterpress text: shade above the glyphs, glint below, crisp fill — for white-on-accent labels |
+| `.textSunken(true)` | Letterpress text: shade above the glyphs, glint below, crisp fill — for a `Role.ON_ACTION` label on a filled control |
 | `.corner(top, bottom)` | Independent corner radii per vertical half — a tab is `corner(r, Length.ZERO)` |
 
 The design rule that produced these (and deleted one that didn't fit): effects must compose against
@@ -118,7 +140,7 @@ Input arrives tactroller → atchung → the framework's dispatch; you subscribe
 ```java
 gui.onClick(button, () -> log.append(gui.text("clicked")));       // worker thread
 gui.onContextClick(row, e -> menu.show(e.x(), e.y()));            // right-click, with the pointer position
-gui.onState(button, state -> button.background(colorFor(state))); // NORMAL / HOVER / PRESSED (observers add up)
+gui.onState(button, s -> button.background(gui.theme().color(Role.PANEL, s))); // observers add up
 gui.onDrag(slider, e -> set(e.fractionX()));                      // pointer-captured
 gui.shortcut(Key.EQUAL, gui::zoomIn, Modifier.CONTROL);           // global chords
 gui.claim(node, Shortcut.of(Key.LEFT), ClaimScope.FOCUSED, cmd);  // focused-only chords

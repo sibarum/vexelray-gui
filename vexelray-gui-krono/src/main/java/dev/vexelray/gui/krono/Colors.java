@@ -1,6 +1,7 @@
 package dev.vexelray.gui.krono;
 
 import dev.vexelray.canvas.Color;
+import dev.vexelray.gui.core.style.Oklab;
 import sibarum.kronometer.Interp;
 
 /**
@@ -44,15 +45,9 @@ public final class Colors {
     }
 
     /** Perceptually uniform. The one to use unless you have a specific reason not to. */
-    public static final Interp<Color> OKLAB = (from, to, alpha) -> {
-        double[] a = toOklab(from);
-        double[] b = toOklab(to);
-        return fromOklab(
-                mix(a[0], b[0], alpha),
-                mix(a[1], b[1], alpha),
-                mix(a[2], b[2], alpha),
-                (float) mix(from.a(), to.a(), alpha));
-    };
+    public static final Interp<Color> OKLAB = (from, to, alpha) -> Oklab.of(from)
+            .mix(Oklab.of(to), alpha)
+            .toColor((float) mix(from.a(), to.a(), alpha));
 
     /** Blends in linear light: right for compositing, too light for a perceptual ramp. See the class note. */
     public static final Interp<Color> LINEAR_RGB = (from, to, alpha) -> new Color(
@@ -69,53 +64,19 @@ public final class Colors {
             (float) mix(from.a(), to.a(), alpha));
 
     // -------------------------------------------------------------- internals
+    // The colour space itself lives in gui-core (dev.vexelray.gui.core.style.Oklab), because the theme derives a
+    // whole palette in it and a framework cannot have two answers for what a colour is. This module owns the
+    // *interpolation* — which space to blend in, which is a decision about a domain, not about the space.
 
     private static double mix(double a, double b, double alpha) {
         return a + (b - a) * alpha;
     }
 
     private static double srgbToLinear(double c) {
-        return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+        return Oklab.srgbToLinear(c);
     }
 
     private static double linearToSrgb(double c) {
-        double v = c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
-        return Math.clamp(v, 0.0, 1.0);
-    }
-
-    /** sRGB to Oklab, via linear light and the LMS cone response. */
-    private static double[] toOklab(Color c) {
-        double r = srgbToLinear(c.r());
-        double g = srgbToLinear(c.g());
-        double b = srgbToLinear(c.b());
-
-        double l = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b;
-        double m = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b;
-        double s = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b;
-
-        double lc = Math.cbrt(l);
-        double mc = Math.cbrt(m);
-        double sc = Math.cbrt(s);
-
-        return new double[] {
-                0.2104542553 * lc + 0.7936177850 * mc - 0.0040720468 * sc,
-                1.9779984951 * lc - 2.4285922050 * mc + 0.4505937099 * sc,
-                0.0259040371 * lc + 0.7827717662 * mc - 0.8086757660 * sc};
-    }
-
-    private static Color fromOklab(double bigL, double a, double b, float alpha) {
-        double lc = bigL + 0.3963377774 * a + 0.2158037573 * b;
-        double mc = bigL - 0.1055613458 * a - 0.0638541728 * b;
-        double sc = bigL - 0.0894841775 * a - 1.2914855480 * b;
-
-        double l = lc * lc * lc;
-        double m = mc * mc * mc;
-        double s = sc * sc * sc;
-
-        return new Color(
-                (float) linearToSrgb(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s),
-                (float) linearToSrgb(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s),
-                (float) linearToSrgb(-0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s),
-                alpha);
+        return Oklab.linearToSrgb(c);
     }
 }

@@ -1,10 +1,11 @@
 package dev.vexelray.gui.widget;
 
-import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
+import dev.vexelray.gui.core.style.Role;
+import dev.vexelray.gui.core.style.Theme;
 
 import java.util.function.DoubleConsumer;
 
@@ -19,9 +20,6 @@ import java.util.function.DoubleConsumer;
  * it must not touch the retained tree except through {@link Node} handles (which are thread-safe).
  */
 public final class Slider {
-
-    private static final Color TRACK = Color.rgb(0x2b3346);
-    private static final Color THUMB = Color.rgb(0x3aa0ff);
 
     private final Node track;
     private final Node leftSpacer;
@@ -38,10 +36,12 @@ public final class Slider {
         this.rightSpacer = gui.box().width(Length.grow(1f - this.value)).height(Length.percent(100));
         // The thumb is the grabbable thing, so it gets the physicality: a lit fill and a small drop shadow lift
         // it off the sunken track. Both are SDF transfer functions — no extra geometry, still one draw.
+        Theme theme = gui.theme();
         Node thumb = gui.box().width(Length.rem(1.1f)).height(Length.percent(100))
-                .background(THUMB).corner(Length.rem(0.55f))
-                .lit(true).elevation(Length.rem(0.25f));
-        this.track = gui.row().height(Length.rem(1.1f)).background(TRACK).corner(Length.rem(0.55f))
+                .background(theme.color(Role.ACCENT)).corner(Length.rem(0.55f))
+                .lit(theme.lit()).elevation(Length.rem(0.25f));
+        this.track = gui.row().height(Length.rem(1.1f))
+                .background(theme.color(Role.TRACK)).corner(Length.rem(0.55f))
                 .alignItems(AlignItems.CENTER).scroll(false, false) // a slider never scrolls
                 .children(leftSpacer, thumb, rightSpacer);
         gui.onDrag(track, e -> set(e.fractionX()));

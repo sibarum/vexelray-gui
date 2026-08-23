@@ -3,6 +3,7 @@ package dev.vexelray.gui.typeset;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
+import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.layout.Length;
 import sibarum.atchung.Subscription;
 
@@ -85,7 +86,7 @@ public final class TypesetBlock implements AutoCloseable {
     private final List<Node> projected = new ArrayList<>();
 
     private volatile Box content;
-    private volatile Color ink = Color.WHITE;
+    private volatile Color ink;
     private volatile Placed placed = Placed.empty();
 
     /** Build a block for {@code content} and project it immediately, so {@link #node()} is usable at once. */
@@ -93,6 +94,8 @@ public final class TypesetBlock implements AutoCloseable {
         this.gui = gui;
         this.engine = engine;
         this.content = content;
+        // The theme's primary ink, so a block matches the text around it until told otherwise.
+        this.ink = gui.theme().color(Role.INK);
         // Never a scroll container: a block is a fixed-aspect atom in v1, and scrolling belongs to whatever holds
         // it. It also keeps the container's content box equal to its border box, which is what a floating child's
         // offsets resolve against.
@@ -114,10 +117,9 @@ public final class TypesetBlock implements AutoCloseable {
         return this;
     }
 
-    /** The colour glyphs and bars draw in; {@link Color#WHITE} by default, which is core's default text colour,
-     *  so a block matches the text around it until told otherwise. */
+    /** The colour glyphs and bars draw in; the theme's primary ink by default (Role.INK). */
     public TypesetBlock ink(Color colour) {
-        this.ink = colour == null ? Color.WHITE : colour;
+        this.ink = colour == null ? gui.theme().color(Role.INK) : colour;
         rebuild();
         return this;
     }

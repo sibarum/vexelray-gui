@@ -17,6 +17,8 @@ import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.LayoutEnums;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
+import dev.vexelray.gui.core.style.Role;
+import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.gui.widget.Slider;
 import dev.vexelray.gui.widget.Tabs;
 import dev.vexelray.gui.widget.TitleBar;
@@ -54,21 +56,9 @@ public final class Demo {
     private static final int W = 900;
     private static final int H = 560;
 
-    private static final Color BG = Color.rgb(0x11141b);
-    private static final Color PANEL = Color.rgb(0x1b2130);
-    private static final Color PANEL_HOVER = Color.rgb(0x232a3d);
-    private static final Color PANEL_PRESSED = Color.rgb(0x151a26);
-    private static final Color LINE = Color.rgb(0x2b3346);
-    private static final Color ACCENT = Color.rgb(0x3aa0ff);
-    private static final Color ACCENT_HOVER = Color.rgb(0x57b1ff);
-    private static final Color ACCENT_PRESSED = Color.rgb(0x2b86e0);
-    // Button blue: deeper than the text accent, so filled controls sit into the page rather than glowing on it
-    // (and the letterpress glint has somewhere darker to catch).
-    private static final Color BTN_BLUE = Color.rgb(0x2668b3);
-    private static final Color BTN_BLUE_HOVER = Color.rgb(0x2f78c9);
-    private static final Color BTN_BLUE_PRESSED = Color.rgb(0x1d548f);
-    private static final Color INK = Color.rgb(0xeef2f8);
-    private static final Color DIM = Color.rgb(0x93a0b4);
+    // No colours here any more: every one of them was a level of the theme's two ladders, and the four hover and
+    // pressed variants were one lightness step applied twice. The demo names roles and lets the theme answer --
+    // which is also what makes it a showcase of the framework rather than of a palette (see Theme and Role).
 
     public static void main(String[] args) throws Exception {
         args = java.util.Arrays.stream(args).filter(s -> !s.isBlank()).toArray(String[]::new);
@@ -78,8 +68,17 @@ public final class Demo {
         // design size leaves no headroom, so any window even slightly smaller starts cropping; this is the point
         // below which the layout would stop making sense, which is a good deal lower.
         gui.minSize(Length.em(40), Length.em(25));   // 640 x 400 at 1x
+        // The look is a preference, so it lives where preferences live -- and it is applied before the UI is built,
+        // because roles resolve when a prop is written (see Theme). One line, and every widget, every piece of the
+        // renderer's own chrome and the clear colour below all follow it.
+        if ("light".equalsIgnoreCase(AppHome.of("vexelray-demo").settings().getString("theme", "dark"))) {
+            gui.theme(Theme.LIGHT);
+        }
         Refs refs = buildUi(gui);
         zoomShortcuts(gui);
+        // The Vulkan clear colour: the same role the root paints, so the frame behind the tree is never a
+        // second opinion about what the page is.
+        Color page = gui.theme().color(Role.PAGE);
 
         if (args.length >= 1 && args[0].equals("--capture-zoom")) {
             // One run, the same tree captured at each step of the ladder: the em check, as a strip of images.
@@ -87,20 +86,22 @@ public final class Demo {
             // any element that holds its pixel size while the rest grow is still pinned to device pixels (§6).
             for (float z : ZOOM_STEPS) {
                 gui.zoom(z);
-                GuiApp.capture(gui, W, H, 0.06f, 0.07f, 0.09f, "gui-zoom-" + z + "x.png");
+                GuiApp.capture(gui, W, H, page.r(), page.g(), page.b(), "gui-zoom-" + z + "x.png");
             }
             System.out.println("captured " + ZOOM_STEPS.length + " zoom levels");
             return;
         }
         if (args.length >= 1 && args[0].equals("--capture")) {
-            GuiApp.capture(gui, W, H, 0.06f, 0.07f, 0.09f, args.length >= 2 ? args[1] : "gui.png");
+            GuiApp.capture(gui, W, H, page.r(), page.g(), page.b(),
+                    args.length >= 2 ? args[1] : "gui.png");
             System.out.println("captured");
             return;
         }
         if (args.length >= 1 && args[0].equals("--capture-live")) {
             startWorker(gui, refs);          // let a worker mutate the tree for a few seconds first
             Thread.sleep(3200);
-            GuiApp.capture(gui, W, H, 0.06f, 0.07f, 0.09f, args.length >= 2 ? args[1] : "gui-live.png");
+            GuiApp.capture(gui, W, H, page.r(), page.g(), page.b(),
+                    args.length >= 2 ? args[1] : "gui-live.png");
             System.out.println("captured");
             return;
         }
@@ -360,29 +361,33 @@ public final class Demo {
      */
     private static Gui popupGui() {
         Gui p = new Gui();
+        Theme theme = p.theme();
         Node card = p.column().width(Length.FILL).height(Length.FILL)
-                .background(PANEL).corner(Length.rem(1)).border(Length.rem(0.1f), LINE)
-                .lit(true).elevation(Length.rem(1.25f))
+                .background(theme.color(Role.PANEL)).corner(Length.rem(1))
+                .border(Length.rem(0.1f), theme.color(Role.LINE))
+                .lit(theme.lit()).elevation(Length.rem(1.25f))
                 .padding(Length.dp(16)).gap(Length.rem(0.5f))
                 .children(
                         p.text("A true OS window").height(Length.rem(2)).textSize(Length.rem(1.375f))
-                                .textColor(ACCENT),
+                                .textColor(theme.color(Role.ACCENT)),
                         p.text("Created on the main thread, presented by the same frame loop as the main "
                                         + "window, drawn by the same shared device and SDF pipeline. Close it "
                                         + "with the title-bar button; the app keeps running.")
-                                .textSize(Length.rem(1)).textColor(DIM)
+                                .textSize(Length.rem(1)).textColor(theme.color(Role.DIM))
                                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.TOP));
-        p.root().background(BG).padding(Length.dp(16)).children(card);
+        p.root().background(theme.color(Role.PAGE)).padding(Length.dp(16)).children(card);
         return p;
     }
 
     /** Build the dashboard with flex; return the handles the worker will mutate. */
     private static Refs buildUi(Gui gui) {
+        Theme theme = gui.theme();
         // The horizontal padding is declared: a label's text area is its whole box (the phantom text inset is
         // editable-only now), so a left-aligned label that wants a margin says so.
         Node header = gui.text("VexelRay GUI")
-                .width(Length.FILL).height(Length.rem(4)).background(PANEL).textSize(Length.rem(1.75f)).textColor(INK)
-                .lit(true).elevation(Length.rem(0.5f))
+                .width(Length.FILL).height(Length.rem(4)).background(theme.color(Role.PANEL))
+                .textSize(Length.rem(1.75f)).textColor(theme.color(Role.INK))
+                .lit(theme.lit()).elevation(Length.rem(0.5f))
                 .padding(Length.ZERO, Length.em(0.625f))
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
 
@@ -394,7 +399,7 @@ public final class Demo {
         // wraps onto two lines reserves two lines. Pinning a height here would opt back out of that.
         for (int i = 1; i <= 16; i++) {
             log.append(gui.text("log line " + i + " — overflows, scrolls")
-                    .textSize(Length.rem(1)).textColor(DIM));
+                    .textSize(Length.rem(1)).textColor(theme.color(Role.DIM)));
         }
 
         // An editable *multiline* field: word-wrapped, Enter inserts a newline, Up/Down move by visual line and
@@ -412,16 +417,16 @@ public final class Demo {
         // next: type before or inside them and they follow their text, because every edit remaps them through
         // its own TextEdit diff (req 12). Nothing re-runs a highlighter — the spans are not recomputed at all.
         notes.setSpans(java.util.List.of(
-                dev.vexelray.gui.core.text.Span.foreground(14, 26, ACCENT),   // "Node handles"
+                dev.vexelray.gui.core.text.Span.foreground(14, 26, theme.color(Role.ACCENT)),   // "Node handles"
                 dev.vexelray.gui.core.text.Span.underline(39, 47),            // "messages"
-                dev.vexelray.gui.core.text.Span.background(61, 65, LINE)));   // "flex"
+                dev.vexelray.gui.core.text.Span.background(61, 65, theme.color(Role.LINE))));   // "flex"
 
         // A tabbed panel. Pages are hidden rather than removed, so the editor on the first tab keeps its content,
         // its caret and its handlers while another tab is up: switch away mid-sentence and come back to it.
         Node about = gui.text("Two pages, one panel. This page is a plain label; the other is the live editor.\n\n"
                         + "Switching hides a page rather than removing it, so nothing on it is rebuilt -- type in "
                         + "the editor, come back here, go back, and the caret is where you left it.")
-                .textSize(Length.rem(1)).textColor(DIM)
+                .textSize(Length.rem(1)).textColor(theme.color(Role.DIM))
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.TOP);
         // A tree explorer over the real filesystem: hasChildren answers from the directory bit without listing,
         // and children() runs its directory listing on the handler executor the first time a folder opens — the
@@ -462,11 +467,11 @@ public final class Demo {
         var contextTarget = new java.util.concurrent.atomic.AtomicReference<java.nio.file.Path>();
         ContextMenu fileMenu = new ContextMenu(gui)
                 .item("Open", () -> log.append(gui.text("open: " + contextTarget.get())
-                        .textSize(Length.rem(1)).textColor(INK)))
+                        .textSize(Length.rem(1)).textColor(theme.color(Role.INK))))
                 .item("Copy path", () -> gui.clipboard().set(String.valueOf(contextTarget.get())))
                 .separator()
                 .item("Properties", () -> log.append(gui.text("properties: " + contextTarget.get())
-                        .textSize(Length.rem(1)).textColor(DIM)));
+                        .textSize(Length.rem(1)).textColor(theme.color(Role.DIM))));
         files.onContext((path, e) -> {
             contextTarget.set(path);
             fileMenu.show(e.x(), e.y());
@@ -480,35 +485,37 @@ public final class Demo {
         // Cards float: a lit fill (top-left edge light + faint vertical gradient) over a soft analytic shadow.
         // Both are transfer functions of the same rounded-box SDF the fill already evaluates — no textures.
         Node leftCard = gui.column().width(Length.FILL).height(Length.FILL)
-                .background(PANEL).corner(Length.rem(1)).border(Length.rem(0.1f), LINE)
-                .lit(true).elevation(Length.rem(1.25f))
+                .background(theme.color(Role.PANEL)).corner(Length.rem(1))
+                .border(Length.rem(0.1f), theme.color(Role.LINE))
+                .lit(theme.lit()).elevation(Length.rem(1.25f))
                 .padding(Length.dp(20)).gap(Length.rem(0.625f))
                 .children(tabs.node());
         Node rightCard = gui.column().width(Length.FILL).height(Length.FILL)
-                .background(PANEL).corner(Length.rem(1)).border(Length.rem(0.1f), LINE)
-                .lit(true).elevation(Length.rem(1.25f))
+                .background(theme.color(Role.PANEL)).corner(Length.rem(1))
+                .border(Length.rem(0.1f), theme.color(Role.LINE))
+                .lit(theme.lit()).elevation(Length.rem(1.25f))
                 .padding(Length.dp(20)).gap(Length.rem(0.625f))
                 .children(
                         gui.text("Live from a worker").height(Length.rem(1.875f)).textSize(Length.rem(1.375f))
-                                .textColor(ACCENT),
+                                .textColor(theme.color(Role.ACCENT)),
                         log);
 
         Node body = gui.row().width(Length.FILL).height(Length.FILL).padding(Length.dp(24)).gap(Length.rem(1.5f))
                 .children(leftCard, rightCard);
 
-        Node getStarted = button(gui, "Get started", Color.WHITE, BTN_BLUE, BTN_BLUE_HOVER, BTN_BLUE_PRESSED, false)
-                .textSunken(true);   // white on accent: letterpress the label for contrast
+        Node getStarted = button(gui, "Get started", Role.ON_ACTION, Role.ACTION, false)
+                .textSunken(theme.letterpress());   // white on a fill: letterpress the label for contrast
         // The click vertical: tactroller -> atchung -> dispatch -> this handler (on a worker thread), which
         // mutates the tree through handles just like the background worker does.
         AtomicInteger clicks = new AtomicInteger();
         gui.onClick(getStarted, () -> {
             int n = clicks.incrementAndGet();
             log.append(gui.text("clicked \"Get started\" x" + n)
-                    .height(Length.rem(1.5f)).textSize(Length.rem(1)).textColor(ACCENT));
+                    .height(Length.rem(1.5f)).textSize(Length.rem(1)).textColor(theme.color(Role.ACCENT)));
         });
 
         // A slider (drag with pointer capture) driving a live value label.
-        Node valueLabel = gui.text("50%").width(Length.rem(5)).textSize(Length.rem(1)).textColor(INK)
+        Node valueLabel = gui.text("50%").width(Length.rem(5)).textSize(Length.rem(1)).textColor(theme.color(Role.INK))
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
         Slider slider = new Slider(gui, 0.5f).onChange(v -> valueLabel.text(Math.round(v * 100) + "%"));
         slider.node().width(Length.rem(14));
@@ -519,37 +526,35 @@ public final class Demo {
         field.node().width(Length.rem(18));
         // Formatting spans: they auto-diff — colours/underline stay attached to their text as you edit.
         field.setSpans(java.util.List.of(
-                dev.vexelray.gui.core.text.Span.foreground(0, 4, ACCENT),      // "type"
-                dev.vexelray.gui.core.text.Span.background(5, 9, LINE),         // "here"
+                dev.vexelray.gui.core.text.Span.foreground(0, 4, theme.color(Role.ACCENT)),      // "type"
+                dev.vexelray.gui.core.text.Span.background(5, 9, theme.color(Role.LINE)),         // "here"
                 dev.vexelray.gui.core.text.Span.underline(11, 16)));           // "Enter"
         field.onSubmit(s -> log.append(gui.text("submitted: " + s)
-                .textSize(Length.rem(1)).textColor(INK)));
+                .textSize(Length.rem(1)).textColor(theme.color(Role.INK))));
 
         // Wrap vs horizontal scroll, toggled live. Both are the same field: turning wrap off makes the node
         // report content wider than its box, which is what grows an h-scrollbar — a text leaf is a scroll
         // citizen like any container. A wrapped node never scrolls horizontally, because nothing lies to the
         // right of a wrapped line to reach.
-        // A toggle, not a button: its base palette depends on its own state (accent while on, panel while off),
-        // and hover/press shade whichever palette is current. One handler owns all restyling, reading the toggle
-        // state plus the last interaction state, so a flip mid-hover repaints correctly.
+        // A toggle, not a button: which *role* it fills with depends on its own state (a filled control while on, a
+        // panel while off), and the theme shades whichever of those is current for hover and press. One handler owns
+        // all restyling, reading the toggle state plus the last interaction state, so a flip mid-hover repaints right.
         boolean[] wrapping = {true};
         Node wrapToggle = gui.text("Wrap: on").width(Length.rem(10)).height(Length.rem(2.75f))
-                .corner(Length.rem(0.625f)).border(Length.rem(0.1f), LINE)
+                .corner(Length.rem(0.625f)).border(Length.rem(0.1f), theme.color(Role.LINE))
                 .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE)
-                .lit(true);
+                .lit(theme.lit());
         var lastState = new java.util.concurrent.atomic.AtomicReference<>(
                 dev.vexelray.gui.core.input.InteractionState.NORMAL);
         Runnable restyleWrap = () -> {
             boolean on = wrapping[0];
             var state = lastState.get();
-            wrapToggle.text(on ? "Wrap: on" : "Wrap: off").textColor(on ? Color.WHITE : DIM)
-                    .textSunken(on);   // letterpress only while white-on-accent; the off state is low-contrast
-
-            wrapToggle.background(switch (state) {
-                case NORMAL -> on ? BTN_BLUE : PANEL;
-                case HOVER -> on ? BTN_BLUE_HOVER : PANEL_HOVER;
-                case PRESSED -> on ? BTN_BLUE_PRESSED : PANEL_PRESSED;
-            });
+            Role fill = on ? Role.ACTION : Role.PANEL;
+            wrapToggle.text(on ? "Wrap: on" : "Wrap: off")
+                    .textColor(gui.theme().color(on ? Role.ON_ACTION : Role.DIM))
+                    // letterpress only while the label is white-on-fill; the off state is low-contrast
+                    .textSunken(on && gui.theme().letterpress());
+            wrapToggle.background(gui.theme().color(fill, state));
             wrapToggle.elevation(switch (state) {
                 case NORMAL -> Length.rem(0.375f);
                 case HOVER -> Length.rem(0.625f);
@@ -570,23 +575,24 @@ public final class Demo {
         // Per-axis padding: small vertically so 44px buttons fit a 64px bar, but full horizontally (dp(24)) so the
         // first button aligns with the cards. left edge (body padding is also dp(24)). These are dp rather than
         // rem because they are frame, not content: zoom should grow what you are reading, not the gutter round it.
-        Node popupButton = button(gui, "Popup", DIM, PANEL, PANEL_HOVER, PANEL_PRESSED, true);
-        Node dialogButton = button(gui, "Dialog", DIM, PANEL, PANEL_HOVER, PANEL_PRESSED, true);
+        Node popupButton = button(gui, "Popup", Role.DIM, Role.PANEL, true);
+        Node dialogButton = button(gui, "Dialog", Role.DIM, Role.PANEL, true);
         Node controls = gui.row().width(Length.FILL).height(Length.rem(4)).padding(Length.dp(8), Length.dp(24))
                 .gap(Length.rem(0.75f)).justify(Justify.START).alignItems(AlignItems.CENTER)
-                .children(getStarted, button(gui, "Docs", DIM, PANEL, PANEL_HOVER, PANEL_PRESSED, true),
+                .children(getStarted, button(gui, "Docs", Role.DIM, Role.PANEL, true),
                         wrapToggle, popupButton, dialogButton, slider.node(), valueLabel);
 
         Node fieldRow = gui.row().width(Length.FILL).height(Length.rem(3.25f))
                 .padding(Length.dp(6), Length.dp(24)).gap(Length.rem(0.75f))
                 .alignItems(AlignItems.CENTER).scroll(false, false)
                 .children(
-                        gui.text("Field:").width(Length.rem(4)).textSize(Length.rem(1)).textColor(DIM)
+                        gui.text("Field:").width(Length.rem(4)).textSize(Length.rem(1)).textColor(theme.color(Role.DIM))
                                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE),
                         field.node());
 
         Node footer = gui.text("flex layout: rows/columns, padding/margin/border, border-box, relative units")
-                .width(Length.FILL).height(Length.rem(2.25f)).textSize(Length.rem(0.9375f)).textColor(DIM)
+                .width(Length.FILL).height(Length.rem(2.25f))
+                .textSize(Length.rem(0.9375f)).textColor(theme.color(Role.DIM))
                 .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE);
 
         // Tooltips: hover a control and a hit-inert bubble appears below it — drawn over the page, invisible to
@@ -604,27 +610,25 @@ public final class Demo {
         // Windows'. Bound to the real window in main(), once there is one.
         TitleBar titleBar = new TitleBar(gui, WindowControls.NONE, "VexelRay GUI");
 
-        gui.root().background(BG).children(titleBar.node(), header, body, controls, fieldRow, footer);
+        gui.root().background(theme.color(Role.PAGE))
+                .children(titleBar.node(), header, body, controls, fieldRow, footer);
         return new Refs(header, log, popupButton, dialogButton, titleBar);
     }
 
     /** A fixed-size labelled button that lightens on hover and darkens while pressed. */
-    private static Node button(Gui gui, String label, Color fg, Color base, Color hover, Color pressed,
-                               boolean bordered) {
-        Node b = gui.text(label).width(Length.rem(10)).height(Length.rem(2.75f)).background(base)
-                .corner(Length.rem(0.625f)).textColor(fg).align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE)
-                .lit(true).elevation(Length.rem(0.375f));
+    private static Node button(Gui gui, String label, Role fg, Role fill, boolean bordered) {
+        Node b = gui.text(label).width(Length.rem(10)).height(Length.rem(2.75f))
+                .background(gui.theme().color(fill))
+                .corner(Length.rem(0.625f)).textColor(gui.theme().color(fg))
+                .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE)
+                .lit(gui.theme().lit()).elevation(Length.rem(0.375f));
         if (bordered) {
-            b.border(Length.rem(0.1f), LINE);
+            b.border(Length.rem(0.1f), gui.theme().color(Role.LINE));
         }
         // Restyle on pointer interaction — the handler runs on a worker thread and mutates via the handle.
         // Depth is part of the feedback: hover lifts the button a little, pressing sets it down flush.
         gui.onState(b, state -> {
-            b.background(switch (state) {
-                case NORMAL -> base;
-                case HOVER -> hover;
-                case PRESSED -> pressed;
-            });
+            b.background(gui.theme().color(fill, state));
             b.elevation(switch (state) {
                 case NORMAL -> Length.rem(0.375f);
                 case HOVER -> Length.rem(0.625f);
@@ -644,7 +648,7 @@ public final class Demo {
                     refs.header().text("VexelRay GUI    tick " + n);
                     if (n <= 8) {
                         refs.log().append(gui.text("event " + n + " from worker thread")
-                                .textSize(Length.rem(1)).textColor(INK));
+                                .textSize(Length.rem(1)).textColor(gui.theme().color(Role.INK)));
                     }
                 }
             } catch (InterruptedException e) {

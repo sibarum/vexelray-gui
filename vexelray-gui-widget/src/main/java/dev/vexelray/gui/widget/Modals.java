@@ -1,6 +1,5 @@
 package dev.vexelray.gui.widget;
 
-import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.WindowControls;
@@ -10,6 +9,8 @@ import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.style.Role;
+import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.os.Decorations;
 import dev.vexelray.os.NativeWindow;
 import dev.vexelray.os.WindowConfig;
@@ -54,16 +55,6 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 public final class Modals implements AutoCloseable {
 
-    private static final Color BG = Color.rgb(0x151a26);
-    private static final Color INK = Color.rgb(0xeef2f8);
-    private static final Color LINE = Color.rgb(0x2b3346);
-    private static final Color BTN = Color.rgb(0x1b2130);
-    private static final Color BTN_HOVER = Color.rgb(0x232a3d);
-    private static final Color BTN_PRESSED = Color.rgb(0x11141b);
-    private static final Color ACCENT = Color.rgb(0x2668b3);
-    private static final Color ACCENT_HOVER = Color.rgb(0x2f78c9);
-    private static final Color ACCENT_PRESSED = Color.rgb(0x1d548f);
-
     /** Dialog metrics, in the logical pixels {@link WindowConfig} takes. */
     private static final int WIDTH = 460;
     private static final int TITLE_BAR = 32;
@@ -98,7 +89,7 @@ public final class Modals implements AutoCloseable {
         this.bar = new TitleBar(gui, WindowControls.NONE, "");
         this.message = gui.text("")
                 .width(Length.FILL).height(Length.grow(1))
-                .textSize(Length.rem(1)).textColor(INK)
+                .textSize(Length.rem(1)).textColor(gui.theme().color(Role.INK))
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.TOP);
         this.buttonRow = gui.row()
                 .width(Length.FILL).height(Length.AUTO)
@@ -110,7 +101,7 @@ public final class Modals implements AutoCloseable {
                 .padding(Length.dp(18)).gap(Length.dp(16))
                 .scroll(false, false)
                 .children(message, buttonRow);
-        gui.root().background(BG).children(bar.node(), body);
+        gui.root().background(gui.theme().color(Role.PAGE)).children(bar.node(), body);
 
         // Registered once, not per dialog: a global claim has no node to release it with, so a dialog that
         // claimed Escape on the way up would leave that claim behind on the way down. These read the dialog that
@@ -277,24 +268,22 @@ public final class Modals implements AutoCloseable {
 
     /** One dialog button: the default one accented, the rest quiet, all of them dismissing the dialog. */
     private Node button(Modal.Button spec) {
-        Color base = spec.isDefault() ? ACCENT : BTN;
-        Color hover = spec.isDefault() ? ACCENT_HOVER : BTN_HOVER;
-        Color pressed = spec.isDefault() ? ACCENT_PRESSED : BTN_PRESSED;
+        // One role for the whole button, whatever the pointer is doing: the default button is a filled control, the
+        // rest are panels, and hover/press are the theme shading each of those -- not six more colours to pick.
+        Role fill = spec.isDefault() ? Role.ACTION : Role.PANEL;
+        Role label = spec.isDefault() ? Role.ON_ACTION : Role.INK;
+        Theme theme = gui.theme();
         Node b = gui.text(spec.label())
                 .height(Length.dp(32))
                 .padding(Length.ZERO, Length.dp(18))
-                .background(base)
+                .background(theme.color(fill))
                 .corner(Length.rem(0.5f))
-                .border(Length.rem(0.1f), LINE)
-                .textSize(Length.rem(0.95f)).textColor(INK)
+                .border(Length.rem(0.1f), theme.color(Role.LINE))
+                .textSize(Length.rem(0.95f)).textColor(theme.color(label))
                 .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE)
-                .lit(true).elevation(Length.rem(0.35f));
+                .lit(theme.lit()).elevation(Length.rem(0.35f));
         gui.onState(b, state -> {
-            b.background(switch (state) {
-                case NORMAL -> base;
-                case HOVER -> hover;
-                case PRESSED -> pressed;
-            });
+            b.background(gui.theme().color(fill, state));
             b.elevation(state == InteractionState.PRESSED ? Length.ZERO : Length.rem(0.35f));
         });
         gui.onClick(b, () -> dismiss(spec));

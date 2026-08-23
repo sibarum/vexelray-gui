@@ -7,6 +7,7 @@ import dev.vexelray.gui.core.input.ClaimScope;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.text.TextLayout;
 import sibarum.tactroller.api.Key;
@@ -31,14 +32,6 @@ import java.util.function.IntConsumer;
  */
 public final class Tabs {
 
-    private static final Color BAR = Color.rgb(0x161b28);
-    private static final Color TAB_IDLE = Color.rgb(0x1b2130);
-    private static final Color TAB_HOVER = Color.rgb(0x232a3d);
-    private static final Color TAB_ACTIVE = Color.rgb(0x2b3346);
-    private static final Color INK = Color.rgb(0xeef2f8);
-    private static final Color DIM = Color.rgb(0x93a0b4);
-    private static final Color ACCENT = Color.rgb(0x3aa0ff);
-
     private final Gui gui;
     private final Node root;
     private final Node bar;
@@ -52,7 +45,7 @@ public final class Tabs {
     /** Build an empty tab panel; add pages with {@link #add}. */
     public Tabs(Gui gui) {
         this.gui = gui;
-        this.bar = gui.row().width(Length.FILL).height(Length.rem(2.25f)).background(BAR)
+        this.bar = gui.row().width(Length.FILL).height(Length.rem(2.25f)).background(gui.theme().color(Role.CHROME))
                 .gap(Length.dp(2)).alignItems(AlignItems.STRETCH).scroll(false, false);
         this.pages = gui.column().width(Length.FILL).height(Length.FILL);
         this.root = gui.column().width(Length.FILL).height(Length.FILL).children(bar, pages);
@@ -89,10 +82,10 @@ public final class Tabs {
                 .height(Length.FILL)
                 .padding(Length.dp(6), Length.dp(14))
                 .textSize(Length.rem(1))
-                .textColor(DIM)
+                .textColor(gui.theme().color(Role.DIM))
                 .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE)
                 .corner(Length.rem(0.5f), Length.ZERO)   // tab silhouette: rounded shoulders, flat seat
-                .background(TAB_IDLE);
+                .background(gui.theme().color(Role.PANEL));
 
         // Handlers resolve the header to its index at event time, not add time: tabs can be removed, so a
         // baked-in index would aim every surviving closure one tab off. The node's identity is the stable key.
@@ -129,11 +122,13 @@ public final class Tabs {
         selected = next;
         if (previous >= 0) {
             bodies.get(previous).visible(false);
-            headers.get(previous).background(TAB_IDLE).textColor(DIM).lit(false).elevation(Length.ZERO);
+            headers.get(previous).background(gui.theme().color(Role.PANEL))
+                    .textColor(gui.theme().color(Role.DIM)).lit(false).elevation(Length.ZERO);
         }
         bodies.get(next).visible(true);
         // The active tab is physically forward: lit and floating a little above the bar the idle tabs sit flush in.
-        headers.get(next).background(TAB_ACTIVE).textColor(ACCENT).lit(true).elevation(Length.rem(0.25f));
+        headers.get(next).background(gui.theme().color(Role.SELECTION))
+                .textColor(gui.theme().color(Role.ACCENT)).lit(gui.theme().lit()).elevation(Length.rem(0.25f));
         int delivered = next;
         gui.handlers().execute(() -> onSelect.accept(delivered));
         return this;
@@ -184,9 +179,10 @@ public final class Tabs {
     }
 
     private Color background(int index, InteractionState state) {
-        if (index == selected) {
-            return TAB_ACTIVE;
-        }
-        return state == InteractionState.NORMAL ? TAB_IDLE : TAB_HOVER;
+        // The selected tab keeps its active fill whatever the pointer does; every other tab is a panel, shaded by
+        // the theme rather than by a second constant per state.
+        return index == selected
+                ? gui.theme().color(Role.SELECTION)
+                : gui.theme().color(Role.PANEL, state);
     }
 }

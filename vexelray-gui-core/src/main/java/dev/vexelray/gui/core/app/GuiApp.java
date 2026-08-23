@@ -84,8 +84,13 @@ public final class GuiApp implements AutoCloseable {
     /** The window a modal dialog is showing in, or null when nothing is modal. Main thread. */
     private NativeWindow modal;
 
-    /** What the rest of the application is dimmed with while a modal is up; null draws no scrim. */
-    private volatile dev.vexelray.canvas.Color modalDim = dev.vexelray.canvas.Color.rgba(0f, 0f, 0f, 0.45f);
+    /**
+     * What the rest of the application is dimmed with while a modal is up. Unset means "whatever the blocked
+     * tree's theme says" (Role.SCRIM), so a dialog over a light window dims correctly without the application
+     * restating it; set it explicitly to override, or to null for no scrim at all.
+     */
+    private volatile dev.vexelray.canvas.Color modalDim;
+    private volatile boolean modalDimSet;
 
     /** One scrim node per blocked tree, created on first use and hidden between modals. */
     private final java.util.Map<Gui, ModalScrim> scrims = new java.util.IdentityHashMap<>();
@@ -294,6 +299,7 @@ public final class GuiApp implements AutoCloseable {
     /** The colour the rest of the application is dimmed with while a modal is up; {@code null} draws no scrim. */
     public GuiApp modalDim(dev.vexelray.canvas.Color color) {
         this.modalDim = color;
+        this.modalDimSet = true;
         return this;
     }
 
@@ -302,7 +308,8 @@ public final class GuiApp implements AutoCloseable {
         if (gui == null || (!dimmed && !scrims.containsKey(gui))) {
             return;   // a tree that has never been dimmed needs no scrim to un-dim
         }
-        scrims.computeIfAbsent(gui, ModalScrim::install).dim(dimmed, modalDim);
+        scrims.computeIfAbsent(gui, ModalScrim::install)
+                .dim(dimmed, modalDimSet ? modalDim : gui.theme().color(dev.vexelray.gui.core.style.Role.SCRIM));
     }
 
     /** Enqueue work for the top of the next frame. The one way anything reaches the main thread from elsewhere. */
@@ -439,7 +446,7 @@ public final class GuiApp implements AutoCloseable {
         Canvas canvas = new Canvas(width, height);
         canvas.begin();
         if (root != null) {
-            TreeRenderer.emit(root, canvas, text);
+            TreeRenderer.emit(root, canvas, text, gui.theme());
         }
         float[] vertices = canvas.toVertexArray();
         int vertexCount = canvas.vertexCount();

@@ -147,7 +147,7 @@ final class GuiWindow implements AutoCloseable {
         RetainedNode root = update();
         canvas.begin();
         if (root != null) {
-            TreeRenderer.emit(root, canvas, text);
+            TreeRenderer.emit(root, canvas, text, gui.theme());
         }
         vertexBuffer.update(canvas.toVertexArray());
         presenter.setVertexCount(canvas.vertexCount());

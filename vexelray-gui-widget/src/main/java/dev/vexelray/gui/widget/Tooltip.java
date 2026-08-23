@@ -1,10 +1,10 @@
 package dev.vexelray.gui.widget;
 
-import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.text.TextLayout;
 
 import java.util.Timer;
@@ -29,10 +29,6 @@ import java.util.TimerTask;
  */
 public final class Tooltip implements AutoCloseable {
 
-    private static final Color TIP_BG = Color.rgb(0x232a3d);
-    private static final Color TIP_BORDER = Color.rgb(0x3a445c);
-    private static final Color TIP_INK = Color.rgb(0xd7deea);
-
     /** How far below the control the bubble sits, in px at density 1. */
     private static final float GAP_PX = 6f;
 
@@ -53,12 +49,12 @@ public final class Tooltip implements AutoCloseable {
         this.bubble = gui.text("")
                 .visible(false)
                 .hitInert(true)
-                .background(TIP_BG)
+                .background(gui.theme().color(Role.RAISED))
                 .corner(Length.rem(0.4f))
-                .border(Length.rem(0.08f), TIP_BORDER)
+                .border(Length.rem(0.08f), gui.theme().color(Role.EDGE))
                 .elevation(Length.rem(0.75f))
                 .textSize(Length.rem(0.9375f))
-                .textColor(TIP_INK)
+                .textColor(gui.theme().color(Role.INK))
                 .padding(Length.dp(4), Length.dp(10))
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
     }

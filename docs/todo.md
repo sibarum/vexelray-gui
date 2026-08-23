@@ -220,6 +220,19 @@ Wanted eventually, deliberately not now.
 - **Global constraint solve across the tree.** Tree-local layout is free under the current SPI (multi-pass within
   a box, fixed-point over a subtree — a force-directed graph is one box). A constraint between a node in one box
   and a node in another needs collect-then-solve-then-place: a different engine shape, not an extension.
+- **A theme swapped at runtime.** `Gui.theme(Theme)` is read when a widget writes a prop, so a swap after the tree
+  is built reaches the renderer's chrome (scrollbars, gutter, selection, shadow) and everything that restyles on
+  interaction, but not the props already written — a live dark/light toggle would leave stale colours behind. The
+  cheap fix is a restyle notification (a per-node observer shaped like `onState`, released with the node); the
+  right one is for a node to *hold* the `Role` and for `TreeRenderer` to resolve it per frame, exactly as `Length`
+  resolves against zoom. `Role` is already the declaration and `Color` only the result, so the second is additive:
+  `PropKey.BACKGROUND` would carry a `Role` (a literal colour being the constant function), the renderer would ask
+  the theme, and re-theming would cost one repaint and zero prop writes. What it needs is invalidation on theme
+  change plus a decision about where interaction state is applied, since the renderer does not know it.
+- **Interaction depth from the theme.** Colour response to hover/press is one `Shading` for the whole UI; the
+  *depth* response is still a `switch (state)` over `Length`s, written out in `Modals.button` and twice in the
+  demo. It is the same shape of decision (one step, applied to whatever the control already is) and belongs
+  next to `Shading` — `Theme.elevation(base, state)` — rather than copied per widget.
 
 ---
 

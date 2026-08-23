@@ -157,8 +157,16 @@ public final class RetainedNode {
     }
 
     public Color textColor() {
+        return textColor(Color.WHITE);
+    }
+
+    /**
+     * The declared text colour, or {@code fallback} when the node never stated one. The renderer passes the
+     * theme's ink here: white is the model's last resort, not a look, and on a light page it is not even legible.
+     */
+    public Color textColor(Color fallback) {
         Object c = props.get(PropKey.TEXT_COLOR);
-        return c != null ? (Color) c : Color.WHITE;
+        return c != null ? (Color) c : fallback;
     }
 
     public TextLayout.HAlign hAlign() {

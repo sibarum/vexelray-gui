@@ -1,6 +1,5 @@
 package dev.vexelray.gui.widget;
 
-import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.ClaimScope;
@@ -8,6 +7,7 @@ import dev.vexelray.gui.core.input.ClickEvent;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.text.TextLayout;
 import sibarum.atchung.Subscription;
 import sibarum.tactroller.api.Key;
@@ -39,12 +39,6 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class ContextMenu implements AutoCloseable {
 
-    private static final Color MENU_BG = Color.rgb(0x1b2130);
-    private static final Color MENU_BORDER = Color.rgb(0x2b3346);
-    private static final Color ITEM_HOVER = Color.rgb(0x2b3346);
-    private static final Color INK = Color.rgb(0xeef2f8);
-    private static final Color SEPARATOR = Color.rgb(0x2b3346);
-
     private static final Shortcut ESCAPE = Shortcut.of(Key.ESCAPE);
 
     private final Gui gui;
@@ -62,10 +56,10 @@ public final class ContextMenu implements AutoCloseable {
         this.gui = gui;
         this.menu = gui.column()
                 .visible(false)
-                .background(MENU_BG)
+                .background(gui.theme().color(Role.PANEL))
                 .corner(Length.rem(0.5f))
-                .border(Length.rem(0.1f), MENU_BORDER)
-                .lit(true)
+                .border(Length.rem(0.1f), gui.theme().color(Role.LINE))
+                .lit(gui.theme().lit())
                 .elevation(Length.rem(1f))
                 .padding(Length.dp(4))
                 .scroll(false, false);
@@ -78,12 +72,15 @@ public final class ContextMenu implements AutoCloseable {
         Node row = gui.text(label)
                 .width(Length.FILL)
                 .textSize(Length.rem(1))
-                .textColor(INK)
+                .textColor(gui.theme().color(Role.INK))
                 .corner(Length.rem(0.4f))
                 .padding(Length.dp(4), Length.dp(12))
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
         ownIds.add(row.id());
-        gui.onState(row, state -> row.background(state == InteractionState.NORMAL ? null : ITEM_HOVER));
+        // Transparent at rest so the menu's own surface shows through, and the hover fill is the theme's, not a
+        // constant of this widget's: an item is a panel the pointer is on.
+        gui.onState(row, state -> row.background(
+                state == InteractionState.NORMAL ? null : gui.theme().color(Role.SELECTION)));
         gui.onClick(row, () -> {
             hide();
             if (action != null) {
@@ -96,7 +93,7 @@ public final class ContextMenu implements AutoCloseable {
 
     /** Add a thin horizontal rule between item groups. */
     public ContextMenu separator() {
-        Node rule = gui.box().width(Length.FILL).height(Length.dp(1)).background(SEPARATOR)
+        Node rule = gui.box().width(Length.FILL).height(Length.dp(1)).background(gui.theme().color(Role.LINE))
                 .margin(Length.dp(3)).scroll(false, false);
         ownIds.add(rule.id());
         menu.append(rule);

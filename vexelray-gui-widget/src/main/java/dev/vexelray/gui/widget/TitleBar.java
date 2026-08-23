@@ -1,6 +1,5 @@
 package dev.vexelray.gui.widget;
 
-import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.WindowControls;
@@ -9,6 +8,8 @@ import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.style.Role;
+import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.text.TextLayout;
 
 /**
@@ -36,13 +37,6 @@ import dev.vexelray.text.TextLayout;
  */
 public final class TitleBar {
 
-    private static final Color CHROME = Color.rgb(0x121722);
-    private static final Color HOVER = Color.rgb(0x232a3d);
-    private static final Color CLOSE_HOVER = Color.rgb(0xc4353b);
-    private static final Color INK = Color.rgb(0xeef2f8);
-    private static final Color DIM = Color.rgb(0x93a0b4);
-    private static final Color NONE = Color.rgba(0f, 0f, 0f, 0f);
-
     /** Caption button footprint — the Windows caption-button metrics, in density-independent pixels. */
     private static final Length BUTTON_W = Length.dp(46);
     private static final Length BAR_H = Length.dp(32);
@@ -64,10 +58,11 @@ public final class TitleBar {
     public TitleBar(Gui gui, WindowControls controls, String title) {
         this.gui = gui;
         this.controls = controls == null ? WindowControls.NONE : controls;
+        Theme theme = gui.theme();
 
         this.titleText = gui.text(title == null ? "" : title)
                 .textSize(Length.rem(0.85f))
-                .textColor(DIM)
+                .textColor(theme.color(Role.DIM))
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
         this.leading = gui.row()
                 .height(Length.FILL)
@@ -79,11 +74,11 @@ public final class TitleBar {
 
         // The maximize glyph is two overlapping outlines, of which the back one is shown only when the window is
         // maximized — the ordinary restore icon, built from boxes because the atlas font carries no square glyph.
-        Node maxBox = gui.box().size(Length.dp(10), Length.dp(10)).border(Length.dp(1), INK);
+        Node maxBox = gui.box().size(Length.dp(10), Length.dp(10)).border(Length.dp(1), theme.color(Role.INK));
         this.maximizeIcon = gui.box().size(Length.dp(14), Length.dp(14)).scroll(false, false)
                 .children(maxBox.floatAt(Length.dp(2), Length.dp(2)));
-        Node restoreBack = gui.box().size(Length.dp(9), Length.dp(9)).border(Length.dp(1), INK);
-        Node restoreFront = gui.box().size(Length.dp(9), Length.dp(9)).border(Length.dp(1), INK);
+        Node restoreBack = gui.box().size(Length.dp(9), Length.dp(9)).border(Length.dp(1), theme.color(Role.INK));
+        Node restoreFront = gui.box().size(Length.dp(9), Length.dp(9)).border(Length.dp(1), theme.color(Role.INK));
         this.restoreIcon = gui.box().size(Length.dp(14), Length.dp(14)).scroll(false, false)
                 .children(restoreBack.floatAt(Length.dp(4), Length.dp(1)),
                         restoreFront.floatAt(Length.dp(1), Length.dp(4)))
@@ -92,14 +87,14 @@ public final class TitleBar {
         // The handlers read the field, not the constructor argument, so they resolve the controls at click
         // time and rebinding later rewires every button. Closing over the argument would capture what the
         // window did not exist yet to be -- WindowControls.NONE, for every application, permanently.
-        Node minimize = button(gui.box().size(Length.dp(10), Length.dp(1)).background(INK),
-                WindowRegion.INTERACTIVE, HOVER, () -> this.controls.minimize());
+        Node minimize = button(gui.box().size(Length.dp(10), Length.dp(1)).background(theme.color(Role.INK)),
+                WindowRegion.INTERACTIVE, Role.RAISED, () -> this.controls.minimize());
         Node maximize = button(gui.box().size(Length.dp(14), Length.dp(14)).scroll(false, false)
                         .children(maximizeIcon, restoreIcon),
-                WindowRegion.MAXIMIZE_BUTTON, HOVER, () -> this.controls.toggleMaximize());
-        Node close = button(gui.text("×").textSize(Length.rem(1.4f)).textColor(INK)
+                WindowRegion.MAXIMIZE_BUTTON, Role.RAISED, () -> this.controls.toggleMaximize());
+        Node close = button(gui.text("×").textSize(Length.rem(1.4f)).textColor(theme.color(Role.INK))
                         .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE),
-                WindowRegion.INTERACTIVE, CLOSE_HOVER, () -> this.controls.close());
+                WindowRegion.INTERACTIVE, Role.DANGER, () -> this.controls.close());
 
         Node buttons = gui.row().height(Length.FILL).alignItems(AlignItems.STRETCH).scroll(false, false)
                 .children(minimize, maximize, close);
@@ -107,7 +102,7 @@ public final class TitleBar {
         this.root = gui.row()
                 .width(Length.FILL)
                 .height(BAR_H)
-                .background(CHROME)
+                .background(theme.color(Role.CHROME))
                 .alignItems(AlignItems.CENTER)
                 .justify(Justify.SPACE_BETWEEN)
                 .scroll(false, false)
@@ -164,18 +159,21 @@ public final class TitleBar {
      * One caption button: a fixed-width, full-height box wrapping {@code icon}, hover-shaded, clickable, and
      * declared to the window manager so the caption it sits on does not swallow the click.
      */
-    private Node button(Node icon, WindowRegion region, Color hover, Runnable action) {
+    private Node button(Node icon, WindowRegion region, Role hover, Runnable action) {
         Node b = gui.box()
                 .width(BUTTON_W)
                 .height(Length.FILL)
                 .justify(Justify.CENTER)
                 .alignItems(AlignItems.CENTER)
-                .background(NONE)
+                .background(gui.theme().color(Role.NONE))
                 .scroll(false, false)
                 .windowRegion(region)
                 .children(icon);
         gui.onClick(b, action);
-        gui.onState(b, state -> b.background(state == InteractionState.NORMAL ? NONE : hover));
+        // Which role, not which colour: a caption button paints nothing until the pointer arrives, and what it
+        // paints then is the theme's business (a close button says DANGER, the others just lift).
+        gui.onState(b, state -> b.background(
+                gui.theme().color(state == InteractionState.NORMAL ? Role.NONE : hover)));
         return b;
     }
 }

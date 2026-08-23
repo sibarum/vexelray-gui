@@ -1,6 +1,5 @@
 package dev.vexelray.gui.widget;
 
-import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.ClaimScope;
@@ -9,6 +8,7 @@ import dev.vexelray.gui.core.input.FocusEvent;
 import dev.vexelray.gui.core.input.KeyEvent;
 import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.text.Document;
 import dev.vexelray.gui.core.text.Edit;
 import dev.vexelray.gui.core.text.Span;
@@ -57,11 +57,6 @@ import java.util.function.Consumer;
  * subscriptions, claims and blink registration when it is removed from the tree.
  */
 public final class TextField implements AutoCloseable {
-
-    private static final Color FIELD_BG = Color.rgb(0x0e1220);
-    private static final Color FIELD_BORDER = Color.rgb(0x2b3346);
-    private static final Color FIELD_BORDER_FOCUS = Color.rgb(0x3aa0ff);
-    private static final Color INK = Color.rgb(0xeef2f8);
 
     /** Cap on retained undo history, so a long editing session can't grow the stacks without bound. */
     private static final int UNDO_LIMIT = 1000;
@@ -118,11 +113,11 @@ public final class TextField implements AutoCloseable {
         this.node = gui.text(text())
                 .editable(true)
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE)
-                .textColor(INK)
+                .textColor(gui.theme().color(Role.INK))
                 .height(Length.rem(2.5f))
-                .background(FIELD_BG)
+                .background(gui.theme().color(Role.WELL))
                 .corner(Length.rem(0.5f))
-                .border(Length.rem(0.1f), FIELD_BORDER)
+                .border(Length.rem(0.1f), gui.theme().color(Role.LINE))
                 .caret(-1);
 
         // The edit path, all of it ordered: typed text, edit commands, and pointer caret placement are the three
@@ -584,11 +579,11 @@ public final class TextField implements AutoCloseable {
         if (focused) {
             node.caret(document.value().caret());
             node.caretOn(true);
-            node.border(Length.rem(0.1f), FIELD_BORDER_FOCUS);
+            node.border(Length.rem(0.1f), gui.theme().color(Role.ACCENT));
         } else {
             node.caret(-1);
             node.caretOn(false);
-            node.border(Length.rem(0.1f), FIELD_BORDER);
+            node.border(Length.rem(0.1f), gui.theme().color(Role.LINE));
         }
     }
 }

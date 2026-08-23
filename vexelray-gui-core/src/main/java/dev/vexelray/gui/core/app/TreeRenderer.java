@@ -3,6 +3,8 @@ package dev.vexelray.gui.core.app;
 import dev.vexelray.canvas.Canvas;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.model.RetainedNode;
+import dev.vexelray.gui.core.style.Role;
+import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.gui.core.text.Span;
 import dev.vexelray.gui.core.text.TextMetrics;
 import dev.vexelray.text.TextLayout;
@@ -20,25 +22,55 @@ import dev.vexelray.text.TextLayout;
  */
 public final class TreeRenderer {
 
-    private static final Color SCROLL_OUTLINE = Color.rgb(0x39415a); // track border, visible against any panel
-    private static final Color SCROLL_TRACK = Color.rgb(0x181d28);   // subtle inner fill
-    private static final Color SCROLL_THUMB = Color.rgb(0x5a6685);   // clearly visible thumb
-    private static final Color SHADOW = Color.withAlpha(Color.rgb(0x05070c), 0.55f); // elevation shadow ink
+    /**
+     * The colours the renderer paints that no node declares — scrollbars, the shadow under an elevated box, line
+     * numbers, the selection wash, and the ink a text node that never stated one falls back to. Chrome is the
+     * framework's own furniture, so it comes from the theme rather than from a prop, and all of it resolves once
+     * per frame: one small object per frame, against a vertex array.
+     */
+    private final Color scrollEdge;
+    private final Color scrollTrough;
+    private final Color scrollGrip;
+    private final Color shadow;
+    private final Color gutterInk;
+    private final Color selection;
+    private final Color ink;
 
-    private TreeRenderer() {
+    private TreeRenderer(Theme theme) {
+        this.scrollEdge = theme.color(Role.EDGE);
+        this.scrollTrough = theme.color(Role.CHROME);
+        this.scrollGrip = theme.color(Role.GRIP);
+        this.shadow = theme.color(Role.SHADOW);
+        this.gutterInk = theme.color(Role.FAINT);
+        this.selection = theme.color(Role.HIGHLIGHT);
+        // The fallback for a text node that never declared a colour. The model answers white when asked with no
+        // opinion (RetainedNode.textColor), which is only right on a dark page -- so the renderer supplies one.
+        this.ink = theme.color(Role.INK);
     }
 
     /** Single-face convenience: everything renders with {@code text} regardless of node font indices. */
     public static void emit(RetainedNode node, Canvas canvas, TextLayout text) {
-        emit(node, canvas, new TextLayout[]{text});
+        emit(node, canvas, new TextLayout[]{text}, Theme.DARK);
+    }
+
+    /** As {@link #emit(RetainedNode, Canvas, TextLayout[], Theme)}, in the framework's default theme. */
+    public static void emit(RetainedNode node, Canvas canvas, TextLayout[] faces) {
+        emit(node, canvas, faces, Theme.DARK);
     }
 
     /**
      * Emit the whole tree rooted at {@code node} into {@code canvas}. {@code faces} holds one {@link TextLayout}
      * per atlas face, index-aligned with {@code RetainedNode.font()}; each text node draws with its own face
      * (out-of-range indices degrade to face 0, matching the measurer).
+     *
+     * <p>{@code theme} supplies only the chrome the tree does not declare (see the fields above); every colour a
+     * node carries was resolved when the prop was written.
      */
-    public static void emit(RetainedNode node, Canvas canvas, TextLayout[] faces) {
+    public static void emit(RetainedNode node, Canvas canvas, TextLayout[] faces, Theme theme) {
+        new TreeRenderer(theme == null ? Theme.DARK : theme).walk(node, canvas, faces);
+    }
+
+    private void walk(RetainedNode node, Canvas canvas, TextLayout[] faces) {
         if (!node.visible()) {
             return;   // hidden: nothing drawn, and the subtree is not walked
         }
@@ -51,7 +83,7 @@ public final class TreeRenderer {
             canvas.pushClip(node.viewX, node.viewY, node.viewW, node.viewH, radius);
         }
         for (RetainedNode child : node.children) {
-            emit(child, canvas, faces);
+            walk(child, canvas, faces);
         }
         if (clip) {
             canvas.popClip();
@@ -65,7 +97,7 @@ public final class TreeRenderer {
     }
 
     /** Draw the reserved-space scrollbars (outlined track + pill thumb) for an overflowing container — chrome. */
-    private static void drawScrollbars(RetainedNode n, Canvas canvas) {
+    private void drawScrollbars(RetainedNode n, Canvas canvas) {
         float sb = n.scrollbarPx;
         if (n.overflowY) {
             track(canvas, n.viewX + n.viewW, n.viewY, sb, n.viewH);
@@ -78,21 +110,21 @@ public final class TreeRenderer {
     }
 
     /** A lit pill floating just off its track: small shadow underneath, edge light on top — grabbable at a glance. */
-    private static void thumb(Canvas canvas, float[] t, float sb) {
+    private void thumb(Canvas canvas, float[] t, float sb) {
         float r = sb * 0.3f;
-        canvas.shadowRoundRect(t[0], t[1] + 1f, t[2], t[3], r, 2.5f, SHADOW);
-        canvas.litRoundRect(t[0], t[1], t[2], t[3], r, 2f, 0.08f, SCROLL_THUMB);
+        canvas.shadowRoundRect(t[0], t[1] + 1f, t[2], t[3], r, 2.5f, shadow);
+        canvas.litRoundRect(t[0], t[1], t[2], t[3], r, 2f, 0.08f, scrollGrip);
     }
 
     /** An outlined track: a border-coloured rounded rect with a subtle inner fill, so it reads against any panel. */
-    private static void track(Canvas canvas, float x, float y, float w, float h) {
+    private void track(Canvas canvas, float x, float y, float w, float h) {
         float r = Math.min(w, h) * 0.5f;
-        canvas.fillRoundRect(x, y, w, h, r, SCROLL_OUTLINE);
+        canvas.fillRoundRect(x, y, w, h, r, scrollEdge);
         canvas.fillRoundRect(x + 1.5f, y + 1.5f, Math.max(0f, w - 3f), Math.max(0f, h - 3f),
-                Math.max(0f, r - 1.5f), SCROLL_TRACK);
+                Math.max(0f, r - 1.5f), scrollTrough);
     }
 
-    private static void drawSelf(RetainedNode n, Canvas canvas, TextLayout text) {
+    private void drawSelf(RetainedNode n, Canvas canvas, TextLayout text) {
         // Border width, corner radius and text size were resolved to px by the layout pass (border-box), so the
         // renderer needs no units or layout context — it just paints the computed rect.
         Color bg = n.background();
@@ -103,7 +135,7 @@ public final class TreeRenderer {
         // Elevation: an analytic soft shadow under the border-box, dropped slightly with the light overhead.
         if (n.elevationPx > 0f && (bg != null || border != null)) {
             float e = n.elevationPx;
-            canvas.shadowRoundRect(n.x, n.y + e * 0.5f, n.w, n.h, rTop, rBottom, e, SHADOW);
+            canvas.shadowRoundRect(n.x, n.y + e * 0.5f, n.w, n.h, rTop, rBottom, e, shadow);
         }
         if (bg != null) {
             if (n.lit()) {
@@ -136,7 +168,7 @@ public final class TreeRenderer {
      * feature — the read-model is supposed to describe what is drawn, and the only way to guarantee it is for the
      * drawing to come from the read-model.
      */
-    private static void drawText(RetainedNode n, String s, boolean hasText, java.util.List<Span> spans, float pad,
+    private void drawText(RetainedNode n, String s, boolean hasText, java.util.List<Span> spans, float pad,
                                  Canvas canvas, TextLayout text) {
         TextMetrics m = n.textMetrics;
         if (m == null) {
@@ -181,13 +213,13 @@ public final class TreeRenderer {
                 }
             }
             if (selHi > selLo) {
-                fillLineRange(line, selLo, selHi, SELECTION, canvas);
+                fillLineRange(line, selLo, selHi, selection, canvas);
             }
             drawLineText(n, s, line, lineSpans, canvas, text);
             for (Span sp : lineSpans) {
                 if (sp.underline()) {
                     underlineLineRange(n, line, sp.start(), sp.end(),
-                            sp.fg() != null ? sp.fg() : n.textColor(), canvas, text);
+                            sp.fg() != null ? sp.fg() : n.textColor(ink), canvas, text);
                 }
             }
         }
@@ -196,22 +228,19 @@ public final class TreeRenderer {
         if (n.caret() >= 0 && n.caretOn()) {
             int caret = n.caret();
             float w = Math.max(1f, n.textSizePx * 0.07f);
-            canvas.fillRoundRect(m.caretX(caret), m.caretTop(caret), w, m.caretHeight(caret), 0f, n.textColor());
+            canvas.fillRoundRect(m.caretX(caret), m.caretTop(caret), w, m.caretHeight(caret), 0f, n.textColor(ink));
         }
         if (clip) {
             canvas.popClip();
         }
     }
 
-    /** Dimmed line-number colour — present but never competing with the text it numbers. */
-    private static final Color GUTTER_INK = Color.rgb(0x6b7590);
-
     /**
      * Right-aligned hard-line numbers in the gutter. Only lines that <em>begin</em> a hard line carry a number
      * (the metrics decided that, not the renderer), so wrapped continuations are blank — which is what makes a
      * wrapped line read as one line.
      */
-    private static void drawGutter(RetainedNode n, TextMetrics m, Canvas canvas, TextLayout text) {
+    private void drawGutter(RetainedNode n, TextMetrics m, Canvas canvas, TextLayout text) {
         float px = n.textSizePx;
         float left = n.x + n.textPadXPx;
         float right = left + n.gutterPx - n.gutterPadPx;
@@ -226,7 +255,7 @@ public final class TreeRenderer {
             TextLayout.TextStyle style = TextLayout.TextStyle.of(px)
                     .withWrap(TextLayout.WrapMode.NONE)
                     .withAlign(TextLayout.HAlign.LEFT, TextLayout.VAlign.TOP);
-            canvas.text(text, label, right - w, line.top(), Math.max(1f, w), line.height(), style, GUTTER_INK);
+            canvas.text(text, label, right - w, line.top(), Math.max(1f, w), line.height(), style, gutterInk);
         }
         canvas.popClip();
     }
@@ -258,15 +287,15 @@ public final class TreeRenderer {
     }
 
     /** Draw one visual line's glyphs, split into maximal runs of a constant effective foreground colour. */
-    private static void drawLineText(RetainedNode n, String s, TextMetrics.VisualLine line,
+    private void drawLineText(RetainedNode n, String s, TextMetrics.VisualLine line,
                                      java.util.List<Span> spans, Canvas canvas, TextLayout text) {
         int from = Math.max(0, line.start());
         int to = Math.min(s.length(), line.end());
         int i = from;
         while (i < to) {
-            Color fg = fgAt(spans, i, n.textColor());
+            Color fg = fgAt(spans, i, n.textColor(ink));
             int j = i + 1;
-            while (j < to && java.util.Objects.equals(fgAt(spans, j, n.textColor()), fg)) {
+            while (j < to && java.util.Objects.equals(fgAt(spans, j, n.textColor(ink)), fg)) {
                 j++;
             }
             // Each run is drawn at its exact baked x, in a box exactly one line high, so the canvas does no
@@ -311,8 +340,4 @@ public final class TreeRenderer {
         }
         return fg;
     }
-
-    /** Translucent selection background, sized text-color-neutral so glyphs stay legible on top. */
-    private static final Color SELECTION = Color.withAlpha(Color.rgb(0x3aa0ff), 0.35f);
-
 }

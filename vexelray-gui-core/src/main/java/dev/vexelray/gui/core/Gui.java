@@ -24,6 +24,7 @@ import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.input.KeyEvent;
 import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.model.RetainedNode;
+import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.gui.core.text.TextMetrics;
 import sibarum.tactroller.api.Key;
 import sibarum.tactroller.api.Modifier;
@@ -134,6 +135,11 @@ public final class Gui implements AutoCloseable {
     private float lastLayoutW = -1f;
     private float lastLayoutH = -1f;
     private volatile TextClipboard clipboard = new TextClipboard.InMemory();
+    // The look. Not a State on the bus like zoom is: a Length resolves against zoom every frame, whereas a colour
+    // is resolved once and written into a prop, so there is nothing per-frame to coalesce (see Theme's class note
+    // on what that costs and where it is heading). Volatile because widgets read it from whichever thread built
+    // them and from every state handler.
+    private volatile Theme theme = Theme.DARK;
     private final Executor handlers;
     /**
      * Mutations buffered by an in-progress {@link #batch} on this thread, or null when not batching. Thread-local
@@ -571,6 +577,24 @@ public final class Gui implements AutoCloseable {
      */
     public Gui onCursorChange(java.util.function.Consumer<CursorShape> sink) {
         input.cursorSink(sink);
+        return this;
+    }
+
+    /**
+     * The look every widget and the renderer's own chrome resolve their colours through — {@link Theme#DARK}
+     * unless replaced. There is no other source of colour in the framework.
+     */
+    public Theme theme() {
+        return theme;
+    }
+
+    /**
+     * Install the theme. Set it before building the UI: roles resolve when a widget writes a prop, so a swap after
+     * the fact reaches the renderer's chrome and everything that restyles on interaction, but leaves already-written
+     * props alone (see {@link Theme}).
+     */
+    public Gui theme(Theme theme) {
+        this.theme = theme == null ? Theme.DARK : theme;
         return this;
     }
 

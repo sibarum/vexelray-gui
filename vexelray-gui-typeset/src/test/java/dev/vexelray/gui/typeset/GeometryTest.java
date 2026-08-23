@@ -198,6 +198,79 @@ Placed matrix = ENGINE.layout(Recipes.matrix(P, cells, "[", "]"), BASE);
                 "a piecewise block aligns them to the left");
     }
 
+    // --- room: cramped style, measured rather than declared -----------------------------------------------------
+
+    // The comparisons below pair each construct with a Row holding the identical subtree. That is not incidental:
+    // a fraction sizes its numerator and denominator at 1.00, so the two trees declare the same set of ratios and
+    // the block's tone map solves to the same numbers for both. Anything that differs is the room, and only the
+    // room. Rise is measured as the vertical distance between the tops of the two glyphs, which is exactly the
+    // amount the satellite adds to the nucleus's ascent.
+
+    @Test
+    void aSuperscriptInADenominatorRisesOnlyIntoTheGapTheFractionReserved() {
+        Box denominator = Recipes.script(P, Recipes.variable("b"), Recipes.number("2"), null);
+        Placed cramped = ENGINE.layout(Recipes.fraction(P, Recipes.variable("a"), denominator), BASE);
+        Placed free = ENGINE.layout(Box.row(Recipes.variable("a"), denominator), BASE);
+
+        assertEquals(P.metrics().fractionGapBelow() * BASE, riseOver(cramped, "2", "b"), 1e-9,
+                "the superscript reaches exactly the slack the stack reserved between bar and denominator");
+        assertTrue(riseOver(free, "2", "b") > riseOver(cramped, "2", "b") + 0.5,
+                "and the same subtree in a row, where nothing is reserved, rises further");
+    }
+
+    @Test
+    void aSubscriptInANumeratorDropsOnlyIntoTheGapTheFractionReserved() {
+        Box numerator = Recipes.script(P, Recipes.variable("a"), null, Recipes.number("2"));
+        Placed cramped = ENGINE.layout(Recipes.fraction(P, numerator, Recipes.variable("b")), BASE);
+        Placed free = ENGINE.layout(Box.row(numerator, Recipes.variable("b")), BASE);
+
+        // The mirror TeX needs a separate rule for, and here the same one: footroom is the gap above the bar.
+        assertEquals(P.metrics().fractionGapAbove() * BASE, dropUnder(cramped, "2", "a"), 1e-9,
+                "the subscript reaches exactly the slack reserved between numerator and bar");
+        assertTrue(dropUnder(free, "2", "a") > dropUnder(cramped, "2", "a") + 0.5,
+                "and drops further with nothing above it");
+    }
+
+    @Test
+    void aRadicandIsCrampedByItsVinculumGapWithoutBeingToldItIsARadicand() {
+        Box radicand = Recipes.script(P, Recipes.variable("x"), Recipes.number("2"), null);
+        Placed p = ENGINE.layout(Recipes.radical(P, radicand, null), BASE);
+
+        // The second box TeX cramps, reached by the identical rule: a radicand is a stack's lower child, so its
+        // allowance is the gap above it, which here is the vinculum's rather than a fraction bar's.
+        assertEquals(P.metrics().vinculumGap() * BASE, riseOver(p, "2", "x"), 1e-9,
+                "the exponent rises into the vinculum gap and no further");
+    }
+
+    @Test
+    void aScriptWithRoomToSpareKeepsTheProfilesFullShift() {
+        // The unconstrained path, asserted rather than assumed: everywhere outside a stack the room is infinite
+        // and the clamp must be invisible. A row nested in a row still passes it through.
+        Placed nested = ENGINE.layout(
+                Box.row(Recipes.variable("a"),
+                        Box.row(Recipes.script(P, Recipes.variable("x"), Recipes.number("2"), null))), BASE);
+        List<Placed.Glyphs> runs = glyphRuns(nested);
+
+        assertEquals(-P.metrics().shiftUp() * BASE, runNamed(nested, "2").y() - runNamed(nested, "x").y(), 1e-9,
+                "two rows deep, the satellite still sits shiftUp above its nucleus");
+        assertEquals(3, runs.size());
+    }
+
+    @Test
+    void limitsFollowDisplayStyleWithNoContextToCarryIt() {
+        Box display = Recipes.limits(P, Recipes.bigOperator("N"), Recipes.number("9"), Recipes.number("0"), true);
+        Box inline = Recipes.limits(P, Recipes.bigOperator("N"), Recipes.number("9"), Recipes.number("0"), false);
+        Placed above = ENGINE.layout(display, BASE);
+        Placed beside = ENGINE.layout(inline, BASE);
+
+        assertEquals(centreOf(above, "N"), centreOf(above, "9"), 0.5,
+                "in display the upper limit is centred over the operator");
+        assertTrue(runNamed(beside, "9").x() > runNamed(beside, "N").x(),
+                "and inline it is a superscript instead");
+        assertTrue(beside.height() < above.height(),
+                "which is the point: an inline sum does not push the line apart");
+    }
+
     // --- the engine's own guarantees ---------------------------------------------------------------------------------
 
     @Test
@@ -297,6 +370,31 @@ Placed matrix = ENGINE.layout(Recipes.matrix(P, cells, "[", "]"), BASE);
         assertTrue(p.draws().isEmpty());
     }
 
+    /**
+     * Two canonical trees, pinned draw by draw. Everything else in this class asserts a relationship, which is
+     * the right default — but a relationship only catches what someone thought to relate, and a change that moves
+     * every number consistently would slip past all of them. This is the backstop: nothing about {@code x²} or
+     * {@code a/b} may move without a person looking at the diff and deciding it was meant.
+     *
+     * <p>Regenerating it is legitimate when a profile constant or the atlas changes on purpose — paste the actual
+     * from the failure. It is not legitimate as a way of making an unexplained change go green.
+     */
+    @Test
+    void twoCanonicalTreesAreNailedDownDrawByDraw() {
+        assertEquals("""
+                        glyphs x  face=mathItalic x=0.000 y=0.000 size=16.000
+                        glyphs 2  face=math x=8.464 y=-7.200 size=11.200""",
+                signature(Recipes.script(P, Recipes.variable("x"), Recipes.number("2"), null)),
+                "x squared");
+
+        assertEquals("""
+                        glyphs a  face=mathItalic x=0.432 y=-7.170 size=16.000
+                        bar       x=0.000 y=-4.320 size=9.840x0.640
+                        glyphs b  face=mathItalic x=0.000 y=11.170 size=16.000""",
+                signature(Recipes.fraction(P, Recipes.variable("a"), Recipes.variable("b"))),
+                "a over b");
+    }
+
     // --- helpers ---------------------------------------------------------------------------------------------------------
 
     private record Named(String name, Box box) {
@@ -374,6 +472,48 @@ Placed matrix = ENGINE.layout(Recipes.matrix(P, cells, "[", "]"), BASE);
             out.add(boundsOf(g));
         }
         return out;
+    }
+
+    /** How far the top of {@code satellite} sits above the top of {@code nucleus} — which is exactly what the
+     *  satellite adds to the nucleus's ascent, and so what a container's headroom bounds. */
+    private static double riseOver(Placed p, String satellite, String nucleus) {
+        return boundsOf(runNamed(p, nucleus)).top - boundsOf(runNamed(p, satellite)).top;
+    }
+
+    /** One line per draw, read through {@link Placed.Sink} — so even the tripwire goes through the closed
+     *  interface a consumer sees, rather than reaching into the draw kinds. */
+    private static String signature(Box box) {
+        StringBuilder out = new StringBuilder();
+        ENGINE.layout(box, BASE).emitTo(new Placed.Sink() {
+            @Override
+            public void glyphs(String text, String face, double x, double y, double size, Object sourceRef) {
+                line(out, String.format("glyphs %-2s face=%s x=%.3f y=%.3f size=%.3f", text, face, x, y, size));
+            }
+
+            @Override
+            public void bar(double x, double y, double width, double height) {
+                line(out, String.format("bar       x=%.3f y=%.3f size=%.3fx%.3f", x, y, width, height));
+            }
+        });
+        return out.toString();
+    }
+
+    private static void line(StringBuilder out, String text) {
+        if (out.length() > 0) {
+            out.append('\n');
+        }
+        out.append(text);
+    }
+
+    /** The horizontal centre of the run drawing {@code text}. */
+    private static double centreOf(Placed p, String text) {
+        Bounds b = boundsOf(runNamed(p, text));
+        return (b.left + b.right) / 2;
+    }
+
+    /** The mirror of {@link #riseOver}, below the baseline. */
+    private static double dropUnder(Placed p, String satellite, String nucleus) {
+        return boundsOf(runNamed(p, satellite)).bottom - boundsOf(runNamed(p, nucleus)).bottom;
     }
 
     private static Placed.Bar onlyBar(Placed p) {

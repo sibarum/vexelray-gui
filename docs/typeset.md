@@ -8,7 +8,7 @@ a ratio and the renderer tone-maps the whole block into a legible range.
 | Module | `vexelray-gui-typeset` |
 | Depends on | `vexelray-gui-core` (only) |
 | Entry | application edge, optional |
-| Status | **P0–P2 complete** — vocabulary, SPI, tone map and engine, all against the real atlas; P3 next |
+| Status | **P0–P3 complete** — vocabulary, SPI, tone map, engine, recipes and style, all against the real atlas; P4 next |
 
 ---
 
@@ -125,8 +125,11 @@ public interface Arrangement {
     Placed lay(Box child);                      // at its declared size
     Placed lay(Box child, double size);         // or at one you pick
     Placed layFilling(Box child, double cross); // ...or with a cross extent to grow into
+    Placed layWithin(Box child, double head, double foot);   // ...or with room to reach into
     double sizePx();                            // this box's resolved size
     double crossExtent();                       // what the container offered, or 0
+    double headroom();                          // how far past its content it may reach, or +∞
+    double footroom();                          // the same below the baseline
     double toneMapped(double authored);         // the block's solved transfer — available, not mandatory
     Profile profile();
     double axis();
@@ -137,6 +140,11 @@ public interface Arrangement {
 `lay` being re-callable is what makes measure-then-place work, so shrink-to-fit and optical sizing are
 expressible. `toneMapped` is offered rather than imposed: a box choosing its own size can route it through the
 same transfer as the rest of the block, or ignore it.
+
+`crossExtent` and `headroom`/`footroom` are the two things a container tells a child about the space around it,
+and they are the same shape twice: a number the child may use, ignorable by anything that has no use for it, so
+neither one makes a container ask what kind of box it is holding. Room is §5.1; `+∞` is the default and means
+unconstrained.
 
 **`lay` and `arrange` are pure** — functions of their inputs, with no side effects and no reliance on call count.
 The engine may memoise, call twice in a frame, or call repeatedly while an enclosing box iterates. Iterating
@@ -332,14 +340,45 @@ yields. The soft ceiling was the right call for reasons that turned out to inclu
 
 ---
 
-## 5. What the style context still carries
+## 5. The style context is empty
 
 Because size is handled globally by the map, the context flowing down the tree carries no size at all — the
-classical per-style size table is subsumed. What remains is thin and non-dimensional:
+classical per-style size table is subsumed. An earlier version of this section listed what was left, expecting a
+thin non-dimensional context to survive. P3 went looking for where to put it and found that each item already had
+a home, so **there is no style context**. Worth recording item by item, because "we removed it" is a weaker claim
+than "each piece turned out to be something else":
 
-- **Slot identity** — which position in which recipe, for spacing and anchoring.
-- **Cramped / uncramped** — affects superscript *shift*, not size.
-- **Display / inline** — whether limits sit above and below, or to the side.
+- **Slot identity** — never was context. It is a `Slot`, passed to the `Attach` that uses it, and each constant
+  carries its own geometry.
+- **Display / inline** — a choice of *recipe*, made once where the tree is built. `Recipes.limits(…, display)` is
+  three lines and picks `underOver` or `script`; nothing downstream knows the distinction exists.
+- **Cramped / uncramped** — a *measurement*, `Arrangement.headroom()` / `footroom()`. See below.
+
+### 5.1 Cramped, measured instead of declared
+
+TeX cramps a denominator and a radicand so their superscripts are raised less. The flag is a proxy: what it is
+really saying is that those two boxes have little room above them. This engine can measure that, so it does.
+
+`headroom()` is how far a box may extend its ascent past its natural content before its container has to grow
+around it, in pixels, `+∞` when nothing constrains it. **It is derived from the gaps a container already
+reserves**, which is the whole point — no second piece of state to thread down the walk, and nothing that can
+disagree with the geometry. `Attach` clamps a side satellite's shift against it; a stacked satellite is not
+clamped, since it already sits at the minimum that clears the nucleus.
+
+Two rules produce it, and both are uniform over their box kind rather than special to a construct:
+
+- A `Row` passes its own room straight through — a row adds no vertical structure of its own.
+- A `Stack` (and a `Grid`, over its rows) gives each interior child the gap on that side, and each edge child
+  whatever the stack was itself given.
+
+The classical behaviour falls out. A denominator and a radicand are exactly the two boxes that sit under a rule
+in a stack, so they get a gap; a numerator is a stack's topmost child, so it inherits rather than reserves, which
+is why TeX does not cramp it either. And the mirror case TeX needs separate machinery for — a numerator's
+*subscript* approaching the bar from above — is `footroom()` with no extra rule at all.
+
+Asserted as a relationship, not a number: `GeometryTest` pairs each construct with a `Row` holding the identical
+subtree, which declares the same ratios and so solves to the same tone map, and the difference between them is
+the room and nothing else. The superscript in `a/b²` reaches exactly `fractionGapBelow` past its nucleus.
 
 ## 6. Spacing is a pairwise table
 
@@ -404,21 +443,24 @@ becomes purely additive later.
 ```
 vexelray-gui-typeset        →  vexelray-gui-core   (only)
 
-  Box            the open SPI + the seven built-ins, plus Extent / Align / Anchor   [P0 ✓]
+  Box            the open SPI + the seven built-ins, plus Extent / Align / Anchor   [P0 ✓ P2 ✓]
   Slot           the six attach corners                                             [P0 ✓]
   Profile        face keys, ratios, spacing table, recipe constants, tone bounds     [P0 ✓]
-  Recipes        built-in compositions + the math profile's atom helpers             [P0 ✓]
+  Recipes        built-in compositions + the math profile's atom helpers             [P0 ✓ P3 ✓]
   FaceKeys       key → face index, supplied by the app                               [P0 ✓]
   Placed         draw list + metrics; the closed alphabet Glyphs | Bar               [P0 ✓]
-  Arrangement    the layout service a box drives                                     [P0 ✓]
+  Arrangement    the layout service a box drives                                     [P0 ✓ P2 ✓ P3 ✓]
   ToneMap        the solve — pure numbers, zero dependencies                         [P1 ✓]
-  Layouts        where the seven built-ins arrange themselves                        [P2]
-  Typeset        the engine: walks the tree, implements Arrangement                  [P2]
+  Typeset        the engine: walks the tree, implements Arrangement                  [P2 ✓]
   TypesetBlock   the component: Placed → a subtree of floating nodes                 [P4]
 ```
 
 Depends on `-core` alone — the projection needs `Gui`, `Node`, `Length` and `Color`, and nothing else. It sits
 beside `-krono` and `-nfd` as a module the application edge opts into.
+
+A `Layouts` file was planned here and is absent on purpose: P2 deleted it, and each built-in arranges itself
+inline over exactly the public SPI an application would use. No framework helper that inspects box kinds exists,
+which is what makes the seven look like something an application could have written.
 
 `Extent`, `Align` and `Anchor` are nested in `Box` rather than given their own files: they are IR vocabulary, only
 meaningful against a primitive, and nesting keeps that visible. `Slot` is separate because it is the more
@@ -535,13 +577,45 @@ set did not: five things had to be added once real geometry needed them.
 None of it changed the shape, and finding it in P2 rather than P4 is the ordering working. But "P0 locked the
 SPI" was too strong a claim at the time, and it is worth recording as such.
 
-### P3 — Recipes and the spacing table
+### P3 — Recipes, the spacing table, and the style context ✓
 
 Wire the built-in compositions and the pairwise adjacency table.
 
 **Gate:** assert relationships rather than raw numbers wherever a relationship will do — bar centred on the axis,
 numerator bottom clearing the bar by `gapNum`. Keep exact goldens for a few canonical trees as regression
 tripwires.
+
+**Result: passed, but the phase as scoped was already finished before it started.** `Recipes` covers all ten
+reference constructs, all sixteen `Metrics` fields are consumed by a recipe or a box, `Row` reads
+`spacing().gap(left, right)` and `GeometryTest.rowSpacingComesFromThePairwiseTable` asserts the table against the
+real atlas. That is P2's doing, not a scheduling error: the engine could not be tested at all without the
+compositions to test it on, so P2 pulled P3 forward wholesale. **The ordering claim in §10's preamble is worth
+re-reading with that in mind** — putting the two invalidating gates first was right, but the boundary between an
+engine and the compositions that exercise it was never real.
+
+So the phase became what it should have been: the last unbuilt thing that changes geometry, §5's **style
+context**. Neither cramped/uncramped nor display/inline existed anywhere in the module, and both had to be settled
+before the projection freezes coordinates.
+
+**The finding is that there is no context.** Display/inline is a choice of recipe; cramped is
+`Arrangement.headroom()`, derived from the gaps a container already reserves. §5 is rewritten around it. Three
+methods went onto the SPI — `headroom()`, `footroom()`, `layWithin` — and no state onto the walk.
+
+What makes it more than a renaming: the two boxes TeX cramps come out of a rule that says nothing about
+fractions or radicals, the mirror case TeX handles separately comes out of the same rule for free, and the whole
+thing is checkable against measured geometry rather than against TeX's output. A boolean would have been correct
+by fiat; this one can be wrong, and the tests are what say it is not.
+
+**Six assertions added** (`GeometryTest`, 18 → 24), and the technique is worth keeping: each cramped construct is
+compared against a `Row` holding the *identical subtree*. A fraction sizes both its parts at 1.00, so the two
+trees declare the same ratio set and solve to the same tone map — which means the difference between them is the
+room and nothing else. Without that pairing the comparison would have measured the tone map re-solving for a
+deeper tree and called it a clamp.
+
+The gate's second half was thin and is now real: `twoCanonicalTreesAreNailedDownDrawByDraw` pins `x²` and `a/b`
+draw by draw, read out through `Placed.Sink` so even the tripwire goes through the closed interface a consumer
+sees. Relationships are still the default — a relationship only catches what someone thought to relate, and this
+is the backstop for a change that moves everything consistently.
 
 ### P4 — Projection and component
 

@@ -182,7 +182,10 @@ public interface Box {
             double descent = 0;
             for (int i = 0; i < n; i++) {
                 if (!items.get(i).fillsCrossExtent()) {
-                    laid[i] = a.lay(items.get(i));
+                    // A row adds no vertical structure of its own, so whatever room it was given is the room each
+                    // of its children has: a superscript inside a denominator is cramped by the fraction, and a
+                    // row in between neither tightens that nor relaxes it (Arrangement#headroom).
+                    laid[i] = a.layWithin(items.get(i), a.headroom(), a.footroom());
                     ascent = Math.max(ascent, laid[i].ascent());
                     descent = Math.max(descent, laid[i].descent());
                 }
@@ -240,19 +243,28 @@ public interface Box {
             return new Stack(size, spacingClass, items, gaps, anchor);
         }
 
-        /** The vertical counterpart of {@link Row#arrange}: measure the non-growers to find the width, then let
-         *  the growers span it — which is exactly how a fraction bar reaches across its numerator. */
+        /**
+         * The vertical counterpart of {@link Row#arrange}: measure the non-growers to find the width, then let
+         * the growers span it — which is exactly how a fraction bar reaches across its numerator.
+         *
+         * <p>A stack is also <b>the only built-in that reserves vertical room</b>, and so the only one that can
+         * hand a child less than it was given. Each interior child gets the gap on that side as its allowance;
+         * each edge child inherits whatever the stack itself was given, because there is nothing of the stack's
+         * own between it and the outside. That one rule is what makes a fraction's denominator cramped and its
+         * numerator not, with no style flag anywhere (see {@link Arrangement#headroom()}).
+         */
         @Override
         public Placed arrange(Arrangement a) {
             int n = items.size();
             if (n == 0) {
                 return Placed.empty();
             }
+            double px = a.sizePx();
             Placed[] laid = new Placed[n];
             double width = 0;
             for (int i = 0; i < n; i++) {
                 if (!items.get(i).fillsCrossExtent()) {
-                    laid[i] = a.lay(items.get(i));
+                    laid[i] = a.layWithin(items.get(i), roomAbove(a, i, px), roomBelow(a, i, n, px));
                     width = Math.max(width, laid[i].width());
                 }
             }
@@ -263,7 +275,6 @@ public interface Box {
                 }
             }
 
-            double px = a.sizePx();
             double[] tops = new double[n];
             double y = 0;
             for (int i = 0; i < n; i++) {
@@ -297,6 +308,16 @@ public interface Box {
 
         private double gapAt(int index) {
             return index < gaps.size() ? gaps.get(index) : 0.0;
+        }
+
+        /** The slack above child {@code i}: the gap this stack reserves there, or the stack's own allowance for
+         *  the topmost child, which has nothing of the stack's above it. */
+        private double roomAbove(Arrangement a, int i, double px) {
+            return i == 0 ? a.headroom() : gapAt(i - 1) * px;
+        }
+
+        private double roomBelow(Arrangement a, int i, int n, double px) {
+            return i == n - 1 ? a.footroom() : gapAt(i) * px;
         }
     }
 
@@ -352,7 +373,12 @@ public interface Box {
                 }
             }
 
-            Placed core = a.lay(nucleus);
+            // The nucleus is this box's own content vertically, so it inherits the room, exactly as a row's
+            // children do — which is what makes cramping propagate into a nested attach. Satellites are laid
+            // unconstrained and clamped by where they are placed instead; that is the more accurate of the two,
+            // because the clamp reads the satellite's measured ascent and so already accounts for anything it
+            // raised inside itself.
+            Placed core = a.layWithin(nucleus, a.headroom(), a.footroom());
             double coreWidth = core.width();
             for (Slot slot : Slot.values()) {
                 if (slot.stacked() && laid.containsKey(slot)) {
@@ -381,12 +407,26 @@ public interface Box {
             double postWidth = sideWidth(laid, false);
             List<Placed.Draw> out = new ArrayList<>(shift(draws, preWidth, 0));
 
+            // What the box occupies before any side satellite is hung off it — the reference the clamp below
+            // measures against, captured once so a second satellite is not clamped against the first.
+            double coreAscent = ascent;
+            double coreDescent = descent;
+
             for (Slot slot : Slot.values()) {
                 Placed s = laid.get(slot);
                 if (s == null || slot.stacked()) {
                     continue;
                 }
-                double y = slot.sideShift(m) * px;
+                // A side satellite is placed by a shift with slack in it, so it is the one thing here that can be
+                // asked to give way: it may reach past the core by as much as the container reserved and no
+                // further. Where nothing was reserved the room is infinite and the profile's shift stands exactly
+                // as authored, which is every case outside a stack. A stacked satellite is deliberately not
+                // clamped — it already sits at the minimum that clears the core, so tightening it would overlap
+                // the nucleus rather than merely close a gap.
+                double natural = slot.sideShift(m) * px;
+                double y = slot.above()
+                        ? Math.min(0, Math.max(natural, s.ascent() - coreAscent - a.headroom()))
+                        : Math.max(0, Math.min(natural, coreDescent + a.footroom() - s.descent()));
                 // Pre-scripts are right-aligned against the core; post-scripts start where it ends.
                 double x = slot.leading() ? preWidth - s.width() : preWidth + coreWidth;
                 out.addAll(s.shifted(x, y));
@@ -536,14 +576,19 @@ public interface Box {
             for (List<Box> row : rows) {
                 nCols = Math.max(nCols, row.size());
             }
+            double px = a.sizePx();
             Placed[][] cell = new Placed[nRows][nCols];
             double[] colWidth = new double[nCols];
             double[] rowAscent = new double[nRows];
             double[] rowDescent = new double[nRows];
             for (int r = 0; r < nRows; r++) {
                 List<Box> row = rows.get(r);
+                // A grid reserves rowGap between its rows exactly as a stack reserves its gaps, so a cell's
+                // allowance is that gap on any side with a row beyond it, and the grid's own on the outer edges.
+                double above = r == 0 ? a.headroom() : rowGap * px;
+                double below = r == nRows - 1 ? a.footroom() : rowGap * px;
                 for (int c = 0; c < row.size(); c++) {
-                    Placed p = a.lay(row.get(c));
+                    Placed p = a.layWithin(row.get(c), above, below);
                     cell[r][c] = p;
                     colWidth[c] = Math.max(colWidth[c], p.width());
                     rowAscent[r] = Math.max(rowAscent[r], p.ascent());
@@ -551,7 +596,6 @@ public interface Box {
                 }
             }
 
-            double px = a.sizePx();
             double width = colGap * px * Math.max(0, nCols - 1);
             for (double w : colWidth) {
                 width += w;

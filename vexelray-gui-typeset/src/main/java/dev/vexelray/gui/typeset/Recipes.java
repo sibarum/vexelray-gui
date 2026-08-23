@@ -75,6 +75,22 @@ public final class Recipes {
     }
 
     /**
+     * A big operator's bounds, set where the style calls for them: stacked above and below in display, tucked
+     * into the corners inline. {@code ∑} over a whole line carries its limits vertically; the same sum inside a
+     * sentence must not push the line apart, so its bounds become scripts.
+     *
+     * <p>This is the whole of what "display versus inline" amounts to here (docs/typeset.md §5), and it is worth
+     * seeing how little it is: <b>a choice of which recipe to call</b>, made once where the tree is built, not a
+     * mode threaded down the walk. Nothing in the engine, the SPI or the profile knows the distinction exists.
+     * The same is true of the other half of the classical style context — cramped versus uncramped is
+     * {@link Arrangement#headroom()}, derived from the gaps a container already reserves — which leaves the
+     * context flowing down the tree empty, and so absent.
+     */
+    public static Box limits(Profile p, Box base, Box upper, Box lower, boolean display) {
+        return display ? underOver(p, base, upper, lower) : script(p, base, upper, lower);
+    }
+
+    /**
      * A radicand under a surd, with an optional degree index. The surd stretches to the assembled height and the
      * vinculum spans the radicand, both by {@link Extent#FILL} — the same mechanism a growable delimiter uses.
      * The index rides at {@link Slot#NW} of the surd, which is an {@link Box.Attach} like any other.

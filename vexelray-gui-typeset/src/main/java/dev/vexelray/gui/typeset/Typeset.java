@@ -31,6 +31,10 @@ public final class Typeset {
     /** Deep enough for any real notation; shallow enough that a box laying itself out fails in milliseconds. */
     private static final int MAX_DEPTH = 64;
 
+    /** The room a box gets when nothing above or below it has reserved any — the root's, and every child laid
+     *  through a {@code lay} that says nothing about room. */
+    private static final double UNCONSTRAINED = Double.POSITIVE_INFINITY;
+
     /** Stand-in metrics when the atlas has neither the glyph nor a missing-glyph box, so layout always has real
      *  numbers. Roughly a lowercase letter: half an em wide, most of an x-height tall. */
     private static final Arrangement.Glyph FALLBACK = new Arrangement.Glyph(0.5, 0.7, -0.2);
@@ -51,7 +55,7 @@ public final class Typeset {
      */
     public Placed layout(Box root, double basePx) {
         ToneMap tone = toneMapFor(root, basePx);
-        return new Frame(tone, tone.px(root.size()), 0, 0).arrange(root);
+        return new Frame(tone, tone.px(root.size()), 0, UNCONSTRAINED, UNCONSTRAINED, 0).arrange(root);
     }
 
     /** The transfer {@link #layout} would solve for this block — exposed so a caller can inspect or assert it. */
@@ -77,20 +81,24 @@ public final class Typeset {
 
     /**
      * One box's view of the engine while it arranges itself. A frame is created per box, carrying that box's
-     * resolved pixel size, the cross extent its container offered, and the depth — so nothing mutable is shared
-     * and {@code arrange} stays as pure as its contract claims.
+     * resolved pixel size, the cross extent and the room its container offered, and the depth — so nothing mutable
+     * is shared and {@code arrange} stays as pure as its contract claims.
      */
     private final class Frame implements Arrangement {
 
         private final ToneMap tone;
         private final double sizePx;
         private final double crossExtent;
+        private final double headroom;
+        private final double footroom;
         private final int depth;
 
-        Frame(ToneMap tone, double sizePx, double crossExtent, int depth) {
+        Frame(ToneMap tone, double sizePx, double crossExtent, double headroom, double footroom, int depth) {
             this.tone = tone;
             this.sizePx = sizePx;
             this.crossExtent = crossExtent;
+            this.headroom = headroom;
+            this.footroom = footroom;
             this.depth = depth;
         }
 
@@ -110,16 +118,21 @@ public final class Typeset {
 
         @Override
         public Placed lay(Box child, double size) {
-            return child(size, 0).arrange(child);
+            return child(size, 0, UNCONSTRAINED, UNCONSTRAINED).arrange(child);
         }
 
         @Override
         public Placed layFilling(Box child, double extent) {
-            return child(child.size(), extent).arrange(child);
+            return child(child.size(), extent, UNCONSTRAINED, UNCONSTRAINED).arrange(child);
         }
 
-        private Frame child(double ratio, double extent) {
-            return new Frame(tone, sizePx * tone.relative(ratio), extent, depth + 1);
+        @Override
+        public Placed layWithin(Box child, double above, double below) {
+            return child(child.size(), 0, above, below).arrange(child);
+        }
+
+        private Frame child(double ratio, double extent, double above, double below) {
+            return new Frame(tone, sizePx * tone.relative(ratio), extent, above, below, depth + 1);
         }
 
         @Override
@@ -130,6 +143,16 @@ public final class Typeset {
         @Override
         public double crossExtent() {
             return crossExtent;
+        }
+
+        @Override
+        public double headroom() {
+            return headroom;
+        }
+
+        @Override
+        public double footroom() {
+            return footroom;
         }
 
         @Override

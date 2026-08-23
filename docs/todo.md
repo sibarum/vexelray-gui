@@ -150,6 +150,16 @@ Not open questions; decisions taken in P0 that later phases must honour. Listed 
   the seven look like what an application would write rather than like something with a framework helper.
 - ~~Containment must become an assertion at P2.~~ **Done** — `GeometryTest.everyConstructStaysInsideItsOwnBox`
   checks every draw of every construct on both axes, measured with the atlas the engine used.
+- ~~A style context must exist by P3 to carry cramped and display style.~~ **Done, by finding there is no
+  context.** Display/inline is a choice of recipe (`Recipes.limits`); cramped is `Arrangement.headroom()` /
+  `footroom()`, derived from the gaps a container already reserves. docs/typeset.md §5 is rewritten around it.
+- **A nested attach can exceed its allowance by up to twice the reserved gap.** Known, bounded, and left alone.
+  `Attach` clamps a side satellite against its *core's measured* ascent, and passes its room down to the nucleus
+  — so in `a / b²ᶜ`, where the denominator's nucleus is itself an attach, the inner script may consume the room
+  and the outer clamp then allows the same room again above the result. Satellites do not have this problem: the
+  clamp reads their measured ascent, so anything they raised internally is already counted. An exact fix needs
+  the nucleus's *unclamped* ascent as well as its actual one — two lays, or a second field on `Placed` — and
+  neither is worth it for the growth of one gap in a construct this rare. Revisit only if a real document shows it.
 - **Hysteresis policy for the tone map's slope, before P6.** `s` depends on the block's extremes, so a live edit
   resizes every glyph. Pick quantisation or a threshold; the demo's zoom control will show the jitter otherwise.
 - **A one-line `Gui.rootEmPx()` accessor.** Checked 2026-08-22, and the news is good: `Gui.zoom()` and

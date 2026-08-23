@@ -2,7 +2,8 @@ package dev.vexelray.gui.typeset;
 
 /**
  * The services a {@link Box} gets while it arranges itself: laying children out, its own resolved size, the
- * container's cross extent, the profile, and glyph metrics. The engine implements this; a box calls it.
+ * container's cross extent, the room it has been given to grow into, the profile, and glyph metrics. The engine
+ * implements this; a box calls it.
  *
  * <p><b>The box drives.</b> Children are not handed over pre-arranged — they are laid out on demand, as many times
  * as the box likes, at their declared size or at one the box picks. That is what makes measure-then-place work, and
@@ -38,6 +39,16 @@ public interface Arrangement {
     Placed layFilling(Box child, double crossExtent);
 
     /**
+     * Lay {@code child} out at its declared size, telling it how far above and below its natural content it may
+     * reach before this box has to grow around it. Both are in pixels; {@link Double#POSITIVE_INFINITY} means
+     * unconstrained, which is what every other {@code lay} passes.
+     *
+     * <p>A container calls this for any child — one that has nothing to raise or drop simply ignores the numbers,
+     * so there is no property to test and no kind to ask about.
+     */
+    Placed layWithin(Box child, double headroom, double footroom);
+
+    /**
      * This box's own resolved size in pixels — what every em-valued profile metric and glyph advance multiplies
      * by. The tone map already applied, so this is the real rendered size, not an authored ratio.
      */
@@ -56,6 +67,30 @@ public interface Arrangement {
      * same mechanism.
      */
     double crossExtent();
+
+    /**
+     * How far this box may extend its ascent past what its content naturally occupies before the container has to
+     * grow around it, in pixels; {@link Double#POSITIVE_INFINITY} when nothing constrains it.
+     *
+     * <p><b>This is TeX's cramped style, measured rather than declared</b> (docs/typeset.md §5). A superscript in
+     * a fraction's denominator is raised less than the same one in a row — not because the denominator carries a
+     * flag, but because the {@link Box.Stack} above it reserved exactly {@code fractionGapBelow} of slack between
+     * the bar and the denominator, and that gap is the whole allowance. Room is <em>derived from the gaps a
+     * container already reserves</em>, so there is no second piece of state to thread down the walk and nothing
+     * that can disagree with the geometry.
+     *
+     * <p>The classical rule then falls out of a uniform one. A {@link Box.Row} passes its own room straight
+     * through, because a row adds no vertical structure; a {@link Box.Stack} hands each interior child the gap on
+     * that side and each edge child whatever it was itself given. The two boxes TeX cramps — a denominator and a
+     * radicand — are precisely the two that sit under a rule in a stack, and a numerator, which TeX does not cramp
+     * above, is a stack's topmost child and so inherits rather than reserves. The mirror case TeX needs a separate
+     * rule for, a numerator's <em>subscript</em> approaching the bar from above, is {@link #footroom()} with no
+     * extra rule at all.
+     */
+    double headroom();
+
+    /** The mirror of {@link #headroom()} below the baseline: how far past its natural descent this box may reach. */
+    double footroom();
 
     /**
      * The block's solved size transfer applied to an authored ratio, in pixels (docs/typeset.md §4).

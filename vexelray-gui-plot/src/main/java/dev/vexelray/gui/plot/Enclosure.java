@@ -64,6 +64,38 @@ public interface Enclosure {
      */
     Enclosure spill();
 
+    /**
+     * Express this enclosure as one call on {@code sink} — the closed alphabet every answer reduces to.
+     *
+     * <p>This is the seam a <em>consumer</em> needs, and the one it may not get by switching. Classification
+     * ({@code enclosure, frame → span}) has to tell the three answers apart, but writing that as a three-case
+     * {@code instanceof} chain would put the arithmetic's vocabulary back into a switch, and adding a fourth
+     * answer — an affine form, the known upgrade — would then break every consumer instead of none. Inverting it
+     * keeps each half open in the direction it has to be: the set of <b>operations</b> is closed, here, in
+     * {@link Sink}; the set of <b>answers</b> stays open above it.
+     *
+     * <p>It is also what keeps this unit ignorant of plotting. A {@code spanIn(frame)} method would have been
+     * shorter and would have made the interval algebra depend on the framing policy. The sink carries no
+     * plotting vocabulary at all — only the arithmetic's own.
+     */
+    void emitTo(Sink sink);
+
+    /**
+     * What a consumer of enclosures implements: the three answers, as three calls. Write all three and you can
+     * classify any enclosure, including one written after you.
+     */
+    interface Sink {
+
+        /** A bounded answer: everything the expression takes on the column lies within {@code [lo, hi]}. */
+        void bounded(BigDecimal lo, BigDecimal hi);
+
+        /** The column spills to ±∞ somewhere inside it — a pole, or detail finer than the column. */
+        void unbounded();
+
+        /** No real value anywhere on the column — a true gap, not a pole. */
+        void undefined();
+    }
+
     /** Raised to a constant exponent: integer powers exactly, rational ones outward-rounded. */
     Enclosure raisedTo(BigDecimal exponent);
 

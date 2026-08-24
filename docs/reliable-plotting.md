@@ -1,8 +1,10 @@
 # Reliable plotting
 
 `vexelray-gui-plot`. Ported from the Pontif framework's `pontif.algebra` interval evaluator
-(`docs/reliable-plotting.md` there), rewritten into this repo's idiom. **What is here is the substrate: the
-enclosure algebra and the expression vocabulary that walks onto it. Nothing draws yet.**
+(`docs/reliable-plotting.md` there), rewritten into this repo's idiom. **Four of the five units are here: the
+enclosure algebra, the expression vocabulary that walks onto it, the frame and the classification of a column
+against it, and the policy that picks a window. The fifth — drawing — is not, and does not need to be: the
+first consumer, `calculator-vexel-demo`, renders spans out of ordinary boxes.**
 
 ## The problem point sampling cannot solve
 
@@ -72,18 +74,30 @@ powers — is the same, and the cases it was originally proven with are restated
 
 ## Module boundaries
 
-The units are separately swappable, and dependencies point one way. Only the first two exist:
+The units are separately swappable, and dependencies point one way:
 
 1. **Interval algebra** (`Interval`, `Unbounded`, `Undefined`) — arithmetic and nothing else. Knows nothing of
    expressions or plotting; the single place the three-way propagation lives.
 2. **The expression walk** (`Expr`) — nodes onto (1). No plotting dependencies.
-3. **Classification** — `(enclosure, viewport) → column kind`: a curve span, an empty column, a pole, a
-   full-height fill. A pure function. *Not built.*
-4. **Framing policy** — `analysis → viewport`. Where the window comes from is as much preference as mathematics,
-   so it is isolated: swapping the feel of auto-framing must not touch evaluation or rendering. *Not built.*
-5. **Renderer** — spans to pixels, knowing nothing of algebra. Blocked on a node vocabulary that can draw a
-   diagonal line: `NodeKind` is `{BOX, TEXT}` today, and a curve is neither. *Not built, and the decision to
-   widen `-core` has not been taken.*
+3. **Classification** (`Frame`, `Span`) — `(enclosure, frame) → column kind`: a clipped stretch of curve, a
+   painted pole, or nothing. A pure function, and the whole of it is clipping.
+4. **Framing policy** (`Framing`) — `expression → frame`. Where the window comes from is as much preference as
+   mathematics, so it is isolated: swapping the feel of auto-framing must not touch evaluation or rendering.
+5. **Renderer** — spans to pixels, knowing nothing of algebra. Lives in the consumer, and the first one is
+   `calculator-vexel-demo`. Not here, because a renderer needs a node vocabulary and this module has no
+   dependencies at all.
+
+**The diagonal line that was blocking (5) turned out not to exist.** The note this section used to carry said
+the renderer was waiting on a node kind that could draw one, `NodeKind` being `{BOX, TEXT}`. But a reliable plot
+has no diagonals in it: a column classifies to a *vertical span*, and a vertical span is a box. Point sampling
+needs polylines because it joins samples it did not evaluate between; evaluating over the column removes both
+the need to join and the thing that was blocked on. `-core` did not have to widen.
+
+**And the cheap-viewport property falls out of unit 3 being separate from unit 1.** An enclosure is in plot
+space, so it does not depend on the frame at all: moving in **y**, at any zoom, is re-classification and
+re-evaluates nothing, and moving in **x** re-evaluates only the columns that came into view. A consumer that
+keeps a map from column-of-x to enclosure can pan and zoom without recomputing what it already knows — which is
+what makes the difference between a plot you explore and a plot you wait for.
 
 ## Still ahead
 

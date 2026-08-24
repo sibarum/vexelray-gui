@@ -102,6 +102,11 @@ public record Interval(BigDecimal lo, BigDecimal hi) implements Enclosure {
         return UNBOUNDED;
     }
 
+    @Override
+    public void emitTo(Sink sink) {
+        sink.bounded(lo, hi);
+    }
+
     // --- arithmetic (exact) ------------------------------------------------------------------------------
 
     /** Endpoint-wise, and exact: the extremes of a sum are the sums of the extremes. */

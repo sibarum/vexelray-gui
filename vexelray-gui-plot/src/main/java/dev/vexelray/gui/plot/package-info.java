@@ -16,8 +16,23 @@
  * likewise open: twelve nodes are built in, a node encloses itself, and an application adds a thirteenth without
  * touching the module.
  *
- * <p><b>What is not here yet.</b> This is the substrate only. Choosing a window (the framing policy), turning a
- * column's enclosure into a classified span, joining runs of spans into clipped polylines, and drawing any of it
- * are all still to come; see {@code docs/reliable-plotting.md} for the design they will land against.
+ * <p>Above the substrate sit the two units that turn an enclosure into a picture without knowing what a picture
+ * is made of. {@link dev.vexelray.gui.plot.Frame} is the rectangle of plot space on show, and owns the two
+ * conversions everything above it needs: which column of x a pixel column covers, and where a y falls down the
+ * height. {@link dev.vexelray.gui.plot.Span} classifies one column against a frame into the three things a
+ * column can be — a clipped stretch of curve, a painted pole, or nothing — and hands it to a renderer through a
+ * sink, so the set of operations a renderer implements stays closed while the set of answers stays open.
+ * {@link dev.vexelray.gui.plot.Framing} chooses the window, and is deliberately the one unit here that is
+ * preference rather than mathematics.
+ *
+ * <p>The split between evaluation and classification is what makes a viewport cheap to move: an enclosure is in
+ * plot space and knows nothing of the frame, so panning and zooming in <b>y</b> is re-classification alone and
+ * re-evaluates nothing, while panning in <b>x</b> re-evaluates only the columns that came into view. A consumer
+ * that caches enclosures per column of x gets both.
+ *
+ * <p><b>What is not here yet.</b> Drawing. A renderer needs a node vocabulary, which is a dependency this module
+ * does not have and a decision that has not been taken; {@code calculator-vexel-demo} carries one built out of
+ * boxes, which is all a column-wise plot ever needs. Adaptive subdivision and affine arithmetic are still ahead
+ * too — see {@code docs/reliable-plotting.md}.
  */
 package dev.vexelray.gui.plot;

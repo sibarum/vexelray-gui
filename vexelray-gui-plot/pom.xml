@@ -16,12 +16,12 @@
     <description>
         Reliable graphing: evaluate an expression over a whole column of x at once and get back an enclosure that
         provably contains every value it takes there. That is what lets a plotted curve be honest about poles and
-        domain gaps instead of aliasing over them. This module is the substrate only — the enclosure algebra and
-        the expression vocabulary that walks onto it. Framing, column classification and rendering are not here
-        yet. See docs/reliable-plotting.md.
+        domain gaps instead of aliasing over them. On top of that substrate: a frame, the classification of a
+        column into what it draws as, and the policy that chooses a window. Rendering is not here — it needs a
+        node vocabulary, and this module deliberately has no dependencies. See docs/reliable-plotting.md.
     </description>
 
-    <!-- No dependencies, and that is a design statement: the enclosure algebra is arithmetic, it knows nothing
-         about nodes, canvases or themes, and a test of it needs nothing running. -->
+    <!-- No dependencies, and that is a design statement: everything here is arithmetic and policy, it knows
+         nothing about nodes, canvases or themes, and a test of it needs nothing running. -->
 
 </project>

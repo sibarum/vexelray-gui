@@ -34,6 +34,11 @@ public record Undefined() implements Enclosure {
     }
 
     @Override
+    public void emitTo(Sink sink) {
+        sink.undefined();
+    }
+
+    @Override
     public Enclosure raisedTo(BigDecimal exponent) {
         return this;
     }

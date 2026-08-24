@@ -30,6 +30,11 @@ public record Unbounded() implements Enclosure {
     }
 
     @Override
+    public void emitTo(Sink sink) {
+        sink.unbounded();
+    }
+
+    @Override
     public Enclosure raisedTo(BigDecimal exponent) {
         return this;
     }

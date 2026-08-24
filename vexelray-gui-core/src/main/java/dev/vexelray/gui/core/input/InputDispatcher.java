@@ -186,6 +186,13 @@ public final class InputDispatcher {
     // Cursor shape reporting (§8.3): the app-installed sink and the last shape reported (to fire only on change).
     private Consumer<CursorShape> cursorSink = s -> { };
     private CursorShape reportedCursor = CursorShape.DEFAULT;
+    /** Nodes whose drag wants the pointer locked for its duration (see {@link #setDragLocksPointer}). */
+    private final java.util.Set<Long> dragLocks = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    // Pointer lock reporting: the app-installed sink, and whether a lock is currently asked for. The same shape
+    // as the cursor seam above, for the same reason -- the core cannot reach an OS, so it states an intent and
+    // the application edge carries it out.
+    private Consumer<Boolean> pointerLockSink = locked -> { };
+    private boolean lockRequested;
 
     public InputDispatcher(Atchung bus, Topic<ClickEvent> clicks, Executor handlerExecutor) {
         this(bus, clicks, handlerExecutor, () -> { });
@@ -360,6 +367,37 @@ public final class InputDispatcher {
         this.cursorSink = sink == null ? s -> { } : sink;
     }
 
+    /**
+     * Declare that a drag captured by {@code nodeId} should hold the pointer for its duration — the pointer is
+     * locked on {@code START} and released on {@code END}.
+     *
+     * <p>For a drag that means a <em>displacement</em> and has no use for where the pointer is: turning a
+     * camera, panning a plane. Such a gesture has no natural end, so the window's edge is not one either, and
+     * locking is what removes it. A drag that means a <em>place</em> — a slider, a text selection — must not
+     * ask for this: it needs the position the lock destroys, and the visible cursor the lock hides.
+     */
+    public void setDragLocksPointer(long nodeId, boolean locks) {
+        if (locks) {
+            dragLocks.add(nodeId);
+        } else {
+            dragLocks.remove(nodeId);
+        }
+    }
+
+    /** Install the sink notified (on the GUI thread) when the pointer should be locked or released. */
+    public void pointerLockSink(Consumer<Boolean> sink) {
+        this.pointerLockSink = sink == null ? locked -> { } : sink;
+    }
+
+    /** Ask for or drop the lock, firing the sink only on a change so an application need not de-duplicate. */
+    private void requestPointerLock(boolean wanted) {
+        if (wanted == lockRequested) {
+            return;
+        }
+        lockRequested = wanted;
+        pointerLockSink.accept(wanted);
+    }
+
     /** Programmatically move focus to {@code nodeId} (or -1 to clear). */
     public void focus(long nodeId) {
         setFocus(nodeId);
@@ -398,7 +436,10 @@ public final class InputDispatcher {
         // is no longer in the tree — and hit-test ancestry walks a parent chain the reconciler has already cut.
         if (dragCapture != null && dragCapture.id == nodeId) {
             dragCapture = null;
+            // The node steering the drag has gone, so the drag has too -- and a lock outlives nothing.
+            requestPointerLock(false);
         }
+        dragLocks.remove(nodeId);
         if (scrollDrag != null && scrollDrag.id == nodeId) {
             scrollDrag = null;
         }
@@ -449,7 +490,7 @@ public final class InputDispatcher {
                     return;
                 }
                 if (dragCapture != null) {
-                    fireDrag(DragEvent.Phase.MOVE, m.x(), m.y());
+                    fireDrag(DragEvent.Phase.MOVE, m.x(), m.y(), m.dx(), m.dy());
                 }
                 pointerX = m.x();
                 pointerY = m.y();
@@ -476,6 +517,7 @@ public final class InputDispatcher {
                 dragCapture = ancestorWithDragHandler(hit);
                 if (dragCapture != null) {
                     fireDrag(DragEvent.Phase.START, b.x(), b.y());
+                    requestPointerLock(dragLocks.contains(dragCapture.id));
                 }
                 refreshStates();
             }
@@ -491,6 +533,7 @@ public final class InputDispatcher {
                 if (dragCapture != null) {
                     fireDrag(DragEvent.Phase.END, b.x(), b.y());
                     dragCapture = null;
+                    requestPointerLock(false);
                 }
                 pointerX = b.x();
                 pointerY = b.y();
@@ -970,8 +1013,12 @@ public final class InputDispatcher {
     }
 
     private void fireDrag(DragEvent.Phase phase, float x, float y) {
+        fireDrag(phase, x, y, 0f, 0f);
+    }
+
+    private void fireDrag(DragEvent.Phase phase, float x, float y, float dx, float dy) {
         RetainedNode n = dragCapture;
-        DragEvent e = new DragEvent(phase, x, y, n.x, n.y, n.w, n.h);
+        DragEvent e = new DragEvent(phase, x, y, dx, dy, n.x, n.y, n.w, n.h);
         // Ordered first: click-to-caret moves the same document typing does, so it has to sequence with it.
         Consumer<DragEvent> stage = dragStages.get(n.id);
         if (stage != null) {

@@ -718,6 +718,38 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
+     * Declare that dragging {@code node} should hold the pointer for the length of the gesture: locked on the
+     * drag's START, released on its END.
+     *
+     * <p>This is for a drag that means a <b>displacement</b> and never asks where the pointer is — turning a
+     * camera, panning a plane. Such a gesture has no natural end, so the window's edge should not be one
+     * either, and a lock is what removes it: the pointer stops travelling, the motion keeps arriving, and a
+     * drag can turn something a dozen times over without running out of desk.
+     *
+     * <p>A drag that means a <b>place</b> must not ask for this. A slider and a text selection need the
+     * absolute position a lock destroys and the visible cursor a lock hides — and a handler that differences
+     * {@link dev.vexelray.gui.core.input.DragEvent#x()} instead of reading its {@code dx()} reads nothing at
+     * all once locked, so declaring this is also a promise about how the handler is written.
+     */
+    public Gui dragLocksPointer(Node node, boolean locks) {
+        input.setDragLocksPointer(node.id(), locks);
+        return this;
+    }
+
+    /**
+     * Install the sink notified when the pointer should be locked ({@code true}) or released ({@code false}).
+     * The application maps it onto its input backend's pointer lock. Called on the GUI thread, and only on a
+     * change, so an application need not de-duplicate.
+     *
+     * <p>The same seam as {@link #onCursorChange} and for the same reason: the framework can say what it wants
+     * of a pointer and cannot reach an OS to get it.
+     */
+    public Gui onPointerLock(java.util.function.Consumer<Boolean> sink) {
+        input.pointerLockSink(sink);
+        return this;
+    }
+
+    /**
      * The look every widget and the renderer's own chrome resolve their colours through — {@link Theme#DARK}
      * unless replaced. There is no other source of colour in the framework.
      */

@@ -44,6 +44,12 @@ public final class TreeRenderer {
      * value threaded through fifteen signatures is a value that will eventually be forgotten on the sixteenth.
      */
     private float alpha = 1f;
+    // The live clip, in the coordinates the nodes' own boxes are in: what masked() judges a child against. Starts
+    // unbounded, narrows on every clip pushed, and is restored on the way back out of each node.
+    private float clipL = Float.NEGATIVE_INFINITY;
+    private float clipT = Float.NEGATIVE_INFINITY;
+    private float clipR = Float.POSITIVE_INFINITY;
+    private float clipB = Float.POSITIVE_INFINITY;
 
     private TreeRenderer(Theme theme) {
         this.scrollEdge = theme.color(Role.EDGE);
@@ -100,16 +106,32 @@ public final class TreeRenderer {
             boolean scrollClip = node.overflowX || node.overflowY;
             // An overflowing container clips to its scroll viewport; a container that merely said so clips to its
             // whole border box. Both are the same mask, asked for two different ways, so only one is pushed.
+            float keepL = clipL;
+            float keepT = clipT;
+            float keepR = clipR;
+            float keepB = clipB;
+            if (moved) {
+                // The subtree draws dx/dy from where its boxes say it is, so the mask moves the other way in the
+                // space those boxes are expressed in.
+                clipL -= dx;
+                clipT -= dy;
+                clipR -= dx;
+                clipB -= dy;
+            }
             if (scrollClip) {
                 // Clip children to the scroll viewport, honouring the container's (inset) rounded corner.
                 float inset = node.viewX - node.x;
                 float radius = Math.max(0f, node.cornerPx - inset);
                 canvas.pushClip(node.viewX, node.viewY, node.viewW, node.viewH, radius);
+                narrow(node.viewX, node.viewY, node.viewW, node.viewH);
             } else if (node.clip()) {
                 canvas.pushClip(node.x, node.y, node.w, node.h, node.cornerPx);
+                narrow(node.x, node.y, node.w, node.h);
             }
             for (RetainedNode child : node.children) {
-                walk(child, canvas, faces);
+                if (!masked(child)) {
+                    walk(child, canvas, faces);
+                }
             }
             if (scrollClip) {
                 canvas.popClip();
@@ -120,8 +142,51 @@ public final class TreeRenderer {
             if (moved) {
                 canvas.popTranslate();
             }
+            clipL = keepL;
+            clipT = keepT;
+            clipR = keepR;
+            clipB = keepB;
         }
         alpha = inherited;   // one restore point, on every path out
+    }
+
+    /**
+     * Bring the live mask in to {@code (x, y, w, h)} — the same rectangle just pushed on the canvas, tracked here
+     * so {@link #masked} can answer without asking the canvas about its own state.
+     */
+    private void narrow(float x, float y, float w, float h) {
+        clipL = Math.max(clipL, x);
+        clipT = Math.max(clipT, y);
+        clipR = Math.min(clipR, x + w);
+        clipB = Math.min(clipB, y + h);
+    }
+
+    /**
+     * Whether {@code child} is far enough outside the live mask that nothing it draws could land inside it.
+     *
+     * <p><b>Why this is worth the test.</b> A clip hides what it covers; it does not stop the geometry underneath
+     * being built. A tailing log keeps thousands of line nodes and shows twenty of them, and without this every
+     * one of the rest is turned into glyph quads, every frame, to be masked out — which is not merely wasteful:
+     * it is what makes a scrollback overrun a fixed vertex buffer and take the window down with it. This is the
+     * same reasoning {@code drawText} already applies to the visual lines <em>inside</em> one text node, applied
+     * one level up to the nodes inside one container.
+     *
+     * <p><b>Why the slack.</b> A node is not guaranteed to draw inside its own box: text given a fixed height
+     * smaller than it needs spills past the bottom of it rather than being cut off. So a box has to be a whole
+     * box-length clear of the mask before it is dropped, which is far more than any spill and still culls all but
+     * a line or two either side of a long list.
+     *
+     * <p>A box with no area is never culled. Its own rectangle says nothing about where its children are, and a
+     * zero-sized wrapper around real content is a shape the layout is allowed to produce.
+     */
+    private boolean masked(RetainedNode child) {
+        if (clipL == Float.NEGATIVE_INFINITY || child.w <= 0f || child.h <= 0f) {
+            return false;   // nothing masks here, or nothing to judge it by
+        }
+        return child.x + child.w + child.w < clipL
+                || child.x - child.w > clipR
+                || child.y + child.h + child.h < clipT
+                || child.y - child.h > clipB;
     }
 
     /**

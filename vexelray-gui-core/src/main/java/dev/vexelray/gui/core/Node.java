@@ -93,6 +93,53 @@ public final class Node {
         return prop(PropKey.LIT, lit);
     }
 
+    /**
+     * Fade this node and its whole subtree: every colour the renderer emits for it is multiplied by
+     * {@code opacity}, and a nested opacity multiplies again. 1 is opaque (the default), 0 draws nothing.
+     *
+     * <p><b>A visual transform, not a layout input</b> (architecture.md §7): fading a node moves nothing and
+     * measures nothing, so it never reflows — that is what makes it cheap enough to drive every frame. It is also
+     * why it is <em>only</em> visual: a fully faded node still occupies its box and, unless it is also
+     * {@link #hitInert}, is still the thing under the pointer. Anything that fades something out from under the
+     * user should say both.
+     *
+     * <p>The alpha applies per primitive rather than to the subtree as a composited group; see
+     * {@link PropKey#OPACITY} for what that costs and why it is the right trade here.
+     */
+    public Node opacity(float opacity) {
+        return prop(PropKey.OPACITY, Math.max(0f, Math.min(1f, opacity)));
+    }
+
+    /**
+     * Draw this node and its subtree offset by {@code (emX, emY)} multiples of its own em, without moving it.
+     *
+     * <p>The other half of the visual-transform layer (architecture.md §7), and the same bargain as
+     * {@link #opacity}: nothing reflows, nothing is measured, so it is cheap enough to drive every frame. In em
+     * so that it scales with zoom and density like every other relative measure here — and because a
+     * {@link Length} would have to be resolved by the layout pass, which does not re-run for a visual prop and so
+     * would leave the animation working against a stale px value. Multiples of the em need only what the renderer
+     * already has.
+     *
+     * <p><b>The node still lays out, reports, and is hit where it was.</b> Displacement is a fact about drawing,
+     * so a translated node's {@link #layout()} rect and its pointer target stay where the layout put them. Pair
+     * this with {@link #hitInert}(true) on anything the pointer could be over while it moves, and give the parent
+     * {@link #clip}(true) unless it is meant to escape.
+     */
+    public Node translate(float emX, float emY) {
+        prop(PropKey.TRANSLATE_X, emX == 0f ? null : emX);
+        return prop(PropKey.TRANSLATE_Y, emY == 0f ? null : emY);
+    }
+
+    /**
+     * Mask this node's children to its border box. A scrolling container already clips its viewport; say this
+     * when a container that does not scroll still has an edge — most obviously one that something
+     * {@link #translate}s through, since a translated child adds no overflow and so never triggers the automatic
+     * kind.
+     */
+    public Node clip(boolean clip) {
+        return prop(PropKey.CLIP, clip ? Boolean.TRUE : null);
+    }
+
     // --- text ---
 
     public Node text(String s) {

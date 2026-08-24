@@ -128,6 +128,9 @@ evaluates — no textures, no extra passes, still one draw:
 | `.lit(true)` | Edge light from the global top-left light + a faint vertical luminance gradient — modulates whatever `background` is set to, so state restyles keep working |
 | `.textSunken(true)` | Letterpress text: shade above the glyphs, glint below, crisp fill — for a `Role.ON_ACTION` label on a filled control |
 | `.corner(top, bottom)` | Independent corner radii per vertical half — a tab is `corner(r, Length.ZERO)` |
+| `.opacity(float)` | Fades the node and its whole subtree, multiplying down the tree. A visual transform, never a layout input: nothing reflows, which is what makes it cheap enough to drive every frame. Pair it with `.hitInert(true)` when fading something out from under the pointer — a faded node still occupies its box |
+| `.translate(emX, emY)` | Draws the node and its subtree offset, in multiples of its own em, without moving it. The other visual transform: no reflow, no measurement. It still lays out, reports and hit-tests where it was, so pair it with `.hitInert(true)` while it moves and `.clip(true)` on the parent unless it should escape |
+| `.clip(true)` | Masks children to this node's border box. Scrolling containers already clip their viewport; say this for one that doesn't scroll but still has an edge — a translated child adds no overflow, so it never trips the automatic kind |
 
 The design rule that produced these (and deleted one that didn't fit): effects must compose against
 the **global light**, not accumulate as geometry decorations. Multi-pass effects (backdrop blur,

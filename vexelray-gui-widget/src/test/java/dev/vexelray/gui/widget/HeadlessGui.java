@@ -203,7 +203,7 @@ final class HeadlessGui implements AutoCloseable {
      * interleaving control in manual mode, use {@link #dispatchOnly()} + {@link #tasks} instead.
      */
     HeadlessGui frame() {
-        gui.frame(W, H, measurer);
+        lastRoot = gui.frame(W, H, measurer);
         if (tasks != null) {
             tasks.drain();
         }
@@ -213,8 +213,35 @@ final class HeadlessGui implements AutoCloseable {
     /** Manual mode: dispatch a frame but leave the input handlers <em>queued</em> in {@link #tasks} for the test
      *  to release in a chosen order. */
     HeadlessGui dispatchOnly() {
-        gui.frame(W, H, measurer);
+        lastRoot = gui.frame(W, H, measurer);
         return this;
+    }
+
+    /** The retained tree the last frame laid out — the thing the renderer would walk. */
+    private RetainedNode lastRoot;
+
+    /**
+     * The retained node behind {@code handle} as of the last frame, or null if it is not in the tree.
+     *
+     * <p>{@link Node} is a write-only handle and {@link Node#layout()} answers geometry, which leaves the purely
+     * visual props — opacity, colours — with no other way to be asserted. A hidden node is still <em>in</em> the
+     * retained tree (that is the whole difference between hiding and removing), so this reads one either way.
+     */
+    RetainedNode retained(Node handle) {
+        return find(lastRoot, handle.id());
+    }
+
+    private static RetainedNode find(RetainedNode n, long id) {
+        if (n == null || n.id == id) {
+            return n;
+        }
+        for (RetainedNode child : n.children) {
+            RetainedNode hit = find(child, id);
+            if (hit != null) {
+                return hit;
+            }
+        }
+        return null;
     }
 
     /** Move keyboard focus to {@code node} (as a click would), so typed text and keys route to it. */

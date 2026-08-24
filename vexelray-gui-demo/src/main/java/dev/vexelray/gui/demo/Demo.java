@@ -19,6 +19,9 @@ import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
+import dev.vexelray.gui.krono.KronoGui;
+import sibarum.kronometer.Dur;
+import sibarum.kronometer.anim.Ease;
 import dev.vexelray.gui.widget.Slider;
 import dev.vexelray.gui.widget.Tabs;
 import dev.vexelray.gui.widget.TitleBar;
@@ -73,7 +76,10 @@ public final class Demo {
         if ("light".equalsIgnoreCase(AppHome.of("vexelray-demo").settings().getString("theme", "dark"))) {
             gui.theme(Theme.LIGHT);
         }
-        Refs refs = buildUi(gui);
+        // The frame clock. Attached before the UI is built because a widget that animates is handed its timing at
+        // construction, and ticked from the run loop's beforeFrame hook below — one tick per presented frame.
+        KronoGui krono = KronoGui.attach(gui);
+        Refs refs = buildUi(gui, krono);
         zoomShortcuts(gui);
         // The Vulkan clear colour: the same role the root paints, so the frame behind the tree is never a
         // second opinion about what the page is.
@@ -169,7 +175,13 @@ public final class Demo {
                                 .cancelButton("Stay", request::cancel)));
             }
             TactrollerInputBridge bridge = input == null ? null : bridgeFor(input, gui);
-            app.run(gui, maxFrames, () -> pump(bridge));
+            // Input first, then the clock: the tick returns with its batch complete, so anything an animation
+            // posts this frame is on the bus before Gui.frame reconciles it — the frame that presents a value is
+            // the frame that computed it.
+            app.run(gui, maxFrames, () -> {
+                pump(bridge);
+                krono.tick();
+            });
             // The window still exists here (close only *requested* the exit), so its final bounds are readable.
             settings.putInt("window.x", app.window().screenX())
                     .putInt("window.y", app.window().screenY())
@@ -177,6 +189,7 @@ public final class Demo {
                     .putInt("window.h", app.window().outerHeight())
                     .save();
         }
+        krono.close();   // the clock outlives the window but not the process: closed with the GUI it drove
         gui.close();
         System.out.println("clean shutdown");
     }
@@ -379,7 +392,7 @@ public final class Demo {
     }
 
     /** Build the dashboard with flex; return the handles the worker will mutate. */
-    private static Refs buildUi(Gui gui) {
+    private static Refs buildUi(Gui gui, KronoGui krono) {
         Theme theme = gui.theme();
         // The horizontal padding is declared: a label's text area is its whole box (the phantom text inset is
         // editable-only now), so a left-aligned label that wants a margin says so.
@@ -476,6 +489,18 @@ public final class Demo {
                         .textSize(Length.rem(1)).textColor(theme.color(Role.DIM)))));
 
         Tabs tabs = new Tabs(gui);
+        // Changing tabs crossfades. Tabs supplies the motion (opacity over both pages, no layout for the
+        // duration); Kronometer supplies the time. Neither module names the other — the seam is a DoubleConsumer
+        // and a Runnable — so this line is the only place the two meet, and leaving it out gives the instant
+        // switch back.
+        //
+        // LINEAR, and that is not laziness. An easing curve is for something arriving at a place, where
+        // decelerating into it reads as weight; a cross-dissolve has no place to arrive at, and the eye reads
+        // opacity more or less as it is given. OUT_CUBIC here was the first attempt and looked broken: it is
+        // 87% faded by the halfway point, so the visible part finished in the first third and the rest of the
+        // duration was a stall with nothing moving — a delay followed by a change, rather than a transition.
+        tabs.transition(Tabs.slide(
+                (progress, done) -> krono.ramp(Dur.ms(200), Ease.LINEAR, progress, done)));
         tabs.add("Editor", notes.node());
         tabs.add("Files", files.node());
         tabs.add("About", about);

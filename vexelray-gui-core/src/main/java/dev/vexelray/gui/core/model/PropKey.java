@@ -22,6 +22,45 @@ public enum PropKey {
     // Sunken ("letterpress") text: glyphs drop a soft shadow below themselves and carry a sharp black outline,
     // reading as set into the surface. Renderer-only — the glyph rects are unchanged, so nothing reflows.
     TEXT_SUNKEN(false),
+    /**
+     * Subtree opacity: this node and everything under it draw at {@code own x inherited}, multiplied into every
+     * colour the renderer emits. The first of the visual-transform properties of architecture.md §7, and
+     * deliberately not layout-affecting — fading a page moves nothing, so nothing reflows and no measurement
+     * runs. Absent (or 1) is fully opaque; 0 draws nothing and the subtree is skipped, but it still lays out, so
+     * the box it fades back into is already the right shape.
+     *
+     * <p><b>Per-primitive alpha, not group opacity.</b> Siblings that overlap inside a half-faded subtree
+     * composite against each other rather than against what lies behind the group. The exact version needs an
+     * offscreen layer and a second composite — a render target this GUI does not have and does not want for a
+     * 160ms crossfade, where the two states that must be right are the endpoints and both are exact.
+     */
+    OPACITY(false),
+    /**
+     * Subtree displacement, in multiples of the node's own em — the second visual transform of architecture.md
+     * §7, and like {@link #OPACITY} not a layout input: the node is <em>drawn</em> somewhere else and reflows
+     * nothing, so a page can travel without a single measurement running.
+     *
+     * <p>In em rather than a {@link dev.vexelray.gui.core.layout.Length} because of <em>when</em> it has to
+     * resolve. Lengths are resolved to px by the layout pass, and layout deliberately does not re-run for a
+     * purely visual prop — so a {@code Length} here would animate against a px value baked whenever layout last
+     * happened to run, which is to say never, in a UI that is otherwise still. An em multiple needs only the
+     * node's own baked {@code emPx}, which the renderer already has and already scales by (the lit bevel and the
+     * caret width are both fractions of it), so it honours zoom and density with no context to thread and no
+     * layout to trigger.
+     *
+     * <p>Hit-testing does <b>not</b> follow: the tree still reports, and is still hit at, the box layout gave it.
+     * That is the honest reading of a transform layer, and it means anything moving something the pointer could
+     * be over should pair this with {@link #HIT_INERT} rather than let the two disagree.
+     */
+    TRANSLATE_X(false),
+    TRANSLATE_Y(false),
+    /**
+     * Clip this node's children to its own border box. Overflow scrolling already clips its viewport; this is the
+     * same masking asked for outright, by a container that does not scroll and has no overflow to detect —
+     * because what escapes it is a {@link #TRANSLATE_X translated} child, which by design adds no overflow and so
+     * can never trigger the scrolling kind. A container that pages slide through needs to say where it ends.
+     */
+    CLIP(false),
     // Text (size affects layout via intrinsic measure)
     TEXT(true),
     TEXT_SIZE(true),

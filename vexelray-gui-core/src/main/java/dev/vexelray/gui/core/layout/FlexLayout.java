@@ -389,10 +389,19 @@ public final class FlexLayout {
 
     /**
      * Size and place {@code n}'s floating children, after the flow has settled. A floating child is sized to its
-     * own width/height props when fixed, otherwise to its intrinsic content (flex keywords have no distribution
-     * to draw from out of flow), capped at the parent; its offsets resolve against the parent's border box and
-     * are clamped so the whole node stays inside it — a menu opened near an edge slides in rather than cropping.
+     * own width/height props when fixed, to the parent's extent when it said {@link Length#FILL}, and otherwise to
+     * its intrinsic content, capped at the parent; its offsets resolve against the parent's border box and are
+     * clamped so the whole node stays inside it — a menu opened near an edge slides in rather than cropping.
      * Scroll deliberately does not move it: a floating node is anchored to the parent's frame, not its content.
+     *
+     * <p><b>{@code FILL} means the parent out of flow, not intrinsic content.</b> The other flex keywords really do
+     * lose their meaning here — {@code AUTO} is intrinsic by definition, and {@code grow} is a share of leftover
+     * space among siblings a float has none of — but {@code FILL} is "take all there is", and out of flow what
+     * there is is the parent box, with no distribution to compute and nothing ambiguous about it. Collapsing it to
+     * content instead made every overlay that wanted to cover its parent restate the size in some other basis:
+     * {@code ModalScrim} says {@code vw(100)/vh(100)}, which is only right because its parent is the root, and a
+     * tab page lifted out of flow for a crossfade would have had to say {@code percent(100)} and put {@code FILL}
+     * back afterwards. Two workarounds for one missing meaning is the sign it was missing rather than undefined.
      */
     private static void placeFloating(RetainedNode n, LayoutContext ctx, TextMeasurer tm) {
         for (RetainedNode c : n.children) {
@@ -401,12 +410,12 @@ public final class FlexLayout {
             }
             float w = c.width().resolve(ctx, n.w);
             if (w < 0f) {
-                w = measure(c, Axis.HORIZONTAL, ctx, tm);
+                w = c.width() instanceof Length.FillT ? n.w : measure(c, Axis.HORIZONTAL, ctx, tm);
             }
             w = Math.min(Math.max(0f, w), n.w);
             float h = c.height().resolve(ctx, n.h);
             if (h < 0f) {
-                h = measure(c, Axis.VERTICAL, ctx, tm, w);
+                h = c.height() instanceof Length.FillT ? n.h : measure(c, Axis.VERTICAL, ctx, tm, w);
             }
             h = Math.min(Math.max(0f, h), n.h);
             c.w = w;

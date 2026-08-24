@@ -95,6 +95,11 @@
                 <artifactId>vexelray-gui-plot</artifactId>
                 <version>${project.version}</version>
             </dependency>
+            <dependency>
+                <groupId>dev.vexelray.gui</groupId>
+                <artifactId>vexelray-gui-krono</artifactId>
+                <version>${project.version}</version>
+            </dependency>
 
             <!-- VexelRay engine artifacts (from the sibling repo's install). The GUI draws through
                  -canvas, lays text with -text, drives the runtime via -vulkan, and windows/inputs via -os. -->

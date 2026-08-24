@@ -36,6 +36,15 @@ public final class TreeRenderer {
     private final Color selection;
     private final Color ink;
 
+    /**
+     * The opacity inherited at the node currently being drawn — the product of every {@code OPACITY} prop on the
+     * path from the root. Every colour this class hands to the {@link Canvas} goes through {@link #fade}, so the
+     * transform reaches the chrome the tree never declared (a scrollbar, a shadow, the selection wash) as well as
+     * the props a node carries. Walk-scoped rather than a parameter because it applies to *every* colour, and a
+     * value threaded through fifteen signatures is a value that will eventually be forgotten on the sixteenth.
+     */
+    private float alpha = 1f;
+
     private TreeRenderer(Theme theme) {
         this.scrollEdge = theme.color(Role.EDGE);
         this.scrollTrough = theme.color(Role.CHROME);
@@ -74,21 +83,53 @@ public final class TreeRenderer {
         if (!node.visible()) {
             return;   // hidden: nothing drawn, and the subtree is not walked
         }
-        drawSelf(node, canvas, faceFor(faces, node));
-        boolean clip = node.overflowX || node.overflowY;
-        if (clip) {
-            // Clip children to the scroll viewport, honouring the container's (inset) rounded corner.
-            float inset = node.viewX - node.x;
-            float radius = Math.max(0f, node.cornerPx - inset);
-            canvas.pushClip(node.viewX, node.viewY, node.viewW, node.viewH, radius);
+        float inherited = alpha;
+        alpha = inherited * node.opacity();
+        // Fully transparent: skip the subtree exactly as a hidden node does. Not the same as hiding it, though —
+        // it was laid out, so its box is real and it is still hit-testable unless it also said hitInert.
+        if (alpha > 0f) {
+            // Displacement, in multiples of this node's own baked em, so it tracks zoom and density with no
+            // layout context to consult. Pushed around the node and its whole subtree, and cumulative.
+            float dx = node.translateX() * node.emPx;
+            float dy = node.translateY() * node.emPx;
+            boolean moved = dx != 0f || dy != 0f;
+            if (moved) {
+                canvas.pushTranslate(dx, dy);
+            }
+            drawSelf(node, canvas, faceFor(faces, node));
+            boolean scrollClip = node.overflowX || node.overflowY;
+            // An overflowing container clips to its scroll viewport; a container that merely said so clips to its
+            // whole border box. Both are the same mask, asked for two different ways, so only one is pushed.
+            if (scrollClip) {
+                // Clip children to the scroll viewport, honouring the container's (inset) rounded corner.
+                float inset = node.viewX - node.x;
+                float radius = Math.max(0f, node.cornerPx - inset);
+                canvas.pushClip(node.viewX, node.viewY, node.viewW, node.viewH, radius);
+            } else if (node.clip()) {
+                canvas.pushClip(node.x, node.y, node.w, node.h, node.cornerPx);
+            }
+            for (RetainedNode child : node.children) {
+                walk(child, canvas, faces);
+            }
+            if (scrollClip) {
+                canvas.popClip();
+                drawScrollbars(node, canvas);   // the container's chrome, so still at the container's alpha
+            } else if (node.clip()) {
+                canvas.popClip();
+            }
+            if (moved) {
+                canvas.popTranslate();
+            }
         }
-        for (RetainedNode child : node.children) {
-            walk(child, canvas, faces);
-        }
-        if (clip) {
-            canvas.popClip();
-            drawScrollbars(node, canvas);
-        }
+        alpha = inherited;   // one restore point, on every path out
+    }
+
+    /**
+     * {@code c} at the opacity inherited here. The single place the transform is applied: nothing in this class
+     * passes a raw {@link Color} to the canvas.
+     */
+    private Color fade(Color c) {
+        return c == null || alpha >= 1f ? c : Color.withAlpha(c, c.a() * alpha);
     }
 
     private static TextLayout faceFor(TextLayout[] faces, RetainedNode n) {
@@ -112,16 +153,16 @@ public final class TreeRenderer {
     /** A lit pill floating just off its track: small shadow underneath, edge light on top — grabbable at a glance. */
     private void thumb(Canvas canvas, float[] t, float sb) {
         float r = sb * 0.3f;
-        canvas.shadowRoundRect(t[0], t[1] + 1f, t[2], t[3], r, 2.5f, shadow);
-        canvas.litRoundRect(t[0], t[1], t[2], t[3], r, 2f, 0.08f, scrollGrip);
+        canvas.shadowRoundRect(t[0], t[1] + 1f, t[2], t[3], r, 2.5f, fade(shadow));
+        canvas.litRoundRect(t[0], t[1], t[2], t[3], r, 2f, 0.08f, fade(scrollGrip));
     }
 
     /** An outlined track: a border-coloured rounded rect with a subtle inner fill, so it reads against any panel. */
     private void track(Canvas canvas, float x, float y, float w, float h) {
         float r = Math.min(w, h) * 0.5f;
-        canvas.fillRoundRect(x, y, w, h, r, scrollEdge);
+        canvas.fillRoundRect(x, y, w, h, r, fade(scrollEdge));
         canvas.fillRoundRect(x + 1.5f, y + 1.5f, Math.max(0f, w - 3f), Math.max(0f, h - 3f),
-                Math.max(0f, r - 1.5f), scrollTrough);
+                Math.max(0f, r - 1.5f), fade(scrollTrough));
     }
 
     private void drawSelf(RetainedNode n, Canvas canvas, TextLayout text) {
@@ -135,18 +176,19 @@ public final class TreeRenderer {
         // Elevation: an analytic soft shadow under the border-box, dropped slightly with the light overhead.
         if (n.elevationPx > 0f && (bg != null || border != null)) {
             float e = n.elevationPx;
-            canvas.shadowRoundRect(n.x, n.y + e * 0.5f, n.w, n.h, rTop, rBottom, e, shadow);
+            canvas.shadowRoundRect(n.x, n.y + e * 0.5f, n.w, n.h, rTop, rBottom, e, fade(shadow));
         }
         if (bg != null) {
             if (n.lit()) {
                 // Bevel scales with the type size so the edge light stays proportionate under zoom.
-                canvas.litRoundRect(n.x, n.y, n.w, n.h, rTop, rBottom, Math.max(2f, n.emPx * 0.22f), 0.05f, bg);
+                canvas.litRoundRect(n.x, n.y, n.w, n.h, rTop, rBottom,
+                        Math.max(2f, n.emPx * 0.22f), 0.05f, fade(bg));
             } else {
-                canvas.fillRoundRect(n.x, n.y, n.w, n.h, rTop, rBottom, bg);
+                canvas.fillRoundRect(n.x, n.y, n.w, n.h, rTop, rBottom, fade(bg));
             }
         }
         if (bw > 0f && border != null) {
-            canvas.strokeRoundRect(n.x, n.y, n.w, n.h, rTop, rBottom, bw, border);
+            canvas.strokeRoundRect(n.x, n.y, n.w, n.h, rTop, rBottom, bw, fade(border));
         }
 
         String s = n.textString();
@@ -209,17 +251,17 @@ public final class TreeRenderer {
             java.util.List<Span> lineSpans = spansOn(spans, line);
             for (Span sp : lineSpans) {
                 if (sp.bg() != null) {
-                    fillLineRange(line, sp.start(), sp.end(), sp.bg(), canvas);
+                    fillLineRange(line, sp.start(), sp.end(), fade(sp.bg()), canvas);
                 }
             }
             if (selHi > selLo) {
-                fillLineRange(line, selLo, selHi, selection, canvas);
+                fillLineRange(line, selLo, selHi, fade(selection), canvas);
             }
             drawLineText(n, s, line, lineSpans, canvas, text);
             for (Span sp : lineSpans) {
                 if (sp.underline()) {
                     underlineLineRange(n, line, sp.start(), sp.end(),
-                            sp.fg() != null ? sp.fg() : n.textColor(ink), canvas, text);
+                            fade(sp.fg() != null ? sp.fg() : n.textColor(ink)), canvas, text);
                 }
             }
         }
@@ -228,7 +270,8 @@ public final class TreeRenderer {
         if (n.caret() >= 0 && n.caretOn()) {
             int caret = n.caret();
             float w = Math.max(1f, n.textSizePx * 0.07f);
-            canvas.fillRoundRect(m.caretX(caret), m.caretTop(caret), w, m.caretHeight(caret), 0f, n.textColor(ink));
+            canvas.fillRoundRect(m.caretX(caret), m.caretTop(caret), w, m.caretHeight(caret), 0f,
+                    fade(n.textColor(ink)));
         }
         if (clip) {
             canvas.popClip();
@@ -255,7 +298,7 @@ public final class TreeRenderer {
             TextLayout.TextStyle style = TextLayout.TextStyle.of(px)
                     .withWrap(TextLayout.WrapMode.NONE)
                     .withAlign(TextLayout.HAlign.LEFT, TextLayout.VAlign.TOP);
-            canvas.text(text, label, right - w, line.top(), Math.max(1f, w), line.height(), style, gutterInk);
+            canvas.text(text, label, right - w, line.top(), Math.max(1f, w), line.height(), style, fade(gutterInk));
         }
         canvas.popClip();
     }
@@ -305,12 +348,15 @@ public final class TreeRenderer {
                     .withAlign(TextLayout.HAlign.LEFT, TextLayout.VAlign.TOP);
             float x = line.caretX(i);
             float wRun = Math.max(1f, n.x + n.w - x);
+            // Runs are split on the unfaded colour: the fade is uniform across the line, so it cannot merge or
+            // divide a run, and comparing before it keeps the grouping independent of the current opacity.
+            Color faded = fade(fg);
             if (n.textSunken()) {
                 // Letterpress: the press depth scales with the type size, so the effect survives zoom.
-                canvas.textSunken(text, s.substring(i, j), x, line.top(), wRun, line.height(), style, fg,
+                canvas.textSunken(text, s.substring(i, j), x, line.top(), wRun, line.height(), style, faded,
                         Math.max(1f, n.textSizePx * 0.07f));
             } else {
-                canvas.text(text, s.substring(i, j), x, line.top(), wRun, line.height(), style, fg);
+                canvas.text(text, s.substring(i, j), x, line.top(), wRun, line.height(), style, faded);
             }
             i = j;
         }

@@ -248,4 +248,47 @@ class FlexLayoutTest {
 
         assertEquals(34f, child.y, EPS, "(100-32)/2 = 34");
     }
+
+    /**
+     * {@code FILL} keeps its meaning out of flow: an overlay that says "take all there is" gets the parent box.
+     * The other flex keywords genuinely lose theirs there — {@code AUTO} is intrinsic by definition, {@code grow}
+     * is a share of leftover space among siblings a float has none of — but for {@code FILL} the available space
+     * is unambiguous and needs no distribution to compute. Without this, every overlay that wants to cover its
+     * parent has to restate the size in another basis, and each restatement is right for one parent only.
+     */
+    @Test
+    void aFloatingFillChildFillsItsParent() {
+        RetainedNode root = box(0);
+        root.set(PropKey.WIDTH, Length.percent(100));
+        root.set(PropKey.HEIGHT, Length.percent(100));
+        RetainedNode overlay = box(1);
+        overlay.set(PropKey.WIDTH, Length.FILL);
+        overlay.set(PropKey.HEIGHT, Length.FILL);
+        overlay.set(PropKey.FLOAT_X, Length.ZERO);
+        overlay.set(PropKey.FLOAT_Y, Length.ZERO);
+        add(root, overlay);
+
+        FlexLayout.layout(root, 200f, 100f, ctx(), TM);
+
+        assertEquals(200f, overlay.w, EPS, "a floated FILL covers its parent rather than collapsing to content");
+        assertEquals(100f, overlay.h, EPS);
+        assertEquals(root.x, overlay.x, EPS);
+        assertEquals(root.y, overlay.y, EPS);
+    }
+
+    /** And {@code AUTO} out of flow still means intrinsic — the distinction FILL is being separated from. */
+    @Test
+    void aFloatingAutoChildStillSizesToItsContent() {
+        RetainedNode root = box(0);
+        RetainedNode tip = new RetainedNode(1, NodeKind.TEXT);
+        tip.set(PropKey.TEXT, "abcd");            // 4 chars x 16px x 0.5 = 32 wide, 16 tall
+        tip.set(PropKey.FLOAT_X, Length.ZERO);
+        tip.set(PropKey.FLOAT_Y, Length.ZERO);
+        add(root, tip);
+
+        FlexLayout.layout(root, 200f, 100f, ctx(), TM);
+
+        assertTrue(tip.w < 200f, "a tooltip is still the size of its text, not the size of the page under it");
+        assertTrue(tip.h < 100f);
+    }
 }

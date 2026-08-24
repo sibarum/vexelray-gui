@@ -139,6 +139,32 @@ public final class RetainedNode {
         return Boolean.TRUE.equals(props.get(PropKey.LIT));
     }
 
+    /**
+     * This node's own opacity in [0,1], 1 when it never declared one. The renderer multiplies it into the alpha
+     * it inherited, so the effective value is the product down the path from the root.
+     */
+    public float opacity() {
+        Object o = props.get(PropKey.OPACITY);
+        return o instanceof Float f ? f : 1f;
+    }
+
+    /** Horizontal draw offset in multiples of this node's em; 0 when it never declared one. */
+    public float translateX() {
+        Object o = props.get(PropKey.TRANSLATE_X);
+        return o instanceof Float f ? f : 0f;
+    }
+
+    /** Vertical draw offset in multiples of this node's em; 0 when it never declared one. */
+    public float translateY() {
+        Object o = props.get(PropKey.TRANSLATE_Y);
+        return o instanceof Float f ? f : 0f;
+    }
+
+    /** Whether this node masks its children to its border box (see {@link PropKey#CLIP}). */
+    public boolean clip() {
+        return Boolean.TRUE.equals(props.get(PropKey.CLIP));
+    }
+
     /** Whether this node's text is drawn sunken: soft under-shadow + sharp black outline (letterpress). */
     public boolean textSunken() {
         return Boolean.TRUE.equals(props.get(PropKey.TEXT_SUNKEN));

@@ -450,6 +450,7 @@ public final class GuiApp implements AutoCloseable {
         }
         float[] vertices = canvas.toVertexArray();
         int vertexCount = canvas.vertexCount();
+        System.out.println("[emit] " + vertices.length + " floats, " + vertexCount + " vertices");
 
         NativePlatform platform = NativePlatform.current();
         try (VulkanInstance instance = new VulkanInstance("vexelray-gui",

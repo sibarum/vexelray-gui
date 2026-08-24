@@ -84,6 +84,32 @@ class KronoGuiTest {
         assertEquals(List.of(4f, 6f, 8f, 10f, 10f), observed);
     }
 
+    /**
+     * The bare ramp, and the reason it exists: a consumer that only wants <em>timing</em> should not have to hand
+     * this module its widgets to get it. Both types crossing the seam are JDK types, so {@code gui-widget} can
+     * declare a hole of exactly this shape ({@code Tabs.Ramp}) and be filled by this method without either module
+     * naming the other — which is what keeps the widget layer clock-free while its tabs still crossfade.
+     */
+    @Test
+    @DisplayName("a ramp runs 0 to 1 over its duration and then reports done, exactly once")
+    void rampDrivesZeroToOne() {
+        List<Double> observed = new ArrayList<>();
+        AtomicInteger done = new AtomicInteger();
+        try (KronoGui krono = headless()) {
+            krono.ramp(ms(100), Ease.LINEAR, observed::add, done::incrementAndGet);
+            for (int frame = 1; frame <= 6; frame++) {
+                krono.tick(ms(25).times(frame));
+            }
+        }
+        assertEquals(1, done.get(), "done is reported once, not once per frame after the end");
+        assertEquals(0d, observed.get(0), 1e-6, "a ramp starts at its start, not at the first sample after it");
+        assertEquals(1d, observed.get(observed.size() - 1), 1e-6,
+                "and lands exactly on 1 — a crossfade that stopped at 0.98 would leave the arriving page dimmed");
+        for (int i = 1; i < observed.size(); i++) {
+            assertTrue(observed.get(i) >= observed.get(i - 1), "and never goes backwards on the way");
+        }
+    }
+
     @Test
     @DisplayName("retargeting mid-flight continues from the current value")
     void retargetIsContinuous() {

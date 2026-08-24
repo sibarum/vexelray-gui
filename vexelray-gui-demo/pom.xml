@@ -34,6 +34,13 @@
             <groupId>dev.vexelray.gui</groupId>
             <artifactId>vexelray-gui-nfd</artifactId>
         </dependency>
+        <!-- The clock. Motion enters at the application edge and nowhere else: -widget declares seams shaped
+             out of JDK types (a DoubleConsumer and a Runnable) and this module satisfies them, so a widget
+             animates without ever naming Kronometer. -->
+        <dependency>
+            <groupId>dev.vexelray.gui</groupId>
+            <artifactId>vexelray-gui-krono</artifactId>
+        </dependency>
         <!-- The application edge for input: the tactroller->atchung bridge (brings tactroller-api +
              atchung-core transitively). The GUI core knows only the input topic contract; the demo owns
              the concrete input source and hands the GUI the same bus. -->

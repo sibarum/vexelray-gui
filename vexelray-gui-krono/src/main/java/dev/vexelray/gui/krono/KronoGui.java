@@ -24,6 +24,7 @@ import sibarum.kronometer.anim.Tween;
 
 import java.util.Objects;
 import java.util.function.BiConsumer;
+import java.util.function.DoubleConsumer;
 import java.util.function.Supplier;
 
 /**
@@ -242,6 +243,64 @@ public final class KronoGui implements AutoCloseable {
 
     public void retarget(Cell<Color> cell, Color target, Dur over, Ease ease) {
         retarget(cell, target, over, ease, Colors.OKLAB);
+    }
+
+    /**
+     * Drive a bare 0→1 ramp over {@code over}: {@code progress} is called once per frame for the duration, then
+     * {@code done} exactly once. Safe from a handler thread.
+     *
+     * <p>The lowest-common-denominator animation, and deliberately so. Everything else here binds a value to a
+     * node, which means naming the node's type — and a consumer that only wants <em>timing</em> should not have
+     * to hand this module its widgets to get it. A {@link DoubleConsumer} and a {@link Runnable} are both JDK
+     * types, so a widget can declare a seam of exactly this shape and be satisfied by this method without either
+     * side depending on the other: that is what lets {@code Tabs.crossfade} be timed by Kronometer while
+     * {@code gui-widget} stays clock-free, and it is reusable by anything else with the same problem.
+     *
+     * <p><b>Both endpoints are delivered exactly.</b> The per-frame effect can only sample the curve at frame
+     * boundaries, and by the first of those the ramp is already a frame into its duration — so a consumer driven
+     * only by samples would start at 0.25 on a four-frame ramp and jump there from wherever it was. Whatever the
+     * frame rate, 0 is delivered before any time passes and 1 at the end, so a consumer that treats the first
+     * call as "this is where the animation begins" is right, and so is one that treats arrival as "this was left
+     * at its end state".
+     *
+     * <p><b>And the end value is on screen before {@code done}.</b> {@code done} is deferred to the frame
+     * <em>after</em> the one that carried 1, which sounds like a detail and is the difference between a fade and
+     * a cut: a consumer that tears down on arrival — hides the node, drops the overlay — runs in the same batch
+     * as the final sample, so without the extra frame the end value is written and then overwritten before
+     * anything is presented, and the last thing the eye actually saw was the second-to-last sample. At 60fps over
+     * 200ms that is a fifth of the animation still showing at the moment it vanishes.
+     */
+    public void ramp(Dur over, Ease ease, DoubleConsumer progress, Runnable done) {
+        Objects.requireNonNull(progress, "progress");
+        Objects.requireNonNull(done, "done");
+        Curve<Float> curve = Tween.curve(0f, 1f, over, ease, Interp.FLOAT);
+        onTimeline(() -> {
+            Cell<Float> cell = kron.cell("ramp", 0f);
+            progress.accept(0d);       // the start, before a single frame has elapsed
+            long[] endedOnTick = {-1};
+            Effect[] sampler = new Effect[1];
+            sampler[0] = kron.effect(frames, () -> {
+                if (endedOnTick[0] < 0) {
+                    progress.accept(cell.get());
+                } else if (ticks > endedOnTick[0]) {
+                    // A frame has been presented carrying the end value; the consumer may now tear down.
+                    // Cancelling detaches only this ramp's handler from the frame domain — a guarantee
+                    // Kronometer had to be taught: cancel() used to cancel the shred Rate.each hands back,
+                    // and that is the domain's single driver, shared by every handler on it. One arriving
+                    // animation stopped the frame clock for everything, including everything registered after.
+                    sampler[0].cancel();
+                    done.run();
+                }
+            });
+            Time.spork("ramp", () -> {
+                cell.drive(curve);
+                Time.advance(over);
+                progress.accept(1d);
+                // The frame domain steps after everything else scheduled in this window, so the sampler sees
+                // this on the tick it was set and finishes on the next one.
+                endedOnTick[0] = ticks;
+            });
+        });
     }
 
     /**

@@ -349,14 +349,73 @@ a label is likewise `em`, not `dp`, even though a toolbar feels like chrome.
 
 ## 7. Animation — a visual-transform layer, GUI-side
 
-> Forward-looking: motion is expected to move onto Kronometer (strongly-timed kernel + signal graph;
-> animation as a function of logical time rather than accumulated `dt`). See docs/reactive-timing.md
-> for the seam and what must land first. Not implemented; read it before changing how motion or event
-> timing works.
+> **Partly built.** `OPACITY` and `TRANSLATE_X/Y` are in, motion runs on Kronometer through
+> `vexelray-gui-krono`, and the first consumer is the tab transition (`Tabs.slide` + `KronoGui.ramp`).
+> `SCALE`, `ROTATION` and `TINT`, the visibility FSM, `gui.motion(DISABLED)` and the deadline-driven wait
+> loop are not. See docs/reactive-timing.md for the Kronometer seam and what it still owes.
 
 Opt-in per node; nothing fires unless an animation is attached. Animatable properties are a
 **post-layout visual transform** — `OPACITY, TRANSLATE_X/Y, SCALE, ROTATION, TINT` — **not** layout
 inputs. Animating them never re-runs layout; it only changes how the tree is emitted to the `Canvas`.
+
+**`OPACITY`, as built.** One inherited float threaded through `TreeRenderer.walk`, multiplied into every
+colour the renderer emits — including the chrome no node declares (scrollbars, the shadow under an
+elevated box, the selection wash), which is where this would otherwise leak. It is *per-primitive* alpha,
+not group opacity: overlapping siblings inside a half-faded subtree composite against each other. Exact
+group opacity needs an offscreen layer and a second composite, which is a render target this GUI does not
+have; the endpoints — the two states that must be right — are exact either way. `0` skips the subtree like
+a hidden node, but it still lays out and is still hit-testable, so anything fading something out from
+under the user pairs it with `hitInert`.
+
+**`TRANSLATE_X/Y`, as built.** A `Canvas.pushTranslate` around the node and its subtree — one addition where
+a vertex is written, moving both the position and the screen coordinate the clip SDF evaluates at, so a
+translated shape is clipped where it lands. Expressed in **multiples of the node's own em**, not a `Length`,
+because of *when* it resolves: `Length`s are resolved to px by the layout pass, and layout deliberately does
+not re-run for a visual prop, so a `Length` here would animate against px baked whenever layout last happened
+to run — never, in a UI that is otherwise still. The em is already on the node. Hit-testing does **not**
+follow, which is the honest reading of a transform layer and the reason `Tabs` makes both pages `hitInert`
+while they move: better no pointer target than one that disagrees with the picture. `CLIP` is the companion —
+a translated child adds no overflow, so it can never trip the clipping that comes with scrolling.
+
+**Two curves, not one.** The fade is linear and the travel is eased-out, and that split is the whole of why a
+transition reads as motion rather than as a slideshow. Opacity has no place to arrive at; displacement does,
+and decelerating into it is what reads as weight. Easing is the wrong answer for one and the right answer for
+the other, so a transition that runs both off a single curve gets at least one of them wrong.
+
+**Where a widget gets its timing.** `-widget` cannot see `-krono` (the clock enters at the application
+edge), so a widget that animates declares a seam out of JDK types and lets the application fill it:
+`Tabs.Ramp` is `(DoubleConsumer progress, Runnable done)`, and `KronoGui.ramp` satisfies it without
+either module naming the other. The widget owns *what* moves; Kronometer owns *when*. A widget with no
+ramp installed is instantaneous, which is both the default and the reduced-motion path.
+
+**Compositing constrains what a transition may animate, and admits no clean answer.** With a top layer at
+`a` over a bottom at `b`, the screen gets `a·top + (1-a)·b·bottom + (1-a)(1-b)·backdrop`. That last term
+vanishes only when `a` or `b` is exactly 1, so **a transition cannot both fade its two layers and keep them
+covering the box** — and both horns are visible. Holding the bottom opaque is a perfect blend *if the top
+covers it*, and a page that is only text covers nothing, so the layer underneath sits at full strength and
+then vanishes the instant it is hidden. Fading both never cuts but lets the backdrop through in between.
+
+Two things make the second the better trade, and neither is the algorithm. **The panel paints its own
+content surface** (`Tabs` gives the page area a `CHROME` fill), so the leak term resolves to a deliberate,
+stationary colour a shade off the pages rather than to whatever the application put behind the widget —
+which is also just what a tab panel should look like. And **the bottom layer holds opaque and releases
+late**, capping the leak at `(1-HOLD)/4` instead of the 25% a from-the-start fade would reach.
+
+Which layer *is* on top is not the transition's to choose: paint order is child order, fixed when the pages
+were added, because reordering means remove-and-reinsert and that releases every registration on the page.
+`Tabs.Change` carries it.
+
+**An end value has to be presented before its consumer tears down.** `KronoGui.ramp` defers `done` to the
+frame after the one carrying 1. Without it, the final sample and the teardown that reacts to it land in the
+same batch, so the end state is written and overwritten before anything reaches the screen and the last
+thing actually seen is the second-to-last sample — at 60fps over 200ms, a fifth of the animation still
+showing at the moment it disappears. It reads as a cut at the end of a fade.
+
+**A transition is a transaction, and it can be interrupted.** The rule that keeps that tractable:
+a new transition settles the previous one before starting, so a superseded `done` arriving late finds
+nothing to settle and is a no-op — no generation tokens, and a transition never learns it lost. What
+`Tabs` can restore without being told is exactly the transform layer plus what it applied itself, which
+is why the surface is named: every property on it has an identity value.
 
 **This needs zero engine and zero bus support:** because we draw immediate-mode, the emitter simply
 applies the current transform when it makes `Canvas` calls. The visibility FSM
@@ -632,7 +691,8 @@ exists as siblings, so those steps are *integration*, not construction.
     code.**
 
 Still open: layout-animation path (size/position via `onChange`) first-class vs. transform-layer-only
-for v1; group membership static vs. dynamic; choreographer interruption semantics; whether tree
+for v1; group membership static vs. dynamic; choreographer interruption semantics (the settle-first rule
+in §7 covers a single transition, not a multi-node choreography mid-flight); whether tree
 mutations ever share a bus instance with cross-component traffic or always use a private internal topic
 (currently: shared bus, private topic name).
 

@@ -1,6 +1,9 @@
 package dev.vexelray.gui.widget;
 
 import dev.vexelray.gui.core.WindowControls;
+import dev.vexelray.gui.core.app.WindowSpec;
+import dev.vexelray.os.NativeWindow;
+import dev.vexelray.os.WindowConfig;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -93,6 +96,100 @@ class TitleBarTest {
 
             assertEquals(List.of(), first.calls, "the window it used to command hears nothing");
             assertEquals(List.of("close"), second.calls, "the window it commands now does");
+        }
+    }
+
+    /**
+     * The same two bindings, performed by the framework. Every application wrote them by hand at every window,
+     * because a bar is necessarily built before the window it belongs to — and both halves are silent when
+     * forgotten: miss the first and the buttons do nothing, miss the second and they command a destroyed handle.
+     */
+    @Test
+    void aBarWiresItselfToWhateverWindowItsSpecOpens() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TitleBar bar = bar(h, WindowControls.NONE);
+            RecordingWindow window = new RecordingWindow();
+            WindowSpec spec = bar.commands(WindowSpec.of(WindowConfig.of("Test", 100, 100), h.gui));
+
+            spec.onCreated().accept(window);            // what the frame loop does once the window exists
+            h.click(buttonX(0), BAR_H / 2f);
+            assertEquals(List.of("requestClose"), window.calls, "the caption commands the window it opened");
+
+            window.calls.clear();
+            spec.onClosed().run();                      // and what it does once the window is gone
+            h.click(buttonX(0), BAR_H / 2f);
+            assertEquals(List.of(), window.calls, "a bar outlives its window and must stop commanding it");
+        }
+    }
+
+    /** Wiring itself in must not displace what the application asked for at the same moments. */
+    @Test
+    void wiringItselfInLeavesTheApplicationsOwnCallbacksAlone() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TitleBar bar = bar(h, WindowControls.NONE);
+            List<String> app = new ArrayList<>();
+            WindowSpec spec = bar.commands(WindowSpec.of(WindowConfig.of("Test", 100, 100), h.gui)
+                    .onCreated(w -> app.add("placed"))
+                    .onClosed(() -> app.add("forgotten")));
+
+            RecordingWindow window = new RecordingWindow();
+            spec.onCreated().accept(window);
+            spec.onClosed().run();
+
+            assertEquals(List.of("placed", "forgotten"), app);
+        }
+    }
+
+    /** A window that only records what it was told to do. Everything else {@link NativeWindow} defaults. */
+    private static final class RecordingWindow implements NativeWindow {
+        private final List<String> calls = new ArrayList<>();
+
+        @Override
+        public void requestClose() {
+            calls.add("requestClose");
+        }
+
+        @Override
+        public void minimize() {
+            calls.add("minimize");
+        }
+
+        @Override
+        public int width() {
+            return 100;
+        }
+
+        @Override
+        public int height() {
+            return 100;
+        }
+
+        @Override
+        public boolean pumpEvents() {
+            return true;
+        }
+
+        @Override
+        public void show() {
+        }
+
+        @Override
+        public boolean isKeyDown(dev.vexelray.os.Key key) {
+            return false;
+        }
+
+        @Override
+        public long createVulkanSurface(long vkInstance, java.lang.foreign.MemorySegment vkGetInstanceProcAddr) {
+            return 0L;
+        }
+
+        @Override
+        public long osHandle() {
+            return 0L;
+        }
+
+        @Override
+        public void close() {
         }
     }
 }

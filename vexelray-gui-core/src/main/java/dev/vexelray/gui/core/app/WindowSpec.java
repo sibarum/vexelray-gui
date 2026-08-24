@@ -47,18 +47,41 @@ public record WindowSpec(WindowConfig config, Gui gui, Consumer<NativeWindow> on
         return new WindowSpec(config, gui, null, null, null);
     }
 
-    /** This spec, with {@code onCreated} run once the OS window exists. */
+    /**
+     * This spec, with {@code onCreated} run once the OS window exists. <b>Adds to</b> whatever this spec
+     * already runs there rather than replacing it, in the order the calls were made.
+     *
+     * <p>Composing rather than replacing is what lets a component wire <em>itself</em> into a window an
+     * application is still describing — a {@code TitleBar} binding its caption buttons to the window it ends up
+     * in, say — without the two silently overwriting each other depending on which was chained last. The
+     * moments are notifications, and there is no reason two parties may not both want to hear one.
+     */
     public WindowSpec onCreated(Consumer<NativeWindow> onCreated) {
-        return new WindowSpec(config, gui, onCreated, onClosed, onCloseRequest);
+        return new WindowSpec(config, gui, andThen(this.onCreated, onCreated), onClosed, onCloseRequest);
     }
 
-    /** This spec, with {@code onClosed} run once the window is gone. */
+    /** This spec, with {@code onClosed} run once the window is gone. Adds, as {@link #onCreated} does. */
     public WindowSpec onClosed(Runnable onClosed) {
-        return new WindowSpec(config, gui, onCreated, onClosed, onCloseRequest);
+        return new WindowSpec(config, gui, onCreated, andThen(this.onClosed, onClosed), onCloseRequest);
     }
 
-    /** This spec, with a say in whether this window closes at all. */
+    /**
+     * This spec, with a say in whether this window closes at all. <b>Replaces</b>, where the two above add:
+     * a close request is a decision and not a notification, and two handlers each answering the same
+     * {@link CloseRequest} is a bug rather than a feature.
+     */
     public WindowSpec onCloseRequest(Consumer<CloseRequest> onCloseRequest) {
         return new WindowSpec(config, gui, onCreated, onClosed, onCloseRequest);
+    }
+
+    private static Consumer<NativeWindow> andThen(Consumer<NativeWindow> first, Consumer<NativeWindow> next) {
+        return next == null ? first : first.andThen(next);
+    }
+
+    private static Runnable andThen(Runnable first, Runnable next) {
+        return next == null ? first : () -> {
+            first.run();
+            next.run();
+        };
     }
 }

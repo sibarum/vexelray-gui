@@ -136,6 +136,13 @@ public final class Gui implements AutoCloseable {
     private volatile LayoutSnapshot latestLayout = LayoutSnapshot.EMPTY;
     private long layoutVersion;
     private final LayoutReader layoutReader = () -> latestLayout;
+    /**
+     * Geometry observers by node id (§ {@link #onResize}). Registered from any thread — a tree is often built
+     * off the GUI thread — and delivered from {@link #publishLayout}, so the map is concurrent while each
+     * watch's remembered box is read and written on the GUI thread alone.
+     */
+    private final java.util.concurrent.ConcurrentMap<Long, ResizeWatch> resizeWatches =
+            new java.util.concurrent.ConcurrentHashMap<>();
     private float lastViewportW = -1f;
     private float lastViewportH = -1f;
     private float lastLayoutW = -1f;
@@ -508,6 +515,51 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
+     * Observe {@code node}'s computed geometry: the handler is called with its {@link NodeLayout} whenever the
+     * node's box changes, <b>including the first time it has one</b>. Runs on a worker thread.
+     *
+     * <p><b>This is the seam for "my geometry is real now".</b> Everything else a node can be told about is
+     * input; geometry was observable only by polling {@link Node#layout} or by subscribing to {@link #layout()}
+     * and diffing, and an application that did neither had no way to know when its box arrived. The failure that
+     * produces is silent — code that runs too early reads {@link NodeLayout#ABSENT}, does nothing, reports
+     * nothing, and is never asked again — which is why it belongs in the framework rather than in each
+     * application's notes.
+     *
+     * <p><b>Lifecycle callbacks are not a substitute, and neither is the window.</b> {@code WindowSpec.onCreated}
+     * means the OS window exists; nothing has been measured yet, so a node's box is still absent there. The first
+     * call to this handler is the moment after that — and because it is an observer rather than a one-shot, the
+     * same registration also covers every later window resize, zoom change and DPI change, which a
+     * "first frame" callback would not.
+     *
+     * <p>Only a change of <em>box</em> fires it: the border rect and the content rect are compared, so scrolling
+     * a container does not (its viewport did not move, its contents did). A node laid out to zero — inside a
+     * hidden parent, say — is reported honestly as zero rather than withheld; a consumer that cannot draw at
+     * that size checks and waits for the next call.
+     */
+    public Gui onResize(Node node, java.util.function.Consumer<NodeLayout> handler) {
+        return watchResize(node, handler, false);
+    }
+
+    /**
+     * As {@link #onResize}, delivered on the GUI thread inside the layout pass that produced the change, in the
+     * ordered lane the {@code *Ui} seams share — for a handler whose work has to land in the same frame as the
+     * layout it reacts to. It runs while the framework holds the frame, so it must be short: measure, mutate a
+     * handle, return. Anything that computes belongs on {@link #onResize}.
+     */
+    public Gui onResizeUi(Node node, java.util.function.Consumer<NodeLayout> handler) {
+        return watchResize(node, handler, true);
+    }
+
+    private Gui watchResize(Node node, java.util.function.Consumer<NodeLayout> handler, boolean ordered) {
+        if (handler == null) {
+            resizeWatches.remove(node.id());
+            return this;
+        }
+        resizeWatches.put(node.id(), new ResizeWatch(handler, ordered));
+        return this;
+    }
+
+    /**
      * Register a key handler for {@code node} (which becomes focusable). Fires with each key press while the node
      * holds focus, after shortcuts and Tab traversal have had first refusal. Runs on a worker thread.
      */
@@ -570,9 +622,9 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
-     * Drop every input registration {@code node} holds — handlers, ordered stages, claims, focusability — and
-     * clear focus if it held it. Removing a node does this automatically; this is for releasing a node's
-     * registrations while keeping the node.
+     * Drop every registration {@code node} holds — input handlers, ordered stages, claims, focusability, and its
+     * geometry observer — and clear focus if it held it. Removing a node does this automatically; this is for
+     * releasing a node's registrations while keeping the node.
      */
     public Gui releaseNode(Node node) {
         releaseNodeId(node.id());
@@ -582,6 +634,7 @@ public final class Gui implements AutoCloseable {
     /** The reconciler's removal seam: everything keyed by a node id is dropped when the node leaves the tree. */
     private void releaseNodeId(long id) {
         input.clearHandlers(id);
+        resizeWatches.remove(id);
     }
 
     /** Make {@code node} focusable (reachable by click and Tab) without a key handler — e.g. a button. */
@@ -1040,7 +1093,53 @@ public final class Gui implements AutoCloseable {
         collectLayout(root, nodes);
         LayoutSnapshot snap = new LayoutSnapshot(++layoutVersion, nodes);
         latestLayout = snap;             // volatile: Node.layout() reads this lock-free from any thread
+        deliverResizes(snap);            // before the State commit, so a handler's edits ride the same drain
         layoutState.commit(setLayout, snap);
+    }
+
+    /**
+     * Tell each geometry observer whose box moved. Runs on the GUI thread, once per published layout, and does
+     * nothing at all when nobody is watching — the common case, and the reason this can sit on the frame path.
+     */
+    private void deliverResizes(LayoutSnapshot snap) {
+        if (resizeWatches.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<Long, ResizeWatch> entry : resizeWatches.entrySet()) {
+            NodeLayout computed = snap.node(entry.getKey());
+            if (!computed.present()) {
+                continue;                // not in the tree (or not laid out yet): there is no box to report
+            }
+            ResizeWatch watch = entry.getValue();
+            if (computed.rect().equals(watch.box) && computed.content().equals(watch.content)) {
+                continue;
+            }
+            // Recorded before delivery, not after: an ordered handler may mutate, and a mutation that lands in
+            // this same frame must not be able to make the next pass look like a change we already announced.
+            watch.box = computed.rect();
+            watch.content = computed.content();
+            if (watch.ordered) {
+                watch.handler.accept(computed);
+            } else {
+                handlers.execute(() -> watch.handler.accept(computed));
+            }
+        }
+    }
+
+    /**
+     * One geometry observer: where to send it, and the box it was last told about. The two rects are the
+     * comparison, so a scroll — which moves contents inside an unchanged viewport — is not a resize.
+     */
+    private static final class ResizeWatch {
+        private final java.util.function.Consumer<NodeLayout> handler;
+        private final boolean ordered;
+        private Rect box;
+        private Rect content;
+
+        ResizeWatch(java.util.function.Consumer<NodeLayout> handler, boolean ordered) {
+            this.handler = handler;
+            this.ordered = ordered;
+        }
     }
 
     private static void collectLayout(RetainedNode n, Map<Long, NodeLayout> out) {

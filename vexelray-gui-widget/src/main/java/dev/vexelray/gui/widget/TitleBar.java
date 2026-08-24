@@ -4,6 +4,7 @@ import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.WindowControls;
 import dev.vexelray.gui.core.WindowRegion;
+import dev.vexelray.gui.core.app.WindowSpec;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
@@ -130,6 +131,32 @@ public final class TitleBar {
         this.controls = controls == null ? WindowControls.NONE : controls;
         syncMaximized();
         return this;
+    }
+
+    /**
+     * Have this bar command whatever window {@code spec} opens, for as long as it is open — the binding above,
+     * performed by the framework rather than by hand.
+     *
+     * <p>The two lines this replaces were written identically at every window of every application, because a
+     * bar is necessarily built before the window it belongs to: the tree outlives the window, so the buttons
+     * command {@link WindowControls#NONE} until something points them at the real one, and must go back to
+     * commanding nothing when it closes or they are left holding a destroyed handle. Forgetting either is
+     * silent — a caption that draws perfectly and does nothing — and every application that got it right got it
+     * right in the same way.
+     *
+     * <p>It composes, so it can be applied to a spec that already has lifecycle callbacks of its own, in any
+     * order:
+     * {@snippet :
+     * app.window("plot", () -> titleBar.commands(WindowSpec.of(config, gui)
+     *         .onCreated(this::restorePlacement)));
+     * }
+     *
+     * <p>Not for the <b>main</b> window: that one exists before its tree is handed over, so its bar takes
+     * {@code GuiApp.controls()} directly and there is no moment to wait for.
+     */
+    public WindowSpec commands(WindowSpec spec) {
+        return spec.onCreated(window -> controls(WindowControls.of(window)))
+                   .onClosed(() -> controls(WindowControls.NONE));
     }
 
     /** Change the title shown. */

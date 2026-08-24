@@ -257,6 +257,16 @@ What sits between the GUI and the OS, all driven from the one main-thread loop:
   get/put (including ordered lists, e.g. the open files), explicit atomic `save()`, and every failure
   mode (missing, malformed, corrupt) degrades to defaults — never an exception at launch. The demo
   round-trips its window bounds through `~/.vexelray-demo/session.properties`.
+- **`WindowMemory`** — where each window was, across restarts, on top of `Settings`. Name a window and
+  it gets three lines: `config(key, title, w, h)` for the `WindowConfig` it is *created* with,
+  `restoreBounds` in `onCreated` for a reopen (a named window's spec is built once, so its config is a
+  stale rectangle by then), and `watch(key, window[, gui])` to follow it. Then `poll()` each frame and
+  `save()` at shutdown. It carries the four things every application otherwise reimplements: a clamp
+  through `WorkArea.fit` so bounds saved on a desk that has since changed shape cannot strand a window
+  off-screen; maximized kept *apart* from the bounds it would otherwise destroy; a debounce, so a drag
+  is one write rather than four hundred; and open-ness *polled* rather than written on close, which is
+  what makes quitting with a tool window up distinguishable from closing it by hand. Pass the window's
+  `Gui` to `watch` and the user's zoom is remembered too, restored before the first frame.
 - **Native file dialogs** (`vexelray-gui-nfd`) — open/save/pick-folder as `Optional<Path>`, bound
   straight to the window handle.
 

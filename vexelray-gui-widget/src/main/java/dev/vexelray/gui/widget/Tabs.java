@@ -15,7 +15,6 @@ import sibarum.tactroller.api.Key;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.DoubleConsumer;
 import java.util.function.IntConsumer;
 
 /**
@@ -124,21 +123,6 @@ public final class Tabs {
      */
     public record Change(Node outgoing, Node incoming, boolean incomingOnTop) { }
 
-    /**
-     * Where the time comes from: drive {@code progress} from 0 to 1 and then call {@code done}. Sole purpose is
-     * to keep this module clock-free — {@code vexelray-gui-krono} can satisfy it with
-     * {@code (p, done) -> krono.ramp(ms(160), Ease.OUT_CUBIC, p, done)} without either module naming the other,
-     * because the only types crossing the seam are a {@link DoubleConsumer} and a {@link Runnable}.
-     */
-    @FunctionalInterface
-    public interface Ramp {
-        /**
-         * Drive {@code progress} over [0,1] and call {@code done} once at the end. Deliver both endpoints
-         * exactly: a ramp sampled only at frame boundaries is already a frame into its duration by the first
-         * one, so a consumer that never sees 0 starts by jumping to wherever that first sample landed.
-         */
-        void run(DoubleConsumer progress, Runnable done);
-    }
 
     /**
      * How much faster the leaving page goes than the arriving one comes: it is gone by {@code 1/LEAVE_RATE} of

@@ -298,8 +298,8 @@ class TabTransitionTest {
 
     // ------------------------------------------------------------------ the crossfade itself
 
-    /** A {@link Tabs.Ramp} the test steps by hand — standing in for a frame clock, which is all a ramp ever is. */
-    private static final class Steps implements Tabs.Ramp {
+    /** A {@link Ramp} the test steps by hand — standing in for a frame clock, which is all a ramp ever is. */
+    private static final class Steps implements Ramp {
         DoubleConsumer progress;
         Runnable done;
 

@@ -690,8 +690,17 @@ exists as siblings, so those steps are *integration*, not construction.
     assumption acquires an exception. **The trigger is the first `writeTo(file)`, not a peer running old
     code.**
 
-Still open: layout-animation path (size/position via `onChange`) first-class vs. transform-layer-only
-for v1; group membership static vs. dynamic; choreographer interruption semantics (the settle-first rule
+Settled by use rather than by decision: the layout-animation path is **not** first-class, and a widget that
+needs one animates a real length itself — `TreeView` opens a subtree by driving its container's height, so
+the flex pass genuinely runs per frame. That is the mechanism the effect requires, not a shortcut around
+the transform layer: displacing the rows below with a transform would move them without making room, so the
+tree's own extent, its overflow and its scrollbar would all describe a tree that is not the one on screen.
+What made it cheap is a property of the widget, not of the framework — rows are a fixed `em` tall, so a
+subtree's height is exact arithmetic over counts the widget already keeps, and it never has to show content
+to find out how big it is. A widget without that property would still face the measure-then-animate problem,
+which is the thing a first-class path would have to solve and the reason not to generalise from one case.
+
+Still open: group membership static vs. dynamic; choreographer interruption semantics (the settle-first rule
 in §7 covers a single transition, not a multi-node choreography mid-flight); whether tree
 mutations ever share a bus instance with cross-component traffic or always use a private internal topic
 (currently: shared bus, private topic name).

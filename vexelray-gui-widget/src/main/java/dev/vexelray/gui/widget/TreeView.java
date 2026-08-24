@@ -96,6 +96,17 @@ public final class TreeView<T> implements AutoCloseable {
         boolean materialized;    // whether Source.children has been asked
         final List<Row> children = new ArrayList<>();
 
+        /**
+         * How far this row's subtree is open, 0 to 1 — the whole of the animation state, and a fraction rather
+         * than a flag so that a subtree caught mid-open can be reversed from wherever it got to instead of
+         * snapping. At rest it is exactly 0 or 1 and {@link #kidsBox} carries no height of its own.
+         */
+        float openness;
+        float animFrom;
+        float animTo;
+        /** Bumped per animation, so a ramp still running for a superseded toggle finds nothing to write. */
+        long animGen;
+
         Row(T item, Row parent) {
             this.item = item;
             this.parent = parent;
@@ -152,6 +163,9 @@ public final class TreeView<T> implements AutoCloseable {
 
     /** All state below is guarded by {@code this}. The GUI-thread stages and the handler executor both mutate
      *  it; the monitor makes their transitions atomic, and every callback leaves the monitor before dispatch. */
+    /** How expand and collapse are timed, or null for the instant flip. See {@link #motion}. */
+    private volatile Ramp motion;
+
     private final List<Row> rootRows = new ArrayList<>();
     private final Map<T, Row> rowsByItem = new HashMap<>();
     private final List<Row> visible = new ArrayList<>();
@@ -195,6 +209,15 @@ public final class TreeView<T> implements AutoCloseable {
     /** The node to place in a layout (size it there — the tree fills whatever box it is given). */
     public Node node() {
         return root;
+    }
+
+    /**
+     * The row strip drawn for {@code item}, or null if it has no row — package-private, so a test can aim at a
+     * row's laid-out geometry rather than guess at a pixel.
+     */
+    synchronized Node rowNode(T item) {
+        Row r = rowsByItem.get(item);
+        return r == null ? null : r.rowNode;
     }
 
     /** The selected item, or null when nothing is selected yet. */
@@ -429,12 +452,96 @@ public final class TreeView<T> implements AutoCloseable {
             refreshVisible();
             return;
         }
-        row.kidsBox.visible(row.expanded);
+        open(row, row.expanded ? 1f : 0f);
         refreshVisible();
         if (!row.expanded && selected != null && isUnder(selected, row)) {
             Row landed = row;
             gui.handlers().execute(() -> select(landed, true));
         }
+    }
+
+    /**
+     * Install the motion for expand and collapse: the subtree grows and shrinks over {@code ramp}, and everything
+     * below it slides to make room. Passing null, or never calling this, keeps the instant flip — which is what
+     * every tree here did before there was any motion, and what the reduced-motion path is.
+     *
+     * <p>Unlike the visual transforms, <b>this one is a layout animation</b>: the subtree's height is a real
+     * height, so the flex pass runs on every frame of it. That is the mechanism the effect requires rather than a
+     * shortcut — displacing the rows below with a transform would move them without making room, so the tree's
+     * own extent, its overflow and its scrollbar would all describe a tree that is not the one on screen.
+     */
+    public synchronized TreeView<T> motion(Ramp motion) {
+        this.motion = motion;
+        return this;
+    }
+
+    /**
+     * Take {@code row}'s subtree to {@code to} — 1 open, 0 shut — animating if a ramp is installed.
+     *
+     * <p>From wherever it currently is, not from the other end: toggling a subtree caught half-open reverses it
+     * from there. Anything else means a fast second click has to watch the subtree jump to a state it was never
+     * in before travelling back.
+     */
+    private void open(Row row, float to) {
+        long gen = ++row.animGen;
+        Ramp ramp = motion;
+        if (ramp == null || row.openness == to) {
+            settleOpen(row, gen, to);
+            return;
+        }
+        row.animFrom = row.openness;
+        row.animTo = to;
+        // Visible for the duration whichever way it is going — a subtree cannot be watched closing if it was
+        // hidden when the animation started — and clipped, because for the duration the box is shorter than what
+        // is inside it. Scrolling containers clip themselves; this one does not scroll and has to say so.
+        row.kidsBox.visible(true).clip(true);
+        stepOpen(row, gen, 0f);
+        ramp.run(p -> stepOpen(row, gen, (float) p), () -> settleOpen(row, gen, to));
+    }
+
+    /** One frame of an open/shut animation, ignored if the toggle it belongs to has been superseded. */
+    private synchronized void stepOpen(Row row, long gen, float p) {
+        if (gen != row.animGen) {
+            return;
+        }
+        float t = Math.max(0f, Math.min(1f, p));
+        row.openness = row.animFrom + (row.animTo - row.animFrom) * t;
+        row.kidsBox.height(Length.em(row.openness * contentEm(row)));
+    }
+
+    /**
+     * Put {@code row}'s subtree at rest: exactly open or exactly shut, with no height of its own.
+     *
+     * <p>Handing the height back to {@code AUTO} matters more than it looks. An explicit height is a promise
+     * about content that has not happened yet — materialising a subtree, renaming a row, a theme change that
+     * moves the row height — and a box still holding the number that was right when it stopped animating would
+     * quietly clip or gap. At rest the box is what is in it.
+     */
+    private synchronized void settleOpen(Row row, long gen, float to) {
+        if (gen != row.animGen) {
+            return;
+        }
+        row.openness = to;
+        row.kidsBox.clip(false).height(Length.AUTO).visible(to > 0f);
+    }
+
+    /**
+     * The height of {@code row}'s children container, in em, as it should be <em>right now</em>.
+     *
+     * <p>Exact arithmetic rather than a measurement, because every row is a fixed {@code ROW_EM} tall — which is
+     * what spares this the usual expand-animation dance of showing the content to find out how big it is and
+     * then hiding it again, always one frame too late to be invisible.
+     *
+     * <p>Recursive through {@code openness} so a subtree that is itself mid-animation contributes what it is
+     * currently showing, not what it would show when finished. Without that, opening a row inside a row that is
+     * still opening gives the outer box a height for content it does not yet have.
+     */
+    private float contentEm(Row row) {
+        float em = 0f;
+        for (Row child : row.children) {
+            em += ROW_EM + child.openness * contentEm(child);
+        }
+        return em;
     }
 
     /** Fetch and build {@code row}'s children — handler executor, so the source is free to touch a disk. */
@@ -452,7 +559,9 @@ public final class TreeView<T> implements AutoCloseable {
                 row.expanded = false;
                 row.disclosure.text(GLYPH_LEAF);
             }
-            row.kidsBox.visible(row.expanded);
+            // The animation starts here rather than at the toggle: until the fetch lands there is nothing to
+            // open, and a subtree animating to a height of zero content would be a flourish over an empty box.
+            open(row, row.expanded ? 1f : 0f);
             refreshVisible();
         }
     }

@@ -473,6 +473,11 @@ public final class Demo {
             }
         });
         files.node().width(Length.FILL).height(Length.FILL);
+        // Expanding a folder slides the rows below it down instead of teleporting them. OUT_CUBIC here, where
+        // the tab dissolve is linear, and the difference is the point: this is a distance being covered, and
+        // decelerating into the place it stops is what reads as weight. Opacity has no place to arrive at, so
+        // easing it only produces a stall.
+        files.motion((progress, done) -> krono.ramp(Dur.ms(200), Ease.OUT_CUBIC, progress, done));
 
         // A context menu on the tree: right-click a row and it opens at the pointer, floating over the page (a
         // floating last child of the root — no layer machinery, no reflow). Esc or a click elsewhere dismisses.

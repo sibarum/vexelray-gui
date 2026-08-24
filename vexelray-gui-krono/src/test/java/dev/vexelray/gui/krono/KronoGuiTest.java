@@ -87,7 +87,7 @@ class KronoGuiTest {
     /**
      * The bare ramp, and the reason it exists: a consumer that only wants <em>timing</em> should not have to hand
      * this module its widgets to get it. Both types crossing the seam are JDK types, so {@code gui-widget} can
-     * declare a hole of exactly this shape ({@code Tabs.Ramp}) and be filled by this method without either module
+     * declare a hole of exactly this shape ({@code Ramp}) and be filled by this method without either module
      * naming the other — which is what keeps the widget layer clock-free while its tabs still crossfade.
      */
     @Test

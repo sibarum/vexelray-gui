@@ -135,6 +135,26 @@ class SurfaceTest {
     }
 
     /**
+     * The view direction is a unit vector, it points downward into the scene, and it is the axis
+     * {@link Camera#depthKey} measures along — which is what lets a consumer use one of them for angle and the
+     * other for order without the two disagreeing.
+     */
+    @Test
+    void theViewDirectionIsOneVectorForTheWholePicture() {
+        Camera c = Camera.DEFAULT;
+        double[] v = c.viewDirection();
+        assertEquals(1, Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]), 1e-12, "a direction is a unit vector");
+        assertTrue(v[2] < 0, "the eye is above the floor, so it looks down");
+        // depth along the view direction, for a point on the floor, is the depth key -- one axis, two readings.
+        assertEquals(c.depthKey(0.3, -0.2) * Math.cos(c.pitch()),
+                0.3 * v[0] + -0.2 * v[1], 1e-12);
+        // Straight down at the top of the pitch range: nothing but z.
+        double[] overhead = new Camera(0, 10).viewDirection();
+        assertEquals(0, overhead[0], 1e-2);
+        assertTrue(overhead[2] < -0.99);
+    }
+
+    /**
      * The painting order depends on the floor and not on height — which is the whole reason the projection has
      * no perspective, and the assumption the surface renderer's occlusion rests on.
      */

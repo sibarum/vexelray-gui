@@ -83,6 +83,20 @@ public record Camera(double yaw, double pitch) {
     }
 
     /**
+     * The unit vector pointing from the eye into the scene, in the same normalised space {@link #project} takes
+     * its arguments in. {@code {x, y, z}}.
+     *
+     * <p><b>One vector for the whole picture</b>, which is the useful consequence of there being no perspective:
+     * under an orthographic projection every point is viewed along the same direction, so anything that depends
+     * on the angle between a surface and the eye — a Fresnel term, a reflection — needs this once rather than
+     * per point. It is also, by construction, the direction {@link #depthKey} measures along.
+     */
+    public double[] viewDirection() {
+        double cp = Math.cos(pitch);
+        return new double[]{cp * Math.sin(yaw), cp * Math.cos(yaw), -Math.sin(pitch)};
+    }
+
+    /**
      * The half-extent, in projected units, of the normalised unit box seen from here — {@code {u, v}}. What a
      * viewport divides by to make the whole volume fit however it happens to be turned.
      */

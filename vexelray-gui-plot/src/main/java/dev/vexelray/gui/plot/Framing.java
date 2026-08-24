@@ -80,8 +80,31 @@ public final class Framing {
      * window — the "fit" command, for once the user has panned somewhere the original framing never saw.
      */
     public static Frame refit(Expr expr, Frame frame) {
-        double[] y = fitY(expr, frame);
+        double[] y = fit(sample(expr, frame));
         return frame.withY(y[0], y[1]);
+    }
+
+    /**
+     * The automatic volume for a surface: the default square floor about the origin, and a height measured
+     * across it.
+     *
+     * @param xName the name of the axis running left to right
+     * @param yName the name of the axis running into the picture
+     */
+    public static Volume automatic(Expr expr, String xName, String yName) {
+        return refit(expr, Volume.about(DEFAULT_HALF_WIDTH, DEFAULT_HALF_HEIGHT), xName, yName);
+    }
+
+    /**
+     * Re-fit the height of {@code volume} to what {@code expr} does across its floor — "fit", for a surface.
+     *
+     * <p>The policy is not re-argued for the third axis; it is the same preference applied to one more of them.
+     * What changes is only the shape of the sample: a grid rather than a row, {@link #SAMPLES} points across it
+     * in total so that framing a surface costs about what framing a curve does.
+     */
+    public static Volume refit(Expr expr, Volume volume, String xName, String yName) {
+        double[] z = fit(sample(expr, volume, xName, yName));
+        return volume.withZ(z[0], z[1]);
     }
 
     /**
@@ -102,9 +125,12 @@ public final class Framing {
         return snapped * magnitude;
     }
 
-    /** The fitted {@code [lo, hi]} for the frame's x window, by the policy in this class's documentation. */
-    private static double[] fitY(Expr expr, Frame over) {
-        List<Double> seen = sample(expr, over);
+    /**
+     * The fitted {@code [lo, hi]} for a set of observed values, by the policy in this class's documentation.
+     * Both a curve's y and a surface's z arrive here — the policy is about a spread of numbers and does not
+     * know or care which axis they were measured along.
+     */
+    private static double[] fit(List<Double> seen) {
         if (seen.isEmpty()) {
             // Nothing bounded anywhere: every column is a pole or a gap. There is nothing to measure, and
             // guessing would only be a different way of being arbitrary.
@@ -153,6 +179,28 @@ public final class Framing {
         Endpoints collector = new Endpoints(seen);
         for (int i = 0; i < SAMPLES; i++) {
             expr.enclose(over.column(i, SAMPLES)).emitTo(collector);
+        }
+        return seen;
+    }
+
+    /**
+     * The same measurement over a surface's floor: a square grid of about {@link #SAMPLES} cells, so framing a
+     * surface costs what framing a curve does rather than the square of it.
+     */
+    private static List<Double> sample(Expr expr, Volume over, String xName, String yName) {
+        int side = Math.max(2, (int) Math.round(Math.sqrt(SAMPLES)));
+        List<Double> seen = new ArrayList<>(2 * side * side);
+        Endpoints collector = new Endpoints(seen);
+        double xStep = over.xWidth() / side;
+        double yStep = over.yDepth() / side;
+        for (int ix = 0; ix < side; ix++) {
+            Interval xs = new Interval(BigDecimal.valueOf(over.xLo() + ix * xStep),
+                                       BigDecimal.valueOf(over.xLo() + (ix + 1) * xStep));
+            for (int iy = 0; iy < side; iy++) {
+                Interval ys = new Interval(BigDecimal.valueOf(over.yLo() + iy * yStep),
+                                           BigDecimal.valueOf(over.yLo() + (iy + 1) * yStep));
+                expr.enclose(Cell.of(xName, xs, yName, ys)).emitTo(collector);
+            }
         }
         return seen;
     }

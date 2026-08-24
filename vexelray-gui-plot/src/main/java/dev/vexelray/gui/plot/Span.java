@@ -53,7 +53,25 @@ public interface Span {
      * columns of x are being asked about.
      */
     static Span of(Enclosure enclosure, Frame frame) {
-        return Classification.of(enclosure, frame);
+        return of(enclosure, frame.yLo(), frame.yHi());
+    }
+
+    /**
+     * Classify {@code enclosure} against a bare visible extent — the same clipping, without a rectangle around
+     * it.
+     *
+     * <p>This is the form a surface needs. A cell of {@code (x, y)} encloses to a range of {@code z}, and a
+     * range of {@code z} clipped to the visible depth is the <em>same three answers</em> a column's range of
+     * {@code y} gives: a bounded stretch, a fill, or nothing. So the classification is not generalised for the
+     * third dimension, only un-narrowed — {@link Frame} was never doing anything with x here.
+     *
+     * <p>Pure, and cheap — everything expensive happened in {@link Expr#enclose}. That split is what lets a
+     * viewport be moved along the classified axis without re-evaluating anything: the enclosures are in plot
+     * space and do not depend on the extent, so a cache of them survives every transform except one that
+     * changes which region of the domain is being asked about.
+     */
+    static Span of(Enclosure enclosure, double visibleLo, double visibleHi) {
+        return Classification.of(enclosure, visibleLo, visibleHi);
     }
 
     /**

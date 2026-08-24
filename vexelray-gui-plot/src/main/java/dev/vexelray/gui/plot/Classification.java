@@ -13,37 +13,40 @@ import java.math.BigDecimal;
 final class Classification implements Enclosure.Sink {
 
     private Span span = Span.BLANK;
-    private final Frame frame;
+    /** The visible extent the enclosure is clipped to: a frame's y range, or a volume's z range. */
+    private final double visibleLo;
+    private final double visibleHi;
 
-    private Classification(Frame frame) {
-        this.frame = frame;
+    private Classification(double visibleLo, double visibleHi) {
+        this.visibleLo = visibleLo;
+        this.visibleHi = visibleHi;
     }
 
-    static Span of(Enclosure enclosure, Frame frame) {
-        Classification c = new Classification(frame);
+    static Span of(Enclosure enclosure, double visibleLo, double visibleHi) {
+        Classification c = new Classification(visibleLo, visibleHi);
         enclosure.emitTo(c);
         return c.span;
     }
 
     /**
-     * Clip {@code [lo, hi]} to the frame. Wholly above or wholly below is blank — the curve exists, but not
-     * here — and anything overlapping keeps the overlapping part.
+     * Clip {@code [lo, hi]} to the visible extent. Wholly above or wholly below is blank — the curve exists, but
+     * not here — and anything overlapping keeps the overlapping part.
      *
-     * <p>The comparison is done in {@code double} even though the endpoints are exact. That is sound: the frame
-     * is itself a {@code double} rectangle, so the question being asked is already a {@code double} question,
-     * and {@code BigDecimal.doubleValue} of an out-of-range endpoint saturates to an infinity, which compares
-     * the right way round.
+     * <p>The comparison is done in {@code double} even though the endpoints are exact. That is sound: the extent
+     * is itself a pair of {@code double}s, so the question being asked is already a {@code double} question, and
+     * {@code BigDecimal.doubleValue} of an out-of-range endpoint saturates to an infinity, which compares the
+     * right way round.
      */
     @Override
     public void bounded(BigDecimal lo, BigDecimal hi) {
         double low = lo.doubleValue();
         double high = hi.doubleValue();
-        if (high < frame.yLo() || low > frame.yHi()) {
+        if (high < visibleLo || low > visibleHi) {
             span = Span.BLANK;
             return;
         }
-        double top = frame.fractionOf(Math.min(high, frame.yHi()));
-        double bottom = frame.fractionOf(Math.max(low, frame.yLo()));
+        double top = fractionOf(Math.min(high, visibleHi));
+        double bottom = fractionOf(Math.max(low, visibleLo));
         // Clamp rather than trust the arithmetic: the two mins above make the fractions lie in [0, 1]
         // mathematically, and rounding at the edge of a very tall frame is the one way they would not.
         span = new Span.Curve(clamp01(top), clamp01(bottom));
@@ -57,6 +60,11 @@ final class Classification implements Enclosure.Sink {
     @Override
     public void undefined() {
         span = Span.BLANK;
+    }
+
+    /** Where {@code v} falls down the extent: 0 at the top, 1 at the bottom — {@link Frame#fractionOf}'s law. */
+    private double fractionOf(double v) {
+        return (visibleHi - v) / (visibleHi - visibleLo);
     }
 
     private static double clamp01(double v) {

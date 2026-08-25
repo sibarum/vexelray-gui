@@ -199,16 +199,23 @@ public final class GuiApp implements AutoCloseable {
      * to be saved again. It also carries {@link NativeWindow#requestClose()}, which is how a popup closes itself
      * — through the ordinary route, so the loop tears it down on its own terms and {@code onClosed} still runs.
      *
-     * <p>The config's {@code owner} is ignored: a popup is owned by the main window by definition, and this
-     * substitutes the right handle when the window is created. Never call {@link NativeWindow#close()} on the
-     * window — that destroys OS resources the loop is still presenting to.
+     * <p>The config's {@code owner} is ignored: a popup is owned by the main window by definition
+     * ({@link Standing#SATELLITE}), and this substitutes the right handle when the window is created. A second
+     * window that should <em>not</em> sit above the main one is not a popup — open it through
+     * {@link #requestWindow} or {@link #window}, which stand beside it. Never call {@link NativeWindow#close()}
+     * on the window — that destroys OS resources the loop is still presenting to.
      */
     public void requestPopup(WindowConfig config, Gui popupGui,
                              java.util.function.Consumer<NativeWindow> onCreated, Runnable onClosed) {
-        requestWindow(WindowSpec.of(config, popupGui).onCreated(onCreated).onClosed(onClosed));
+        requestWindow(WindowSpec.of(config, popupGui).onCreated(onCreated).onClosed(onClosed)
+                .standing(Standing.SATELLITE));
     }
 
-    /** Open an anonymous window from a full {@link WindowSpec} — {@code requestPopup} with every seam declared. */
+    /**
+     * Open an anonymous window from a full {@link WindowSpec} — {@code requestPopup} with every seam declared,
+     * including whether the window stands above the main one or beside it ({@link WindowSpec#standing}, which
+     * defaults to beside).
+     */
     public void requestWindow(WindowSpec spec) {
         post(() -> openWindow(spec, null));
     }
@@ -318,17 +325,17 @@ public final class GuiApp implements AutoCloseable {
     }
 
     /**
-     * Create a window for {@code spec} now, on the main thread: the OS window (owned by the main window), its
-     * input backend, and its place in the frame loop. {@code owner} is the named handle to keep in step, or null
-     * for an anonymous popup.
+     * Create a window for {@code spec} now, on the main thread: the OS window, its input backend, and its place
+     * in the frame loop. {@code owner} is the named handle to keep in step, or null for an anonymous popup.
      */
     OpenWindow openWindow(WindowSpec spec, AppWindow owner) {
-        // Owned by the main window: one taskbar icon for the whole application, the window always above its
-        // owner, and the group raised together when any of its windows is activated — the OS does all of that
-        // from this one argument. Ownership also destroys the window with the owner; that arrives here as the
-        // window's own pump reporting closed, the same path as its close button.
+        // The spec's Standing decides whether this window is a satellite of the main window — above it always,
+        // sharing its taskbar button, minimized and destroyed with it — or a peer with its own place in the
+        // stack, which the main window can be brought in front of. Nothing after creation can change it: the
+        // OS settles a window's standing from the owner it was created with. A satellite that goes away with
+        // its owner arrives back here as its own pump reporting closed, the same path as its close button.
         GuiWindow w = new GuiWindow(platform, instance, device, atlas, text, measurer, spec.gui(),
-                spec.config().ownedBy(main.osHandle()));
+                spec.standing().place(spec.config(), main.osHandle()));
         WindowInput input = inputs.attach(w.window, spec.gui());
         OpenWindow entry = new OpenWindow(w, input, spec, owner);
         open.add(entry);

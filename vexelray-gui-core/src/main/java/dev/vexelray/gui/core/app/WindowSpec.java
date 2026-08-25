@@ -23,9 +23,11 @@ import java.util.function.Consumer;
  * @param onClosed       run on the main thread after the window is gone
  * @param onCloseRequest asked before this window closes, on the handler executor; {@code null} means a close
  *                       just closes (see {@link CloseRequest})
+ * @param standing       where this window stands relative to the main one — beside it or above it
+ *                       ({@link Standing}); {@code null} means {@link Standing#PEER}
  */
 public record WindowSpec(WindowConfig config, Gui gui, Consumer<NativeWindow> onCreated, Runnable onClosed,
-                         Consumer<CloseRequest> onCloseRequest) {
+                         Consumer<CloseRequest> onCloseRequest, Standing standing) {
 
     public WindowSpec {
         if (config == null) {
@@ -40,11 +42,14 @@ public record WindowSpec(WindowConfig config, Gui gui, Consumer<NativeWindow> on
         if (onClosed == null) {
             onClosed = () -> { };
         }
+        if (standing == null) {
+            standing = Standing.PEER;
+        }
     }
 
-    /** A window showing {@code gui}, with nothing to do at its lifecycle moments. */
+    /** A window showing {@code gui}, with nothing to do at its lifecycle moments, standing beside the main one. */
     public static WindowSpec of(WindowConfig config, Gui gui) {
-        return new WindowSpec(config, gui, null, null, null);
+        return new WindowSpec(config, gui, null, null, null, null);
     }
 
     /**
@@ -57,12 +62,12 @@ public record WindowSpec(WindowConfig config, Gui gui, Consumer<NativeWindow> on
      * moments are notifications, and there is no reason two parties may not both want to hear one.
      */
     public WindowSpec onCreated(Consumer<NativeWindow> onCreated) {
-        return new WindowSpec(config, gui, andThen(this.onCreated, onCreated), onClosed, onCloseRequest);
+        return new WindowSpec(config, gui, andThen(this.onCreated, onCreated), onClosed, onCloseRequest, standing);
     }
 
     /** This spec, with {@code onClosed} run once the window is gone. Adds, as {@link #onCreated} does. */
     public WindowSpec onClosed(Runnable onClosed) {
-        return new WindowSpec(config, gui, onCreated, andThen(this.onClosed, onClosed), onCloseRequest);
+        return new WindowSpec(config, gui, onCreated, andThen(this.onClosed, onClosed), onCloseRequest, standing);
     }
 
     /**
@@ -71,7 +76,16 @@ public record WindowSpec(WindowConfig config, Gui gui, Consumer<NativeWindow> on
      * {@link CloseRequest} is a bug rather than a feature.
      */
     public WindowSpec onCloseRequest(Consumer<CloseRequest> onCloseRequest) {
-        return new WindowSpec(config, gui, onCreated, onClosed, onCloseRequest);
+        return new WindowSpec(config, gui, onCreated, onClosed, onCloseRequest, standing);
+    }
+
+    /**
+     * This spec, with the given {@link Standing} — {@link Standing#SATELLITE} for a window that belongs above
+     * the main one and stays above it however the user clicks. <b>Replaces</b>, like {@link #onCloseRequest}
+     * and for the same reason: a window has one place in the stack, and it is settled once, at creation.
+     */
+    public WindowSpec standing(Standing standing) {
+        return new WindowSpec(config, gui, onCreated, onClosed, onCloseRequest, standing);
     }
 
     private static Consumer<NativeWindow> andThen(Consumer<NativeWindow> first, Consumer<NativeWindow> next) {

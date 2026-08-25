@@ -4,6 +4,7 @@ import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.WindowControls;
 import dev.vexelray.gui.core.app.GuiApp;
+import dev.vexelray.gui.core.app.Standing;
 import dev.vexelray.gui.core.app.WindowSpec;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
@@ -216,6 +217,9 @@ public final class Modals implements AutoCloseable {
         WindowConfig config = WindowConfig.of(modal.title(), width(modal), height(modal))
                 .decorations(Decorations.CLIENT);
         app.requestWindow(WindowSpec.of(config, gui)
+                // Above every window of the application, always: a modal the user can click behind the window it
+                // is blocking is a trap — the application stops responding and the reason for it is out of sight.
+                .standing(Standing.SATELLITE)
                 .onCreated(window -> {
                     current.window().set(window);
                     bar.controls(WindowControls.of(window));   // the chrome commands *this* window

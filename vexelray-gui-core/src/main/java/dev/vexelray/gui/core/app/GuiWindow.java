@@ -2,6 +2,7 @@ package dev.vexelray.gui.core.app;
 
 import dev.vexelray.canvas.Canvas;
 import dev.vexelray.canvas.CanvasShader;
+import dev.vexelray.canvas.CanvasVertex;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.layout.TextMeasurer;
 import dev.vexelray.gui.core.model.RetainedNode;
@@ -51,7 +52,22 @@ import dev.vexelray.vulkan.vk.VulkanInstance;
  */
 final class GuiWindow implements AutoCloseable {
 
-    private static final int CAPACITY_FLOATS = 512 * 1024;
+    /**
+     * The per-window vertex buffer, in floats. Host-visible and rewritten once a frame, so it is the ceiling on
+     * how complicated one window's picture may be.
+     *
+     * <p>Worth doing the arithmetic rather than picking a round number. At 23 floats a vertex and six vertices a
+     * quad, a quad is 138 floats: this is about thirty thousand of them. An ordinary dense UI is a few hundred;
+     * a plot that draws a surface out of boxes is tens of thousands, which is how the previous figure of 512K —
+     * under four thousand quads — was found, by a window dying on it mid-frame.
+     *
+     * <p>Sixteen megabytes of host-visible memory is not a meaningful cost on any device that can run this. The
+     * real fix is a buffer that <b>grows</b>; until it does, {@link #draw} degrades rather than throws.
+     */
+    private static final int CAPACITY_FLOATS = 4 * 1024 * 1024;
+
+    /** Said once, not once a frame: a window over budget is over budget for as long as it is on screen. */
+    private boolean warnedOverCapacity;
 
     final NativeWindow window;
     /** The tree shown in this window. Set at creation for popups; bound by {@code run} for the main window. */
@@ -150,8 +166,31 @@ final class GuiWindow implements AutoCloseable {
         if (root != null) {
             TreeRenderer.emit(root, canvas, text, gui.theme());
         }
-        vertexBuffer.update(canvas.toVertexArray());
-        presenter.setVertexCount(canvas.vertexCount());
+        emit(canvas.toVertexArray(), canvas.vertexCount());
+    }
+
+    /**
+     * Hand one frame's vertices to the GPU, dropping the tail if there are more than the buffer holds.
+     *
+     * <p>A picture too complicated to draw is a bad frame; it is not a reason for the application to stop. The
+     * old behaviour threw out of the render loop and took the process with it, which turns "this plot is denser
+     * than the buffer expected" into a crash with a stack trace about Vulkan — from which nothing about the
+     * actual cause is apparent. Truncating loses the primitives emitted last, which are the nearest ones, so a
+     * frame over budget is visibly wrong rather than quietly wrong. It says so once, with the numbers, because a
+     * cap nobody is told about reads as a rendering bug.
+     */
+    private void emit(float[] vertices, int vertexCount) {
+        int room = (int) (vertexBuffer.capacityFloats() / CanvasVertex.FLOATS_PER_VERTEX);
+        if (vertexCount > room) {
+            if (!warnedOverCapacity) {
+                warnedOverCapacity = true;
+                System.err.println("vexelray-gui: window needs " + vertexCount + " vertices and the buffer holds "
+                        + room + "; drawing what fits. Raise GuiWindow.CAPACITY_FLOATS or draw less.");
+            }
+            vertexCount = room;
+        }
+        vertexBuffer.update(vertices, vertexCount * CanvasVertex.FLOATS_PER_VERTEX);
+        presenter.setVertexCount(vertexCount);
     }
 
     /**

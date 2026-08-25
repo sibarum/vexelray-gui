@@ -18,6 +18,7 @@ import dev.vexelray.text.TextLayout;
 import dev.vexelray.vulkan.present.AtlasTexture;
 import dev.vexelray.vulkan.present.GraphicsPipeline;
 import dev.vexelray.vulkan.present.OffscreenDraw;
+import dev.vexelray.vulkan.present.SampledImage;
 import dev.vexelray.vulkan.present.VertexBuffer;
 import dev.vexelray.vulkan.present.VulkanRenderPass;
 import dev.vexelray.vulkan.present.VulkanSwapchain;
@@ -53,6 +54,7 @@ public final class GuiApp implements AutoCloseable {
     private final VulkanInstance instance;
     private final VulkanDevice device;
     private final AtlasTexture atlas;
+    private final AtlasTexture noImage;
     private final TextLayout[] text;
     private final TextMeasurer measurer;
 
@@ -121,10 +123,13 @@ public final class GuiApp implements AutoCloseable {
         int[] atlasSize = new int[2];
         byte[] atlasRgba = loadAtlasRgba(atlasSize);
         this.atlas = new AtlasTexture(device, atlasSize[0], atlasSize[1], atlasRgba);
+        // One placeholder for the device, not one per window: every window's canvas pipeline is built against the
+        // same layout, and every span that draws no image binds this same 1x1 white.
+        this.noImage = AtlasTexture.placeholder(device);
         this.text = faces(AtlasData.loadFromResource(ATLAS_JSON));
         this.measurer = measurer(text);
 
-        this.main = new GuiWindow(platform, instance, device, atlas, text, measurer, null,
+        this.main = new GuiWindow(platform, instance, device, atlas, noImage, text, measurer, null,
                 probe, probeSurface, config.decorations());
         this.controls = WindowControls.of(main.window);
     }
@@ -334,7 +339,7 @@ public final class GuiApp implements AutoCloseable {
         // stack, which the main window can be brought in front of. Nothing after creation can change it: the
         // OS settles a window's standing from the owner it was created with. A satellite that goes away with
         // its owner arrives back here as its own pump reporting closed, the same path as its close button.
-        GuiWindow w = new GuiWindow(platform, instance, device, atlas, text, measurer, spec.gui(),
+        GuiWindow w = new GuiWindow(platform, instance, device, atlas, noImage, text, measurer, spec.gui(),
                 spec.standing().place(spec.config(), main.osHandle()));
         WindowInput input = inputs.attach(w.window, spec.gui());
         OpenWindow entry = new OpenWindow(w, input, spec, owner);
@@ -428,6 +433,7 @@ public final class GuiApp implements AutoCloseable {
         open.clear();
         main.close();
         atlas.close();
+        noImage.close();
         device.close();
         instance.close();
     }
@@ -457,6 +463,7 @@ public final class GuiApp implements AutoCloseable {
         }
         float[] vertices = canvas.toVertexArray();
         int vertexCount = canvas.vertexCount();
+        List<Canvas.Run> runs = canvas.runs();
 
         NativePlatform platform = NativePlatform.current();
         try (VulkanInstance instance = new VulkanInstance("vexelray-gui",
@@ -467,12 +474,15 @@ public final class GuiApp implements AutoCloseable {
                  VulkanRenderPass rp = new VulkanRenderPass(device, Vk.FORMAT_R8G8B8A8_UNORM,
                          Vk.IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
                  AtlasTexture atlas = new AtlasTexture(device, atlasSize[0], atlasSize[1], atlasRgba);
+                 AtlasTexture noImage = AtlasTexture.placeholder(device);
                  VertexBuffer vb = new VertexBuffer(device, vertices);
                  GraphicsPipeline pipeline = new GraphicsPipeline(device, rp.handle(), width, height,
                          CanvasShader.vertex().spirv(), "main", CanvasShader.fragment().spirv(), "main",
-                         canvasConfig(atlas, false))) { // fixed viewport: offscreen, no resize
+                         canvasConfig(atlas, noImage, false))) { // fixed viewport: offscreen, no resize
+                // The same run list the windowed path walks, so a tree holding images captures to PNG exactly as
+                // it presents — which is what makes the image kind checkable without a window.
                 byte[] rgba = OffscreenDraw.toRgba(device, rp.handle(), pipeline, width, height, vb.handle(),
-                        atlas.descriptorSet(), vertexCount, bgR, bgG, bgB, 1f);
+                        atlas.descriptorSet(), bind(runs, vertexCount, noImage), bgR, bgG, bgB, 1f);
                 ImageIO.write(toImage(rgba, width, height), "PNG", new File(path));
             }
         }
@@ -588,13 +598,45 @@ public final class GuiApp implements AutoCloseable {
         };
     }
 
-    static GraphicsPipeline.Config canvasConfig(AtlasTexture atlas, boolean dynamicViewport) {
+    /**
+     * Resolve each {@link Canvas.Run}'s opaque image handle to the descriptor set to bind, clipped to the vertices
+     * that actually reached the buffer. Shared by the windowed and capture paths, so the two cannot disagree about
+     * which image a span draws with.
+     *
+     * <p>The clip is the caller's truncation and exists for the same reason it does: a run pointing past the end of
+     * the buffer is a draw of undefined memory, which is a worse answer to "this frame is too big" than a missing
+     * tail. A handle that is not a {@link SampledImage} — or a null one, which is every shape and glyph — gets the
+     * placeholder, so a tree carrying something unexpected shows a blank box rather than failing the frame.
+     */
+    static List<WindowedPresenter.Run> bind(List<Canvas.Run> runs, int vertexCount, SampledImage noImage) {
+        List<WindowedPresenter.Run> out = new ArrayList<>(runs.size());
+        for (Canvas.Run r : runs) {
+            if (r.firstVertex() >= vertexCount) {
+                break;   // runs are in submission order, so the first one past the end ends the frame
+            }
+            int count = Math.min(r.vertexCount(), vertexCount - r.firstVertex());
+            long set = r.image() instanceof SampledImage img ? img.descriptorSet() : noImage.descriptorSet();
+            out.add(new WindowedPresenter.Run(set, r.firstVertex(), count));
+        }
+        return out;
+    }
+
+    /**
+     * The canvas pipeline's layout: the glyph atlas at set 0 and an image at set 1.
+     *
+     * <p>Both sets are declared whether or not this frame draws an image, because a pipeline layout is fixed at
+     * build time and a set the pipeline declares must have something bound. {@code image} is only read for its
+     * <em>layout</em> here — every image binds against the same one-sampler shape, so the placeholder's layout
+     * describes a marched viewport just as well as it describes itself.
+     */
+    static GraphicsPipeline.Config canvasConfig(AtlasTexture atlas, SampledImage image, boolean dynamicViewport) {
         List<GraphicsPipeline.VertexAttribute> attrs = new ArrayList<>();
         for (CanvasVertex.Attr a : CanvasVertex.ATTRIBUTES) {
             attrs.add(new GraphicsPipeline.VertexAttribute(a.location(), vkFormat(a.components()), a.offset()));
         }
         return new GraphicsPipeline.Config(CanvasVertex.STRIDE_BYTES, attrs,
-                new long[]{atlas.descriptorSetLayout()}, true, Vk.SHADER_STAGE_FRAGMENT_BIT, 0, dynamicViewport);
+                new long[]{atlas.descriptorSetLayout(), image.descriptorSetLayout()}, true,
+                Vk.SHADER_STAGE_FRAGMENT_BIT, 0, dynamicViewport);
     }
 
     private static int vkFormat(int components) {

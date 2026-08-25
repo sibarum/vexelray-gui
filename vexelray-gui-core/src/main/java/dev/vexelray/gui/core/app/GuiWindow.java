@@ -14,6 +14,7 @@ import dev.vexelray.shader.ComposedShader;
 import dev.vexelray.text.TextLayout;
 import dev.vexelray.vulkan.present.AtlasTexture;
 import dev.vexelray.vulkan.present.GraphicsPipeline;
+import dev.vexelray.vulkan.present.SampledImage;
 import dev.vexelray.vulkan.present.VertexBuffer;
 import dev.vexelray.vulkan.present.VulkanRenderPass;
 import dev.vexelray.vulkan.present.VulkanSwapchain;
@@ -80,6 +81,8 @@ final class GuiWindow implements AutoCloseable {
     private final GraphicsPipeline pipeline;
     private final WindowedPresenter presenter;
     private final Canvas canvas;
+    /** Bound at the image set for every span that draws no image -- see {@link AtlasTexture#placeholder}. */
+    private final SampledImage noImage;
     private final TextLayout[] text;
     private final TextMeasurer measurer;
     private final boolean clientChrome;
@@ -88,8 +91,8 @@ final class GuiWindow implements AutoCloseable {
 
     /** Create a fresh OS window (popups). Must run on the main thread. */
     GuiWindow(NativePlatform platform, VulkanInstance instance, VulkanDevice device, AtlasTexture atlas,
-              TextLayout[] text, TextMeasurer measurer, Gui gui, WindowConfig config) {
-        this(platform, instance, device, atlas, text, measurer, gui,
+              SampledImage noImage, TextLayout[] text, TextMeasurer measurer, Gui gui, WindowConfig config) {
+        this(platform, instance, device, atlas, noImage, text, measurer, gui,
                 platform.createWindow(config), 0L, config.decorations());
     }
 
@@ -100,9 +103,10 @@ final class GuiWindow implements AutoCloseable {
      * this bundle needs it to know whether the tree's chrome declarations are worth publishing.
      */
     GuiWindow(NativePlatform platform, VulkanInstance instance, VulkanDevice device, AtlasTexture atlas,
-              TextLayout[] text, TextMeasurer measurer, Gui gui, NativeWindow window, long existingSurface,
-              Decorations decorations) {
+              SampledImage noImage, TextLayout[] text, TextMeasurer measurer, Gui gui, NativeWindow window,
+              long existingSurface, Decorations decorations) {
         this.instance = instance;
+        this.noImage = noImage;
         this.gui = gui;
         this.text = text;
         this.measurer = measurer;
@@ -117,7 +121,7 @@ final class GuiWindow implements AutoCloseable {
         ComposedShader vs = CanvasShader.vertex();
         ComposedShader fs = CanvasShader.fragment();
         this.pipeline = new GraphicsPipeline(device, renderPass.handle(), swapchain.width(), swapchain.height(),
-                vs.spirv(), "main", fs.spirv(), "main", GuiApp.canvasConfig(atlas, true));
+                vs.spirv(), "main", fs.spirv(), "main", GuiApp.canvasConfig(atlas, noImage, true));
         this.presenter = new WindowedPresenter(device, swapchain, renderPass.handle(), pipeline, window);
         presenter.configureDraw(vertexBuffer.handle(), atlas.descriptorSet(), 0);
         // Windows drags and resizes a window inside a message loop of its own, which suspends the host's loop for
@@ -166,7 +170,7 @@ final class GuiWindow implements AutoCloseable {
         if (root != null) {
             TreeRenderer.emit(root, canvas, text, gui.theme());
         }
-        emit(canvas.toVertexArray(), canvas.vertexCount());
+        emit(canvas.toVertexArray(), canvas.vertexCount(), canvas.runs());
     }
 
     /**
@@ -179,7 +183,7 @@ final class GuiWindow implements AutoCloseable {
      * frame over budget is visibly wrong rather than quietly wrong. It says so once, with the numbers, because a
      * cap nobody is told about reads as a rendering bug.
      */
-    private void emit(float[] vertices, int vertexCount) {
+    private void emit(float[] vertices, int vertexCount, java.util.List<Canvas.Run> runs) {
         int room = (int) (vertexBuffer.capacityFloats() / CanvasVertex.FLOATS_PER_VERTEX);
         if (vertexCount > room) {
             if (!warnedOverCapacity) {
@@ -190,7 +194,7 @@ final class GuiWindow implements AutoCloseable {
             vertexCount = room;
         }
         vertexBuffer.update(vertices, vertexCount * CanvasVertex.FLOATS_PER_VERTEX);
-        presenter.setVertexCount(vertexCount);
+        presenter.setRuns(GuiApp.bind(runs, vertexCount, noImage));
     }
 
     /**

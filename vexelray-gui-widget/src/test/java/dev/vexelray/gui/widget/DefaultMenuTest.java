@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import sibarum.tactroller.api.Key;
 import sibarum.tactroller.api.Modifier;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -167,6 +168,30 @@ class DefaultMenuTest {
             assertEquals(1, tabs.count(), "choosing Close removed the tab that was right-clicked");
             assertEquals(0, tabs.selected(), "and the selection moved to a surviving one");
             assertFalse(header == null);
+        }
+    }
+
+    /**
+     * Close is the one structural change an application never asked for, so it is the one its bookkeeping will
+     * otherwise miss. An owner keeping anything per tab has to hear about this exactly as it hears about its own
+     * {@code remove} — otherwise its list keeps a tab the bar has lost and every index it computes afterwards
+     * lands one tab off, silently, on a panel that still looks perfectly ordinary.
+     */
+    @Test
+    void closingFromTheMenuTellsTheOwnerWhichTabItLost() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            List<String> documents = new ArrayList<>(List.of("Editor", "Files", "Log"));
+            Tabs tabs = new Tabs(h.gui);
+            tabs.onRemove(documents::remove);
+            documents.forEach(title -> tabs.add(title, h.gui.box()));
+            h.gui.root().children(tabs.node());
+            h.frame();
+
+            rightClick(h, headerCenterX(tabs, 1), headerCenterY(tabs));
+            choose(h, 0, 1);
+
+            assertEquals(List.of("Editor", "Log"), documents, "the owner lost the tab the click was on");
+            assertEquals(tabs.count(), documents.size(), "and the two structures are still the same length");
         }
     }
 

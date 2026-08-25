@@ -5,6 +5,9 @@ import dev.vexelray.gui.core.layout.Length;
 import org.junit.jupiter.api.Test;
 import sibarum.tactroller.api.Key;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -174,6 +177,78 @@ class TabsTest {
 
             tabs.select(1);
             assertEquals(1, seen[0]);
+        }
+    }
+
+    /**
+     * Removal is reported while the panel is consistent: both of the bar's lists have already lost the tab, and
+     * the selection has not moved yet. An owner told any later than that would be resolving the index against a
+     * bar that had moved on; told any earlier, it would be shrinking its own list a moment before the bar shrank
+     * its own. Neither is a state the two can be compared in, which is why this is a fixed point rather than a
+     * detail — and why it is inline, not on the handler executor: a deferred notice is a desync with a timer.
+     */
+    @Test
+    void removalIsReportedWhileTheTwoStructuresAgree() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            List<String> seen = new ArrayList<>();
+            Tabs tabs = new Tabs(h.gui);
+            tabs.onRemove(i -> seen.add(i + " of " + tabs.count() + " selected=" + tabs.selected()));
+            tabs.add("One", page(h, "one"));
+            tabs.add("Two", page(h, "two"));
+            tabs.add("Three", page(h, "three"));
+            h.gui.root().children(tabs.node());
+            h.frame();
+            tabs.select(2);
+
+            tabs.remove(1);
+
+            assertEquals(List.of("1 of 2 selected=-1"), seen, "the tab is gone from the bar, the selection pending");
+            assertEquals(1, tabs.selected(), "which then moves to follow the tab that was showing");
+        }
+    }
+
+    /** Out-of-range removals are no-ops, so an owner is not told about a tab that never left. */
+    @Test
+    void aRemovalThatDoesNothingIsNotReported() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            int[] count = {0};
+            Tabs tabs = new Tabs(h.gui).onRemove(i -> count[0]++);
+            tabs.add("One", page(h, "one"));
+            h.gui.root().children(tabs.node());
+            h.frame();
+
+            tabs.remove(-1);
+            tabs.remove(7);
+            assertEquals(0, count[0], "neither index named a tab");
+
+            tabs.remove(0);
+            assertEquals(1, count[0], "this one did");
+        }
+    }
+
+    /**
+     * The editor's rule — never be left with no document — said in the widget's terms: the handler adds a
+     * replacement, and because the panel is unselected at that moment the new tab is selected by {@code add}
+     * itself rather than left blank behind a bar with nothing lit.
+     */
+    @Test
+    void theHandlerMayReplaceTheLastTabAsItGoes() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Tabs tabs = new Tabs(h.gui);
+            tabs.onRemove(i -> {
+                if (tabs.count() == 0) {
+                    tabs.add("Untitled", page(h, "empty"));
+                }
+            });
+            tabs.add("One", page(h, "one"));
+            h.gui.root().children(tabs.node());
+            h.frame();
+
+            tabs.remove(0);
+            h.frame();
+
+            assertEquals(1, tabs.count(), "closing the only tab left a fresh one in its place");
+            assertEquals(0, tabs.selected(), "and it is the one showing");
         }
     }
 }

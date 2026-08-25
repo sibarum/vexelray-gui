@@ -42,6 +42,7 @@ public final class Tabs {
 
     private volatile int selected = -1;
     private volatile IntConsumer onSelect = i -> { };
+    private volatile IntConsumer onRemove = i -> { };
     private volatile TabMenu contextMenu = (index, menu) -> { };
     private volatile TabTransition transition = TabTransition.NONE;
 
@@ -274,6 +275,32 @@ public final class Tabs {
     }
 
     /**
+     * React to a tab being removed, whoever removed it — the application's own {@link #remove} call, or the
+     * <b>Close</b> item the bar puts on every header's context menu without being asked.
+     *
+     * <p>That second source is the reason this exists. {@link #remove} is an owner's operation: it releases the
+     * page's registrations but cannot close the widgets on it, and an application that keeps anything alongside
+     * the bar — a parallel list of documents, a map from tab to model — owns that too. Close reaches
+     * {@code remove} directly from a right click, so without this the owner is never told, its structure keeps a
+     * tab the bar has lost, and every index it computes afterwards points one or more tabs off. Nothing throws
+     * and nothing looks wrong; the panel simply starts acting on the wrong page.
+     *
+     * <p><b>Runs inline, not on the handler executor</b>, unlike {@link #onSelect}. A parallel structure has to
+     * shrink in the same instant the bar's does or there is a window where the two disagree, and that window is
+     * exactly the bug this is here to close. It runs after both internal lists have lost the tab and before the
+     * selection moves to a survivor, so the handler sees the panel already consistent, and any {@code onSelect}
+     * that follows is delivered against indices the owner has already agreed with.
+     *
+     * <p>The handler may add a tab (an editor that refuses to be left with none does exactly that): the panel is
+     * unselected at that moment, so {@link #add} selects what it adds and the reselection below finds nothing
+     * left to do. It must not call {@link #remove} again.
+     */
+    public Tabs onRemove(IntConsumer handler) {
+        this.onRemove = handler == null ? i -> { } : handler;
+        return this;
+    }
+
+    /**
      * Add a page under {@code title}. {@code body} is placed in the content area and hidden until selected; the
      * first page added is selected automatically, so a freshly built panel is never blank.
      */
@@ -300,6 +327,8 @@ public final class Tabs {
         gui.onState(header, state -> header.background(background(headers.indexOf(header), state)));
         // The one thing every tab bar's menu has, and the same index-at-event-time rule as the handlers above:
         // Close aims at wherever this header sits when the item is chosen, not where it sat when it was built.
+        // It is also the only structural change an application does not itself call for, which is what onRemove
+        // is for -- an owner that keeps anything per tab hears about this one exactly as it hears about its own.
         gui.onContextMenu(header, menu -> {
             int at = headers.indexOf(header);
             menu.item("Close", () -> remove(at));
@@ -418,6 +447,9 @@ public final class Tabs {
      * survivors would render duplicated.) Removal releases every input registration in both subtrees, so the
      * page's widgets come back dead, not dormant — the caller closes them, it cannot re-home them. Selection
      * moves to the nearest surviving tab.
+     *
+     * <p>{@link #onRemove} is told, whichever way the removal was asked for — including the header menu's own
+     * <b>Close</b>, which is a caller the application never wrote and so is the one it will otherwise miss.
      */
     public synchronized Tabs remove(int index) {
         if (index < 0 || index >= headers.size()) {
@@ -431,6 +463,9 @@ public final class Tabs {
 
         int previous = selected;
         selected = -1;   // force select() to restyle: surviving indices shifted under the old value
+        // Here, and not a line later: whatever the owner keeps alongside the bar loses the tab at the same
+        // moment the bar does, so no index can be resolved against a pair of lists that disagree. See onRemove.
+        onRemove.accept(index);
         if (!headers.isEmpty()) {
             select(Math.min(previous > index ? previous - 1 : previous, headers.size() - 1));
         }

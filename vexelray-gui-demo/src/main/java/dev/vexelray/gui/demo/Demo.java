@@ -479,6 +479,12 @@ public final class Demo {
         // easing it only produces a stall.
         files.motion((progress, done) -> krono.ramp(Dur.ms(200), Ease.OUT_CUBIC, progress, done));
 
+        // Ctrl+F with the tree focused opens its find bar; typing walks the real directory tree (fetching as it
+        // goes, stopping at the first match, opening only the path to it) and Enter steps to the next. Nothing
+        // here wires it: a tree searches itself, and the only thing an application would add is what "matches"
+        // means for its own items — a path, say, rather than the file name the row shows.
+        files.matcher((path, query) -> String.valueOf(path).toLowerCase().contains(query.toLowerCase()));
+
         // A context menu on the tree: right-click a row and it opens at the pointer, floating over the page (a
         // floating last child of the root — no layer machinery, no reflow). Esc or a click elsewhere dismisses.
         // The menu is built at the moment of the click and handed the row's item, so nothing here has to remember

@@ -2,17 +2,20 @@ package dev.vexelray.gui.widget;
 
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
+import dev.vexelray.gui.core.input.ClaimScope;
 import dev.vexelray.gui.core.input.ClickEvent;
 import dev.vexelray.gui.core.input.FocusEvent;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.input.KeyEvent;
 import dev.vexelray.gui.core.input.MenuSink;
+import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.text.TextLayout;
 import sibarum.atchung.Subscription;
 import sibarum.tactroller.api.Key;
+import sibarum.tactroller.api.Modifier;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -23,6 +26,7 @@ import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
+import java.util.function.BiPredicate;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
@@ -49,6 +53,12 @@ import java.util.function.Predicate;
  * parent), Home/End jump, PageUp/PageDown move by what the viewport holds, and Enter activates. All of it runs
  * as ordered stages on the GUI thread against a widget-side flattened list of visible rows — pure model work,
  * recomputed only when the set of visible rows actually changes.
+ *
+ * <p><b>Ctrl+F searches the hierarchy, not the rows on screen.</b> The chord opens a find bar at the top of the
+ * tree (hidden until then, and no part of the layout or the Tab order while it is); typing searches from the top
+ * and Enter steps to the next match, wrapping. A tree is searched by walking it, and walking a lazy one means
+ * fetching it — so the search stops at the first match, opens only the path to it, and is an action like any
+ * other, which is what lets the next keystroke overtake the one still walking.
  *
  * <p><b>Every row carries a menu, and everything on it is an {@link Action}.</b> Expand and Collapse are two of
  * them — recursive, because the single-level flip is what the disclosure control and the arrow keys already are —
@@ -176,6 +186,10 @@ public final class TreeView<T> implements AutoCloseable {
     private static final String GLYPH_EXPANDED = "−";   // MINUS SIGN, full-width unlike hyphen
     private static final String GLYPH_LEAF = " ";
 
+    /** Open the find bar; shut it again. Claims rather than key handlers, so they preempt instead of bubbling. */
+    private static final Shortcut FIND = Shortcut.of(Key.F, Modifier.CONTROL);
+    private static final Shortcut ESCAPE = Shortcut.of(Key.ESCAPE);
+
     /** One item's presence in the tree: its row, its (possibly unmaterialised) children container, its state. */
     private final class Row {
         final T item;
@@ -289,6 +303,14 @@ public final class TreeView<T> implements AutoCloseable {
     /** What the application added, in the order it added it. Read on every right click, written at build time. */
     private final List<Action<T>> extraActions = new CopyOnWriteArrayList<>();
 
+    /** The find bar: hidden until Ctrl+F, and no part of the layout or the Tab order until it is up. */
+    private final Node findBar;
+    private final TextField findField;
+    private final Node findStatus;
+
+    /** How a row answers a query. Replaceable: only the application knows what its items are searchable by. */
+    private volatile BiPredicate<T, String> matcher;
+
     /** Build a tree over {@code source}; roots are listed immediately (on the calling thread), collapsed. */
     public TreeView(Gui gui, Source<T> source) {
         this.gui = gui;
@@ -314,6 +336,35 @@ public final class TreeView<T> implements AutoCloseable {
         gui.onKeyUi(this.root, this::onKey);
         this.focusSub = gui.bus().subscribe(gui.focusEvents(), this::onFocus);
 
+        // The find bar, built shut. A hidden node takes no space and is no Tab stop, so a tree nobody searches is
+        // the tree there was before there was searching — which is the only honest way to add a bar that appears:
+        // it costs the page nothing until the user asks for it, and asking is a chord, never a hover.
+        this.matcher = (item, query) -> source.label(item).toLowerCase().contains(query.toLowerCase());
+        this.findField = new TextField(gui);
+        this.findField.node().width(Length.grow(1)).height(Length.rem(2f));
+        this.findStatus = gui.text("")
+                .width(Length.em(6))
+                .textSize(Length.rem(0.85f))
+                .textColor(gui.theme().color(Role.DIM))
+                .align(TextLayout.HAlign.RIGHT, TextLayout.VAlign.MIDDLE);
+        this.findBar = gui.row()
+                .width(Length.FILL)
+                .visible(false)
+                .gap(Length.dp(6))
+                .padding(Length.ZERO, Length.dp(2))
+                .scroll(false, false)
+                .children(findField.node(), findStatus);
+        root.append(findBar);
+        // Every edit is a new search from the top — which is what makes it incremental, and what makes typing
+        // "src" three searches of which the first two are superseded mid-walk. Enter is the same search resumed
+        // past the current match, so the two together are find and find-next.
+        findField.onChange(query -> startFind(query, null));
+        findField.onSubmit(query -> startFind(query, selected()));
+        // FOCUSED, so the chord belongs to the tree only while the tree is the thing being keyboarded — an
+        // application's own Ctrl+F keeps working everywhere else, and outranks nothing here.
+        gui.claim(this.root, FIND, ClaimScope.FOCUSED, this::openFind);
+        gui.claim(findField.node(), ESCAPE, ClaimScope.FOCUSED, this::closeFind);
+
         synchronized (this) {
             for (T item : source.roots()) {
                 Row r = new Row(item, null);
@@ -337,6 +388,16 @@ public final class TreeView<T> implements AutoCloseable {
     synchronized Node rowNode(T item) {
         Row r = rowsByItem.get(item);
         return r == null ? null : r.rowNode;
+    }
+
+    /** The find bar's strip — package-private, so a test can read whether the user can see it. */
+    Node findBar() {
+        return findBar;
+    }
+
+    /** The find bar's status line — package-private, so a test can read what it says about the last search. */
+    Node findStatus() {
+        return findStatus;
     }
 
     /** The selected item, or null when nothing is selected yet. */
@@ -472,6 +533,7 @@ public final class TreeView<T> implements AutoCloseable {
     @Override
     public void close() {
         focusSub.close();
+        findField.close();   // takes the Escape claim with it; the root's Ctrl+F goes with the root below
         synchronized (this) {
             for (Row r : rowsByItem.values()) {
                 gui.releaseNode(r.rowNode);
@@ -583,6 +645,143 @@ public final class TreeView<T> implements AutoCloseable {
             rowH = visible.isEmpty() ? 0f : visible.get(0).rowNode.layout().rect().h();
         }
         return rowH > 0f && viewH > 0f ? Math.max(1, (int) Math.floor(viewH / rowH)) : 1;
+    }
+
+    // --- find: Ctrl+F, and the search that is an action like any other ---
+
+    /**
+     * How a row answers a query. The default is a case-insensitive substring of the row's label, which is what a
+     * user typing into a find bar means by "search" — and wrong for exactly the applications that know better: a
+     * filesystem tree searched by full path, a symbol tree searched by kind, an inventory searched by SKU.
+     *
+     * <p>Asked on the handler executor, once per row the walk reaches, so it may read application state — and
+     * should be cheap, because the walk's other half is already paying for I/O.
+     */
+    public TreeView<T> matcher(BiPredicate<T, String> test) {
+        this.matcher = test == null
+                ? (item, query) -> source.label(item).toLowerCase().contains(query.toLowerCase())
+                : test;
+        return this;
+    }
+
+    /**
+     * Open the find bar and put the caret in it, emptied — Ctrl+F starts a search rather than resuming one.
+     *
+     * <p>Opening it is a layout change, and deliberately one the user asked for: the bar takes its strip at the
+     * top of the tree and the rows move down by it, which is the same bar every editor puts there. Nothing about
+     * it responds to the pointer merely being near.
+     */
+    private void openFind() {
+        findStatus.text("");
+        findField.text("");        // clears the query, and the change that clears it stops any search still running
+        findBar.visible(true);
+        gui.focus(findField.node());
+    }
+
+    /** Shut the bar, stop whatever it started, and give the keyboard back to the tree. */
+    private void closeFind() {
+        begin();                   // the search is an action, and closing the bar is the user done with it
+        findBar.visible(false);
+        findStatus.text("");
+        gui.focus(root);
+    }
+
+    /**
+     * Search for {@code query}, starting after {@code from} (or at the top when it is null), and stop at the first
+     * row that answers: reveal it, select it, and leave the rest of the tree alone.
+     *
+     * <p><b>Stopping at the first match is what makes this affordable.</b> A tree searches by walking, and walking
+     * a lazy hierarchy means fetching it — so a search that collected every match would fetch the whole tree
+     * before it could say anything, on every keystroke. Stopping at the first bounds the work by the distance to
+     * an answer, and Enter pays for the next one only when it is asked for.
+     *
+     * <p>A miss is the expensive case: nothing matched means the walk reached the end, which for a filesystem is
+     * a real walk. That is exactly why it is an action — the next keystroke supersedes it, Escape supersedes it,
+     * and so does anything else the user does to the tree.
+     */
+    private void startFind(String query, T from) {
+        Job job = begin();
+        if (query == null || query.isEmpty()) {
+            findStatus.text("");
+            return;
+        }
+        findStatus.text("Searching…");
+        Row found = findFrom(query, from, job);
+        if (!job.live()) {
+            return;   // superseded mid-walk: the search that replaced this one owns the status line now
+        }
+        findStatus.text(found == null ? "No match" : "");
+        if (found != null) {
+            reveal(found);
+            select(found, true);
+        }
+    }
+
+    /**
+     * Walk the whole hierarchy in document order looking for {@code query}, fetching levels as it reaches them and
+     * wrapping once past the end when it started somewhere other than the top.
+     *
+     * <p>It expands nothing on the way. Materialising a row and opening it are two different things — the first is
+     * "what is under here", the second is "show it" — and a search that opened every row it passed would leave the
+     * tree unfolded behind it. Only the path to the answer is opened, by {@link #reveal}.
+     */
+    private Row findFrom(String query, T from, Job job) {
+        BiPredicate<T, String> test = matcher;
+        Deque<Row> pending = new ArrayDeque<>();
+        pushRoots(pending);
+        boolean past = from == null;
+        boolean wrapped = past;
+        while (job.live()) {
+            Row row = pending.poll();
+            if (row == null) {
+                if (wrapped) {
+                    return null;
+                }
+                // Round again from the top, now matching everything: the anchor was never reached from where we
+                // started, or there was nothing after it. Once only — the second pass ends the search either way.
+                wrapped = true;
+                past = true;
+                pushRoots(pending);
+                continue;
+            }
+            if (!past) {
+                past = row.item.equals(from);   // the anchor itself is the one row a "next" must not answer with
+            } else if (test.test(row.item, query)) {
+                return row;
+            }
+            if (claimFetch(row)) {
+                materialize(row);   // outside the monitor: the search pays the same I/O an expansion would
+            }
+            synchronized (this) {
+                for (int i = row.children.size() - 1; i >= 0; i--) {
+                    pending.push(row.children.get(i));
+                }
+            }
+        }
+        return null;
+    }
+
+    private synchronized void pushRoots(Deque<Row> pending) {
+        pending.clear();
+        for (int i = rootRows.size() - 1; i >= 0; i--) {
+            pending.push(rootRows.get(i));
+        }
+    }
+
+    /** Open every ancestor of {@code row}, top down, so a match found inside shut subtrees is one the user sees. */
+    private void reveal(Row row) {
+        List<Row> ancestors = new ArrayList<>();
+        synchronized (this) {
+            for (Row p = row.parent; p != null; p = p.parent) {
+                ancestors.add(p);
+            }
+        }
+        for (int i = ancestors.size() - 1; i >= 0; i--) {
+            Row ancestor = ancestors.get(i);
+            if (openLocked(ancestor)) {
+                materialize(ancestor);   // it was walked through, so this is all but unreachable — and correct
+            }
+        }
     }
 
     // --- actions: the row menu, and the one-at-a-time rule ---
@@ -709,8 +908,7 @@ public final class TreeView<T> implements AutoCloseable {
         if (!row.canExpand) {
             return false;
         }
-        boolean fetch = !row.materialized;
-        row.materialized = true;
+        boolean fetch = claimFetch(row);
         if (!row.expanded) {
             row.expanded = true;
             row.disclosure.text(GLYPH_EXPANDED);
@@ -720,6 +918,20 @@ public final class TreeView<T> implements AutoCloseable {
         }
         refreshVisible();
         return fetch;
+    }
+
+    /**
+     * Claim {@code row}'s one fetch without opening it; @return whether the caller must now materialise it.
+     *
+     * <p>The two are separate because searching needs the first without the second: a walk has to know what is
+     * under a row to keep going, and must leave it looking exactly as it found it.
+     */
+    private synchronized boolean claimFetch(Row row) {
+        if (!row.canExpand || row.materialized) {
+            return false;
+        }
+        row.materialized = true;
+        return true;
     }
 
     /**

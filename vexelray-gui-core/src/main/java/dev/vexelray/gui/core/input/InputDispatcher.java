@@ -749,9 +749,17 @@ public final class InputDispatcher {
         setFocus(order.get(next));
     }
 
-    /** Focusable node ids in tree (DFS pre-order) — the Tab order. */
+    /**
+     * Focusable node ids in tree (DFS pre-order) — the Tab order.
+     *
+     * <p>A hidden subtree is not in it, and cannot be: hiding is how this framework says "not now" — a collapsed
+     * subtree, the tab page that is not selected, a bar that opens on a shortcut — and a control the user cannot
+     * see is a control they cannot answer. Tab landing on one takes the caret somewhere invisible and swallows
+     * every keystroke after it. Judged on the node's own {@code visible()}, so the whole subtree under a hidden
+     * container goes with it.
+     */
     private void collectFocusable(RetainedNode n, List<Long> out) {
-        if (n == null) {
+        if (n == null || !n.visible()) {
             return;
         }
         if (focusable.contains(n.id)) {

@@ -129,6 +129,44 @@ class KeyboardFocusTest {
         assertEquals(List.of(new FocusEvent(1, true), new FocusEvent(1, false), new FocusEvent(2, true)), events);
     }
 
+    /**
+     * A hidden control is not a Tab stop. Hiding is how the framework says "not now" — a collapsed subtree, the
+     * tab page that is not selected, a find bar that opens on a chord — and Tab landing on one would take the
+     * caret somewhere invisible and swallow every keystroke after it.
+     */
+    @Test
+    void tabSkipsHiddenNodesAndWhatIsInsideThem() {
+        Atchung bus = Atchung.create();
+        InputDispatcher d = new InputDispatcher(bus, CLICKS, Runnable::run);
+        RetainedNode root = node(0, 0, 0, 100, 100);
+        RetainedNode shown = node(1, 0, 0, 100, 40);
+        RetainedNode hiddenBar = node(2, 0, 40, 100, 40);
+        RetainedNode inTheBar = node(3, 0, 40, 100, 40);
+        hiddenBar.set(dev.vexelray.gui.core.model.PropKey.VISIBLE, false);
+        shown.parent = root;
+        hiddenBar.parent = root;
+        inTheBar.parent = hiddenBar;
+        root.children.add(shown);
+        root.children.add(hiddenBar);
+        hiddenBar.children.add(inTheBar);
+        d.setFocusable(1, true);
+        d.setFocusable(2, true);
+        d.setFocusable(3, true);
+
+        keyDown(bus, Key.TAB);
+        d.dispatch(root);
+        assertEquals(1, d.focused(), "Tab focuses the one control that is on screen");
+
+        keyDown(bus, Key.TAB);
+        d.dispatch(root);
+        assertEquals(1, d.focused(), "and wraps back to it: the hidden bar, and the field inside it, are not stops");
+
+        hiddenBar.set(dev.vexelray.gui.core.model.PropKey.VISIBLE, true);
+        keyDown(bus, Key.TAB);
+        d.dispatch(root);
+        assertEquals(2, d.focused(), "shown, it takes its place in the order");
+    }
+
     @Test
     void tabDoesNothingWithNoFocusables() {
         Atchung bus = Atchung.create();

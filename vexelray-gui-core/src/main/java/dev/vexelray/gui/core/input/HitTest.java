@@ -21,15 +21,30 @@ public final class HitTest {
         if (root == null || !contains(root, x, y)) {
             return null;
         }
+        // Floating children first: they paint over every sibling, and hit order is paint order. They are also
+        // outside the scroll mask below — a float never scrolled, so the rectangle that hides scrolled content
+        // says nothing about it, and a bar floating over the top of a scrolling field is hit everywhere it draws.
+        for (int i = root.children.size() - 1; i >= 0; i--) {
+            RetainedNode child = root.children.get(i);
+            if (child.floating()) {
+                RetainedNode hit = at(child, x, y);
+                if (hit != null) {
+                    return hit;
+                }
+            }
+        }
         // Descend only where the children are actually drawn. A scrolling container clips them to its viewport,
         // which excludes the strips its scrollbars reserved — so without this the region under a scrollbar hit
         // whatever content the clip had just hidden, and a press there addressed something invisible.
         if (!clips(root) || withinViewport(root, x, y)) {
             // Later children paint on top, so search them front-to-back (reverse) for the topmost hit.
             for (int i = root.children.size() - 1; i >= 0; i--) {
-                RetainedNode hit = at(root.children.get(i), x, y);
-                if (hit != null) {
-                    return hit;
+                RetainedNode child = root.children.get(i);
+                if (!child.floating()) {
+                    RetainedNode hit = at(child, x, y);
+                    if (hit != null) {
+                        return hit;
+                    }
                 }
             }
         }

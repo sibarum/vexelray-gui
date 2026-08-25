@@ -316,6 +316,11 @@ public final class FlexLayout {
         n.viewH = Math.max(0f, boxH - (overX ? sb : 0f));
         n.contentW = lines[0];
         n.contentH = lines[1] * lineH;
+
+        // A text leaf with a floating child is a leaf in *flow*, not a leaf — the same distinction the empty-box
+        // case above draws. Its glyphs are its content and a float takes nothing from them, so a field can carry
+        // its own chrome anchored to its own box (a find bar) without a wrapper the application has to know about.
+        placeFloating(n, ctx, tm);
     }
 
     /**

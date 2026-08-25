@@ -115,6 +115,30 @@ class TreeFindTest {
         }
     }
 
+    /**
+     * Shift+Enter steps the other way, which for a hierarchy means the last match the forward walk passed before
+     * reaching where the selection is — document order being a property of walking forwards, there is no other way
+     * to know what "before" means.
+     */
+    @Test
+    void shiftEnterStepsBackAndWrapsTheOtherWay() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TreeView<String> tree = tree(h);
+            find(h, tree, "app");
+            assertEquals("App.java", tree.selected(), "the first match in document order");
+
+            h.chord(Key.ENTER, Key.LEFT_SHIFT);
+            h.frame();
+            assertEquals("AppTest.java", tree.selected(),
+                    "nothing matched before it, so back from the first is round to the last");
+
+            h.chord(Key.ENTER, Key.LEFT_SHIFT);
+            h.frame();
+            assertEquals("App.java", tree.selected(), "and back again to the one before it");
+            tree.close();
+        }
+    }
+
     /** A miss says so, and leaves the tree exactly as it found it. */
     @Test
     void aQueryThatMatchesNothingSaysSoAndMovesNothing() {

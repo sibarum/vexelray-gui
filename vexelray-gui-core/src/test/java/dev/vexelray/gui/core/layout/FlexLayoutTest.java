@@ -291,4 +291,31 @@ class FlexLayoutTest {
         assertTrue(tip.w < 200f, "a tooltip is still the size of its text, not the size of the page under it");
         assertTrue(tip.h < 100f);
     }
+
+    /**
+     * A text node with a floating child is a leaf in <em>flow</em>, not a leaf: its glyphs are its content and a
+     * float takes nothing from them, so the float is still placed. Without this an editable field could not carry
+     * its own chrome — a find bar — anchored to its own box, and the bar would silently never be laid out.
+     */
+    @Test
+    void aTextLeafStillPlacesItsFloatingChild() {
+        RetainedNode field = new RetainedNode(0, NodeKind.TEXT);
+        field.set(PropKey.EDITABLE, Boolean.TRUE);
+        field.set(PropKey.MULTILINE, Boolean.TRUE);
+        field.set(PropKey.TEXT, "one\ntwo\nthree");
+        RetainedNode bar = box(1);
+        bar.set(PropKey.WIDTH, Length.FILL);
+        bar.set(PropKey.HEIGHT, Length.rem(2));
+        bar.set(PropKey.FLOAT_X, Length.ZERO);
+        bar.set(PropKey.FLOAT_Y, Length.ZERO);
+        add(field, bar);
+
+        FlexLayout.layout(field, 200f, 100f, ctx(), TM);
+
+        assertEquals(200f, bar.w, EPS, "the bar spans the field it is anchored to");
+        assertEquals(32f, bar.h, EPS);
+        assertEquals(field.x, bar.x, EPS, "seated at the box origin, not at the text origin");
+        assertEquals(field.y, bar.y, EPS);
+        assertTrue(field.contentH > 0f, "and the text was measured exactly as it was before it had a bar");
+    }
 }

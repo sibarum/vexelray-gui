@@ -422,7 +422,10 @@ public final class Demo {
         TextField notes = new TextField(gui,
                 "Built through Node handles, mutated by messages, laid out by flex — no hard-coded rects.\n\n"
                         + "This paragraph is editable. It wraps at the card's width, Enter starts a new line, and "
-                        + "Up/Down keep your column across short lines. Keep typing and the view follows the caret.")
+                        + "Up/Down keep your column across short lines. Keep typing and the view follows the caret.\n\n"
+                        + "Ctrl+F floats a find bar over the top of this field without reflowing a line of it: "
+                        + "typing counts every match and washes the ones you are not on, Enter and Shift+Enter step "
+                        + "through them, and Escape leaves the caret on the one you stopped at.")
                 .multiline(true).wordWrap(true).lineNumbers(true);
         notes.node().width(Length.FILL).height(Length.FILL);
         // Formatting spans on a multiline field, set once and never touched again. The point is what happens

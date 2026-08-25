@@ -109,6 +109,11 @@ public record Document(String text, int caret, int anchor, List<Span> spans, Tex
             }
             case Edit.SelectAll ignored -> anchor == 0 && caret == text.length() ? this
                     : new Document(text, text.length(), 0, spans, null);
+            case Edit.Select s -> {
+                int from = clampOffset(s.start());
+                int to = clampOffset(s.end());
+                yield to == caret && from == anchor ? this : new Document(text, to, from, spans, null);
+            }
             case Edit.SetText s -> {
                 String next = s.text() == null ? "" : s.text();
                 yield new Document(next, next.length(), next.length(), List.of(), null);

@@ -53,6 +53,15 @@ import java.util.function.Consumer;
  * widget never sees a measurer or a glyph atlas, which is what lets the identical code drive a field on screen,
  * headless in a test, or on a remote client with no fonts of its own.
  *
+ * <p><b>A multiline field can be searched.</b> Ctrl+F floats a {@link FindBar} over the top of it: typing runs
+ * an incremental search from the caret, Enter and Shift+Enter step through the matches either way, and Escape
+ * puts the bar away leaving the match selected — so find-then-type is a replace and nothing had to be built for
+ * it. The document is already in memory, so unlike the tree's walk the search is a pure function over an
+ * immutable snapshot and can afford to know <em>every</em> match: the bar counts them ("3 of 17") and the ones
+ * you are not on carry a wash. That wash is added where the document is mirrored onto the node, never committed
+ * into it — the document's spans are the application's statement about its text, and a search is this widget's
+ * statement about a query, so a highlighter and a find bar cannot overwrite each other.
+ *
  * <p>Selection spans {@code [min(anchor,caret), max(anchor,caret))}; {@code anchor == caret} means no selection.
  * Clipboard cut/copy/paste go through {@link Gui#clipboard()}. Call {@link #close()} to release the field's
  * subscriptions, claims and blink registration when it is removed from the tree.
@@ -90,6 +99,16 @@ public final class TextField implements AutoCloseable {
      * returns to the original column instead of walking left. Touched only on the ordered stage (GUI thread).
      */
     private float desiredX = Float.NaN;
+
+    /**
+     * The find bar, built by the first Ctrl+F and never before (see {@link #findBar()}), and the query it is
+     * searching for — empty whenever nobody is searching, which is what the mirror checks before adding a wash.
+     * The spans are the widget's own, kept apart from the document's for the reason the class doc gives.
+     */
+    private volatile FindBar find;
+    private volatile String findQuery = "";
+    private volatile List<Span> findSpans = List.of();
+    private volatile Matches findCache;
 
     private volatile boolean multiline;
     private volatile boolean readOnly;
@@ -198,6 +217,16 @@ public final class TextField implements AutoCloseable {
         return this;
     }
 
+    /**
+     * Select {@code [start, end)} — offsets clamped into the content, caret at {@code end}, and the range washed
+     * exactly as a dragged selection is. What a search does with the match it found, and what a palette or a
+     * completion does with the word it is about to replace.
+     */
+    public TextField select(int start, int end) {
+        apply(new Edit.Select(start, end), true);   // its own undo boundary: a jump is never part of a typing run
+        return this;
+    }
+
     /** React to content edits (typing, deletion, paste, programmatic set). Runs on the handler executor. */
     public TextField onChange(Consumer<String> handler) {
         this.onChange = handler == null ? s -> { } : handler;
@@ -247,10 +276,24 @@ public final class TextField implements AutoCloseable {
      * Let the field hold multiple lines: Enter inserts a newline instead of submitting, pasted newlines survive,
      * and the field scrolls vertically to keep the caret in view. Size it with {@code node().height(...)} — a
      * multiline field does not grow to fit its content.
+     *
+     * <p>It also becomes searchable: Ctrl+F opens the find bar. A single-line field does not, and not merely
+     * because there would be nothing to scroll to — a bar is a strip of chrome as tall as the field it would sit
+     * on, and a search over one line is what reading it already is.
      */
     public TextField multiline(boolean multiline) {
         this.multiline = multiline;
         node.multiline(multiline);
+        if (multiline) {
+            // Seeded from the selection: a user who selected a word and asked to find has said which word.
+            gui.claim(node, FindBar.FIND, ClaimScope.FOCUSED, this::openFind);
+        } else {
+            gui.releaseClaim(node, FindBar.FIND);
+            FindBar bar = find;
+            if (bar != null && bar.shown()) {
+                bar.dismiss();   // a field that stopped being searchable is not left with a bar over its first line
+            }
+        }
         // Tab indents inside a multiline editor, and traverses focus everywhere else. Expressed as a claim on the
         // chord while this field has focus, which outranks the framework's global Tab claim — rather than core
         // deciding on the field's behalf. Shift+Tab is deliberately left unclaimed, so it is still the way out.
@@ -287,6 +330,10 @@ public final class TextField implements AutoCloseable {
     public void close() {
         focusSub.close();
         blink.close();
+        FindBar bar = find;
+        if (bar != null) {
+            bar.close();   // takes its query field's claims with it; the strip goes with this node below
+        }
         gui.releaseNode(node);
     }
 
@@ -449,6 +496,215 @@ public final class TextField implements AutoCloseable {
     private int visualLineEnd(Document d) {
         TextMetrics m = node.layout().text();
         return m == null ? d.length() : m.lineEnd(d.caret());
+    }
+
+    // --- find: Ctrl+F over a document that is already here ---
+
+    /** The find bar as it stands, or null before the first Ctrl+F — package-private, so a test can read it. */
+    FindBar finder() {
+        return find;
+    }
+
+    /** Ctrl+F: put the bar up, seeded from the selection when it is one line's worth of text to look for. */
+    private void openFind() {
+        String selected = document.value().selectedText();
+        findBar().open(selected.indexOf('\n') < 0 ? selected : "");
+    }
+
+    /**
+     * The bar, built on the first ask and kept.
+     *
+     * <p><b>Lazy by necessity, not by taste.</b> A find bar's query field is itself a {@code TextField}, so a
+     * field that built its bar in its constructor would build a bar for the bar's field, and one for that field's,
+     * without end. Building it when the chord asks is what terminates the recursion — the bar's own field is
+     * single-line, so it is never asked — and it is the honest arrangement anyway: a field nobody searches carries
+     * nothing at all, which is the same rule the bar's own hidden-until-asked-for strip follows.
+     *
+     * <p><b>Floating over the text, not stacked above it.</b> A field is one node, placed and sized by the
+     * application; a bar in the flow would need a wrapper the application never asked for and cannot see. So the
+     * bar is a floating child of the field itself: it takes nothing from the layout, moves and hides with the box
+     * it is anchored to, and opening it reflows nothing — which matters more here than in a tree, because
+     * reflowing a wrapped editor re-wraps every line under the caret.
+     */
+    private synchronized FindBar findBar() {
+        if (find == null) {
+            FindBar bar = new FindBar(gui, new Finder());
+            bar.node()
+                    .floatAt(Length.ZERO, Length.ZERO)
+                    .corner(Length.rem(0.5f), Length.ZERO)   // seated in the top of the well, sharing its corner
+                    .elevation(Length.rem(0.5f));            // and lifted off it, because it covers the first line
+            node.append(bar.node());
+            find = bar;
+        }
+        return find;
+    }
+
+    /**
+     * What the bar asks of the field. Every one of these is a lookup over an immutable snapshot plus one commit:
+     * the text is already in memory, so a search here costs nothing worth interrupting — the opposite of the
+     * tree's, which fetches the hierarchy it walks and stops at the first answer it can. That is what lets this
+     * one know every match, and Shift+Enter step back through them without a second way of searching.
+     */
+    private final class Finder implements FindBar.Search {
+
+        /**
+         * A new query, answered from the caret rather than from the top: the text is in front of the user and the
+         * match they mean is the next one from where they are looking. Inclusive of a match starting exactly at
+         * the caret, so extending a query keeps the answer it has already found instead of stepping off it.
+         */
+        @Override
+        public void first(String query) {
+            List<int[]> all = searchFor(query);
+            go(all, from(all, document.value().selectionStart(), true));
+        }
+
+        @Override
+        public void next(String query) {
+            List<int[]> all = searchFor(query);
+            go(all, from(all, document.value().selectionStart(), false));
+        }
+
+        @Override
+        public void previous(String query) {
+            List<int[]> all = searchFor(query);
+            go(all, before(all, document.value().selectionStart()));
+        }
+
+        /**
+         * The bar is away. The washes go with it, and the selection deliberately does not: the caret is left on
+         * the match, so Escape hands back a field ready to have that word typed over.
+         */
+        @Override
+        public void closed() {
+            findQuery = "";
+            findSpans = List.of();
+            mirror();
+            gui.focus(node);
+        }
+    }
+
+    /** Adopt {@code q} as what is being searched for, and answer every place it occurs. */
+    private List<int[]> searchFor(String q) {
+        findQuery = q == null ? "" : q;
+        return matches(document.value().text());
+    }
+
+    /**
+     * Select match {@code i}, or answer the miss — either way the bar is told, because a search that found
+     * nothing has still answered and a search that landed where it already was has still been asked.
+     */
+    private void go(List<int[]> all, int i) {
+        if (i >= 0) {
+            int[] m = all.get(i);
+            apply(new Edit.Select(m[0], m[1]), true);
+        }
+        mirror();   // a no-op commit publishes nothing, and the count and the washes are due regardless
+    }
+
+    /**
+     * Recompute what the search says about the document as it now is: a wash on every match except the one the
+     * selection is sitting on, and a count on the bar.
+     *
+     * <p>Derived at the mirror rather than stored, which is what makes an edit under an open bar safe: there is no
+     * match list to go stale, no highlight left attached to text that moved. The matches are a pure function of
+     * the text and the query, the current one a pure function of the selection, and all of it is re-read here
+     * whenever anything about the document changes.
+     */
+    private void refreshFind(Document d) {
+        FindBar bar = find;
+        if (bar == null) {
+            return;
+        }
+        if (findQuery.isEmpty()) {
+            findSpans = List.of();
+            bar.status("");
+            return;
+        }
+        List<int[]> all = matches(d.text());
+        if (all.isEmpty()) {
+            findSpans = List.of();
+            bar.status("No match");
+            return;
+        }
+        List<Span> washes = new ArrayList<>(all.size());
+        int current = -1;
+        for (int i = 0; i < all.size(); i++) {
+            int[] m = all.get(i);
+            if (m[0] == d.selectionStart() && m[1] == d.selectionEnd()) {
+                current = i;   // the one the caret is on wears the selection, so it does not also wear a wash
+            } else {
+                washes.add(Span.background(m[0], m[1], gui.theme().color(Role.SELECTION)));
+            }
+        }
+        findSpans = washes;
+        bar.status(current >= 0
+                ? (current + 1) + " of " + all.size()
+                : all.size() + (all.size() == 1 ? " match" : " matches"));
+    }
+
+    /** A match list, together with the exact text and query it was read from. */
+    private record Matches(String text, String query, List<int[]> found) { }
+
+    /**
+     * Every place the current query occurs in {@code text}, in document order.
+     *
+     * <p>Cached on the <em>identity</em> of the text, not its value: a caret move publishes a new document over
+     * the same {@code String}, so the list survives every motion key and every step between matches, and is
+     * recomputed only when the characters actually change. Which is also why it can be recomputed at the mirror
+     * without a thought — the expensive case is the one that happens once per edit.
+     */
+    private List<int[]> matches(String text) {
+        String q = findQuery;
+        Matches cached = findCache;
+        if (cached != null && cached.text() == text && cached.query().equals(q)) {
+            return cached.found();
+        }
+        List<int[]> found = occurrences(text, q);
+        findCache = new Matches(text, q, found);
+        return found;
+    }
+
+    /**
+     * Every non-overlapping, case-insensitive occurrence of {@code query} in {@code text}.
+     *
+     * <p>Compared region by region rather than by lower-casing both sides. Case mapping can change a string's
+     * length — {@code İ} folds to two characters — so an offset found in a folded copy can point somewhere else
+     * in the real text, and a highlight one character out is a highlight over the wrong word.
+     */
+    private static List<int[]> occurrences(String text, String query) {
+        int q = query.length();
+        if (q == 0 || text.length() < q) {
+            return List.of();
+        }
+        List<int[]> found = new ArrayList<>();
+        for (int i = 0; i + q <= text.length(); i++) {
+            if (text.regionMatches(true, i, query, 0, q)) {
+                found.add(new int[]{i, i + q});
+                i += q - 1;   // matches do not overlap, so "aa" occurs twice in "aaaa" and not three times
+            }
+        }
+        return found;
+    }
+
+    /** The first match at (or, when stepping, after) {@code offset}, wrapping to the first; -1 if there are none. */
+    private static int from(List<int[]> all, int offset, boolean inclusive) {
+        for (int i = 0; i < all.size(); i++) {
+            int at = all.get(i)[0];
+            if (inclusive ? at >= offset : at > offset) {
+                return i;
+            }
+        }
+        return all.isEmpty() ? -1 : 0;
+    }
+
+    /** The last match before {@code offset}, wrapping round to the last of all; -1 if there are none. */
+    private static int before(List<int[]> all, int offset) {
+        for (int i = all.size() - 1; i >= 0; i--) {
+            if (all.get(i)[0] < offset) {
+                return i;
+            }
+        }
+        return all.isEmpty() ? -1 : all.size() - 1;
     }
 
     // --- context menu ---
@@ -640,15 +896,38 @@ public final class TextField implements AutoCloseable {
      * putting it there is what keeps a slow application callback from running on the frame loop.
      */
     private void published() {
+        Document d = mirror();   // the document the node was just given, so the notification carries that one
+        Consumer<String> handler = onChange;
+        gui.handlers().execute(() -> handler.accept(d.text()));
+    }
+
+    /**
+     * The mirror alone, with no notification: the node says what the document says.
+     *
+     * <p>Separate from {@link #published()} because a search changes what the widget shows about a document
+     * without changing the document — a miss, or a step that landed where the caret already was. That is a mirror
+     * and not a change, and telling the application its text changed when it did not is a lie it would act on.
+     *
+     * @return the document that was mirrored, so a caller that also notifies names the same one
+     */
+    private Document mirror() {
         Versioned<Document> v = document.current();
         Document d = v.value();
+        refreshFind(d);   // before the spans below are written, since it decides what is added to them
         node.text(d.text());
         node.caret(focused ? d.caret() : -1);
         node.selection(d.anchor(), d.caret());
-        node.spans(d.spans());
+        List<Span> washes = findSpans;
+        if (washes.isEmpty()) {
+            node.spans(d.spans());
+        } else {
+            List<Span> both = new ArrayList<>(d.spans().size() + washes.size());
+            both.addAll(d.spans());
+            both.addAll(washes);
+            node.spans(both);
+        }
         blink.wake();
-        Consumer<String> handler = onChange;
-        gui.handlers().execute(() -> handler.accept(d.text()));
+        return d;
     }
 
     private void onFocus(FocusEvent e) {

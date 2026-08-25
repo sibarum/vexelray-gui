@@ -1,6 +1,8 @@
 package dev.vexelray.gui.core.input;
 
+import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.model.NodeKind;
+import dev.vexelray.gui.core.model.PropKey;
 import dev.vexelray.gui.core.model.RetainedNode;
 import org.junit.jupiter.api.Test;
 
@@ -62,6 +64,47 @@ class HitTestTest {
         assertSame(child, HitTest.at(root, 50, 50), "inside the viewport the child is hit as usual");
         assertSame(root, HitTest.at(root, 95, 50),
                 "in the scrollbar strip the container is hit, not the child the clip removed");
+    }
+
+    /**
+     * A float is not in the flow, so the flow's clip is not about it: it was placed against the settled box and
+     * stays there while the content scrolls underneath. Trimming it to the viewport would make an overlay
+     * unhittable exactly where the padding, the gutter or the scrollbar strip happens to be — a find bar floating
+     * across the top of a scrolling field, dead along its left edge.
+     */
+    @Test
+    void aFloatingChildIsHitOutsideItsParentsViewport() {
+        RetainedNode root = node(0, 0, 0, 100, 100);
+        root.overflowY = true;
+        root.viewX = 20;    // the left 20px are a gutter, the right 10 the scrollbar strip
+        root.viewY = 0;
+        root.viewW = 70;
+        root.viewH = 100;
+        RetainedNode flow = node(1, 0, 0, 100, 100);
+        RetainedNode bar = node(2, 0, 0, 100, 30);
+        bar.set(PropKey.FLOAT_X, Length.ZERO);
+        bar.set(PropKey.FLOAT_Y, Length.ZERO);
+        attach(root, flow);
+        attach(root, bar);
+
+        assertSame(bar, HitTest.at(root, 5, 10), "over the gutter, where the flow child would have been clipped");
+        assertSame(bar, HitTest.at(root, 95, 10), "and over the scrollbar strip, for the same reason");
+        assertSame(flow, HitTest.at(root, 50, 50), "below the bar the flow child is hit as usual");
+    }
+
+    /** Paint order is hit order, and a float paints over every sibling — including ones declared after it. */
+    @Test
+    void aFloatingChildIsHitBeforeSiblingsThatFollowIt() {
+        RetainedNode root = node(0, 0, 0, 100, 100);
+        RetainedNode bar = node(1, 0, 0, 100, 30);
+        bar.set(PropKey.FLOAT_X, Length.ZERO);
+        bar.set(PropKey.FLOAT_Y, Length.ZERO);
+        RetainedNode later = node(2, 0, 0, 100, 100);
+        attach(root, bar);
+        attach(root, later);
+
+        assertSame(bar, HitTest.at(root, 50, 10));
+        assertSame(later, HitTest.at(root, 50, 50));
     }
 
     /** Without overflow there is no clip, so the viewport fields are irrelevant and children hit everywhere. */

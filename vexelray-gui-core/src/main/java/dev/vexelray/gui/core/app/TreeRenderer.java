@@ -118,6 +118,10 @@ public final class TreeRenderer {
                 clipR -= dx;
                 clipB -= dy;
             }
+            float flowL = clipL;
+            float flowT = clipT;
+            float flowR = clipR;
+            float flowB = clipB;
             if (scrollClip) {
                 // Clip children to the scroll viewport, honouring the container's (inset) rounded corner.
                 float inset = node.viewX - node.x;
@@ -129,14 +133,31 @@ public final class TreeRenderer {
                 narrow(node.x, node.y, node.w, node.h);
             }
             for (RetainedNode child : node.children) {
-                if (!masked(child)) {
+                if (!child.floating() && !masked(child)) {
                     walk(child, canvas, faces);
                 }
             }
             if (scrollClip) {
                 canvas.popClip();
                 drawScrollbars(node, canvas);   // the container's chrome, so still at the container's alpha
-            } else if (node.clip()) {
+                // The scroll mask hides what scrolled out of the flow, and a float is not in the flow: it was
+                // placed against the settled box and stays there while the content moves under it. Clipping it to
+                // the viewport would cut chrome by the padding, the line-number gutter and the scrollbar strip —
+                // an overlay trimmed by facts about the content it sits over. An explicit clip() is left to reach
+                // it, because that one is a statement about the whole subtree rather than about the flow.
+                clipL = flowL;
+                clipT = flowT;
+                clipR = flowR;
+                clipB = flowB;
+            }
+            // Floating children last, out of the flow's mask as they were out of its layout — so they paint over
+            // every sibling, which is what makes one an overlay.
+            for (RetainedNode child : node.children) {
+                if (child.floating() && !masked(child)) {
+                    walk(child, canvas, faces);
+                }
+            }
+            if (!scrollClip && node.clip()) {
                 canvas.popClip();
             }
             if (moved) {

@@ -45,6 +45,17 @@ public sealed interface Edit {
     record SelectAll() implements Edit {
     }
 
+    /**
+     * Select {@code [start, end)} — anchor at {@code start}, caret at {@code end}, both clamped into the text.
+     *
+     * <p>Absolute, and deliberately so: unlike {@link Caret} this names a range someone already located in the
+     * text — the match a search landed on, the word a completion is replacing — and re-resolving it against the
+     * caret would move it somewhere else. {@link SelectAll} stays the relative form of the same idea (whatever
+     * the text is at commit time, all of it), which is why both exist.
+     */
+    record Select(int start, int end) implements Edit {
+    }
+
     /** Replace the entire text (a programmatic set): caret to the end, selection cleared, spans dropped. */
     record SetText(String text) implements Edit {
     }

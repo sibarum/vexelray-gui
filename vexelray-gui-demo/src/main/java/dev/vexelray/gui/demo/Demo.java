@@ -482,15 +482,28 @@ public final class Demo {
         // A context menu on the tree: right-click a row and it opens at the pointer, floating over the page (a
         // floating last child of the root — no layer machinery, no reflow). Esc or a click elsewhere dismisses.
         // The menu is built at the moment of the click and handed the row's item, so nothing here has to remember
-        // which row was clicked — and what is on it can depend on what that row *is*: only a directory can be
-        // expanded, so only a directory is offered it.
+        // which row was clicked — and what is on it can depend on what that row *is*.
+        //
+        // Expand and Collapse arrive already on it, recursive, marked with the same +/− the row's own disclosure
+        // control uses, and greyed on a row that has nothing to expand or nothing to collapse. This demo adds one
+        // command of its own as a peer of those two — same mark, same per-item availability — and it is a walk on
+        // purpose: counting a deep directory takes long enough to be worth stopping, and choosing anything else on
+        // any row's menu stops it, because the tree runs one action at a time.
+        files.action(TreeView.Action.<java.nio.file.Path>of("»", "Count files", (path, job) -> {
+            int found = countFiles(path, job);
+            log.append(gui.text(job.live() ? "count: " + found + " under " + path : "count: stopped")
+                    .textSize(Length.rem(1)).textColor(theme.color(Role.DIM)));
+        }).shownWhen(java.nio.file.Files::isDirectory));
+
+        // And the free-form door, for lines that are not commands on the item in that sense. They land after the
+        // tree's own, and choosing one still takes the tree over — an application does not have to know that to
+        // get it.
         files.onContextMenu((path, menu) -> menu
-                .item("Open", () -> log.append(gui.text("open: " + path)
+                .item("›", "Open", () -> log.append(gui.text("open: " + path)
                         .textSize(Length.rem(1)).textColor(theme.color(Role.INK))))
-                .item("Copy path", () -> gui.clipboard().set(String.valueOf(path)))
-                .item("Expand", java.nio.file.Files.isDirectory(path), () -> files.expand(path))
+                .item("•", "Copy path", () -> gui.clipboard().set(String.valueOf(path)))
                 .separator()
-                .item("Properties", () -> log.append(gui.text("properties: " + path)
+                .item("…", "Properties", () -> log.append(gui.text("properties: " + path)
                         .textSize(Length.rem(1)).textColor(theme.color(Role.DIM)))));
 
         Tabs tabs = new Tabs(gui);
@@ -641,6 +654,33 @@ public final class Demo {
         gui.root().background(theme.color(Role.PAGE))
                 .children(titleBar.node(), header, body, controls, fieldRow, footer);
         return new Refs(header, log, popupButton, dialogButton, titleBar);
+    }
+
+    /**
+     * Count the ordinary files under {@code dir}, giving up the moment the tree hands its job to something else.
+     *
+     * <p>The interesting line is the one in the {@code while}: a long piece of application work asks, between the
+     * steps it is made of, whether it is still the action the tree is running. Nothing interrupts it — it stops
+     * because it looked.
+     */
+    private static int countFiles(java.nio.file.Path dir, TreeView.Job job) {
+        int found = 0;
+        java.util.Deque<java.nio.file.Path> pending = new java.util.ArrayDeque<>();
+        pending.push(dir);
+        while (job.live() && !pending.isEmpty()) {
+            try (var kids = java.nio.file.Files.list(pending.poll())) {
+                for (java.nio.file.Path kid : (Iterable<java.nio.file.Path>) kids::iterator) {
+                    if (java.nio.file.Files.isDirectory(kid)) {
+                        pending.push(kid);
+                    } else {
+                        found++;
+                    }
+                }
+            } catch (java.io.IOException e) {
+                // An unreadable directory contributes nothing, exactly as it lists as empty in the tree.
+            }
+        }
+        return found;
     }
 
     /** A fixed-size labelled button that lightens on hover and darkens while pressed. */

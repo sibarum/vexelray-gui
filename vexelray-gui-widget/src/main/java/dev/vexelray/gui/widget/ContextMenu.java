@@ -48,6 +48,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * publishes one too, and racing it would close what it just opened. Nothing is blocked while the menu is up; the
  * click that lands elsewhere still does what it always did.
  *
+ * <p><b>A row is a strip, not a line of text</b>, because an item may carry a mark: the icon column is reserved
+ * once per opening, for the whole menu, whenever anything on it has one — so the labels line up under each other,
+ * an item with no mark still takes its share of the column, and a menu of plain items is drawn with no column at
+ * all, exactly as it was before there were icons.
+ *
  * <p>A disabled row is inert by construction: it carries no click handler, so choosing it does nothing — and it is
  * still one of the menu's own nodes, so the menu stays open rather than treating the click as "somewhere else".
  *
@@ -168,30 +173,59 @@ public final class ContextMenu implements MenuPresenter {
      */
     private void rebuild(List<MenuItem> menuItems) {
         for (Node row : rows) {
-            ownIds.remove(row.id());
             gui.releaseNode(row);
             row.remove();
         }
         rows.clear();
         this.items.clear();
+        // Every id the panel owns goes with its rows, because a row is a strip with nodes inside it now and
+        // click-away judges "one of mine" against the node the pointer actually hit — which is the label, not the
+        // strip around it. Rebuilt wholesale rather than removed one at a time: the set is exactly the panel plus
+        // whatever this menu is made of.
+        ownIds.clear();
+        ownIds.add(menu.id());
+        // The icon column belongs to the menu, not to the item: it is reserved once, when anything on this menu
+        // carries a mark, so every label starts at the same x whether or not its own item has one. A menu of plain
+        // items has no column at all and is drawn exactly as it was before there were icons. Decided per opening,
+        // which is the only time it can be decided without something moving under the pointer.
+        boolean iconColumn = menuItems.stream().anyMatch(i -> i.icon() != null);
         for (MenuItem item : menuItems) {
-            Node row = item.separator() ? rule() : row(item);
-            ownIds.add(row.id());
+            Node row = item.separator() ? own(rule()) : row(item, iconColumn);
             rows.add(row);
             this.items.add(item);
             menu.append(row);
         }
     }
 
+    /** Record {@code node} as one of the menu's own, so a click on it is not a click away from the menu. */
+    private Node own(Node node) {
+        ownIds.add(node.id());
+        return node;
+    }
+
     /** One command row: full-width, hover-shaded while it can be chosen, dimmed and inert when it cannot. */
-    private Node row(MenuItem item) {
-        Node row = gui.text(item.label())
+    private Node row(MenuItem item, boolean iconColumn) {
+        Node row = own(gui.row()
+                .width(Length.FILL)
+                .corner(Length.rem(0.4f))
+                .padding(Length.dp(4), Length.dp(12))
+                .gap(Length.em(0.5f))
+                .scroll(false, false));
+        if (iconColumn) {
+            // A cell of fixed width whether or not this item fills it: the column is what aligns the labels, so an
+            // item with no mark still takes its share of it instead of sliding its label into the gap. Dimmer than
+            // the label by a step — the mark is what the line is about, the label is what it says.
+            row.append(own(gui.text(item.icon() == null ? "" : item.icon())
+                    .width(Length.em(1.2f))
+                    .textSize(Length.rem(1))
+                    .textColor(gui.theme().color(item.enabled() ? Role.DIM : Role.FAINT))
+                    .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE)));
+        }
+        row.append(own(gui.text(item.label())
                 .width(Length.FILL)
                 .textSize(Length.rem(1))
                 .textColor(gui.theme().color(item.enabled() ? Role.INK : Role.FAINT))
-                .corner(Length.rem(0.4f))
-                .padding(Length.dp(4), Length.dp(12))
-                .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
+                .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE)));
         if (!item.enabled()) {
             return row;   // no handlers at all: nothing to hover, nothing to choose
         }

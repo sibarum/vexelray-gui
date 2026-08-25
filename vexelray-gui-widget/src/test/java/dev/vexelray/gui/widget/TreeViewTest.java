@@ -326,9 +326,10 @@ class TreeViewTest {
             assertEquals("src", contextItem[0], "and the app was asked for that item's menu, with the position");
             assertEquals(x, at[0], 0.5f);
             assertEquals(y, at[1], 0.5f);
-            assertEquals(List.of("Open src"),
+            assertEquals(java.util.Arrays.asList("Expand", "Collapse", null, "Open src"),
                     ((ContextMenu) h.gui.menus()).items().stream().map(MenuItem::label).toList(),
-                    "the tree installed a presenter of its own, so the menu is actually on screen");
+                    "the tree's own two commands, a rule, then what the application added — and a presenter of "
+                            + "the tree's own installing, so the menu is actually on screen");
             tree.close();
         }
     }

@@ -2,6 +2,7 @@ package dev.vexelray.gui.widget;
 
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.model.RetainedNode;
 import org.junit.jupiter.api.Test;
 import sibarum.tactroller.api.Key;
 
@@ -9,6 +10,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -314,6 +316,54 @@ class ContextMenuTest {
 
             h.rightClick(300f, 250f);
             assertEquals(List.of("Opened 2"), labels(menu), "the rows were replaced, not reused");
+            menu.close();
+        }
+    }
+
+    /**
+     * A mark is drawn beside the label it belongs to — and the column that holds it belongs to the <em>menu</em>,
+     * so a line with no mark still takes its share of it and every label starts at the same x.
+     */
+    @Test
+    void aMarkSitsBesideItsLabelInAColumnTheWholeMenuShares() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            ContextMenu menu = new ContextMenu(h.gui);
+            Node target = page(h);
+            h.gui.onContextMenu(target, m -> m
+                    .item("+", "Expand", () -> { })
+                    .item("Properties", () -> { }));
+            h.gui.root().children(target);
+            h.frame();
+
+            h.rightClick(200f, 150f);
+            h.frame();
+
+            assertEquals("+", menu.items().getFirst().icon(), "the item's mark reached the presenter");
+            assertNull(menu.items().get(1).icon(), "and an item is free to have none");
+
+            List<RetainedNode> rows = h.retained(menu.node()).children;
+            assertEquals(2, rows.size());
+            assertEquals(2, rows.get(0).children.size(), "a cell for the mark and a cell for the label");
+            assertEquals(2, rows.get(1).children.size(), "including on the row that declined a mark");
+            assertEquals(rows.get(0).children.get(1).x, rows.get(1).children.get(1).x, 0.01f,
+                    "so the labels line up under each other, mark or no mark");
+            menu.close();
+        }
+    }
+
+    /** A menu whose items all decline a mark is the menu there was before there were any: no column at all. */
+    @Test
+    void aMenuOfPlainItemsReservesNothingForMarks() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Node target = page(h);
+            ContextMenu menu = wire(h, target);
+
+            h.rightClick(200f, 150f);
+            h.frame();
+
+            for (RetainedNode row : h.retained(menu.node()).children) {
+                assertEquals(1, row.children.size(), "a label and nothing else");
+            }
             menu.close();
         }
     }

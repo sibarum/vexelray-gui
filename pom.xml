@@ -211,6 +211,7 @@
                     <!-- Explicit release on the plugin (not only the maven.compiler.release property) so IDEs
                          pick up the Java 25 language level reliably. Sourced from the property. -->
                     <configuration>
+                        <target>${maven.compiler.release}</target>
                         <release>${maven.compiler.release}</release>
                     </configuration>
                 </plugin>

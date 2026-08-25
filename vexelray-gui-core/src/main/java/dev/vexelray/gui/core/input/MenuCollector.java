@@ -29,13 +29,8 @@ final class MenuCollector implements MenuSink {
     }
 
     @Override
-    public MenuSink item(String label, Runnable action) {
-        return item(label, true, action);
-    }
-
-    @Override
-    public MenuSink item(String label, boolean enabled, Runnable action) {
-        items.add(enabled ? MenuItem.of(label, action) : MenuItem.disabled(label));
+    public MenuSink item(String icon, String label, boolean enabled, Runnable action) {
+        items.add(enabled ? MenuItem.of(icon, label, action) : MenuItem.disabled(icon, label));
         return this;
     }
 

@@ -20,13 +20,29 @@ public interface MenuSink {
     ClickEvent event();
 
     /** Add a choosable item. */
-    MenuSink item(String label, Runnable action);
+    default MenuSink item(String label, Runnable action) {
+        return item(null, label, true, action);
+    }
 
     /**
      * Add an item that is only choosable when {@code enabled} — the form to reach for when the action exists but
      * does not apply yet (see {@link MenuItem}: shown and greyed beats absent).
      */
-    MenuSink item(String label, boolean enabled, Runnable action);
+    default MenuSink item(String label, boolean enabled, Runnable action) {
+        return item(null, label, enabled, action);
+    }
+
+    /** Add a choosable item marked with {@code icon}: a glyph drawn beside the label (see {@link MenuItem}). */
+    default MenuSink item(String icon, String label, Runnable action) {
+        return item(icon, label, true, action);
+    }
+
+    /**
+     * The general form the other three delegate to: a mark, a label, whether the command applies right now, and
+     * what choosing it does. {@code icon} may be null — an item with no mark — and a disabled item keeps the mark
+     * it would have had, because greyed out is still a line about the same command.
+     */
+    MenuSink item(String icon, String label, boolean enabled, Runnable action);
 
     /**
      * Open a group with a rule. Free to call unconditionally: a separator that would come out at either end of the

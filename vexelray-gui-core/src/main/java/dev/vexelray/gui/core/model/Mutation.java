@@ -10,7 +10,7 @@ import java.util.Map;
  */
 public sealed interface Mutation
         permits Mutation.Create, Mutation.Insert, Mutation.Remove, Mutation.SetProp, Mutation.SetText,
-                Mutation.ScrollToEdge, Mutation.Batch {
+                Mutation.ScrollToEdge, Mutation.Reveal, Mutation.Batch {
 
     /** The node this mutation targets (for coalescing / routing); {@code Batch} returns {@code 0}. */
     long targetId();
@@ -62,6 +62,26 @@ public sealed interface Mutation
      * queues behind the appends that made the tail move, and lands in the same frame they do.
      */
     record ScrollToEdge(long id) implements Mutation {
+        @Override
+        public long targetId() {
+            return id;
+        }
+    }
+
+    /**
+     * Bring a node inside every scrolling ancestor's viewport — the other edit that changes where a scroller is
+     * looking rather than what the tree contains, and the twin of {@link ScrollToEdge}: that one goes to an edge
+     * the layout can find on its own, this one goes to a node whose position only the layout knows.
+     *
+     * <p>A request, not an offset, because the answer does not exist yet when it is asked. The caller is a
+     * keyboard handler or a search on a worker thread; the row it wants seen may be one that this frame's
+     * mutations are still about to reveal. So it queues behind them, and is answered in the same frame — after
+     * the layout that places the row, before the publish that reports it.
+     *
+     * <p>One-shot on purpose. A standing "keep this in view" would fight the user the moment they scrolled away
+     * from it, which is the difference between following a selection and taking the scrollbar away.
+     */
+    record Reveal(long id) implements Mutation {
         @Override
         public long targetId() {
             return id;

@@ -349,6 +349,26 @@ public final class Node {
         return this;
     }
 
+    /**
+     * Ask every scrolling ancestor to bring this node inside its viewport, by the least scrolling that does it.
+     *
+     * <p><b>Least, and leading-edge first.</b> A node just past the bottom edge comes up by exactly the shortfall
+     * rather than jumping to the middle: the rows around it stay where the eye left them, which is what makes a
+     * selection walked with the arrow keys readable. A node taller than the viewport aligns its top, because the
+     * top of something too big to see is the part that says what it is. A node already in view moves nothing.
+     *
+     * <p><b>Answered this frame, not the next.</b> The request queues with the edits around it and is resolved
+     * after the layout that places this node — so revealing a row that the same handler just expanded a subtree to
+     * produce works, and there is no frame in which the selection is somewhere the scroller is not.
+     *
+     * <p>A no-op on a node no ancestor can scroll to (nothing overflows), on a hidden one, and on one that has
+     * left the tree by the time the frame answers.
+     */
+    public Node scrollIntoView() {
+        sink.post(new Mutation.Reveal(id));
+        return this;
+    }
+
     // --- structure ---
 
     public Node append(Node child) {

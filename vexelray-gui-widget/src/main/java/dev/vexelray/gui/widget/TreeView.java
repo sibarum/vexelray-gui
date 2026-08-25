@@ -1010,6 +1010,11 @@ public final class TreeView<T> implements AutoCloseable {
             styleLocked(row, InteractionState.NORMAL);
             item = row.item;
         }
+        // Every route to a selection ends here — an arrow key, a click, a search, the collapse that pulls the
+        // selection up out of a subtree — so this is the one place that has to ask for it to be on screen. Asked
+        // for the strip, not the entry: the entry is the row plus its whole subtree, and bringing *that* into
+        // view would align the top of a folder's contents rather than the folder.
+        row.rowNode.scrollIntoView();
         if (notify) {
             Consumer<T> handler = onSelect;
             gui.handlers().execute(() -> handler.accept(item));

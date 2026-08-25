@@ -40,8 +40,25 @@ public final class Reconciler {
         this.onRemoved = onRemoved == null ? id -> { } : onRemoved;
     }
 
+    /** Nodes asked to be brought into view since the frame last took them (see {@link Mutation.Reveal}). */
+    private final List<RetainedNode> reveals = new java.util.ArrayList<>();
+
     public RetainedNode root() {
         return root;
+    }
+
+    /**
+     * Take the reveal requests made since the last call, emptying them — one-shot, like the ask itself. A request
+     * for a node that has since left the tree comes back too; the caller sees it is detached and skips it, which
+     * is cheaper than pruning this list on every removal for a case that is one frame wide.
+     */
+    public List<RetainedNode> takeReveals() {
+        if (reveals.isEmpty()) {
+            return List.of();
+        }
+        List<RetainedNode> asked = List.copyOf(reveals);
+        reveals.clear();
+        return asked;
     }
 
     public boolean layoutDirty() {
@@ -129,6 +146,14 @@ public final class Reconciler {
                 if (n != null && n.scrollLock() != dev.vexelray.gui.core.layout.LayoutEnums.ScrollLock.NONE) {
                     n.scrollAttached = true;
                     layoutDirty = true;
+                }
+            }
+            case Mutation.Reveal v -> {
+                RetainedNode n = index.get(v.id());
+                // Recorded, not answered: where the node is has not been decided yet this frame. The frame reads
+                // these back after it lays out (Gui.frame), which is the first moment the question has an answer.
+                if (n != null) {
+                    reveals.add(n);
                 }
             }
             case Mutation.Batch b -> applyAll(b.ops());

@@ -538,6 +538,8 @@ GUI thread, per dirty/animating frame:
         Remove w/ onExit -> lifecycle;  animatable -> animation
   5. lifecycle.tick(now); animation.tick(now)
   6. if layoutDirty: layout(root, viewport)                        // boxes, viewports, overflow
+  6a. for each Reveal asked this frame: scroll its ancestors the least that shows it;
+        if one moved, layout again -- a container bakes its offset into its children
   6b. if layoutRan || geometryDirty:                               // the compute phase (§4)
         resolveGeometry(root, measurer)   // caret-follow scroll, text metrics, gutter -> onto the tree
         publishLayout(root)               // pure copy -> LayoutSnapshot on the bus
@@ -604,7 +606,9 @@ exists as siblings, so those steps are *integration*, not construction.
    visible only on overflow, never hover-triggered (pointer-target UX rule). **[done, containers and text
    nodes alike: text leaves report their own content extent, so a multiline editor takes the wheel and the
    thumb like any other scroller. A wrapped node never scrolls horizontally — nothing lies to the right of
-   a wrapped line — and a single-line input masks at its edge instead of growing a bar.]**
+   a wrapped line — and a single-line input masks at its edge instead of growing a bar. `Node.scrollIntoView()`
+   is the keyboard's half of it (§10 step 6a): a one-shot request, resolved after the layout that places the
+   node, so a widget that moves a selection off screen can put it back in the same frame.]**
 8. **The layout read-model (§4)** and everything built on it: boxes → text metrics → click-to-caret → the
    compute phase → multiline, wrap and vertical navigation → line numbers → the unified label draw path.
    **[done — see docs/layout-read-model.md, which is closed.]**

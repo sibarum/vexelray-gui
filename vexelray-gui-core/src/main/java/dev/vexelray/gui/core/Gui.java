@@ -894,17 +894,28 @@ public final class Gui implements AutoCloseable {
             viewport.commit(setViewport, new Viewport(Math.round(viewportW), Math.round(viewportH)));
         }
         if (r != null) {
+            // vw/vh resolve against the laid-out canvas, which is the area that actually exists to fill.
+            LayoutContext layoutCtx = new LayoutContext(ROOT_EM_PX, z, d, layoutW, layoutH);
             boolean layoutRan = reconciler.layoutDirty() || viewportChanged || zoomChanged || clampChanged;
             if (layoutRan) {
-                // vw/vh resolve against the laid-out canvas, which is the area that actually exists to fill.
-                FlexLayout.layout(r, layoutW, layoutH,
-                        new LayoutContext(ROOT_EM_PX, z, d, layoutW, layoutH), tm);
+                FlexLayout.layout(r, layoutW, layoutH, layoutCtx, tm);
                 lastViewportW = viewportW;
                 lastViewportH = viewportH;
                 lastLayoutW = layoutW;
                 lastLayoutH = layoutH;
                 lastZoom = z;
                 lastDpi = d;
+            }
+            // Reveal requests are answered here: after the layout that says where everything is, and before the
+            // publish that tells everyone else. A scroller that moved is laid out a second time rather than left
+            // to catch up next frame — a container bakes its scroll offset into its children's positions, so one
+            // that moved after the pass would publish rects for where its rows used to be, and the frame's own
+            // hit-testing would aim at them. The extra pass is paid only on frames where something asked.
+            for (RetainedNode asked : reconciler.takeReveals()) {
+                if (reveal(asked)) {
+                    FlexLayout.layout(r, layoutW, layoutH, layoutCtx, tm);
+                    layoutRan = true;
+                }
             }
             // The compute phase (docs/layout-read-model.md §2.1): resolve everything that is a pure function of the
             // laid-out tree — caret-follow scroll, text metrics — then publish. It runs whenever the geometry could
@@ -918,6 +929,75 @@ public final class Gui implements AutoCloseable {
             reconciler.clearDirty();
         }
         return r;
+    }
+
+    /**
+     * Bring {@code target} inside the viewport of every ancestor that scrolls, by the least scrolling that does
+     * it; @return whether any of them actually moved.
+     *
+     * <p>Innermost first, carrying the offset it applied: scrolling the inner container moves the target within
+     * it, so an outer scroller has to be asked about where the target has just ended up rather than where it was
+     * laid out. Without that, nested scrollers each solve the problem the other just changed.
+     *
+     * <p>Only containers that actually overflow are asked. One that fits its content has no offset to give, and
+     * "reveal" on a page that does not scroll is not an error — it is a request that is already satisfied.
+     */
+    private static boolean reveal(RetainedNode target) {
+        if (target == null || !target.visible() || target.parent == null) {
+            return false;   // never in the tree, or gone from it since the ask
+        }
+        boolean moved = false;
+        float x = target.x;
+        float y = target.y;
+        for (RetainedNode a = target.parent; a != null; a = a.parent) {
+            if (!a.visible()) {
+                return moved;   // an ancestor is hidden: its geometry is stale, and nothing under it is on screen
+            }
+            if (a.overflowY) {
+                float applied = scrollBy(a, scrollDelta(y, target.h, a.viewY, a.viewH), true);
+                y -= applied;
+                moved |= applied != 0f;
+            }
+            if (a.overflowX) {
+                float applied = scrollBy(a, scrollDelta(x, target.w, a.viewX, a.viewW), false);
+                x -= applied;
+                moved |= applied != 0f;
+            }
+        }
+        return moved;
+    }
+
+    /**
+     * The least scroll that puts {@code [pos, pos + size]} inside {@code [view, view + extent]}: negative to come
+     * back, positive to go on, zero when it is already there.
+     *
+     * <p>The leading edge wins the tie. Going forward never scrolls past the point where the target's own top (or
+     * left) reaches the edge of the viewport, which is what stops a row taller than the viewport from being
+     * scrolled to its bottom — the top of something too big to see is the part that says what it is.
+     */
+    private static float scrollDelta(float pos, float size, float view, float extent) {
+        float lead = pos - view;
+        float trail = (pos + size) - (view + extent);
+        if (lead < 0f) {
+            return lead;
+        }
+        return trail > 0f ? Math.min(lead, trail) : 0f;
+    }
+
+    /** Move {@code n}'s scroll offset by {@code delta}, clamped to its content; @return what it actually moved. */
+    private static float scrollBy(RetainedNode n, float delta, boolean vertical) {
+        if (delta == 0f) {
+            return 0f;
+        }
+        float was = vertical ? n.scrollY : n.scrollX;
+        float max = vertical ? Math.max(0f, n.contentH - n.viewH) : Math.max(0f, n.contentW - n.viewW);
+        float now = Math.max(0f, Math.min(was + delta, max));
+        if (vertical) {
+            n.scrollY = now;
+        } else {
+            n.scrollX = now;
+        }
+        return now - was;
     }
 
     /**

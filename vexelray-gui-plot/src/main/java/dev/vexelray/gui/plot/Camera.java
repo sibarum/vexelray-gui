@@ -97,6 +97,30 @@ public record Camera(double yaw, double pitch) {
     }
 
     /**
+     * Where an eye {@code distance} away stands to look at the origin from here — {@code {x, y, z}}, in the same
+     * normalised space {@link #project} takes its arguments in.
+     *
+     * <p>Simply {@code -distance} times {@link #viewDirection}, and it exists so that a renderer needing an
+     * actual <em>position</em> rather than a projection does not re-derive one from the angles. A ray-marcher
+     * does need one: it has no projection to fold the viewpoint into, only an eye and a direction to fire rays
+     * along. Deriving it here means a marched picture and a projected one look from the same place <em>because
+     * they are computed from the same vector</em>, rather than because two pieces of trigonometry were written
+     * to agree and have not yet drifted — which matters the moment an application offers both and lets someone
+     * swap between them.
+     *
+     * <p>No magnification in it, for the reason there is none anywhere else here: how far back an eye should
+     * stand depends on how large the picture is meant to be, and this class has never heard of a viewport. The
+     * caller supplies the distance it wants.
+     */
+    public double[] eye(double distance) {
+        if (!Double.isFinite(distance)) {
+            throw new IllegalArgumentException("an eye needs a finite distance, was " + distance);
+        }
+        double[] forward = viewDirection();
+        return new double[]{-distance * forward[0], -distance * forward[1], -distance * forward[2]};
+    }
+
+    /**
      * The half-extent, in projected units, of the normalised unit box seen from here — {@code {u, v}}. What a
      * viewport divides by to make the whole volume fit however it happens to be turned.
      */

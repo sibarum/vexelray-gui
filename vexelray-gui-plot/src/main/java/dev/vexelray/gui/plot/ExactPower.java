@@ -31,6 +31,30 @@ final class ExactPower {
     /** The largest root index or power evaluated at all; past it we decline rather than lie. */
     private static final int LARGEST_INDEX = 1_000_000;
 
+    /**
+     * How large an integer the search for an <em>exact</em> root will look at, in bits.
+     *
+     * <p>The exact path is worth taking only while it is cheap, and it stops being cheap without warning. A
+     * {@link BigDecimal} of scale {@code s} becomes a numerator and denominator around {@code 10^s}, and
+     * {@link #integerRoot} then runs a Newton descent whose every step raises a number that size to a power.
+     * Scale grows through the exact arithmetic upstream — the product of two scale-{@code s} values has scale
+     * {@code 2s}, and a derivative is a tree of products — so an ordinary expression can arrive here with
+     * hundreds of digits and an awkward one with thousands. At that point the descent is not slow, it is
+     * effectively unbounded: <b>{@code (x²−y²)^(1÷2)} hung the surface renderer indefinitely</b>, burning CPU
+     * inside {@code BigInteger.pow} with the window still up and nothing to show for it.
+     *
+     * <p>Past this size the exact attempt is abandoned for {@link #newtonRoot}, which is bounded, correctly
+     * rounded to the claimed precision, and widened outward by {@link Interval} afterwards like every other
+     * endpoint. So the enclosure stays sound and merely stops being <em>exact</em> — which is the trade this
+     * class exists to make deliberately rather than to stumble into.
+     *
+     * <p>This bounds <em>cost</em>, and it is not what makes {@link #integerRoot} correct — that is its seed,
+     * taken from the bit length and therefore right at every magnitude. The two were found together and are
+     * worth keeping apart: with a sound seed the exact search terminates for any input at all, and this only
+     * says when it has stopped being worth attempting.
+     */
+    private static final int LARGEST_EXACT_BITS = 900;
+
     private ExactPower() {
     }
 
@@ -122,6 +146,9 @@ final class ExactPower {
             denominator = BigInteger.ONE;
         }
         Rational exact = Rational.reduce(numerator, denominator);
+        if (exact.num().bitLength() > LARGEST_EXACT_BITS || exact.den().bitLength() > LARGEST_EXACT_BITS) {
+            return newtonRoot(v, n);        // too big to search exactly; see LARGEST_EXACT_BITS
+        }
         BigInteger[] top = integerRoot(exact.num(), n);
         BigInteger[] bottom = integerRoot(exact.den(), n);
         if (top[1].signum() != 0 && bottom[1].signum() != 0) {          // both are perfect n-th powers
@@ -144,7 +171,16 @@ final class ExactPower {
         if (n == 1) {
             return new BigInteger[]{a, BigInteger.ONE};
         }
-        BigInteger x = BigInteger.valueOf((long) Math.max(1.0, Math.pow(a.doubleValue(), 1.0 / n)));
+        // The seed must be an OVER-estimate, because the descent below only ever goes down and stops the moment
+        // a step fails to decrease. Taken from the bit length, it always is: a < 2^L, so the n-th root is under
+        // 2^(L/n + 1) for any a whatsoever.
+        //
+        // It used to be (long) Math.pow(a.doubleValue(), 1.0 / n), and that is where the surface renderer went
+        // when asked for (x²−y²)^(1÷2). The cast saturates at Long.MAX_VALUE, so for a large a the seed came
+        // back around 9.2e18 while the true root was some 10^135 — an UNDER-estimate. The descent then broke on
+        // its first step, having nowhere down to go, and left the two ±1 correction loops below to walk the
+        // remaining distance one integer at a time. Not slow: unreachable, with the window still up.
+        BigInteger x = BigInteger.ONE.shiftLeft(a.bitLength() / n + 1);
         BigInteger order = BigInteger.valueOf(n);
         BigInteger below = BigInteger.valueOf(n - 1L);
         while (true) {                                                   // integer Newton descent

@@ -49,8 +49,8 @@ class TreeScrollTest {
     void walkingPastTheFoldBringsTheSelectionWithIt() {
         try (HeadlessGui h = new HeadlessGui()) {
             TreeView<String> tree = shortTree(h);
-            assertTrue(tree.node().layout().overflowY(), "twenty rows in a box that holds a few");
-            assertEquals(0f, tree.node().layout().scrollY(), 0.5f, "and it opens at the top");
+            assertTrue(tree.scroller().layout().overflowY(), "twenty rows in a box that holds a few");
+            assertEquals(0f, tree.scroller().layout().scrollY(), 0.5f, "and it opens at the top");
 
             tree.focus();
             for (int i = 0; i < 8; i++) {
@@ -59,7 +59,7 @@ class TreeScrollTest {
             }
 
             assertEquals("item07", tree.selected());
-            assertTrue(tree.node().layout().scrollY() > 0f, "the tree scrolled to keep up");
+            assertTrue(tree.scroller().layout().scrollY() > 0f, "the tree scrolled to keep up");
             assertInView(tree, "item07");
         }
     }
@@ -79,7 +79,7 @@ class TreeScrollTest {
             h.tap(Key.HOME);
             h.frame();
             assertEquals("item00", tree.selected());
-            assertEquals(0f, tree.node().layout().scrollY(), 0.5f, "and back to the top for the first row");
+            assertEquals(0f, tree.scroller().layout().scrollY(), 0.5f, "and back to the top for the first row");
         }
     }
 
@@ -96,6 +96,54 @@ class TreeScrollTest {
 
             assertEquals("item18", tree.selected());
             assertInView(tree, "item18");
+        }
+    }
+
+    /**
+     * The wheel over a row scrolls the rows. It reaches the scroller by being the nearest scrollable ancestor of
+     * whatever was under the pointer, so moving the rows into a box of their own changed where the scrolling
+     * happens and nothing about how it is asked for.
+     */
+    @Test
+    void theWheelOverARowScrollsTheRowsAndNotTheFrame() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TreeView<String> tree = shortTree(h);
+            Rect box = tree.node().layout().rect();
+            h.wheel(0, -3, box.x() + box.w() / 2f, box.y() + box.h() / 2f);
+
+            assertTrue(tree.scroller().layout().scrollY() > 0f, "the rows moved");
+            assertEquals(0f, tree.node().layout().scrollY(), 0.5f, "and the frame around them did not");
+            tree.close();
+        }
+    }
+
+    /**
+     * The find bar does not scroll away with the rows. It is chrome about the tree, not a row of it, so it lives
+     * above the scroller rather than inside it — and the rows move under it while it stays where it was put.
+     */
+    @Test
+    void theFindBarStaysPutWhileTheRowsScrollUnderIt() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TreeView<String> tree = shortTree(h);
+            tree.focus();
+            h.chord(Key.F, Key.LEFT_CONTROL);
+            h.frame();
+            Rect opened = tree.findBar().layout().rect();
+            assertTrue(opened.h() > 0f, "the bar has a strip of its own");
+
+            tree.focus();          // back to the rows; the bar keeps its query and its place
+            h.tap(Key.END);
+            h.frame();
+            h.frame();
+
+            assertEquals("item19", tree.selected());
+            assertTrue(tree.scroller().layout().scrollY() > 0f, "the rows really did scroll");
+            Rect bar = tree.findBar().layout().rect();
+            assertEquals(opened.y(), bar.y(), 0.5f, "and the bar is exactly where it was");
+            Rect box = tree.node().layout().rect();
+            assertTrue(bar.y() >= box.y() - 0.5f && bar.y() + bar.h() <= box.y() + box.h() + 0.5f,
+                    "still inside the tree's box: bar " + bar + " in " + box);
+            tree.close();
         }
     }
 

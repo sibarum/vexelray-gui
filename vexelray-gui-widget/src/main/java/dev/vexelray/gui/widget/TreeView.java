@@ -67,8 +67,10 @@ import java.util.function.Predicate;
  * (see {@link Job}), so triggering a second one supersedes the first wherever it had got to.
  *
  * <p>Scrolling, clipping and scrollbars come from the container itself (overflow is a layout fact, not a widget
- * feature), so a tree taller than its box scrolls with no code here. Call {@link #close()} to release the
- * tree's subscription and registrations when removing it.
+ * feature), so a tree taller than its box scrolls with no code here. Which container is the point: {@link #node()}
+ * is a frame that never scrolls, holding the chrome and, under it, the {@link #scroller()} the rows live in. A
+ * tree that scrolled as one box would scroll its own find bar away — chrome that leaves when the content moves is
+ * not chrome. Call {@link #close()} to release the tree's subscription and registrations when removing it.
  */
 public final class TreeView<T> implements AutoCloseable {
 
@@ -268,6 +270,12 @@ public final class TreeView<T> implements AutoCloseable {
     private final Gui gui;
     private final Source<T> source;
     private final Node root;
+
+    /**
+     * The rows, and the thing that scrolls. Separate from {@link #root} so the find bar can be chrome rather than
+     * content: a bar inside the scroller is a bar that scrolls away, which is not a bar.
+     */
+    private final Node rows;
     private final Subscription focusSub;
 
     /** All state below is guarded by {@code this}. The GUI-thread stages and the handler executor both mutate
@@ -316,13 +324,18 @@ public final class TreeView<T> implements AutoCloseable {
         // the application can replace, and a reason it is stated as a predicate rather than baked into the walk.
         this.expandAction = Action.<T>of(GLYPH_COLLAPSED, "Expand", this::expandDeep).enabledWhen(this::canOpen);
         this.collapseAction = Action.<T>of(GLYPH_EXPANDED, "Collapse", this::collapseDeep).enabledWhen(this::isOpen);
+        // The frame and the scroller are two boxes, not one. The frame carries the tree's own look and holds the
+        // chrome; the rows go inside a scroller that fills what is left of it. One box could not do both: the bar
+        // would be content, and content scrolls.
         this.root = gui.column()
                 .width(Length.FILL)
                 .height(Length.FILL)
                 .background(gui.theme().color(Role.WELL))
                 .corner(Length.rem(0.5f))
                 .border(Length.rem(0.1f), gui.theme().color(Role.LINE))
-                .padding(Length.dp(4));
+                .padding(Length.dp(4))
+                .scroll(false, false);
+        this.rows = gui.column().width(Length.FILL).height(Length.FILL);
 
         // Navigation is an ordered stage: moving a cursor is order-dependent under key repeat, and it is pure
         // lookups on the visible list — exactly what the GUI-thread lane is for. Registering it also makes the
@@ -330,19 +343,19 @@ public final class TreeView<T> implements AutoCloseable {
         gui.onKeyUi(this.root, this::onKey);
         this.focusSub = gui.bus().subscribe(gui.focusEvents(), this::onFocus);
 
-        // The find bar, built shut and placed at the top of the column — in the flow, so the rows move down by it
-        // rather than under it, which is what every tree that has one does. Ctrl+F opens it seeded with nothing: a
-        // tree has no text to have selected, so the chord can only mean "start".
+        // The find bar, built shut, above the scroller rather than inside it: it takes its strip from the rows'
+        // box, so opening it moves the rows down and scrolling them moves nothing of it. Ctrl+F opens it seeded
+        // with nothing — a tree has no text to have selected, so the chord can only mean "start".
         this.matcher = (item, query) -> source.label(item).toLowerCase().contains(query.toLowerCase());
         this.find = new FindBar(gui, new Finder()).openOn(this.root, () -> "");
-        root.append(find.node());
+        root.children(find.node(), rows);
 
         synchronized (this) {
             for (T item : source.roots()) {
                 Row r = new Row(item, null);
                 rootRows.add(r);
                 rowsByItem.put(item, r);
-                root.append(r.entry);
+                rows.append(r.entry);
             }
             refreshVisible();
         }
@@ -351,6 +364,17 @@ public final class TreeView<T> implements AutoCloseable {
     /** The node to place in a layout (size it there — the tree fills whatever box it is given). */
     public Node node() {
         return root;
+    }
+
+    /**
+     * The box the rows scroll in — inside {@link #node()}, below whatever chrome is up.
+     *
+     * <p>Public because it is what an application asking a scrolling question about a tree has to ask: the outer
+     * node is a frame that never scrolls, so its {@code scrollY} is always zero and its viewport includes the
+     * find bar's strip. Reading it is the only thing to do with it; the tree does the scrolling itself.
+     */
+    public Node scroller() {
+        return rows;
     }
 
     /**
@@ -609,9 +633,14 @@ public final class TreeView<T> implements AutoCloseable {
         gui.handlers().execute(() -> handler.accept(item));
     }
 
-    /** Rows the viewport holds, for PageUp/PageDown — rows are uniform height, so this is one division. */
+    /**
+     * Rows the viewport holds, for PageUp/PageDown — rows are uniform height, so this is one division.
+     *
+     * <p>The scroller's viewport, not the frame's: a page is what one press can bring into view, and while the
+     * find bar is up its strip is part of the frame and not part of that.
+     */
     private int pageRows() {
-        float viewH = root.layout().viewH();
+        float viewH = rows.layout().viewH();
         float rowH;
         synchronized (this) {
             rowH = visible.isEmpty() ? 0f : visible.get(0).rowNode.layout().rect().h();
@@ -683,6 +712,9 @@ public final class TreeView<T> implements AutoCloseable {
         Job job = begin();
         if (query == null || query.isEmpty()) {
             find.status("");
+            // Nothing to search for, but the bar asking has just taken a strip out of the rows' box — so the row
+            // the user was on comes back into what is left of it, rather than being scrolled off by the chrome.
+            revealSelected();
             return;
         }
         find.status("Searching…");
@@ -1043,6 +1075,17 @@ public final class TreeView<T> implements AutoCloseable {
         if (notify) {
             Consumer<T> handler = onSelect;
             gui.handlers().execute(() -> handler.accept(item));
+        }
+    }
+
+    /** Ask for the selected row to be on screen again, without selecting anything or telling anyone. */
+    private void revealSelected() {
+        Row row;
+        synchronized (this) {
+            row = selected;
+        }
+        if (row != null) {
+            row.rowNode.scrollIntoView();
         }
     }
 

@@ -170,6 +170,14 @@ public final class RetainedNode {
         return Boolean.TRUE.equals(props.get(PropKey.TEXT_SUNKEN));
     }
 
+    /**
+     * The image or viewport drawn across this node's box, or null (see {@link PropKey#IMAGE}). Deliberately
+     * untyped here: the model describes a tree, not a GPU, and the renderer is what knows how to bind one.
+     */
+    public Object image() {
+        return props.get(PropKey.IMAGE);
+    }
+
     public Color borderColor() {
         return (Color) props.get(PropKey.BORDER_COLOR);
     }

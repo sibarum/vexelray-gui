@@ -18,6 +18,7 @@ import dev.vexelray.text.TextLayout;
 import dev.vexelray.vulkan.present.AtlasTexture;
 import dev.vexelray.vulkan.present.GraphicsPipeline;
 import dev.vexelray.vulkan.present.OffscreenDraw;
+import dev.vexelray.vulkan.present.SampledColorTarget;
 import dev.vexelray.vulkan.present.SampledImage;
 import dev.vexelray.vulkan.present.VertexBuffer;
 import dev.vexelray.vulkan.present.VulkanRenderPass;
@@ -55,6 +56,8 @@ public final class GuiApp implements AutoCloseable {
     private final VulkanDevice device;
     private final AtlasTexture atlas;
     private final AtlasTexture noImage;
+    /** Render targets minted by {@link #viewport}, closed with the application. */
+    private final List<SampledColorTarget> viewports = new ArrayList<>();
     private final TextLayout[] text;
     private final TextMeasurer measurer;
 
@@ -132,6 +135,31 @@ public final class GuiApp implements AutoCloseable {
         this.main = new GuiWindow(platform, instance, device, atlas, noImage, text, measurer, null,
                 probe, probeSurface, config.decorations());
         this.controls = WindowControls.of(main.window);
+    }
+
+    /**
+     * A render target of this size, on this application's device — what a <b>viewport</b> node shows.
+     *
+     * <p>Hand the result to {@code Node.image(...)} and render a scene into it (
+     * {@code SampledColorTarget.renderInto}) before the frame that shows it. It is a {@code SampledImage}, so the
+     * canvas draws it as a box that samples: it rounds, clips, fades and lays out like every other node.
+     *
+     * <p>This exists because the device is deliberately not public — GPU lifetime is the framework's business, and
+     * a target allocated on a <em>different</em> device produces a descriptor set this application's pipeline
+     * cannot bind, which is a validation error rather than a blank box. Asking the application for its size and
+     * nothing else keeps that impossible. Targets made here are closed with the application, so an app that keeps
+     * one per viewport for the session need not track them; one that resizes a viewport should
+     * {@link SampledColorTarget#close()} the old target itself, after a frame that no longer names it.
+     *
+     * <p><b>Not resized for you.</b> A target has fixed pixels, and the node it lands in is laid out by flex — so
+     * a viewport whose box has changed shape is being upscaled by the sampler until the application makes a new
+     * target at the new size. Read the box from {@code Node.layout()} and decide; the framework will not guess,
+     * because re-marching a scene is far too expensive to trigger from a resize it merely noticed.
+     */
+    public SampledColorTarget viewport(int width, int height) {
+        SampledColorTarget target = new SampledColorTarget(device, Math.max(1, width), Math.max(1, height));
+        viewports.add(target);
+        return target;
     }
 
     /** The OS window handle (an {@code HWND} on Windows) — used to attach input (tactroller) for client-space
@@ -432,6 +460,10 @@ public final class GuiApp implements AutoCloseable {
         }
         open.clear();
         main.close();
+        for (SampledColorTarget v : viewports) {
+            v.close();
+        }
+        viewports.clear();
         atlas.close();
         noImage.close();
         device.close();

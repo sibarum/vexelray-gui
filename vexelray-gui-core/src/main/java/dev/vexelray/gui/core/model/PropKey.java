@@ -23,6 +23,18 @@ public enum PropKey {
     // reading as set into the surface. Renderer-only — the glyph rects are unchanged, so nothing reflows.
     TEXT_SUNKEN(false),
     /**
+     * A sampled image drawn across this node's border-box: a decoded picture, an icon, or a <b>viewport</b> — a
+     * scene another pipeline marched into a render target this frame. The value is the opaque handle the renderer
+     * hands to {@code Canvas.image}; in practice a {@code SampledImage}, and anything else draws as a blank box
+     * rather than failing the frame.
+     *
+     * <p><b>Not a node kind, and not layout-affecting.</b> A viewport is a box that samples, so it takes its size
+     * from the ordinary box it already is — width, height, flex, corner radius, border, clip and the subtree
+     * transforms all apply unchanged, and putting a scene on a node moves nothing. It draws between the
+     * background and the border, so a background shows through anything transparent in it and a border frames it.
+     */
+    IMAGE(false),
+    /**
      * Subtree opacity: this node and everything under it draw at {@code own x inherited}, multiplied into every
      * colour the renderer emits. The first of the visual-transform properties of architecture.md §7, and
      * deliberately not layout-affecting — fading a page moves nothing, so nothing reflows and no measurement

@@ -273,6 +273,14 @@ public final class TreeRenderer {
                 canvas.fillRoundRect(n.x, n.y, n.w, n.h, rTop, rBottom, fade(bg));
             }
         }
+        // An image sits between the background and the border: a background shows through anything transparent in
+        // it, and a border frames it. It takes the node's own radius, so a viewport rounds with the card it is in.
+        Object image = n.image();
+        if (image != null && n.w > 0f && n.h > 0f) {
+            // An alpha, not a colour: the tint multiplies the texel, so there is no shade to choose here — only
+            // the subtree opacity this class applies to everything it draws.
+            canvas.image(n.x, n.y, n.w, n.h, rTop, rBottom, image, alpha);
+        }
         if (bw > 0f && border != null) {
             canvas.strokeRoundRect(n.x, n.y, n.w, n.h, rTop, rBottom, bw, fade(border));
         }

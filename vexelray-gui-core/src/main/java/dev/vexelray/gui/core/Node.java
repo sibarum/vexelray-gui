@@ -10,6 +10,7 @@ import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.core.model.Mutation;
 import dev.vexelray.gui.core.model.PropKey;
 import dev.vexelray.text.TextLayout;
+import dev.vexelray.vulkan.present.SampledImage;
 
 /**
  * A write-only, identity-stable handle to a node — safe to hold and call from any thread. Every setter enqueues a
@@ -50,6 +51,22 @@ public final class Node {
 
     public Node background(Color c) {
         return prop(PropKey.BACKGROUND, c);
+    }
+
+    /**
+     * Draw {@code image} across this node's box — a picture, an icon, or a <b>viewport</b> showing a scene another
+     * pipeline rendered into a target this frame. Pass null to clear it.
+     *
+     * <p>The node stays an ordinary box: it sizes by flex like any other, and its corner radius, border, clip and
+     * subtree transforms apply to the image unchanged. That is the whole of what makes a viewport cheap here —
+     * there is no viewport node, because a box that samples already is one. The image is drawn between the
+     * background and the border, so a background shows through anything transparent and a border frames it.
+     *
+     * <p>Thread-safe like every setter: the handle is posted as a mutation and applied on the GUI thread. The
+     * image itself must stay valid until a frame that no longer names it has been presented.
+     */
+    public Node image(SampledImage image) {
+        return prop(PropKey.IMAGE, image);
     }
 
     public Node corner(Length radius) {

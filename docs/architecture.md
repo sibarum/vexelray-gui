@@ -57,8 +57,12 @@ Verified against the current libraries.
   per-vertex `screenPxRange`, with `textSunken` composing three glyph passes into letterpress text
   (a reduced px range *is* a soft edge). Corner radii are per vertical half — a tab is `(r, 0)`.
   Clipping is the same SDF as coverage (`pushClip`/`popClip`), so it antialiases and honours rounded
-  corners with no scissor state. Submission order = paint order. `toVertexArray()` / `vertexCount()`
-  feed a vertex buffer. The uber-shader itself is authored as SupirVast core IR and **pre-compiled to
+  corners with no scissor state. Submission order = paint order. `image(...)` is the same rounded box
+  again, multiplied by a texel from a second descriptor set — which is how a decoded picture, an icon,
+  or a **ray-marched scene** enters the batch. `toVertexArray()` / `vertexCount()`
+  feed a vertex buffer, and `runs()` divides it into spans sharing one bound image: still one buffer in
+  submission order, so a run says where to rebind and never where to reorder. No images = one run.
+  The uber-shader itself is authored as SupirVast core IR and **pre-compiled to
   SPIR-V at build time** (supirvast-maven-plugin); at runtime, pipeline creation is a resource read.
 - *Text (`vexelray-text`).* `AtlasData` (msdf-atlas-gen JSON, baked by `vexelray-msdf-maven-plugin`),
   `GlyphLayout`, `TextLayout`: line breaking + wrapping, H/V alignment (incl. justify), `measure` →
@@ -347,6 +351,41 @@ a label is likewise `em`, not `dp`, even though a toolbar feels like chrome.
 
 ---
 
+## 6.9 Viewports — a box that samples
+
+> **Built.** `PropKey.IMAGE`, `Node.image(SampledImage)`, `GuiApp.viewport(w, h)`, and the `TreeRenderer`
+> draw. Proven with an SDF scene marched into a target and composited beside a title and a status line.
+
+A **viewport** — a region showing a scene another pipeline rendered — is not a node kind. `NodeKind` stays
+`BOX` and `TEXT`, and the whole feature is one prop: an image handle the node draws across its border box.
+
+**That is the claim, not a shortcut.** A node carrying a marched scene sizes by flex like any other, and its
+corner radius, border, clip, opacity and translate apply to the scene for free — because none of them ever
+knew what was inside a box. A third node kind would have had to earn each of those back one at a time. It is
+also why `IMAGE` is not layout-affecting: putting a scene on a node moves nothing.
+
+It draws **between the background and the border**, so a background shows through anything transparent in the
+image and a border frames it. The tint is an alpha rather than a colour: the shader multiplies the texel, so
+untinted *is* opaque white, which is a fact about the multiply and not a shade any theme would name (the
+palette guard of docs/architecture-proof-plan.md enforces exactly that distinction).
+
+**Where targets come from.** `GuiApp.viewport(width, height)` mints a `SampledColorTarget` on the application's
+device. The device is deliberately not public — GPU lifetime is the framework's business — and a target
+allocated on a *different* device yields a descriptor set this application's pipeline cannot bind, which is a
+validation error rather than a blank box. Asking for a size and nothing else keeps that impossible. Targets
+made there close with the application.
+
+**Not resized for you, on purpose.** A target has fixed pixels; the node is laid out by flex. A viewport whose
+box changed shape is upscaled by the sampler until the application makes a new target at the new size.
+Re-marching a scene is far too expensive to trigger from a resize the framework merely noticed, so the box is
+readable from `Node.layout()` and the policy belongs to whoever owns the scene.
+
+**Cost.** A frame with N images is one set-0 bind, N rebinds of set 1, and N+1 draws over one vertex buffer in
+submission order. Alternating between two images costs a run each time; drawing an image's worth together
+costs one. A window with no images is one run and one draw, exactly as before.
+
+---
+
 ## 7. Animation — a visual-transform layer, GUI-side
 
 > **Partly built.** `OPACITY` and `TRANSLATE_X/Y` are in, motion runs on Kronometer through
@@ -362,8 +401,9 @@ inputs. Animating them never re-runs layout; it only changes how the tree is emi
 colour the renderer emits — including the chrome no node declares (scrollbars, the shadow under an
 elevated box, the selection wash), which is where this would otherwise leak. It is *per-primitive* alpha,
 not group opacity: overlapping siblings inside a half-faded subtree composite against each other. Exact
-group opacity needs an offscreen layer and a second composite, which is a render target this GUI does not
-have; the endpoints — the two states that must be right — are exact either way. `0` skips the subtree like
+group opacity needs an offscreen layer and a second composite. Render targets now exist here (§6.9), so this
+is a decision rather than a limit: a layer per faded subtree per frame is a great deal of GPU work for a 160ms
+crossfade, and the endpoints — the two states that must be right — are exact either way. `0` skips the subtree like
 a hidden node, but it still lays out and is still hit-testable, so anything fading something out from
 under the user pairs it with `hitInert`.
 

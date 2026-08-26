@@ -5,8 +5,10 @@
 # vexelray-gui
 
 A retained-mode GUI framework for the VexelRay engine. Declarative trees, flex layout, relative
-units, live mutation from any thread — rendered as **one batched draw of one SDF uber-shader**,
-shadows, lighting, and text included.
+units, live mutation from any thread — rendered as **one batch of one SDF uber-shader**,
+shadows, lighting, and text included. A window showing no images is one draw call; one showing
+a ray-marched **viewport** costs a rebind per image and nothing else, because a viewport is a box
+that samples rather than a second pipeline.
 
 <p align="center">
   <img src="docs/demo.png" alt="The showcase demo: lit, elevated cards; letterpressed buttons; tabs; editable fields" width="720">

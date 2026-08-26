@@ -9,6 +9,7 @@ import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.core.model.Mutation;
 import dev.vexelray.gui.core.model.PropKey;
+import dev.vexelray.gui.draw.Picture;
 import dev.vexelray.text.TextLayout;
 import dev.vexelray.vulkan.present.SampledImage;
 
@@ -67,6 +68,24 @@ public final class Node {
      */
     public Node image(SampledImage image) {
         return prop(PropKey.IMAGE, image);
+    }
+
+    /**
+     * Draw {@code picture} inside this node's box — a plot, a diagram, a sparkline. Marks are in pixels with
+     * {@code (0, 0)} at the box's top-left corner, so a drawing is authored against the box's own size and knows
+     * nothing about where on screen the box ended up. Pass null to clear it.
+     *
+     * <p>The node stays an ordinary box, exactly as with {@link #image}: it sizes by flex, and its border, clip
+     * and subtree transforms apply to the drawing unchanged. Nothing here is laid out or hit-tested mark by mark
+     * — a picture is one value, and replacing it is one prop write rather than a subtree of reconciled nodes.
+     * That is what makes a picture the right size of thing for a plot: hundreds of marks, none of which wants
+     * layout, all of which change together whenever the window does.
+     *
+     * <p>The drawing is <b>clipped to the box</b>, and it is in pixels rather than {@code Length}s — see
+     * {@link PropKey#PICTURE} for why both of those are so.
+     */
+    public Node picture(Picture picture) {
+        return prop(PropKey.PICTURE, picture);
     }
 
     public Node corner(Length radius) {

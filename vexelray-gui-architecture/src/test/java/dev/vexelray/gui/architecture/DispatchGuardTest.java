@@ -41,7 +41,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class DispatchGuardTest {
 
     /** The modules the rule is enforced on. Widening this list is what converting a module means. */
-    private static final List<String> RULED = List.of(Bytecode.GUI_TYPESET, Bytecode.GUI_PLOT);
+    private static final List<String> RULED = List.of(Bytecode.GUI_TYPESET, Bytecode.GUI_PLOT, Bytecode.GUI_DRAW);
 
     @Test
     void noSealedTypes() {

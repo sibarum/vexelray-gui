@@ -599,11 +599,14 @@ native presenter; the GUI writes no Vulkan.
 
 ```
 vexelray-gui           parent (pom), groupId dev.vexelray.gui, Java 25
+├─ vexelray-gui-draw   a picture: marks in one pixel frame, and the two targets that consume one -- the
+│                      engine's Canvas, and an SVG writer. Below -core, and knows nothing of nodes, layout,
+│                      themes or the bus. See docs/drawing.md.          -> vexelray-canvas, -text
 ├─ vexelray-gui-core   the framework core: model (Node/RetainedNode, Mutation, reconciler), the
 │                      Atchung-backed mutation channel + event/state publishing, Length + flex layout,
 │                      lifecycle FSM + animation transform layer, framework-owned input dispatch,
 │                      RichText, and the app loop (GuiApp).
-│                      -> vexelray-canvas, -text, -vulkan, -os-api, atchung-core
+│                      -> -draw, vexelray-canvas, -text, -vulkan, -os-api, atchung-core
 ├─ vexelray-gui-widget widgets built on core: box, text, button, slider, list, scroll, text field, … -> -core
 ├─ vexelray-gui-nfd    the GUI's one native binding — a Panama nativefiledialog-extended facade;
 │                      results delivered back through Atchung.                                        -> -core

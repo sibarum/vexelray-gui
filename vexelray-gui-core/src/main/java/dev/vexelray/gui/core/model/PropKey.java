@@ -35,6 +35,23 @@ public enum PropKey {
      */
     IMAGE(false),
     /**
+     * A {@code Picture} drawn inside this node's box: an ordered list of marks in the box's own pixel frame, with
+     * {@code (0, 0)} at its top-left corner. A plot, a diagram, a sparkline — anything an application wants to put
+     * marks on the screen for, without one laid-out node per mark.
+     *
+     * <p><b>Not a node kind, and not layout-affecting</b>, for the same reason {@link #IMAGE} is neither: a
+     * drawing is a box that paints, so it takes its size from the box it already is, and putting one on a node
+     * moves nothing. It draws over the image and under the border, <b>clipped to the box</b> — an application
+     * authors geometry in whatever numbers it computed, and there is no measure pass to catch a mark that
+     * overshoots, so here the clip is the guarantee rather than an assertion about it.
+     *
+     * <p><b>In pixels, and so rebuilt on a zoom.</b> The renderer resolves no units of its own — every length a
+     * node carries was resolved by the layout pass — and a picture cannot be scaled here without this class
+     * becoming the one place that does. A picture is authored for the box that was measured, exactly as a typeset
+     * block re-projects when its basis changes.
+     */
+    PICTURE(false),
+    /**
      * Subtree opacity: this node and everything under it draw at {@code own x inherited}, multiplied into every
      * colour the renderer emits. The first of the visual-transform properties of architecture.md §7, and
      * deliberately not layout-affecting — fading a page moves nothing, so nothing reflows and no measurement

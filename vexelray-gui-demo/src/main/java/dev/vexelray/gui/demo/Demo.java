@@ -515,6 +515,40 @@ public final class Demo {
                 .item("…", "Properties", () -> log.append(gui.text("properties: " + path)
                         .textSize(Length.rem(1)).textColor(theme.color(Role.DIM)))));
 
+        // A drawing, on its own page: one Picture prop instead of a node per mark, and the only thing in this
+        // window with a diagonal in it. The figure is in pixels, so it is rebuilt whenever the panel it is in
+        // changes size.
+        //
+        // On the *Ui* lane, which is the seam for a handler whose work has to land in the same frame as the
+        // layout it reacts to -- and a picture authored in pixels is exactly that. It is clipped to the box, so a
+        // figure a frame behind its panel is a figure that visibly does not fit while a window is being dragged.
+        // The lane's caveat ("anything that computes belongs on onResize") is about heavy work; this is a hundred
+        // marks and ninety-six sines, and paying it per resize frame is cheaper than looking wrong.
+        //
+        // Copy SVG hands the same picture to the second target: one authored drawing, and the file is the
+        // picture rather than a redrawing of it.
+        Node figure = gui.box().width(Length.FILL).height(Length.grow(1));
+        java.util.concurrent.atomic.AtomicReference<dev.vexelray.gui.draw.Picture> drawn =
+                new java.util.concurrent.atomic.AtomicReference<>(dev.vexelray.gui.draw.Picture.EMPTY);
+        java.util.concurrent.atomic.AtomicReference<float[]> figureSize =
+                new java.util.concurrent.atomic.AtomicReference<>(new float[]{0f, 0f});
+        gui.onResizeUi(figure, layout -> {
+            dev.vexelray.gui.draw.Picture p = Chart.of(layout.rect().w(), layout.rect().h(), theme);
+            drawn.set(p);
+            figureSize.set(new float[]{layout.rect().w(), layout.rect().h()});
+            figure.picture(p);
+        });
+        Node copySvg = button(gui, "Copy SVG", Role.INK, Role.PANEL, true);
+        gui.onClick(copySvg, () -> {
+            float[] size = figureSize.get();
+            String svg = dev.vexelray.gui.draw.Svg.document(drawn.get(), size[0], size[1]);
+            gui.clipboard().set(svg);
+            log.append(gui.text("copied " + svg.lines().count() + " lines of SVG")
+                    .textSize(Length.rem(1)).textColor(theme.color(Role.ACCENT)));
+        });
+        Node chart = gui.column().width(Length.FILL).height(Length.FILL).gap(Length.rem(0.625f))
+                .children(figure, copySvg);
+
         Tabs tabs = new Tabs(gui);
         // Changing tabs crossfades. Tabs supplies the motion (opacity over both pages, no layout for the
         // duration); Kronometer supplies the time. Neither module names the other — the seam is a DoubleConsumer
@@ -530,6 +564,7 @@ public final class Demo {
                 (progress, done) -> krono.ramp(Dur.ms(200), Ease.LINEAR, progress, done)));
         tabs.add("Editor", notes.node());
         tabs.add("Files", files.node());
+        tabs.add("Chart", chart);
         tabs.add("About", about);
 
         // Cards float: a lit fill (top-left edge light + faint vertical gradient) over a soft analytic shadow.

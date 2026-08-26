@@ -19,6 +19,9 @@
     </description>
 
     <modules>
+        <!-- A picture: marks in one pixel frame, and the two targets that consume one (the engine's Canvas, and
+             an SVG writer). Below -core, and depends on no other module. See docs/drawing.md. -->
+        <module>vexelray-gui-draw</module>
         <!-- Framework core: retained Node tree, Atchung-backed mutation channel + event/state publishing,
              Length + flex layout, lifecycle FSM + animation transform layer, input dispatch, RichText,
              GuiApp loop. -->
@@ -70,6 +73,11 @@
     <dependencyManagement>
         <dependencies>
             <!-- Reactor-internal modules: children reference these without a version. -->
+            <dependency>
+                <groupId>dev.vexelray.gui</groupId>
+                <artifactId>vexelray-gui-draw</artifactId>
+                <version>${project.version}</version>
+            </dependency>
             <dependency>
                 <groupId>dev.vexelray.gui</groupId>
                 <artifactId>vexelray-gui-core</artifactId>

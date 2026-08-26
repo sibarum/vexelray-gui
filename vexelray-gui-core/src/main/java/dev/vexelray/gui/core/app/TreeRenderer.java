@@ -7,6 +7,8 @@ import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.gui.core.text.Span;
 import dev.vexelray.gui.core.text.TextMetrics;
+import dev.vexelray.gui.draw.CanvasSink;
+import dev.vexelray.gui.draw.Picture;
 import dev.vexelray.text.TextLayout;
 
 /**
@@ -44,6 +46,14 @@ public final class TreeRenderer {
      * value threaded through fifteen signatures is a value that will eventually be forgotten on the sixteenth.
      */
     private float alpha = 1f;
+    /**
+     * The displacement inherited at the node currently being drawn — the sum of every {@code TRANSLATE} on the
+     * path from the root, and so the offset between where a node's box says it is and where it is actually
+     * painted. Kept because a clip is in <em>screen</em> coordinates while a node's box is not: a mask that must
+     * travel with the node it belongs to has to be pushed at the displaced position.
+     */
+    private float transX;
+    private float transY;
     // The live clip, in the coordinates the nodes' own boxes are in: what masked() judges a child against. Starts
     // unbounded, narrows on every clip pushed, and is restored on the way back out of each node.
     private float clipL = Float.NEGATIVE_INFINITY;
@@ -99,8 +109,12 @@ public final class TreeRenderer {
             float dx = node.translateX() * node.emPx;
             float dy = node.translateY() * node.emPx;
             boolean moved = dx != 0f || dy != 0f;
+            float keepTransX = transX;
+            float keepTransY = transY;
             if (moved) {
                 canvas.pushTranslate(dx, dy);
+                transX += dx;
+                transY += dy;
             }
             drawSelf(node, canvas, faceFor(faces, node));
             boolean scrollClip = node.overflowX || node.overflowY;
@@ -167,6 +181,8 @@ public final class TreeRenderer {
             clipT = keepT;
             clipR = keepR;
             clipB = keepB;
+            transX = keepTransX;   // restored rather than subtracted, so a deep tree accumulates no drift
+            transY = keepTransY;
         }
         alpha = inherited;   // one restore point, on every path out
     }
@@ -280,6 +296,21 @@ public final class TreeRenderer {
             // An alpha, not a colour: the tint multiplies the texel, so there is no shade to choose here — only
             // the subtree opacity this class applies to everything it draws.
             canvas.image(n.x, n.y, n.w, n.h, rTop, rBottom, image, alpha);
+        }
+        // A drawing goes over the image and under the border: an application's own marks belong inside the frame
+        // the node draws around them. It is clipped to the box because nothing measured it — a picture is
+        // authored geometry, and the clip is what makes "it stays in its box" true rather than hoped for.
+        Picture picture = n.picture();
+        if (picture != null && !picture.isEmpty() && n.w > 0f && n.h > 0f) {
+            // At the displaced position, because a drawing is the node's own content and travels with it. A
+            // container's clip is deliberately anchored where it was pushed (that is what lets a child slide
+            // inside it); a node's own picture is not a child, so it must not be trimmed by where the node
+            // would have been.
+            canvas.pushClip(n.x + transX, n.y + transY, n.w, n.h, Math.max(rTop, rBottom));
+            canvas.pushTranslate(n.x, n.y);
+            picture.emitTo(new CanvasSink(canvas, text, alpha));
+            canvas.popTranslate();
+            canvas.popClip();
         }
         if (bw > 0f && border != null) {
             canvas.strokeRoundRect(n.x, n.y, n.w, n.h, rTop, rBottom, bw, fade(border));

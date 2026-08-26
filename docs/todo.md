@@ -208,6 +208,13 @@ Wanted eventually, deliberately not now.
   is too, so a diagonal line cannot be drawn at all. A commutative-diagram arrow is the first real thing an open
   box set will ask for. Widening `Sink` is the decision, and it reaches the node projection (which would have to
   bypass `Node` for `Canvas`) and any remote consumer.
+
+  **The target now exists.** `vexelray-gui-draw` is a `Picture` of marks with a `line` at any angle, drawn on a
+  node as one prop and exportable as SVG — which is exactly the "bypass `Node` for `Canvas`" the note was
+  describing, already built and already clipped to its box (docs/drawing.md). So what is left is the narrow
+  decision this note always was: widen `Placed.Sink` by one operation, and project a typeset block onto a
+  `Picture` rather than onto floating nodes. The two sinks are close enough — `glyphs` and a box fill — that it is
+  a projection rather than a redesign, and the remote consumer's half of the question is unchanged.
 - **Selection.** Insured, not built: every `Box.Run` carries an app-supplied `sourceRef` and reading order is a
   published guarantee. Adding selection later should be purely additive.
 - **Wrapping structured text.** A typeset block is a fixed-aspect atom in v1 — right for equations, wrong for

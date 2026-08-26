@@ -6,6 +6,7 @@ import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.core.layout.LayoutEnums.ScrollLock;
+import dev.vexelray.gui.draw.Picture;
 import dev.vexelray.text.TextLayout;
 
 import java.util.ArrayList;
@@ -176,6 +177,15 @@ public final class RetainedNode {
      */
     public Object image() {
         return props.get(PropKey.IMAGE);
+    }
+
+    /**
+     * The drawing painted inside this node's box, or null (see {@link PropKey#PICTURE}). Typed, unlike
+     * {@link #image()}: an image is a handle only the renderer can interpret, whereas a picture is a value the
+     * model can hold and anything can read — which is what lets the same drawing be exported without a GPU.
+     */
+    public Picture picture() {
+        return (Picture) props.get(PropKey.PICTURE);
     }
 
     public Color borderColor() {

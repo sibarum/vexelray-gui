@@ -20,6 +20,12 @@
     </description>
 
     <dependencies>
+        <!-- A picture and its two targets. Below core: the drawing a node carries is a value, and the sink that
+             paints it into the Canvas is what the tree renderer uses. -->
+        <dependency>
+            <groupId>dev.vexelray.gui</groupId>
+            <artifactId>vexelray-gui-draw</artifactId>
+        </dependency>
         <!-- The message bus: mutations are published to a Topic and drained via a Pump on the GUI thread;
              app events and state are published here too (architecture.md §4-5). -->
         <dependency>

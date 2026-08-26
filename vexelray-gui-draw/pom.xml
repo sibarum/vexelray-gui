@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>dev.vexelray.gui</groupId>
+        <artifactId>vexelray-gui</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>vexelray-gui-draw</artifactId>
+
+    <name>VexelRay GUI :: Draw</name>
+    <description>
+        A picture: an ordered list of marks in one local pixel frame, and the two things that can consume it — the
+        engine's Canvas, and an SVG writer. One authored drawing, two targets, and the alphabet is bounded by what
+        the Canvas can actually draw, so neither target is a degraded version of the other. Below -core rather
+        than beside it: a picture knows nothing of nodes, layout, themes or the bus. See docs/drawing.md.
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>dev.vexelray</groupId>
+            <artifactId>vexelray-canvas</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>dev.vexelray</groupId>
+            <artifactId>vexelray-text</artifactId>
+        </dependency>
+    </dependencies>
+</project>

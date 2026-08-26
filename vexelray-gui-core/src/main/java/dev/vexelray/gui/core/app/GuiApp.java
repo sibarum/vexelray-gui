@@ -487,6 +487,11 @@ public final class GuiApp implements AutoCloseable {
         int[] atlasSize = new int[2];
         byte[] atlasRgba = loadAtlasRgba(atlasSize);
         TextLayout[] text = faces(AtlasData.loadFromResource(ATLAS_JSON));
+        // Two frames, not one. Anything an application derives from its own measured box — a picture authored in
+        // pixels is the clearest case — cannot exist during the first layout that produces that box: the observer
+        // fires inside it, and the mutation it posts is applied by the next drain. A still image wants the settled
+        // state rather than the instant before it, so the first frame is a warm-up and the second is the picture.
+        gui.frame(width, height, measurer(text));
         RetainedNode root = gui.frame(width, height, measurer(text));
         Canvas canvas = new Canvas(width, height);
         canvas.begin();

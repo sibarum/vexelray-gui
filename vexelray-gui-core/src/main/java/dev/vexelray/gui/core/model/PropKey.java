@@ -52,6 +52,31 @@ public enum PropKey {
      */
     PICTURE(false),
     /**
+     * A {@code Picture} drawn <b>over</b> this node and its whole subtree — the same value {@link #PICTURE} is,
+     * emitted at the other end of the node's paint. The decoration slot: a sweep across a field that just took a
+     * command, a wash over a panel that was written to from somewhere else, a ring around one that rejected what
+     * it was given.
+     *
+     * <p><b>Why a second slot rather than reusing {@link #PICTURE}.</b> The two are different in kind, and the
+     * difference is exactly where they paint. A picture is <em>content</em>: it goes under the border, because
+     * an application's own marks belong inside the frame the node draws around them, and it is the application's
+     * — a plot lives there. An overlay is <em>about</em> the node: it goes over the border, the text and the
+     * children, because a thing that says "this just happened to this box" that a label can cover has failed at
+     * the one job it has. Writing a decoration into {@link #PICTURE} would both mispaint it and evict the plot.
+     *
+     * <p><b>The third visual transform</b> (architecture.md §7), alongside {@link #OPACITY} and
+     * {@link #TRANSLATE_X}. Same bargain as those two: not layout-affecting, so nothing reflows and nothing is
+     * measured; never hit-tested, because a picture is not a node and there is nothing there to hit; and — the
+     * property that makes it a member of that layer rather than merely a prop — <b>its identity value is
+     * {@code null}</b>, so whatever put one on can be taken off again without anyone being told what was there
+     * before. That is what lets a one-shot cue be played on a node the framework does not own.
+     *
+     * <p>Clipped to the border box and travelling with the node's own displacement, exactly as {@link #PICTURE}
+     * is, and in the same pixel frame: {@code (0, 0)} is the box's top-left corner. The box's corner radii are
+     * published on {@link dev.vexelray.gui.core.layout.NodeLayout}, so an overlay can hug the shape it decorates.
+     */
+    OVERLAY(false),
+    /**
      * Subtree opacity: this node and everything under it draw at {@code own x inherited}, multiplied into every
      * colour the renderer emits. The first of the visual-transform properties of architecture.md §7, and
      * deliberately not layout-affecting — fading a page moves nothing, so nothing reflows and no measurement

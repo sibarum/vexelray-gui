@@ -388,14 +388,22 @@ costs one. A window with no images is one run and one draw, exactly as before.
 
 ## 7. Animation — a visual-transform layer, GUI-side
 
-> **Partly built.** `OPACITY` and `TRANSLATE_X/Y` are in, motion runs on Kronometer through
-> `vexelray-gui-krono`, and the first consumer is the tab transition (`Tabs.slide` + `KronoGui.ramp`).
-> `SCALE`, `ROTATION` and `TINT`, the visibility FSM, `gui.motion(DISABLED)` and the deadline-driven wait
-> loop are not. See docs/reactive-timing.md for the Kronometer seam and what it still owes.
+> **Partly built.** `OPACITY`, `TRANSLATE_X/Y` and `OVERLAY` are in, motion runs on Kronometer through
+> `vexelray-gui-krono`, and there are two consumers: the tab transition (`Tabs.slide` + `KronoGui.ramp`)
+> and one-shot cues (`Cue` + `Cues`). `SCALE`, `ROTATION` and `TINT`, the visibility FSM,
+> `gui.motion(DISABLED)` and the deadline-driven wait loop are not. See docs/reactive-timing.md for the
+> Kronometer seam and what it still owes.
 
 Opt-in per node; nothing fires unless an animation is attached. Animatable properties are a
-**post-layout visual transform** — `OPACITY, TRANSLATE_X/Y, SCALE, ROTATION, TINT` — **not** layout
-inputs. Animating them never re-runs layout; it only changes how the tree is emitted to the `Canvas`.
+**post-layout visual transform** — `OPACITY, TRANSLATE_X/Y, OVERLAY, SCALE, ROTATION, TINT` — **not**
+layout inputs. Animating them never re-runs layout; it only changes how the tree is emitted to the
+`Canvas`.
+
+**What makes something a member of this layer** is not that it is animatable — it is that **it has an
+identity value the framework can restore without being told**. That is the property `Tabs` relies on to
+come back to rest after a transition it may have lost, and it is what decides which props a general
+animation may touch at all: a `background` has no identity, so anything that animates one owns putting
+the old colour back, and only the thing that set it knows what that was.
 
 **`OPACITY`, as built.** One inherited float threaded through `TreeRenderer.walk`, multiplied into every
 colour the renderer emits — including the chrome no node declares (scrollbars, the shadow under an
@@ -416,6 +424,29 @@ to run — never, in a UI that is otherwise still. The em is already on the node
 follow, which is the honest reading of a transform layer and the reason `Tabs` makes both pages `hitInert`
 while they move: better no pointer target than one that disagrees with the picture. `CLIP` is the companion —
 a translated child adds no overflow, so it can never trip the clipping that comes with scrolling.
+
+**`OVERLAY`, as built — and why it had to exist.** A `Picture` painted over the node, its border, its
+text and its whole subtree, in the box's own pixel frame and clipped to it. The same value `PICTURE`
+takes and the same emitter; the other end of the node's paint. The two are not redundant, and the
+difference is exactly *where* they land: `PICTURE` is **content**, so it goes under the border — an
+application's marks belong inside the frame the node draws around them, and a plot lives there.
+`OVERLAY` is **about** the node, so it goes on top — a decoration that a label can cover has failed at
+the one job it has. Writing a decoration into `PICTURE` would both mispaint it and evict the plot.
+
+Its identity value is `null`, which is what admits it to this layer and what it is *for*: **an
+application can define a one-shot visual and have the framework play it on a node it does not own**, with
+nothing to remember and nothing to guess wrong on the way back. `Cue` is that surface —
+`(progress, box) -> Picture`, a pure function, so an application's own is a lambda and every stock one is
+testable with no GUI, no node and no clock. `Cues` plays them: it holds the ramp, and it holds the two
+things a cue cannot hold for itself — the box comes back clean, and **a node shows one cue at a time**.
+Cueing a node mid-cue supersedes rather than overlaps, because two cues writing one slot every frame is
+a race whose loser then wipes the winner's paint a duration later — a flash that clears itself halfway
+through, but only when the user was quick. Not queued, either: a cue means "this just happened", and
+three backed up behind each other are all saying it about a moment that has passed.
+
+The box's corner radii ride on `NodeLayout` for this. They are the one part of a node's shape that is not
+a rectangle, and without them anything authoring marks in a node's own box can only draw square corners
+over a rounded card and hope.
 
 **Two curves, not one.** The fade is linear and the travel is eased-out, and that split is the whole of why a
 transition reads as motion rather than as a slideshow. Opacity has no place to arrive at; displacement does,

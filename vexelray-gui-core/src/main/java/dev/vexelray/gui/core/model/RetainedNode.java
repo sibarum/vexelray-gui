@@ -188,6 +188,14 @@ public final class RetainedNode {
         return (Picture) props.get(PropKey.PICTURE);
     }
 
+    /**
+     * The drawing painted over this node and its subtree, or null (see {@link PropKey#OVERLAY}) — the decoration
+     * slot, read the same way and by the same consumers as {@link #picture()}, only emitted last.
+     */
+    public Picture overlay() {
+        return (Picture) props.get(PropKey.OVERLAY);
+    }
+
     public Color borderColor() {
         return (Color) props.get(PropKey.BORDER_COLOR);
     }

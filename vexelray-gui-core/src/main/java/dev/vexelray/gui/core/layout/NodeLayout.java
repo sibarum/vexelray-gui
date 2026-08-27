@@ -11,11 +11,18 @@ package dev.vexelray.gui.core.layout;
  *
  * <p>Text-specific metrics (caret geometry, line boxes) are added in a later migration step as a nullable field;
  * this step carries boxes, scroll and overflow only.
+ *
+ * <p><b>The corner radii are here because a drawing needs them.</b> They are the one piece of a node's shape that
+ * is not a rectangle, and everything that authors marks in a node's own box — a {@code Picture}, and above all an
+ * overlay that has to hug the box it decorates — would otherwise have to draw square corners over a rounded card
+ * and hope. Resolved to px by the layout pass like every other length, so a reader needs no units and no context.
  */
 public record NodeLayout(
         boolean present,
         Rect rect,
         Rect content,
+        float cornerTopPx,
+        float cornerBottomPx,
         float scrollX,
         float scrollY,
         float contentW,
@@ -27,7 +34,7 @@ public record NodeLayout(
 
     /** The value returned for a node that has no computed layout yet. */
     public static final NodeLayout ABSENT =
-            new NodeLayout(false, Rect.ZERO, Rect.ZERO, 0f, 0f, 0f, 0f, false, false, 0f, null);
+            new NodeLayout(false, Rect.ZERO, Rect.ZERO, 0f, 0f, 0f, 0f, 0f, 0f, false, false, 0f, null);
 
     /** Caret geometry for a text node (line boxes + per-boundary x), or {@code null} for a non-text node. */
     public dev.vexelray.gui.core.text.TextMetrics text() {

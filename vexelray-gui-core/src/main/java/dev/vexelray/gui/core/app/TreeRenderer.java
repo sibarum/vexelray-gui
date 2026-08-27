@@ -174,6 +174,11 @@ public final class TreeRenderer {
             if (!scrollClip && node.clip()) {
                 canvas.popClip();
             }
+            // The decoration slot, last of everything this node puts on the screen — over its own border and text
+            // and over every child, because something that says "this just happened to this box" that a label can
+            // cover has failed at the one thing it does. Inside the node's translate, like its own picture: an
+            // overlay decorates where the node is drawn, not where it was laid out.
+            drawOverlay(node, canvas, faceFor(faces, node));
             if (moved) {
                 canvas.popTranslate();
             }
@@ -267,6 +272,36 @@ public final class TreeRenderer {
                 Math.max(0f, r - 1.5f), fade(scrollTrough));
     }
 
+    /**
+     * The node's decoration, emitted after its whole subtree — see {@link dev.vexelray.gui.core.model.PropKey#OVERLAY}.
+     * A separate call rather than a second line in {@link #drawSelf} because <em>when</em> is the whole of what
+     * distinguishes the two slots: same value, same frame, same clip; the other end of the node.
+     */
+    private void drawOverlay(RetainedNode n, Canvas canvas, TextLayout text) {
+        emitPicture(n, n.overlay(), canvas, text);
+    }
+
+    /**
+     * Paint {@code picture} in {@code n}'s own pixel frame — {@code (0, 0)} at the box's top-left — clipped to the
+     * border box.
+     *
+     * <p>Clipped because nothing measured it: a picture is authored geometry and there is no measure pass to catch
+     * a mark that overshoots, so the clip is what makes "it stays in its box" true rather than hoped for. At the
+     * <b>displaced</b> position, because a picture is the node's own paint and travels with it — a container's
+     * clip is deliberately anchored where it was pushed (that is what lets a child slide inside it), and a node's
+     * own picture is not a child, so it must not be trimmed by where the node would have been.
+     */
+    private void emitPicture(RetainedNode n, Picture picture, Canvas canvas, TextLayout text) {
+        if (picture == null || picture.isEmpty() || n.w <= 0f || n.h <= 0f) {
+            return;
+        }
+        canvas.pushClip(n.x + transX, n.y + transY, n.w, n.h, Math.max(n.cornerPx, n.cornerBottomPx));
+        canvas.pushTranslate(n.x, n.y);
+        picture.emitTo(new CanvasSink(canvas, text, alpha));
+        canvas.popTranslate();
+        canvas.popClip();
+    }
+
     private void drawSelf(RetainedNode n, Canvas canvas, TextLayout text) {
         // Border width, corner radius and text size were resolved to px by the layout pass (border-box), so the
         // renderer needs no units or layout context — it just paints the computed rect.
@@ -298,20 +333,8 @@ public final class TreeRenderer {
             canvas.image(n.x, n.y, n.w, n.h, rTop, rBottom, image, alpha);
         }
         // A drawing goes over the image and under the border: an application's own marks belong inside the frame
-        // the node draws around them. It is clipped to the box because nothing measured it — a picture is
-        // authored geometry, and the clip is what makes "it stays in its box" true rather than hoped for.
-        Picture picture = n.picture();
-        if (picture != null && !picture.isEmpty() && n.w > 0f && n.h > 0f) {
-            // At the displaced position, because a drawing is the node's own content and travels with it. A
-            // container's clip is deliberately anchored where it was pushed (that is what lets a child slide
-            // inside it); a node's own picture is not a child, so it must not be trimmed by where the node
-            // would have been.
-            canvas.pushClip(n.x + transX, n.y + transY, n.w, n.h, Math.max(rTop, rBottom));
-            canvas.pushTranslate(n.x, n.y);
-            picture.emitTo(new CanvasSink(canvas, text, alpha));
-            canvas.popTranslate();
-            canvas.popClip();
-        }
+        // the node draws around them.
+        emitPicture(n, n.picture(), canvas, text);
         if (bw > 0f && border != null) {
             canvas.strokeRoundRect(n.x, n.y, n.w, n.h, rTop, rBottom, bw, fade(border));
         }

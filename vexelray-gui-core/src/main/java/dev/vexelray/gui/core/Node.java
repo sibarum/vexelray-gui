@@ -88,6 +88,28 @@ public final class Node {
         return prop(PropKey.PICTURE, picture);
     }
 
+    /**
+     * Draw {@code picture} <b>over</b> this node and everything under it — over its border, its text and its
+     * children. The same value {@link #picture} takes and the same pixel frame, painted at the other end of the
+     * node. Pass null to clear it.
+     *
+     * <p>{@link #picture} is content, so it goes inside the frame the node draws around it; this is a
+     * <em>decoration</em>, so it goes on top. That is the whole distinction, and it is why they are two slots:
+     * a sweep across a field that just took a command has to be visible over the command, and it must not evict
+     * the plot a node was already drawing.
+     *
+     * <p><b>Third of the visual transforms</b> (architecture.md §7), with {@link #opacity} and
+     * {@link #translate}: nothing reflows, nothing is measured, nothing is hit-tested — and its identity value
+     * is null, so a framework that put one on can take it off again without knowing what was there before. That
+     * is what makes it the surface a one-shot cue can be played on (see {@code Cue} in {@code -widget}).
+     *
+     * <p>Clipped to the border box, and it travels with the node's own {@link #translate}. The box's corner radii
+     * are on {@link NodeLayout}, so an overlay can hug the shape it is decorating.
+     */
+    public Node overlay(Picture picture) {
+        return prop(PropKey.OVERLAY, picture);
+    }
+
     public Node corner(Length radius) {
         return prop(PropKey.CORNER, radius);
     }

@@ -1258,6 +1258,7 @@ public final class Gui implements AutoCloseable {
         out.put(n.id, new NodeLayout(true,
                 new Rect(n.x, n.y, n.w, n.h),
                 new Rect(n.viewX, n.viewY, n.viewW, n.viewH),
+                n.cornerPx, n.cornerBottomPx,
                 n.scrollX, n.scrollY, n.contentW, n.contentH, n.overflowX, n.overflowY, n.textSizePx,
                 n.textMetrics));
         for (RetainedNode c : n.children) {

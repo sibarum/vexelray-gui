@@ -22,6 +22,9 @@ import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.gui.krono.KronoGui;
 import sibarum.kronometer.Dur;
 import sibarum.kronometer.anim.Ease;
+import dev.vexelray.gui.widget.Cue;
+import dev.vexelray.gui.widget.Cues;
+import dev.vexelray.gui.widget.Ramp;
 import dev.vexelray.gui.widget.Slider;
 import dev.vexelray.gui.widget.Tabs;
 import dev.vexelray.gui.widget.TitleBar;
@@ -593,11 +596,6 @@ public final class Demo {
         // The click vertical: tactroller -> atchung -> dispatch -> this handler (on a worker thread), which
         // mutates the tree through handles just like the background worker does.
         AtomicInteger clicks = new AtomicInteger();
-        gui.onClick(getStarted, () -> {
-            int n = clicks.incrementAndGet();
-            log.append(gui.text("clicked \"Get started\" x" + n)
-                    .height(Length.rem(1.5f)).textSize(Length.rem(1)).textColor(theme.color(Role.ACCENT)));
-        });
 
         // A slider (drag with pointer capture) driving a live value label.
         Node valueLabel = gui.text("50%").width(Length.rem(5)).textSize(Length.rem(1)).textColor(theme.color(Role.INK))
@@ -614,8 +612,38 @@ public final class Demo {
                 dev.vexelray.gui.core.text.Span.foreground(0, 4, theme.color(Role.ACCENT)),      // "type"
                 dev.vexelray.gui.core.text.Span.background(5, 9, theme.color(Role.LINE)),         // "here"
                 dev.vexelray.gui.core.text.Span.underline(11, 16)));           // "Enter"
-        field.onSubmit(s -> log.append(gui.text("submitted: " + s)
-                .textSize(Length.rem(1)).textColor(theme.color(Role.INK))));
+        // One-shot cues: an application says what a moment looks like, and the framework plays it once and takes
+        // it back off. Three moments, three cues, all painted into the same overlay slot — a scanline sweeping the
+        // field that accepted a command, a wash over one written to from elsewhere, a ring around one that refused.
+        // Linear, because none of them arrives anywhere: they travel through, or rise and fall.
+        // 420ms, not 260: a cue is competing with the thing the user is actually looking at (the caret, the log
+        // line that just appeared), so it has to survive not being looked at directly. Under about a third of a
+        // second it reads as a rendering glitch if it registers at all.
+        Cues cues = new Cues((progress, done) -> krono.ramp(Dur.ms(420), Ease.LINEAR, progress, done));
+        Cue accepted = Cue.scanline(theme.color(Role.ACCENT));
+        // Refusal gets longer than acceptance: it is asking to be read, not merely noticed.
+        Ramp insistent = (progress, done) -> krono.ramp(Dur.ms(650), Ease.LINEAR, progress, done);
+        Cue rejected = Cue.ring(theme.color(Role.DANGER)).with(Cue.wash(
+                Color.withAlpha(theme.color(Role.DANGER), 0.45f)));
+        Cue written = Cue.wash(Color.withAlpha(theme.color(Role.ACCENT), 0.5f));
+        field.onSubmit(s -> {
+            if (s.isBlank()) {
+                cues.play(field.node(), rejected, insistent);   // nothing to submit: refused, and it has to read as refusal
+                return;
+            }
+            cues.play(field.node(), accepted);
+            log.append(gui.text("submitted: " + s)
+                    .textSize(Length.rem(1)).textColor(theme.color(Role.INK)));
+        });
+        gui.onClick(getStarted, () -> {
+            int n = clicks.incrementAndGet();
+            log.append(gui.text("clicked \"Get started\" x" + n)
+                    .height(Length.rem(1.5f)).textSize(Length.rem(1)).textColor(theme.color(Role.ACCENT)));
+            // A programmatic write — the case the user did not cause, and so the one that most needs saying. The
+            // field changes under them with nothing to have watched; the cue is what makes it a visible event.
+            field.text("filled in from somewhere else (click #" + n + ")");
+            cues.play(field.node(), written);
+        });
 
         // Wrap vs horizontal scroll, toggled live. Both are the same field: turning wrap off makes the node
         // report content wider than its box, which is what grows an h-scrollbar — a text leaf is a scroll

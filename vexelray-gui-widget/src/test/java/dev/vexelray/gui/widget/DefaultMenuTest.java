@@ -172,6 +172,44 @@ class DefaultMenuTest {
     }
 
     /**
+     * A bar of <em>panes</em> offers no Close, because there is nothing behind a pane and no way to ask for one
+     * back. The application may still remove one: that line is between what the bar offers a user and what its
+     * owner can do, and it is the same line {@code onRemove} is drawn along.
+     */
+    @Test
+    void aPaneOffersNoCloseButItsOwnerMayStillRemoveIt() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Tabs tabs = new Tabs(h.gui).closable(false);
+            tabs.add("⁘", h.gui.box());
+            tabs.add("θ", h.gui.box());
+            h.gui.root().children(tabs.node());
+            h.frame();
+
+            rightClick(h, headerCenterX(tabs, 1), headerCenterY(tabs));
+            assertEquals(List.of(), labels(h), "nothing on offer, so nothing that can lose the pad");
+
+            tabs.remove(1);
+            assertEquals(1, tabs.count(), "the owner is not the one being protected from itself");
+        }
+    }
+
+    /** An application's own items still reach a pane's menu — Close is the only thing suppressed. */
+    @Test
+    void aPaneStillCarriesTheApplicationsOwnItems() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Tabs tabs = new Tabs(h.gui).closable(false)
+                    .onContextMenu((index, menu) -> menu.item("Reset", () -> { }));
+            tabs.add("⁘", h.gui.box());
+            tabs.add("θ", h.gui.box());
+            h.gui.root().children(tabs.node());
+            h.frame();
+
+            rightClick(h, headerCenterX(tabs, 1), headerCenterY(tabs));
+            assertEquals(List.of("Reset"), labels(h));
+        }
+    }
+
+    /**
      * Close is the one structural change an application never asked for, so it is the one its bookkeeping will
      * otherwise miss. An owner keeping anything per tab has to hear about this exactly as it hears about its own
      * {@code remove} — otherwise its list keeps a tab the bar has lost and every index it computes afterwards

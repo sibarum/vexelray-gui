@@ -39,8 +39,19 @@ public final class Tabs {
     private final Node pages;
     private final List<Node> headers = new ArrayList<>();
     private final List<Node> bodies = new ArrayList<>();
+    /**
+     * The pointer state each header was last seen in, parallel to {@link #headers}.
+     *
+     * <p>Kept because a skin is told the selection and the state <em>together</em>, and the two arrive from
+     * different places: the pointer from a state handler, the selection from {@link #select}. Without this, a
+     * tab selected while the pointer is over it repaints as though the pointer were elsewhere, and stays wrong
+     * until it moves — which is exactly the class of bug a whole-header skin exists to make unwritable.
+     */
+    private final List<InteractionState> states = new ArrayList<>();
 
     private volatile int selected = -1;
+    private volatile boolean closable = true;
+    private volatile HeaderSkin skin = this::themeSkin;
     private volatile IntConsumer onSelect = i -> { };
     private volatile IntConsumer onRemove = i -> { };
     private volatile TabMenu contextMenu = (index, menu) -> { };
@@ -306,14 +317,9 @@ public final class Tabs {
      */
     public Tabs add(String title, Node body) {
         int index = headers.size();
-        Node header = gui.text(title)
-                .height(Length.FILL)
-                .padding(Length.dp(6), Length.dp(14))
-                .textSize(Length.rem(1))
-                .textColor(gui.theme().color(Role.DIM))
-                .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE)
-                .corner(Length.rem(0.5f), Length.ZERO)   // tab silhouette: rounded shoulders, flat seat
-                .background(gui.theme().color(Role.PANEL));
+        // Only the height is the panel's: a header fills the bar. Everything else a header looks like is the
+        // skin's, so that one function is the whole answer to "what does a tab look like here".
+        Node header = gui.text(title).height(Length.FILL);
 
         // Handlers resolve the header to its index at event time, not add time: tabs can be removed, so a
         // baked-in index would aim every surviving closure one tab off. The node's identity is the stable key.
@@ -323,15 +329,24 @@ public final class Tabs {
         // anything else bound to those chords for exactly as long as this header is focused.
         gui.claim(header, Shortcut.of(Key.LEFT), ClaimScope.FOCUSED, () -> select(headers.indexOf(header) - 1));
         gui.claim(header, Shortcut.of(Key.RIGHT), ClaimScope.FOCUSED, () -> select(headers.indexOf(header) + 1));
-        // Hover shading, except on the selected tab, which keeps its active colour.
-        gui.onState(header, state -> header.background(background(headers.indexOf(header), state)));
+        // Hover shading. Recorded as well as painted, so that a selection landing on this header later knows
+        // whether the pointer is still on it -- see the states list.
+        gui.onState(header, state -> {
+            int at = headers.indexOf(header);
+            if (at >= 0) {
+                states.set(at, state);
+                paint(at);
+            }
+        });
         // The one thing every tab bar's menu has, and the same index-at-event-time rule as the handlers above:
         // Close aims at wherever this header sits when the item is chosen, not where it sat when it was built.
         // It is also the only structural change an application does not itself call for, which is what onRemove
         // is for -- an owner that keeps anything per tab hears about this one exactly as it hears about its own.
         gui.onContextMenu(header, menu -> {
             int at = headers.indexOf(header);
-            menu.item("Close", () -> remove(at));
+            if (closable) {
+                menu.item("Close", () -> remove(at));
+            }
             contextMenu.build(at, menu);
         });
 
@@ -339,6 +354,8 @@ public final class Tabs {
         pages.append(body.width(Length.FILL).height(Length.FILL).visible(false));
         headers.add(header);
         bodies.add(body);
+        states.add(InteractionState.NORMAL);
+        paint(index);
 
         if (selected < 0) {
             select(0);
@@ -378,16 +395,14 @@ public final class Tabs {
 
         int previous = selected;
         selected = next;
-        if (previous >= 0) {
-            headers.get(previous).background(gui.theme().color(Role.PANEL))
-                    .textColor(gui.theme().color(Role.DIM)).lit(false).elevation(Length.ZERO);
-        }
         Node incoming = bodies.get(next).visible(true);
-        // The active tab is physically forward: lit and floating a little above the bar the idle tabs sit flush in.
-        // The bar restyles instantly either way — the transition is the pages moving, and a header that faded
+        // Both headers repainted from the skin, each at the pointer state it is actually in. The bar restyles
+        // instantly whatever the pages are doing — the transition is the pages moving, and a header that faded
         // along with them would leave the click the user just made unacknowledged for the length of the motion.
-        headers.get(next).background(gui.theme().color(Role.SELECTION))
-                .textColor(gui.theme().color(Role.ACCENT)).lit(gui.theme().lit()).elevation(Length.rem(0.25f));
+        if (previous >= 0) {
+            paint(previous);
+        }
+        paint(next);
 
         if (previous >= 0) {
             Node outgoing = bodies.get(previous);
@@ -460,6 +475,7 @@ public final class Tabs {
         settle();
         headers.remove(index).remove();
         bodies.remove(index).remove();
+        states.remove(index);
 
         int previous = selected;
         selected = -1;   // force select() to restyle: surviving indices shifted under the old value
@@ -473,16 +489,48 @@ public final class Tabs {
     }
 
     /**
+     * Whether the bar offers <b>Close</b> on a header's own menu. True by default, which is a bar of documents.
+     *
+     * <p>False is a bar of <em>panes</em> — a fixed set the application chose, where the tabs name views of one
+     * thing rather than several things. A keypad with an arithmetic pad and a circular one is the case: closing
+     * one is not an operation the user can want, because there is nothing behind it and no way to ask for it
+     * back. Offering an action whose only outcome is a worse window is worse than offering nothing.
+     *
+     * <p>It governs what the bar <em>offers</em>, not what the application may do: {@link #remove} is an owner's
+     * operation and stays available either way. That is the same line {@link #onRemove} is drawn along — the
+     * owner always knows, and here the owner is also the only one who can ask.
+     */
+    public Tabs closable(boolean closable) {
+        this.closable = closable;
+        return this;
+    }
+
+    /**
      * Add to the context menu of every tab. Close comes first, then this — sources accumulate, so an application
      * contributes "Close others", "Duplicate", "Pin" without restating the one the bar already knows how to do.
+     * With {@link #closable} off there is no Close, and this is the whole menu.
      */
     public Tabs onContextMenu(TabMenu source) {
         this.contextMenu = source == null ? (index, menu) -> { } : source;
         return this;
     }
 
-    /** The header node for tab {@code index} -- package-private, so a test can aim at it rather than guess. */
-    Node header(int index) {
+    /**
+     * The header node for tab {@code index} — <b>to point at, not to restructure</b>, on the same terms as
+     * {@link #bar()}: read its layout, play a {@link Cue} on it, hang a tooltip off it. Do not add children to
+     * it, remove it, or write the properties {@link HeaderSkin} owns; the skin repaints every header whenever
+     * the selection or the pointer moves, so anything visual set here is overwritten at a moment the caller does
+     * not choose.
+     *
+     * <p><b>Why {@link #bar()} will not do.</b> The bar can say that it changed; only a header can say
+     * <em>which tab</em>. An application that opens several documents at once — three files off a shell
+     * pipeline, a session restored — has to be able to mark the ones that just arrived, and a flash across the
+     * whole strip at that moment says the one thing that was already obvious and none of what was wanted.
+     *
+     * @throws IndexOutOfBoundsException if there is no tab {@code index} — a stale index is a fault here rather
+     *                                   than a null threaded onwards to fail somewhere further away
+     */
+    public Node header(int index) {
         return headers.get(index);
     }
 
@@ -494,11 +542,85 @@ public final class Tabs {
         return this;
     }
 
-    private Color background(int index, InteractionState state) {
-        // The selected tab keeps its active fill whatever the pointer does; every other tab is a panel, shaded by
-        // the theme rather than by a second constant per state.
-        return index == selected
-                ? gui.theme().color(Role.SELECTION)
-                : gui.theme().color(Role.PANEL, state);
+    /**
+     * How one header is painted. Everything visual about a tab goes through this — fill, ink, silhouette, depth —
+     * so a bar can be made to speak the vocabulary of whatever it sits in rather than only the theme's.
+     *
+     * <p>Called for every header when it is added, whenever the selection moves, and whenever the pointer changes
+     * its state, always with the header's current {@code selected} and {@code state} together. So an
+     * implementation is a pure function of those two and never has to remember what it painted last — which is
+     * the bug it exists to make unwritable: a bar whose hover shading and whose selection each set the background
+     * from their own handler leaves a tab selected under the pointer showing the wrong colour until the pointer
+     * moves away.
+     *
+     * <p>Only {@code height} is the panel's own, so that a header fills the bar. Everything else is yours.
+     */
+    @FunctionalInterface
+    public interface HeaderSkin {
+        /** Paint {@code header}. Runs on whatever thread moved the selection or the pointer. */
+        void paint(Node header, boolean selected, InteractionState state);
+    }
+
+    /**
+     * Paint the headers this way instead of the theme's way. {@code null} restores the default.
+     *
+     * <p>The default is a tab: a panel with rounded shoulders and a flat seat, going lit and accent-inked when
+     * selected — right for a bar of documents over a content area. An application whose bar sits among its own
+     * controls will want those controls' silhouette instead, and this is how it says so without reaching into
+     * the panel or fighting it for the props.
+     *
+     * <p>Set it before adding tabs, or call it after and the headers already there are repainted.
+     */
+    public Tabs skin(HeaderSkin skin) {
+        this.skin = skin == null ? this::themeSkin : skin;
+        for (int i = 0; i < headers.size(); i++) {
+            paint(i);
+        }
+        return this;
+    }
+
+    /**
+     * The bar the headers sit in — to <b>style</b>, not to restructure: its surface, its gap, its padding, how
+     * tall it is. A bar of documents wants the chrome slab it has by default; a bar sitting among an
+     * application's own controls may want no surface at all and the gap those controls are spaced by.
+     *
+     * <p>Do not add or remove children. The panel's bookkeeping is by index over exactly the headers it made,
+     * and a stranger among them puts every index one out.
+     */
+    public Node bar() {
+        return bar;
+    }
+
+    /**
+     * The area the pages sit in — same contract as {@link #bar}: style it, do not restructure it.
+     *
+     * <p><b>An opaque surface here is what makes a transition well defined</b>, so a panel with one installed
+     * should keep one: blending two pages against no backdrop either bleeds through to whatever is behind the
+     * whole widget or refuses to fade at all. With no transition — the default — there is nothing to blend and
+     * nothing to lose by making it transparent.
+     */
+    public Node pages() {
+        return pages;
+    }
+
+    /** Repaint header {@code index} from whatever the skin currently is, at its last known pointer state. */
+    private void paint(int index) {
+        skin.paint(headers.get(index), index == selected, states.get(index));
+    }
+
+    /**
+     * The default skin: the tab this panel has always drawn. An idle header is a panel shaded by the theme for
+     * the pointer's state; the selected one keeps its active fill whatever the pointer does, and is physically
+     * forward — lit, and floating a little above the bar the idle ones sit flush in.
+     */
+    private void themeSkin(Node header, boolean selected, InteractionState state) {
+        header.padding(Length.dp(6), Length.dp(14))
+                .textSize(Length.rem(1))
+                .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE)
+                .corner(Length.rem(0.5f), Length.ZERO)   // tab silhouette: rounded shoulders, flat seat
+                .background(selected ? gui.theme().color(Role.SELECTION) : gui.theme().color(Role.PANEL, state))
+                .textColor(gui.theme().color(selected ? Role.ACCENT : Role.DIM))
+                .lit(selected && gui.theme().lit())
+                .elevation(selected ? Length.rem(0.25f) : Length.ZERO);
     }
 }

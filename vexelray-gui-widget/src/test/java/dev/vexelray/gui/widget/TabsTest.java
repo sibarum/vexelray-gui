@@ -26,6 +26,16 @@ class TabsTest {
         return h.gui.text(label).width(Length.FILL).height(Length.FILL);
     }
 
+    /** Where {@code header} sits in {@code tabs}, or -1 — how a skin's argument is named in an assertion. */
+    private static int at(Tabs tabs, Node header) {
+        for (int i = 0; i < tabs.count(); i++) {
+            if (tabs.header(i) == header) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     @Test
     void theFirstPageAddedIsSelected() {
         try (HeadlessGui h = new HeadlessGui()) {
@@ -123,6 +133,45 @@ class TabsTest {
             h.click(r.x() + r.w() / 2f, r.y() + r.h() / 2f);
             h.frame();
             assertEquals(1, tabs.selected(), "the second header was clicked");
+        }
+    }
+
+    /**
+     * A skin is told the selection and the pointer state <b>together</b>, every time either moves — so it can be
+     * a pure function of the two and never has to remember what it painted last.
+     *
+     * <p>The case that makes this worth having is the last assertion: selecting a tab the pointer is already on.
+     * A bar whose hover shading and whose selection each wrote the background from their own handler paints the
+     * not-hovered colour there and stays wrong until the pointer moves away.
+     */
+    @Test
+    void aSkinIsToldTheSelectionAndThePointerStateTogether() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            List<String> painted = new ArrayList<>();
+            Tabs[] panel = new Tabs[1];
+            // A header carries no readable label -- text() sets one -- so it is named by its position, which is
+            // also the only thing the panel itself knows a header by.
+            Tabs tabs = new Tabs(h.gui).skin((header, selected, state) ->
+                    painted.add(at(panel[0], header) + ":" + (selected ? "on" : "off") + ":" + state));
+            panel[0] = tabs;
+            tabs.add("One", page(h, "one"));
+            tabs.add("Two", page(h, "two"));
+            h.gui.root().children(tabs.node());
+            h.frame();
+
+            assertTrue(painted.contains("0:on:NORMAL"), "the first tab added is selected: " + painted);
+            assertTrue(painted.contains("1:off:NORMAL"), "and the second is not: " + painted);
+
+            var r = tabs.header(1).layout().rect();
+            painted.clear();
+            h.hover(r.x() + r.w() / 2f, r.y() + r.h() / 2f);
+            assertEquals(List.of("1:off:HOVER"), painted, "the pointer arrived on an unselected tab");
+
+            painted.clear();
+            tabs.select(1);
+            assertTrue(painted.contains("1:on:HOVER"),
+                    "selected under the pointer, so still hovered: " + painted);
+            assertTrue(painted.contains("0:off:NORMAL"), "and the one it left is not: " + painted);
         }
     }
 

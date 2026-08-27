@@ -318,10 +318,12 @@ public final class Gui implements AutoCloseable {
      * <p>{@code vw}/{@code vh} resolve against this clamped canvas rather than the window, since that is the area
      * actually laid out. {@link #viewport()} continues to report the real window size.
      *
-     * <p><b>Not an OS window minimum.</b> The window can still be dragged smaller; it simply shows less of the
-     * UI. Stopping the drag itself needs a min-size on {@code NativeWindow}, which the engine does not expose
-     * (architecture.md §3) — and the overflow is currently cropped rather than scrollable, which wants the root
-     * to become a scroll viewport.
+     * <p><b>Not an OS window minimum</b>, and the two are worth having separately. This one decides what the UI
+     * is laid out on when the window is smaller than the UI can represent, and shows part of it. Stopping the
+     * <em>drag</em> is {@code WindowConfig.minSize}, which the window manager enforces — and a window can still
+     * arrive under its minimum without any drag (a restore, a display-mode change, a programmatic resize), which
+     * is exactly when this one is what saves the layout. The overflow here is cropped rather than scrollable,
+     * which wants the root to become a scroll viewport.
      */
     public Gui minSize(Length width, Length height) {
         this.minWidth = width == null ? Length.ZERO : width;

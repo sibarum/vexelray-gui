@@ -378,10 +378,22 @@ public final class TreeView<T> implements AutoCloseable {
     }
 
     /**
-     * The row strip drawn for {@code item}, or null if it has no row — package-private, so a test can aim at a
-     * row's laid-out geometry rather than guess at a pixel.
+     * The row strip drawn for {@code item} — <b>to point at, not to restructure</b>: read its layout, play a
+     * {@link Cue} on it. Do not add children to it or write the properties the tree paints, which it rewrites
+     * whenever the selection or the pointer moves.
+     *
+     * <p><b>Null is the ordinary answer, not the exceptional one</b>, and this is the whole care a caller owes
+     * it: a tree materialises rows as folders open, so an item under a collapsed parent — or one that has been
+     * scrolled past, or that no longer exists — has no row and never had one. A caller marking a row it has just
+     * asked the tree to {@link #select} is in the good case and still has to check, because selecting an item
+     * the source no longer offers leaves nothing to mark.
+     *
+     * <p><b>Why an application asks.</b> The tree can be told to select something without anything visibly
+     * happening — a {@code reveal} of a file in a folder already open, on a row already selected, is a correct
+     * no-op that is indistinguishable from a command that failed. Marking the row is what tells those apart, and
+     * only the tree knows which node it is.
      */
-    synchronized Node rowNode(T item) {
+    public synchronized Node rowNode(T item) {
         Row r = rowsByItem.get(item);
         return r == null ? null : r.rowNode;
     }

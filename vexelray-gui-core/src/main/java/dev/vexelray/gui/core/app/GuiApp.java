@@ -86,6 +86,9 @@ public final class GuiApp implements AutoCloseable {
     /** The tree in the main window; bound by {@link #run}, and the executor application callbacks run on. */
     private Gui mainGui;
 
+    /** How long {@link #run} may block after presenting. See {@link #pacing}. Default: never block. */
+    private java.util.function.LongSupplier pacing = () -> 0L;
+
     /** The window a modal dialog is showing in, or null when nothing is modal. Main thread. */
     private NativeWindow modal;
 
@@ -398,6 +401,62 @@ public final class GuiApp implements AutoCloseable {
         return NativePlatform.current().workArea(x, y);
     }
 
+    /**
+     * How long the loop may block after presenting a frame, in nanoseconds — {@link Long#MAX_VALUE} to
+     * block until an event arrives, {@code 0} (the default) to present again at once.
+     *
+     * <p><b>Render on demand, without this module knowing what a clock is.</b> A loop that presents
+     * unconditionally redraws a completely still window at whatever rate the presenter allows, which is
+     * a core spent on nothing. Something has to say when the next frame is actually due, and that
+     * something is the application's animation runtime — so the seam is a JDK type rather than a
+     * dependency, the same way a widget declares its timing need as a {@code DoubleConsumer} and stays
+     * clock-free.
+     *
+     * <pre>{@code
+     * app.pacing(() -> krono.kron().sleepTimeout().nanos());
+     * krono.kron().onWork(app::postWake);          // and this, or a sleeping loop never wakes
+     * }</pre>
+     *
+     * <p>Two things the supplier must get right, neither of which this method can check:
+     *
+     * <ul>
+     *   <li><b>Return the minimum over every clock in the process</b>, not the main window's. One loop
+     *       serves every window, so a hosted window with an animation of its own is starved by a
+     *       supplier that only consults the main one — and it presents as a broken animation rather
+     *       than as a wrong loop.</li>
+     *   <li><b>Zero while anything is animating.</b> That is what keeps this free: the loop free-runs
+     *       during motion exactly as it does now, and blocks only when there is provably nothing to
+     *       draw. A supplier that returns a frame period instead is a frame-rate cap, which is a
+     *       different feature with different failure modes.</li>
+     * </ul>
+     *
+     * <p>Wired without {@link #postWake} this is safe but pointless on any platform whose
+     * {@link NativeWindow#waitEvents} actually blocks; the animation runtime should refuse to report an
+     * indefinite budget until a wake exists. Wired on a platform with no {@code waitEvents} it does
+     * nothing at all, which is the intended fallback rather than a failure.
+     *
+     * <p><b>Do not set this on a run with a frame cap.</b> {@code run(gui, maxFrames)} is a scripted
+     * run — a capture, a bounded check — and blocking makes N frames of a still window take forever
+     * rather than N presents. The two flags live together in the caller, so the caller is what decides;
+     * this method deliberately does not second-guess it, because a {@code pacing} that silently stopped
+     * applying under some other argument would be worse than one that is documented not to mix.
+     */
+    public GuiApp pacing(java.util.function.LongSupplier nanosUntilNextFrame) {
+        this.pacing = java.util.Objects.requireNonNull(nanosUntilNextFrame, "nanosUntilNextFrame");
+        return this;
+    }
+
+    /**
+     * End a {@link #pacing} block early, from any thread.
+     *
+     * <p>The other half of {@code pacing}, and the half whose absence is a hang rather than a cost: a
+     * loop told it may block indefinitely has only OS input to end that block, and a worker thread's
+     * mutation is not OS input. Hand this to whatever knows that work arrived.
+     */
+    public void postWake() {
+        main.window.postWake();
+    }
+
     /** Drive {@code gui} until the window closes (or {@code maxFrames} presented if positive). */
     public void run(Gui gui, int maxFrames) {
         run(gui, maxFrames, () -> { });
@@ -439,6 +498,16 @@ public final class GuiApp implements AutoCloseable {
                 return true;
             });
             frame++;
+            if (running) {
+                // After presenting, never before: the frame the application just asked for is not the
+                // one to make it wait for. One call covers every window, because the wait is on this
+                // thread's message queue rather than on any one window, and every window on this loop
+                // shares that queue.
+                long budget = pacing.getAsLong();
+                if (budget > 0) {
+                    main.window.waitEvents(budget);
+                }
+            }
         }
         device.waitIdle();
         // Main window gone (or frame cap hit): the other windows' loop is gone with it, so close them too.

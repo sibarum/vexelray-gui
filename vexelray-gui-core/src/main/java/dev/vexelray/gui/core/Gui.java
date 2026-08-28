@@ -99,6 +99,12 @@ public final class Gui implements AutoCloseable {
     private final Atchung bus;
     private final MutationSink sink;
     private final Pump pump;
+
+    /** The unset {@link #workListener}. Held by identity so an unwired GUI is answerable. */
+    private static final Runnable NO_WAKE = () -> { };
+    /** Told when a mutation is published, so a parked host loop knows a frame is owed. */
+    private volatile Runnable workListener = NO_WAKE;
+    private volatile boolean warnedWakeFailed;
     private final Subscription mutationSub;
     private final Reconciler reconciler;
     private final InputDispatcher input;
@@ -196,7 +202,7 @@ public final class Gui implements AutoCloseable {
             if (group != null) {
                 group.add(m);
             } else {
-                bus.publish(MUTATIONS, m);
+                publishMutation(m);
             }
         };
 
@@ -210,7 +216,29 @@ public final class Gui implements AutoCloseable {
         this.mutationSub = pump.subscribe(MUTATIONS, reconciler::apply, MUTATION_MAILBOX, Backpressure.BLOCK);
         // Framework input dispatch on the same bus; click handlers run on the worker executor (off the GUI thread).
         // Wheel scrolling mutates scroll offsets on the GUI thread and asks for a relayout next frame.
-        this.handlers = handlerExecutor != null ? handlerExecutor : workers;
+        // Every handler is followed by a wake, whatever it did.
+        //
+        // Mutating a node wakes the loop already, because the publish does it. But a handler is ordinary
+        // application code and its effect is very often *neither* a mutation nor a clock operation: it
+        // drops a request on one of the application's own queues — a history to restore, a file to open,
+        // a preview to render — each drained once per frame from the host's beforeFrame hook. Nothing
+        // about that is visible from here, and to a loop that parks it does not exist: the handler runs,
+        // the queue fills, no frame is asked for, and the request is executed on whatever frame some
+        // unrelated event eventually causes. The tell is that the *effect* is what arrives late, so an
+        // animation the handler queued starts from the beginning whenever the frame finally comes,
+        // rather than being found already in progress.
+        //
+        // So the wake is hung on the one thing every such path has in common: a handler ran. Waking after
+        // it finishes covers all of them, including the ones an application has not written yet, and
+        // costs one frame per input event that finds nothing left to do.
+        Executor base = handlerExecutor != null ? handlerExecutor : workers;
+        this.handlers = task -> base.execute(() -> {
+            try {
+                task.run();
+            } finally {
+                wake();
+            }
+        });
         this.input = new InputDispatcher(bus, CLICKS, handlers, reconciler::markLayoutDirty);
         this.input.focusTopic(FOCUS);
         this.input.keyRoutedTopic(KEY_ROUTES);
@@ -858,8 +886,80 @@ public final class Gui implements AutoCloseable {
             batching.remove();
         }
         if (!group.isEmpty()) {
-            bus.publish(MUTATIONS, new Mutation.Batch(List.copyOf(group)));
+            publishMutation(new Mutation.Batch(List.copyOf(group)));
         }
+    }
+
+    /**
+     * Put a mutation on the bus and tell whoever is driving frames that there is now something to draw.
+     *
+     * <p>Every publish goes through here, which is the point: the wake is easy to write once and easy
+     * to forget the second time, and forgetting it produces a window that stops updating rather than
+     * one that updates slowly.
+     */
+    private void publishMutation(Mutation m) {
+        bus.publish(MUTATIONS, m);
+        wake();
+    }
+
+    /**
+     * Tell a parked host loop that a frame is owed. Never throws into its caller.
+     *
+     * <p>A wake that fails is a window that stops updating, so it says so once rather than silently —
+     * and it must not take the publish or the handler down with it, both of which have already
+     * succeeded by the time this runs.
+     */
+    private void wake() {
+        try {
+            workListener.run();
+        } catch (Throwable t) {
+            if (!warnedWakeFailed) {
+                warnedWakeFailed = true;
+                System.err.println("vexelray-gui: the onWork listener threw; frames may stop arriving "
+                        + "when nothing else wakes the loop. " + t);
+            }
+        }
+    }
+
+    /**
+     * How a host loop that parks between frames is told a mutation is waiting for it.
+     *
+     * <p><b>Required by any loop that sleeps</b>, and its absence is a window that stops updating rather
+     * than a slow one. Click handlers run on the worker executor, off the GUI thread — so a handler
+     * publishes its mutation <em>after</em> the frame that dispatched the click has already drained,
+     * reconciled and presented. A loop that then asks only its animation clock is told there is nothing
+     * to do, parks, and leaves the mutation queued: the button was clicked, the state changed, and the
+     * screen keeps showing what it showed before. It comes right the instant any OS event arrives, so it
+     * presents as "the UI only updates when I move the mouse" — which points at input handling rather
+     * than at the loop, and it is worst on a touchpad where a click carries no movement with it.
+     *
+     * <pre>{@code
+     * gui.onWork(app::postWake);          // alongside kron.onWork(app::postWake)
+     * }</pre>
+     *
+     * <p>Both are needed and they are not redundant: this one covers changes the application makes, the
+     * clock's covers time passing. Either alone leaves half the reasons a frame is due unaccounted for.
+     *
+     * <p>Fires on <em>every</em> publish, including from the GUI thread mid-frame, which costs at most
+     * one extra pass that finds nothing to do. Filtering by thread would be an optimisation paid for in
+     * exactly the currency this is trying to save.
+     *
+     * <p>One listener, last call wins — so one call site per {@code Gui}. A second, from a profiler or
+     * an adapter installing its own, silently replaces the first and the loop stops waking.
+     */
+    public void onWork(Runnable listener) {
+        this.workListener = java.util.Objects.requireNonNull(listener, "listener");
+    }
+
+    /**
+     * Whether a frame is owed: mutations are queued and nothing has drawn them yet.
+     *
+     * <p>For a host that wants to check rather than be told — a diagnostic, or a belt-and-braces term in
+     * a pacing supplier. {@link #onWork} is the load-bearing half; this cannot close the race on its own,
+     * because a handler still running on a worker has not published yet and so has nothing to report.
+     */
+    public boolean hasPendingWork() {
+        return pump.hasPending();
     }
 
     /**

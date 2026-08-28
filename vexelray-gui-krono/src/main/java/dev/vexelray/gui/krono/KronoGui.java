@@ -13,6 +13,7 @@ import sibarum.kronometer.Effect;
 import sibarum.kronometer.Interp;
 import sibarum.kronometer.Kron;
 import sibarum.kronometer.Metro;
+import sibarum.kronometer.Moment;
 import sibarum.kronometer.Rate;
 
 import sibarum.kronometer.Signal;
@@ -72,8 +73,6 @@ public final class KronoGui implements AutoCloseable {
     private final Rate frames;
     private final Animator animator;
 
-    private long epochNanos = Long.MIN_VALUE;
-    private long ticks;
 
     private KronoGui(Gui gui, Kron kron) {
         this.gui = gui;
@@ -112,17 +111,33 @@ public final class KronoGui implements AutoCloseable {
      * before {@link Gui#frame} reconciles.
      */
     public void tick() {
-        if (epochNanos == Long.MIN_VALUE) {
-            epochNanos = System.nanoTime();
-        }
-        ticks++;
-        kron.tick(System.nanoTime() - epochNanos);
+        kron.tick();
     }
 
     /** Advance to an explicit logical moment — for a scripted or headless run. */
     public void tick(Dur elapsed) {
-        ticks++;
         kron.tick(elapsed.nanos());
+    }
+
+    /**
+     * The earliest moment the runtime has anything to do — {@code Moment.FOREVER} if it has nothing.
+     *
+     * <p>What a render-on-demand loop blocks on: {@code waitEvents(isQuiescent() ? forever :
+     * nextDeadline() - now)}. Ask it after {@link #tick()} has returned, which in {@code INLINE} is
+     * what publishes the kernel's writes to the calling thread.
+     */
+    public Moment nextDeadline() {
+        return kron.nextDeadline();
+    }
+
+    /** Whether nothing is scheduled and nothing is animating, so the loop may sleep indefinitely. */
+    public boolean isQuiescent() {
+        return kron.isQuiescent();
+    }
+
+    /** One line per reason the runtime is not quiescent. For "why is my loop never idle". */
+    public java.util.List<String> whyBusy() {
+        return kron.whyBusy();
     }
 
     public Gui gui() {
@@ -149,7 +164,7 @@ public final class KronoGui implements AutoCloseable {
 
     /** How many frames have been ticked. */
     public long ticks() {
-        return ticks;
+        return kron.ticks();
     }
 
     // ------------------------------------------------------------ scheduling
@@ -162,12 +177,7 @@ public final class KronoGui implements AutoCloseable {
      * making that the caller's problem would mean every click handler needed to know about the baton.
      */
     public void onTimeline(Runnable work) {
-        Objects.requireNonNull(work, "work");
-        if (kron.isOnTimeline()) {
-            work.run();
-        } else {
-            kron.post(work);
-        }
+        kron.onTimeline(work);
     }
 
     /** A shred: ordinary code that can advance time. Safe to call from a handler. */
@@ -216,15 +226,14 @@ public final class KronoGui implements AutoCloseable {
     public <T> Effect bind(Node node, BiConsumer<Node, T> setter, Signal<T> signal) {
         Objects.requireNonNull(node, "node");
         Objects.requireNonNull(setter, "setter");
-        Objects.requireNonNull(signal, "signal");
-        return kron.effect(frames, () -> setter.accept(node, signal.get()));
+        return kron.bind(frames, signal, value -> setter.accept(node, value));
     }
 
     /** A cell whose value lands on a node property every frame. The usual way to start. */
     public <T> Cell<T> bound(String name, T initial, Node node, BiConsumer<Node, T> setter) {
-        Cell<T> cell = kron.cell(name, initial);
-        bind(node, setter, cell);
-        return cell;
+        Objects.requireNonNull(node, "node");
+        Objects.requireNonNull(setter, "setter");
+        return kron.bound(frames, name, initial, value -> setter.accept(node, value));
     }
 
     /**
@@ -269,38 +278,15 @@ public final class KronoGui implements AutoCloseable {
      * as the final sample, so without the extra frame the end value is written and then overwritten before
      * anything is presented, and the last thing the eye actually saw was the second-to-last sample. At 60fps over
      * 200ms that is a fifth of the animation still showing at the moment it vanishes.
+     *
+     * <p>Both properties are now {@code Tween.rampOn}'s, upstream, so this is the adapter it always should have
+     * been: {@code Sink} takes a float and {@link DoubleConsumer} a double, and that is the entire difference.
+     * The forty lines this used to be are in the roadmap's §2 if anyone wants the archaeology.
      */
     public void ramp(Dur over, Ease ease, DoubleConsumer progress, Runnable done) {
         Objects.requireNonNull(progress, "progress");
         Objects.requireNonNull(done, "done");
-        Curve<Float> curve = Tween.curve(0f, 1f, over, ease, Interp.FLOAT);
-        onTimeline(() -> {
-            Cell<Float> cell = kron.cell("ramp", 0f);
-            progress.accept(0d);       // the start, before a single frame has elapsed
-            long[] endedOnTick = {-1};
-            Effect[] sampler = new Effect[1];
-            sampler[0] = kron.effect(frames, () -> {
-                if (endedOnTick[0] < 0) {
-                    progress.accept(cell.get());
-                } else if (ticks > endedOnTick[0]) {
-                    // A frame has been presented carrying the end value; the consumer may now tear down.
-                    // Cancelling detaches only this ramp's handler from the frame domain — a guarantee
-                    // Kronometer had to be taught: cancel() used to cancel the shred Rate.each hands back,
-                    // and that is the domain's single driver, shared by every handler on it. One arriving
-                    // animation stopped the frame clock for everything, including everything registered after.
-                    sampler[0].cancel();
-                    done.run();
-                }
-            });
-            Time.spork("ramp", () -> {
-                cell.drive(curve);
-                Time.advance(over);
-                progress.accept(1d);
-                // The frame domain steps after everything else scheduled in this window, so the sampler sees
-                // this on the tick it was set and finishes on the next one.
-                endedOnTick[0] = ticks;
-            });
-        });
+        Tween.rampOn(frames, over, ease, progress::accept, done);
     }
 
     /**
@@ -349,6 +335,6 @@ public final class KronoGui implements AutoCloseable {
 
     @Override
     public String toString() {
-        return "KronoGui(" + ticks + " frames, " + kron.clock() + ")";
+        return "KronoGui(" + kron + ")";
     }
 }

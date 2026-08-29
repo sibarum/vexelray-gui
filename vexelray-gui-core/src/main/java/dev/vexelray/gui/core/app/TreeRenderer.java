@@ -364,6 +364,70 @@ public final class TreeRenderer {
         if (m == null) {
             return;   // not a text node, or a measurer with no glyph metrics resolved none
         }
+        // The metrics were baked by the compute phase, which runs *before* the frame's layout displacement is
+        // applied — so every coordinate in them is in the node's settled frame, while n.x and n.viewX are in its
+        // drawn one. Drawing the two together is what leaves a moving label's glyphs behind its box: the fill
+        // slides, the text does not, and only for nodes a motion source has enrolled, which is the tearing.
+        //
+        // So the whole text block is drawn in the settled frame and carried to the drawn one by a translate.
+        // That is also exactly how Node.translate has always moved text, and the reason that one never had this
+        // bug — a transform around the drawing moves everything the drawing is made of, which is the property a
+        // per-coordinate fix would have had to re-earn at every call site below.
+        float mdx = displacedX(n);
+        float mdy = displacedY(n);
+        boolean displaced = mdx != 0f || mdy != 0f;
+        if (displaced) {
+            canvas.pushTranslate(mdx, mdy);
+        }
+        try {
+            drawTextSettled(n, m, s, hasText, spans, canvas, text);
+        } finally {
+            if (displaced) {
+                canvas.popTranslate();
+            }
+        }
+    }
+
+    /**
+     * How far this node is drawn from where layout settled it — the displacement a {@link
+     * dev.vexelray.gui.core.layout.LayoutMotion} is carrying, re-derived rather than asked for, because the
+     * renderer holds no motion source and the two positions are both on the node.
+     *
+     * <p>Zero for a node that has never been settled: {@code layoutX} is then not a position it was ever at, and
+     * displacing from it would throw the node across the window on its first frame.
+     */
+    private static float displacedX(RetainedNode n) {
+        return n.layoutRectKnown ? n.x - n.layoutX : 0f;
+    }
+
+    private static float displacedY(RetainedNode n) {
+        return n.layoutRectKnown ? n.y - n.layoutY : 0f;
+    }
+
+    /** The settled-frame origin of the border box — where the metrics think the node is. */
+    private static float settledX(RetainedNode n) {
+        return n.x - displacedX(n);
+    }
+
+    private static float settledY(RetainedNode n) {
+        return n.y - displacedY(n);
+    }
+
+    /** And of the content viewport, which the displacement moves by the same amount. */
+    private static float settledViewX(RetainedNode n) {
+        return n.viewX - displacedX(n);
+    }
+
+    private static float settledViewY(RetainedNode n) {
+        return n.viewY - displacedY(n);
+    }
+
+    /**
+     * Everything from here down is in the settled frame: metric coordinates and box coordinates agree, and the
+     * caller's translate is what puts the result where the node is actually drawn.
+     */
+    private void drawTextSettled(RetainedNode n, TextMetrics m, String s, boolean hasText,
+                                 java.util.List<Span> spans, Canvas canvas, TextLayout text) {
         // An empty document still publishes metrics — one empty visual line — so a focused empty field draws its
         // caret and a numbered editor its "1". The glyph/selection/span loops below are naturally no-ops on "".
         if (!hasText) {
@@ -380,13 +444,13 @@ public final class TreeRenderer {
         // strip when there is one, so text never draws underneath the bar.
         boolean clip = n.editable();
         if (clip) {
-            canvas.pushClip(n.viewX, n.viewY, Math.max(1f, n.viewW), Math.max(1f, n.viewH), 0f);
+            canvas.pushClip(settledViewX(n), settledViewY(n), Math.max(1f, n.viewW), Math.max(1f, n.viewH), 0f);
         }
 
         // Cull lines outside the scroll viewport: the clip would mask them anyway, but their glyph quads would
         // still be generated — an unbounded document must not translate into unbounded per-frame vertex data.
-        float cullLo = clip ? n.viewY : Float.NEGATIVE_INFINITY;
-        float cullHi = clip ? n.viewY + n.viewH : Float.POSITIVE_INFINITY;
+        float cullLo = clip ? settledViewY(n) : Float.NEGATIVE_INFINITY;
+        float cullHi = clip ? settledViewY(n) + n.viewH : Float.POSITIVE_INFINITY;
         int selLo = Math.min(n.selectStart(), n.selectEnd());
         int selHi = Math.max(n.selectStart(), n.selectEnd());
         for (TextMetrics.VisualLine line : m.lines()) {
@@ -433,12 +497,12 @@ public final class TreeRenderer {
      */
     private void drawGutter(RetainedNode n, TextMetrics m, Canvas canvas, TextLayout text) {
         float px = n.textSizePx;
-        float left = n.x + n.textPadXPx;
+        float left = settledX(n) + n.textPadXPx;
         float right = left + n.gutterPx - n.gutterPadPx;
-        canvas.pushClip(left, n.viewY, Math.max(1f, n.gutterPx), Math.max(1f, n.viewH), 0f);
+        canvas.pushClip(left, settledViewY(n), Math.max(1f, n.gutterPx), Math.max(1f, n.viewH), 0f);
         for (TextMetrics.VisualLine line : m.lines()) {
             if (line.number() <= 0
-                    || line.top() + line.height() < n.viewY || line.top() > n.viewY + n.viewH) {
+                    || line.top() + line.height() < settledViewY(n) || line.top() > settledViewY(n) + n.viewH) {
                 continue; // unnumbered continuation, or culled outside the gutter's viewport (same as the text)
             }
             String label = Integer.toString(line.number());
@@ -495,7 +559,7 @@ public final class TreeRenderer {
                     .withWrap(TextLayout.WrapMode.NONE)
                     .withAlign(TextLayout.HAlign.LEFT, TextLayout.VAlign.TOP);
             float x = line.caretX(i);
-            float wRun = Math.max(1f, n.x + n.w - x);
+            float wRun = Math.max(1f, settledX(n) + n.w - x);
             // Runs are split on the unfaded colour: the fade is uniform across the line, so it cannot merge or
             // divide a run, and comparing before it keeps the grouping independent of the current opacity.
             Color faded = fade(fg);

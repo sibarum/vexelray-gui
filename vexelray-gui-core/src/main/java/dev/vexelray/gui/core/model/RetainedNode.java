@@ -37,6 +37,20 @@ public final class RetainedNode {
     public float w;
     public float h;
 
+    // Where the last layout pass put this node, kept so a LayoutMotion displacement can be re-derived from the
+    // settled position every frame instead of accumulated onto the live rect. Accumulation is what makes a
+    // transition drift: a frame that lays out and a frame that does not would translate a different number of
+    // times, and the error would never be corrected because nothing would remember what the truth had been.
+    // Absolute, and covering both the border box and the content viewport, since those are the only two absolute
+    // coordinate pairs a node carries — everything else is a size, which a displacement never touches.
+    public float layoutX;
+    public float layoutY;
+    public float layoutViewX;
+    public float layoutViewY;
+    /** Whether the four above have been filled. False for a node laid out for the first time, which is what
+     * distinguishes "appeared here" from "moved here from the origin". */
+    public boolean layoutRectKnown;
+
     // Layout-computed, resolved-to-px render inputs (filled each layout pass so the renderer needs no units/ctx).
     public float borderPx;
     public float cornerPx;

@@ -24,6 +24,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * text field behave one way on screen and another way headless or over a wire — silently falsifying claim C1 for
  * as long as it went unnoticed. The behaviour now lives in the compute phase (layout-read-model.md §2.1); this
  * guard is what stops it, or anything like it, drifting back into a read path.
+ *
+ * <p>{@code Displacement} is admitted for the reason {@code TreeRenderer} was not: it runs inside
+ * {@code Gui.frame}, in every host, so a transition looks identical headless and on screen. That placement is
+ * also what keeps a {@code LayoutMotion} implementation — {@code Transitions} in gui-krono, or anything an
+ * application writes — out of the model entirely: a motion source reports two floats per node and never touches
+ * a field, so this guard already covers every one that will ever exist without having to name any of them.
  */
 class ModelWriterGuardTest {
 
@@ -37,6 +43,7 @@ class ModelWriterGuardTest {
             "dev/vexelray/gui/core/model/Reconciler",       // command stage: applies Mutations (the single writer)
             "dev/vexelray/gui/core/input/InputDispatcher",  // dispatch stage: proposes scroll offsets, focus state
             "dev/vexelray/gui/core/layout/FlexLayout",      // compute stage: boxes, viewport, overflow, scroll clamp
+            "dev/vexelray/gui/core/layout/Displacement",    // motion stage: where a node is drawn vs laid out
             "dev/vexelray/gui/core/Gui");                   // compute stage: caret-follow scroll + text metrics
 
     @Test

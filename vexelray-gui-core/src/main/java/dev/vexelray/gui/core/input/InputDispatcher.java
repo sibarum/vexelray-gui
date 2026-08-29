@@ -1,5 +1,9 @@
 package dev.vexelray.gui.core.input;
 
+import dev.vexelray.gui.core.drop.DragSource;
+import dev.vexelray.gui.core.drop.Drop;
+import dev.vexelray.gui.core.drop.Payload;
+import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.drop.DragSession;
 import dev.vexelray.gui.core.drop.DropTarget;
 import dev.vexelray.gui.core.layout.LayoutEnums.ScrollLock;
@@ -79,6 +83,14 @@ public final class InputDispatcher {
     /** Within this much of the locked edge (in ems), a scroll counts as "at the edge" and re-attaches the lock. */
     private static final float LOCK_EDGE_EPS_EM = 0.25f;
 
+    /**
+     * How far the pointer must travel before a press on a drag source becomes a drag, and how long before it
+     * becomes visible. Larger than the 2px a slider wants: a tree row is usually clicked, so the deadzone has to
+     * survive the hand movement of an ordinary click rather than merely of a steady one.
+     */
+    private static final int DRAG_DISTANCE_PX = 6;
+    private static final long DRAG_HOLD_MS = 90L;
+
     /** One em for {@code n}, from the layout; the default context's 16px if the node has not been laid out. */
     private static float em(RetainedNode n) {
         return n != null && n.emPx > 0f ? n.emPx : 16f;
@@ -106,6 +118,18 @@ public final class InputDispatcher {
     private final Map<Long, Consumer<DragEvent>> dragHandlers = new ConcurrentHashMap<>();
     /** What each node would do with a drag released on it. Unrelated to dragHandlers -- see onDrop. */
     private final Map<Long, DropTarget> dropTargets = new ConcurrentHashMap<>();
+    /** What each node offers up when a drag starts on it. */
+    private final Map<Long, DragSource> dragSources = new ConcurrentHashMap<>();
+    /**
+     * Recognises press-move-release as a drag. Its own thresholds, not the onDrag path's: a slider must respond
+     * to a one-pixel nudge with no delay, while a tree row must tolerate a click without reorganising itself, so
+     * the two cannot share a setting. Fed pointer events only -- see feedDragGesture.
+     */
+    private final sibarum.tactroller.api.DragGesture drags =
+            new sibarum.tactroller.api.DragGesture(DRAG_DISTANCE_PX, DRAG_HOLD_MS, Set.of(MouseButton.LEFT));
+    /** The drag in flight, or null. GUI thread only. */
+    private DragSession session;
+    private volatile History dropHistory;
     private final Map<Long, Consumer<KeyEvent>> keyHandlers = new ConcurrentHashMap<>();
     // Typed-text handlers (CharTyped → codepoint) and caret-placement handlers (click → offset), both for
     // editable text nodes; registering either makes the node focusable.
@@ -279,6 +303,130 @@ public final class InputDispatcher {
      */
     public void onDrop(long nodeId, DropTarget target) {
         dropTargets.put(nodeId, target);
+    }
+
+    /** Register what {@code nodeId} offers up when a drag begins on it — see {@link DragSource}. */
+    public void onDragSource(long nodeId, DragSource source) {
+        dragSources.put(nodeId, source);
+    }
+
+    /** Where a completed drop records its change. Until one is set, drops resolve and draw but commit nothing —
+     * which is the right default for a tree that has not said who owns its undo. */
+    public void dropHistory(History history) {
+        this.dropHistory = history;
+    }
+
+    /** The drag in flight, or null. For a renderer drawing the ghost and the indicator. */
+    public DragSession dragSession() {
+        return session != null && !session.ended() ? session : null;
+    }
+
+    /**
+     * Feed one input event to the drag recogniser and act on whatever it produces.
+     *
+     * <p><b>Pointer events only.</b> {@code DragGesture} would also cancel on Escape if it were fed keys, and it
+     * observes the stream rather than consuming from it — so the same Escape would reach the claim system and
+     * dismiss a modal or a context menu at the same time. One key, two actions, and the layering that
+     * {@code ContextMenuTest} exists to protect quietly broken. Escape for a drag is handled in
+     * {@link #handleKeyDown} instead, where it can be consumed.
+     */
+    private void feedDragGesture(InputEvent event) {
+        // The filter is the whole point and is easy to lose: DragGesture cancels on Escape if it is fed keys, and
+        // it would do so *first*, leaving the dispatcher with no live session to consume the key by — so the same
+        // Escape would go on to dismiss a modal as well. Pinned by escapeDuringADragIsNotAlsoAClaim.
+        if (!(event instanceof InputEvent.ButtonPressed
+                || event instanceof InputEvent.ButtonReleased
+                || event instanceof InputEvent.PointerMoved)) {
+            return;
+        }
+        for (sibarum.tactroller.api.DragEvent d : drags.feed(event)) {
+            onDragGesture(d);
+        }
+    }
+
+    /** Open, move or end the session, according to what the recogniser says the gesture just did. */
+    private void onDragGesture(sibarum.tactroller.api.DragEvent event) {
+        switch (event) {
+            case sibarum.tactroller.api.DragEvent.DragStarted s -> openSession(s);
+            case sibarum.tactroller.api.DragEvent.DragOver o -> {
+                if (session != null) {
+                    session.moveTo(o.x(), o.y(), this::dropTargetsAt);
+                }
+            }
+            case sibarum.tactroller.api.DragEvent.DragEnded e -> endSession(e);
+        }
+    }
+
+    /**
+     * Ask the node the press landed on for a payload, and open a session if it offers one.
+     *
+     * <p>The press point is used rather than the current one: by now the pointer has travelled past the
+     * threshold, and resolving the source under it would pick up whatever it wandered onto instead of the thing
+     * the user grabbed.
+     */
+    private void openSession(sibarum.tactroller.api.DragEvent.DragStarted started) {
+        RetainedNode from = HitTest.at(currentRoot, started.startX(), started.startY());
+        for (RetainedNode n = from; n != null; n = n.parent) {
+            DragSource source = dragSources.get(n.id);
+            if (source == null) {
+                continue;
+            }
+            Payload payload = source.payloadAt(started.startX(), started.startY());
+            if (payload != null) {
+                session = DragSession.open(payload, started.x(), started.y());
+                session.moveTo(started.x(), started.y(), this::dropTargetsAt);
+                return;
+            }
+            // A source that declines does not stop an ancestor answering: the empty space below a tree's rows
+            // belongs to the tree, and the tree may well want to offer something for it.
+        }
+    }
+
+    /** Commit or abandon the session, and put focus where the drop landed. */
+    private void endSession(sibarum.tactroller.api.DragEvent.DragEnded ended) {
+        if (session == null) {
+            return;
+        }
+        if (ended.cancelled()) {
+            session.cancel();
+            session = null;
+            return;
+        }
+        session.moveTo(ended.x(), ended.y(), this::dropTargetsAt);
+        History history = dropHistory;
+        Drop performed = history == null ? Drop.NONE : session.commit(history);
+        session = null;
+        if (performed.accepts()) {
+            // Focus follows the drop, and this is load-bearing rather than a nicety. Ctrl+Z resolves by focus
+            // (Gui.history's ClaimScope), but a drag is a pointer gesture with no focus relationship — so
+            // dropping a row while a text field still held focus would send the user's first undo to the field's
+            // typing history instead of to the drop they just made. Focusing what a click here would focus
+            // realigns the two, and is what the user expects anyway: the thing just moved is the thing now acted on.
+            RetainedNode landed = ancestorFocusable(HitTest.at(currentRoot, ended.x(), ended.y()));
+            setFocus(landed == null ? -1 : landed.id);
+        }
+    }
+
+    /**
+     * Escape while a drag is in flight cancels it and goes no further.
+     *
+     * <p>Deliberately ahead of claim resolution rather than expressed as a claim. A drag is modal for as long as
+     * it lasts — there is no sensible reading of "Escape" mid-drag that means anything but "not this one" — and
+     * the claim system resolves a single winner by scope, so a drag would have to outrank both the VISIBLE claim
+     * of an open context menu and the GLOBAL one of a modal to be sure of getting it. Inventing a scope above
+     * GLOBAL to express "except during a drag" would put a gesture's lifetime into a system that is about where
+     * a key is meaningful, which is a different question.
+     *
+     * @return whether the key was consumed here
+     */
+    private boolean escapeCancelledDrag(Key key) {
+        if (key != Key.ESCAPE || session == null || session.ended()) {
+            return false;
+        }
+        session.cancel();
+        session = null;
+        drags.reset();   // the button is still down; without this its release would complete a cancelled gesture
+        return true;
     }
 
     /**
@@ -464,6 +612,7 @@ public final class InputDispatcher {
         stateHandlers.remove(nodeId);
         dragHandlers.remove(nodeId);
         dropTargets.remove(nodeId);
+        dragSources.remove(nodeId);
         keyHandlers.remove(nodeId);
         charHandlers.remove(nodeId);
         charStages.remove(nodeId);
@@ -506,6 +655,45 @@ public final class InputDispatcher {
         this.currentRoot = root;
         pump.drain();
         pumpKeyRepeat();
+        pumpDragGesture();
+        settleDragSession();
+    }
+
+    /**
+     * Advance the drag recogniser's clock, on the same per-frame basis as auto-repeat and for the same reason:
+     * its hold threshold needs time to pass, and a pointer held perfectly still after crossing the distance
+     * produces no further events to carry it. Without this the drag would not begin until the pointer moved
+     * again, which is precisely the moment the user is holding it steady to aim.
+     */
+    private void pumpDragGesture() {
+        for (sibarum.tactroller.api.DragEvent d : drags.tick(System.nanoTime())) {
+            onDragGesture(d);
+        }
+    }
+
+    /**
+     * Re-resolve the live drag against the tree as it now stands, then count the frame as seen.
+     *
+     * <p>Re-resolving every frame rather than only on pointer motion is what keeps the indicator honest when the
+     * <em>tree</em> moves under a still pointer — a wheel scroll mid-drag being the ordinary case, and a
+     * transition settling being the other. An indicator that updated only on motion would tell the truth until
+     * the user scrolled and then lie until they jiggled the mouse.
+     *
+     * <p>Counting the frame here, at the end of dispatch, is what makes "a drop the user never saw does not
+     * commit" fall out rather than needing enforcement: this frame goes on to render, so by the next dispatch
+     * the count is honest. A flick whose whole gesture arrives in one drain reaches its release before any
+     * dispatch has ended, so it commits nothing.
+     */
+    private void settleDragSession() {
+        if (session == null) {
+            return;
+        }
+        if (session.ended()) {
+            session = null;
+            return;
+        }
+        session.moveTo(session.x(), session.y(), this::dropTargetsAt);
+        session.seen();
     }
 
     /** Release the bus subscription, and the presenter installed on this tree (it holds nodes of its own). */
@@ -524,6 +712,10 @@ public final class InputDispatcher {
         // Sequence every edge, not just the ones that publish an observation: a consumer that only ever sees key
         // routes still needs the gaps between them to be countable.
         current = conduit.next();
+        // The drag recogniser observes the same stream, ahead of routing and without consuming from it: presses,
+        // releases and moves still reach clicks, scrollbars and onDrag exactly as before, so nothing already
+        // working has to learn that drags exist.
+        feedDragGesture(e);
         switch (e) {
             case InputEvent.PointerMoved m -> {
                 if (scrollDrag != null) {
@@ -665,6 +857,9 @@ public final class InputDispatcher {
     }
 
     private void handleKeyDown(Key key) {
+        if (escapeCancelledDrag(key)) {
+            return;
+        }
         Modifier mod = modifierOf(key);
         if (mod != null) {
             heldMods.add(mod);

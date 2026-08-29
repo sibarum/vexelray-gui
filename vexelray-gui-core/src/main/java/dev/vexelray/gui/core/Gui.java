@@ -1,6 +1,7 @@
 package dev.vexelray.gui.core;
 
 import dev.vexelray.gui.core.drop.DragSession;
+import dev.vexelray.gui.core.drop.DragSource;
 import dev.vexelray.gui.core.drop.DropTarget;
 import dev.vexelray.gui.core.layout.Displacement;
 import dev.vexelray.gui.core.layout.FlexLayout;
@@ -585,6 +586,38 @@ public final class Gui implements AutoCloseable {
      * drag source driving a session against it. */
     public java.util.List<DropTarget> dropTargetsAt(float x, float y) {
         return input.dropTargetsAt(x, y);
+    }
+
+    /**
+     * Make {@code node} something a drag can begin on — see {@link DragSource}.
+     *
+     * <p>The gesture is recognised for you: a press here becomes a drag only once the pointer has travelled far
+     * enough and held long enough, so an ordinary click on the node stays an ordinary click. The source is asked
+     * for a payload at that moment, not at the press, and answering null leaves the gesture as a click.
+     */
+    public Gui onDragSource(Node node, DragSource source) {
+        input.onDragSource(node.id(), java.util.Objects.requireNonNull(source, "source"));
+        return this;
+    }
+
+    /**
+     * Where a completed drop records its change, so it can be undone.
+     *
+     * <p>Until one is set, drops resolve and draw but commit nothing — deliberately, because a drop that mutated
+     * with no way back would be the one operation in the framework the user could not undo, and silently so.
+     *
+     * <p>A drop also moves focus to what a click at the drop point would focus, which is what keeps Ctrl+Z
+     * pointed at the right history: {@link #history(Node, History, ClaimScope)} resolves by focus, and a drag is
+     * a pointer gesture with no focus relationship of its own.
+     */
+    public Gui dropHistory(History history) {
+        input.dropHistory(java.util.Objects.requireNonNull(history, "history"));
+        return this;
+    }
+
+    /** The drag in flight over this tree, or null — for a renderer drawing the ghost and the drop indicator. */
+    public DragSession dragSession() {
+        return input.dragSession();
     }
 
     /**

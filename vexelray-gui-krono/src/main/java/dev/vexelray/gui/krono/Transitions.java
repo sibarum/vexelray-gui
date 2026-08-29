@@ -46,8 +46,16 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>Nothing transitions unless it was enrolled, because most layout changes should not be animated: a window
  * resize moves everything, and a UI that slides its entire contents on every drag of the window edge is seasick
  * rather than smooth. {@link #follow} enrols one node, {@link #followChildren} enrols a container's direct
- * children — the second being what a list or tree wants, since its rows come and go and enrolling each one as it
- * appeared would be bookkeeping the container already does.
+ * children — what a list or tree wants, since its rows come and go and enrolling each one as it appeared would
+ * be bookkeeping the container already does — and {@link #followSubtree} enrols everything under a node at any
+ * depth, which is what a whole page wants.
+ *
+ * <p>The three exist because the granularity has to match the <em>consequence</em> of the change, not the place
+ * it happened. A layout change does not stop at the container it happened in: open a panel and the rows below it
+ * move, and so does the card below them, and the strip below that. Enrolling one container animates part of that
+ * and snaps the rest, and the two halves moving the same distance at different times is a page visibly tearing
+ * along the boundary. Either everything covers the distance or nothing does — mixed is worse than neither.
+ * Nearest enrolment wins, so a page can say one thing and a list inside it another.
  *
  * <p>A duration of {@link Dur#ZERO} enrols a node that moves instantly. That is the honest reduced-motion
  * setting, and it is why an application can route every enrolment through one duration and turn the whole class
@@ -80,6 +88,7 @@ public final class Transitions implements LayoutMotion {
     private final KronoGui krono;
     private final Map<Long, Terms> followed = new ConcurrentHashMap<>();
     private final Map<Long, Terms> followedChildren = new ConcurrentHashMap<>();
+    private final Map<Long, Terms> followedSubtree = new ConcurrentHashMap<>();
     private final Map<Long, Lag> lags = new ConcurrentHashMap<>();
 
     private Transitions(KronoGui krono) {
@@ -107,12 +116,36 @@ public final class Transitions implements LayoutMotion {
         return this;
     }
 
+    /**
+     * Enrol everything under {@code root}, at any depth, however deeply nested and whenever it was added.
+     *
+     * <p>This is what a whole page wants, and the reason it exists is that mixed motion is worse than no motion.
+     * A layout change does not stop at the container it happened in: open a panel and the rows below it move,
+     * and so does the card below <em>them</em>, and the strip below that. Enrolling one container therefore
+     * animates part of the consequence and snaps the rest — and because the two halves are moving the same
+     * distance at different times, the page visibly tears along the boundary. Either everything covers the
+     * distance or nothing does.
+     *
+     * <p>Nearest enrolment wins, so a list inside an enrolled page can still say something different about its
+     * own rows. {@code root} itself is not enrolled — say {@link #follow} for that — which keeps "the page's
+     * contents move" from also meaning "the page slides around inside its parent".
+     *
+     * <p>{@link Dur#ZERO} enrols a subtree that moves instantly, which is the honest reduced-motion setting and
+     * the reason an application can route every enrolment through one duration and turn the whole class off in
+     * one place.
+     */
+    public Transitions followSubtree(Node root, Dur over, Ease ease) {
+        followedSubtree.put(root.id(), terms(over, ease));
+        return this;
+    }
+
     /** Stop transitioning {@code node} and its children, and drop any lag it is carrying, so it snaps to where
      * layout puts it from now on. */
     public Transitions unfollow(Node node) {
         long id = node.id();
         followed.remove(id);
         followedChildren.remove(id);
+        followedSubtree.remove(id);
         Lag lag = lags.remove(id);
         if (lag != null) {
             lag.epoch++;        // whatever ramp is still running has lost; its writes go nowhere
@@ -191,13 +224,37 @@ public final class Transitions implements LayoutMotion {
 
     /** A node's own enrolment wins over its container's, so one row can be given its own timing without the
      * container having to know about it. */
+    /**
+     * The terms that apply to {@code node}: its own, else its parent's {@code followChildren}, else the nearest
+     * enclosing {@code followSubtree}.
+     *
+     * <p>Most specific wins, which is what lets a page say "everything here moves" and a list inside it say
+     * "except my rows, which move faster".
+     *
+     * <p>The walk to the root is why {@code followSubtree} is a separate call rather than the only one: it is
+     * O(depth) for every node that moved, on every frame something is moving. That is nothing against a layout
+     * pass, and it is still worth not paying for a list that only ever wanted its own rows.
+     */
     private Terms termsFor(RetainedNode node) {
         Terms own = followed.get(node.id);
         if (own != null) {
             return own;
         }
         RetainedNode parent = node.parent;
-        return parent == null ? null : followedChildren.get(parent.id);
+        if (parent == null) {
+            return null;
+        }
+        Terms asChild = followedChildren.get(parent.id);
+        if (asChild != null) {
+            return asChild;
+        }
+        for (RetainedNode up = parent; up != null; up = up.parent) {
+            Terms subtree = followedSubtree.get(up.id);
+            if (subtree != null) {
+                return subtree;
+            }
+        }
+        return null;
     }
 
     private static Terms terms(Dur over, Ease ease) {

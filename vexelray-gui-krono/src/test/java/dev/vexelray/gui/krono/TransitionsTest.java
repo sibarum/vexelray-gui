@@ -220,6 +220,73 @@ class TransitionsTest {
     }
 
     @Test
+    @DisplayName("a subtree enrolment reaches any depth, which is what a whole page needs")
+    void followSubtreeReachesGrandchildren() {
+        try (KronoGui krono = headless()) {
+            Transitions moves = Transitions.on(krono);
+            Node page = krono.gui().column();
+            moves.followSubtree(page, OVER, Ease.LINEAR);
+
+            RetainedNode root = retained(page);
+            RetainedNode card = retainedUnder(root);
+            RetainedNode strip = retainedUnder(card);
+            RetainedNode deep = retainedUnder(strip);
+
+            moves.moved(deep, 0f, 0f, 0f, 100f);
+
+            assertEquals(-100f, moves.displacementY(deep),
+                    "three levels down is still under the page that was enrolled");
+        }
+    }
+
+    /**
+     * The reason a subtree enrolment exists at all: a layout change does not stop at the container it happened
+     * in, and animating one level of the consequence while the rest snaps tears the page along the boundary.
+     */
+    @Test
+    @DisplayName("followChildren reaches one level, which is what it is for")
+    void followChildrenDoesNotReachGrandchildren() {
+        try (KronoGui krono = headless()) {
+            Transitions moves = Transitions.on(krono);
+            Node list = krono.gui().column();
+            moves.followChildren(list, OVER, Ease.LINEAR);
+
+            RetainedNode container = retained(list);
+            RetainedNode row = retainedUnder(container);
+            RetainedNode inRow = retainedUnder(row);
+
+            moves.moved(row, 0f, 0f, 0f, 100f);
+            moves.moved(inRow, 0f, 0f, 0f, 100f);
+
+            assertEquals(-100f, moves.displacementY(row), "a direct child is enrolled");
+            assertEquals(0f, moves.displacementY(inRow), "what is inside a row is not");
+        }
+    }
+
+    @Test
+    @DisplayName("the nearest enrolment wins, so a page and a list inside it can differ")
+    void aNearerEnrolmentOverridesTheSubtree() {
+        try (KronoGui krono = headless()) {
+            Transitions moves = Transitions.on(krono);
+            Node page = krono.gui().column();
+            Node list = krono.gui().column();
+            moves.followSubtree(page, OVER, Ease.LINEAR);
+            moves.followChildren(list, Dur.ZERO, Ease.LINEAR);   // this list snaps, inside a page that does not
+
+            RetainedNode pageNode = retained(page);
+            RetainedNode listNode = new RetainedNode(list.id(), NodeKind.BOX);
+            listNode.parent = pageNode;
+            pageNode.children.add(listNode);
+            RetainedNode row = retainedUnder(listNode);
+
+            moves.moved(row, 0f, 0f, 0f, 100f);
+
+            assertEquals(0f, moves.displacementY(row), "the list's own terms, not the page's");
+            assertTrue(moves.settled());
+        }
+    }
+
+    @Test
     @DisplayName("a node that did not actually move starts nothing")
     void aZeroLengthMoveIsNotATransition() {
         try (KronoGui krono = headless()) {

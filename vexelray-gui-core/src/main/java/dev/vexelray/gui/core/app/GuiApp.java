@@ -383,8 +383,24 @@ public final class GuiApp implements AutoCloseable {
      * nothing. {@link #run} independently refuses to park while this queue is non-empty, which covers
      * the same-thread case exactly — a task posted during {@code beforeFrame} is visible by the time the
      * budget is read — and the wake covers every other thread.
+     *
+     * <h2>Public, because applications were writing it themselves</h2>
+     *
+     * An application whose handlers run off the GUI thread needs somewhere to put structural work, and
+     * with this hidden every one of them grew its own: a {@code ConcurrentLinkedQueue<Runnable>} drained
+     * from the {@code beforeFrame} hook. Three of them, in two applications, all the same shape.
+     *
+     * <p>They are not equivalent, and the difference costs a frame per step. This queue is drained
+     * <b>to exhaustion at the top of an iteration</b>, so a task posted <em>by</em> a task — which is
+     * what opening a window from a request looks like — runs in the same frame. A queue drained from
+     * {@code beforeFrame} runs mid-frame, so the nested post it makes lands here and waits for the next
+     * iteration. Chain three such steps and the operation takes three frames, which at 140 fps was
+     * invisible and against a loop that parks is something you can watch happen.
+     *
+     * <p>So: structural work belongs here. A private queue is right only for work that must run at a
+     * particular point in the host's own frame hook, and that is rarer than it looks.
      */
-    void post(Runnable task) {
+    public void post(Runnable task) {
         tasks.add(task);
         postWake();
     }

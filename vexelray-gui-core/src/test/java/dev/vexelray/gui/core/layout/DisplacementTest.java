@@ -231,4 +231,96 @@ class DisplacementTest {
 
         assertEquals(200f, fresh.y, "no recorded position means nothing to displace from");
     }
+
+    // --- scrolling is not moving --------------------------------------------------------------------------
+
+    /**
+     * Scroll {@code scroller} to {@code offset}, carrying everything under it the way FlexLayout does.
+     *
+     * <p>The whole subtree, not the direct children: a scroller places its children at {@code baseY - scrollY}
+     * and they place theirs relative to that, so an offset moves every descendant. Carrying only one level is
+     * what an earlier version of this fixture did, and it made the nested case look like a bug in the code it
+     * was testing rather than in the fixture — the grandchild really had moved relative to its own parent.
+     */
+    private static void scrollTo(RetainedNode scroller, float offset) {
+        float delta = offset - scroller.scrollY;
+        scroller.scrollY = offset;
+        for (RetainedNode child : scroller.children) {
+            carry(child, delta);
+        }
+    }
+
+    private static void carry(RetainedNode node, float delta) {
+        layOut(node, node.x, node.y - delta);
+        for (RetainedNode child : node.children) {
+            carry(child, delta);
+        }
+    }
+
+    @Test
+    void scrollingAContainerDoesNotMoveWhatIsInIt() {
+        Recording motion = new Recording();
+        RetainedNode root = node(0f, 0f);
+        RetainedNode scroller = child(root, 0f, 0f);
+        child(scroller, 0f, 0f);
+        child(scroller, 0f, 40f);
+        Displacement.settle(root, motion);
+
+        scrollTo(scroller, 25f);
+        Displacement.settle(root, motion);
+
+        assertTrue(motion.moves.isEmpty(),
+                "a row carried by the scroll it is inside of has not moved: " + motion.moves);
+    }
+
+    @Test
+    void aMoveDuringAScrollReportsTheMoveAndNotTheScroll() {
+        Recording motion = new Recording();
+        RetainedNode root = node(0f, 0f);
+        RetainedNode scroller = child(root, 0f, 0f);
+        RetainedNode row = child(scroller, 0f, 40f);
+        Displacement.settle(root, motion);
+
+        scrollTo(scroller, 10f);        // row is now at 30
+        layOut(row, 0f, row.y + 60f);   // and genuinely moves 60 further down, to 90
+        Displacement.settle(root, motion);
+
+        assertEquals(List.of(row.id + ":0.0,30.0->0.0,90.0"), motion.moves,
+                "the reported distance is the move, measured from where the scroll had already put it");
+    }
+
+    @Test
+    void nestedScrollersAccumulate() {
+        Recording motion = new Recording();
+        RetainedNode root = node(0f, 0f);
+        RetainedNode outer = child(root, 0f, 0f);
+        RetainedNode inner = child(outer, 0f, 0f);
+        child(inner, 0f, 50f);
+        Displacement.settle(root, motion);
+
+        // Both scroll, in the same direction: the leaf is carried by the sum, and neither half is a move.
+        scrollTo(outer, 15f);
+        scrollTo(inner, 20f);
+        Displacement.settle(root, motion);
+
+        assertTrue(motion.moves.isEmpty(), "two nested scrolls still add up to no movement: " + motion.moves);
+    }
+
+    @Test
+    void aScrollerThatMovesIsStillAMove() {
+        Recording motion = new Recording();
+        RetainedNode root = node(0f, 0f);
+        RetainedNode scroller = child(root, 0f, 0f);
+        RetainedNode row = child(scroller, 0f, 40f);
+        Displacement.settle(root, motion);
+
+        // The scroller itself slides down the page — which carries its children with it, and is a move for
+        // every one of them, because nothing about the scroll offset changed.
+        layOut(scroller, 0f, 100f);
+        layOut(row, 0f, 140f);
+        Displacement.settle(root, motion);
+
+        assertEquals(List.of(scroller.id + ":0.0,0.0->0.0,100.0", row.id + ":0.0,40.0->0.0,140.0"),
+                motion.moves, "a scroller moving is not a scroller scrolling");
+    }
 }

@@ -50,6 +50,12 @@ public final class RetainedNode {
     /** Whether the four above have been filled. False for a node laid out for the first time, which is what
      * distinguishes "appeared here" from "moved here from the origin". */
     public boolean layoutRectKnown;
+    // What this node's scroll offset was when the four above were recorded. A scroller's offset is baked into
+    // the absolute position of everything under it (FlexLayout places its children at baseX - scrollX), so
+    // without this a scroll of ten pixels is indistinguishable from every descendant having moved ten pixels —
+    // and a motion source told that would animate the whole subtree lagging behind the scroll it is inside of.
+    public float layoutScrollX;
+    public float layoutScrollY;
 
     // Layout-computed, resolved-to-px render inputs (filled each layout pass so the renderer needs no units/ctx).
     public float borderPx;

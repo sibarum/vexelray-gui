@@ -11,7 +11,7 @@ a ray-marched **viewport** costs a rebind per image and nothing else, because a 
 that samples rather than a second pipeline.
 
 <p align="center">
-  <img src="docs/demo.png" alt="The showcase demo: lit, elevated cards; letterpressed buttons; tabs; editable fields" width="720">
+  <img src="docs/demo.png" alt="The gallery demo: a chapter rail, a live editor page, and the activity rail" width="720">
 </p>
 
 It is the top of a three-sibling stack, each its own repo:
@@ -217,8 +217,17 @@ Widgets are ordinary framework users — built entirely on public `Node`/`Gui` A
   `hitInert` (drawn, never a pointer target), anchored to the control's box (never follows the
   pointer), and coexists with the control's own hover restyle because state observers accumulate.
 
-The demo ([Demo.java](vexelray-gui-demo/src/main/java/dev/vexelray/gui/demo/Demo.java)) exercises
-all of it end to end — worth reading top to bottom as the canonical example.
+The demo is a **gallery**: a navigation rail, a page, and an activity rail, with one
+[chapter](vexelray-gui-demo/src/main/java/dev/vexelray/gui/demo/Chapter.java) per part of the
+framework — text, trees, drag and drop, drawing, plot, typeset, windows, motion, layout. Each is a
+file of its own under `demo/chapter`, so adding a subsystem to the demo is adding a file to
+[Gallery.java](vexelray-gui-demo/src/main/java/dev/vexelray/gui/demo/Gallery.java) rather than
+another button to one screen. [Demo.java](vexelray-gui-demo/src/main/java/dev/vexelray/gui/demo/Demo.java)
+is what is left over: the application edge — input, clipboard, window memory, the frame loop, and
+what closing the window means — which is exactly the part a client application writes for itself.
+
+Run it with `mvn -pl vexelray-gui-demo exec:exec`. `Demo --capture out.png <chapter>` shoots a
+single page headless, and `Demo --capture-zoom` walks the zoom ladder as a strip of images.
 
 ## The application edge
 

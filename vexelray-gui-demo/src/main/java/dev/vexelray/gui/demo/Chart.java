@@ -21,7 +21,7 @@ import dev.vexelray.gui.draw.Sketch;
  * <p>And it is built from a measured size, which is what a picture always is: pixels, authored against the box
  * the layout produced, rebuilt when that box changes. Nothing scales it behind the caller's back.
  */
-final class Chart {
+public final class Chart {
 
     /** Room for the labels along the left and bottom edges. */
     private static final float PAD_L = 34f;
@@ -36,7 +36,7 @@ final class Chart {
     }
 
     /** The figure at {@code w} x {@code h} px, in {@code theme}'s colours. */
-    static Picture of(float w, float h, Theme theme) {
+    public static Picture of(float w, float h, Theme theme) {
         float left = PAD_L;
         float right = Math.max(left + 1f, w - PAD_R);
         float top = PAD_T;

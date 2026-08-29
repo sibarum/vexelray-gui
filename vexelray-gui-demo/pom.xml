@@ -34,6 +34,18 @@
             <groupId>dev.vexelray.gui</groupId>
             <artifactId>vexelray-gui-nfd</artifactId>
         </dependency>
+        <!-- Two optional modules the gallery gives a chapter each. Neither is reachable through -widget, and
+             that is deliberate: typeset is a second composition world a flex layout embeds as an atom, and
+             plot is arithmetic with no renderer at all, so the chapter draws its output itself, which is the
+             thing that chapter is about. An application that wants neither depends on neither. -->
+        <dependency>
+            <groupId>dev.vexelray.gui</groupId>
+            <artifactId>vexelray-gui-typeset</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>dev.vexelray.gui</groupId>
+            <artifactId>vexelray-gui-plot</artifactId>
+        </dependency>
         <!-- The clock. Motion enters at the application edge and nowhere else: -widget declares seams shaped
              out of JDK types (a DoubleConsumer and a Runnable) and this module satisfies them, so a widget
              animates without ever naming Kronometer. -->

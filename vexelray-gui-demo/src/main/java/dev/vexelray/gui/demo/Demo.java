@@ -2,38 +2,19 @@ package dev.vexelray.gui.demo;
 
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
-import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.TextClipboard;
-import dev.vexelray.gui.core.WindowControls;
 import dev.vexelray.gui.core.app.AppHome;
-import dev.vexelray.gui.core.app.AppWindow;
 import dev.vexelray.gui.core.app.GuiApp;
 import dev.vexelray.gui.core.app.Settings;
 import dev.vexelray.gui.core.app.WindowInput;
-import dev.vexelray.gui.core.app.WindowSpec;
-import dev.vexelray.os.Decorations;
-import dev.vexelray.os.WindowConfig;
+import dev.vexelray.gui.core.app.WindowMemory;
 import dev.vexelray.gui.core.layout.Length;
-import dev.vexelray.gui.core.layout.LayoutEnums;
-import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
-import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.gui.krono.KronoGui;
-import sibarum.kronometer.Dur;
-import sibarum.kronometer.anim.Ease;
-import dev.vexelray.gui.widget.Cue;
-import dev.vexelray.gui.widget.Cues;
-import dev.vexelray.gui.widget.Ramp;
-import dev.vexelray.gui.widget.Slider;
-import dev.vexelray.gui.widget.Tabs;
-import dev.vexelray.gui.widget.TitleBar;
-import dev.vexelray.gui.widget.TextField;
 import dev.vexelray.gui.widget.Modal;
 import dev.vexelray.gui.widget.Modals;
-import dev.vexelray.gui.widget.Tooltip;
-import dev.vexelray.gui.widget.TreeView;
-import dev.vexelray.text.TextLayout;
+import dev.vexelray.os.Decorations;
 import sibarum.tactroller.api.BackendException;
 import sibarum.tactroller.api.CoordinateSpace;
 import sibarum.tactroller.api.Key;
@@ -44,26 +25,34 @@ import sibarum.tactroller.atchung.TactrollerInputBridge;
 import sibarum.tactroller.clipboard.Clipboard;
 import sibarum.tactroller.clipboard.ClipboardException;
 
-import java.util.concurrent.atomic.AtomicInteger;
-
 /**
- * vexelray-gui showcase — step 6. The UI is built declaratively through {@link Gui}/{@link Node} handles and laid
- * out by the flex engine (no hard-coded rects); a worker thread mutates it live; and the "Get started" button is
- * clickable — input flows tactroller → atchung → framework dispatch → a click handler that mutates the tree,
- * proving the whole vertical with app logic off the GUI thread.
+ * The vexelray-gui gallery: one chapter per part of the framework, in one window.
+ *
+ * <p>The demo used to be a single screen that grew a button every time the framework grew a feature, and a
+ * screen that grows that way ends up demonstrating that there are many features and nothing about any of them.
+ * It is now a {@link Shell} — a navigation rail, a page, an activity rail — over a list of {@link Chapter}s, and
+ * adding a subsystem to the demo is adding a file to {@link Gallery}.
+ *
+ * <p>What is left in this class is the application edge, which is exactly the part a client application has to
+ * write for itself: opening an input backend and settling the coordinate space, installing a clipboard,
+ * remembering where the window was, wiring the frame loop, and deciding what closing the window means. Every
+ * one of those is a decision the framework deliberately does not take.
  *
  * <p>Run: {@code Demo} (windowed, interactive), {@code Demo <frames>} (capped), {@code Demo --capture <out.png>}
- * (headless). Needs {@code --enable-native-access=ALL-UNNAMED}.
+ * (headless), {@code Demo --capture-zoom} (the em check, as a strip of images). Needs
+ * {@code --enable-native-access=ALL-UNNAMED}.
  */
 public final class Demo {
 
-    /** Window and capture size, in the engine's logical coordinates (see {@code attachInput} on why not pixels). */
-    private static final int W = 900;
-    private static final int H = 560;
+    /** The application's own name, which is what its settings directory is called. */
+    private static final String APP = "vexelray-demo";
 
-    // No colours here any more: every one of them was a level of the theme's two ladders, and the four hover and
-    // pressed variants were one lightness step applied twice. The demo names roles and lets the theme answer --
-    // which is also what makes it a showcase of the framework rather than of a palette (see Theme and Role).
+    /** Window size on a first run, in the engine's logical coordinates (see {@code attachInput}). */
+    private static final int W = 1240;
+    private static final int H = 780;
+
+    /** Zoom levels the capture ladder walks; the interactive shortcuts use {@link Gui#zoomRange} instead. */
+    private static final float[] ZOOM_STEPS = {0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f, 3f};
 
     public static void main(String[] args) throws Exception {
         args = java.util.Arrays.stream(args).filter(s -> !s.isBlank()).toArray(String[]::new);
@@ -71,27 +60,28 @@ public final class Demo {
         Gui gui = new Gui();
         // The smallest canvas this UI is still coherent on — a *floor*, not the design size. Setting it to the
         // design size leaves no headroom, so any window even slightly smaller starts cropping; this is the point
-        // below which the layout would stop making sense, which is a good deal lower.
-        gui.minSize(Length.em(40), Length.em(25));   // 640 x 400 at 1x
-        // The look is a preference, so it lives where preferences live -- and it is applied before the UI is built,
-        // because roles resolve when a prop is written (see Theme). One line, and every widget, every piece of the
+        // below which two rails and a page stop making sense, which is a good deal lower.
+        gui.minSize(Length.em(52), Length.em(30));
+        // The look is a preference, so it lives where preferences live — and it is applied before the UI is
+        // built, because a role resolves when a prop is written. One line, and every widget, every piece of the
         // renderer's own chrome and the clear colour below all follow it.
-        if ("light".equalsIgnoreCase(AppHome.of("vexelray-demo").settings().getString("theme", "dark"))) {
+        if ("light".equalsIgnoreCase(AppHome.of(APP).settings().getString("theme", "dark"))) {
             gui.theme(Theme.LIGHT);
         }
-        // The frame clock. Attached before the UI is built because a widget that animates is handed its timing at
-        // construction, and ticked from the run loop's beforeFrame hook below — one tick per presented frame.
+        // The frame clock. Attached before the UI is built, because a widget that animates is handed its timing
+        // at construction, and ticked from the run loop's beforeFrame hook below — one tick per presented frame.
         KronoGui krono = KronoGui.attach(gui);
-        Refs refs = buildUi(gui, krono);
+
+        Shell shell = new Shell(gui, krono, Gallery.chapters());
         zoomShortcuts(gui);
-        // The Vulkan clear colour: the same role the root paints, so the frame behind the tree is never a
-        // second opinion about what the page is.
+        // The Vulkan clear colour: the same role the root paints, so the frame behind the tree is never a second
+        // opinion about what the page is.
         Color page = gui.theme().color(Role.PAGE);
 
         if (args.length >= 1 && args[0].equals("--capture-zoom")) {
             // One run, the same tree captured at each step of the ladder: the em check, as a strip of images.
             // Every length in the UI resolves through zoom, so each file should be the previous one scaled —
-            // any element that holds its pixel size while the rest grow is still pinned to device pixels (§6).
+            // any element that holds its pixel size while the rest grow is still pinned to device pixels.
             for (float z : ZOOM_STEPS) {
                 gui.zoom(z);
                 GuiApp.capture(gui, W, H, page.r(), page.g(), page.b(), "gui-zoom-" + z + "x.png");
@@ -100,113 +90,102 @@ public final class Demo {
             return;
         }
         if (args.length >= 1 && args[0].equals("--capture")) {
+            // A capture may name the chapter it wants, so the gallery can be documented a page at a time
+            // without the shot having to be taken by hand.
+            if (args.length >= 3) {
+                shell.selectNow(Integer.parseInt(args[2]));
+            }
             GuiApp.capture(gui, W, H, page.r(), page.g(), page.b(),
                     args.length >= 2 ? args[1] : "gui.png");
             System.out.println("captured");
             return;
         }
-        if (args.length >= 1 && args[0].equals("--capture-live")) {
-            startWorker(gui, refs);          // let a worker mutate the tree for a few seconds first
-            Thread.sleep(3200);
-            GuiApp.capture(gui, W, H, page.r(), page.g(), page.b(),
-                    args.length >= 2 ? args[1] : "gui-live.png");
-            System.out.println("captured");
-            return;
-        }
 
         int maxFrames = args.length > 0 ? Integer.parseInt(args[0]) : 0;
-        startWorker(gui, refs);        // app logic off the GUI thread, mutating via the bus
-        // W and H are density-independent: the window is created at their *pixel* size on this display, so a UI
-        // that honours density gets a window that honours it too. Sizing the window in raw pixels while the
-        // content scales is the mismatch that leaves a 125% display showing three quarters of the UI.
-        //
-        // Placement persists across runs (~/.vexelray-demo/session.properties): the window is *created* at its
-        // last bounds — outer rect on both sides of the round trip — rather than appearing and then jumping.
-        // AppHome is the directory, Settings a file in it; bounds go in "session" rather than the default
-        // "settings" store because they are where the user left the window, not a preference the user chose.
-        Settings settings = AppHome.of("vexelray-demo").settings("session");
-        WindowConfig windowConfig = WindowConfig
-                .of("VexelRay GUI", settings.getInt("window.w", W), settings.getInt("window.h", H))
-                .at(settings.getInt("window.x", WindowConfig.UNPOSITIONED),
-                        settings.getInt("window.y", WindowConfig.UNPOSITIONED))
-                // The GUI draws the frame. The window keeps every window-manager behaviour it had — the bounds
-                // above still describe the same outer rect, so placement saved by an OS-framed run restores here
-                // unchanged — and gains a title bar made of the same widgets as the rest of the UI.
-                .decorations(Decorations.CLIENT);
-        try (Tactroller input = openInput(gui);
-             GuiApp app = new GuiApp(windowConfig);
+        startWorker(gui, shell.console());
+
+        // Placement is read before the window exists, so the gallery is *created* where it was left rather than
+        // appearing and then moving — and clamped on the way, because the desk may have changed shape since.
+        // Every window here goes through the same three lines: config it, restore it, watch it.
+        WindowMemory memory = new WindowMemory(Settings.open(APP));
+        try (Tactroller input = openInput();
+             GuiApp app = new GuiApp(memory.config("main", "VexelRay GUI", W, H)
+                     // The GUI draws the frame. The window keeps every window-manager behaviour it had —
+                     // dragging, snapping, Win+arrow, double-click-to-maximize, the system menu — and gains a
+                     // title bar made of the same widgets as the rest of the UI.
+                     .decorations(Decorations.CLIENT));
              Clipboard clipboard = openClipboard(gui)) {
+
             attachInput(input, gui, app);
-            refs.titleBar().controls(app.controls());   // the window exists now; point the chrome at it
+            shell.titleBar().controls(app.controls());   // the window exists now; point the chrome at it
+            if (memory.maximized("main")) {
+                app.window().maximize();
+            }
+            // Watched with its tree, so the UI zoom is remembered too: Ctrl+= is the same kind of decision as
+            // dragging the window bigger, and losing it on quit is the same loss.
+            memory.watch("main", app.window(), gui);
             // One seam, and every window the framework opens from here on can hear the user: its own backend,
-            // attached when the window is created, pumped by the loop, released with it. Dialogs and named
-            // windows need nothing further to be interactive.
+            // attached when the window is created, pumped by the loop, released with it.
             app.input(Demo::windowInput);
             Modals.install(app);
+            // Everything a chapter registered against a window it could not yet have.
+            shell.stage().started(app);
 
-            // The popup vertical, as a *named* window: "popup" is one window however many times it is asked for,
-            // so clicking the button (or pressing Ctrl+`) while it is open raises the window that exists instead
-            // of making a second one — and closing it does not lose its tree, which is waiting for the next show.
-            AppWindow popup = app.window("popup",
-                    () -> WindowSpec.of(WindowConfig.of("VexelRay popup", 420, 280), popupGui()));
-            gui.onClick(refs.popupButton(), popup::show);
-            gui.shortcut(Key.GRAVE_ACCENT, popup::toggle, Modifier.CONTROL);
             if (maxFrames > 0) {
-                // Frames-capped runs exercise both window verticals: a named window, and a dialog that blocks
-                // and dims everything else while it is up.
-                popup.show();
+                // A frames-capped run exercises the window verticals it would otherwise never reach.
                 Modals.info("Modal dialog", "Shown by a frames-capped run, over a dimmed application.");
             }
-
-            // A dialog is a value, from any thread, with no class behind it. While it is up, every other window
-            // of this application is disabled by the window manager and dimmed.
-            gui.onClick(refs.dialogButton(), () -> Modals.show(
-                    Modal.of("A real window", "This dialog is an OS window of its own, owned by the main "
-                                    + "window and drawn with the same chrome. The application behind it is "
-                                    + "disabled and dimmed until you answer.\n\nAsk twice and the second "
-                                    + "question waits its turn.")
-                            .defaultButton("Ask again", () -> Modals.info("Second question",
-                                    "Queued behind the first, presented when it closed."))
-                            .cancelButton("Close", () -> { })));
 
             // Closing the window is a *request* the application may refuse. Installed only when there is input
             // to answer it with: a dialog nobody can click would be a window that cannot be closed at all.
             if (input != null) {
                 app.onCloseRequest(request -> Modals.show(
-                        Modal.of("Quit the demo?", "Window placement is saved either way.")
+                        Modal.of("Quit the gallery?", "Window placement and zoom are saved either way.")
                                 .defaultButton("Quit", request::proceed)
                                 .cancelButton("Stay", request::cancel)));
             }
-            TactrollerInputBridge bridge = input == null ? null : bridgeFor(input, gui);
-            // Input first, then the clock: the tick returns with its batch complete, so anything an animation
-            // posts this frame is on the bus before Gui.frame reconciles it — the frame that presents a value is
-            // the frame that computed it.
-            app.run(gui, maxFrames, () -> {
-                pump(bridge);
-                krono.tick();
-            });
-            // The window still exists here (close only *requested* the exit), so its final bounds are readable.
-            settings.putInt("window.x", app.window().screenX())
-                    .putInt("window.y", app.window().screenY())
-                    .putInt("window.w", app.window().outerWidth())
-                    .putInt("window.h", app.window().outerHeight())
-                    .save();
+
+            TactrollerInputBridge bridge = input == null ? null : new TactrollerInputBridge(input, gui.bus());
+            if (maxFrames <= 0) {
+                // Render on demand: park until something says a frame is due, and only on an uncapped run — a
+                // frame cap is a script, and blocking would make N frames of a still window take forever rather
+                // than N presents.
+                //
+                // Every deadline this application holds, in one supplier. The clock knows about animations; it
+                // does not know that the window placement is 700ms from being written, and a loop that parks has
+                // no next frame on which to discover that.
+                app.pacing(() -> Math.min(krono.kron().sleepTimeout().nanos(), memory.nanosUntilSettle()));
+                app.idleRefresh(200_000_000L)   // 5 Hz floor while focused: a missed wake is late, never lost
+                        .maxFrameRate(16_666_666L);   // 60 Hz ceiling while animating
+                // And the wakes, without which the parking above is a hang rather than a saving: a worker's
+                // mutation and a timeline's tick are not OS input, so each has to nudge the message queue.
+                gui.onWork(app::postWake);
+                krono.kron().onWork(app::postWake);
+            }
+            try {
+                // Input first, then the clock: the tick returns with its batch complete, so anything an
+                // animation posts this frame is on the bus before Gui.frame reconciles it — the frame that
+                // presents a value is the frame that computed it.
+                app.run(gui, maxFrames, () -> {
+                    pump(bridge);
+                    krono.tick();
+                    memory.poll();
+                });
+            } finally {
+                // The debounce has no next frame to fire on once the loop is over, so the last move of the
+                // session is written here or not at all.
+                memory.save();
+            }
         }
         krono.close();   // the clock outlives the window but not the process: closed with the GUI it drove
         gui.close();
         System.out.println("clean shutdown");
     }
 
-    /** Zoom levels the capture ladder walks; the interactive shortcuts use {@link Gui#zoomRange} instead. */
-    private static final float[] ZOOM_STEPS = {0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f, 3f};
-
     /**
      * Ctrl+= / Ctrl+- / Ctrl+0 — zoom in, out, reset. Registered here rather than in core because which chord
      * zooms (or whether zooming exists at all) is an application decision; {@code gui.shortcut} is an ordinary
-     * {@code GLOBAL} claim, so a focused element that wants these chords can outrank them (§8).
-     *
-     * <p>The commands run on a worker thread and only commit to the zoom {@code State}; the next frame reads it
-     * and relays out.
+     * {@code GLOBAL} claim, so a focused element that wants these chords can outrank it.
      */
     private static void zoomShortcuts(Gui gui) {
         gui.zoomRange(0.5f, 3f, 1.25f);
@@ -220,22 +199,10 @@ public final class Demo {
     }
 
     /**
-     * Open tactroller, attach it to the app window, and settle the two things that must agree about density.
-     * Returns {@code null} (input disabled) if no backend is present, so the showcase still renders headless/in CI.
-     *
-     * <p><b>Coordinate space.</b> {@code FRAMEBUFFER}, not {@code CLIENT}. The GUI hit-tests input against the
-     * rects it laid out, and it lays out in the viewport {@code GuiApp} hands it — which is the drawable the
-     * Canvas and swapchain are sized to, i.e. pixels. On a Retina-class display a window's point extent is half
-     * its pixel extent, so client-space coordinates would land at half their true position and every press would
-     * hit the control above the one aimed at. On a 1:1 display the two spaces are the same number, which is
-     * exactly why picking the wrong one survives development on Windows and fails on the first Mac
-     * (DpiTest reproduces it by arithmetic).
-     *
-     * <p><b>Density.</b> Fed from {@code contentScale()}, so every {@code Length} resolves through the real
-     * points-to-pixels ratio and the UI keeps its physical size on a dense screen. This comes from tactroller
-     * because {@code NativeWindow} cannot answer it — it exposes one size and no scale (architecture.md §3, E4).
+     * Open tactroller. Returns {@code null} (input disabled) if no backend is present, so the gallery still
+     * renders headless and in CI — a window nobody can click is a degraded window rather than a failed launch.
      */
-    private static Tactroller openInput(Gui gui) {
+    private static Tactroller openInput() {
         try {
             Tactroller t = Tactroller.open();
             System.out.println("input: " + t.backendName());
@@ -261,11 +228,9 @@ public final class Demo {
      *       too big" and overflows the window.</li>
      * </ul>
      *
-     * <p>So the framework's density support is correct and tested ({@code DpiTest}, {@code Length.dp}) but cannot
-     * be switched on here yet: it becomes live only once the process is DPI-aware and the engine reports a real
-     * framebuffer extent, at which point the canvas is in pixels and both settings above flip together. That is
-     * E4, and its packaging half — DPI awareness is declared by a manifest or {@code SetProcessDpiAwarenessContext}
-     * rather than by code, and the engine owns window creation.
+     * <p>So the framework's density support is correct and tested and cannot be switched on here yet: it becomes
+     * live only once the process is DPI-aware and the engine reports a real framebuffer extent, at which point
+     * the canvas is in pixels and both settings above flip together.
      */
     private static void attachInput(Tactroller input, Gui gui, GuiApp app) {
         if (input == null) {
@@ -282,14 +247,14 @@ public final class Demo {
     }
 
     /**
-     * Open the OS clipboard and install it on the GUI so text widgets can cut/copy/paste. Returns {@code null}
-     * (leaving the GUI's in-memory default in place) if no clipboard backend is present, so the showcase still
-     * runs headless/in CI.
+     * Open the OS clipboard and install it on the GUI so text widgets can cut, copy and paste. Returns
+     * {@code null} — leaving the GUI's in-memory default in place — if no clipboard backend is present.
      */
     private static Clipboard openClipboard(Gui gui) {
         try {
             Clipboard clip = Clipboard.open();
             gui.clipboard(new TextClipboard() {
+
                 @Override
                 public String get() {
                     try {
@@ -304,30 +269,22 @@ public final class Demo {
                     try {
                         clip.setText(text);
                     } catch (ClipboardException e) {
-                        // best effort — a transient clipboard failure just drops the copy
+                        // Best effort — a transient clipboard failure just drops the copy.
                     }
                 }
             });
             return clip;
         } catch (ClipboardException e) {
-            System.out.println("clipboard unavailable (" + e.getMessage() + "); cut/copy/paste use in-memory buffer");
+            System.out.println("clipboard unavailable (" + e.getMessage() + "); cut/copy/paste use a buffer");
             return null;
         }
     }
 
-    /** Bridge tactroller onto the GUI's bus: pumped once per frame, its edges feed the framework's dispatch. */
-    private static TactrollerInputBridge bridgeFor(Tactroller input, Gui gui) {
-        return new TactrollerInputBridge(input, gui.bus());
-    }
-
     /**
      * Input for a window the framework opened on its own — a dialog, a named window: its own tactroller backend,
-     * attached to that window's handle, bridged onto that window's bus, and pumped by the frame loop. This is the
-     * whole of what an application has to say about input for every window it does not create itself
-     * ({@link GuiApp#input}); the main window is still wired by hand above because it exists before the app does.
-     *
-     * <p>A window whose backend will not open renders and hears nothing, which is a degraded window rather than a
-     * failed launch — the same policy as the main window's.
+     * attached to that window's handle, bridged onto that window's bus, and pumped by the frame loop. This is
+     * the whole of what an application has to say about input for every window it does not create itself; the
+     * main window is still wired by hand above because it exists before the app does.
      */
     private static WindowInput windowInput(dev.vexelray.os.NativeWindow window, Gui windowGui) {
         Tactroller backend;
@@ -366,431 +323,20 @@ public final class Demo {
         }
     }
 
-    private record Refs(Node header, Node log, Node popupButton, Node dialogButton, TitleBar titleBar) {
-    }
-
     /**
-     * A self-contained {@link Gui} for a popup window: its own tree, laid out against the popup's own viewport.
-     * The handles are as thread-safe as any other, so a worker could mutate this tree live, exactly like the main
-     * window's.
-     */
-    private static Gui popupGui() {
-        Gui p = new Gui();
-        Theme theme = p.theme();
-        Node card = p.column().width(Length.FILL).height(Length.FILL)
-                .background(theme.color(Role.PANEL)).corner(Length.rem(1))
-                .border(Length.rem(0.1f), theme.color(Role.LINE))
-                .lit(theme.lit()).elevation(Length.rem(1.25f))
-                .padding(Length.dp(16)).gap(Length.rem(0.5f))
-                .children(
-                        p.text("A true OS window").height(Length.rem(2)).textSize(Length.rem(1.375f))
-                                .textColor(theme.color(Role.ACCENT)),
-                        p.text("Created on the main thread, presented by the same frame loop as the main "
-                                        + "window, drawn by the same shared device and SDF pipeline. Close it "
-                                        + "with the title-bar button; the app keeps running.")
-                                .textSize(Length.rem(1)).textColor(theme.color(Role.DIM))
-                                .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.TOP));
-        p.root().background(theme.color(Role.PAGE)).padding(Length.dp(16)).children(card);
-        return p;
-    }
-
-    /** Build the dashboard with flex; return the handles the worker will mutate. */
-    private static Refs buildUi(Gui gui, KronoGui krono) {
-        Theme theme = gui.theme();
-        // The horizontal padding is declared: a label's text area is its whole box (the phantom text inset is
-        // editable-only now), so a left-aligned label that wants a margin says so.
-        Node header = gui.text("VexelRay GUI")
-                .width(Length.FILL).height(Length.rem(4)).background(theme.color(Role.PANEL))
-                .textSize(Length.rem(1.75f)).textColor(theme.color(Role.INK))
-                .lit(theme.lit()).elevation(Length.rem(0.5f))
-                .padding(Length.ZERO, Length.em(0.625f))
-                .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
-
-        // Tail the log: pinned to the bottom as the worker appends lines, until the user scrolls up (§8.5).
-        Node log = gui.column().width(Length.FILL).height(Length.FILL).gap(Length.rem(0.375f))
-                .scrollLock(LayoutEnums.ScrollLock.BOTTOM);
-        // Pre-fill enough lines to overflow the panel, so the auto vertical scrollbar appears (and reserves space).
-        // Log lines set no height on purpose: a text node sizes to its *wrapped* content, so a long message that
-        // wraps onto two lines reserves two lines. Pinning a height here would opt back out of that.
-        for (int i = 1; i <= 16; i++) {
-            log.append(gui.text("log line " + i + " — overflows, scrolls")
-                    .textSize(Length.rem(1)).textColor(theme.color(Role.DIM)));
-        }
-
-        // An editable *multiline* field: word-wrapped, Enter inserts a newline, Up/Down move by visual line and
-        // keep a sticky column across short ones, and the view scrolls vertically to follow the caret. All of it
-        // is widget code over the published layout read-model — core gained exactly one seam for it
-        // (TextMeasurer.lineSpans) and no caret plumbing at all. Height comes from the card via FILL, so the
-        // field is a fixed box that scrolls internally rather than growing (docs/layout-read-model.md §11.8).
-        TextField notes = new TextField(gui,
-                "Built through Node handles, mutated by messages, laid out by flex — no hard-coded rects.\n\n"
-                        + "This paragraph is editable. It wraps at the card's width, Enter starts a new line, and "
-                        + "Up/Down keep your column across short lines. Keep typing and the view follows the caret.\n\n"
-                        + "Ctrl+F floats a find bar over the top of this field without reflowing a line of it: "
-                        + "typing counts every match and washes the ones you are not on, Enter and Shift+Enter step "
-                        + "through them, and Escape leaves the caret on the one you stopped at.")
-                .multiline(true).wordWrap(true).lineNumbers(true);
-        notes.node().width(Length.FILL).height(Length.FILL);
-        // Formatting spans on a multiline field, set once and never touched again. The point is what happens
-        // next: type before or inside them and they follow their text, because every edit remaps them through
-        // its own TextEdit diff (req 12). Nothing re-runs a highlighter — the spans are not recomputed at all.
-        notes.setSpans(java.util.List.of(
-                dev.vexelray.gui.core.text.Span.foreground(14, 26, theme.color(Role.ACCENT)),   // "Node handles"
-                dev.vexelray.gui.core.text.Span.underline(39, 47),            // "messages"
-                dev.vexelray.gui.core.text.Span.background(61, 65, theme.color(Role.LINE))));   // "flex"
-
-        // A tabbed panel. Pages are hidden rather than removed, so the editor on the first tab keeps its content,
-        // its caret and its handlers while another tab is up: switch away mid-sentence and come back to it.
-        Node about = gui.text("Two pages, one panel. This page is a plain label; the other is the live editor.\n\n"
-                        + "Switching hides a page rather than removing it, so nothing on it is rebuilt -- type in "
-                        + "the editor, come back here, go back, and the caret is where you left it.")
-                .textSize(Length.rem(1)).textColor(theme.color(Role.DIM))
-                .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.TOP);
-        // A tree explorer over the real filesystem: hasChildren answers from the directory bit without listing,
-        // and children() runs its directory listing on the handler executor the first time a folder opens — the
-        // ordered input stages never touch the disk. Collapse hides the subtree; re-opening it is free.
-        TreeView<java.nio.file.Path> files = new TreeView<>(gui, new TreeView.Source<>() {
-            @Override
-            public java.util.List<java.nio.file.Path> roots() {
-                return java.util.List.of(java.nio.file.Path.of(".").toAbsolutePath().normalize());
-            }
-
-            @Override
-            public String label(java.nio.file.Path p) {
-                java.nio.file.Path name = p.getFileName();
-                return name == null ? p.toString() : name.toString();
-            }
-
-            @Override
-            public boolean hasChildren(java.nio.file.Path p) {
-                return java.nio.file.Files.isDirectory(p);
-            }
-
-            @Override
-            public java.util.List<java.nio.file.Path> children(java.nio.file.Path p) {
-                try (var kids = java.nio.file.Files.list(p)) {
-                    return kids.sorted(java.util.Comparator
-                                    .comparing((java.nio.file.Path k) -> !java.nio.file.Files.isDirectory(k))
-                                    .thenComparing(k -> k.getFileName().toString().toLowerCase()))
-                            .toList();
-                } catch (java.io.IOException e) {
-                    return java.util.List.of();   // an unreadable directory shows as empty, not as a crash
-                }
-            }
-        });
-        files.node().width(Length.FILL).height(Length.FILL);
-        // Expanding a folder slides the rows below it down instead of teleporting them. OUT_CUBIC here, where
-        // the tab dissolve is linear, and the difference is the point: this is a distance being covered, and
-        // decelerating into the place it stops is what reads as weight. Opacity has no place to arrive at, so
-        // easing it only produces a stall.
-        files.motion((progress, done) -> krono.ramp(Dur.ms(200), Ease.OUT_CUBIC, progress, done));
-
-        // Ctrl+F with the tree focused opens its find bar; typing walks the real directory tree (fetching as it
-        // goes, stopping at the first match, opening only the path to it) and Enter steps to the next. Nothing
-        // here wires it: a tree searches itself, and the only thing an application would add is what "matches"
-        // means for its own items — a path, say, rather than the file name the row shows.
-        files.matcher((path, query) -> String.valueOf(path).toLowerCase().contains(query.toLowerCase()));
-
-        // A context menu on the tree: right-click a row and it opens at the pointer, floating over the page (a
-        // floating last child of the root — no layer machinery, no reflow). Esc or a click elsewhere dismisses.
-        // The menu is built at the moment of the click and handed the row's item, so nothing here has to remember
-        // which row was clicked — and what is on it can depend on what that row *is*.
-        //
-        // Expand and Collapse arrive already on it, recursive, marked with the same +/− the row's own disclosure
-        // control uses, and greyed on a row that has nothing to expand or nothing to collapse. This demo adds one
-        // command of its own as a peer of those two — same mark, same per-item availability — and it is a walk on
-        // purpose: counting a deep directory takes long enough to be worth stopping, and choosing anything else on
-        // any row's menu stops it, because the tree runs one action at a time.
-        files.action(TreeView.Action.<java.nio.file.Path>of("»", "Count files", (path, job) -> {
-            int found = countFiles(path, job);
-            log.append(gui.text(job.live() ? "count: " + found + " under " + path : "count: stopped")
-                    .textSize(Length.rem(1)).textColor(theme.color(Role.DIM)));
-        }).shownWhen(java.nio.file.Files::isDirectory));
-
-        // And the free-form door, for lines that are not commands on the item in that sense. They land after the
-        // tree's own, and choosing one still takes the tree over — an application does not have to know that to
-        // get it.
-        files.onContextMenu((path, menu) -> menu
-                .item("›", "Open", () -> log.append(gui.text("open: " + path)
-                        .textSize(Length.rem(1)).textColor(theme.color(Role.INK))))
-                .item("•", "Copy path", () -> gui.clipboard().set(String.valueOf(path)))
-                .separator()
-                .item("…", "Properties", () -> log.append(gui.text("properties: " + path)
-                        .textSize(Length.rem(1)).textColor(theme.color(Role.DIM)))));
-
-        // A drawing, on its own page: one Picture prop instead of a node per mark, and the only thing in this
-        // window with a diagonal in it. The figure is in pixels, so it is rebuilt whenever the panel it is in
-        // changes size.
-        //
-        // On the *Ui* lane, which is the seam for a handler whose work has to land in the same frame as the
-        // layout it reacts to -- and a picture authored in pixels is exactly that. It is clipped to the box, so a
-        // figure a frame behind its panel is a figure that visibly does not fit while a window is being dragged.
-        // The lane's caveat ("anything that computes belongs on onResize") is about heavy work; this is a hundred
-        // marks and ninety-six sines, and paying it per resize frame is cheaper than looking wrong.
-        //
-        // Copy SVG hands the same picture to the second target: one authored drawing, and the file is the
-        // picture rather than a redrawing of it.
-        Node figure = gui.box().width(Length.FILL).height(Length.grow(1));
-        java.util.concurrent.atomic.AtomicReference<dev.vexelray.gui.draw.Picture> drawn =
-                new java.util.concurrent.atomic.AtomicReference<>(dev.vexelray.gui.draw.Picture.EMPTY);
-        java.util.concurrent.atomic.AtomicReference<float[]> figureSize =
-                new java.util.concurrent.atomic.AtomicReference<>(new float[]{0f, 0f});
-        gui.onResizeUi(figure, layout -> {
-            dev.vexelray.gui.draw.Picture p = Chart.of(layout.rect().w(), layout.rect().h(), theme);
-            drawn.set(p);
-            figureSize.set(new float[]{layout.rect().w(), layout.rect().h()});
-            figure.picture(p);
-        });
-        Node copySvg = button(gui, "Copy SVG", Role.INK, Role.PANEL, true);
-        gui.onClick(copySvg, () -> {
-            float[] size = figureSize.get();
-            String svg = dev.vexelray.gui.draw.Svg.document(drawn.get(), size[0], size[1]);
-            gui.clipboard().set(svg);
-            log.append(gui.text("copied " + svg.lines().count() + " lines of SVG")
-                    .textSize(Length.rem(1)).textColor(theme.color(Role.ACCENT)));
-        });
-        Node chart = gui.column().width(Length.FILL).height(Length.FILL).gap(Length.rem(0.625f))
-                .children(figure, copySvg);
-
-        Tabs tabs = new Tabs(gui);
-        // Changing tabs crossfades. Tabs supplies the motion (opacity over both pages, no layout for the
-        // duration); Kronometer supplies the time. Neither module names the other — the seam is a DoubleConsumer
-        // and a Runnable — so this line is the only place the two meet, and leaving it out gives the instant
-        // switch back.
-        //
-        // LINEAR, and that is not laziness. An easing curve is for something arriving at a place, where
-        // decelerating into it reads as weight; a cross-dissolve has no place to arrive at, and the eye reads
-        // opacity more or less as it is given. OUT_CUBIC here was the first attempt and looked broken: it is
-        // 87% faded by the halfway point, so the visible part finished in the first third and the rest of the
-        // duration was a stall with nothing moving — a delay followed by a change, rather than a transition.
-        tabs.transition(Tabs.slide(
-                (progress, done) -> krono.ramp(Dur.ms(200), Ease.LINEAR, progress, done)));
-        tabs.add("Editor", notes.node());
-        tabs.add("Files", files.node());
-        tabs.add("Chart", chart);
-        tabs.add("About", about);
-
-        // Cards float: a lit fill (top-left edge light + faint vertical gradient) over a soft analytic shadow.
-        // Both are transfer functions of the same rounded-box SDF the fill already evaluates — no textures.
-        Node leftCard = gui.column().width(Length.FILL).height(Length.FILL)
-                .background(theme.color(Role.PANEL)).corner(Length.rem(1))
-                .border(Length.rem(0.1f), theme.color(Role.LINE))
-                .lit(theme.lit()).elevation(Length.rem(1.25f))
-                .padding(Length.dp(20)).gap(Length.rem(0.625f))
-                .children(tabs.node());
-        Node rightCard = gui.column().width(Length.FILL).height(Length.FILL)
-                .background(theme.color(Role.PANEL)).corner(Length.rem(1))
-                .border(Length.rem(0.1f), theme.color(Role.LINE))
-                .lit(theme.lit()).elevation(Length.rem(1.25f))
-                .padding(Length.dp(20)).gap(Length.rem(0.625f))
-                .children(
-                        gui.text("Live from a worker").height(Length.rem(1.875f)).textSize(Length.rem(1.375f))
-                                .textColor(theme.color(Role.ACCENT)),
-                        log);
-
-        Node body = gui.row().width(Length.FILL).height(Length.FILL).padding(Length.dp(24)).gap(Length.rem(1.5f))
-                .children(leftCard, rightCard);
-
-        Node getStarted = button(gui, "Get started", Role.ON_ACTION, Role.ACTION, false)
-                .textSunken(theme.letterpress());   // white on a fill: letterpress the label for contrast
-        // The click vertical: tactroller -> atchung -> dispatch -> this handler (on a worker thread), which
-        // mutates the tree through handles just like the background worker does.
-        AtomicInteger clicks = new AtomicInteger();
-
-        // A slider (drag with pointer capture) driving a live value label.
-        Node valueLabel = gui.text("50%").width(Length.rem(5)).textSize(Length.rem(1)).textColor(theme.color(Role.INK))
-                .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
-        Slider slider = new Slider(gui, 0.5f).onChange(v -> valueLabel.text(Math.round(v * 100) + "%"));
-        slider.node().width(Length.rem(14));
-
-        // An editable single-line text field: typed text flows tactroller CharTyped -> bus -> dispatch -> onChar;
-        // Enter submits into the log. Proves the keyboard/focus/text vertical end to end.
-        TextField field = new TextField(gui, "type here, Enter to log — long text scrolls and is masked at the edge");
-        field.node().width(Length.rem(18));
-        // Formatting spans: they auto-diff — colours/underline stay attached to their text as you edit.
-        field.setSpans(java.util.List.of(
-                dev.vexelray.gui.core.text.Span.foreground(0, 4, theme.color(Role.ACCENT)),      // "type"
-                dev.vexelray.gui.core.text.Span.background(5, 9, theme.color(Role.LINE)),         // "here"
-                dev.vexelray.gui.core.text.Span.underline(11, 16)));           // "Enter"
-        // One-shot cues: an application says what a moment looks like, and the framework plays it once and takes
-        // it back off. Three moments, three cues, all painted into the same overlay slot — a scanline sweeping the
-        // field that accepted a command, a wash over one written to from elsewhere, a ring around one that refused.
-        // Linear, because none of them arrives anywhere: they travel through, or rise and fall.
-        // 420ms, not 260: a cue is competing with the thing the user is actually looking at (the caret, the log
-        // line that just appeared), so it has to survive not being looked at directly. Under about a third of a
-        // second it reads as a rendering glitch if it registers at all.
-        Cues cues = new Cues((progress, done) -> krono.ramp(Dur.ms(420), Ease.LINEAR, progress, done));
-        Cue accepted = Cue.scanline(theme.color(Role.ACCENT));
-        // Refusal gets longer than acceptance: it is asking to be read, not merely noticed.
-        Ramp insistent = (progress, done) -> krono.ramp(Dur.ms(650), Ease.LINEAR, progress, done);
-        Cue rejected = Cue.ring(theme.color(Role.DANGER)).with(Cue.wash(
-                Color.withAlpha(theme.color(Role.DANGER), 0.45f)));
-        Cue written = Cue.wash(Color.withAlpha(theme.color(Role.ACCENT), 0.5f));
-        field.onSubmit(s -> {
-            if (s.isBlank()) {
-                cues.play(field.node(), rejected, insistent);   // nothing to submit: refused, and it has to read as refusal
-                return;
-            }
-            cues.play(field.node(), accepted);
-            log.append(gui.text("submitted: " + s)
-                    .textSize(Length.rem(1)).textColor(theme.color(Role.INK)));
-        });
-        gui.onClick(getStarted, () -> {
-            int n = clicks.incrementAndGet();
-            log.append(gui.text("clicked \"Get started\" x" + n)
-                    .height(Length.rem(1.5f)).textSize(Length.rem(1)).textColor(theme.color(Role.ACCENT)));
-            // A programmatic write — the case the user did not cause, and so the one that most needs saying. The
-            // field changes under them with nothing to have watched; the cue is what makes it a visible event.
-            field.text("filled in from somewhere else (click #" + n + ")");
-            cues.play(field.node(), written);
-        });
-
-        // Wrap vs horizontal scroll, toggled live. Both are the same field: turning wrap off makes the node
-        // report content wider than its box, which is what grows an h-scrollbar — a text leaf is a scroll
-        // citizen like any container. A wrapped node never scrolls horizontally, because nothing lies to the
-        // right of a wrapped line to reach.
-        // A toggle, not a button: which *role* it fills with depends on its own state (a filled control while on, a
-        // panel while off), and the theme shades whichever of those is current for hover and press. One handler owns
-        // all restyling, reading the toggle state plus the last interaction state, so a flip mid-hover repaints right.
-        boolean[] wrapping = {true};
-        Node wrapToggle = gui.text("Wrap: on").width(Length.rem(10)).height(Length.rem(2.75f))
-                .corner(Length.rem(0.625f)).border(Length.rem(0.1f), theme.color(Role.LINE))
-                .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE)
-                .lit(theme.lit());
-        var lastState = new java.util.concurrent.atomic.AtomicReference<>(
-                dev.vexelray.gui.core.input.InteractionState.NORMAL);
-        Runnable restyleWrap = () -> {
-            boolean on = wrapping[0];
-            var state = lastState.get();
-            Role fill = on ? Role.ACTION : Role.PANEL;
-            wrapToggle.text(on ? "Wrap: on" : "Wrap: off")
-                    .textColor(gui.theme().color(on ? Role.ON_ACTION : Role.DIM))
-                    // letterpress only while the label is white-on-fill; the off state is low-contrast
-                    .textSunken(on && gui.theme().letterpress());
-            wrapToggle.background(gui.theme().color(fill, state));
-            wrapToggle.elevation(switch (state) {
-                case NORMAL -> Length.rem(0.375f);
-                case HOVER -> Length.rem(0.625f);
-                case PRESSED -> Length.ZERO;
-            });
-        };
-        restyleWrap.run();
-        gui.onState(wrapToggle, state -> {
-            lastState.set(state);
-            restyleWrap.run();
-        });
-        gui.onClick(wrapToggle, () -> {
-            wrapping[0] = !wrapping[0];
-            notes.wordWrap(wrapping[0]);
-            restyleWrap.run();
-        });
-
-        // Per-axis padding: small vertically so 44px buttons fit a 64px bar, but full horizontally (dp(24)) so the
-        // first button aligns with the cards. left edge (body padding is also dp(24)). These are dp rather than
-        // rem because they are frame, not content: zoom should grow what you are reading, not the gutter round it.
-        Node popupButton = button(gui, "Popup", Role.DIM, Role.PANEL, true);
-        Node dialogButton = button(gui, "Dialog", Role.DIM, Role.PANEL, true);
-        Node controls = gui.row().width(Length.FILL).height(Length.rem(4)).padding(Length.dp(8), Length.dp(24))
-                .gap(Length.rem(0.75f)).justify(Justify.START).alignItems(AlignItems.CENTER)
-                .children(getStarted, button(gui, "Docs", Role.DIM, Role.PANEL, true),
-                        wrapToggle, popupButton, dialogButton, slider.node(), valueLabel);
-
-        Node fieldRow = gui.row().width(Length.FILL).height(Length.rem(3.25f))
-                .padding(Length.dp(6), Length.dp(24)).gap(Length.rem(0.75f))
-                .alignItems(AlignItems.CENTER).scroll(false, false)
-                .children(
-                        gui.text("Field:").width(Length.rem(4)).textSize(Length.rem(1)).textColor(theme.color(Role.DIM))
-                                .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE),
-                        field.node());
-
-        Node footer = gui.text("flex layout: rows/columns, padding/margin/border, border-box, relative units")
-                .width(Length.FILL).height(Length.rem(2.25f))
-                .textSize(Length.rem(0.9375f)).textColor(theme.color(Role.DIM))
-                .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE);
-
-        // Tooltips: hover a control and a hit-inert bubble appears below it — drawn over the page, invisible to
-        // the pointer, so nothing about the hover target changes. It coexists with each button's own hover
-        // restyle because interaction-state observers accumulate.
-        new Tooltip(gui)
-                .attach(getStarted, "Append a line to the live log")
-                .attach(popupButton, "Open a true OS popup window (Ctrl+`)")
-                .attach(dialogButton, "Ask a question in a modal dialog")
-                .attach(wrapToggle, "Toggle word wrap in the editor");
-
-        // The window's own chrome, drawn by the GUI: a title bar that is a row of widgets, and two declarations
-        // (WindowRegion.DRAG on the strip, INTERACTIVE on each button) that tell the window manager which of
-        // those pixels are caption. Dragging, snapping, double-click-to-maximize and the system menu stay
-        // Windows'. Bound to the real window in main(), once there is one.
-        TitleBar titleBar = new TitleBar(gui, WindowControls.NONE, "VexelRay GUI");
-
-        gui.root().background(theme.color(Role.PAGE))
-                .children(titleBar.node(), header, body, controls, fieldRow, footer);
-        return new Refs(header, log, popupButton, dialogButton, titleBar);
-    }
-
-    /**
-     * Count the ordinary files under {@code dir}, giving up the moment the tree hands its job to something else.
+     * Application logic off the GUI thread, mutating the tree through handles exactly as a click handler does.
      *
-     * <p>The interesting line is the one in the {@code while}: a long piece of application work asks, between the
-     * steps it is made of, whether it is still the action the tree is running. Nothing interrupts it — it stops
-     * because it looked.
+     * <p>It says something once and then stops, which is the honest version of this demonstration: a worker that
+     * chattered forever would keep the render-on-demand loop awake for no reason, and a gallery whose activity
+     * rail is always moving cannot show you that something you did moved it.
      */
-    private static int countFiles(java.nio.file.Path dir, TreeView.Job job) {
-        int found = 0;
-        java.util.Deque<java.nio.file.Path> pending = new java.util.ArrayDeque<>();
-        pending.push(dir);
-        while (job.live() && !pending.isEmpty()) {
-            try (var kids = java.nio.file.Files.list(pending.poll())) {
-                for (java.nio.file.Path kid : (Iterable<java.nio.file.Path>) kids::iterator) {
-                    if (java.nio.file.Files.isDirectory(kid)) {
-                        pending.push(kid);
-                    } else {
-                        found++;
-                    }
-                }
-            } catch (java.io.IOException e) {
-                // An unreadable directory contributes nothing, exactly as it lists as empty in the tree.
-            }
-        }
-        return found;
-    }
-
-    /** A fixed-size labelled button that lightens on hover and darkens while pressed. */
-    private static Node button(Gui gui, String label, Role fg, Role fill, boolean bordered) {
-        Node b = gui.text(label).width(Length.rem(10)).height(Length.rem(2.75f))
-                .background(gui.theme().color(fill))
-                .corner(Length.rem(0.625f)).textColor(gui.theme().color(fg))
-                .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE)
-                .lit(gui.theme().lit()).elevation(Length.rem(0.375f));
-        if (bordered) {
-            b.border(Length.rem(0.1f), gui.theme().color(Role.LINE));
-        }
-        // Restyle on pointer interaction — the handler runs on a worker thread and mutates via the handle.
-        // Depth is part of the feedback: hover lifts the button a little, pressing sets it down flush.
-        gui.onState(b, state -> {
-            b.background(gui.theme().color(fill, state));
-            b.elevation(switch (state) {
-                case NORMAL -> Length.rem(0.375f);
-                case HOVER -> Length.rem(0.625f);
-                case PRESSED -> Length.ZERO;
-            });
-        });
-        return b;
-    }
-
-    private static void startWorker(Gui gui, Refs refs) {
+    private static void startWorker(Gui gui, Console console) {
         gui.async(() -> {
-            int n = 0;
             try {
-                while (true) {
-                    Thread.sleep(900);
-                    n++;
-                    refs.header().text("VexelRay GUI    tick " + n);
-                    if (n <= 8) {
-                        refs.log().append(gui.text("event " + n + " from worker thread")
-                                .textSize(Length.rem(1)).textColor(gui.theme().color(Role.INK)));
-                    }
-                }
+                Thread.sleep(600);
+                console.note("worker thread reporting in — this line was appended from off the GUI thread");
+                Thread.sleep(900);
+                console.note("every handle is thread-safe: a mutation is a message, reconciled next frame");
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }

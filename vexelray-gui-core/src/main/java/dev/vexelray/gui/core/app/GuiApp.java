@@ -125,13 +125,29 @@ public final class GuiApp implements AutoCloseable {
      * after appearing (see {@code Settings}).
      */
     public GuiApp(WindowConfig config) {
+        this(config, null);
+    }
+
+    /**
+     * As {@link #GuiApp(WindowConfig)}, but around a window somebody else made.
+     *
+     * <p>For a host that needs the loop to be real and the window not to be: a harness driving a whole
+     * application under test, where everything the GPU touches has to behave exactly as it does in
+     * production and only the four methods the frame loop uses — pump, wait, wake, focus — are the
+     * test's to control. Passing a wrapper around a genuine window keeps the swapchain, the presenter
+     * and every pixel honest, which a substitute renderer would not.
+     *
+     * <p>{@code config} is still read for size, decorations and the rest; only the creation is skipped.
+     * A {@code null} window means create one, which is the ordinary path.
+     */
+    public GuiApp(WindowConfig config, NativeWindow window) {
         this.platform = NativePlatform.current();
         this.instance = new VulkanInstance(config.title(), platform.requiredVulkanInstanceExtensions());
 
         // Device selection needs a surface to prove present support, so the main window is created first and its
         // surface probed; popups then reuse the same device (scaffold caveat: same-queue present support for
         // sibling surfaces holds on every real platform, but is asserted per-surface only for this first one).
-        NativeWindow probe = platform.createWindow(config);
+        NativeWindow probe = window != null ? window : platform.createWindow(config);
         long probeSurface = probe.createVulkanSurface(instance.handleAddress(),
                 VkLoader.getInstanceProcAddrPointer());
         VulkanInstance.DeviceSelection selection = instance.selectGraphicsPresentDevice(probeSurface)

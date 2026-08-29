@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>dev.vexelray.gui</groupId>
+        <artifactId>vexelray-gui</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>vexelray-gui-harness</artifactId>
+
+    <name>VexelRay GUI :: Harness</name>
+    <description>Drives a real GuiApp frame loop under a test's control: synthetic input, an observable
+        frame budget, and a wait that only ends when something actually asks for a frame. Shipped rather
+        than test-scoped so an application can assert its own interaction end to end — the loop is where
+        render-on-demand goes wrong, and a click that produces no frame is invisible to every unit test
+        that calls Gui.frame() by hand.</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>dev.vexelray.gui</groupId>
+            <artifactId>vexelray-gui-core</artifactId>
+        </dependency>
+    </dependencies>
+</project>

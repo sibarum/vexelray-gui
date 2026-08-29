@@ -43,6 +43,9 @@
              walks onto it. Pure arithmetic — it depends on no other module, and nothing depends on it yet.
              See docs/reliable-plotting.md. -->
         <module>vexelray-gui-plot</module>
+        <!-- Drives a real GuiApp loop under a test's control: synthetic input, an observable frame
+             budget, and a wait that ends only when something asks for a frame. See docs/render-on-demand. -->
+        <module>vexelray-gui-harness</module>
         <!-- Test-only: the automated separation-of-concerns guard (docs/architecture-proof-plan.md M0).
              Last, so it inspects the compiled output of everything above it. -->
         <module>vexelray-gui-architecture</module>

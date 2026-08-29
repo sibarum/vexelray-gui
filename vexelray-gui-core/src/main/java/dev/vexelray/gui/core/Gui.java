@@ -1,7 +1,9 @@
 package dev.vexelray.gui.core;
 
+import dev.vexelray.gui.core.layout.Displacement;
 import dev.vexelray.gui.core.layout.FlexLayout;
 import dev.vexelray.gui.core.layout.LayoutContext;
+import dev.vexelray.gui.core.layout.LayoutMotion;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
 import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
 import dev.vexelray.gui.core.layout.LayoutSnapshot;
@@ -13,6 +15,7 @@ import dev.vexelray.gui.core.model.Mutation;
 import dev.vexelray.gui.core.model.NodeKind;
 import dev.vexelray.gui.core.model.PropKey;
 import dev.vexelray.gui.core.model.Reconciler;
+import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.input.ClaimScope;
 import dev.vexelray.gui.core.input.ClickEvent;
 import dev.vexelray.gui.core.input.KeyRouted;
@@ -100,11 +103,15 @@ public final class Gui implements AutoCloseable {
     private final MutationSink sink;
     private final Pump pump;
 
+    /** Set -Dvexelray.wake.trace=true to see every wake and, crucially, every tree that cannot make one. */
+    private static final boolean WAKE_TRACE = Boolean.getBoolean("vexelray.wake.trace");
+
     /** The unset {@link #workListener}. Held by identity so an unwired GUI is answerable. */
     private static final Runnable NO_WAKE = () -> { };
     /** Told when a mutation is published, so a parked host loop knows a frame is owed. */
     private volatile Runnable workListener = NO_WAKE;
     private volatile boolean warnedWakeFailed;
+    private volatile boolean tracedUnwired;
     private final Subscription mutationSub;
     private final Reconciler reconciler;
     private final InputDispatcher input;
@@ -116,6 +123,8 @@ public final class Gui implements AutoCloseable {
     // triggers a relayout the same way a resize does, with no cross-thread write to the reconciler.
     private final State<Float> zoom;
     private final Committer<Float, Float> setZoom;
+    /** Where nodes are drawn relative to where layout put them; NONE until a motion source is attached. */
+    private volatile LayoutMotion motion = LayoutMotion.NONE;
     private float lastZoom = -1f;
     // Display density (points -> pixels), the other ambient factor every Length resolves through. Separate from
     // zoom because they answer different questions: density keeps a UI the same *physical* size on a denser
@@ -236,10 +245,17 @@ public final class Gui implements AutoCloseable {
             try {
                 task.run();
             } finally {
-                wake();
+                wake("handler returned");
             }
         });
-        this.input = new InputDispatcher(bus, CLICKS, handlers, reconciler::markLayoutDirty);
+        // Dirtying layout is a change like any other, and it is the one that publishes no Mutation: a
+        // scroll offset moves, the tree has to be laid out again, and nothing on the bus says so. In a
+        // loop that redrew unconditionally the distinction never mattered; in one that parks, a
+        // relayout nobody asked a frame for is a tree that stays exactly as it was last drawn.
+        this.input = new InputDispatcher(bus, CLICKS, handlers, () -> {
+            reconciler.markLayoutDirty();
+            wake("layout requested");
+        });
         this.input.focusTopic(FOCUS);
         this.input.keyRoutedTopic(KEY_ROUTES);
 
@@ -712,6 +728,31 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
+     * Bind the conventional undo chords — Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y — to {@code history}, claimed by
+     * {@code node} at {@code scope}.
+     *
+     * <p>Nesting is the point, and it needs nothing new: a focused editor's own history is a
+     * {@link ClaimScope#FOCUSED} claim, an application's is {@link ClaimScope#GLOBAL}, and claim precedence
+     * already says the specific one wins while it applies. So Ctrl+Z undoes your typing while the cursor is in a
+     * field and undoes the last document command when it is not, without either history knowing the other exists.
+     *
+     * <p>The commands run on a worker thread, like any other claim. A history whose changes must apply in the
+     * frame's own order — one editing a model the GUI thread reconciles from — claims {@link #claimUi} instead
+     * and calls {@link History#undo()} there.
+     */
+    public Gui history(Node node, History history, ClaimScope scope) {
+        claim(node, Shortcut.of(Key.Z, Modifier.CONTROL), scope, history::undo);
+        claim(node, Shortcut.of(Key.Z, Modifier.CONTROL, Modifier.SHIFT), scope, history::redo);
+        claim(node, Shortcut.of(Key.Y, Modifier.CONTROL), scope, history::redo);
+        return this;
+    }
+
+    /** The application-wide binding: {@link #history(Node, History, ClaimScope)} on the root, always in force. */
+    public Gui history(History history) {
+        return history(root, history, ClaimScope.GLOBAL);
+    }
+
+    /**
      * Every key press and what became of it — which node had focus, and whether a claim preempted delivery.
      * Fires for <b>all</b> keys including ones the framework or a claim handled, so an extension can see keys it
      * would otherwise never be told about. Observation only: subscribing cannot cancel or redirect anything.
@@ -899,7 +940,7 @@ public final class Gui implements AutoCloseable {
      */
     private void publishMutation(Mutation m) {
         bus.publish(MUTATIONS, m);
-        wake();
+        wake("mutation");
     }
 
     /**
@@ -909,7 +950,22 @@ public final class Gui implements AutoCloseable {
      * and it must not take the publish or the handler down with it, both of which have already
      * succeeded by the time this runs.
      */
-    private void wake() {
+    private void wake(String why) {
+        if (WAKE_TRACE) {
+            String id = "Gui@" + Integer.toHexString(System.identityHashCode(this));
+            if (workListener != NO_WAKE) {
+                System.out.println("[wake] " + why + " on " + id);
+            } else if (!tracedUnwired) {
+                // Once per tree, not once per mutation. A palette built at startup and opened later
+                // mutates freely while hidden, and a line per mutation buries the one that matters
+                // under hundreds that do not — which is how a diagnostic becomes noise and then gets
+                // ignored. The host wires every tree it presents, every frame, so reaching here means
+                // nothing is presenting this one — and a tree nobody draws is owed no frame.
+                tracedUnwired = true;
+                System.out.println("[wake] " + why + " on " + id + "   (no listener - nothing is"
+                        + " presenting this tree, so no frame is owed. Further notices suppressed.)");
+            }
+        }
         try {
             workListener.run();
         } catch (Throwable t) {
@@ -949,6 +1005,28 @@ public final class Gui implements AutoCloseable {
      */
     public void onWork(Runnable listener) {
         this.workListener = java.util.Objects.requireNonNull(listener, "listener");
+        if (WAKE_TRACE) {
+            System.out.println("[wake] wired Gui@" + Integer.toHexString(System.identityHashCode(this)));
+        }
+    }
+
+    /**
+     * Attach the source that says how far behind its laid-out position each node is drawn — see
+     * {@link LayoutMotion}. {@link LayoutMotion#NONE} (the default) draws everything exactly where layout put it.
+     *
+     * <p>One source per tree, last call wins, for the same reason as {@link #onWork}: two of them would each
+     * report a displacement for the same node and the tree would be drawn at whichever one was asked second.
+     * A source that wants to compose several transitions composes them on its own side, where it can see them
+     * both.
+     */
+    public Gui motion(LayoutMotion source) {
+        this.motion = java.util.Objects.requireNonNull(source, "source");
+        return this;
+    }
+
+    /** The attached motion source, or {@link LayoutMotion#NONE}. */
+    public LayoutMotion motion() {
+        return motion;
     }
 
     /**
@@ -1024,9 +1102,30 @@ public final class Gui implements AutoCloseable {
             // have moved, which includes a caret move that reflows nothing, and it runs in *every* host: this is
             // what makes a field behave identically headless, on screen, and over the wire. Static frames do
             // neither, so the coalesced State still commits only on change.
-            if (layoutRan || reconciler.geometryDirty()) {
+            boolean geometryChanged = layoutRan || reconciler.geometryDirty();
+            if (geometryChanged) {
                 resolveGeometry(r, tm);
+            }
+            // Motion sits between the compute phase and publish, and the line matters in both directions
+            // (LayoutMotion's javadoc says why). Settling reads the rects the compute phase just finished with,
+            // so a transition starts from the truth; displacing then rewrites them, so publish, the renderer and
+            // next frame's hit-testing all see the same drawn position.
+            boolean moving = false;
+            if (motion != LayoutMotion.NONE) {
+                if (geometryChanged) {
+                    Displacement.settle(r, motion);
+                }
+                moving = Displacement.displace(r, motion);
+            }
+            if (geometryChanged || moving) {
                 publishLayout(r);
+            }
+            if (moving) {
+                // Something is short of where it belongs, so the next frame has work whether or not anything
+                // else asks for one. Self-limiting: a displacement that decays to zero stops waking, and one
+                // that does not is a motion source that never finishes, which this makes visible as a loop that
+                // will not park rather than as a transition that silently freezes half-way.
+                wake("motion");
             }
             reconciler.clearDirty();
         }

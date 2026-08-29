@@ -86,8 +86,20 @@ public final class GuiApp implements AutoCloseable {
     /** The tree in the main window; bound by {@link #run}, and the executor application callbacks run on. */
     private Gui mainGui;
 
+    /** Set -Dvexelray.wake.trace=true to trace the whole chain: wake, budget, frame. */
+    private static final boolean WAKE_TRACE = Boolean.getBoolean("vexelray.wake.trace");
+
+    /** Trees already given a wake, by identity. Main thread only. See {@link #wireAllWakes}. */
+    private final java.util.Set<Gui> wired =
+            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+
     /** How long {@link #run} may block after presenting. See {@link #pacing}. Default: never block. */
     private java.util.function.LongSupplier pacing = () -> 0L;
+
+    /** Longest the loop will park while focused. See {@link #idleRefresh}. */
+    private long maxIdleNanos = 200_000_000L;        // 5 Hz
+    /** Shortest gap between presented frames. See {@link #maxFrameRate}. */
+    private long minFrameNanos = 0L;                 // uncapped
 
     /** The window a modal dialog is showing in, or null when nothing is modal. Main thread. */
     private NativeWindow modal;
@@ -355,9 +367,26 @@ public final class GuiApp implements AutoCloseable {
                 .dim(dimmed, modalDimSet ? modalDim : gui.theme().color(dev.vexelray.gui.core.style.Role.SCRIM));
     }
 
-    /** Enqueue work for the top of the next frame. The one way anything reaches the main thread from elsewhere. */
+    /**
+     * Enqueue work for the top of the next frame. The one way anything reaches the main thread from
+     * elsewhere — opening a window, showing, hiding, closing one.
+     *
+     * <p>And therefore a channel of change in its own right, which is the part that was missing. This
+     * queue is drained at the <b>top</b> of an iteration, so work posted at any point after that —
+     * including from the host's own {@code beforeFrame} hook, which is where an application drains its
+     * own queues — is owed the <em>next</em> frame. Under a loop that redrew unconditionally that frame
+     * always came. Under one that parks it does not, and the request waits indefinitely for an
+     * unrelated event.
+     *
+     * <p>It is the last channel to show itself because it is the narrowest: only window operations pass
+     * through here, so everything else about an application keeps working and one menu item does
+     * nothing. {@link #run} independently refuses to park while this queue is non-empty, which covers
+     * the same-thread case exactly — a task posted during {@code beforeFrame} is visible by the time the
+     * budget is read — and the wake covers every other thread.
+     */
     void post(Runnable task) {
         tasks.add(task);
+        postWake();
     }
 
     /**
@@ -370,6 +399,7 @@ public final class GuiApp implements AutoCloseable {
         // stack, which the main window can be brought in front of. Nothing after creation can change it: the
         // OS settles a window's standing from the owner it was created with. A satellite that goes away with
         // its owner arrives back here as its own pump reporting closed, the same path as its close button.
+        wireWake(spec.gui());
         GuiWindow w = new GuiWindow(platform, instance, device, atlas, noImage, text, measurer, spec.gui(),
                 spec.standing().place(spec.config(), main.osHandle()));
         WindowInput input = inputs.attach(w.window, spec.gui());
@@ -453,8 +483,107 @@ public final class GuiApp implements AutoCloseable {
      * loop told it may block indefinitely has only OS input to end that block, and a worker thread's
      * mutation is not OS input. Hand this to whatever knows that work arrived.
      */
+    /**
+     * The longest this loop will park while its window has focus. {@code 0} to park indefinitely.
+     *
+     * <p><b>The bound that makes everything else an optimisation.</b> Render on demand is only correct
+     * if every source of change wakes the loop, and that is a promise about code nobody has written
+     * yet: the next queue someone adds, drained once per frame and announcing nothing, silently brings
+     * back a window that ignores a click. There is no way to test for the absence of a wake, and the
+     * symptom — occasionally unresponsive, fine again as soon as the pointer moves — points nowhere
+     * near its cause.
+     *
+     * <p>So the loop refuses to park longer than this. A missing wake then costs <em>latency</em>
+     * instead of a hang, which is a different kind of defect: bounded, uniform, and survivable. The
+     * default of 5 Hz costs five wakes a second that mostly find nothing to do, against the 140 an
+     * unconditional loop was spending, and buys the guarantee that the UI always comes back.
+     *
+     * <p>It is a floor, not a frame rate. Everything that <em>does</em> wake the loop still gets its
+     * frame immediately, so the common paths stay at zero latency and this is only ever the worst case.
+     *
+     * <p>Focus is what keeps it cheap: a window nobody is looking at parks indefinitely, so the floor
+     * is paid only where it can be perceived.
+     */
+    public GuiApp idleRefresh(long maxIdleNanos) {
+        this.maxIdleNanos = maxIdleNanos <= 0 ? Long.MAX_VALUE : maxIdleNanos;
+        return this;
+    }
+
+    /**
+     * The shortest gap between presented frames — a ceiling on how fast this loop will draw.
+     *
+     * <p>The other half of the budget. {@link #pacing} reports zero while anything is animating, which
+     * means "as fast as you can", and on a presenter that does not block that is 140 fps to show a
+     * 60 Hz display. This bounds it without involving the presenter.
+     *
+     * <p>Costs nothing in input latency: the wait ends early on OS input regardless, so this limits
+     * only how often the loop draws of its own accord.
+     */
+    public GuiApp maxFrameRate(long minFrameNanos) {
+        this.minFrameNanos = Math.max(0L, minFrameNanos);
+        return this;
+    }
+
     public void postWake() {
+        if (WAKE_TRACE) {
+            System.out.println("[wake]   -> postWake: nudging the OS message queue");
+        }
         main.window.postWake();
+    }
+
+    /**
+     * Let one {@link Gui} end a {@link #pacing} block, so a change in it earns a frame.
+     *
+     * <p>Done here, for every tree this application drives, because <b>an application has more trees
+     * than it has main windows</b> and the ones it forgets are exactly the ones that break. A file
+     * navigator, a history palette, a preview — each is a {@code Gui} of its own, and each is where a
+     * user does the clicking that appears to do nothing. Left to the application this is a line to
+     * repeat per window, correct on the window under test and missing on the one being used.
+     *
+     * <p>All of them wake the <em>main</em> window, which is not a simplification: {@code waitEvents}
+     * blocks on the loop thread's message queue, and every window on this loop shares it, so one nudge
+     * ends the block whichever tree asked for it.
+     */
+    private void wireWake(Gui gui) {
+        if (gui != null && wired.add(gui)) {
+            gui.onWork(this::postWake);
+        }
+    }
+
+    /**
+     * Ensure every tree this loop is about to present can wake it. Called each iteration.
+     *
+     * <p>Wiring at window creation was not enough, and the reason is worth keeping: a tree is not
+     * always handed over at the moment it starts being drawn. A palette built at startup and opened
+     * later, a window recreated after a close, a tree adopted by a path that did not exist when this
+     * was written — each is a chance to be presenting something that cannot ask for a frame, and the
+     * symptom is a window that ignores clicks, which points nowhere near here.
+     *
+     * <p>So the invariant is checked rather than established once: <b>if it is being presented, it can
+     * wake the loop.</b> An identity set makes the steady state a hash lookup per window per frame, and
+     * a tree that is not presented needs no frame and is therefore correct to leave alone.
+     */
+    /**
+     * Whether any window of this application has focus — this loop serves all of them, so any one of
+     * them being looked at means the loop is being looked at.
+     */
+    private boolean isFocused() {
+        if (main.window.isFocused()) {
+            return true;
+        }
+        for (OpenWindow w : open) {
+            if (w.window.window.isFocused()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void wireAllWakes() {
+        wireWake(mainGui);
+        for (OpenWindow w : open) {
+            wireWake(w.spec.gui());
+        }
     }
 
     /** Drive {@code gui} until the window closes (or {@code maxFrames} presented if positive). */
@@ -473,6 +602,7 @@ public final class GuiApp implements AutoCloseable {
     public void run(Gui gui, int maxFrames, Runnable beforeFrame) {
         main.gui = gui;
         this.mainGui = gui;
+        wireWake(gui);
         // Map the GUI's desired cursor shape onto the OS window (I-beam over editable text, §8.3).
         gui.onCursorChange(shape -> main.window.setCursor(osCursor(shape)));
         int frame = 0;
@@ -483,6 +613,9 @@ public final class GuiApp implements AutoCloseable {
             for (Runnable task; (task = tasks.poll()) != null; ) {
                 task.run();
             }
+            // After the tasks, because opening a window is one of them: a tree that arrived this
+            // iteration is presented this iteration, so it must be able to ask for the next one.
+            wireAllWakes();
             running = main.frame(beforeFrame) || mainGate.keepAlive(main.window, gui.handlers());
             open.removeIf(w -> {
                 // Each window pumps its own input before its own frame: two OS windows, one loop, one GUI.
@@ -503,7 +636,22 @@ public final class GuiApp implements AutoCloseable {
                 // one to make it wait for. One call covers every window, because the wait is on this
                 // thread's message queue rather than on any one window, and every window on this loop
                 // shares that queue.
-                long budget = pacing.getAsLong();
+                // Never park on a queue that is already holding something: a window operation posted
+                // after this iteration's drain is owed the next frame, and it is the only one here that
+                // can say so.
+                long budget = tasks.isEmpty() ? pacing.getAsLong() : 0L;
+                // Then the two bounds. The floor applies only while someone is looking: an unfocused
+                // window parks on whatever the application asked for, up to forever.
+                if (isFocused()) {
+                    budget = Math.min(budget, maxIdleNanos);
+                }
+                // The ceiling applies always. A zero budget means "immediately", which on a presenter
+                // that does not block is as fast as the machine goes; this is what stops that.
+                budget = Math.max(budget, minFrameNanos);
+                if (WAKE_TRACE) {
+                    System.out.println("[loop] frame " + frame + " done; budget "
+                            + (budget == Long.MAX_VALUE ? "forever" : budget / 1_000_000 + "ms"));
+                }
                 if (budget > 0) {
                     main.window.waitEvents(budget);
                 }

@@ -2,12 +2,17 @@ package dev.vexelray.gui.widget;
 
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
+import dev.vexelray.gui.core.drop.Drop;
+import dev.vexelray.gui.core.drop.Payload;
+import dev.vexelray.gui.core.drop.PayloadType;
+import dev.vexelray.gui.core.edit.Change;
 import dev.vexelray.gui.core.input.ClickEvent;
 import dev.vexelray.gui.core.input.FocusEvent;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.input.KeyEvent;
 import dev.vexelray.gui.core.input.MenuSink;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.layout.Rect;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.text.TextLayout;
@@ -182,6 +187,12 @@ public final class TreeView<T> implements AutoCloseable {
     /** Row height in em — enough for the label plus breathing room, uniform so paging arithmetic is exact. */
     private static final float ROW_EM = 1.75f;
 
+    /** Fraction of a row's height at each end that means "between rows" rather than "into this one". */
+    private static final float DROP_EDGE = 0.25f;
+
+    /** How thick the between-rows seam indicator is, px. */
+    private static final float SEAM_PX = 2f;
+
     // The atlas carries no triangle glyphs, so the disclosure affordance is the classic +/− pair. A leaf shows
     // a space: the control column keeps its width, so labels at one depth align whether or not they can open.
     private static final String GLYPH_COLLAPSED = "+";
@@ -287,6 +298,10 @@ public final class TreeView<T> implements AutoCloseable {
     private final Map<T, Row> rowsByItem = new HashMap<>();
     private final List<Row> visible = new ArrayList<>();
     private Row selected;
+    /** What a reorder means, or null until reorderable() is called. */
+    private volatile Reorder<T> reorder;
+    /** The form this tree offers its rows as -- per instance, so two trees do not silently accept each other's. */
+    private final PayloadType<T> itemType = PayloadType.of("tree-item");
 
     private volatile boolean focused;
     private volatile Consumer<T> onSelect = t -> { };
@@ -375,6 +390,152 @@ public final class TreeView<T> implements AutoCloseable {
      */
     public Node scroller() {
         return rows;
+    }
+
+    /**
+     * Let rows be dragged to new places in the tree, with {@code reorder} saying what each placement means.
+     *
+     * <pre>{@code
+     * tree.reorderable((moved, where) -> model.change(moved, where));   // null refuses the placement
+     * }</pre>
+     *
+     * <p>A press on a row becomes a drag only once it has travelled far enough and been held long enough, so an
+     * ordinary click still selects; and a drop that never got as far as being drawn commits nothing, so a click
+     * too quick to see cannot reorganise the tree. Escape cancels. All of that is the framework's, not this
+     * widget's — {@link Gui#onDragSource} and {@link Gui#onDrop} are the whole of what is registered here.
+     *
+     * <p><b>Every point in the tree resolves to a placement.</b> There is no dead space between rows, none at the
+     * edges, and none below the last row — that space is "into the root", which is how an item is moved back to
+     * the top level. A row that can hold children divides into three bands, an outer quarter each side for
+     * "before" and "after" and the middle half for "into"; a leaf divides in two, since there is no inside to
+     * drop into. What makes it total is that the row is chosen by which one the pointer has reached rather than
+     * by which rect contains the point: a sub-pixel gap between two rows would otherwise be a place where drops
+     * silently do nothing, and that is exactly the kind of crack a user learns to hunt for.
+     *
+     * <p>Refusal is the application's, through {@code reorder} returning null — dropping a folder into itself,
+     * a placement that would leave the item where it already is, a branch that will not take children. Refusing
+     * there means the user sees it before releasing rather than discovering it afterwards.
+     *
+     * <p>The payload is offered as {@link #itemType()}, which is private to this tree: two trees do not accept
+     * one another's rows unless one is deliberately told about the other's type.
+     *
+     * <p>Set {@link Gui#dropHistory} for the move to be undoable — without one it resolves and draws but commits
+     * nothing, which is the framework refusing to make a change the user could not take back.
+     */
+    public TreeView<T> reorderable(Reorder<T> reorder) {
+        java.util.Objects.requireNonNull(reorder, "reorder");
+        this.reorder = reorder;
+        gui.onDragSource(rows, (x, y) -> {
+            Row from = rowAt(y);
+            if (from == null) {
+                return null;   // the space below the last row is somewhere to drop, not something to pick up
+            }
+            // Dragging a row is acting on it, so it becomes the selection — the same thing a click would do, and
+            // what makes the row menu and the keyboard agree with what the pointer just grabbed.
+            select(from, true);
+            return Payload.of(itemType, from.item);
+        });
+        gui.onDrop(rows, (payload, x, y) -> payload.as(itemType)
+                .map(moved -> resolvePlacement(moved, y))
+                .orElse(Drop.NONE));
+        return this;
+    }
+
+    /** The form this tree offers its rows as. Pass it to another tree's drop target to allow drags between them. */
+    public PayloadType<T> itemType() {
+        return itemType;
+    }
+
+    /**
+     * Which placement the pointer is over, as one value carrying the indicator and the change together.
+     *
+     * <p>Runs on the GUI thread, once per frame of a drag. Rects come from the published layout, so they are the
+     * ones the tree is <em>drawn</em> at — a row still sliding into place after a previous drop resolves where it
+     * appears rather than where it is heading.
+     */
+    private Drop resolvePlacement(T moved, float y) {
+        List<Row> rows2;
+        synchronized (this) {
+            rows2 = List.copyOf(visible);
+        }
+        for (Row row : rows2) {
+            Rect rect = row.rowNode.layout().rect();
+            if (rect == null || rect.h() <= 0f) {
+                continue;   // not laid out yet; it cannot be under anything
+            }
+            if (y >= rect.y() + rect.h()) {
+                continue;   // the pointer is past this row entirely
+            }
+            // The first row the pointer has not gone past owns the point, whether or not the rect contains it.
+            // That is what closes the gaps: a point in the crack between two rows belongs to the lower one
+            // rather than to nothing.
+            return bandOf(moved, row, rect, y);
+        }
+        // Past every row: the top level, which is the only way to drag something out of a branch.
+        return placed(moved, Placement.intoRoot(), belowLastRow(rows2));
+    }
+
+    /** Which of a row's bands the pointer is in, and the drop that band means. */
+    private Drop bandOf(T moved, Row row, Rect rect, float y) {
+        float within = clamp01((y - rect.y()) / rect.h());
+        if (!row.canExpand) {
+            // A leaf has no inside, so the row divides in two and the boundary is its middle. Giving a leaf an
+            // "into" band that then always refused would be a third of the row that looks live and is not.
+            return within < 0.5f
+                    ? placed(moved, Placement.before(row.item), edge(rect, true))
+                    : placed(moved, Placement.after(row.item), edge(rect, false));
+        }
+        if (within < DROP_EDGE) {
+            return placed(moved, Placement.before(row.item), edge(rect, true));
+        }
+        if (within >= 1f - DROP_EDGE) {
+            return placed(moved, Placement.after(row.item), edge(rect, false));
+        }
+        return placed(moved, Placement.into(row.item), rect);
+    }
+
+    /** Ask the application what this placement means; a refusal is an ordinary answer and becomes NONE. */
+    private Drop placed(T moved, Placement<T> where, Rect indicator) {
+        Reorder<T> r = reorder;
+        if (r == null) {
+            return Drop.NONE;
+        }
+        Change change = r.move(moved, where);
+        return change == null ? Drop.NONE : Drop.move(indicator, change);
+    }
+
+    /** A seam line at the top or bottom edge of a row, thin enough to read as "between" rather than "on". */
+    private static Rect edge(Rect rect, boolean top) {
+        return new Rect(rect.x(), top ? rect.y() : rect.y() + rect.h() - SEAM_PX, rect.w(), SEAM_PX);
+    }
+
+    /** The seam under the last row — where a drop onto the empty space below the tree would land. */
+    private Rect belowLastRow(List<Row> laidOut) {
+        for (int i = laidOut.size() - 1; i >= 0; i--) {
+            Rect rect = laidOut.get(i).rowNode.layout().rect();
+            if (rect != null && rect.h() > 0f) {
+                return edge(rect, false);
+            }
+        }
+        Rect box = rows.layout().rect();
+        return box == null ? Rect.ZERO : new Rect(box.x(), box.y(), box.w(), SEAM_PX);
+    }
+
+    private static float clamp01(float v) {
+        return v < 0f ? 0f : (v > 1f ? 1f : v);
+    }
+
+    /** Which visible row covers {@code y}, or null past the last one. */
+    private Row rowAt(float y) {
+        synchronized (this) {
+            for (Row row : visible) {
+                Rect rect = row.rowNode.layout().rect();
+                if (rect != null && rect.h() > 0f && y >= rect.y() && y < rect.y() + rect.h()) {
+                    return row;
+                }
+            }
+        }
+        return null;
     }
 
     /**

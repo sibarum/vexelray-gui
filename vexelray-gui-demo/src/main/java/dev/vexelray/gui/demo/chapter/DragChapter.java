@@ -3,9 +3,8 @@ package dev.vexelray.gui.demo.chapter;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
-import dev.vexelray.gui.core.drop.Drop;
 import dev.vexelray.gui.core.drop.DragState;
-import dev.vexelray.gui.core.drop.Payload;
+import dev.vexelray.gui.core.drop.Drop;
 import dev.vexelray.gui.core.drop.PayloadType;
 import dev.vexelray.gui.core.edit.Change;
 import dev.vexelray.gui.core.edit.History;
@@ -17,17 +16,16 @@ import dev.vexelray.gui.demo.Chapter;
 import dev.vexelray.gui.demo.Console;
 import dev.vexelray.gui.demo.Stage;
 import dev.vexelray.gui.demo.Ui;
-import dev.vexelray.gui.widget.Placement;
 import dev.vexelray.gui.widget.TreeView;
 import dev.vexelray.text.TextLayout;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Drag and drop: a tree that says where a row would land, an application that says what landing there means, and
- * two ordinary boxes that accept the same payload.
+ * Drag and drop, on something worth dragging: a project outline whose tasks are moved between columns, ordered
+ * within one, promoted out to the top level, or dropped on a target that is not a tree at all.
  *
  * <p>The registration is two calls — {@code onDragSource} and {@code onDrop} — and everything that makes a drag
  * a drag comes from the framework: the travel-and-hold threshold that keeps an ordinary click an ordinary click,
@@ -35,52 +33,69 @@ import java.util.concurrent.atomic.AtomicInteger;
  * move that keeps Ctrl+Z pointed at the history the drop wrote into.
  *
  * <p><b>The split is the whole design.</b> A tree reads its hierarchy through a {@code Source}, so it can say
- * where a drop would land <em>in the tree's own terms</em> — before this row, into that branch, out to the root
- * — but it cannot say what putting it there does, because that is a mutation of a model it can only read. So the
- * tree resolves a {@link Placement} and the application returns a {@link Change}, and neither learns the other's
- * job. <b>Refusal is the application's too</b>, by returning null: a folder into itself, a placement that would
- * leave the item exactly where it already is. Answering there is what makes the indicator disappear <em>before</em>
- * the user releases, rather than the drop being swallowed afterwards.
+ * where a drop would land <em>in the tree's own terms</em> — before this row, into that branch, out to the root —
+ * but it cannot say what putting it there does, because that is a mutation of a model it can only read. So the
+ * tree resolves a placement and the application returns a {@link Change}. <b>Refusal is the application's too</b>,
+ * by returning null: a task into itself, a placement that would leave it exactly where it already is. Answering
+ * there is what makes the indicator disappear <em>before</em> the user releases rather than the drop being
+ * swallowed afterwards.
+ *
+ * <p>And the third part, which the application also owns: <b>saying when the model changed</b>. The tree is never
+ * told, so every change here ends in {@code refresh()}. Undo works the same way, because the inverse change is a
+ * change like any other.
  */
 public final class DragChapter implements Chapter {
 
-    /** A node in the small in-memory hierarchy this chapter drags around. */
-    private static final class Item {
+    /** A task, or a column of them — the hierarchy is one thing, not two. */
+    private static final class Task {
 
-        private final String name;
-        private final List<Item> kids = new ArrayList<>();
-        private Item parent;
+        private String name;
+        private final List<Task> kids = new ArrayList<>();
+        private Task parent;
 
-        Item(String name, Item... children) {
+        Task(String name, Task... children) {
             this.name = name;
-            for (Item kid : children) {
+            for (Task kid : children) {
                 kid.parent = this;
                 kids.add(kid);
             }
         }
 
-        boolean isUnder(Item other) {
-            for (Item p = this; p != null; p = p.parent) {
+        boolean isUnder(Task other) {
+            for (Task p = this; p != null; p = p.parent) {
                 if (p == other) {
                     return true;
                 }
             }
             return false;
         }
-
-        @Override
-        public String toString() {
-            return name;
-        }
     }
 
-    private final Item root = new Item("Board",
-            new Item("Inbox", new Item("Read the drop docs"), new Item("Try the bands")),
-            new Item("Doing", new Item("Redesign the demo")),
-            new Item("Done", new Item("Ship the indicator")));
+    private final Task root = new Task("Project",
+            new Task("Backlog",
+                    new Task("Ghost under the cursor"),
+                    new Task("Reorder inside a column"),
+                    new Task("Promote to a column of its own")),
+            new Task("In progress",
+                    new Task("Move a task between columns"),
+                    new Task("Refuse an impossible drop")),
+            new Task("Done",
+                    new Task("Resolve every point to a placement")));
 
     private final History history = new History();
-    private final AtomicInteger collected = new AtomicInteger();
+    private final List<Task> archived = new ArrayList<>();
+
+    /** What the pointer is currently carrying, for the ghost to show. */
+    private final AtomicReference<String> carrying = new AtomicReference<>("");
+
+    private final List<Node> archiveRows = new ArrayList<>();
+
+    private Gui gui;
+    private Node archive;
+    private Node archiveList;
+    private Node ghost;
+    private Console console;
+    private TreeView<Task> board;
 
     @Override
     public String title() {
@@ -89,122 +104,186 @@ public final class DragChapter implements Chapter {
 
     @Override
     public String blurb() {
-        return "Rows resolve to a placement, the application returns the change or refuses it, and any box can "
-                + "be a drop target for the same payload.";
+        return "Move tasks between columns, reorder them, promote one to the top level, or drop it on a "
+                + "target that is not a tree — all of it undoable.";
     }
 
     @Override
     public Node build(Stage stage) {
-        Gui gui = stage.gui();
+        this.gui = stage.gui();
+        Gui gui = this.gui;
         Theme theme = stage.theme();
-        Console console = stage.console();
+        this.console = stage.console();
 
         // Without a history, a drop resolves and draws but commits nothing — deliberately, because a drop that
         // mutated with no way back would be the one operation in the framework the user could not take back, and
         // silently so. Setting one is the application saying where those changes go.
         gui.dropHistory(history);
 
-        TreeView<Item> board = new TreeView<>(gui, new TreeView.Source<Item>() {
+        board = new TreeView<>(gui, new TreeView.Source<Task>() {
 
             @Override
-            public List<Item> roots() {
+            public List<Task> roots() {
                 return List.copyOf(root.kids);
             }
 
             @Override
-            public String label(Item item) {
-                return item.name;
+            public String label(Task task) {
+                return task.name;
             }
 
             @Override
-            public boolean hasChildren(Item item) {
-                return !item.kids.isEmpty();
+            public boolean hasChildren(Task task) {
+                return !task.kids.isEmpty();
             }
 
             @Override
-            public List<Item> children(Item item) {
-                return List.copyOf(item.kids);
+            public List<Task> children(Task task) {
+                return List.copyOf(task.kids);
             }
         });
         board.node().width(Length.FILL).height(Length.FILL);
+        // Opened before the motion is installed, and the order is load-bearing rather than tidy. A board whose
+        // columns are shut is a board with nothing to drag, so these have to be open on the first frame — and an
+        // animated open is a change spread over frames a capture run never presents, which would photograph
+        // three columns with their contents still at zero height. With no motion installed yet the tree takes
+        // its instant path, which is the same reason Tabs defaults to no transition.
+        for (Task column : root.kids) {
+            board.expand(column);
+        }
+        // From here on, opening a column slides the rows below it down rather than teleporting them. A reordered
+        // row still lands at once, which is deliberate: the whole board settles on the same frame, and half a
+        // view animating while the other half snaps is worse than either (see the Motion chapter).
+        board.motion((progress, done) ->
+                stage.krono().ramp(sibarum.kronometer.Dur.ms(180), sibarum.kronometer.anim.Ease.OUT_CUBIC,
+                        progress, done));
 
         // What each placement means, in the model's own terms — and which ones mean nothing, which is the more
-        // interesting half. Every point over the rows resolves to a placement, so this method is asked about
-        // every one of them, once per frame, while the pointer moves. It decides what to draw, not what to do:
-        // the change it returns is not applied until the user releases.
+        // interesting half. Every point over the rows resolves to a placement, so this is asked about all of
+        // them, once per frame, while the pointer moves. It decides what to draw, not what to do: the change it
+        // returns is not applied until the user releases.
         board.reorderable((moved, where) -> {
+            carrying.set(moved.name);
             if (where.isRoot()) {
-                return moveTo(moved, root, root.kids.size(), console);
+                return moveTo(moved, root, root.kids.size());
             }
-            Item reference = where.reference();
+            Task reference = where.reference();
             if (reference.isUnder(moved)) {
                 return null;   // into itself or its own descendant: not a failure, an answer
             }
             return switch (where.relation()) {
                 case INTO -> reference.kids.contains(moved) ? null
-                        : moveTo(moved, reference, reference.kids.size(), console);
-                case BEFORE -> beside(moved, reference, 0, console);
-                case AFTER -> beside(moved, reference, 1, console);
+                        : moveTo(moved, reference, reference.kids.size());
+                case BEFORE -> beside(moved, reference, 0);
+                case AFTER -> beside(moved, reference, 1);
             };
         });
 
-        // Two ordinary boxes, accepting the same payload the tree offers. Nothing about them is a widget: a
-        // node, a drop target, and a subscription to the published drag so they can light up while one is over
-        // them. The payload type is the tree's own, which is what stops two unrelated trees in one window from
-        // silently accepting each other's rows.
-        PayloadType<Item> itemType = board.itemType();
-        Node basket = zone(gui, "Collect", "drop a card here to count it");
-        Node bin = zone(gui, "Discard", "drop a card here to remove it");
-
-        gui.onDrop(basket, (payload, x, y) -> payload.as(itemType)
-                .map(item -> Drop.copy(rectOf(basket), counting(item, 1, console)))
+        // A target that is not a tree: an ordinary box, a drop target, and a subscription to the published drag
+        // so it can light up. The payload type is the tree's own, which is what stops two unrelated trees in one
+        // window from silently accepting each other's rows.
+        PayloadType<Task> taskType = board.itemType();
+        archiveList = gui.column().width(Length.FILL).height(Length.grow(1)).gap(Length.rem(0.25f))
+                .scroll(false, true);
+        archive = gui.column().width(Length.FILL).height(Length.FILL)
+                .background(theme.color(Role.WELL)).corner(Length.rem(0.75f))
+                .border(Length.rem(0.15f), theme.color(Role.LINE))
+                .padding(Length.dp(14)).gap(Length.rem(0.375f))
+                .children(
+                        gui.text("Archive").width(Length.FILL).height(Length.rem(1.5f))
+                                .textSize(Length.rem(1)).textColor(theme.color(Role.INK))
+                                .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE),
+                        gui.text("drop a task here to take it off the board")
+                                .width(Length.FILL)
+                                .textSize(Length.rem(0.875f)).textColor(theme.color(Role.FAINT))
+                                .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.TOP),
+                        archiveList);
+        gui.onDrop(archive, (payload, x, y) -> payload.as(taskType)
+                .map(task -> {
+                    carrying.set(task.name);
+                    return task.parent == null ? Drop.NONE : Drop.move(rectOf(archive), archiving(task));
+                })
                 .orElse(Drop.NONE));
 
-        gui.onDrop(bin, (payload, x, y) -> payload.as(itemType)
-                .map(item -> item.parent == null ? Drop.NONE
-                        : Drop.move(rectOf(bin), detaching(item, console)))
-                .orElse(Drop.NONE));
+        // The ghost: a floating, hit-inert last child of the root, which is the framework's whole overlay story —
+        // no layer machinery, no z-order, no second tree. Hit-inert because a thing under the cursor that the
+        // pointer can see would be a drop target sitting on top of every drop target.
+        //
+        // It is the application's, and it has to be: only the application knows what a payload looks like. What
+        // the framework supplies is the pointer position, published once per frame, and a place to put a node
+        // that is not in the flow.
+        ghost = gui.text("").width(Length.AUTO).height(Length.rem(2))
+                .padding(Length.ZERO, Length.em(0.625f))
+                .background(Color.withAlpha(theme.color(Role.ACTION), 0.92f))
+                .corner(Length.rem(0.4f)).textColor(theme.color(Role.ON_ACTION))
+                .textSize(Length.rem(0.9375f))
+                .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE)
+                .lit(theme.lit()).elevation(Length.rem(1f))
+                .hitInert(true)
+                .visible(false);
+        gui.root().append(ghost);
 
-        // Both zones read the *published* drag rather than the live session. The session is the framework's own
-        // state, mutated on the GUI thread inside the frame, and a widget reading it would be reading a value
-        // that changes underneath its own paint. The State commits once per frame and only on change, so a
-        // pointer held still over one seam costs nothing at all.
+        // Read from the *published* drag rather than the live session: the session is the framework's own state,
+        // mutated on the GUI thread inside the frame, and reading it from here would be reading a value that
+        // changes underneath the paint. The State commits once per frame and only on change, so a pointer held
+        // still costs nothing at all.
         gui.drag().onCommit(v -> {
             DragState drag = v.value();
-            light(basket, drag, theme);
-            light(bin, drag, theme);
+            if (!drag.active()) {
+                ghost.visible(false);
+                lightArchive(false, theme);
+                return;
+            }
+            // Offset from the hotspot so the label never sits under the cursor itself. dp, not rem: the ghost
+            // trails the pointer by a fixed distance on screen, which is not a quantity that should grow when
+            // the user zooms the content.
+            ghost.text(carrying.get()).visible(true)
+                    .floatAt(Length.dp(drag.x() + 14f), Length.dp(drag.y() + 12f))
+                    // It says what would happen, not merely what is held: the framework has already asked every
+                    // target under the pointer, and the answer is in the same value that carries the position.
+                    .background(Color.withAlpha(
+                            theme.color(drag.accepts() ? Role.ACTION : Role.DANGER), 0.92f))
+                    .textColor(theme.color(drag.accepts() ? Role.ON_ACTION : Role.ON_DANGER));
+            lightArchive(over(archive, drag) && drag.accepts(), theme);
         });
-
-        Node zones = gui.column().width(Length.rem(16)).height(Length.FILL).gap(Ui.GAP)
-                .children(basket, bin);
 
         Node tools = Ui.strip(gui,
                 Ui.controls(gui,
-                        Ui.button(gui, "Undo the drop", () ->
-                                console.note(history.undo() ? "undo: the drop is reversed" : "no drop to undo")),
+                        Ui.button(gui, "Undo", () ->
+                                console.note(history.undo() ? "undo" : "nothing to undo")),
                         Ui.button(gui, "Redo", () ->
-                                console.note(history.redo() ? "redo" : "nothing to redo"))),
-                Ui.prose(gui, "Press a row and drag: a branch divides into three bands — an outer quarter each "
-                        + "side for before and after, the middle half for into — and a leaf divides in two, "
-                        + "because a band that always refused would be a third of a row that looks live and is "
-                        + "not. Below the last row is the root, which is the only way out of a branch."));
+                                console.note(history.redo() ? "redo" : "nothing to redo")),
+                        Ui.button(gui, "Open every column", () -> {
+                            for (Task column : root.kids) {
+                                board.expand(column);
+                            }
+                        })),
+                Ui.prose(gui, "Press a task and drag it. A row that can hold children divides into three bands — "
+                        + "an outer quarter each side for before and after, the middle half for into — and a "
+                        + "leaf divides in two, because a band that always refused would be a third of a row "
+                        + "that looks live and is not. Below the last row is the top level, which is the only "
+                        + "way to drag a task out of its column. Escape cancels; a flick too quick to have been "
+                        + "drawn commits nothing."));
 
         return gui.column().width(Length.FILL).height(Length.FILL).gap(Ui.GAP)
                 .children(
                         gui.row().width(Length.FILL).height(Length.FILL).gap(Ui.GAP)
-                                .children(Ui.card(gui, Ui.heading(gui, "Board"), board.node()), zones),
+                                .children(
+                                        Ui.card(gui, Ui.heading(gui, "The board"), board.node()),
+                                        gui.column().width(Length.rem(15)).height(Length.FILL)
+                                                .children(archive)),
                         tools);
     }
 
     /**
-     * The change that puts {@code moved} at index {@code at} under {@code parent}, and the change that puts it
-     * back.
+     * The change that puts {@code moved} at index {@code at} under {@code parent} — or null, if that would not
+     * be a change at all.
      *
-     * <p>Reversal is expressed the same way as the move — {@code apply} performs and hands back its own inverse —
-     * so nothing anywhere records a "kind" of change or switches on one. Undo is a stack of reverses.
+     * <p>Refusing here rather than at the drop is what puts the answer in front of the user while they can still
+     * act on it: no indicator means no drop, and they see that before letting go.
      */
-    private Change moveTo(Item moved, Item parent, int at, Console console) {
-        Item from = moved.parent;
+    private Change moveTo(Task moved, Task parent, int at) {
+        Task from = moved.parent;
         if (from == null) {
             return null;
         }
@@ -212,86 +291,101 @@ public final class DragChapter implements Chapter {
         if (from == parent && (back == at || back + 1 == at)) {
             return null;   // it would land exactly where it already is
         }
-        return placing(moved, parent, at, console);
+        return placing(moved, parent, at);
     }
 
     /**
-     * The change itself, with no opinion about whether it is worth making — that was decided above, at the
-     * moment the pointer was over the seam.
+     * The change itself, with no opinion about whether it is worth making — that was settled above, while the
+     * pointer was over the seam.
      *
-     * <p>Where it came from is read when the change is <em>applied</em>, not when it is built. A drop is
+     * <p>Where the task came from is read when the change is <em>applied</em>, not when it is built. A drop is
      * resolved once per frame while the pointer moves and applied at most once, on release, so a change that
-     * closed over the item's position at build time would be describing a hierarchy that had already moved on.
+     * closed over the task's position at build time would be describing a board that had already moved on.
+     *
+     * <p>{@code apply} performs and hands back its own inverse, so nothing anywhere records a kind of change or
+     * switches on one. Undo is a stack of reverses.
      */
-    private Change placing(Item moved, Item parent, int at, Console console) {
+    private Change placing(Task moved, Task parent, int at) {
         return () -> {
-            Item from = moved.parent;
+            Task from = moved.parent;
             int back = from == null ? -1 : from.kids.indexOf(moved);
             if (from != null) {
                 from.kids.remove(moved);
             }
+            archived.remove(moved);
             parent.kids.add(Math.min(at, parent.kids.size()), moved);
             moved.parent = parent;
-            console.say("moved " + moved.name + " into " + parent.name);
-            return from == null ? detaching(moved, console) : placing(moved, from, back, console);
-        };
-    }
-
-    /**
-     * Counting an item in or out of the basket. A {@code COPY} drop leaves the source where it is, so the
-     * change here is entirely the target's — and its inverse is the same change with the sign turned round,
-     * which is what keeps redo working: an inverse that returned null would undo once and then be a dead end.
-     */
-    private Change counting(Item item, int delta, Console console) {
-        return () -> {
-            int now = collected.addAndGet(delta);
-            console.good((delta > 0 ? "collected " : "un-collected ") + item.name + " (" + now + " held)");
-            return counting(item, -delta, console);
+            shown("moved \"" + moved.name + "\" into " + parent.name);
+            return from == null ? archiving(moved) : placing(moved, from, back);
         };
     }
 
     /** Before ({@code offset} 0) or after ({@code offset} 1) a sibling. */
-    private Change beside(Item moved, Item reference, int offset, Console console) {
-        Item parent = reference.parent == null ? root : reference.parent;
-        return moveTo(moved, parent, parent.kids.indexOf(reference) + offset, console);
+    private Change beside(Task moved, Task reference, int offset) {
+        Task parent = reference.parent == null ? root : reference.parent;
+        return moveTo(moved, parent, parent.kids.indexOf(reference) + offset);
     }
 
-    /** Taking an item out of the hierarchy, and putting it back exactly where it was. */
-    private Change detaching(Item item, Console console) {
+    /** Taking a task off the board and into the archive, and putting it back exactly where it was. */
+    private Change archiving(Task task) {
         return () -> {
-            Item parent = item.parent;
-            int at = parent.kids.indexOf(item);
-            parent.kids.remove(item);
-            item.parent = null;
-            console.say("discarded " + item.name);
-            return placing(item, parent, at, console);
+            Task parent = task.parent;
+            int at = parent.kids.indexOf(task);
+            parent.kids.remove(task);
+            task.parent = null;
+            archived.add(task);
+            shown("archived \"" + task.name + "\"");
+            return placing(task, parent, at);
         };
     }
 
-    /** A labelled box that a drag can be dropped on. */
-    private static Node zone(Gui gui, String title, String hint) {
-        Theme theme = gui.theme();
-        return gui.column().width(Length.FILL).height(Length.grow(1))
-                .background(theme.color(Role.WELL)).corner(Length.rem(0.75f))
-                .border(Length.rem(0.15f), theme.color(Role.LINE))
-                .padding(Length.dp(14)).gap(Length.rem(0.25f))
-                .children(
-                        gui.text(title).width(Length.FILL).height(Length.rem(1.5f))
-                                .textSize(Length.rem(1)).textColor(theme.color(Role.INK))
-                                .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE),
-                        gui.text(hint).width(Length.FILL)
-                                .textSize(Length.rem(0.875f)).textColor(theme.color(Role.FAINT))
-                                .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.TOP));
+    /**
+     * Every change ends here: the model has moved, so the views are told.
+     *
+     * <p>Two of them, and neither is the tree's business to know about. {@code refresh()} is the obligation the
+     * {@code Source} split leaves with the application — the tree reads the hierarchy and is never notified when
+     * it changes — and the archive is an ordinary list of nodes this chapter owns outright.
+     */
+    private void shown(String what) {
+        board.refresh();
+        redrawArchive();
+        console.say(what);
     }
 
-    /** Light a zone while a drag it would accept is over it, and put it back when the drag leaves. */
-    private static void light(Node zone, DragState drag, Theme theme) {
-        Rect box = zone.layout().rect();
-        boolean over = drag.accepts() && box != null
-                && drag.x() >= box.x() && drag.x() < box.x() + box.w()
+    /**
+     * The archive list, rebuilt from the model.
+     *
+     * <p>Rebuilt rather than reconciled, and the difference from what {@code TreeView.refresh} does is the point:
+     * these rows carry nothing — no expansion, no selection, no handlers — so there is nothing for reuse to
+     * preserve, and the simplest correct thing is the right one. Reuse is worth its complexity exactly where
+     * something would be lost without it.
+     */
+    private synchronized void redrawArchive() {
+        for (Node row : archiveRows) {
+            row.remove();
+        }
+        archiveRows.clear();
+        for (Task task : archived) {
+            Node row = gui.text(task.name).width(Length.FILL).height(Length.rem(1.75f))
+                    .padding(Length.ZERO, Length.em(0.5f))
+                    .background(gui.theme().color(Role.PANEL)).corner(Length.rem(0.3f))
+                    .textSize(Length.rem(0.875f)).textColor(gui.theme().color(Role.DIM))
+                    .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
+            archiveList.append(row);
+            archiveRows.add(row);
+        }
+    }
+
+    /** Light the archive while a drag it would take is over it, and put it back when the drag leaves. */
+    private void lightArchive(boolean on, Theme theme) {
+        archive.background(on ? Color.withAlpha(theme.color(Role.ACCENT), 0.18f) : theme.color(Role.WELL))
+                .border(Length.rem(0.15f), theme.color(on ? Role.ACCENT : Role.LINE));
+    }
+
+    private static boolean over(Node node, DragState drag) {
+        Rect box = node.layout().rect();
+        return box != null && drag.x() >= box.x() && drag.x() < box.x() + box.w()
                 && drag.y() >= box.y() && drag.y() < box.y() + box.h();
-        zone.background(over ? Color.withAlpha(theme.color(Role.ACCENT), 0.18f) : theme.color(Role.WELL))
-                .border(Length.rem(0.15f), theme.color(over ? Role.ACCENT : Role.LINE));
     }
 
     /** A zone's own box, as the indicator for a drop onto it: the promise and the drop are one value. */

@@ -132,8 +132,11 @@ public final class Demo {
             shell.stage().started(app);
 
             if (maxFrames > 0) {
-                // A frames-capped run exercises the window verticals it would otherwise never reach.
+                // A frames-capped run exercises the window verticals it would otherwise never reach: a dialog,
+                // and the named popup — which is looked up by its key rather than handed over by the chapter
+                // that registered it, since that is the whole point of a window having a name.
                 Modals.info("Modal dialog", "Shown by a frames-capped run, over a dimmed application.");
+                app.window("popup").ifPresent(dev.vexelray.gui.core.app.AppWindow::show);
             }
 
             // Closing the window is a *request* the application may refuse. Installed only when there is input

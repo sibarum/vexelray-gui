@@ -96,9 +96,6 @@ public final class MotionChapter implements Chapter {
                         + "third of a second it reads as a rendering glitch if it registers at all."));
 
         // --- transitions --------------------------------------------------------------------------------
-        // Enrolment is opt-in, per node: a container's direct children, which is what a list or a tree wants,
-        // since its rows come and go and enrolling each one as it appeared would be bookkeeping the container
-        // already does. Dur.ZERO here would be the honest reduced-motion setting rather than a special case.
         Transitions moves = Transitions.on(krono);
         Node stack = gui.column().width(Length.FILL).height(Length.AUTO).gap(Length.rem(0.375f));
         Node detail = gui.text("this panel took the room, and the rows below covered the distance")
@@ -114,8 +111,6 @@ public final class MotionChapter implements Chapter {
                 bar(gui, "Row two"),
                 bar(gui, "Row three"),
                 bar(gui, "Row four"));
-        moves.followChildren(stack, Dur.ms(220), Ease.OUT_CUBIC);
-        gui.motion(moves);
 
         Node transitions = Ui.strip(gui,
                 Ui.heading(gui, "Transitions — the picture catching up"),
@@ -162,8 +157,19 @@ public final class MotionChapter implements Chapter {
                 Ui.prose(gui, "Colour interpolates through Oklab rather than sRGB, so a blend between two "
                         + "saturated colours does not dip through grey on the way."));
 
-        return gui.column().width(Length.FILL).height(Length.FILL).gap(Ui.GAP).scroll(false, true)
+        Node page = gui.column().width(Length.FILL).height(Length.FILL).gap(Ui.GAP).scroll(false, true)
                 .children(cues, transitions, animation);
+        // The whole page, at any depth -- not just the stack whose rows move. A layout change does not stop at
+        // the container it happened in: opening the panel moves the rows below it, and the card below them, and
+        // the strip below that. Enrolling only the stack animated the first of those and snapped the rest, and
+        // two halves covering the same distance at different times is a page tearing along the boundary.
+        //
+        // The cost is honest and worth saying: a window resize also moves everything, so while this chapter is
+        // up, dragging the window edge smears the page for 220ms. That is the trade a subtree enrolment makes,
+        // and it is why the framework does not make it for you.
+        moves.followSubtree(page, Dur.ms(220), Ease.OUT_CUBIC);
+        gui.motion(moves);
+        return page;
     }
 
     private static Node bar(Gui gui, String text) {

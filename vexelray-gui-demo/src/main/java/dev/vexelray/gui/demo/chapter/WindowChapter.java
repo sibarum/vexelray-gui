@@ -14,6 +14,9 @@ import dev.vexelray.gui.demo.Ui;
 import dev.vexelray.gui.nfd.FileDialog;
 import dev.vexelray.gui.widget.Modal;
 import dev.vexelray.gui.widget.Modals;
+import dev.vexelray.gui.widget.TitleBar;
+import dev.vexelray.gui.core.WindowControls;
+import dev.vexelray.os.Decorations;
 import dev.vexelray.os.WindowConfig;
 import dev.vexelray.text.TextLayout;
 import sibarum.tactroller.api.Key;
@@ -58,8 +61,20 @@ public final class WindowChapter implements Chapter {
         // Registered now, opened later. The tree is built before the window exists, so a chapter that wants a
         // second window says what it would do and the shell runs it once there is something to run it against.
         stage.onApp(app -> {
-            AppWindow window = app.window("popup",
-                    () -> WindowSpec.of(WindowConfig.of("VexelRay popup", 460, 300), popupGui(gui.theme())));
+            AppWindow window = app.window("popup", () -> {
+                // A second window of one application is not a second opinion about what the application looks
+                // like, so it gets the same chrome the main window and every dialog get: the frame handed to the
+                // GUI with Decorations.CLIENT, and a TitleBar drawn where the system caption was.
+                Gui popupGui = new Gui();
+                popupGui.theme(gui.theme());
+                TitleBar bar = new TitleBar(popupGui, WindowControls.NONE, "VexelRay popup");
+                popupContent(popupGui, bar);
+                // The bar exists before the window does, so it is bound to the window's controls when there is
+                // one and unbound when it closes — which is the whole of what a window-chrome widget needs from
+                // a window it does not create.
+                return bar.commands(WindowSpec.of(
+                        WindowConfig.of("VexelRay popup", 460, 320).decorations(Decorations.CLIENT), popupGui));
+            });
             popup.set(window);
             gui.shortcut(Key.GRAVE_ACCENT, () -> {
                 window.toggle();
@@ -156,14 +171,13 @@ public final class WindowChapter implements Chapter {
     }
 
     /**
-     * The popup's tree: a {@link Gui} of its own, laid out against the popup's own viewport.
+     * The popup's tree: its own {@link Gui}, laid out against the popup's own viewport, under its own title bar.
      *
-     * <p>It takes the main window's theme rather than making its own, because a second window of one application
-     * is not a second opinion about what the application looks like.
+     * <p>The handles are as thread-safe as any other, so a worker could mutate this tree live exactly as it
+     * mutates the main window's.
      */
-    private static Gui popupGui(Theme theme) {
-        Gui p = new Gui();
-        p.theme(theme);
+    private static void popupContent(Gui p, TitleBar bar) {
+        Theme theme = p.theme();
         Node card = p.column().width(Length.FILL).height(Length.FILL)
                 .background(theme.color(Role.PANEL)).corner(Length.rem(1))
                 .border(Length.rem(0.1f), theme.color(Role.LINE))
@@ -180,7 +194,9 @@ public final class WindowChapter implements Chapter {
                                 .width(Length.FILL)
                                 .textSize(Length.rem(0.9375f)).textColor(theme.color(Role.DIM))
                                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.TOP));
-        p.root().background(theme.color(Role.PAGE)).padding(Length.dp(16)).children(card);
-        return p;
+        // The bar is a child of the root and the padding is on the body below it, not on the root: a title bar
+        // inset from the window edge is a title bar with a gap the window manager still treats as caption.
+        Node body = p.column().width(Length.FILL).height(Length.FILL).padding(Length.dp(16)).children(card);
+        p.root().background(theme.color(Role.PAGE)).children(bar.node(), body);
     }
 }

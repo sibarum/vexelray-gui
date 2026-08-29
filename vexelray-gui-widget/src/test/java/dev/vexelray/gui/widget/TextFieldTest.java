@@ -81,6 +81,61 @@ class TextFieldTest {
         }
     }
 
+    /**
+     * The distinction {@code replace} exists for, stated as the test that fails without it: a programmatic
+     * rewrite of the whole line is an edit and undoes, where {@link TextField#text(String)} is a reset and
+     * takes the past with it.
+     */
+    @Test
+    void replaceIsUndoableWhereTextIsAReset() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TextField f = focusedField(h, "");
+            h.type("2+2");
+
+            f.replace("4");
+            assertEquals("4", f.text());
+            h.chord(Key.Z, Key.LEFT_CONTROL);
+            assertEquals("2+2", f.text(), "a whole-line replacement is one undo entry");
+            h.chord(Key.Y, Key.LEFT_CONTROL);
+            assertEquals("4", f.text(), "and redoes");
+
+            f.text("4");                                 // the other door: content with no past
+            h.chord(Key.Z, Key.LEFT_CONTROL);
+            assertEquals("4", f.text(), "text() resets the history, so there is nothing to undo");
+        }
+    }
+
+    @Test
+    void replaceWithTheSameTextIsNotAnEdit() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TextField f = focusedField(h, "");
+            h.type("abc");
+            h.tap(Key.HOME);
+
+            f.replace("abc");                            // a command that is a fixed point on this input
+            assertEquals(0, f.caret(), "unchanged content leaves the caret alone");
+
+            h.chord(Key.Z, Key.LEFT_CONTROL);
+            assertEquals("", f.text(), "and costs no entry: one Ctrl+Z still undoes the typing run");
+        }
+    }
+
+    @Test
+    void replaceStartsItsOwnEntryRatherThanJoiningTheRun() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TextField f = focusedField(h, "");
+            h.type("ab");
+            f.replace("Z");
+            h.type("c");                                 // "Zc"
+            assertEquals("Zc", f.text());
+
+            h.chord(Key.Z, Key.LEFT_CONTROL);
+            assertEquals("Z", f.text(), "the typing after it is its own run");
+            h.chord(Key.Z, Key.LEFT_CONTROL);
+            assertEquals("ab", f.text(), "and the replacement is its own entry");
+        }
+    }
+
     @Test
     void shiftArrowSelectionIsReplacedByTyping() {
         try (HeadlessGui h = new HeadlessGui()) {

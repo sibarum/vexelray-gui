@@ -114,6 +114,12 @@ public record Document(String text, int caret, int anchor, List<Span> spans, Tex
                 int to = clampOffset(s.end());
                 yield to == caret && from == anchor ? this : new Document(text, to, from, spans, null);
             }
+            case Edit.ReplaceAll r -> {
+                String next = r.text() == null ? "" : r.text();
+                // Unchanged content is not an edit: no diff, so no history entry and no caret jump. See the
+                // record's own note on why a fixed point must not cost a Ctrl+Z that does nothing.
+                yield next.equals(text) ? this : replace(0, text.length(), next);
+            }
             case Edit.SetText s -> {
                 String next = s.text() == null ? "" : s.text();
                 yield new Document(next, next.length(), next.length(), List.of(), null);

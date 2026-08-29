@@ -2,6 +2,8 @@ package dev.vexelray.gui.widget;
 
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
+import dev.vexelray.gui.core.edit.Change;
+import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.input.ClaimScope;
 import dev.vexelray.gui.core.input.DragEvent;
 import dev.vexelray.gui.core.input.FocusEvent;
@@ -23,9 +25,7 @@ import sibarum.atchung.Versioned;
 import sibarum.tactroller.api.Key;
 import sibarum.tactroller.api.Modifier;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Deque;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -85,13 +85,13 @@ public final class TextField implements AutoCloseable {
     private final CaretBlink.Registration blink;
 
     /**
-     * Undo/redo over the edit-diff (keyboard-focus-text.md §4.3). This is widget-local <em>history</em>, not the
-     * document, and it is the only mutable state left needing a monitor — held across commit-and-record so the
-     * recorded diff is the one that commit produced. The document itself needs no lock: it is a {@code State}.
+     * Undo/redo over the edit-diff (keyboard-focus-text.md §4.3). The stacks, the coalescing rules and the saved
+     * position are the framework's general {@link History}; what stays here is the only part that is about text —
+     * a {@link TextChange}, which knows how to replay one {@link TextEdit} absolutely and when two of them are the
+     * same typing run. The monitor spans commit-and-record so the diff handed to the history is the one that
+     * commit produced. The document itself needs no lock: it is a {@code State}.
      */
-    private final Deque<TextEdit> undo = new ArrayDeque<>();
-    private final Deque<TextEdit> redo = new ArrayDeque<>();
-    private boolean coalesceBarrier;
+    private final History history = new History(UNDO_LIMIT);
 
     /**
      * Vertical navigation's sticky desired column (absolute px). NaN means "recompute from the caret": every
@@ -181,12 +181,45 @@ public final class TextField implements AutoCloseable {
         return document.value().caret();
     }
 
-    /** Replace the content programmatically; the caret moves to the end, selection clears, and history resets. */
+    /**
+     * This field's undo history. Exposed because the questions an application asks of it are not this widget's to
+     * answer: whether the work is saved ({@link History#mark()}, {@link History#status()}), whether a menu item
+     * should be live, whether some larger command should land as one entry. The field records into it as the user
+     * types either way; Ctrl+Z is already wired.
+     */
+    public History history() {
+        return history;
+    }
+
+    /**
+     * Replace the whole content as an <b>edit</b>: one undo entry, spans remapped through it, and the caret at
+     * the end of what was put there.
+     *
+     * <p>The one to reach for whenever the new content is something the user just did — a completion, a
+     * template, a keypad key that rewrites the line, a command that reformats what is in the field.
+     * {@link #text(String)} is the other case and only the other case: content this field has no past with, a
+     * file loaded over the top or a reset, where the previous line is not a state anyone should be able to get
+     * back to. Choosing {@code text} for the first kind is how an application ends up with an undo that covers
+     * typing and silently stops at every command — which is a harder bug to see than it sounds, because the
+     * stack is not broken, it is empty.
+     *
+     * <p>Replacing the content with what it already says does nothing at all: no entry, and the caret stays
+     * where it is. A command that is a fixed point on this input should not cost a Ctrl+Z that appears to do
+     * nothing.
+     */
+    public TextField replace(String s) {
+        apply(new Edit.ReplaceAll(s == null ? "" : s), true);   // its own entry: a command is never a typing run
+        return this;
+    }
+
+    /**
+     * Replace the content programmatically; the caret moves to the end, selection clears, and <b>history
+     * resets</b> — the field is being handed content it has no past with. See {@link #replace(String)} for the
+     * other case, which is most of them.
+     */
     public TextField text(String s) {
         synchronized (this) {
-            undo.clear();
-            redo.clear();
-            coalesceBarrier = true;
+            history.clear();
             document.commit(commit, new Edit.SetText(s));
         }
         published();
@@ -196,7 +229,8 @@ public final class TextField implements AutoCloseable {
     /**
      * Insert {@code s} at the caret, replacing the selection if there is one, exactly as typing it would — the
      * caret lands after the insertion and the edit joins the undo history. This is the programmatic entry a
-     * palette, keypad or completion popup wants; {@link #text(String)} replaces the whole content instead.
+     * palette, keypad or completion popup wants; {@link #replace(String)} rewrites the whole line instead, and
+     * {@link #text(String)} hands the field content it has no past with.
      */
     public TextField insert(String s) {
         if (s != null && !s.isEmpty()) {
@@ -776,7 +810,7 @@ public final class TextField implements AutoCloseable {
     private void apply(Edit edit, boolean barrierBefore) {
         synchronized (this) {
             if (barrierBefore) {
-                coalesceBarrier = true;
+                history.barrier();
             }
             Document before = document.value();
             document.commit(commit, edit);
@@ -786,9 +820,9 @@ public final class TextField implements AutoCloseable {
             }
             TextEdit diff = after.lastEdit();
             if (diff != null) {
-                record(diff);
+                history.record(new TextChange(diff.inverse()));   // the way back from what was just applied
             } else {
-                coalesceBarrier = true;   // a caret/selection move ends the current typing run
+                history.barrier();   // a caret/selection move ends the current typing run
             }
         }
         published();
@@ -801,24 +835,41 @@ public final class TextField implements AutoCloseable {
     }
 
     /** Force the next edit to start its own undo entry. */
-    private synchronized void barrier() {
-        coalesceBarrier = true;
+    private void barrier() {
+        history.barrier();
     }
 
-    /** Push {@code e} onto the undo stack, merging into the previous entry when it continues a run (§4.3). */
-    private void record(TextEdit e) {
-        redo.clear();
-        TextEdit top = undo.peek();
-        if (!coalesceBarrier && top != null && canCoalesce(top, e)) {
-            undo.pop();
-            undo.push(merge(top, e));
-        } else {
-            undo.push(e);
-            while (undo.size() > UNDO_LIMIT) {
-                undo.removeLast();
-            }
+    /**
+     * One history entry: the {@link TextEdit} to replay, in absolute coordinates. An entry is always the way
+     * <em>back</em> from something already applied, so the edit it holds is the inverse of the one the user made;
+     * applying it hands back the edit that redoes it, and the two directions cannot drift apart.
+     */
+    private final class TextChange implements Change {
+
+        private final TextEdit edit;
+
+        TextChange(TextEdit edit) {
+            this.edit = edit;
         }
-        coalesceBarrier = false;
+
+        @Override
+        public Change apply() {
+            // Absolute, not re-resolved: an undo restores a specific prior state, so unlike an input edit it must
+            // not be resolved against wherever the caret has since moved to.
+            document.commit(commit, new Edit.Replace(edit.at(), edit.removed().length(), edit.inserted()));
+            return new TextChange(edit.inverse());
+        }
+
+        @Override
+        public Change coalesce(Change following) {
+            if (!(following instanceof TextChange next)) {
+                return null;   // not this field's entry; nothing here can speak for it
+            }
+            // Both entries are inverses, so the run test — which is about what the user did — reads them forward.
+            TextEdit first = edit.inverse();
+            TextEdit second = next.edit.inverse();
+            return canCoalesce(first, second) ? new TextChange(merge(first, second).inverse()) : null;
+        }
     }
 
     private static boolean isInsert(TextEdit t) {
@@ -855,34 +906,18 @@ public final class TextField implements AutoCloseable {
         if (readOnly) {
             return;   // nothing the user did can be undone, because nothing the user did was applied
         }
-        synchronized (this) {
-            TextEdit e = undo.poll();
-            if (e == null) {
-                return;
-            }
-            // Replay the inverse in absolute coordinates: an undo restores a specific prior state, so unlike an
-            // input edit it must not be re-resolved against the caret.
-            document.commit(commit, new Edit.Replace(e.at(), e.inserted().length(), e.removed()));
-            redo.push(e);
-            coalesceBarrier = true;
+        if (history.undo()) {
+            published();
         }
-        published();
     }
 
     private void redo() {
         if (readOnly) {
             return;
         }
-        synchronized (this) {
-            TextEdit e = redo.poll();
-            if (e == null) {
-                return;
-            }
-            document.commit(commit, new Edit.Replace(e.at(), e.removed().length(), e.inserted()));
-            undo.push(e);
-            coalesceBarrier = true;
+        if (history.redo()) {
+            published();
         }
-        published();
     }
 
     // --- publication: mirror to the retained node, then notify the application ---

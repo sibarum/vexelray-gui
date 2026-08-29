@@ -60,6 +60,24 @@ public sealed interface Edit {
     record SetText(String text) implements Edit {
     }
 
+    /**
+     * Replace all of the text with {@code text}, as an <b>edit</b>: it produces a diff, so spans are remapped
+     * through it and a history has something to record. The relative form of {@link Replace} over the whole
+     * document — whatever the content is at commit time, all of it — which is why no length is a parameter:
+     * measuring one first is exactly the stale read this interface exists to avoid.
+     *
+     * <p>{@link SetText} is the other half of the pair and stays the right answer for content the document has
+     * no past with — a file loaded over the top, a field reset. This one is for content the user just made
+     * happen: a completion, a template, a keypad key that rewrites the line. The difference is not the pixels,
+     * it is whether what was there is a state anyone should be able to get back to.
+     *
+     * <p>Replacing the text with what it already says is <b>not</b> an edit: the document is yielded unchanged,
+     * so there is no diff, no history entry and no caret thrown to the end. A command that happens to be a fixed
+     * point must not cost a Ctrl+Z that appears to do nothing.
+     */
+    record ReplaceAll(String text) implements Edit {
+    }
+
     /** Replace the formatting span set, leaving the text and caret alone. */
     record SetSpans(List<Span> spans) implements Edit {
     }

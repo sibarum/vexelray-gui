@@ -133,6 +133,13 @@ public interface Cue {
      * event because that is what it is reporting. The trail still hangs off the top edge and is clipped there,
      * which costs nothing and is what keeps the leading edge from reading as a bar.
      *
+     * <p><b>The exit is the opposite decision, and for the opposite reason.</b> The sweep travels far enough that
+     * the trailing edge clears the bottom, so the box is empty at the moment the cue is taken back off. Stopping
+     * when the <em>core</em> has left is the tidier arithmetic and it is the one that reads as a bug: the glow is
+     * a large fraction of the box, so most of it is still lit when the overlay is cleared, and a lit thing
+     * disappearing is an artefact rather than a sweep. Off the top is clipped and unseen; off the bottom is the
+     * end of the gesture, and it has to be reached rather than cut.
+     *
      * <p>Give this a <b>linear</b> ramp. The band is travelling and has no place to arrive at — easing it makes
      * the sweep finish in the first third and stall, which reads as a jump followed by a delay.
      *
@@ -154,9 +161,15 @@ public interface Cue {
             }
             float trailH = Math.max(6f, box.h() * trail);
             float coreH = Math.max(2f, box.h() * core);
-            // On the top edge at 0 and wholly past the bottom at 1: every frame of the duration is a frame with
-            // the bright line somewhere in the box. The trail hangs off the top and the clip deals with it.
-            float head = (float) t * (box.h() + coreH);
+            // On the top edge at 0, and at 1 the *trail* is past the bottom too — not merely the core. Travelling
+            // only the box's own height leaves the last trailH of glow still lit inside the box at the instant
+            // the cue is taken off, which is a sweep that vanishes rather than one that leaves; and because the
+            // trail is a large fraction of the box, "the last trailH" was most of it.
+            //
+            // The cost is that the core reaches the bottom edge before the duration is up and the rest of it is
+            // the glow draining off, which is the same asymmetry the entrance already has at the other end. That
+            // is what a sweep is: the light passes, and then the light it left behind passes.
+            float head = (float) t * (box.h() + trailH);
             float band = trailH / TRAIL_BANDS;
             List<Picture.Mark> marks = new ArrayList<>(TRAIL_BANDS + 1);
             for (int i = 0; i < TRAIL_BANDS; i++) {

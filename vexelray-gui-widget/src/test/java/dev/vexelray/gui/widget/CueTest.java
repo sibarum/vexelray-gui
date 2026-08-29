@@ -95,13 +95,27 @@ class CueTest {
         Cue scanline = Cue.scanline(ACCENT);
 
         assertEquals(0f, headY(scanline.at(0d, box)), 0.01f, "the line is on the top edge at the very start");
-        // Up to 0.9, because the last sliver of the duration is the line leaving through the bottom — which is
-        // the sweep ending, not a gap in it.
-        for (double t = 0d; t <= 0.9d; t += 0.05d) {
-            float y = headY(scanline.at(t, box));
-            assertTrue(y >= 0f && y < box.h(), "the bright core is in the box at t=" + t + " (was " + y + ")");
+        // Something is on screen at every frame of the duration — which is the property, rather than the core
+        // specifically being inside the box. Past the point where the core leaves through the bottom, what is
+        // visible is the trail draining out after it, and that is still the sweep rather than a gap in it.
+        for (double t = 0d; t < 1d; t += 0.05d) {
+            assertTrue(anythingInside(scanline.at(t, box), box),
+                    "some part of the sweep is still in the box at t=" + t);
         }
-        assertTrue(headY(scanline.at(1d, box)) >= box.h(), "and wholly past the bottom edge at the end");
+    }
+
+    /**
+     * <b>The box is empty when the cue is taken off.</b> The regression this exists for is the other end of the
+     * one above: the sweep travelled the box's own height, so the core had left but most of the trail — which is
+     * 60% of the box — was still lit at t=1. A cue that is cleared while it is still painting reads as a glitch,
+     * because a light that stops is not a light that passed.
+     */
+    @Test
+    void theScanlineHasLeftTheBoxBeforeItIsTakenOff() {
+        Cue.Box box = new Cue.Box(200f, 24f, 0f, 0f);
+
+        assertFalse(anythingInside(Cue.scanline(ACCENT).at(1d, box), box),
+                "nothing the scanline paints is still inside the box at the end");
     }
 
     /** Reversed is the same cue mirrored — the reason direction is not a parameter on every factory. */
@@ -328,6 +342,20 @@ class CueTest {
     }
 
     /** The y of the scanline's bright core — the mark the sweep is actually read by. */
+    /**
+     * Whether any part of what the cue paints overlaps the box — the trail included, since the trail is most of
+     * what a scanline is. {@link #headY} answers about the bright core alone, which is the wrong question to ask
+     * about whether anything is still lit.
+     */
+    private static boolean anythingInside(Picture p, Cue.Box box) {
+        for (Picture.Mark mark : p.marks()) {
+            if (mark instanceof Picture.Fill fill && fill.y() < box.h() && fill.y() + fill.h() > 0d) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static float headY(Picture p) {
         List<Picture.Mark> marks = new ArrayList<>(p.marks());
         Picture.Fill core = (Picture.Fill) marks.get(marks.size() - 1);

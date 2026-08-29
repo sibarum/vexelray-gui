@@ -203,9 +203,12 @@ public final class TreeView<T> implements AutoCloseable {
     /** One item's presence in the tree: its row, its (possibly unmaterialised) children container, its state. */
     private final class Row {
         final T item;
-        final Row parent;
-        final int depth;
-        final boolean canExpand;
+        /** Not final: a row can be dragged into a different branch, and a reconcile reseats it there. */
+        Row parent;
+        int depth;
+        /** Not final either: a leaf that gains children gains a disclosure control, without being rebuilt. */
+        boolean canExpand;
+        final Node spacer;       // the indent, which is depth and therefore changes when the row is reseated
         final Node entry;        // column: [rowNode, kidsBox]
         final Node rowNode;      // the pointer target and the styled strip
         final Node disclosure;   // the +/− glyph
@@ -232,7 +235,7 @@ public final class TreeView<T> implements AutoCloseable {
             this.depth = parent == null ? 0 : parent.depth + 1;
             this.canExpand = source.hasChildren(item);
 
-            Node spacer = gui.box().width(Length.em(depth * INDENT_EM)).scroll(false, false);
+            this.spacer = gui.box().width(Length.em(depth * INDENT_EM)).scroll(false, false);
             this.disclosure = gui.text(canExpand ? GLYPH_COLLAPSED : GLYPH_LEAF)
                     .width(Length.em(1.2f))
                     .textSize(Length.rem(1))
@@ -269,13 +272,55 @@ public final class TreeView<T> implements AutoCloseable {
             // so that choosing one supersedes whatever action was running, exactly as choosing a built-in does.
             gui.onContextMenu(rowNode, menu -> rowMenu(item, menu));
             gui.onContextMenu(rowNode, menu -> contextMenu.accept(item, new Preempting(menu)));
-            if (canExpand) {
-                gui.onClick(disclosure, () -> {
-                    select(this, true);
-                    toggle(this);
-                });
-            }
+            // Registered whatever the row is today, and guarded when it runs rather than when it is built: a
+            // leaf can gain children (a reconcile after a drop moved one into it), and a handler that was never
+            // installed cannot be installed later without rebuilding the row and losing everything else on it.
+            gui.onClick(disclosure, () -> {
+                if (!canExpand) {
+                    return;
+                }
+                select(this, true);
+                toggle(this);
+            });
             gui.onState(rowNode, state -> restyle(this, state));
+        }
+
+        /**
+         * Put this row under {@code newParent}, at whatever depth that is.
+         *
+         * <p>The indent is the only thing depth is: a row three levels in is a row with a wider spacer. No
+         * recursion, because a reconcile walks the whole materialised subtree and reseats every descendant from
+         * its own parent — and a subtree that is <em>not</em> materialised has no rows to reseat.
+         */
+        void reseat(Row newParent) {
+            this.parent = newParent;
+            int now = newParent == null ? 0 : newParent.depth + 1;
+            if (now != depth) {
+                depth = now;
+                spacer.width(Length.em(depth * INDENT_EM));
+            }
+        }
+
+        /**
+         * Bring the row's own appearance back in line with the source: its label, and whether it can be opened.
+         *
+         * <p>A row that stops being able to hold children is shut on the way, because an open row with no
+         * disclosure control is one the user cannot close.
+         */
+        void resync() {
+            label.text(source.label(item));
+            boolean now = source.hasChildren(item);
+            if (now == canExpand) {
+                return;
+            }
+            canExpand = now;
+            if (!now) {
+                expanded = false;
+                materialized = false;
+                children.clear();
+                open(this, 0f);
+            }
+            disclosure.text(!now ? GLYPH_LEAF : expanded ? GLYPH_EXPANDED : GLYPH_COLLAPSED);
         }
     }
 
@@ -387,6 +432,97 @@ public final class TreeView<T> implements AutoCloseable {
     /** The node to place in a layout (size it there — the tree fills whatever box it is given). */
     public Node node() {
         return root;
+    }
+
+    /**
+     * Read the hierarchy again and bring the rows into line with it — the other half of {@link #reorderable}.
+     *
+     * <p>A tree reads its model through a {@link Source} and is never told when that model changes, which is the
+     * right split (it is the application's model, mutated by the application's code) and leaves the application
+     * holding one obligation: <b>say when</b>. Without this the tree resolved a placement, drew the indicator,
+     * refused what could not be done and recorded the change — and then showed the hierarchy as it had been,
+     * which made every one of those correct behaviours look broken.
+     *
+     * <p><b>Rows are reused, not rebuilt.</b> An item that was already in the tree keeps its row — the same
+     * node, the same registrations, its expansion state, and its place in the selection — and is moved to
+     * wherever the source now says it is. Rebuilding would be far simpler and is the thing that must not happen:
+     * a rebuilt tree closes every folder the user had opened, which after a drag is precisely the state they
+     * were working in.
+     *
+     * <p><b>No new I/O.</b> Only rows that have already been opened are walked into, so a reconcile costs
+     * exactly the directory listings the user has already paid for. A collapsed folder is re-read when it is
+     * next opened, which is when it was going to be read anyway.
+     *
+     * <p>Safe from any thread, like every other method here.
+     */
+    public TreeView<T> refresh() {
+        Row landed;
+        synchronized (this) {
+            java.util.Set<T> live = new java.util.HashSet<>();
+            reconcile(null, source.roots(), live);
+            // Anything not reached is gone from the model. It cannot be hiding under a collapsed row: an
+            // unopened row has no children rows to hide, and an opened one was walked.
+            for (java.util.Iterator<Map.Entry<T, Row>> it = rowsByItem.entrySet().iterator(); it.hasNext(); ) {
+                Map.Entry<T, Row> e = it.next();
+                if (!live.contains(e.getKey())) {
+                    e.getValue().entry.remove();
+                    it.remove();
+                }
+            }
+            refreshVisible();
+            // The selection never rests on a row that is no longer there — the same rule a collapse follows.
+            landed = selected != null && !rowsByItem.containsKey(selected.item) ? nearestLive(selected) : null;
+            if (selected != null && !rowsByItem.containsKey(selected.item)) {
+                selected = null;
+            }
+        }
+        if (landed != null) {
+            select(landed, true);
+        }
+        return this;
+    }
+
+    /**
+     * Reconcile one level: the rows under {@code parent} become exactly {@code items}, in that order.
+     *
+     * <p>Each row is inserted at its index whether or not it moved. That is one mutation per row per reconcile,
+     * against the bookkeeping needed to work out which of them actually changed — and the bookkeeping is what
+     * would be wrong the first time two items swapped places, because a swap has no smallest edit that is
+     * obviously right. A mutation that sets a node where it already is costs a list remove and an add.
+     */
+    private void reconcile(Row parent, List<T> items, java.util.Set<T> live) {
+        Node box = parent == null ? rows : parent.kidsBox;
+        List<Row> settled = new ArrayList<>(items.size());
+        for (int i = 0; i < items.size(); i++) {
+            T item = items.get(i);
+            live.add(item);
+            Row row = rowsByItem.get(item);
+            if (row == null) {
+                row = new Row(item, parent);
+                rowsByItem.put(item, row);
+            } else {
+                row.reseat(parent);
+                row.resync();
+            }
+            box.insert(row.entry, i);
+            settled.add(row);
+            if (row.materialized) {
+                reconcile(row, source.children(item), live);
+            }
+        }
+        List<Row> siblings = parent == null ? rootRows : parent.children;
+        siblings.clear();
+        siblings.addAll(settled);
+    }
+
+    /** The nearest row still in the tree above a removed one — where a selection lands when its row goes. */
+    private Row nearestLive(Row gone) {
+        for (Row p = gone.parent; p != null; p = p.parent) {
+            if (rowsByItem.containsKey(p.item)) {
+                return p;
+            }
+        }
+        return rootRows.isEmpty() ? null : rootRows.get(0);
     }
 
     /**

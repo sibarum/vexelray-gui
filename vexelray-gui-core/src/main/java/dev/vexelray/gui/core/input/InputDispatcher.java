@@ -1,5 +1,7 @@
 package dev.vexelray.gui.core.input;
 
+import dev.vexelray.gui.core.drop.DragSession;
+import dev.vexelray.gui.core.drop.DropTarget;
 import dev.vexelray.gui.core.layout.LayoutEnums.ScrollLock;
 import dev.vexelray.gui.core.model.RetainedNode;
 import sibarum.atchung.Atchung;
@@ -102,6 +104,8 @@ public final class InputDispatcher {
     // channel with a single owner.
     private final Map<Long, java.util.List<Consumer<InteractionState>>> stateHandlers = new ConcurrentHashMap<>();
     private final Map<Long, Consumer<DragEvent>> dragHandlers = new ConcurrentHashMap<>();
+    /** What each node would do with a drag released on it. Unrelated to dragHandlers -- see onDrop. */
+    private final Map<Long, DropTarget> dropTargets = new ConcurrentHashMap<>();
     private final Map<Long, Consumer<KeyEvent>> keyHandlers = new ConcurrentHashMap<>();
     // Typed-text handlers (CharTyped → codepoint) and caret-placement handlers (click → offset), both for
     // editable text nodes; registering either makes the node focusable.
@@ -265,6 +269,45 @@ public final class InputDispatcher {
         dragHandlers.put(nodeId, handler);
     }
 
+    /**
+     * Register {@code nodeId}'s answer to what would happen if a drag landed on it. Replaces any prior target.
+     *
+     * <p>Unrelated to {@link #onDrag}, and the two must not be confused: that one is a <em>manipulation</em> —
+     * the pointer steering a slider or a scrollbar thumb, captured on press with no threshold. This is a drop
+     * target, which does not capture anything, answers about drags it did not start, and may be asked about a
+     * drag that began in another window or outside the process entirely.
+     */
+    public void onDrop(long nodeId, DropTarget target) {
+        dropTargets.put(nodeId, target);
+    }
+
+    /**
+     * The drop targets covering {@code (x, y)}, innermost first — the {@link DragSession.Lookup} for this tree.
+     *
+     * <p>Hit-testing finds the deepest node under the point and the chain to the root is walked from there, so a
+     * container's target answers for every point in it that no descendant claimed. That is what makes resolution
+     * total across nesting rather than only within one node: without the walk, a row that declined a payload
+     * would leave a row-shaped hole in a tree that was perfectly willing to accept it.
+     *
+     * <p>The point is tested against the same rects the pointer is dispatched against, which during a transition
+     * are the <em>drawn</em> ones — so a drag resolves against the tree the user can see, not the one it is on
+     * its way to becoming.
+     */
+    public List<DropTarget> dropTargetsAt(float x, float y) {
+        RetainedNode hit = HitTest.at(currentRoot, x, y);
+        List<DropTarget> found = null;
+        for (RetainedNode n = hit; n != null; n = n.parent) {
+            DropTarget target = dropTargets.get(n.id);
+            if (target != null) {
+                if (found == null) {
+                    found = new ArrayList<>(4);
+                }
+                found.add(target);
+            }
+        }
+        return found == null ? List.of() : found;
+    }
+
     /** Register a key handler for {@code nodeId} (also makes it focusable). Fires when the node holds focus. */
     public void onKey(long nodeId, Consumer<KeyEvent> handler) {
         keyHandlers.put(nodeId, handler);
@@ -420,6 +463,7 @@ public final class InputDispatcher {
         menuSources.remove(nodeId);
         stateHandlers.remove(nodeId);
         dragHandlers.remove(nodeId);
+        dropTargets.remove(nodeId);
         keyHandlers.remove(nodeId);
         charHandlers.remove(nodeId);
         charStages.remove(nodeId);

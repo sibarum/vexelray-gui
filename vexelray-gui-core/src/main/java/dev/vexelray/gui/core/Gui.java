@@ -1,5 +1,7 @@
 package dev.vexelray.gui.core;
 
+import dev.vexelray.gui.core.drop.DragSession;
+import dev.vexelray.gui.core.drop.DropTarget;
 import dev.vexelray.gui.core.layout.Displacement;
 import dev.vexelray.gui.core.layout.FlexLayout;
 import dev.vexelray.gui.core.layout.LayoutContext;
@@ -558,6 +560,31 @@ public final class Gui implements AutoCloseable {
     public Gui onDrag(Node node, java.util.function.Consumer<DragEvent> handler) {
         input.onDrag(node.id(), handler);
         return this;
+    }
+
+    /**
+     * Say what would happen if a drag were released on {@code node} — see {@link DropTarget}.
+     *
+     * <p>Not the same thing as {@link #onDrag}, and a node may have both without them interacting. That one is a
+     * manipulation the pointer steers: captured on press, no threshold, ends on release, and always about a
+     * gesture that started on the node itself. This one answers about a drag the node did not start and may know
+     * nothing about — one begun elsewhere in this window, in another window of this process, or in another
+     * process entirely, since a file dragged from the desktop arrives with no press for anything to have
+     * captured.
+     *
+     * <p>The target is asked once per frame while a drag is over it, on the GUI thread, and returns a
+     * description. Nothing it describes happens until the user releases, and what happens then is exactly the
+     * {@link dev.vexelray.gui.core.drop.Drop} that was last shown.
+     */
+    public Gui onDrop(Node node, DropTarget target) {
+        input.onDrop(node.id(), java.util.Objects.requireNonNull(target, "target"));
+        return this;
+    }
+
+    /** The drop targets under a point, innermost first — the {@link DragSession.Lookup} for this tree, for a
+     * drag source driving a session against it. */
+    public java.util.List<DropTarget> dropTargetsAt(float x, float y) {
+        return input.dropTargetsAt(x, y);
     }
 
     /**

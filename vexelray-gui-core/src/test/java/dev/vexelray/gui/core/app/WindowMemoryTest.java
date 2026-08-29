@@ -224,6 +224,26 @@ class WindowMemoryTest {
         return new WindowMemory(Settings.at(dir.resolve("settings.properties")), desktop);
     }
 
+    @Test
+    void aPendingWriteIsADeadlineTheFrameLoopCanBeToldAbout(@TempDir Path dir) {
+        WindowMemory memory = new WindowMemory(Settings.at(dir.resolve("settings.properties")), ONE_SCREEN);
+        Stub w = window(120, 90, 500, 400);
+        memory.watch("main", w);
+        memory.save();
+
+        assertEquals(Long.MAX_VALUE, memory.nanosUntilSettle(),
+                "nothing pending: a loop with nothing else to do may park indefinitely");
+
+        // Move it, the way a drag does, and poll the way the frame hook does.
+        w.x = 300;
+        memory.poll();
+
+        long due = memory.nanosUntilSettle();
+        assertTrue(due > 0 && due <= 700_000_000L,
+                "a debounced write is a frame owed at a stated time, not whenever something else "
+                        + "happens to wake the loop: " + due);
+    }
+
     private static Stub window(int x, int y, int width, int height) {
         Stub s = new Stub();
         s.x = x;

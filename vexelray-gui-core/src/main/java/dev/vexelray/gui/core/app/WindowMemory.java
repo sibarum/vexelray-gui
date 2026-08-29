@@ -318,6 +318,31 @@ public final class WindowMemory {
         }
     }
 
+    /**
+     * Nanoseconds until the debounced write falls due, or {@link Long#MAX_VALUE} when nothing is
+     * pending. Zero once it is due.
+     *
+     * <p>{@link #poll} writes {@code SETTLE_NANOS} after the last change, which is a deadline in the
+     * future and therefore something a host loop has to be told about. A loop that parks when nothing
+     * is happening has no next frame to discover it on: the drag ends, the last OS event goes by, and
+     * the placement is written whenever something unrelated happens to wake the loop — or, if the
+     * window has lost focus by then, not until {@link #save()} on the way out, so a kill loses it.
+     *
+     * <p>It belongs in the frame budget, alongside every other deadline the application holds:
+     *
+     * <pre>{@code
+     * app.pacing(() -> Math.min(krono.kron().sleepTimeout().nanos(), memory.nanosUntilSettle()));
+     * }</pre>
+     *
+     * <p>Costs one frame, 700 ms after a window stops moving, and only when one has.
+     */
+    public long nanosUntilSettle() {
+        if (!dirty) {
+            return Long.MAX_VALUE;
+        }
+        return Math.max(0L, SETTLE_NANOS - (System.nanoTime() - lastChange));
+    }
+
     /** Write now, whatever the debounce thinks — the shutdown path, where there is no next frame. */
     public void save() {
         if (!dirty) {

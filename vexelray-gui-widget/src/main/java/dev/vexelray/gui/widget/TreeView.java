@@ -3,6 +3,7 @@ package dev.vexelray.gui.widget;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.drop.Drop;
+import dev.vexelray.gui.core.drop.DragState;
 import dev.vexelray.gui.core.drop.Payload;
 import dev.vexelray.gui.core.drop.PayloadType;
 import dev.vexelray.gui.core.edit.Change;
@@ -302,6 +303,12 @@ public final class TreeView<T> implements AutoCloseable {
     private volatile Reorder<T> reorder;
     /** The form this tree offers its rows as -- per instance, so two trees do not silently accept each other's. */
     private final PayloadType<T> itemType = PayloadType.of("tree-item");
+    /** How the drop target is shown; replaceable, defaulted to the theme accent at construction. */
+    private volatile DropIndicator dropIndicator;
+    /** Whether an overlay is currently painted, so clearing it is done once rather than every frame. */
+    private volatile boolean painting;
+    /** The drag subscription, opened by reorderable() and closed with the tree. */
+    private Subscription dragSub;
 
     private volatile boolean focused;
     private volatile Consumer<T> onSelect = t -> { };
@@ -351,6 +358,7 @@ public final class TreeView<T> implements AutoCloseable {
                 .padding(Length.dp(4))
                 .scroll(false, false);
         this.rows = gui.column().width(Length.FILL).height(Length.FILL);
+        this.dropIndicator = DropIndicator.of(gui.theme().color(Role.ACCENT));
 
         // Navigation is an ordered stage: moving a cursor is order-dependent under key repeat, and it is pure
         // lookups on the visible list — exactly what the GUI-thread lane is for. Registering it also makes the
@@ -438,7 +446,50 @@ public final class TreeView<T> implements AutoCloseable {
         gui.onDrop(rows, (payload, x, y) -> payload.as(itemType)
                 .map(moved -> resolvePlacement(moved, y))
                 .orElse(Drop.NONE));
+        // Drawn from the published drag rather than from the live session: the session is the framework's own
+        // state, mutated on the GUI thread inside the frame, and a widget reading it would be reading a value
+        // that changes underneath its paint. The State commits once per frame and only on change, so a pointer
+        // held still over one seam costs nothing.
+        this.dragSub = gui.drag().onCommit(v -> showDrop(v.value()));
         return this;
+    }
+
+    /**
+     * Replace how this tree shows where a drop would land. {@link DropIndicator#NONE} draws nothing; the default
+     * is {@link DropIndicator#of} in the theme's accent.
+     *
+     * <p>Where the indicator goes is not negotiable — it comes from the resolution that produced the change the
+     * drop would make, so it cannot point somewhere the drop would not happen. What it looks like is entirely
+     * this.
+     */
+    public TreeView<T> dropIndicator(DropIndicator indicator) {
+        this.dropIndicator = java.util.Objects.requireNonNull(indicator, "indicator");
+        return this;
+    }
+
+    /**
+     * Paint, move or clear the drop indicator for the drag as it now stands.
+     *
+     * <p>Clearing is guarded by whether anything is currently painted, because a drag over some other widget
+     * still commits a new state on every move — and writing "no overlay" sixty times a second onto a node that
+     * has none is a mutation per frame that changes nothing.
+     */
+    private void showDrop(DragState drag) {
+        Rect box = rows.layout().rect();
+        boolean mine = drag.accepts() && box != null && drag.y() >= box.y() && drag.y() < box.y() + box.h();
+        if (!mine) {
+            if (painting) {
+                painting = false;
+                rows.overlay(null);
+            }
+            return;
+        }
+        Rect at = drag.indicator();
+        // Into the node's own frame: a Picture is drawn in the box it is attached to, so it must not carry the
+        // absolute position — which is also what keeps it right as the container scrolls under it.
+        Rect local = new Rect(at.x() - box.x(), at.y() - box.y(), at.w(), at.h());
+        painting = true;
+        rows.overlay(dropIndicator.paint(local, drag.effect()));
     }
 
     /** The form this tree offers its rows as. Pass it to another tree's drop target to allow drags between them. */
@@ -702,6 +753,9 @@ public final class TreeView<T> implements AutoCloseable {
     @Override
     public void close() {
         focusSub.close();
+        if (dragSub != null) {
+            dragSub.close();
+        }
         find.close();   // takes the bar's own claims with it; the root's Ctrl+F goes with the root below
         synchronized (this) {
             for (Row r : rowsByItem.values()) {

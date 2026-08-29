@@ -2,6 +2,7 @@ package dev.vexelray.gui.core;
 
 import dev.vexelray.gui.core.drop.DragSession;
 import dev.vexelray.gui.core.drop.DragSource;
+import dev.vexelray.gui.core.drop.DragState;
 import dev.vexelray.gui.core.drop.DropTarget;
 import dev.vexelray.gui.core.layout.Displacement;
 import dev.vexelray.gui.core.layout.FlexLayout;
@@ -150,6 +151,10 @@ public final class Gui implements AutoCloseable {
     // Computed-layout read-model (docs/layout-read-model.md): the latest snapshot workers read via Node.layout(),
     // and the coalesced State observers subscribe to. Published after each layout pass.
     private final State<LayoutSnapshot> layoutState;
+    /** The live drag, as a coalesced State -- the read-model half of DragSession (docs/layout-read-model.md). */
+    private final State<DragState> dragState;
+    private final Committer<DragState, DragState> setDrag;
+    private DragState lastDrag = DragState.NONE;
     private final Committer<LayoutSnapshot, LayoutSnapshot> setLayout;
     private volatile LayoutSnapshot latestLayout = LayoutSnapshot.EMPTY;
     private long layoutVersion;
@@ -281,6 +286,12 @@ public final class Gui implements AutoCloseable {
         this.setLayout = lb.mutation("set", (current, next) -> next);
         this.layoutState = lb.build();
 
+        // The live drag, published the same way. Latest-wins is exactly right for it: a subscriber that missed
+        // an intermediate position has missed nothing it could still have drawn.
+        State.Builder<DragState> gb = State.of(DragState.NONE);
+        this.setDrag = gb.mutation("set", (current, next) -> next);
+        this.dragState = gb.build();
+
         Map<PropKey, Object> init = new EnumMap<>(PropKey.class);
         init.put(PropKey.DIRECTION, Direction.COLUMN);
         init.put(PropKey.WIDTH, Length.FILL);
@@ -292,6 +303,16 @@ public final class Gui implements AutoCloseable {
     /** The Atchung bus this GUI publishes mutations, events, and (via a bridge) input on. */
     public Atchung bus() {
         return bus;
+    }
+
+    /**
+     * The live drag as a bus {@code State} — subscribe with {@code gui.drag().onCommit(...)} to draw a ghost or a
+     * drop indicator. {@link DragState#NONE} whenever nothing is being dragged.
+     *
+     * <p>Published once per frame, on change only, so a still pointer over a settled indicator costs nothing.
+     */
+    public State<DragState> drag() {
+        return dragState;
     }
 
     /** The live window size as a bus {@code State} — subscribe with {@code gui.viewport().onCommit(...)}. */
@@ -1180,6 +1201,7 @@ public final class Gui implements AutoCloseable {
             if (geometryChanged || moving) {
                 publishLayout(r);
             }
+            publishDrag();
             if (moving) {
                 // Something is short of where it belongs, so the next frame has work whether or not anything
                 // else asks for one. Self-limiting: a displacement that decays to zero stops waking, and one
@@ -1461,6 +1483,29 @@ public final class Gui implements AutoCloseable {
     }
 
     /** Copy the resolved tree into an immutable {@link LayoutSnapshot} and publish it. A pure copy — no arithmetic. */
+    /**
+     * Publish the live drag, if it has changed since the last frame.
+     *
+     * <p>After layout and displacement, so the indicator a target resolved is published in the same frame the
+     * geometry it was resolved against is — a subscriber drawing from it is never a frame out of step with the
+     * rows it is drawing between.
+     *
+     * <p>On change only: a drag held still over one seam is the common case, and re-committing an identical value
+     * sixty times a second would wake every subscriber for nothing. The record's equality is what makes that
+     * comparison honest rather than a hand-written field-by-field check that forgets one.
+     */
+    private void publishDrag() {
+        DragSession live = input.dragSession();
+        DragState next = live == null
+                ? DragState.NONE
+                : new DragState(true, live.x(), live.y(), live.drop().effect(), live.drop().indicator());
+        if (next.equals(lastDrag)) {
+            return;
+        }
+        lastDrag = next;
+        dragState.commit(setDrag, next);
+    }
+
     private void publishLayout(RetainedNode root) {
         Map<Long, NodeLayout> nodes = new HashMap<>();
         collectLayout(root, nodes);

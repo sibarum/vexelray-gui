@@ -101,6 +101,19 @@ public final class Reconciler {
                 RetainedNode p = index.get(i.parent());
                 RetainedNode ch = index.get(i.child());
                 if (p != null && ch != null) {
+                    // Detach first. An insert says where the child is *now*, and a node is in exactly one place,
+                    // so leaving it in its previous parent's list would put it in two — laid out twice, drawn
+                    // twice, with `parent` naming only one of them. No caller can want that, which is why this
+                    // is a correction rather than a new behaviour to opt into.
+                    //
+                    // It is also the whole of what "move a node" needs. Before it, the only way to get a node
+                    // under a different parent was to remove it and build a new one — and Remove releases the
+                    // subtree, so that loses the handle, its registrations, and any widget state hanging off it.
+                    // A reorderable list, a reorderable tab bar and a tree that can be dragged into all needed
+                    // this one line.
+                    if (ch.parent != null) {
+                        ch.parent.children.remove(ch);
+                    }
                     ch.parent = p;
                     if (i.index() < 0 || i.index() >= p.children.size()) {
                         p.children.add(ch);

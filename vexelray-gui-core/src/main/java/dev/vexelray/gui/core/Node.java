@@ -429,8 +429,31 @@ public final class Node {
 
     // --- structure ---
 
+    /**
+     * Make {@code child} this node's last child, wherever it was before.
+     *
+     * <p>Appending a node that already has a parent <b>moves</b> it: a node is in exactly one place, and an
+     * insert says where it is now. The handle, its registrations and any widget state hanging off it all
+     * survive, which is what distinguishes moving a row from destroying it and building another that looks
+     * like it.
+     */
     public Node append(Node child) {
         sink.post(new Mutation.Insert(id, child.id, Mutation.Insert.END));
+        return this;
+    }
+
+    /**
+     * Put {@code child} at {@code index} among this node's children, moving it if it is already somewhere.
+     *
+     * <p>An index at or past the end appends, so a caller walking a list into place never has to special-case
+     * its last element. Negative is treated the same way, because the alternative — throwing — turns an
+     * off-by-one in a reorder into a crash on the handler thread rather than a row in the wrong place.
+     *
+     * <p><b>The index is where it lands, counted after the detach.</b> Moving a child from index 0 to index 2 of
+     * the same parent leaves it third of three, not fourth of a list it is still in twice.
+     */
+    public Node insert(Node child, int index) {
+        sink.post(new Mutation.Insert(id, child.id, Math.max(Mutation.Insert.END, index)));
         return this;
     }
 

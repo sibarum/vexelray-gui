@@ -161,6 +161,25 @@ or on a remote client with no fonts of its own.
 - **Undo/redo** is built on a **diff** between snapshots. **The same diff drives auto-diff spans (§4.4)** —
   one edit-diff mechanism, reused: an edit produces a diff (inserted/removed ranges); undo/redo replay it,
   and every span remaps its offsets through it.
+- The **stacks themselves are not the text field's**. `core.edit.History` is the framework's general
+  undo/redo — two stacks of `Change`, where a `Change.apply()` returns its own reverse, so a do and an undo
+  cannot drift apart. Coalescing (what continues a typing run) is asked of the change, not decided by the
+  history; "saved" is a marked **position** in the stack, so undoing away from a save is dirty and redoing
+  back to it is clean again. `TextField` keeps only the part that is about text — replaying one `TextEdit`
+  absolutely, and when two of them are the same run — and exposes its history so an application can mark a
+  save, watch `status()` or bind a menu item. An application-wide history binds through `Gui.history(...)`,
+  and nests under a focused editor's by ordinary claim precedence (`ClaimScope`).
+- **Two doors for setting the whole content, and the choice is about the past rather than the pixels.**
+  `TextField.replace(String)` (`Edit.ReplaceAll`) is an **edit**: one undo entry, spans remapped through its
+  diff, caret at the end. `TextField.text(String)` (`Edit.SetText`) is a **reset**: no diff, spans dropped,
+  history cleared. Take `replace` whenever the new content is something the user just made happen — a
+  completion, a template, a command that rewrites the line, a keypad key — and `text` only for content the
+  field has no past with, a file loaded over the top. Reaching for `text` by default is how an application
+  ends up with an undo that covers typing and stops at every command, which is hard to see because the stack
+  is not broken, it is empty. `ReplaceAll` is the **relative** form of `Replace` over the whole document —
+  no length parameter, because measuring one first is the stale read intents exist to avoid (§`Edit`) — and
+  replacing the content with what it already says is not an edit at all: no entry, and the caret stays put,
+  so a command that is a fixed point on its input costs no Ctrl+Z that appears to do nothing.
 
 ### 4.4 Spans
 A span is a `[start, end)` range over the content carrying attributes. Kinds:

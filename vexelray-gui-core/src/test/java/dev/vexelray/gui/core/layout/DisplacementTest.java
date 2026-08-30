@@ -306,21 +306,48 @@ class DisplacementTest {
         assertTrue(motion.moves.isEmpty(), "two nested scrolls still add up to no movement: " + motion.moves);
     }
 
+    /**
+     * A container sliding down the page is a move of the container and of nothing inside it — its contents kept
+     * their places within it, and {@link Displacement#displace} inherits the container's displacement down the
+     * subtree, so they are carried by it.
+     *
+     * <p>This is the double-count, and it is the one that shows up as soon as a whole page is enrolled rather
+     * than one list: a child reported as having moved gets a lag of its own <em>on top of</em> the one it
+     * inherits, so it travels twice the distance and arrives from somewhere it never was. The deeper a control
+     * sits, the further it overshoots.
+     */
     @Test
-    void aScrollerThatMovesIsStillAMove() {
+    void aContainerThatMovesCarriesItsContentsRatherThanMovingThem() {
         Recording motion = new Recording();
         RetainedNode root = node(0f, 0f);
-        RetainedNode scroller = child(root, 0f, 0f);
-        RetainedNode row = child(scroller, 0f, 40f);
+        RetainedNode card = child(root, 0f, 0f);
+        RetainedNode row = child(card, 0f, 40f);
+        RetainedNode inRow = child(row, 0f, 48f);
         Displacement.settle(root, motion);
 
-        // The scroller itself slides down the page — which carries its children with it, and is a move for
-        // every one of them, because nothing about the scroll offset changed.
-        layOut(scroller, 0f, 100f);
-        layOut(row, 0f, 140f);
+        layOut(card, 0f, 100f);       // the card slides down the page...
+        layOut(row, 0f, 140f);        // ...and everything in it keeps its place inside it
+        layOut(inRow, 0f, 148f);
         Displacement.settle(root, motion);
 
-        assertEquals(List.of(scroller.id + ":0.0,0.0->0.0,100.0", row.id + ":0.0,40.0->0.0,140.0"),
-                motion.moves, "a scroller moving is not a scroller scrolling");
+        assertEquals(List.of(card.id + ":0.0,0.0->0.0,100.0"), motion.moves,
+                "one move, at the node that actually moved");
+    }
+
+    /** And a child that moves <em>while</em> its container does reports only its own share of the distance. */
+    @Test
+    void aMoveInsideAMovingContainerReportsOnlyItsOwnShare() {
+        Recording motion = new Recording();
+        RetainedNode root = node(0f, 0f);
+        RetainedNode card = child(root, 0f, 0f);
+        RetainedNode row = child(card, 0f, 40f);
+        Displacement.settle(root, motion);
+
+        layOut(card, 0f, 100f);       // carried 100...
+        layOut(row, 0f, 165f);        // ...and moved 25 within the card on top of it
+        Displacement.settle(root, motion);
+
+        assertEquals(List.of(card.id + ":0.0,0.0->0.0,100.0", row.id + ":0.0,140.0->0.0,165.0"),
+                motion.moves, "the row travels 25, not 125");
     }
 }

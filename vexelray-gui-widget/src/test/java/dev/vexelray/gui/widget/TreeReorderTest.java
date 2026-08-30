@@ -353,4 +353,90 @@ class TreeReorderTest {
             tree.close();
         }
     }
+
+    // --- an empty branch is still a branch ------------------------------------------------------------------
+
+    /**
+     * A board: its columns are branches because of what they <em>are</em>, not because of what happens to be in
+     * them, and its cards are leaves for the same reason. {@code hasChildren} answers about content — which is
+     * what decides whether a row can be opened — and {@code acceptsChildren} about kind.
+     */
+    private static final class BoardSource implements TreeView.Source<String> {
+
+        final Map<String, List<String>> columns = new LinkedHashMap<>();
+
+        BoardSource() {
+            columns.put("Todo", new ArrayList<>(List.of("write it", "read it")));
+            columns.put("Done", new ArrayList<>());
+        }
+
+        @Override
+        public List<String> roots() {
+            return List.copyOf(columns.keySet());
+        }
+
+        @Override
+        public String label(String item) {
+            return item;
+        }
+
+        @Override
+        public boolean hasChildren(String item) {
+            return !columns.getOrDefault(item, List.of()).isEmpty();
+        }
+
+        @Override
+        public List<String> children(String item) {
+            return List.copyOf(columns.getOrDefault(item, List.of()));
+        }
+
+        @Override
+        public boolean acceptsChildren(String item) {
+            return columns.containsKey(item);
+        }
+    }
+
+    /**
+     * The bug this exists for: "can hold children" was answered with "has children", so taking the last card out
+     * of a column turned it into a leaf — two bands, no inside, nowhere to drop into. Emptying a column is done
+     * by dragging things out of it, so the tree let the user reach a state it then gave them no way to leave.
+     */
+    @Test
+    @DisplayName("an empty branch still offers somewhere to drop into")
+    void anEmptyBranchIsStillABranch() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            h.gui.dropHistory(new History());
+            TreeView<String> tree = new TreeView<>(h.gui, new BoardSource());
+            tree.reorderable(recording());
+            h.gui.root().children(tree.node());
+            tree.expand("Todo");
+            h.frame();
+
+            drag(h, midOf(tree, "write it"), midOf(tree, "Done"));
+
+            assertEquals(List.of("write it INTO Done"), moves,
+                    "the middle of an empty column is its inside, not a seam beside it");
+            tree.close();
+        }
+    }
+
+    /** And a row that genuinely cannot hold anything still divides in two, so no band of it is a lie. */
+    @Test
+    @DisplayName("a leaf that cannot hold children has no into band")
+    void aRealLeafStillDividesInTwo() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            h.gui.dropHistory(new History());
+            TreeView<String> tree = new TreeView<>(h.gui, new BoardSource());
+            tree.reorderable(recording());
+            h.gui.root().children(tree.node());
+            tree.expand("Todo");
+            h.frame();
+
+            drag(h, midOf(tree, "Done"), midOf(tree, "read it") - 2f);
+
+            assertEquals(List.of("Done BEFORE read it"), moves,
+                    "the middle of a card is the boundary between before and after it");
+            tree.close();
+        }
+    }
 }

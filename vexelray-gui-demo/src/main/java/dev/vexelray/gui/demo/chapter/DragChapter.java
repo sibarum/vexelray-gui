@@ -141,6 +141,14 @@ public final class DragChapter implements Chapter {
             public List<Task> children(Task task) {
                 return List.copyOf(task.kids);
             }
+
+            @Override
+            public boolean acceptsChildren(Task task) {
+                // Anything on this board can hold anything else — a column holds tasks, a task holds subtasks —
+                // and, crucially, that stays true of a column the user has just emptied. Answering this with
+                // hasChildren is what makes the last card out of a column the last card ever to go into it.
+                return true;
+            }
         });
         board.node().width(Length.FILL).height(Length.FILL);
         // Opened before the motion is installed, and the order is load-bearing rather than tidy. A board whose

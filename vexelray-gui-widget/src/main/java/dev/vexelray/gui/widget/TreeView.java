@@ -98,6 +98,29 @@ public final class TreeView<T> implements AutoCloseable {
 
         /** The children of {@code item}, in display order. Called once, lazily, on the handler executor. */
         List<T> children(T item);
+
+        /**
+         * Whether {@code item} could <em>hold</em> children — which is not the same question as whether it has
+         * any, and is the one a drop has to ask.
+         *
+         * <p>They were the same question until an empty branch turned up. A folder with nothing in it is a leaf
+         * by {@link #hasChildren}, so its row divided in two and offered nowhere to drop <em>into</em> — and
+         * since taking the last child out of a branch is what empties it, the tree let the user reach a state it
+         * gave them no way to leave. The last item could be dragged out of a column and never back in.
+         *
+         * <p>The default keeps the old answer, which is right for a tree whose leaves are genuinely leaves — a
+         * file cannot contain a file. Say otherwise where a branch is a branch because of what it <em>is</em>
+         * rather than because of what happens to be in it: a directory, a column on a board, a group.
+         *
+         * <p>Answering true is not a promise that any particular drop succeeds. The application still refuses
+         * individual placements through {@link Reorder}, and both answers reach the user the same way, before
+         * they let go. This one decides whether the band is offered at all; that one decides what happens in it.
+         *
+         * <p>Cheap: asked while the pointer is over the row, once per frame.
+         */
+        default boolean acceptsChildren(T item) {
+            return hasChildren(item);
+        }
     }
 
     /**
@@ -665,9 +688,11 @@ public final class TreeView<T> implements AutoCloseable {
     /** Which of a row's bands the pointer is in, and the drop that band means. */
     private Drop bandOf(T moved, Row row, Rect rect, float y) {
         float within = clamp01((y - rect.y()) / rect.h());
-        if (!row.canExpand) {
-            // A leaf has no inside, so the row divides in two and the boundary is its middle. Giving a leaf an
-            // "into" band that then always refused would be a third of the row that looks live and is not.
+        // Whether it can *hold* children, not whether it has any — asked of the source every time, because an
+        // empty branch is still a branch and a row that has just been emptied must not stop accepting drops.
+        if (!source.acceptsChildren(row.item)) {
+            // Nothing that has no inside, so the row divides in two and the boundary is its middle. Giving such
+            // a row an "into" band that then always refused would be a third of it that looks live and is not.
             return within < 0.5f
                     ? placed(moved, Placement.before(row.item), edge(rect, true))
                     : placed(moved, Placement.after(row.item), edge(rect, false));

@@ -92,8 +92,19 @@ public final class HarnessApp implements AutoCloseable {
      * is an OS event and would have woken the loop on its own.
      */
     public void click(int x, int y) {
-        gui.bus().publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, x, y, 0));
-        gui.bus().publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, x, y, 0));
+        click(x, y, MouseButton.LEFT);
+    }
+
+    /**
+     * As {@link #click(int, int)}, with the button named - {@code RIGHT} for a context menu.
+     *
+     * <p>Worth having as its own case rather than a parameter nobody passes: a menu opened by one click
+     * and chosen from by another is two interactions deep, and every step of that chain is somewhere a
+     * frame can fail to arrive.
+     */
+    public void click(int x, int y, MouseButton button) {
+        gui.bus().publish(InputTopics.INPUT, new InputEvent.ButtonPressed(button, x, y, 0));
+        gui.bus().publish(InputTopics.INPUT, new InputEvent.ButtonReleased(button, x, y, 0));
         // Input published on the bus is not an OS event, so nothing has told the loop it arrived. A real
         // click would have: this stands in for the WM_LBUTTONDOWN that wakes the loop before its own
         // dispatch ever sees the event. Everything *after* this wake is what is under test.

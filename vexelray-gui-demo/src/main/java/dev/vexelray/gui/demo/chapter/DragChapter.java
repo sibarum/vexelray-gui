@@ -5,6 +5,7 @@ import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.drop.DragState;
 import dev.vexelray.gui.core.drop.Drop;
+import dev.vexelray.gui.core.drop.DropEffect;
 import dev.vexelray.gui.core.drop.PayloadType;
 import dev.vexelray.gui.core.edit.Change;
 import dev.vexelray.gui.core.edit.History;
@@ -170,20 +171,27 @@ public final class DragChapter implements Chapter {
         // interesting half. Every point over the rows resolves to a placement, so this is asked about all of
         // them, once per frame, while the pointer moves. It decides what to draw, not what to do: the change it
         // returns is not applied until the user releases.
-        board.reorderable((moved, where) -> {
+        board.reorderable((moved, where, effect) -> {
             carrying.set(moved.name);
+            // A copy has nothing to refuse about where it came from: it is a new task, so it can land inside
+            // the one it was copied from, and landing where the original already sits is not a no-op. So the
+            // item being placed is decided first, and every question below is asked about *that* item.
+            Task placing = effect == DropEffect.COPY ? copyOf(moved) : moved;
+            if (effect != DropEffect.MOVE && effect != DropEffect.COPY) {
+                return null;   // LINK is not a thing a board has
+            }
             if (where.isRoot()) {
-                return moveTo(moved, root, root.kids.size());
+                return put(placing, root, root.kids.size());
             }
             Task reference = where.reference();
-            if (reference.isUnder(moved)) {
+            if (reference.isUnder(placing)) {
                 return null;   // into itself or its own descendant: not a failure, an answer
             }
             return switch (where.relation()) {
-                case INTO -> reference.kids.contains(moved) ? null
-                        : moveTo(moved, reference, reference.kids.size());
-                case BEFORE -> beside(moved, reference, 0);
-                case AFTER -> beside(moved, reference, 1);
+                case INTO -> reference.kids.contains(placing) ? null
+                        : put(placing, reference, reference.kids.size());
+                case BEFORE -> beside(placing, reference, 0);
+                case AFTER -> beside(placing, reference, 1);
             };
         });
 
@@ -266,7 +274,10 @@ public final class DragChapter implements Chapter {
                                 board.expand(column);
                             }
                         })),
-                Ui.prose(gui, "Press a task and drag it. A row that can hold children divides into three bands — "
+                Ui.prose(gui, "Ctrl+X, Ctrl+C and Ctrl+V move and duplicate tasks from the keyboard, and are on "
+                        + "every row's menu. A paste lands inside the selected task if it can hold children and "
+                        + "beside it otherwise, which is the same question the middle band of a row answers. "
+                        + "Press a task and drag it. A row that can hold children divides into three bands — "
                         + "an outer quarter each side for before and after, the middle half for into — and a "
                         + "leaf divides in two, because a band that always refused would be a third of a row "
                         + "that looks live and is not. Below the last row is the top level, which is the only "
@@ -329,9 +340,38 @@ public final class DragChapter implements Chapter {
     }
 
     /** Before ({@code offset} 0) or after ({@code offset} 1) a sibling. */
-    private Change beside(Task moved, Task reference, int offset) {
+    private Change beside(Task placing, Task reference, int offset) {
         Task parent = reference.parent == null ? root : reference.parent;
-        return moveTo(moved, parent, parent.kids.indexOf(reference) + offset);
+        return put(placing, parent, parent.kids.indexOf(reference) + offset);
+    }
+
+    /**
+     * Place something that is either already on the board or has just been made.
+     *
+     * <p>The two differ in exactly one way: a task already on the board can be asked to land where it already
+     * is, and that is refused; a task that does not exist yet cannot, so nothing about its destination is a
+     * no-op.
+     */
+    private Change put(Task placing, Task parent, int at) {
+        return placing.parent == null ? placing(placing, parent, at) : moveTo(placing, parent, at);
+    }
+
+    /**
+     * A new task with the same name and the same subtasks under it.
+     *
+     * <p>Deep, because a column copied without its cards is not a copy of that column — and because the model
+     * owns what duplication means, which is the reason the framework asks rather than doing it. Built during
+     * resolution, which for a drag runs once a frame: the copies for the frames the user moved through are
+     * garbage, and only the one belonging to the frame they released on is ever applied.
+     */
+    private Task copyOf(Task task) {
+        Task copy = new Task(task.name);
+        for (Task kid : task.kids) {
+            Task kidCopy = copyOf(kid);
+            kidCopy.parent = copy;
+            copy.kids.add(kidCopy);
+        }
+        return copy;
     }
 
     /** Taking a task off the board and into the archive, and putting it back exactly where it was. */

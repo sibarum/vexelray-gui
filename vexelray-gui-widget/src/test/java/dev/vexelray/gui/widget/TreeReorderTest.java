@@ -58,12 +58,13 @@ class TreeReorderTest {
 
     /** A reorder that records what it was asked to do, and refuses to drop an item onto itself. */
     private Reorder<String> recording() {
-        return (moved, where) -> {
+        return (moved, where, effect) -> {
             if (moved.equals(where.reference())) {
                 return null;
             }
             String what = moved + " " + where.relation() + " "
-                    + (where.isRoot() ? "<root>" : where.reference());
+                    + (where.isRoot() ? "<root>" : where.reference())
+                    + (effect == dev.vexelray.gui.core.drop.DropEffect.MOVE ? "" : " (" + effect + ")");
             return change(what);
         };
     }

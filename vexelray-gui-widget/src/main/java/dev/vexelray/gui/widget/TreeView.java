@@ -4,6 +4,7 @@ import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.drop.Drop;
 import dev.vexelray.gui.core.drop.DragState;
+import dev.vexelray.gui.core.drop.DropEffect;
 import dev.vexelray.gui.core.drop.Payload;
 import dev.vexelray.gui.core.drop.PayloadType;
 import dev.vexelray.gui.core.edit.Change;
@@ -11,7 +12,11 @@ import dev.vexelray.gui.core.input.ClickEvent;
 import dev.vexelray.gui.core.input.FocusEvent;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.layout.LayoutEnums;
+import dev.vexelray.gui.core.edit.History;
+import dev.vexelray.gui.core.drop.Transfer;
+import dev.vexelray.gui.core.input.ClaimScope;
 import dev.vexelray.gui.core.input.KeyEvent;
+import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.input.MenuSink;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.Rect;
@@ -20,6 +25,7 @@ import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.text.TextLayout;
 import sibarum.atchung.Subscription;
 import sibarum.tactroller.api.Key;
+import sibarum.tactroller.api.Modifier;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -284,6 +290,10 @@ public final class TreeView<T> implements AutoCloseable {
     private static final String GLYPH_EXPANDED = "−";   // MINUS SIGN, full-width unlike hyphen
     private static final String GLYPH_LEAF = " ";
 
+    private static final Shortcut CUT = Shortcut.of(Key.X, Modifier.CONTROL);
+    private static final Shortcut COPY = Shortcut.of(Key.C, Modifier.CONTROL);
+    private static final Shortcut PASTE = Shortcut.of(Key.V, Modifier.CONTROL);
+
     /** One item's presence in the tree: its row, its (possibly unmaterialised) children container, its state. */
     private final class Row {
         final T item;
@@ -522,6 +532,9 @@ public final class TreeView<T> implements AutoCloseable {
     /** The two the tree ships. Public handles, because their availability is the application's to retune. */
     private final Action<T> expandAction;
     private final Action<T> collapseAction;
+    private final Action<T> cutAction;
+    private final Action<T> copyAction;
+    private final Action<T> pasteAction;
 
     /** What the application added, in the order it added it. Read on every right click, written at build time. */
     private final List<Action<T>> extraActions = new CopyOnWriteArrayList<>();
@@ -543,6 +556,21 @@ public final class TreeView<T> implements AutoCloseable {
         // the application can replace, and a reason it is stated as a predicate rather than baked into the walk.
         this.expandAction = Action.<T>of(GLYPH_COLLAPSED, "Expand", this::expandDeep).enabledWhen(this::canOpen);
         this.collapseAction = Action.<T>of(GLYPH_EXPANDED, "Collapse", this::collapseDeep).enabledWhen(this::isOpen);
+        // The transfer commands, on the menu as well as on the chords — a cut you can only reach by knowing the
+        // chord is half a feature, and the menu is where a user finds out that a tree can do this at all.
+        //
+        // Shown only where the tree accepts transfers, because reorderable() is what makes any of them mean
+        // anything; hidden rather than greyed, since a tree that will never take a paste is not a tree where
+        // Paste "does not apply right now".
+        this.cutAction = Action.<T>of(null, "Cut", (item, job) -> take(item, DropEffect.MOVE))
+                .shownWhen(item -> reorder != null);
+        this.copyAction = Action.<T>of(null, "Copy", (item, job) -> take(item, DropEffect.COPY))
+                .shownWhen(item -> reorder != null);
+        // Greyed rather than hidden, because this one genuinely is "not right now": there is nothing in hand,
+        // and the entry disappearing would leave the user wondering where the command went between two clicks.
+        this.pasteAction = Action.<T>of(null, "Paste", (item, job) -> paste(item))
+                .shownWhen(item -> reorder != null)
+                .enabledWhen(item -> gui.transfer().offers(itemType));
         // The frame and the scroller are two boxes, not one. The frame carries the tree's own look and holds the
         // chrome; the rows go inside a scroller that fills what is left of it. One box could not do both: the bar
         // would be content, and content scrolls.
@@ -561,6 +589,11 @@ public final class TreeView<T> implements AutoCloseable {
         // lookups on the visible list — exactly what the GUI-thread lane is for. Registering it also makes the
         // tree focusable, which is the single tab stop.
         gui.onKeyUi(this.root, this::onKey);
+        // Cut, copy and paste, claimed FOCUSED so they belong to the tree only while it holds focus -- a text
+        // field in the same window keeps its own, and neither has to know about the other.
+        gui.claim(this.root, CUT, ClaimScope.FOCUSED, () -> take(selectedItem(), DropEffect.MOVE));
+        gui.claim(this.root, COPY, ClaimScope.FOCUSED, () -> take(selectedItem(), DropEffect.COPY));
+        gui.claim(this.root, PASTE, ClaimScope.FOCUSED, () -> paste(selectedItem()));
         this.focusSub = gui.bus().subscribe(gui.focusEvents(), this::onFocus);
 
         // The find bar, built shut, above the scroller rather than inside it: it takes its strip from the rows'
@@ -885,12 +918,17 @@ public final class TreeView<T> implements AutoCloseable {
 
     /** Ask the application what this placement means; a refusal is an ordinary answer and becomes NONE. */
     private Drop placed(T moved, Placement<T> where, Rect indicator) {
-        Reorder<T> r = reorder;
-        if (r == null) {
-            return Drop.NONE;
-        }
-        Change change = r.move(moved, where);
+        // MOVE, because a pointer drag has no way to say otherwise yet: the gesture carries no modifier state,
+        // so there is nothing for a Ctrl-drag to be recognised from. When it does, this is the one line that
+        // changes — the application side already answers COPY, because a paste asks it the same question.
+        Change change = resolve(moved, where, DropEffect.MOVE);
         return change == null ? Drop.NONE : Drop.move(indicator, change);
+    }
+
+    /** Ask the application what {@code effect} at {@code where} means; a refusal is an ordinary null. */
+    private Change resolve(T moved, Placement<T> where, DropEffect effect) {
+        Reorder<T> r = reorder;
+        return r == null ? null : r.move(moved, where, effect);
     }
 
     /** A seam line at the top or bottom edge of a row, thin enough to read as "between" rather than "on". */
@@ -1431,6 +1469,10 @@ public final class TreeView<T> implements AutoCloseable {
         // Unconditional: a rule that would open the menu or double another is dropped by the sink, so this needs
         // no test for whether anything above it or below it survived its own predicates.
         menu.separator();
+        offer(cutAction, item, menu);
+        offer(copyAction, item, menu);
+        offer(pasteAction, item, menu);
+        menu.separator();
         for (Action<T> action : extraActions) {
             offer(action, item, menu);
         }
@@ -1852,6 +1894,64 @@ public final class TreeView<T> implements AutoCloseable {
     }
 
     // --- styling ---
+
+    /**
+     * Take the selected row in hand, to be pasted somewhere else.
+     *
+     * <p>Nothing is changed here and nothing is removed: a cut is an <em>intention</em>, and the model is not
+     * touched until the paste lands. That is what makes a cut that is never pasted cost nothing, and a cut
+     * followed by Escape or by another cut a non-event — rather than a hole in the tree waiting to be filled.
+     */
+    private void take(T item, DropEffect effect) {
+        if (item == null || reorder == null) {
+            return;   // nothing to take, or a tree that does not accept transfers at all
+        }
+        gui.transfer(new Transfer(Payload.of(itemType, item), effect));
+    }
+
+    /** The selected item, or null -- what a chord acts on, where a menu acts on the row it was opened over. */
+    private synchronized T selectedItem() {
+        return selected == null ? null : selected.item;
+    }
+
+    /**
+     * Put what is held at the selection: <em>into</em> the selected row if it can hold children, otherwise after
+     * it, and into the root if nothing is selected.
+     *
+     * <p>Into-if-it-can-hold is the rule every file manager uses, and it is expressible here only because the
+     * tree already had to ask that question for drops. A paste onto a folder means "in this folder"; a paste
+     * onto a file means "beside this file"; and the two are told apart by the same answer the middle band of a
+     * row is offered on.
+     *
+     * <p>The application refuses through {@link Reorder} exactly as it does for a drop, so a paste that cannot
+     * happen does nothing rather than doing something unexpected — and a copy of an item a model cannot
+     * duplicate is refused rather than quietly turning into a move.
+     */
+    private void paste(T target) {
+        Transfer held = gui.transfer();
+        if (!held.offers(itemType)) {
+            return;
+        }
+        T moved = held.payload().as(itemType).orElse(null);
+        History history = gui.dropHistory();
+        if (moved == null || history == null) {
+            // No history is the same refusal a drop makes: a transfer the user could not take back would be the
+            // one edit in the framework with no way out, and silently so.
+            return;
+        }
+        Placement<T> where = target == null ? Placement.intoRoot()
+                : source.acceptsChildren(target) ? Placement.into(target) : Placement.after(target);
+        Change change = resolve(moved, where, held.effect());
+        if (change == null) {
+            return;
+        }
+        history.perform(change);
+        if (held.effect() == DropEffect.MOVE) {
+            // A cut lands once. A copy stays in hand, because pasting the same thing into three places is the
+            // reason copy exists and making the user press Ctrl+C between each would be answering that with no.
+            gui.transfer(Transfer.NONE);
+        }
+    }
 
     /** Space on the selected row: the same command the box's click runs, reached from the keyboard. */
     private void toggleChecked() {

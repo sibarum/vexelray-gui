@@ -54,7 +54,7 @@ class TreeDropIndicatorTest {
 
     private TreeView<String> tree(HeadlessGui h) {
         TreeView<String> tree = new TreeView<>(h.gui, new MapSource());
-        tree.reorderable((moved, where) -> moved.equals(where.reference()) ? null : () -> null);
+        tree.reorderable((moved, where, effect) -> moved.equals(where.reference()) ? null : () -> null);
         tree.dropIndicator((where, effect) -> {
             painted.add(where);
             return Picture.of(new Picture.Fill(where.x(), where.y(), where.w(), where.h(), 0, 0,

@@ -3,6 +3,7 @@ package dev.vexelray.gui.core;
 import dev.vexelray.gui.core.drop.DragSession;
 import dev.vexelray.gui.core.drop.DragSource;
 import dev.vexelray.gui.core.drop.DragState;
+import dev.vexelray.gui.core.drop.Transfer;
 import dev.vexelray.gui.core.drop.DropTarget;
 import dev.vexelray.gui.core.layout.Displacement;
 import dev.vexelray.gui.core.layout.FlexLayout;
@@ -129,6 +130,10 @@ public final class Gui implements AutoCloseable {
     private final Committer<Float, Float> setZoom;
     /** Where nodes are drawn relative to where layout put them; NONE until a motion source is attached. */
     private volatile LayoutMotion motion = LayoutMotion.NONE;
+    /** What is held for a paste. See {@link #transfer()}. */
+    private volatile dev.vexelray.gui.core.drop.Transfer transfer = dev.vexelray.gui.core.drop.Transfer.NONE;
+    /** Where drops and pastes record; the same stack, because they are the same change made two ways. */
+    private volatile History transferHistory;
     private float lastZoom = -1f;
     // Display density (points -> pixels), the other ambient factor every Length resolves through. Separate from
     // zoom because they answer different questions: density keeps a UI the same *physical* size on a denser
@@ -633,6 +638,39 @@ public final class Gui implements AutoCloseable {
      */
     public Gui dropHistory(History history) {
         input.dropHistory(java.util.Objects.requireNonNull(history, "history"));
+        this.transferHistory = history;
+        return this;
+    }
+
+    /**
+     * Where a transfer records its change — the history {@link #dropHistory} set, or null.
+     *
+     * <p>Readable because a drop is not the only way to complete a transfer: a paste makes the same change, from
+     * the keyboard, and must land in the same stack. Two histories would mean Ctrl+Z undoing whichever kind of
+     * transfer the user happened to do last rather than the last thing they did.
+     */
+    public History dropHistory() {
+        return transferHistory;
+    }
+
+    /**
+     * What is held for a paste, or {@link Transfer#NONE}.
+     *
+     * <p>One per {@link Gui}, so two trees in a window can exchange rows and a window can paste what another of
+     * its panes cut. It is deliberately <em>not</em> the OS clipboard: that one carries text (see
+     * {@link #clipboard}), and a typed payload has nowhere to ride across a process boundary.
+     *
+     * <p>Not a {@code State}, unlike the drag: this changes when a command puts something in it and at no other
+     * time, so there is nothing to observe per frame. A menu that wants to grey its Paste entry reads it at the
+     * moment the menu is built, which is the moment the answer matters.
+     */
+    public Transfer transfer() {
+        return transfer;
+    }
+
+    /** Put something in hand for a paste, or {@link Transfer#NONE} to drop what is held. Safe from any thread. */
+    public Gui transfer(Transfer held) {
+        this.transfer = held == null ? Transfer.NONE : held;
         return this;
     }
 

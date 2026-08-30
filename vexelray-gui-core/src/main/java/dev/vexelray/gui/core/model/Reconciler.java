@@ -48,6 +48,14 @@ public final class Reconciler {
     }
 
     /**
+     * The node with this id, or {@code null} if nothing in the tree has it — a read of the index that removal
+     * and reparenting already maintain. GUI thread, like every other read of the model.
+     */
+    public RetainedNode node(long id) {
+        return index.get(id);
+    }
+
+    /**
      * Take the reveal requests made since the last call, emptying them — one-shot, like the ask itself. A request
      * for a node that has since left the tree comes back too; the caller sees it is detached and skips it, which
      * is cheaper than pruning this list on every removal for a case that is one frame wide.

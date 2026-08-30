@@ -5,15 +5,18 @@ import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.edit.Change;
 import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.input.ClaimScope;
+import dev.vexelray.gui.core.input.CursorShape;
 import dev.vexelray.gui.core.input.DragEvent;
 import dev.vexelray.gui.core.input.FocusEvent;
 import dev.vexelray.gui.core.input.KeyEvent;
 import dev.vexelray.gui.core.input.MenuSink;
 import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.nav.Address;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.text.Document;
 import dev.vexelray.gui.core.text.Edit;
+import dev.vexelray.gui.core.text.Link;
 import dev.vexelray.gui.core.text.Span;
 import dev.vexelray.gui.core.text.TextEdit;
 import dev.vexelray.gui.core.text.TextMetrics;
@@ -82,6 +85,8 @@ public final class TextField implements AutoCloseable {
     private final Committer<Document, Edit> commit;
 
     private final Subscription focusSub;
+    /** Watches the held-modifier state, which is what makes a link show itself (see {@link #links}). */
+    private final Subscription modifierSub;
     private final CaretBlink.Registration blink;
 
     /**
@@ -109,6 +114,19 @@ public final class TextField implements AutoCloseable {
     private volatile String findQuery = "";
     private volatile List<Span> findSpans = List.of();
     private volatile Matches findCache;
+
+    /**
+     * The hyperlinks in this text, and whether the modifier that arms them is down.
+     *
+     * <p>Widget-side rather than in the document, and deliberately: a link is a statement about what a piece of
+     * text <em>is for</em>, made by whoever built the view — a compiler error pointing at a line, a cross
+     * reference, a landmark in another window — and the document is the text. The underline is not stored at all;
+     * it is derived from these two, in {@link #mirror()}, on every mirror, which is the only way a decoration
+     * that exists exactly while a key is held can work.
+     */
+    private volatile List<Link> links = List.of();
+    private volatile boolean linksArmed;
+    private volatile Consumer<Link> onLink;
 
     private volatile boolean multiline;
     private volatile boolean readOnly;
@@ -152,6 +170,13 @@ public final class TextField implements AutoCloseable {
         // that answers the keyboard and not the mouse, which is not a decision an application should have to make.
         ContextMenu.presentOn(gui);
         gui.onContextMenu(node, this::defaultMenu);
+
+        // Links are armed by a held modifier, and a held modifier is a condition rather than an event, so this
+        // watches the state rather than the key edges. It is also why this is the only place the field asks
+        // about the keyboard outside its own focus: a document shows its links whether or not it is the focused
+        // field, exactly as every editor and browser does — you hold Ctrl and look.
+        this.onLink = target -> gui.navigate(Address.parse(target.target()));
+        this.modifierSub = gui.modifiers().onCommit(held -> armLinks(held.value()));
 
         this.focusSub = gui.bus().subscribe(gui.focusEvents(), this::onFocus);
         this.blink = CaretBlink.register(gui, node, () -> focused);
@@ -363,6 +388,7 @@ public final class TextField implements AutoCloseable {
     @Override
     public void close() {
         focusSub.close();
+        modifierSub.close();
         blink.close();
         FindBar bar = find;
         if (bar != null) {
@@ -401,6 +427,130 @@ public final class TextField implements AutoCloseable {
         return document.value().spans();
     }
 
+    // --- hyperlinks ---
+
+    /**
+     * Replace this field's hyperlinks. A link is a range of the text that stands for something else
+     * ({@link Link}); hold Ctrl (Command on macOS) and every one of them underlines itself, Ctrl+click follows
+     * the one under the pointer, and Ctrl+Enter follows the one under the caret.
+     *
+     * <p>They remap through edits like spans do, so a field whose text is being typed in keeps its links attached
+     * to their words with nothing asked of the caller.
+     *
+     * <p><b>Holding a modifier is the whole of the affordance, and that is on purpose.</b> Nothing appears,
+     * moves, or grows under the pointer as it passes over a link, because a control that changes shape when the
+     * pointer is merely near it moves the target out from under the click that was already on its way. A held key
+     * is a thing the user chose to do, and it reveals every link at once rather than the one the pointer happened
+     * to find.
+     */
+    public TextField links(List<Link> newLinks) {
+        this.links = newLinks == null || newLinks.isEmpty() ? List.of() : List.copyOf(newLinks);
+        applyLinkCursor();
+        mirror();
+        return this;
+    }
+
+    /** A snapshot of this field's links, in the order they were given. */
+    public List<Link> links() {
+        return links;
+    }
+
+    /** Add one link, keeping the rest. */
+    public TextField addLink(Link link) {
+        if (link != null) {
+            List<Link> next = new ArrayList<>(links);
+            next.add(link);
+            links(next);
+        }
+        return this;
+    }
+
+    /** Remove every link. */
+    public TextField clearLinks() {
+        return links(List.of());
+    }
+
+    /** The link covering {@code offset}, or null. The first one that covers it, if two overlap. */
+    public Link linkAt(int offset) {
+        for (Link l : links) {
+            if (l.covers(offset)) {
+                return l;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * What following a link does. The default navigates: the target is read as an
+     * {@link Address} and {@code Gui.navigate} takes the user there, so a link to
+     * {@code "prefs/theme.accent"} opens the preferences window, selects the tab the swatch is on, scrolls to it
+     * and focuses it — the whole of part one, reached from a word in a document.
+     *
+     * <p>Replace it for targets that are not places in this application: a URL to hand to the OS, a file to open,
+     * an identifier in the application's own model. Nothing here interprets a target beyond handing it on, which
+     * is what keeps a document unable to make the framework do anything by containing the right string.
+     *
+     * <p>Runs on the handler executor, like every other application callback here.
+     */
+    public TextField onLinkActivate(Consumer<Link> handler) {
+        this.onLink = handler == null ? link -> { } : handler;
+        return this;
+    }
+
+    /** The modifier state changed: arm or disarm the links, and redraw them if that changed anything. */
+    private void armLinks(java.util.Set<Modifier> held) {
+        boolean armed = held.contains(Modifier.CONTROL) || held.contains(Modifier.SUPER);
+        if (armed == linksArmed) {
+            return;
+        }
+        linksArmed = armed;
+        applyLinkCursor();
+        mirror();   // a mirror, not a change: the text is the same text, it is only drawn differently
+    }
+
+    /**
+     * The pointer over an armed field with links in it is over something clickable, so it says so. Cleared back
+     * to nothing (the I-beam the field gets for being editable) the moment the modifier is released.
+     */
+    private void applyLinkCursor() {
+        gui.cursor(node, linksArmed && !links.isEmpty() ? CursorShape.POINTER : null);
+    }
+
+    /** Follow {@code link}, on the handler executor. */
+    private void activate(Link link) {
+        Consumer<Link> handler = onLink;
+        gui.handlers().execute(() -> handler.accept(link));
+    }
+
+    /** The underline the armed links are drawn with — one span each, derived fresh on every mirror. */
+    private List<Span> underlineSpans() {
+        List<Link> current = links;
+        if (current.isEmpty()) {
+            return List.of();
+        }
+        List<Span> out = new ArrayList<>(current.size());
+        for (Link l : current) {
+            out.add(l.underline());
+        }
+        return out;
+    }
+
+    /** Remap the links through an edit that has just been applied, dropping any whose text was deleted. */
+    private void remapLinks(TextEdit diff) {
+        List<Link> current = links;
+        if (current.isEmpty()) {
+            return;
+        }
+        List<Link> next = new ArrayList<>(current.size());
+        for (Link l : current) {
+            Link moved = l.remap(diff);
+            if (moved != null) {
+                next.add(moved);
+            }
+        }
+        links = List.copyOf(next);
+    }
+
     // --- ordered stages: these run on the GUI thread during the input drain, in arrival order ---
 
     private void onCodePoint(int cp) {
@@ -426,6 +576,15 @@ public final class TextField implements AutoCloseable {
                 case V -> { paste(); return; }
                 case Z -> { if (shift) { redo(); } else { undo(); } return; } // Ctrl+Z undo, Ctrl+Shift+Z redo
                 case Y -> { redo(); return; }                                  // Ctrl+Y redo
+                // Ctrl+Enter follows the link the caret is in. Without it links would be a mouse-only feature,
+                // which is not a feature — it is a part of the document only some users can reach.
+                case ENTER -> {
+                    Link hit = linkAt(document.value().caret());
+                    if (hit != null) {
+                        activate(hit);
+                        return;
+                    }
+                }
                 default -> { /* Ctrl+other falls through to motion (word-jump) below */ }
             }
         }
@@ -470,6 +629,15 @@ public final class TextField implements AutoCloseable {
             return; // not laid out yet, or no glyph metrics available
         }
         int offset = m.offsetAt(e.x(), e.y());
+        if (linksArmed && e.phase() == DragEvent.Phase.START) {
+            Link hit = linkAt(offset);
+            if (hit != null) {
+                // Following a link is not a text gesture: the caret does not move and no selection starts, so
+                // going somewhere and coming back leaves the document exactly as it was found.
+                activate(hit);
+                return;
+            }
+        }
         switch (e.phase()) {
             case START -> moveCaret(offset, false);  // press positions the caret, collapsing any selection
             case MOVE -> moveCaret(offset, true);    // drag extends the selection to the pointer
@@ -820,6 +988,7 @@ public final class TextField implements AutoCloseable {
             }
             TextEdit diff = after.lastEdit();
             if (diff != null) {
+                remapLinks(diff);   // links follow their text, exactly as the document's own spans do
                 history.record(new TextChange(diff.inverse()));   // the way back from what was just applied
             } else {
                 history.barrier();   // a caret/selection move ends the current typing run
@@ -953,13 +1122,19 @@ public final class TextField implements AutoCloseable {
         node.caret(focused ? d.caret() : -1);
         node.selection(d.anchor(), d.caret());
         List<Span> washes = findSpans;
-        if (washes.isEmpty()) {
+        // The link underlines are derived here and nowhere else: they exist for exactly as long as the modifier
+        // is held, so storing them would mean a link that could not stop being underlined. Added on top of the
+        // document's own spans for the same reason the find wash is — the document says how its text is
+        // formatted, and this is the widget saying what is currently reachable.
+        List<Span> underlines = linksArmed ? underlineSpans() : List.of();
+        if (washes.isEmpty() && underlines.isEmpty()) {
             node.spans(d.spans());
         } else {
-            List<Span> both = new ArrayList<>(d.spans().size() + washes.size());
-            both.addAll(d.spans());
-            both.addAll(washes);
-            node.spans(both);
+            List<Span> all = new ArrayList<>(d.spans().size() + washes.size() + underlines.size());
+            all.addAll(d.spans());
+            all.addAll(washes);
+            all.addAll(underlines);
+            node.spans(all);
         }
         blink.wake();
         return d;

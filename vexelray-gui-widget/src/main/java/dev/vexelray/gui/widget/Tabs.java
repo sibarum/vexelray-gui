@@ -350,6 +350,18 @@ public final class Tabs {
             contextMenu.build(at, menu);
         });
 
+        // A hidden page is the plainest kind of concealment there is, so the panel says how to undo it: anything
+        // navigated to inside this body selects the tab it is on, first. Index at reveal time, like every other
+        // closure here — the page can have been dragged elsewhere in the bar since it was added.
+        gui.reveals(body, descendant -> {
+            int at = bodies.indexOf(body);
+            if (at < 0 || at == selected) {
+                return false;   // already showing, or no longer a page of this panel: nothing to reveal
+            }
+            select(at);
+            return true;
+        });
+
         bar.append(header);
         pages.append(body.width(Length.FILL).height(Length.FILL).visible(false));
         headers.add(header);

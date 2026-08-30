@@ -165,6 +165,14 @@ public final class InputDispatcher {
 
     // Keyboard/focus state (GUI-thread only, mutated during dispatch).
     private final EnumSet<Modifier> heldMods = EnumSet.noneOf(Modifier.class);
+    /**
+     * Told whenever the held set changes (see {@code Gui.modifiers}). Modifiers were until now a fact this class
+     * kept to itself — a modifier press returns here without routing anywhere, because it is not a command — and
+     * that leaves anything whose <em>appearance</em> depends on a held key with nowhere to read it. Holding Ctrl
+     * to see which words in a document are links is exactly that: no command, no click, nothing routed, and the
+     * whole of what has to happen.
+     */
+    private Consumer<Set<Modifier>> modifierSink = m -> { };
     private long focusedId = -1;
     private Topic<FocusEvent> focusTopic;
     private Topic<KeyRouted> keyRoutedTopic;
@@ -845,13 +853,27 @@ public final class InputDispatcher {
             case InputEvent.KeyReleased k -> {
                 Modifier mod = modifierOf(k.key());
                 if (mod != null) {
-                    heldMods.remove(mod);
+                    if (heldMods.remove(mod)) {
+                        reportModifiers();
+                    }
                 } else if (k.key() == repeatKey) {
                     repeatKey = null; // stop auto-repeat when the held key is lifted
                 }
             }
+            case InputEvent.FocusChanged f -> {
+                // A window that loses focus never sees the release of anything held over it: alt-tab away with
+                // Ctrl down and the key comes up in somebody else's window. Left as it was, the set says Ctrl is
+                // held for the rest of the session — and anything drawn from it (a document showing its links)
+                // stays stuck in that state with no way for the user to clear it. Losing focus clears the held
+                // set for the same reason it stops a repeat: what was held is no longer this window's business.
+                if (!f.focused() && !heldMods.isEmpty()) {
+                    heldMods.clear();
+                    repeatKey = null;
+                    reportModifiers();
+                }
+            }
             default -> {
-                // Other events (focus-change edges from tactroller) are not routed here.
+                // Other device edges are not routed here.
             }
         }
     }
@@ -862,7 +884,9 @@ public final class InputDispatcher {
         }
         Modifier mod = modifierOf(key);
         if (mod != null) {
-            heldMods.add(mod);
+            if (heldMods.add(mod)) {
+                reportModifiers();
+            }
             return; // a modifier keypress is not itself a chord or a command
         }
         KeyEvent e = new KeyEvent(key, Set.copyOf(heldMods));
@@ -963,6 +987,20 @@ public final class InputDispatcher {
             handlerExecutor.execute(() -> handler.accept(e));
         }
         repeatNextNanos = now + REPEAT_INTERVAL_NANOS; // frame-rate-bounded; no burst catch-up
+    }
+
+    /** Install the sink told when the held-modifier set changes. */
+    public void onModifiers(Consumer<Set<Modifier>> sink) {
+        this.modifierSink = sink == null ? m -> { } : sink;
+    }
+
+    /** The modifiers held right now — a snapshot, taken on the dispatch thread. */
+    public Set<Modifier> modifiers() {
+        return Set.copyOf(heldMods);
+    }
+
+    private void reportModifiers() {
+        modifierSink.accept(Set.copyOf(heldMods));
     }
 
     private static Modifier modifierOf(Key key) {
@@ -1285,12 +1323,12 @@ public final class InputDispatcher {
                 break; // consumed; bubbling stops at the first handler
             }
         }
-        bus.publish(clicks, new ClickEvent(target.id, MouseButton.LEFT, x, y));
+        bus.publish(clicks, new ClickEvent(target.id, MouseButton.LEFT, x, y, heldMods));
     }
 
     /** The right-button twin of {@link #fireClick}: bubble to the first context handler, then publish. */
     private void fireContextClick(RetainedNode target, float x, float y) {
-        ClickEvent e = new ClickEvent(target.id, MouseButton.RIGHT, x, y);
+        ClickEvent e = new ClickEvent(target.id, MouseButton.RIGHT, x, y, heldMods);
         for (RetainedNode n = target; n != null; n = n.parent) {
             Consumer<ClickEvent> handler = contextHandlers.get(n.id);
             if (handler != null) {

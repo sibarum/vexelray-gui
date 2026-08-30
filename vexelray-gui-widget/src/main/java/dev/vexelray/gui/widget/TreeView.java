@@ -400,6 +400,17 @@ public final class TreeView<T> implements AutoCloseable {
                     .children(spacer, disclosure, checkBox, label);
             this.kidsBox = gui.column().width(Length.FILL).visible(false).scroll(false, false);
             this.entry = gui.column().width(Length.FILL).scroll(false, false).children(rowNode, kidsBox);
+            // How a collapsed branch un-hides something inside it, for navigation (Gui.reveals). Only a branch
+            // that has been open once has rows in here at all — a branch never expanded has no nodes under it,
+            // so there is nothing there for a landmark to name and nothing for this to reveal. Expanding walks
+            // outward-in, so an ancestor's own reveal has already run by the time this one is asked.
+            gui.reveals(kidsBox, descendant -> {
+                if (expanded) {
+                    return false;
+                }
+                expand(item);
+                return true;
+            });
 
             // A row click selects; a click on the disclosure itself also toggles. Both arrive on the handler
             // executor and both funnel into synchronized transitions, so a click and a keystroke can interleave

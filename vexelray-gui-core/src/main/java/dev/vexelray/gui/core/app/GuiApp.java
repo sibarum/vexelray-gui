@@ -115,6 +115,12 @@ public final class GuiApp implements AutoCloseable {
     /** One scrim node per blocked tree, created on first use and hidden between modals. */
     private final java.util.Map<Gui, ModalScrim> scrims = new java.util.IdentityHashMap<>();
 
+    /** The name the main window answers to in an {@link dev.vexelray.gui.core.nav.Address}. */
+    private volatile String mainKey = "main";
+
+    /** Listening for navigation requests, so a destination in a closed window can still be reached. */
+    private sibarum.atchung.Subscription navSub;
+
     public GuiApp(String title, int width, int height) {
         this(WindowConfig.of(title, width, height));
     }
@@ -263,10 +269,13 @@ public final class GuiApp implements AutoCloseable {
      * to be saved again. It also carries {@link NativeWindow#requestClose()}, which is how a popup closes itself
      * — through the ordinary route, so the loop tears it down on its own terms and {@code onClosed} still runs.
      *
-     * <p>The config's {@code owner} is ignored: a popup is owned by the main window by definition
-     * ({@link Standing#SATELLITE}), and this substitutes the right handle when the window is created. A second
-     * window that should <em>not</em> sit above the main one is not a popup — open it through
-     * {@link #requestWindow} or {@link #window}, which stand beside it. Never call {@link NativeWindow#close()}
+     * <p>The config's {@code owner} is ignored: a popup is an owned window by definition
+     * ({@link Standing#SATELLITE}), and this substitutes the right handle when the window is created. That
+     * handle is the main window's. A popup belonging to some <em>other</em> window of this application — a
+     * second window's own tool window — has to say so, or it joins the main window's owner group and leaves the
+     * window it belongs to underneath: open it through {@link #requestWindow} with
+     * {@link WindowSpec#belongingTo}. A second window that should not sit above anything is not a popup at all —
+     * {@link #requestWindow} or {@link #window} stand beside. Never call {@link NativeWindow#close()}
      * on the window — that destroys OS resources the loop is still presenting to.
      */
     public void requestPopup(WindowConfig config, Gui popupGui,
@@ -315,7 +324,49 @@ public final class GuiApp implements AutoCloseable {
         if (key == null || key.isBlank()) {
             throw new IllegalArgumentException("window key must not be blank");
         }
-        return named.computeIfAbsent(key, k -> new AppWindow(k, this, spec.get()));
+        return named.computeIfAbsent(key, k -> {
+            WindowSpec built = spec.get();
+            // The tree learns the name its window is known by, which is what lets an Address that names a window
+            // be told apart from one meant for somebody else on the same bus.
+            built.gui().windowKey(k);
+            return new AppWindow(k, this, built);
+        });
+    }
+
+    /**
+     * The name the main window answers to when an {@link dev.vexelray.gui.core.nav.Address} names a window —
+     * {@code "main"} unless this says otherwise. The other windows are named where they are registered
+     * ({@link #window(String, java.util.function.Supplier)}); the main one has nowhere else to say it.
+     */
+    public GuiApp mainWindow(String key) {
+        this.mainKey = key == null || key.isBlank() ? "main" : key;
+        if (mainGui != null) {
+            mainGui.windowKey(mainKey);
+        }
+        return this;
+    }
+
+    /**
+     * Carry out the window half of a navigation request: open and raise the window that owns the destination.
+     *
+     * <p>The split is deliberate and it is the whole reason this is here rather than in {@link Gui}. A tree can
+     * reveal, scroll and focus, and does — but it cannot make its own window exist, and a link to a landmark in
+     * a preferences window that is currently closed has to open it. So: <b>the application opens windows, the
+     * tree navigates itself.</b> Both halves see the same published {@link dev.vexelray.gui.core.nav.Address},
+     * neither has to tell the other it is done, and a window already showing is simply raised — {@code show()}
+     * being idempotent is what makes that safe to do on every request.
+     *
+     * <p>An address that names no window asks nothing of this: it means "wherever this reaches", and whichever
+     * open tree has the landmark answers it.
+     */
+    private void route(dev.vexelray.gui.core.nav.Address address) {
+        if (!address.windowNamed() || address.window().equals(mainKey)) {
+            return;   // the main window is already open; nothing to do but let its tree walk
+        }
+        AppWindow target = named.get(address.window());
+        if (target != null) {
+            target.show();
+        }
     }
 
     /** The window known as {@code key}, if that name has been registered. */
@@ -433,7 +484,7 @@ public final class GuiApp implements AutoCloseable {
         // its owner arrives back here as its own pump reporting closed, the same path as its close button.
         wireWake(spec.gui());
         GuiWindow w = new GuiWindow(platform, instance, device, atlas, noImage, text, measurer, spec.gui(),
-                spec.standing().place(spec.config(), main.osHandle()));
+                spec.standing().place(spec.config(), anchorHandle(spec)));
         WindowInput input = inputs.attach(w.window, spec.gui());
         OpenWindow entry = new OpenWindow(w, input, spec, owner);
         open.add(entry);
@@ -444,6 +495,20 @@ public final class GuiApp implements AutoCloseable {
             applyScrim(spec.gui(), w.window != modal);
         }
         return entry;
+    }
+
+    /**
+     * The OS handle a new window's {@link Standing} is measured from: the anchor the spec named, or the main
+     * window when it named none.
+     *
+     * <p>The fallback also covers an anchor that is not open. That is not a failure to report: ownership is
+     * fixed at creation and there is nothing to be owned by, so the choice is between an unanchored window and
+     * no window, and a tool window is normally opened from the window it belongs to anyway.
+     */
+    private long anchorHandle(WindowSpec spec) {
+        AppWindow anchor = spec.anchor();
+        NativeWindow window = anchor == null ? null : anchor.window();
+        return window == null ? main.osHandle() : window.osHandle();
     }
 
     /**
@@ -634,6 +699,11 @@ public final class GuiApp implements AutoCloseable {
     public void run(Gui gui, int maxFrames, Runnable beforeFrame) {
         main.gui = gui;
         this.mainGui = gui;
+        gui.windowKey(mainKey);
+        // Navigation requests reach the loop here, on the main thread, because the only thing this half of
+        // navigation does is open windows — and creating a window belongs to the main thread on every platform.
+        this.navSub = gui.bus().subscribeAsync(
+                dev.vexelray.gui.core.nav.NavTopics.GO, this::route, this::post);
         wireWake(gui);
         // Map the GUI's desired cursor shape onto the OS window (I-beam over editable text, §8.3).
         gui.onCursorChange(shape -> main.window.setCursor(osCursor(shape)));
@@ -703,6 +773,10 @@ public final class GuiApp implements AutoCloseable {
 
     @Override
     public void close() {
+        if (navSub != null) {
+            navSub.close();
+            navSub = null;
+        }
         device.waitIdle();
         for (OpenWindow w : open) {
             w.release();

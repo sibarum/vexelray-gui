@@ -37,8 +37,8 @@ public final class TreeChapter implements Chapter {
 
     @Override
     public String blurb() {
-        return "Lazy children off the input stages, a context menu built at the moment of the click, a "
-                + "cancellable command per row, and Ctrl+F searching a tree by walking it.";
+        return "Lazy children off the input stages, checkboxes whose cascade is the application's, a context "
+                + "menu built at the moment of the click, and Ctrl+F searching a tree by walking it.";
     }
 
     @Override
@@ -120,22 +120,99 @@ public final class TreeChapter implements Chapter {
                 .separator()
                 .item("…", "Properties", () -> console.note("properties: " + path)));
 
+        // Checkboxes, with a staging area's policy: ticking a folder ticks everything under it, and a folder
+        // whose contents are partly ticked reads MIXED. None of that is in the widget — it is all in the two
+        // methods below, which is the point. A filter would answer state() with a plain set lookup and cascade
+        // nothing; a permission tree would propagate upward instead. A tree that picked one of those for
+        // everybody would be wrong for the other two and would have to be worked around.
+        files.checkable(new TreeView.Checkable<Path>() {
+
+            @Override
+            public TreeView.Check state(Path path) {
+                if (!Files.isDirectory(path)) {
+                    return staged.contains(path) ? TreeView.Check.ON : TreeView.Check.OFF;
+                }
+                // A folder is answered from what is under it rather than from a tick of its own, so the answer
+                // stays right when a child is ticked from somewhere else — including by the button below.
+                boolean any = false;
+                boolean all = true;
+                for (Path kid : listing(path)) {
+                    if (state(kid) == TreeView.Check.OFF) {
+                        all = false;
+                    } else {
+                        any = true;
+                    }
+                }
+                return !any ? TreeView.Check.OFF : all ? TreeView.Check.ON : TreeView.Check.MIXED;
+            }
+
+            @Override
+            public void toggled(Path path) {
+                boolean turningOn = state(path) != TreeView.Check.ON;
+                stage(path, turningOn);
+                console.note((turningOn ? "staged " : "unstaged ") + path.getFileName()
+                        + "  ·  " + staged.size() + " files staged");
+            }
+        });
+
         Node tools = Ui.strip(gui,
                 Ui.controls(gui,
                         Ui.label(gui, "Try:", Length.rem(3)),
                         Ui.button(gui, "Focus the tree", files::focus),
+                        Ui.button(gui, "Clear the ticks", () -> {
+                            staged.clear();
+                            // Nothing told the tree: the ticks are the application's, exactly as the hierarchy
+                            // is, so a change made from outside the tree is one the application has to declare.
+                            files.recheck();
+                            console.note("cleared every tick");
+                        }),
                         Ui.button(gui, "Collapse all", () -> {
                             for (Path root : List.of(Path.of(".").toAbsolutePath().normalize())) {
                                 files.collapseAll(root);
                             }
                             console.note("collapsed every open folder");
                         })),
-                Ui.prose(gui, "Right-click a row for its own menu. Ctrl+F with the tree focused searches it, "
-                        + "and the search walks — press Enter repeatedly and the tree opens only the paths it "
-                        + "had to open to find each match. Expanding a folder slides what is below it."));
+                Ui.prose(gui, "Tick a folder and everything under it is staged; tick some of its contents and "
+                        + "it reads as a bar rather than a tick, which is a different shape and not merely a "
+                        + "smaller one — a checkbox is read at a glance. Space toggles the selected row. "
+                        + "Right-click a row for its own menu, and Ctrl+F searches by walking: press Enter "
+                        + "repeatedly and the tree opens only the paths it had to open to find each match."));
 
         return gui.column().width(Length.FILL).height(Length.FILL).gap(Ui.GAP)
                 .children(Ui.card(gui, Ui.heading(gui, "This repository"), files.node()), tools);
+    }
+
+    /** What is staged — the model behind the ticks, and the only place any of it lives. */
+    private final java.util.Set<Path> staged = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** Stage or unstage {@code path} and everything under it. The cascade, in four lines. */
+    private void stage(Path path, boolean on) {
+        if (!Files.isDirectory(path)) {
+            if (on) {
+                staged.add(path);
+            } else {
+                staged.remove(path);
+            }
+            return;
+        }
+        for (Path kid : listing(path)) {
+            stage(kid, on);
+        }
+    }
+
+    /**
+     * One directory's contents, or nothing.
+     *
+     * <p>Read again on every ask rather than cached, which is honest for a demo over a live filesystem and is
+     * the reason a real staging area would keep its own model of the tree instead: {@code state} is called for
+     * every visible row whenever the ticks are refreshed, and a folder's answer walks everything under it.
+     */
+    private static List<Path> listing(Path dir) {
+        try (var kids = Files.list(dir)) {
+            return kids.toList();
+        } catch (IOException e) {
+            return List.of();
+        }
     }
 
     /**

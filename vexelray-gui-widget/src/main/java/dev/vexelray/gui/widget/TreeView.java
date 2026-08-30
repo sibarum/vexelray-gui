@@ -10,6 +10,7 @@ import dev.vexelray.gui.core.edit.Change;
 import dev.vexelray.gui.core.input.ClickEvent;
 import dev.vexelray.gui.core.input.FocusEvent;
 import dev.vexelray.gui.core.input.InteractionState;
+import dev.vexelray.gui.core.layout.LayoutEnums;
 import dev.vexelray.gui.core.input.KeyEvent;
 import dev.vexelray.gui.core.input.MenuSink;
 import dev.vexelray.gui.core.layout.Length;
@@ -86,6 +87,63 @@ public final class TreeView<T> implements AutoCloseable {
      * it decides whether a disclosure control is shown, and it is asked when the row is built, not when it opens
      * (a filesystem answers it from the directory bit without listing anything).
      */
+    /**
+     * What a checkbox on a row can say. Three states, because two cannot describe a folder half of whose
+     * contents are ticked — and a parent that shows unticked while something under it is ticked is a lie the
+     * user finds out about later.
+     */
+    public enum Check {
+
+        /** Not ticked. */
+        OFF,
+
+        /** Ticked. */
+        ON,
+
+        /** Some of what is under it is ticked and some is not. Drawn as a bar rather than a tick. */
+        MIXED;
+
+        /** What a click on a box in this state usually means — {@code MIXED} resolving to ON. */
+        public Check toggled() {
+            return this == ON ? OFF : ON;
+        }
+    }
+
+    /**
+     * Checkboxes on rows: the tree draws them and reports clicks; the application owns what is ticked.
+     *
+     * <pre>{@code
+     * tree.checkable(new TreeView.Checkable<Path>() {
+     *     public Check state(Path p)  { return selected.contains(p) ? Check.ON : Check.OFF; }
+     *     public void toggled(Path p) { if (!selected.remove(p)) selected.add(p); }
+     * });
+     * }</pre>
+     *
+     * <p>The same split as the hierarchy, for the same reason. A tick is a fact about the application's model —
+     * which files are staged, which options are on — so the tree can no more own it than it owns the tree
+     * itself. It asks, draws what it is told, and reports the click.
+     *
+     * <p><b>Cascading is deliberately not here.</b> Whether ticking a folder ticks everything under it, whether
+     * a parent goes {@link Check#MIXED} when one child is on, whether ticking a child ticks its parents — those
+     * are model rules and they genuinely differ: a staging area cascades down, a filter does not, a permission
+     * tree propagates up. A widget that picked one would be wrong for the other two and would have to be fought.
+     * {@link #state} is asked per row, so any of those policies is expressible by answering it.
+     */
+    public interface Checkable<T> {
+
+        /** The state of {@code item}'s box. Asked for every visible row when the marks are refreshed. */
+        Check state(T item);
+
+        /**
+         * The user clicked {@code item}'s box (or pressed Space on its row). Change the model; the tree
+         * re-reads {@link #state} for every visible row immediately afterwards, so a change that touches other
+         * rows — a cascade, a parent turning MIXED — shows without being announced separately.
+         *
+         * <p>Runs on the handler executor, like every other handler here.
+         */
+        void toggled(T item);
+    }
+
     public interface Source<T> {
         /** The top-level items, in display order. */
         List<T> roots();
@@ -102,6 +160,9 @@ public final class TreeView<T> implements AutoCloseable {
         /**
          * Whether {@code item} could <em>hold</em> children — which is not the same question as whether it has
          * any, and is the one a drop has to ask.
+         *
+         * <p>(Placed on {@code Source} rather than beside {@link Reorder} because it is a fact about the item,
+         * which is what a source answers, and not a policy about a placement, which is what a reorder decides.)
          *
          * <p>They were the same question until an empty branch turned up. A folder with nothing in it is a leaf
          * by {@link #hasChildren}, so its row divided in two and offered nowhere to drop <em>into</em> — and
@@ -235,6 +296,8 @@ public final class TreeView<T> implements AutoCloseable {
         final Node entry;        // column: [rowNode, kidsBox]
         final Node rowNode;      // the pointer target and the styled strip
         final Node disclosure;   // the +/− glyph
+        final Node checkBox;     // the tick box, out of the layout until the tree is checkable
+        final Node checkMark;    // what is drawn inside it: a square for ON, a bar for MIXED
         final Node label;
         final Node kidsBox;      // hidden until expanded; children entries append here, never anywhere else
         boolean expanded;
@@ -264,6 +327,48 @@ public final class TreeView<T> implements AutoCloseable {
                     .textSize(Length.rem(1))
                     .textColor(gui.theme().color(Role.DIM))
                     .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE);
+            // The checkbox, drawn rather than lettered. A tick is not in the atlas — and even where one is, a
+            // glyph is the wrong primitive for this: it cannot show MIXED, it changes weight with the font, and
+            // it is centred on a baseline rather than in a box. Two nested boxes and a fill are exact at every
+            // zoom and cost the same one draw as everything else.
+            //
+            // Built on every row whether or not anything is checkable, and hidden until something is. A hidden
+            // node is out of the layout entirely, so an unchecked tree pays a node per row and no width — and
+            // the alternative, adding the box when checkable() arrives, means rebuilding every row that already
+            // exists to get one.
+            this.checkMark = gui.box()
+                    .width(Length.em(0.45f)).height(Length.em(0.45f))
+                    .corner(Length.rem(0.15f))
+                    .background(gui.theme().color(Role.ACCENT))
+                    .visible(false);
+            this.checkBox = gui.row()
+                    .width(Length.em(0.95f)).height(Length.em(0.95f))
+                    .corner(Length.rem(0.2f))
+                    .border(Length.rem(0.1f), gui.theme().color(Role.EDGE))
+                    .justify(LayoutEnums.Justify.CENTER)
+                    .alignItems(LayoutEnums.AlignItems.CENTER)
+                    .scroll(false, false)
+                    // Shown from the start on a tree that is already checkable, so a branch opened later does
+                    // not appear a box narrower than the rows above it and then jump. The *mark* inside is not
+                    // read here: that is application code, and this constructor runs under the tree's monitor.
+                    .visible(checkable != null)
+                    .children(checkMark);
+            // Guarded when it runs rather than when it is built, for the same reason the disclosure is: a tree
+            // becomes checkable after its first rows already exist.
+            gui.onClick(checkBox, () -> {
+                Checkable<T> c = checkable;
+                if (c == null) {
+                    return;
+                }
+                // Selecting first is the convention every explorer follows, and it is what makes Space
+                // afterwards act on the row the pointer just ticked.
+                select(this, true);
+                c.toggled(item);
+                recheck();
+            });
+            gui.onState(checkBox, state -> checkBox.border(Length.rem(0.1f),
+                    gui.theme().color(state == InteractionState.NORMAL ? Role.EDGE : Role.ACCENT)));
+
             // grow(1), not auto: the label takes the row's remaining width, so the whole strip past the glyph
             // belongs to the name — and a name longer than the row wraps at the row edge instead of widening it.
             this.label = gui.text(source.label(item))
@@ -277,8 +382,12 @@ public final class TreeView<T> implements AutoCloseable {
                     .corner(Length.rem(0.4f))
                     .padding(Length.ZERO, Length.dp(4))
                     .gap(Length.em(0.25f))
+                    // Centred rather than stretched: the disclosure and the label are text and centre
+                    // themselves inside whatever height they are given, but a checkbox is a box, and a box
+                    // stretched to the row height is not a checkbox.
+                    .alignItems(LayoutEnums.AlignItems.CENTER)
                     .scroll(false, false)
-                    .children(spacer, disclosure, label);
+                    .children(spacer, disclosure, checkBox, label);
             this.kidsBox = gui.column().width(Length.FILL).visible(false).scroll(false, false);
             this.entry = gui.column().width(Length.FILL).scroll(false, false).children(rowNode, kidsBox);
 
@@ -321,6 +430,24 @@ public final class TreeView<T> implements AutoCloseable {
             if (now != depth) {
                 depth = now;
                 spacer.width(Length.em(depth * INDENT_EM));
+            }
+        }
+
+        /**
+         * Draw {@code state} in this row's box.
+         *
+         * <p>MIXED is a bar rather than a smaller square, because the two must not be told apart by size: a
+         * checkbox is read at a glance and at a glance a small square is a square. A different <em>shape</em>
+         * survives being looked at quickly, and survives a user who has never seen the control before.
+         */
+        void paintCheck(Check state) {
+            checkBox.visible(true);
+            switch (state) {
+                case OFF -> checkMark.visible(false);
+                case ON -> checkMark.visible(true)
+                        .width(Length.em(0.45f)).height(Length.em(0.45f));
+                case MIXED -> checkMark.visible(true)
+                        .width(Length.em(0.45f)).height(Length.em(0.14f));
             }
         }
 
@@ -369,6 +496,8 @@ public final class TreeView<T> implements AutoCloseable {
     private Row selected;
     /** What a reorder means, or null until reorderable() is called. */
     private volatile Reorder<T> reorder;
+    /** What is ticked, or null until checkable() is called -- which is also what hides every box. */
+    private volatile Checkable<T> checkable;
     /** The form this tree offers its rows as -- per instance, so two trees do not silently accept each other's. */
     private final PayloadType<T> itemType = PayloadType.of("tree-item");
     /** How the drop target is shown; replaceable, defaulted to the theme accent at construction. */
@@ -458,6 +587,51 @@ public final class TreeView<T> implements AutoCloseable {
     }
 
     /**
+     * Put a checkbox on every row, with {@code checkable} saying what is ticked and taking the clicks.
+     *
+     * <p>Space toggles the selected row, which is the same command reached the other way — and the reason it is
+     * the tree's business rather than the application's is that the tree already owns the selection the chord
+     * acts on.
+     *
+     * <p>Turning this on shows a box on every row that exists and every row built afterwards. There is no way
+     * to turn it off again, deliberately: a control that comes and goes underneath the pointer is the thing the
+     * hover rule exists to prevent, and a tree that is sometimes checkable is a tree whose rows change width
+     * while you are reading them.
+     */
+    public TreeView<T> checkable(Checkable<T> checkable) {
+        this.checkable = java.util.Objects.requireNonNull(checkable, "checkable");
+        recheck();
+        return this;
+    }
+
+    /**
+     * Ask again what is ticked, and redraw the boxes.
+     *
+     * <p>The counterpart to {@link #refresh} for the other thing the tree reads and does not own. It is
+     * separate because it is far cheaper — no hierarchy is walked and no {@code children} is called — and
+     * because the two changes are genuinely different events: a drop restructures, a tick does not.
+     *
+     * <p>Called for you after a click on a box, so an application only needs this when something <em>else</em>
+     * changed what is ticked: a "select all" button, a background job, another view of the same model.
+     */
+    public TreeView<T> recheck() {
+        Checkable<T> c = checkable;
+        if (c == null) {
+            return this;
+        }
+        List<Row> rows;
+        synchronized (this) {
+            rows = List.copyOf(rowsByItem.values());
+        }
+        // Outside the monitor: state() is the application's code and may do anything, and holding the tree's
+        // lock across it is how a widget deadlocks against the model it is reading.
+        for (Row row : rows) {
+            row.paintCheck(c.state(row.item));
+        }
+        return this;
+    }
+
+    /**
      * Read the hierarchy again and bring the rows into line with it — the other half of {@link #reorderable}.
      *
      * <p>A tree reads its model through a {@link Source} and is never told when that model changes, which is the
@@ -502,6 +676,9 @@ public final class TreeView<T> implements AutoCloseable {
         if (landed != null) {
             select(landed, true);
         }
+        // Rows built by the reconcile have never been asked what they are: their boxes are still hidden, and a
+        // tick that only appears after the next click would be a state the user could not trust.
+        recheck();
         return this;
     }
 
@@ -771,6 +948,19 @@ public final class TreeView<T> implements AutoCloseable {
         return r == null ? null : r.rowNode;
     }
 
+    /**
+     * The checkbox drawn on {@code item}'s row, or null when that row does not exist — <b>to point at, not to
+     * restyle</b>, on the same terms as {@link #rowNode}: read its box, play a {@link Cue} on it, aim a test at
+     * it. The tree rewrites what is inside it whenever the marks are refreshed.
+     *
+     * <p>It has no size at all until {@link #checkable} has been called, because until then it is hidden and a
+     * hidden node is out of the layout.
+     */
+    public synchronized Node checkBoxNode(T item) {
+        Row r = rowsByItem.get(item);
+        return r == null ? null : r.checkBox;
+    }
+
     /** The find bar's strip — package-private, so a test can read whether the user can see it. */
     Node findBar() {
         return find.node();
@@ -940,6 +1130,9 @@ public final class TreeView<T> implements AutoCloseable {
             case RIGHT -> expandOrEnter();
             case LEFT -> collapseOrExit();
             case ENTER -> activate();
+            // The keyboard half of the checkbox. It is here rather than in the application because the chord
+            // acts on the selection, and the selection is the tree's.
+            case SPACE -> toggleChecked();
             default -> { }
         }
     }
@@ -1617,6 +1810,10 @@ public final class TreeView<T> implements AutoCloseable {
             open(row, row.expanded ? 1f : 0f);
             refreshVisible();
         }
+        // The rows that just appeared have boxes but no marks in them. Outside the monitor, because asking what
+        // is ticked is asking the application, and holding the tree's lock across that is how a widget
+        // deadlocks against the model it is reading.
+        recheck();
     }
 
     /** Recompute the flattened visible-row list — the thing the keyboard walks. Guarded by {@code this}. */
@@ -1655,6 +1852,20 @@ public final class TreeView<T> implements AutoCloseable {
     }
 
     // --- styling ---
+
+    /** Space on the selected row: the same command the box's click runs, reached from the keyboard. */
+    private void toggleChecked() {
+        Checkable<T> c = checkable;
+        Row row;
+        synchronized (this) {
+            row = selected;
+        }
+        if (c == null || row == null) {
+            return;
+        }
+        c.toggled(row.item);
+        recheck();
+    }
 
     private void restyle(Row row, InteractionState state) {
         synchronized (this) {

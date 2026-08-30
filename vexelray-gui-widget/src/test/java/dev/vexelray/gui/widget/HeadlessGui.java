@@ -89,6 +89,14 @@ final class HeadlessGui implements AutoCloseable {
         }
     }
 
+    static {
+        // A test that publishes more input than a frame drains would otherwise hit Fatal.HALT and take the
+        // surefire JVM down mid-suite, which surfaces as "the VM crashed" and names nothing. Under test the
+        // fault is thrown instead, so the overflow arrives as a failing test that names the topic — the
+        // behaviour is identical up to that last step, and the last step is the one a test cannot survive.
+        sibarum.atchung.Atchung.onFatal(sibarum.atchung.Fatal.THROW);
+    }
+
     final Atchung bus = Atchung.create();
     /** Non-null only in manual mode ({@link #manual()}); the queue of deferred input handlers. */
     final ManualExecutor tasks;

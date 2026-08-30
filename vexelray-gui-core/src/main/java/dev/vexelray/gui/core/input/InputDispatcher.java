@@ -50,26 +50,34 @@ import java.util.concurrent.Executor;
 public final class InputDispatcher {
 
     /**
-     * Input edges are drained every frame into a bounded mailbox.
+     * Input edges are drained every frame into a bounded mailbox, and overflowing it <b>stops the process</b>.
      *
-     * <p><b>The policy is a compromise, and the constraint that forces it is not obvious.</b> This one topic
-     * carries traffic of two different loss classes: pointer motion, which coalesces harmlessly, and key, char and
-     * button edges, which do not — a shed keystroke is gone, and reads downstream as a key that never arrived.
-     * {@code DROP_OLDEST} sheds the oldest, which under a stall is exactly the keystrokes, while the newest motion
-     * survives. That is backwards for half the traffic.
+     * <p><b>This channel carries traffic of two loss classes</b>, which is the whole problem: pointer motion,
+     * which coalesces harmlessly, and key, char and button edges, which do not — a shed keystroke is gone, and
+     * reads downstream as a key the user never pressed. There is no policy that is right for both, and the
+     * previous choice, {@code DROP_OLDEST}, was wrong for the half that matters: under a stall it sheds the
+     * oldest, which is exactly the keystrokes, while the newest motion survives.
      *
-     * <p>It is nonetheless the least-bad option available here. {@link Backpressure#BLOCK} would <b>deadlock</b>:
-     * in the standard wiring the input bridge publishes from the frame loop and this pump drains on the same
-     * thread, so a full mailbox would have the GUI thread waiting on itself. {@code COALESCE_LATEST} would discard
-     * keys outright. Two mailboxes filtered by class would protect the keys but reorder them against motion, which
-     * breaks drag (press, move, release must stay in sequence).
+     * <p>{@link Backpressure#FAIL} does not make this channel correct. It makes it <b>honest</b>. Losing an
+     * input edge is not a degradation the framework can absorb on the application's behalf — it is a divergence
+     * between what the user did and what the program believes, and every frame after it is computed from a
+     * premise that is false. Atchung reports no dropped-message count, so the old policy's failures were not
+     * merely bad, they were <em>invisible</em>: undetectable from this side, indistinguishable from a widget
+     * bug, and diagnosed by staring at the consumer, which was working perfectly. A crash naming this topic and
+     * this capacity is worse to experience and better in every other respect.
      *
-     * <p>The real fix is upstream and matches what §5 already describes: pointer <em>position</em> belongs on the
-     * coalesced {@code State<PointerState>} rather than as edges on the lossless topic, leaving this channel
-     * carrying only traffic that must not be dropped. That is a {@code tactroller-atchung} change, so it is
-     * recorded as open (architecture.md §13) rather than worked around here. Note also that Atchung exposes no
-     * dropped-message count, so a shed edge is currently undetectable from this side — which is why the honest
-     * move is to stop sharing the channel, not to widen the buffer and hope.
+     * <p>The alternatives remain closed. {@code BLOCK} would <b>deadlock</b>: in the standard wiring the input
+     * bridge publishes from the frame loop and this pump drains on the same thread, so a full mailbox would have
+     * the GUI thread waiting on itself. {@code COALESCE_LATEST} would discard keys outright. Two mailboxes
+     * filtered by class would protect the keys but reorder them against motion, which breaks drag (press, move,
+     * release must stay in sequence).
+     *
+     * <p><b>The fix this makes urgent</b> is the one §5 already describes: pointer <em>position</em> belongs on
+     * a coalesced {@code State<PointerState>} rather than as edges here, leaving this channel carrying only
+     * traffic that must not be dropped. Until that lands in {@code tactroller-atchung}, motion is what fills
+     * this mailbox, so a frame that stalls for {@value #MAILBOX} events' worth of pointer travel will now take
+     * the application down where it used to quietly eat a keystroke. That is the intended trade and it is also
+     * the pressure: the channel needs splitting, and widening the buffer and hoping was never the answer.
      */
     private static final int MAILBOX = 4096;
 
@@ -240,7 +248,7 @@ public final class InputDispatcher {
         this.handlerExecutor = handlerExecutor;
         this.requestLayout = requestLayout;
         this.pump = bus.pump();
-        this.sub = pump.subscribe(InputTopics.INPUT, this::handle, MAILBOX, Backpressure.DROP_OLDEST);
+        this.sub = pump.subscribe(InputTopics.INPUT, this::handle, MAILBOX, Backpressure.FAIL);
         // Focus traversal is a framework *default*, not an interception: it is an ordinary global claim, so a
         // focused element that claims Tab (a multiline editor indenting) simply outranks it. Shift+Tab is left
         // unclaimed by such elements, which is what keeps a way out of the field.

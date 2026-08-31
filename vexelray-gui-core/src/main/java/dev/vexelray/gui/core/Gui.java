@@ -136,6 +136,21 @@ public final class Gui implements AutoCloseable {
     private static final Runnable NO_WAKE = () -> { };
     /** Told when a mutation is published, so a parked host loop knows a frame is owed. */
     private volatile Runnable workListener = NO_WAKE;
+    /**
+     * Whether the loop has already been told a frame is owed, and has not yet started one.
+     *
+     * <p><b>The wake is a cell, not an event</b> — the same reason the mutation mailbox folds, one layer up. A
+     * second wake before the frame arrives says nothing the first did not: the loop either draws next or it does
+     * not, and it is already going to. Left undeduplicated it was one nudge of the OS message queue <em>per
+     * property write</em>, which is a syscall against a fold that had just reduced the write itself to a map
+     * put — the cheap half optimised and the expensive half left alone.
+     *
+     * <p>Cleared at the very top of {@link #frame}, before the drain rather than after it. A write that lands
+     * mid-frame then re-arms the wake and costs one extra frame that finds nothing to do; clearing at the end
+     * would instead swallow that write's wake and leave it sitting until something unrelated woke the loop. Over
+     * -waking is a wasted frame, under-waking is a UI that stops updating.
+     */
+    private final java.util.concurrent.atomic.AtomicBoolean woken = new java.util.concurrent.atomic.AtomicBoolean();
     private volatile boolean warnedWakeFailed;
     private volatile boolean tracedUnwired;
     private final Subscription mutationSub;
@@ -1395,6 +1410,9 @@ public final class Gui implements AutoCloseable {
      * succeeded by the time this runs.
      */
     private void wake(String why) {
+        if (!woken.compareAndSet(false, true)) {
+            return;   // a frame is already owed, and saying so twice does not owe two
+        }
         if (WAKE_TRACE) {
             String id = "Gui@" + Integer.toHexString(System.identityHashCode(this));
             if (workListener != NO_WAKE) {
@@ -1449,6 +1467,10 @@ public final class Gui implements AutoCloseable {
      */
     public void onWork(Runnable listener) {
         this.workListener = java.util.Objects.requireNonNull(listener, "listener");
+        // Re-arm: a wake recorded while nothing was listening was delivered to NO_WAKE and reached no loop, so
+        // the newly wired listener must not inherit it as "already told". Without this, a tree that was edited
+        // before it was presented would suppress the first real wake it ever had.
+        woken.set(false);
         if (WAKE_TRACE) {
             System.out.println("[wake] wired Gui@" + Integer.toHexString(System.identityHashCode(this)));
         }
@@ -1490,6 +1512,9 @@ public final class Gui implements AutoCloseable {
      * text intrinsic sizes.
      */
     public RetainedNode frame(float viewportW, float viewportH, TextMeasurer tm) {
+        // The frame the last wake asked for is this one, so the next edit has to ask again. First thing, before
+        // anything below can publish: see the field's note on why this is the top and not the bottom.
+        woken.set(false);
         // Dispatch this frame's input first, against the previous frame's laid-out tree (§8, §10): a click may
         // register a mutation, which the drain below then applies in the same frame.
         input.dispatch(reconciler.root());

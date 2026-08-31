@@ -3,7 +3,8 @@ package dev.vexelray.gui.core.app;
 import dev.vexelray.os.WindowConfig;
 
 /**
- * Where a second window stands relative to the application's main window. This is the one thing about a window
+ * Where a second window stands relative to the window it belongs to — the application's main window unless the
+ * spec named another ({@link WindowSpec#belongingTo}). This is the one thing about a window
  * that cannot be decided after it exists: every platform fixes it at creation, from whether the window was given
  * an owner (Win32 owned windows, X11 {@code WM_TRANSIENT_FOR}, Wayland {@code xdg_toplevel.set_parent}, macOS
  * child windows), and a window's standing is what it was created with for as long as it lives.
@@ -24,10 +25,11 @@ import dev.vexelray.os.WindowConfig;
 public interface Standing {
 
     /**
-     * The config this window is created from, given the OS handle of the main window. Called on the main thread,
-     * once, at creation.
+     * The config this window is created from, given the OS handle of the window it stands relative to — its
+     * anchor, which is the application's main window unless the spec named another
+     * ({@link WindowSpec#belongingTo}). Called on the main thread, once, at creation.
      */
-    WindowConfig place(WindowConfig config, long mainWindow);
+    WindowConfig place(WindowConfig config, long anchor);
 
     /**
      * An ordinary top-level window that happens to belong to this application: its own place in the stack, so
@@ -38,7 +40,7 @@ public interface Standing {
      * <p>The requested config passes through untouched, so an application that named an owner itself gets the
      * one it named. The default for {@link WindowSpec}: a window is a window unless it is said to be less.
      */
-    Standing PEER = (config, mainWindow) -> config;
+    Standing PEER = (config, anchor) -> config;
 
     /**
      * A window that belongs to the main window and shows it: always above it, no taskbar button of its own,

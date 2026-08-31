@@ -23,11 +23,13 @@ import java.util.function.Consumer;
  * @param onClosed       run on the main thread after the window is gone
  * @param onCloseRequest asked before this window closes, on the handler executor; {@code null} means a close
  *                       just closes (see {@link CloseRequest})
- * @param standing       where this window stands relative to the main one — beside it or above it
+ * @param standing       where this window stands relative to its anchor — beside it or above it
  *                       ({@link Standing}); {@code null} means {@link Standing#PEER}
+ * @param anchor         the window this one stands relative to; {@code null} means the application's main
+ *                       window (see {@link #belongingTo})
  */
 public record WindowSpec(WindowConfig config, Gui gui, Consumer<NativeWindow> onCreated, Runnable onClosed,
-                         Consumer<CloseRequest> onCloseRequest, Standing standing) {
+                         Consumer<CloseRequest> onCloseRequest, Standing standing, AppWindow anchor) {
 
     public WindowSpec {
         if (config == null) {
@@ -49,7 +51,7 @@ public record WindowSpec(WindowConfig config, Gui gui, Consumer<NativeWindow> on
 
     /** A window showing {@code gui}, with nothing to do at its lifecycle moments, standing beside the main one. */
     public static WindowSpec of(WindowConfig config, Gui gui) {
-        return new WindowSpec(config, gui, null, null, null, null);
+        return new WindowSpec(config, gui, null, null, null, null, null);
     }
 
     /**
@@ -62,12 +64,14 @@ public record WindowSpec(WindowConfig config, Gui gui, Consumer<NativeWindow> on
      * moments are notifications, and there is no reason two parties may not both want to hear one.
      */
     public WindowSpec onCreated(Consumer<NativeWindow> onCreated) {
-        return new WindowSpec(config, gui, andThen(this.onCreated, onCreated), onClosed, onCloseRequest, standing);
+        return new WindowSpec(config, gui, andThen(this.onCreated, onCreated), onClosed, onCloseRequest, standing,
+                anchor);
     }
 
     /** This spec, with {@code onClosed} run once the window is gone. Adds, as {@link #onCreated} does. */
     public WindowSpec onClosed(Runnable onClosed) {
-        return new WindowSpec(config, gui, onCreated, andThen(this.onClosed, onClosed), onCloseRequest, standing);
+        return new WindowSpec(config, gui, onCreated, andThen(this.onClosed, onClosed), onCloseRequest, standing,
+                anchor);
     }
 
     /**
@@ -76,16 +80,37 @@ public record WindowSpec(WindowConfig config, Gui gui, Consumer<NativeWindow> on
      * {@link CloseRequest} is a bug rather than a feature.
      */
     public WindowSpec onCloseRequest(Consumer<CloseRequest> onCloseRequest) {
-        return new WindowSpec(config, gui, onCreated, onClosed, onCloseRequest, standing);
+        return new WindowSpec(config, gui, onCreated, onClosed, onCloseRequest, standing, anchor);
     }
 
     /**
      * This spec, with the given {@link Standing} — {@link Standing#SATELLITE} for a window that belongs above
-     * the main one and stays above it however the user clicks. <b>Replaces</b>, like {@link #onCloseRequest}
+     * its anchor and stays above it however the user clicks. <b>Replaces</b>, like {@link #onCloseRequest}
      * and for the same reason: a window has one place in the stack, and it is settled once, at creation.
      */
     public WindowSpec standing(Standing standing) {
-        return new WindowSpec(config, gui, onCreated, onClosed, onCloseRequest, standing);
+        return new WindowSpec(config, gui, onCreated, onClosed, onCloseRequest, standing, anchor);
+    }
+
+    /**
+     * This spec, standing relative to {@code anchor} rather than to the application's main window.
+     *
+     * <p>A {@link Standing} is a <em>relation</em>, and the thing it relates to is not always the main window.
+     * An application whose second window opens a tool window of its own — a calculator's history beside its
+     * keypad — means above <em>that</em> window, not above whatever happens to be hosting the application. Get
+     * it wrong and the satellite joins the main window's owner group: activating the tool raises that whole
+     * group, and the window the tool actually belongs to is left underneath it. The main window is the default
+     * because it is the common case — one window, one set of satellites — not because it is the only one.
+     *
+     * <p>Resolved once, at creation, like every other part of a window's standing. A named anchor that is not
+     * open at that moment falls back to the main window: an owner must exist before a window can be created
+     * owned by it, and coming up unanchored beats not coming up. In practice a tool window is opened
+     * <em>from</em> the window it belongs to, so that window is open.
+     *
+     * <p><b>Replaces</b>, like {@link #standing}: a window stands relative to one thing.
+     */
+    public WindowSpec belongingTo(AppWindow anchor) {
+        return new WindowSpec(config, gui, onCreated, onClosed, onCloseRequest, standing, anchor);
     }
 
     private static Consumer<NativeWindow> andThen(Consumer<NativeWindow> first, Consumer<NativeWindow> next) {

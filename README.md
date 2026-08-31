@@ -213,6 +213,15 @@ Widgets are ordinary framework users — built entirely on public `Node`/`Gui` A
   each button punches an `INTERACTIVE` hole in it — so the window manager still moves, snaps and
   maximizes the window while the clicks reach the buttons. The maximize icon is re-derived from the
   window on every viewport change, because Win+Up and a caption double-click change it too.
+- **`Popout`** — a panel docked against one edge of the window, collapsible to a rail and poppable out into a
+  window of its own. Docked, it is an ordinary child of the host tree: the host's content shrinks by exactly
+  its width, and it clips and scrolls with the window. Popping out is **not** a reparent — a `Node` belongs to
+  the tree that minted it — so the content is declared as a builder and run once per tree, both instances then
+  hidden rather than removed. Collapsed and popped-out leave the same footprint, the rail carrying the control
+  that undoes it; a `Reveal` makes a landmark inside the panel reachable, docking it back if it was out. The
+  window is a named `AppWindow` wearing the application's own `TitleBar` (`Decorations.CLIENT`), with the dock
+  control in its leading slot, and every route out of the window — dock button, close box, Alt+F4, the owner
+  going away — is heard in one place.
 - **`Tooltip`** — hover help that is admissible under the hover rule by construction: the bubble is
   `hitInert` (drawn, never a pointer target), anchored to the control's box (never follows the
   pointer), and coexists with the control's own hover restyle because state observers accumulate.

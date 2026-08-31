@@ -252,6 +252,20 @@ final class HeadlessGui implements AutoCloseable {
         return null;
     }
 
+    /**
+     * Lay out {@code other} — a second tree of the same application — at this harness's size and metrics, and
+     * answer its root. For a widget that owns a tree of its own for another window: that tree is driven by a
+     * frame loop this harness is not, so a test that wants to look at it has to step it itself.
+     */
+    RetainedNode frame(Gui other) {
+        return other.frame(W, H, measurer);
+    }
+
+    /** Find {@code handle} in a tree laid out by {@link #frame(Gui)}, or null if it is not in it. */
+    static RetainedNode find(RetainedNode root, Node handle) {
+        return find(root, handle.id());
+    }
+
     /** Move keyboard focus to {@code node} (as a click would), so typed text and keys route to it. */
     HeadlessGui focus(Node node) {
         gui.focus(node);

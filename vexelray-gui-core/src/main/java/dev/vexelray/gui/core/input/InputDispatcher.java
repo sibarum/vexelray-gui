@@ -72,12 +72,18 @@ public final class InputDispatcher {
      * filtered by class would protect the keys but reorder them against motion, which breaks drag (press, move,
      * release must stay in sequence).
      *
-     * <p><b>The fix this makes urgent</b> is the one §5 already describes: pointer <em>position</em> belongs on
-     * a coalesced {@code State<PointerState>} rather than as edges here, leaving this channel carrying only
-     * traffic that must not be dropped. Until that lands in {@code tactroller-atchung}, motion is what fills
-     * this mailbox, so a frame that stalls for {@value #MAILBOX} events' worth of pointer travel will now take
-     * the application down where it used to quietly eat a keystroke. That is the intended trade and it is also
-     * the pressure: the channel needs splitting, and widening the buffer and hoping was never the answer.
+     * <p><b>What this bound actually measures.</b> The input bridge publishes from {@code beforeFrame} and this
+     * pump drains inside {@code Gui.frame}, on the same thread in the same loop iteration, so the mailbox is
+     * filled and emptied within one frame and never accumulates across them. Its depth is therefore device rate
+     * over frame rate: about 17 events for a 1&nbsp;kHz mouse at 60fps, about 200 at the 5&nbsp;Hz idle floor,
+     * and roughly 1600 for an 8&nbsp;kHz mouse at that floor. Filling {@value #MAILBOX} takes something else
+     * entirely — some four seconds of a 1&nbsp;kHz device against a loop that has stopped drawing. So this is
+     * not a buffer sized against pointer traffic; it is the point past which the frame loop is not slow but
+     * <b>stopped</b>, and a stopped loop still accepting input is worth crashing over.
+     *
+     * <p>The channel should still be split, and §5 says how: pointer <em>position</em> belongs on a coalesced
+     * {@code State<PointerState>} rather than as edges here. But the reason is the loss classes above, not this
+     * bound — a channel that cannot be given a correct policy is wrong while it is nowhere near full.
      */
     private static final int MAILBOX = 4096;
 

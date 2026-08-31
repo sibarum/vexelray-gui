@@ -291,3 +291,5 @@ What sits between the GUI and the OS, all driven from the one main-thread loop:
 - [docs/layout-read-model.md](docs/layout-read-model.md) — the geometry pipeline and the
   published read-model every consumer (renderer, hit-testing, widgets) shares
 - [docs/keyboard-focus-text.md](docs/keyboard-focus-text.md) — keys, focus, claims, and text editing
+- [docs/transfer.md](docs/transfer.md) — drag and drop, cut and paste: one resolution, several
+  sources, and why what is shown is always what will happen

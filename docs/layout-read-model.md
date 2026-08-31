@@ -46,7 +46,7 @@ Two flows, one fabric, separated by direction:
 
 This is command/query separation: commands go up, a computed read-model comes down, both as bus traffic.
 
-### 2.1 Three tiers, one writer each
+### 2.1 Four tiers, one writer each
 
 Command/query separation answers *who may write the model*. It does not by itself say *who **computes** derived
 values* — and that gap is where every ad-hoc seam has appeared: caret-follow scroll wrote from the renderer, and
@@ -56,10 +56,30 @@ the first draft of §11.3 merely moved that write into publish. Naming the missi
 |---|---|---|---|
 | **Authored props** | text, caret, selection, editable, **scroll intent** | worker → `Mutation` → `pump.drain()` | command |
 | **Derived geometry** | `rect`, `content`, `contentW/H`, `overflow`, **effective scroll**, **text metrics**, gutter width | the layout pass | compute |
+| **Drawn position** | `x/y` and `viewX/viewY` again — the settled values, moved by however far a node is still short of them | `Displacement`, from a `LayoutMotion` | motion |
 | **Read-model** | `LayoutSnapshot` | `publishLayout` — a pure copy | publish |
 
-**Compute in the layout phase, copy in the publish phase, read everywhere else.** Renderers and widgets never
-write; `publishLayout` never computes.
+**Compute in the layout phase, displace in the motion phase, copy in the publish phase, read everywhere else.**
+Renderers and widgets never write; `publishLayout` never computes.
+
+The motion tier is the one addition that writes a field an earlier tier already wrote, so it is worth saying
+exactly what keeps that honest. It runs **after** the compute phase, so everything computed from geometry —
+caret-follow scroll, text metrics — reads the settled position and does not chase an animation already on its
+way to the answer. It runs **before** publish, so the read-model, the renderer and the next frame's hit-testing
+all agree on where a node is *drawn*. That second half is load-bearing: a tree whose rows are visibly mid-flight
+but which hit-tests where they will land is a UI where the user has to aim ahead of the picture, and it is
+invisible in a screenshot because it only appears under a pointer moving faster than the animation.
+
+It also never accumulates. Each frame rebuilds `x/y` from the settled position recorded by `Displacement.settle`
+plus the displacement a `LayoutMotion` reports, so a frame that lays out and a frame that does not produce the
+same tree. Translating the live rect instead would drift by a little on every frame that skipped layout, with
+nothing remembering what the truth had been to correct it.
+
+`Displacement` is therefore a declared stage in `ModelWriterGuardTest`, for the reason `TreeRenderer` was not: it
+runs inside `Gui.frame`, in every host, so a transition behaves identically headless and on screen. A
+`LayoutMotion` implementation — `Transitions` in `gui-krono`, or an application's own — writes nothing at all; it
+reports two floats per node and the framework does the arithmetic. The guard covers every motion source that
+will ever exist without naming one.
 
 This adds no new concept. `FlexLayout.layout()` already writes `x/y/w/h`, `viewX/viewY`, `contentW/H` and
 `overflow` into `RetainedNode` — on the GUI thread, in the write phase, and nobody calls that a violation.

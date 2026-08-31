@@ -15,6 +15,36 @@ public sealed interface Mutation
     /** The node this mutation targets (for coalescing / routing); {@code Batch} returns {@code 0}. */
     long targetId();
 
+    /**
+     * The <b>cell</b> this mutation writes, for the folding mailbox the mutation channel is drained through
+     * ({@code sibarum.atchung.Fold}), or {@code null} if it is an edge that supersedes nothing.
+     *
+     * <p>Setting a label's text twice before the next frame is not two edits — it is two writes to one cell,
+     * and only the second is ever observable, because nothing reads the retained tree between a publish and the
+     * drain that applies it. So a property write names the cell it lands in and the queue keeps one entry for
+     * it, and the mailbox then grows with how much of the tree changed rather than with how busy the thread
+     * that changed it was. A worker looping on {@code node.text(...)} occupies one slot.
+     *
+     * <p><b>Structure is not a cell.</b> {@link Create}, {@link Insert} and {@link Remove} are occurrences in an
+     * order that means something — the same node inserted twice is two moves — and a {@link Batch} is a group
+     * that was already coalesced by whoever grouped it. All of them fold with nothing.
+     *
+     * <p>Declared here, per mutation, rather than read off a switch somewhere else: whether an edit supersedes
+     * an earlier one is a fact about that kind of edit, and the next kind of edit should have to answer the
+     * question in its own declaration rather than be forgotten in someone else's.
+     */
+    default Object cell() {
+        return null;
+    }
+
+    /**
+     * One writable cell of the tree: a node's single property. The unit a {@link SetProp} or {@link SetText}
+     * supersedes another over — and they supersede each other, because {@code SetText} writes
+     * {@link PropKey#TEXT} like any other property write.
+     */
+    record Cell(long id, PropKey key) {
+    }
+
     record Create(long id, NodeKind kind, Map<PropKey, Object> initial) implements Mutation {
         @Override
         public long targetId() {
@@ -44,12 +74,23 @@ public sealed interface Mutation
         public long targetId() {
             return id;
         }
+
+        @Override
+        public Object cell() {
+            return new Cell(id, key);
+        }
     }
 
     record SetText(long id, String text) implements Mutation {
         @Override
         public long targetId() {
             return id;
+        }
+
+        /** The cell an ordinary write to {@link PropKey#TEXT} lands in, because that is what this is. */
+        @Override
+        public Object cell() {
+            return new Cell(id, PropKey.TEXT);
         }
     }
 
@@ -65,6 +106,16 @@ public sealed interface Mutation
         @Override
         public long targetId() {
             return id;
+        }
+
+        /**
+         * Itself: this record's identity <em>is</em> the request, so two asks for the same container in one
+         * frame are one ask. Which they are — the second cannot mean anything the first did not, since neither
+         * carries an offset and both mean "be at the edge when this frame is drawn".
+         */
+        @Override
+        public Object cell() {
+            return this;
         }
     }
 
@@ -85,6 +136,12 @@ public sealed interface Mutation
         @Override
         public long targetId() {
             return id;
+        }
+
+        /** Itself, for the reason {@link ScrollToEdge#cell()} gives: asking twice is asking once. */
+        @Override
+        public Object cell() {
+            return this;
         }
     }
 

@@ -83,7 +83,16 @@ public final class Gui implements AutoCloseable {
      */
     private static final Topic<Mutation> MUTATIONS = Topic.of("vexelray.gui.mutations", Mutation.class);
 
-    /** Mailbox bound for the mutation pump. BLOCK makes this a throttle, not a drop threshold (see class doc). */
+    /**
+     * Mailbox bound for the mutation pump, in <b>cells</b> rather than in edits — the channel folds, so this
+     * counts how much of the tree has changed since the last frame and not how many times it was written.
+     *
+     * <p>{@code BLOCK} makes it a throttle rather than a drop threshold, and folding is what makes that safe.
+     * A producer can no longer reach the bound by writing quickly, only by touching this many distinct
+     * properties and structural edits between two frames — which in practice means building a very large tree
+     * in one go, and a build that briefly outruns the frame loop <em>should</em> be slowed rather than failed.
+     * (Wrapping such a build in {@link #batch} makes it one slot regardless.)
+     */
     private static final int MUTATION_MAILBOX = 1 << 16;
 
     /** The flat root em, in px, before zoom and DPI (§6 — no cascade). */
@@ -271,7 +280,18 @@ public final class Gui implements AutoCloseable {
         this.reconciler = new Reconciler(rootId, this::releaseNodeId);
         // The GUI thread drains this pump each frame; the subscriber runs on that (drain) thread, so applying to
         // the single-writer reconciler here is the GUI-thread write the model requires.
-        this.mutationSub = pump.subscribe(MUTATIONS, reconciler::apply, MUTATION_MAILBOX, Backpressure.BLOCK);
+        // Folded by cell (Mutation.cell): a property write supersedes the queued write to the same property of
+        // the same node instead of queueing beside it, so this mailbox holds what has changed since the last
+        // frame rather than every time somebody said so. A worker looping on node.text(...) occupies one slot.
+        //
+        // Lossless, and not approximately: nothing reads the retained tree between a publish and the drain that
+        // applies it — the reconciler is written only here, on this thread, and every reader goes through the
+        // published LayoutSnapshot instead. So everything published between two frames is one transaction whose
+        // only observable is the state at its end, and a superseded write is unobservable in principle. That
+        // condition is the whole licence for this and it is worth re-checking before anything is allowed to read
+        // the model directly.
+        this.mutationSub = pump.subscribe(MUTATIONS, reconciler::apply, MUTATION_MAILBOX, Backpressure.BLOCK,
+                Mutation::cell);
         // Navigation requests arrive on the same pump, so a link clicked in another window, a macro step and a
         // test all enter this tree at the same point in the frame the tree's own edits do — before the drain,
         // never in the middle of one.

@@ -297,7 +297,7 @@ not move, so a new `InteractionState` needs no case added.
 Existing depths were remapped onto the nearest rung, which moves a few of them by a fraction of a rem — the point
 of doing this first was that fifteen components should not each remember their own number.
 
-### 4.2 Selection, and the things that need it
+### 4.2 ~~Selection, and the things that need it~~ — **Done**
 
 - ~~**`SelectionModel`.**~~ **Done.** The invariant was stated correctly — *anchor + extent + a set*, with
   Shift-click, Ctrl-click, Shift+Arrow and rubber-band as the same three operations (`at`, `toggle`, `extendTo`)
@@ -346,9 +346,41 @@ of doing this first was that fifteen components should not each remember their o
   undeliverable. There is now an overload taking `Consumer<ClickEvent>`, exactly as `onContextClick` already did.
   The alternative — reading `gui.modifiers()` inside a pointer handler — is a second channel alongside the event,
   and is already wrong if the key came up while the handler was queued.
-- **`Table`.** Sticky header, column resize by drag, sort by column, rows selected through `SelectionModel`. The
-  hard part is not the chrome: column width is a `Length` negotiation (fixed / fill / auto-to-content) resolved
-  once per frame, so this reaches `FlexLayout` as much as it reaches `-widget`.
+- ~~**`Table`.**~~ **Done.** Sticky header, column resize by drag, sort by column, rows selected through
+  `SelectionModel`, body virtualised by `ListView`. The note was right that the hard part is the width
+  negotiation, and right about where it lives — with one correction and one consequence.
+
+  **It does not reach `FlexLayout` after all.** Two cells of a column are in different rows, so making them agree
+  is a constraint between siblings' *children* — precisely the cross-tree solve §3 defers, and extending flex to
+  express it would be that engine change. It does not need one: the widget does the collect-solve-place that §3
+  names, from the layout read-model, once per published layout. What it must not do is write unconditionally —
+  a width write invalidates the layout that produced it, so an unchanged solve writes nothing, and there is a
+  test that the widths are a fixed point rather than a drift.
+
+  **The negotiation needed no new type.** A column's width *is* a `Length`, read through the published contract
+  rather than by case: `resolve` answers negative for the keywords, `growFactor` separates fill from auto. So
+  fixed is `rem(8)`, a share is `grow(2)`, and to-content is `AUTO` — the vocabulary flex already has, which is
+  why there is no `ColumnWidth`. The minimum is a floor applied *after* the share, never a basis added before it:
+  as a basis it makes every declared ratio wrong by the same constant, which is what the first version did.
+
+  **`AUTO` had to be decided, not implemented.** A virtualised body has no nodes for the rows off screen and a
+  widget cannot measure text that is not in the tree, so "as wide as its content" can only be measured from the
+  content that exists. Following the window would resize columns *while the user scrolls* — the standing rule's
+  exact prohibition. So it is measured once, from the header and the rows realized at the time, and latched until
+  the items change or the user drags. A wider row later is clipped, as it would be in a fixed column.
+
+  **The header is sticky by not being in the scroller** — a sibling above the body, so there is nothing to pin
+  and nothing to keep in sync. The same fact is why the body does not scroll horizontally in v1: the columns are
+  solved to the width there is.
+
+  Two things worth keeping. A resize grip belongs *outside* the header cell's padding, or the user has to aim
+  8px off the divider they can see. And `alignItems(CENTER)` on a header row gives an empty grip or indicator
+  slot zero height — nothing to press and nothing to draw in, while reading as perfectly correct code; cells
+  stretch and the centring happens one level further in.
+
+  **Not yet: `CursorShape` has no resize shape.** The grip takes `GRAB`, which fits its own documentation
+  ("something that can be grabbed and dragged"). A proper double-arrow is a native binding rather than a widget
+  change, and `SplitPane` (§4.5) will want the same one — do them together.
 
 ### 4.3 Choosers
 

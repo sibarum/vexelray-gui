@@ -166,6 +166,16 @@ public final class ListView<T> implements AutoCloseable {
         return shown.get(item);
     }
 
+    /**
+     * The items that currently have a row, as a snapshot. For anything that hangs state off a realized row and
+     * therefore has to drop it when the row goes — a table keeping its cells, say. Prune against this rather than
+     * asking to be notified: the set is a window's worth, so re-deriving is cheaper than a subscription and cannot
+     * drift from what actually exists.
+     */
+    public synchronized Set<T> realizedItems() {
+        return Set.copyOf(shown.keySet());
+    }
+
     /** React to a row being activated (double-click equivalent: Enter on the selection). */
     public ListView<T> onActivate(Consumer<T> handler) {
         this.onActivate = handler == null ? t -> { } : handler;

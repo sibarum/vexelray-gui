@@ -638,7 +638,7 @@ vexelray-gui           parent (pom), groupId dev.vexelray.gui, Java 25
 │                      lifecycle FSM + animation transform layer, framework-owned input dispatch,
 │                      RichText, and the app loop (GuiApp).
 │                      -> -draw, vexelray-canvas, -text, -vulkan, -os-api, atchung-core
-├─ vexelray-gui-widget widgets built on core: box, text, button, slider, list, scroll, text field, … -> -core
+├─ vexelray-gui-widget interaction protocols on core: tabs, tree, text field, slider, menus, … -> -core
 ├─ vexelray-gui-nfd    the GUI's one native binding — a Panama nativefiledialog-extended facade;
 │                      results delivered back through Atchung.                                        -> -core
 ├─ vexelray-gui-demo   canonical showcase app; wires tactroller-atchung for real input.

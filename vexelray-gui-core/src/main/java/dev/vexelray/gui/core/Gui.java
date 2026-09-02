@@ -134,8 +134,11 @@ public final class Gui implements AutoCloseable {
     private final MutationSink sink;
     private final Pump pump;
 
-    /** Set -Dvexelray.wake.trace=true to see every wake and, crucially, every tree that cannot make one. */
-    private static final boolean WAKE_TRACE = Boolean.getBoolean("vexelray.wake.trace");
+    // Wakes are traced through Probe on the FRAME lane -- `-Dprobe=frame -Dprobe.trace=true`, or
+    // `-Dprobe.format=csv` for the correlation log. There was a bespoke flag here writing to System.out, which
+    // meant the two facts a stall is diagnosed from -- that the loop parked, and what woke it -- were being
+    // written to two different streams with two different buffers. That is precisely the interleaving problem
+    // one writer exists to avoid, so it now goes where everything else goes (docs/automation.md §4).
 
     /** The unset {@link #workListener}. Held by identity so an unwired GUI is answerable. */
     private static final Runnable NO_WAKE = () -> { };
@@ -1464,10 +1467,13 @@ public final class Gui implements AutoCloseable {
         if (!woken.compareAndSet(false, true)) {
             return;   // a frame is already owed, and saying so twice does not owe two
         }
-        if (WAKE_TRACE) {
+        if (Probe.ON) {
             String id = "Gui@" + Integer.toHexString(System.identityHashCode(this));
             if (workListener != NO_WAKE) {
-                System.out.println("[wake] " + why + " on " + id);
+                // The other half of the gap analysis (docs/automation.md §4). loop.park says the loop went to
+                // sleep and for how long it was allowed to; this says what woke it, and why. A gap that ends in
+                // a wake and a gap that ends because the budget ran out are different findings.
+                Probe.mark(Lane.FRAME, "wake", why + " on " + id);
             } else if (!tracedUnwired) {
                 // Once per tree, not once per mutation. A palette built at startup and opened later
                 // mutates freely while hidden, and a line per mutation buries the one that matters
@@ -1475,8 +1481,8 @@ public final class Gui implements AutoCloseable {
                 // ignored. The host wires every tree it presents, every frame, so reaching here means
                 // nothing is presenting this one — and a tree nobody draws is owed no frame.
                 tracedUnwired = true;
-                System.out.println("[wake] " + why + " on " + id + "   (no listener - nothing is"
-                        + " presenting this tree, so no frame is owed. Further notices suppressed.)");
+                Probe.mark(Lane.FRAME, "wake.unwired", why + " on " + id + " - no listener, nothing is"
+                        + " presenting this tree, so no frame is owed; further notices suppressed");
             }
         }
         try {
@@ -1522,8 +1528,8 @@ public final class Gui implements AutoCloseable {
         // the newly wired listener must not inherit it as "already told". Without this, a tree that was edited
         // before it was presented would suppress the first real wake it ever had.
         woken.set(false);
-        if (WAKE_TRACE) {
-            System.out.println("[wake] wired Gui@" + Integer.toHexString(System.identityHashCode(this)));
+        if (Probe.ON) {
+            Probe.mark(Lane.FRAME, "wake.wired", "Gui@" + Integer.toHexString(System.identityHashCode(this)));
         }
     }
 

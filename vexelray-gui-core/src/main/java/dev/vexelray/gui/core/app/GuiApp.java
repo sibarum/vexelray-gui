@@ -89,8 +89,8 @@ public final class GuiApp implements AutoCloseable {
     /** The tree in the main window; bound by {@link #run}, and the executor application callbacks run on. */
     private Gui mainGui;
 
-    /** Set -Dvexelray.wake.trace=true to trace the whole chain: wake, budget, frame. */
-    private static final boolean WAKE_TRACE = Boolean.getBoolean("vexelray.wake.trace");
+    // The wake/budget/frame chain traces through Probe on the FRAME lane; see the note in Gui for why the
+    // bespoke flag that used to live here had to go.
 
     /** Trees already given a wake, by identity. Main thread only. See {@link #wireAllWakes}. */
     private final java.util.Set<Gui> wired =
@@ -636,8 +636,8 @@ public final class GuiApp implements AutoCloseable {
     }
 
     public void postWake() {
-        if (WAKE_TRACE) {
-            System.out.println("[wake]   -> postWake: nudging the OS message queue");
+        if (Probe.ON) {
+            Probe.mark(Lane.FRAME, "wake.post", "nudging the OS message queue");
         }
         main.window.postWake();
     }
@@ -771,10 +771,6 @@ public final class GuiApp implements AutoCloseable {
                 // The ceiling applies always. A zero budget means "immediately", which on a presenter
                 // that does not block is as fast as the machine goes; this is what stops that.
                 budget = Math.max(budget, minFrameNanos);
-                if (WAKE_TRACE) {
-                    System.out.println("[loop] frame " + frame + " done; budget "
-                            + (budget == Long.MAX_VALUE ? "forever" : budget / 1_000_000 + "ms"));
-                }
                 // The heartbeat, and the thing that makes a gap in the log readable (docs/automation.md §4).
                 //
                 // A run is read by sorting on time and looking for long stretches with no frame in them. That

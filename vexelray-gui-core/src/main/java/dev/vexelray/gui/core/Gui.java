@@ -1975,6 +1975,14 @@ public final class Gui implements AutoCloseable {
         SemanticSnapshot sem = new SemanticSnapshot(version, root.id, meanings);
         latestSemantics = sem;
 
+        // The causality key (docs/automation.md §4). Timestamps answer "when", and across threads they can even
+        // answer it in the wrong order; this answers "which frame", which is the question actually being asked
+        // when a click and the layout that was supposed to reflect it disagree. Recorded with the node count
+        // because a version that republishes with a tree that did not change is its own kind of finding.
+        if (Probe.ON) {
+            Probe.mark(Lane.LAYOUT, "layout.publish", "v" + version + " nodes=" + nodes.size());
+        }
+
         deliverResizes(snap);            // before the State commit, so a handler's edits ride the same drain
         layoutState.commit(setLayout, snap);
         semanticState.commit(setSemantics, sem);

@@ -775,6 +775,20 @@ public final class GuiApp implements AutoCloseable {
                     System.out.println("[loop] frame " + frame + " done; budget "
                             + (budget == Long.MAX_VALUE ? "forever" : budget / 1_000_000 + "ms"));
                 }
+                // The heartbeat, and the thing that makes a gap in the log readable (docs/automation.md §4).
+                //
+                // A run is read by sorting on time and looking for long stretches with no frame in them. That
+                // only distinguishes a stall from a nap if two things are recorded unconditionally: that a frame
+                // happened, and that the loop then parked *and for how long it was allowed to*. This loop parks
+                // indefinitely on an unfocused window by design, so without the budget a thirty-second doze and
+                // a thirty-second hang are the same silence. With it the rule is mechanical: a gap covered by
+                // the preceding park is expected, and a gap that is not is a stall whose suspect is the row
+                // above it.
+                if (Probe.ON) {
+                    Probe.mark(Lane.FRAME, "frame.present", "#" + frame);
+                    Probe.mark(Lane.FRAME, "loop.park",
+                            budget == Long.MAX_VALUE ? "forever" : budget / 1_000_000 + "ms");
+                }
                 if (budget > 0) {
                     // Timed separately from the frame, and worth timing: this is where a well-behaved
                     // application spends most of its life, and a wait total that is small next to the run

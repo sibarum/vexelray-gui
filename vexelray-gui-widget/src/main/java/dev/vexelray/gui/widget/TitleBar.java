@@ -3,6 +3,7 @@ package dev.vexelray.gui.widget;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.WindowControls;
+import dev.vexelray.gui.core.WindowInstrument;
 import dev.vexelray.gui.core.WindowRegion;
 import dev.vexelray.gui.core.app.WindowSpec;
 import dev.vexelray.gui.core.input.InteractionState;
@@ -50,6 +51,14 @@ public final class TitleBar {
      */
     private volatile WindowControls controls;
     private final Node root;
+    /** The flexing dead space between identity and the tools: caption, and nothing but caption. */
+    private final Node caption;
+    /** The framework's own tools, between the caption and the window controls. Empty until asked for. */
+    private final Node instruments;
+    /** The instrument buttons currently mounted, so a later call can take them down again. */
+    private final java.util.List<Node> mounted = new java.util.ArrayList<>();
+    /** Built on first use: a bar with no instruments needs no tooltip machinery. */
+    private Tooltip instrumentTips;
     private final Node leading;
     private final Node titleText;
     private final Node maximizeIcon;
@@ -100,18 +109,28 @@ public final class TitleBar {
         Node buttons = gui.row().height(Length.FILL).alignItems(AlignItems.STRETCH).scroll(false, false)
                 .children(minimize, maximize, close);
 
+        // Four zones, left to right: identity, caption, instruments, window controls (docs/automation.md §7).
+        // The caption is a spacer that takes the slack rather than SPACE_BETWEEN spreading three groups, because
+        // instruments have to sit *against* the caption buttons and not float in the middle of the bar. It stays
+        // ordinary dead space, so it is still all draggable.
+        this.caption = gui.box().width(Length.FILL).height(Length.FILL).scroll(false, false);
+        // The bar's own height, not FILL. `buttons` can say FILL because it is given its children here and so has
+        // a content height to resolve against; this strip is filled later, and a row that is empty when the first
+        // layout runs resolves FILL to nothing and stays a zero-height strip that swallows its buttons.
+        this.instruments = gui.row().height(BAR_H)
+                .alignItems(AlignItems.STRETCH).scroll(false, false);
+
         this.root = gui.row()
                 .role("titlebar")
                 .width(Length.FILL)
                 .height(BAR_H)
                 .background(theme.color(Role.CHROME))
                 .alignItems(AlignItems.CENTER)
-                .justify(Justify.SPACE_BETWEEN)
                 .scroll(false, false)
                 // Everything the buttons do not claim is caption: drag to move, double-click to maximize,
                 // right-click for the system menu — all of it the window manager's, none of it re-implemented.
                 .windowRegion(WindowRegion.DRAG)
-                .children(leading, buttons);
+                .children(leading, caption, instruments, buttons);
 
         // The window can be maximized or restored without this widget being the cause, and every one of those
         // routes changes the viewport. Re-deriving from the window on that signal is what keeps the icon honest.
@@ -122,6 +141,63 @@ public final class TitleBar {
     /** The node to place in a layout — put it at the top of the root column. */
     public Node node() {
         return root;
+    }
+
+    /**
+     * Put the framework's own tools in this bar — a screenshot, later a macro recorder
+     * ({@link WindowInstrument#standard()}, or any list an application assembles).
+     *
+     * <p><b>Opt-in, and replacing rather than appending.</b> A bar has none until asked, so nothing ships a
+     * button it never wanted; calling this again replaces the strip, so "which tools does this window have" has
+     * one answer rather than a history.
+     *
+     * <p>Each becomes a caption-sized button between the draggable caption and the window controls, declaring
+     * {@link WindowRegion#INTERACTIVE} so its click reaches the button rather than the window manager — the gaps
+     * around them stay caption, as they do for minimize and close. The mark is re-authored whenever the button's
+     * box changes, because a {@link dev.vexelray.gui.draw.Picture} is in pixels and a window can be zoomed.
+     */
+    public TitleBar instruments(java.util.List<WindowInstrument> tools) {
+        // Replacing, not appending: the strip is a statement about this window, not a log of what was asked for.
+        for (Node old : mounted) {
+            old.remove();
+        }
+        mounted.clear();
+        if (tools == null || tools.isEmpty()) {
+            return this;
+        }
+        if (instrumentTips == null) {
+            instrumentTips = new Tooltip(gui);
+        }
+        for (WindowInstrument tool : tools) {
+            Node b = instrument(tool);
+            mounted.add(b);
+            instruments.append(b);
+        }
+        return this;
+    }
+
+    /** One instrument as a caption-sized button: its mark, its tooltip, and its command. */
+    private Node instrument(WindowInstrument tool) {
+        Node b = gui.box()
+                .role(tool.role())
+                .width(BUTTON_W)
+                .height(Length.FILL)
+                .background(gui.theme().color(Role.NONE))
+                .scroll(false, false)
+                .windowRegion(WindowRegion.INTERACTIVE);
+        // Authored against the box the layout settled on, and re-authored when that box changes. A picture
+        // resolves no units of its own, so this is the only way a mark survives a zoom.
+        gui.onResizeUi(b, computed -> b.picture(
+                tool.mark().apply(computed.rect(), gui.theme().color(Role.INK))));
+        // The instrument asks the window, not the application: a bar in a popup photographs the popup. Resolved
+        // at click time like every other button here, so a bar built before its window still works.
+        gui.onClick(b, () -> tool.action().accept(this.controls));
+        gui.onState(b, state -> b.background(
+                gui.theme().color(state == InteractionState.NORMAL ? Role.NONE : Role.RAISED)));
+        if (!tool.tooltip().isEmpty()) {
+            instrumentTips.attach(b, tool.tooltip());
+        }
+        return b;
     }
 
     /**

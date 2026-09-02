@@ -1497,6 +1497,23 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
+     * Whether a frame is currently owed — something has been published that no frame has drained yet.
+     *
+     * <p>The read side of the wake, for anything that needs to know whether the tree has settled: chiefly the
+     * automation driver's {@code settle}, which waits for a mutation to be reflected before it reads or clicks
+     * again (docs/automation.md §5).
+     *
+     * <p><b>What it does not say.</b> A handler still running on a worker has not published yet, so it is owed
+     * nothing and this reports false while that work is still in flight — the same limit
+     * {@link #onWork} describes from the other side. So this answers "has the loop caught up with what it has
+     * been told", exactly, and never "is the application finished thinking". A caller that needs the second
+     * has to wait on the application's own state, which only the application can name.
+     */
+    public boolean frameOwed() {
+        return woken.get();
+    }
+
+    /**
      * How a host loop that parks between frames is told a mutation is waiting for it.
      *
      * <p><b>Required by any loop that sleeps</b>, and its absence is a window that stops updating rather
@@ -2068,7 +2085,7 @@ public final class Gui implements AutoCloseable {
         boolean text = n.kind == NodeKind.TEXT;
         out.put(n.id, new SemanticNode(
                 n.id, parentId, childIds, n.kind,
-                n.role(), accessibleName(n),
+                n.role(), accessibleName(n), landmarkNames.getOrDefault(n.id, ""),
                 n.visible(), n.hitInert(), n.floating(),
                 input.isFocusable(n.id), input.focusedId() == n.id, n.editable(),
                 text ? n.textString() : null,

@@ -53,7 +53,8 @@ class CursorTest {
 
         @Override
         public float[] caretAdvances(String text, float px) {
-            return new float[]{0f};
+            int n = text == null ? 0 : text.length();
+            return new float[n + 1];    // zero-width glyphs, but the right number of caret boundaries
         }
     };
 

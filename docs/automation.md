@@ -275,7 +275,7 @@ instrument, which is the strongest available guarantee that what the agent synth
   Core, input and frame-loop events instrumented — including the unconditional `frame.present` heartbeat and
   `loop.park`, without which a stall is indistinguishable from an idle window.
 - **A3 — Virtual cursor + paths.** *(Landed: `vexelray-gui-automation`, `Cursor` — stateful, stepped at 125Hz, real-time paced, `move`/`click`/`drag`/`scroll`.)*
-- **A4 — Protocol + CLI.** Socket line protocol, `tree`/`find`/`settle`/`shot`/`mark`, `csvview`.
+- **A4 — Protocol + CLI.** *(Landed: `Automation` + `AutomationServer`, a loopback line protocol. `go` reuses the framework's own navigation, so a concealed target is revealed rather than refused. `csvview` still to do.)*
 - **A5 — Prove it.** Reproduce a known hover-path bug from the CSV alone, without the app in front of us.
   Until A5 passes, the instrument is not trusted for troubleshooting.
 

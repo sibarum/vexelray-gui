@@ -53,6 +53,11 @@ class TitleBarTest {
         public void close() {
             calls.add("close");
         }
+
+        @Override
+        public void capture(String path) {
+            calls.add("capture " + path);
+        }
     }
 
     /** The centre of the nth caption button counting from the right: 0 is close, 1 maximize, 2 minimize. */

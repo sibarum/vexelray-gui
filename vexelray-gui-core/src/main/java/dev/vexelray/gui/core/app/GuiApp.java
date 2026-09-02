@@ -174,7 +174,18 @@ public final class GuiApp implements AutoCloseable {
 
         this.main = new GuiWindow(platform, instance, device, atlas, noImage, text, measurer, null,
                 probe, probeSurface, config.decorations());
-        this.controls = WindowControls.of(main.window);
+        // The capture sink posts to the frame loop rather than capturing here: everything GuiWindow.capture
+        // touches is Vulkan, and a title-bar button is clicked on the GUI thread, not the main one.
+        this.controls = WindowControls.of(main.window, path -> post(() -> {
+            try {
+                main.capture(path);
+            } catch (java.io.IOException e) {
+                // A screenshot that cannot be written is not a reason to take the application down mid-frame.
+                // Saying so once, with the path, is: the instrument is for troubleshooting, and an instrument
+                // that fails silently is the thing being troubleshot.
+                System.err.println("vexelray-gui: could not write capture to " + path + ": " + e.getMessage());
+            }
+        }));
     }
 
     /**
@@ -1050,7 +1061,7 @@ public final class GuiApp implements AutoCloseable {
         }
     }
 
-    private static BufferedImage toImage(byte[] rgba, int w, int h) {
+    static BufferedImage toImage(byte[] rgba, int w, int h) {
         BufferedImage image = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {

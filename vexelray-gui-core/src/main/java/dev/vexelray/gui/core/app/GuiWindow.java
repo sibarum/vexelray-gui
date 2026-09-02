@@ -1,10 +1,12 @@
 package dev.vexelray.gui.core.app;
 
 import dev.vexelray.canvas.Canvas;
+import dev.vexelray.canvas.Color;
 import dev.vexelray.canvas.CanvasShader;
 import dev.vexelray.canvas.CanvasVertex;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.layout.TextMeasurer;
+import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.model.RetainedNode;
 import dev.vexelray.os.Decorations;
 import dev.vexelray.os.NativePlatform;
@@ -17,6 +19,7 @@ import dev.vexelray.shader.ComposedShader;
 import dev.vexelray.text.TextLayout;
 import dev.vexelray.vulkan.present.AtlasTexture;
 import dev.vexelray.vulkan.present.GraphicsPipeline;
+import dev.vexelray.vulkan.present.OffscreenDraw;
 import dev.vexelray.vulkan.present.SampledImage;
 import dev.vexelray.vulkan.present.VertexBuffer;
 import dev.vexelray.vulkan.present.VulkanRenderPass;
@@ -26,6 +29,9 @@ import dev.vexelray.vulkan.vk.Vk;
 import dev.vexelray.vulkan.vk.VkLoader;
 import dev.vexelray.vulkan.vk.VulkanDevice;
 import dev.vexelray.vulkan.vk.VulkanInstance;
+
+import javax.imageio.ImageIO;
+import java.io.File;
 
 /**
  * One OS window and everything owned per-window: the {@link NativeWindow}, its Vulkan surface + swapchain +
@@ -73,10 +79,30 @@ final class GuiWindow implements AutoCloseable {
     /** Said once, not once a frame: a window over budget is over budget for as long as it is on screen. */
     private boolean warnedOverCapacity;
 
+    /**
+     * Teardown happens once. Every object below is a GPU handle whose second destruction is undefined behaviour,
+     * and the two paths that close a window — a popup releasing itself, and the application closing every window
+     * it still holds — are not mutually exclusive by construction. Guarding here is what keeps that harmless.
+     */
+    private boolean closed;
+
     final NativeWindow window;
     /** The tree shown in this window. Set at creation for popups; bound by {@code run} for the main window. */
     Gui gui;
     private final VulkanInstance instance;
+    /** Held for {@link #capture}: the offscreen pass and pipeline it needs are built on this window's device. */
+    private final VulkanDevice device;
+    /** Held for {@link #capture}, which binds the same descriptor set the presenter draws with. */
+    private final AtlasTexture atlas;
+    /**
+     * The offscreen render pass and pipeline {@link #capture} draws through, built on first use and rebuilt when
+     * the window's extent changes. Lazy because most windows are never captured, and a capture path that costs
+     * every window a second pipeline whether or not anyone asks for a picture is a cost with no consumer.
+     */
+    private VulkanRenderPass capturePass;
+    private GraphicsPipeline capturePipeline;
+    private int captureW;
+    private int captureH;
     private final long surface;
     private final VulkanSwapchain swapchain;
     private final VulkanRenderPass renderPass;
@@ -109,6 +135,8 @@ final class GuiWindow implements AutoCloseable {
               SampledImage noImage, TextLayout[] text, TextMeasurer measurer, Gui gui, NativeWindow window,
               long existingSurface, Decorations decorations) {
         this.instance = instance;
+        this.device = device;
+        this.atlas = atlas;
         this.noImage = noImage;
         this.gui = gui;
         this.text = text;
@@ -154,6 +182,87 @@ final class GuiWindow implements AutoCloseable {
             return true;
         }
         return presenter.render(0, this::draw);
+    }
+
+    /**
+     * Render this window's current tree offscreen and write it to {@code path} as a PNG.
+     *
+     * <p><b>Per window, and on the main thread.</b> Per window because a screenshot is of a window — the one
+     * whose title bar the instrument sits in (docs/automation.md §7) — and an application-level capture would
+     * only ever have had to be widened into this. On the main thread because everything Vulkan here is, so this
+     * is called from the frame loop's task queue and never directly.
+     *
+     * <p>It draws the tree <em>as it stands</em>: the same drain-and-lay-out step {@link #draw} runs, then the
+     * same {@link TreeRenderer} emit into the same {@link Canvas}, so a capture and the frame beside it cannot
+     * disagree. Unlike the static {@link GuiApp#capture} there is no warm-up frame — this window has been
+     * running, so whatever an observer wanted to settle has settled.
+     *
+     * <p>The background is the theme's page colour rather than transparent: a PNG of a translucent UI over
+     * nothing is unreadable, and every consumer of this wants to see what was on screen.
+     */
+    void capture(String path) throws java.io.IOException {
+        int w = swapchain.width();
+        int h = swapchain.height();
+        if (w <= 0 || h <= 0) {
+            return;                     // minimized: there is no picture, and asking for one is not an error
+        }
+        if (capturePass == null || captureW != w || captureH != h) {
+            closeCapture();
+            capturePass = new VulkanRenderPass(device, Vk.FORMAT_R8G8B8A8_UNORM,
+                    Vk.IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+            capturePipeline = new GraphicsPipeline(device, capturePass.handle(), w, h,
+                    CanvasShader.vertex().spirv(), "main", CanvasShader.fragment().spirv(), "main",
+                    GuiApp.canvasConfig(atlas, noImage, false)); // fixed viewport: offscreen never resizes mid-draw
+            captureW = w;
+            captureH = h;
+        }
+
+        RetainedNode root = update();
+        canvas.begin();
+        if (root != null) {
+            TreeRenderer.emit(root, canvas, text, gui.theme());
+        }
+        int vertexCount = Math.min(canvas.vertexCount(),
+                (int) (vertexBuffer.capacityFloats() / CanvasVertex.FLOATS_PER_VERTEX));
+        vertexBuffer.update(canvas.toVertexArray(), vertexCount * CanvasVertex.FLOATS_PER_VERTEX);
+
+        Color page = gui.theme().color(Role.PAGE);
+        byte[] rgba = OffscreenDraw.toRgba(device, capturePass.handle(), capturePipeline, w, h,
+                vertexBuffer.handle(), atlas.descriptorSet(),
+                GuiApp.bind(canvas.runs(), vertexCount, noImage), page.r(), page.g(), page.b(), 1f);
+        // Written beside the target and moved into place, never written at it. A capture is asynchronous, so
+        // every consumer of one waits for the file to appear — and a PNG written in place is *visible* from its
+        // first byte, so the natural way to wait produces a truncated read on a timing this test hit first try.
+        // Moving atomically makes "the file is there" mean "the file is complete", for every consumer, forever.
+        File target = new File(path);
+        File tmp = new File(target.getAbsolutePath() + ".part");
+        ImageIO.write(GuiApp.toImage(rgba, w, h), "PNG", tmp);
+        try {
+            java.nio.file.Files.move(tmp.toPath(), target.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+        } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+            // Some filesystems cannot; a plain replace is still far narrower than writing in place.
+            java.nio.file.Files.move(tmp.toPath(), target.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }
+
+        // The vertex buffer now holds the capture's geometry and the presenter's run list still describes the
+        // last presented frame. Nothing reads either until the next frame rewrites both, but leaving the two
+        // disagreeing is the kind of state that is only ever fine until something else is added here.
+        presenter.setRuns(GuiApp.bind(canvas.runs(), vertexCount, noImage));
+    }
+
+    /** Release the offscreen pass and pipeline, if this window ever built them. */
+    private void closeCapture() {
+        if (capturePipeline != null) {
+            capturePipeline.close();
+            capturePipeline = null;
+        }
+        if (capturePass != null) {
+            capturePass.close();
+            capturePass = null;
+        }
     }
 
     /** Yield while there is nothing to draw, so a minimized window costs a poll rather than a core. */
@@ -247,8 +356,13 @@ final class GuiWindow implements AutoCloseable {
     /** Release everything this window owns. Shared objects (device, atlas, instance) are not touched. */
     @Override
     public void close() {
+        if (closed) {
+            return;
+        }
+        closed = true;
         window.setFrameSink(null);   // nothing may pull a frame through objects that are being torn down
         presenter.close();   // waits the device idle before tearing down per-window GPU objects
+        closeCapture();
         pipeline.close();
         vertexBuffer.close();
         renderPass.close();

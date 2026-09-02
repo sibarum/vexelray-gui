@@ -20,7 +20,7 @@ Three of the four primitives already exist, built for other reasons:
 | **Act** — inject input | Publishing `InputEvent` on the Tactroller topic *is* the input path (architecture.md §13.3). `HeadlessGui` already drives real widgets this way. | Exists |
 | **Read** — inspect state | `LayoutSnapshot`: immutable, **versioned**, keyed by stable node id, transport-serializable. | Exists |
 | **Settle** — know when a mutation landed | `LayoutSnapshot.version` increments per published frame. | Exists |
-| **See** — pixels | `GuiApp` offscreen capture on the live device. | Exists (see §7 A0) |
+| **See** — pixels | `GuiApp` offscreen capture on the live device. | Exists (see §8 A0) |
 | **Understand** — role, name, structure, state | — | **Missing (§3)** |
 
 Because injection is the ordinary input path, an agent is not a special mode the application can behave
@@ -193,12 +193,76 @@ An instrument used to troubleshoot other bugs must not have interesting failure 
 
 ---
 
-## 7. Milestones
+## 7. Window instruments: the same tool, driven by hand
 
-- **A0 — Live capture.** Fold `GuiApp.capture` into an instance method on the running app, posted to `tasks`.
-  Keep or delete the static per its remaining CI value. *(Prereq for `shot`.)*
+An agent is not the only thing that wants to screenshot a window or record what happened in it. A person
+troubleshooting wants exactly that, on the window in front of them, without a socket or a CLI. So the same
+capabilities surface as **instruments in the title bar** — and where they live is a design decision, not a
+placement one.
+
+### Chrome belongs to the framework
+
+A title bar is window chrome, and chrome belongs to whoever owns the window. An application contributes
+**identity** — its title, and an icon only as identity. It never contributes **controls** there; a control an
+application needs belongs in the application's own UI.
+
+This is what makes a utility free everywhere. The moment one app puts its own button in the caption, the strip
+is app-addressable, and no framework instrument can rely on the space existing or on its meaning being the same
+from one window to the next. "Screenshot this window" is only free if the framework owns the place it lives.
+
+### Four zones
+
+`TitleBar` is `[identity | caption | buttons]` today. It becomes:
+
+```
+[ identity | caption (flex, DRAG) | instruments | window controls ]
+```
+
+- **identity** — application-supplied, declarative, no handlers.
+- **caption** — the flexing drag region, still `WindowRegion.DRAG`.
+- **instruments** — framework-owned, each `WindowRegion.INTERACTIVE`, with the gaps between them left draggable
+  exactly as the caption buttons already manage.
+- **window controls** — minimize, maximize, close. Rightmost, and maximize keeps `MAXIMIZE_BUTTON` so the
+  platform's own snap affordance still works.
+
+### Registered, never enumerated
+
+An instrument is a value — mark, tooltip, role, action — contributed to a registry that `TitleBar` renders
+without inspecting. The framework registers screenshot and macro-record; `TitleBar` branches on nothing, so the
+automation module can add its own without `TitleBar` knowing it exists. The same shape `WindowControls` already
+has: the bar commands an interface and knows no implementations.
+
+### Three constraints
+
+- **Never revealed on hover.** Instruments are always present and reserve their width. Where the bar is too
+  narrow they collapse into an overflow instrument that is itself always present. Nothing in this strip may
+  appear, move or grow under the pointer.
+- **Marks, not glyphs.** The primary atlas carries no camera or record symbol, and `TitleBar` already draws its
+  icons as rectangles rather than font characters. Instrument marks are `Picture` geometry, which also stays
+  crisp under zoom.
+- **Opt-in per window.** A shipped application must not carry a macro-record button it never asked for. The
+  framework supplies a default set; a `WindowSpec` may take fewer, or none. Free to *enable* — not present
+  unconditionally.
+
+### Why this shapes A0
+
+The screenshot instrument is A0's first consumer, and it settles A0's scope: capture is **per-window**, not
+main-window-only. Building it for the CLI alone would have produced a method on the application that then had
+to be widened. Each window owning its own bar means each instrument captures its own window, and multi-window
+support is not a feature anyone has to add.
+
+Macro-record lands later for the same reason it belongs here at all: recording a macro *is* the input stream
+§4's log already records, and playing one back *is* §2's path synthesis. The person and the agent drive the one
+instrument, which is the strongest available guarantee that what the agent synthesizes matches what a hand does.
+
+## 8. Milestones
+
 - **A1 — `SemanticSnapshot`.** The read-model, published from the compute phase, joined by id and version;
-  architecture-guard rule added. **The bulk of the work, and owed to C4 regardless.**
+  architecture-guard rule added. **The bulk of the work, and owed to C4 regardless.** *(Landed — see
+  docs/semantic-read-model.md. Widget and demo roles landed with it.)*
+- **A0 — Live capture.** Capture on the running app, **per window** (§7), posted to the `tasks` queue so it
+  happens on the main thread inside the frame loop. Keep or delete the static per its remaining CI value.
+  *(Prereq for `shot` and for the screenshot instrument.)*
 - **A2 — The writer.** Single-threaded correlation CSV, `seq`, per-line flush, drop-and-watchdog on failure.
   Core, input and frame-loop events instrumented — including the unconditional `frame.present` heartbeat and
   `loop.park`, without which a stall is indistinguishable from an idle window.
@@ -207,13 +271,13 @@ An instrument used to troubleshoot other bugs must not have interesting failure 
 - **A5 — Prove it.** Reproduce a known hover-path bug from the CSV alone, without the app in front of us.
   Until A5 passes, the instrument is not trusted for troubleshooting.
 
-## 8. Non-goals
+## 9. Non-goals
 
 An MCP server (the CLI is drivable today; MCP is a later wrapper, not a dependency). Visual diffing or image
 assertions. Recording and replaying human sessions. Multi-peer fan-out. Making automation a supported product
 feature of the framework — it is a development instrument that happens to be built from published contracts.
 
-## 9. No new debt
+## 10. No new debt
 
 Explicitly, this module may not: add a second input path; duplicate any part of the layout read-model; build a
 bespoke logging framework beyond the one writer described in §4; introduce a sealed switch or a throwing default

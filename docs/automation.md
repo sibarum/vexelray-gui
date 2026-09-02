@@ -95,22 +95,30 @@ writer makes the file's own order the truth. Everything else follows from that.
 
 ### Schema
 
+**The writer is `sibarum.probe.Probe`, at `-Dprobe.format=csv`.** Not a new one: Probe already had the single
+serialised sink, the per-line flush, and lanes that are exactly this file's `stream` column — and a second
+writer in this repo would have recreated the very interleaving problem this section exists to prevent. Turning
+it on is `-Dprobe=all -Dprobe.format=csv -Dprobe.out=run.csv`; `csv` implies tracing, because a correlation log
+holding only the spans that happened to be slow is not one.
+
 ```
-seq,t_mono_ns,t_wall,frame,version,stream,level,kind,node,detail
+seq,t_mono_ns,t_wall,thread,lane,kind,detail
 ```
 
 | Column | What it is for |
 |---|---|
-| `seq` | Total order from the single writer. Monotonic, no gaps — **a gap is detectable loss**, which is the whole reason to have it. Not the sort key; it breaks ties when two rows share a nanosecond. |
-| `t_mono_ns` | Monotonic nanos. **The sort key**, and the only one — see below. |
-| `t_wall` | ISO-8601 UTC. For humans, and for joining against anything outside this process. |
-| `frame` | GUI frame number the event was observed in. |
-| `version` | `LayoutSnapshot.version` current at emit — **the causality key**. "Did my click land before or after that layout?" is answered here, not by timestamps. |
-| `stream` | `agent` / `input` / `gui` / `app` / `log` / `perf`. What a derived view filters on. |
-| `level` | `trace`…`fatal`, plus `watchdog`. Projects out the warn/error view. |
-| `kind` | Event type: `pointer.move`, `hover.enter`, `key.down`, `mutation.drain`, `layout.publish`, `frame.present`, `agent.click`. |
-| `node` | Node id, or empty. Joins a log line to a widget. |
-| `detail` | Free-form, escaped, **always last** so a naive split keeps working when it contains commas. |
+| `seq` | Row number from the single writer. Gapless — **a gap is detectable loss**, which is the whole reason to have it. Not the sort key; it breaks ties when two threads land in the same nanosecond. |
+| `t_mono_ns` | Monotonic nanos since the process started. **The sort key**, and the only one — a wall clock can step sideways and sort two events into an order that never happened. |
+| `t_wall` | ISO-8601 UTC. For people, and for joining against anything outside this process. |
+| `thread` | Who. Essential and easy to forget: the same `kind` on the GUI thread and on a worker are different events. |
+| `lane` | Where: `frame`, `layout`, `input`, `bus`, `state`, `draw`, `gpu`, `anim`, `time`, `shader`, `app`. What a derived view filters on. |
+| `kind` | What: `frame.present`, `loop.park`, `layout.publish`, a span's name, `open`/`close`. |
+| `detail` | The producer's own, escaped, **always last** so a naive split keeps working when it contains commas. |
+
+**Frame, version and node ride in `detail`, not in columns of their own.** Probe is the whole stack's seam and
+a message bus has no frames, so bending its schema to one consumer would be the wrong trade. The convention is
+`#<frame>`, `v<version>`, `node=<id>`, and a derived view extracts them — `awk -F, '$6=="layout.publish"'` and
+so on. The causality question is still answerable, which was the requirement; it just costs a field split.
 
 ### Reading it: sort by time, hunt for gaps
 
@@ -136,7 +144,7 @@ timestamps across threads cannot.
 
 - **One event per physical line. Newlines in `detail` are escaped, never raw.** The entire value of this format
   is that `sort`, `grep -n` and `awk` operate on it; one raw stack trace destroys that for every row after it.
-- Written from a single thread that owns the file. Producers hand it a record; they never touch the writer.
+- Writes are serialised on the one sink. Producers hand it an event; they never touch the writer.
 - **Flushed per line, not buffered.** An instrument used to debug crashes must have already written the last
   line before the crash. This costs throughput and is worth it.
 - Emitting must never be able to fail the app: a full disk degrades to a dropped record and a `watchdog` line,
@@ -144,7 +152,7 @@ timestamps across threads cannot.
 
 ### Derived views
 
-A small `csvview` command projects `--stream`, `--level`, `--node`, `--frame` ranges. These are generated on
+A derived view is `awk`/`grep` over the one file, or a small `csvview` command projecting `--stream`, `--level`, `--node`, `--frame` ranges. These are generated on
 demand from the one file, so they are consistent with it by construction. No parallel writers, ever.
 
 ---
@@ -263,7 +271,7 @@ instrument, which is the strongest available guarantee that what the agent synth
 - **A0 — Live capture.** Capture on the running app, **per window** (§7), posted to the `tasks` queue so it
   happens on the main thread inside the frame loop. Keep or delete the static per its remaining CI value.
   *(Prereq for `shot` and for the screenshot instrument.)*
-- **A2 — The writer.** Single-threaded correlation CSV, `seq`, per-line flush, drop-and-watchdog on failure.
+- **A2 — The writer.** *(Landed: `probe.format=csv` in atchung — `seq`, two clocks, one row per physical line.)*
   Core, input and frame-loop events instrumented — including the unconditional `frame.present` heartbeat and
   `loop.park`, without which a stall is indistinguishable from an idle window.
 - **A3 — Virtual cursor + paths.** Stateful cursor, stepped motion, real-time pacing, `move`/`click`/`drag`.

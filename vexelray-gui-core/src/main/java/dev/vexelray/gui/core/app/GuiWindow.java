@@ -9,6 +9,9 @@ import dev.vexelray.gui.core.model.RetainedNode;
 import dev.vexelray.os.Decorations;
 import dev.vexelray.os.NativePlatform;
 import dev.vexelray.os.NativeWindow;
+import sibarum.probe.Lane;
+import sibarum.probe.Probe;
+import sibarum.probe.Zone;
 import dev.vexelray.os.WindowConfig;
 import dev.vexelray.shader.ComposedShader;
 import dev.vexelray.text.TextLayout;
@@ -164,13 +167,22 @@ final class GuiWindow implements AutoCloseable {
 
     /** One frame's worth of work: host hook, layout, emit, and (for client chrome) republish the OS regions. */
     private void draw(double dt, java.lang.foreign.MemorySegment pushConstants) {
-        beforeFrame.run();
-        RetainedNode root = update();
-        canvas.begin();
-        if (root != null) {
-            TreeRenderer.emit(root, canvas, text, gui.theme());
+        // The application edge - on a real app this is the input pump, so its cost is input's, not drawing's.
+        try (Zone z = Probe.zone(Lane.FRAME, "before frame")) {
+            beforeFrame.run();
         }
-        emit(canvas.toVertexArray(), canvas.vertexCount(), canvas.runs());
+        RetainedNode root = update();
+        try (Zone z = Probe.zone(Lane.DRAW, "emit canvas")) {
+            canvas.begin();
+            if (root != null) {
+                TreeRenderer.emit(root, canvas, text, gui.theme());
+            }
+            // The number the truncation warning below is about, recorded every frame rather than only when it
+            // overflows: a buffer that is nearly full is the frame before the one that draws wrong.
+            Probe.count(Lane.DRAW, "vertices", canvas.vertexCount());
+            Probe.count(Lane.DRAW, "runs", canvas.runs().size());
+            emit(canvas.toVertexArray(), canvas.vertexCount(), canvas.runs());
+        }
     }
 
     /**
@@ -213,7 +225,12 @@ final class GuiWindow implements AutoCloseable {
         if (ww > 0 && wh > 0 && (ww != canvas.width() || wh != canvas.height())) {
             canvas.resize(ww, wh);
         }
-        RetainedNode root = gui == null ? null : gui.frame(canvas.width(), canvas.height(), measurer);
+        RetainedNode root;
+        // Everything between a mutation and a drawable node: dispatch, drain, reconcile, layout, publish. The
+        // LAYOUT lane names the pieces; this is their sum, and the one number to compare against DRAW and GPU.
+        try (Zone z = Probe.zone(Lane.LAYOUT, "tree update")) {
+            root = gui == null ? null : gui.frame(canvas.width(), canvas.height(), measurer);
+        }
         if (clientChrome) {
             // The tree's own declarations, plus how far into its dead space it hands over a resize grip — both
             // derived from the frame just laid out, so the band scales with the gutter it was set from.

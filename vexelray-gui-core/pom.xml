@@ -20,6 +20,10 @@
     </description>
 
     <dependencies>
+        <dependency>
+            <groupId>sibarum.atchung</groupId>
+            <artifactId>atchung-probe</artifactId>
+        </dependency>
         <!-- A picture and its two targets. Below core: the drawing a node carries is a value, and the sink that
              paints it into the Canvas is what the tree renderer uses. -->
         <dependency>

@@ -9,6 +9,9 @@ import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
 import dev.vexelray.gui.core.layout.TextMeasurer;
 import dev.vexelray.gui.core.model.RetainedNode;
 import dev.vexelray.os.NativePlatform;
+import sibarum.probe.Lane;
+import sibarum.probe.Probe;
+import sibarum.probe.Zone;
 import dev.vexelray.os.NativeWindow;
 import dev.vexelray.os.WindowConfig;
 import dev.vexelray.shader.ComposedShader;
@@ -718,7 +721,14 @@ public final class GuiApp implements AutoCloseable {
             // After the tasks, because opening a window is one of them: a tree that arrived this
             // iteration is presented this iteration, so it must be able to ask for the next one.
             wireAllWakes();
-            running = main.frame(beforeFrame) || mainGate.keepAlive(main.window, gui.handlers());
+            // One span per loop iteration, and it is the root of the whole report: every other span in every
+            // other lane nests inside this one, so its self time is the loop's own overhead and its children
+            // are where a frame actually went. The wait below is deliberately outside it - a loop parked on an
+            // empty event queue is idle, not slow, and counting the park as frame time would make a perfectly
+            // healthy render-on-demand application look like the worst offender in the table.
+            try (Zone frameZone = Probe.zone(Lane.FRAME, "frame")) {
+                running = main.frame(beforeFrame) || mainGate.keepAlive(main.window, gui.handlers());
+            }
             open.removeIf(w -> {
                 // Each window pumps its own input before its own frame: two OS windows, one loop, one GUI.
                 if (w.window.frame(w.input::pump) || w.gate.keepAlive(w.window.window, w.spec.gui().handlers())) {
@@ -755,7 +765,12 @@ public final class GuiApp implements AutoCloseable {
                             + (budget == Long.MAX_VALUE ? "forever" : budget / 1_000_000 + "ms"));
                 }
                 if (budget > 0) {
-                    main.window.waitEvents(budget);
+                    // Timed separately from the frame, and worth timing: this is where a well-behaved
+                    // application spends most of its life, and a wait total that is small next to the run
+                    // time is the signature of a loop that is spinning rather than sleeping.
+                    try (Zone waitZone = Probe.idleZone(Lane.FRAME, "wait for events")) {
+                        main.window.waitEvents(budget);
+                    }
                 }
             }
         }

@@ -42,10 +42,15 @@ Run the interactive showcase (needs a Vulkan-capable GPU):
 mvn -pl vexelray-gui-demo -am compile exec:exec
 ```
 
-Headless capture to PNG (works in CI, no input backend needed):
+Headless capture to PNG (works in CI, no input backend needed). `demo.args` is split on whitespace, so a
+filename and a chapter index are ordinary arguments:
 
 ```bash
 mvn -pl vexelray-gui-demo exec:exec -Ddemo.args=--capture
+```
+
+```bash
+mvn -pl vexelray-gui-demo exec:exec "-Ddemo.args=--capture tables.png 3"
 ```
 
 Native executable (needs a GraalVM JDK; profile-gated so ordinary builds stay fast):
@@ -235,8 +240,9 @@ another button to one screen. [Demo.java](vexelray-gui-demo/src/main/java/dev/ve
 is what is left over: the application edge — input, clipboard, window memory, the frame loop, and
 what closing the window means — which is exactly the part a client application writes for itself.
 
-Run it with `mvn -pl vexelray-gui-demo exec:exec`. `Demo --capture out.png <chapter>` shoots a
-single page headless, and `Demo --capture-zoom` walks the zoom ladder as a strip of images.
+Run it with `mvn -pl vexelray-gui-demo exec:exec`, passing arguments as `-Ddemo.args=...` (quote the whole
+`-D` when it has spaces). `Demo --capture out.png <chapter>` shoots a single page headless -- the chapter is
+its index in the rail -- and `Demo --capture-zoom` walks the zoom ladder as a strip of images.
 
 ## The application edge
 

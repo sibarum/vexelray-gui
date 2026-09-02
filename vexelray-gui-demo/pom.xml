@@ -21,7 +21,11 @@
 
     <properties>
         <demo.mainClass>dev.vexelray.gui.demo.Demo</demo.mainClass>
-        <!-- Program args for exec:exec (one token; empty = the interactive showcase). -->
+        <!--
+          Program args for exec:exec, split on whitespace: empty is the interactive showcase, and a
+          multi-word value (the capture flag, a filename and a chapter index) is three arguments rather
+          than one. See the plugin configuration below.
+        -->
         <demo.args></demo.args>
     </properties>
 
@@ -81,13 +85,19 @@
                     <skip>false</skip>
                     <executable>${java.home}/bin/java</executable>
                     <classpathScope>runtime</classpathScope>
-                    <arguments>
-                        <argument>--enable-native-access=ALL-UNNAMED</argument>
-                        <argument>-classpath</argument>
-                        <classpath/>
-                        <argument>${demo.mainClass}</argument>
-                        <argument>${demo.args}</argument>
-                    </arguments>
+                    <!--
+                      One command line, split on whitespace, rather than a list of argument elements.
+
+                      An argument element is exactly one token and a property cannot expand into several, so a
+                      multi-word demo.args arrived as a single argument and Demo read the whole string as a
+                      frame count: every capture form the README documents was unrunnable as written. This form
+                      is split, so a multi-word demo.args means what it says, and an empty one contributes no
+                      token at all, which is the interactive run.
+
+                      %classpath is exec:exec's own token for the runtime classpath. It is substituted after
+                      the split, so it stays a single argument even where a path contains a space.
+                    -->
+                    <commandlineArgs>--enable-native-access=ALL-UNNAMED -classpath %classpath ${demo.mainClass} ${demo.args}</commandlineArgs>
                 </configuration>
             </plugin>
         </plugins>

@@ -174,18 +174,7 @@ public final class GuiApp implements AutoCloseable {
 
         this.main = new GuiWindow(platform, instance, device, atlas, noImage, text, measurer, null,
                 probe, probeSurface, config.decorations());
-        // The capture sink posts to the frame loop rather than capturing here: everything GuiWindow.capture
-        // touches is Vulkan, and a title-bar button is clicked on the GUI thread, not the main one.
-        this.controls = WindowControls.of(main.window, path -> post(() -> {
-            try {
-                main.capture(path);
-            } catch (java.io.IOException e) {
-                // A screenshot that cannot be written is not a reason to take the application down mid-frame.
-                // Saying so once, with the path, is: the instrument is for troubleshooting, and an instrument
-                // that fails silently is the thing being troubleshot.
-                System.err.println("vexelray-gui: could not write capture to " + path + ": " + e.getMessage());
-            }
-        }));
+        this.controls = controlsFor(main);
     }
 
     /**
@@ -490,6 +479,32 @@ public final class GuiApp implements AutoCloseable {
      * Create a window for {@code spec} now, on the main thread: the OS window, its input backend, and its place
      * in the frame loop. {@code owner} is the named handle to keep in step, or null for an anonymous popup.
      */
+    /**
+     * Working controls for one of this application's windows — every command, including a real
+     * {@link WindowControls#capture}.
+     *
+     * <p><b>Made here because only here can it be made.</b> {@code WindowControls.of(NativeWindow)} cannot
+     * capture: the pixels come from that window's own render bundle, which the host owns and a native window
+     * knows nothing about. So a title bar that minted its own controls from the window handed to
+     * {@code onCreated} got a working minimize, maximize and close and a screenshot that silently did nothing —
+     * on every window but the main one. Every window this application opens is handed these instead.
+     *
+     * <p>The capture posts to the frame loop rather than running here: everything {@code GuiWindow.capture}
+     * touches is Vulkan, and a caption button is clicked on the GUI thread, not the main one.
+     */
+    private WindowControls controlsFor(GuiWindow window) {
+        return WindowControls.of(window.window, path -> post(() -> {
+            try {
+                window.capture(path);
+            } catch (java.io.IOException e) {
+                // A screenshot that cannot be written is not a reason to take the application down mid-frame.
+                // Saying so once, with the path, is: the instrument is for troubleshooting, and an instrument
+                // that fails silently is the thing being troubleshot.
+                System.err.println("vexelray-gui: could not write capture to " + path + ": " + e.getMessage());
+            }
+        }));
+    }
+
     OpenWindow openWindow(WindowSpec spec, AppWindow owner) {
         // The spec's Standing decides whether this window is a satellite of the main window — above it always,
         // sharing its taskbar button, minimized and destroyed with it — or a peer with its own place in the
@@ -503,6 +518,9 @@ public final class GuiApp implements AutoCloseable {
         OpenWindow entry = new OpenWindow(w, input, spec, owner);
         open.add(entry);
         spec.onCreated().accept(w.window);
+        // The controls this window can actually be commanded by, capture included. After onCreated, so a bar
+        // that also listens there is already built by the time it is pointed at the window.
+        spec.onControls().accept(controlsFor(w));
         if (modal != null) {
             // A window opened while a dialog is up must not be a way around it.
             w.window.setEnabled(w.window == modal);

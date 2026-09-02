@@ -130,6 +130,30 @@ class InstrumentStripTest {
     }
 
     @Test
+    void aBarInAnyWindowGetsAWorkingScreenshot() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            // A bar built before its window, as every bar but the main one is.
+            TitleBar bar = new TitleBar(h.gui, null, "popup")
+                    .instruments(List.of(WindowInstrument.screenshot(() -> "popup.png")));
+            h.gui.root().children(bar.node());
+            h.frame();
+
+            // What the host does when it opens the window. The bar must take these rather than mint its own
+            // from the NativeWindow: a native window cannot photograph itself, so a bar that built its own got
+            // a working minimize, maximize and close and a screenshot that silently did nothing — on every
+            // window except the main one.
+            Recorder rec = new Recorder();
+            var spec = bar.commands(dev.vexelray.gui.core.app.WindowSpec.of(
+                    dev.vexelray.os.WindowConfig.of("popup", 400, 300), h.gui));
+            spec.onControls().accept(rec);
+
+            h.click(fromRight(3), 16f);
+            assertEquals(List.of("capture popup.png"), rec.calls,
+                    "the instrument has to reach the window the host supplied, not a no-op");
+        }
+    }
+
+    @Test
     void aMarkIsReauthoredForTheBoxItGot() {
         try (HeadlessGui h = new HeadlessGui()) {
             List<Rect> authored = new ArrayList<>();

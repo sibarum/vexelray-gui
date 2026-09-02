@@ -120,7 +120,15 @@ seq,t_mono_ns,t_wall,thread,lane,kind,detail
 **Frame, version and node ride in `detail`, not in columns of their own.** Probe is the whole stack's seam and
 a message bus has no frames, so bending its schema to one consumer would be the wrong trade. The convention is
 `#<frame>`, `v<version>`, `node=<id>`, and a derived view extracts them — `awk -F, '$6=="layout.publish"'` and
-so on. The causality question is still answerable, which was the requirement; it just costs a field split.
+so on.
+
+**And this is weaker than a column would have been**, which is worth stating rather than glossing. A version
+appears only on the row that published it, so no other row carries the version it happened at: "did my click
+land before or after that layout?" is answered by finding the nearest preceding `layout.publish` in the
+time-sorted file. That is inference from ordering, not a join, and it is only as good as the ordering — which
+is why the monotonic clock is the sort key and why `seq` exists to prove nothing went missing in between. If
+this ever proves too weak, the fix is for producers to put the version in `detail` on the rows that matter, not
+for Probe to grow a column that means nothing to a message bus.
 
 ### Reading it: sort by time, hunt for gaps
 
@@ -309,8 +317,16 @@ has: the bar commands an interface and knows no implementations.
 
 The screenshot instrument is A0's first consumer, and it settles A0's scope: capture is **per-window**, not
 main-window-only. Building it for the CLI alone would have produced a method on the application that then had
-to be widened. Each window owning its own bar means each instrument captures its own window, and multi-window
-support is not a feature anyone has to add.
+to be widened. Each window owning its own bar means each instrument captures its own window.
+
+**That took one seam more than this section originally claimed, and the gap was silent.** `GuiWindow.capture`
+existed and was simply unreachable for a popup: a bar built its own `WindowControls` from the `NativeWindow`
+it was handed at `onCreated`, and a native window cannot photograph itself — so `WindowControls.of(window)`
+bound a capture sink that did nothing, and the host wired a real one for the main window only. Every other
+window had a screenshot button that neither worked nor complained, which is the exact failure this document
+spends §6 arguing against. The controls are now handed down *by the host* through `WindowSpec.onControls`:
+only `GuiApp` owns a window's render bundle, so only `GuiApp` can make working controls, and nothing else is
+allowed to try.
 
 Macro-record lands later for the same reason it belongs here at all: recording a macro *is* the input stream
 §4's log already records, and playing one back *is* §2's path synthesis. The person and the agent drive the one

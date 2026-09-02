@@ -116,7 +116,11 @@ class TitleBarTest {
             RecordingWindow window = new RecordingWindow();
             WindowSpec spec = bar.commands(WindowSpec.of(WindowConfig.of("Test", 100, 100), h.gui));
 
-            spec.onCreated().accept(window);            // what the frame loop does once the window exists
+            // What the frame loop does once the window exists. The controls come from the host, not from the
+            // bar: a NativeWindow can serve minimize, maximize and close on its own but cannot photograph
+            // itself, so letting the bar mint its own gave every non-main window a silent no-op screenshot.
+            spec.onCreated().accept(window);
+            spec.onControls().accept(WindowControls.of(window));
             h.click(buttonX(0), BAR_H / 2f);
             assertEquals(List.of("requestClose"), window.calls, "the caption commands the window it opened");
 

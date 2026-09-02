@@ -232,7 +232,11 @@ public final class TitleBar {
      * {@code GuiApp.controls()} directly and there is no moment to wait for.
      */
     public WindowSpec commands(WindowSpec spec) {
-        return spec.onCreated(window -> controls(WindowControls.of(window)))
+        // Taken from the host rather than minted from the native window. A NativeWindow cannot photograph
+        // itself — the pixels are in the GUI's per-window render bundle, which only GuiApp owns — so a bar that
+        // built its own controls got a working minimize, maximize and close and a screenshot that quietly did
+        // nothing. That is the failure mode this whole strip exists to avoid, and it was in the strip.
+        return spec.onControls(this::controls)
                    .onClosed(() -> controls(WindowControls.NONE));
     }
 

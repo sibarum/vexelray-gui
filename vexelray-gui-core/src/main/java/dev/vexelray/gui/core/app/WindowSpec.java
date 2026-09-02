@@ -1,6 +1,7 @@
 package dev.vexelray.gui.core.app;
 
 import dev.vexelray.gui.core.Gui;
+import dev.vexelray.gui.core.WindowControls;
 import dev.vexelray.os.NativeWindow;
 import dev.vexelray.os.WindowConfig;
 
@@ -29,7 +30,8 @@ import java.util.function.Consumer;
  *                       window (see {@link #belongingTo})
  */
 public record WindowSpec(WindowConfig config, Gui gui, Consumer<NativeWindow> onCreated, Runnable onClosed,
-                         Consumer<CloseRequest> onCloseRequest, Standing standing, AppWindow anchor) {
+                         Consumer<CloseRequest> onCloseRequest, Standing standing, AppWindow anchor,
+                         Consumer<WindowControls> onControls) {
 
     public WindowSpec {
         if (config == null) {
@@ -44,6 +46,9 @@ public record WindowSpec(WindowConfig config, Gui gui, Consumer<NativeWindow> on
         if (onClosed == null) {
             onClosed = () -> { };
         }
+        if (onControls == null) {
+            onControls = c -> { };
+        }
         if (standing == null) {
             standing = Standing.PEER;
         }
@@ -51,7 +56,7 @@ public record WindowSpec(WindowConfig config, Gui gui, Consumer<NativeWindow> on
 
     /** A window showing {@code gui}, with nothing to do at its lifecycle moments, standing beside the main one. */
     public static WindowSpec of(WindowConfig config, Gui gui) {
-        return new WindowSpec(config, gui, null, null, null, null, null);
+        return new WindowSpec(config, gui, null, null, null, null, null, null);
     }
 
     /**
@@ -65,13 +70,30 @@ public record WindowSpec(WindowConfig config, Gui gui, Consumer<NativeWindow> on
      */
     public WindowSpec onCreated(Consumer<NativeWindow> onCreated) {
         return new WindowSpec(config, gui, andThen(this.onCreated, onCreated), onClosed, onCloseRequest, standing,
-                anchor);
+                anchor, onControls);
+    }
+
+    /**
+     * This spec, with {@code onControls} handed the {@link WindowControls} for the window it opens — on the
+     * main thread, before the first frame. Adds, as {@link #onCreated} does.
+     *
+     * <p><b>Why this exists and {@code onCreated} was not enough.</b> {@code onCreated} hands over a
+     * {@link NativeWindow}, and a native window cannot do everything a title bar asks of the window it sits in:
+     * {@link WindowControls#capture} needs the GUI's per-window render bundle, which only the host owns. A bar
+     * that built its own controls from the native window therefore got a working minimize, maximize and close
+     * and a <b>silent no-op screenshot</b> — every window except the main one, because the host wired the real
+     * sink only there. Handing the controls down instead of letting the bar mint them is what makes
+     * "every window can photograph itself" true rather than merely intended (docs/automation.md §7).
+     */
+    public WindowSpec onControls(Consumer<WindowControls> onControls) {
+        return new WindowSpec(config, gui, onCreated, onClosed, onCloseRequest, standing, anchor,
+                andThenControls(this.onControls, onControls));
     }
 
     /** This spec, with {@code onClosed} run once the window is gone. Adds, as {@link #onCreated} does. */
     public WindowSpec onClosed(Runnable onClosed) {
         return new WindowSpec(config, gui, onCreated, andThen(this.onClosed, onClosed), onCloseRequest, standing,
-                anchor);
+                anchor, onControls);
     }
 
     /**
@@ -80,7 +102,7 @@ public record WindowSpec(WindowConfig config, Gui gui, Consumer<NativeWindow> on
      * {@link CloseRequest} is a bug rather than a feature.
      */
     public WindowSpec onCloseRequest(Consumer<CloseRequest> onCloseRequest) {
-        return new WindowSpec(config, gui, onCreated, onClosed, onCloseRequest, standing, anchor);
+        return new WindowSpec(config, gui, onCreated, onClosed, onCloseRequest, standing, anchor, onControls);
     }
 
     /**
@@ -89,7 +111,7 @@ public record WindowSpec(WindowConfig config, Gui gui, Consumer<NativeWindow> on
      * and for the same reason: a window has one place in the stack, and it is settled once, at creation.
      */
     public WindowSpec standing(Standing standing) {
-        return new WindowSpec(config, gui, onCreated, onClosed, onCloseRequest, standing, anchor);
+        return new WindowSpec(config, gui, onCreated, onClosed, onCloseRequest, standing, anchor, onControls);
     }
 
     /**
@@ -110,7 +132,15 @@ public record WindowSpec(WindowConfig config, Gui gui, Consumer<NativeWindow> on
      * <p><b>Replaces</b>, like {@link #standing}: a window stands relative to one thing.
      */
     public WindowSpec belongingTo(AppWindow anchor) {
-        return new WindowSpec(config, gui, onCreated, onClosed, onCloseRequest, standing, anchor);
+        return new WindowSpec(config, gui, onCreated, onClosed, onCloseRequest, standing, anchor, onControls);
+    }
+
+    private static Consumer<WindowControls> andThenControls(Consumer<WindowControls> first,
+                                                            Consumer<WindowControls> next) {
+        return next == null ? first : c -> {
+            first.accept(c);
+            next.accept(c);
+        };
     }
 
     private static Consumer<NativeWindow> andThen(Consumer<NativeWindow> first, Consumer<NativeWindow> next) {

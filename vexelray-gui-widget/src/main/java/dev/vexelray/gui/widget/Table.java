@@ -171,7 +171,7 @@ public final class Table<T> implements AutoCloseable {
         this.root = gui.column().width(Length.FILL).height(Length.FILL).scroll(false, false);
         // Cells stretch to the header's height rather than centring: a grip or an indicator slot that sizes to
         // its own (empty) content is a box of no height, which is nothing to aim at and nothing to draw in.
-        this.header = gui.row().width(Length.FILL).height(Length.rem(rowRem))
+        this.header = gui.row().width(Length.FILL).height(Length.rem(rowRem)).scroll(false, false)
                 .background(gui.theme().color(Role.CHROME));
         buildHeader();
         root.children(header, body.node());
@@ -291,7 +291,7 @@ public final class Table<T> implements AutoCloseable {
 
             // The padding is on the label rather than on the cell, so the grip sits flush against the boundary
             // it moves. A grip inset by the padding is a grip the user has to aim off-target for.
-            Node cell = gui.row().width(widthOf(index)).height(Length.FILL);
+            Node cell = gui.row().width(widthOf(index)).height(Length.FILL).scroll(false, false);
             Node label = gui.text(column.title()).width(Length.FILL).height(Length.FILL)
                     .padding(Length.ZERO, CELL_PAD)
                     .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE)
@@ -369,11 +369,14 @@ public final class Table<T> implements AutoCloseable {
 
     /** One row: a cell per column, recorded so the solve can write each one its width. */
     private Node buildRow(Gui g, T item) {
-        Node row = g.row().width(Length.FILL).height(Length.FILL);
+        Node row = g.row().width(Length.FILL).height(Length.FILL).scroll(false, false);
         List<Node> built = new ArrayList<>(columns.size());
         for (int i = 0; i < columns.size(); i++) {
             // A row, so that centring is the cross axis and the cell still takes its height from the row above.
+            // Not a scroller: overflow scrolling is on by default, so a cell whose content is wider than its
+            // column would draw a scrollbar across its own text. A cell truncates -- that is what clip is for.
             Node cell = g.row().width(widthOf(i)).height(Length.FILL)
+                    .scroll(false, false)
                     .alignItems(AlignItems.CENTER)
                     .padding(Length.ZERO, CELL_PAD)
                     .clip(true);
@@ -413,12 +416,15 @@ public final class Table<T> implements AutoCloseable {
     private void solve() {
         List<Runnable> writes = new ArrayList<>();
         synchronized (this) {
-            NodeLayout table = root.layout();
-            if (!table.present() || table.viewW() <= 0f) {
+            // The BODY's viewport, not the table's: the body is a scroller, so it is narrower than the table by
+            // its scrollbar, and solving against the table would push the last column under the bar and clip it.
+            // The header is not in the scroller, so its cells stop short of the bar -- which is where they belong.
+            NodeLayout viewport = body.node().layout();
+            if (!viewport.present() || viewport.viewW() <= 0f) {
                 return;
             }
             prune();
-            float available = table.viewW();
+            float available = viewport.viewW();
             LayoutContext ctx = context();
 
             float[] basis = new float[columns.size()];

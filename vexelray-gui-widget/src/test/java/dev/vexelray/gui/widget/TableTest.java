@@ -10,6 +10,7 @@ import java.util.Comparator;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -26,8 +27,15 @@ class TableTest {
     private static final Comparator<Person> BY_NAME = Comparator.comparing(Person::name);
     private static final Comparator<Person> BY_AGE = Comparator.comparingInt(Person::age);
 
-    /** The harness lays out at 800px wide; a table filling it is the width every solve below shares out. */
+    /**
+     * The harness lays out at 800px wide. The columns are shared out over the <em>body</em>, which is narrower
+     * than that by its scrollbar -- so the width to measure against is read from the body, never assumed.
+     */
     private static final float TABLE_W = 800f;
+
+    private static float bodyWidth(Table<Person> table) {
+        return table.rows().node().layout().viewW();
+    }
 
     // ------------------------------------------------------------------ the solve
 
@@ -56,11 +64,11 @@ class TableTest {
             float fixed = Length.rem(5).scalarPx(dev.vexelray.gui.core.layout.LayoutContext.of(800, 600), 0f);
             assertEquals(fixed, table.columnWidth(1), 0.5f, "the fixed column is its declared length");
 
-            float remainder = TABLE_W - fixed;
+            float remainder = bodyWidth(table) - fixed;
             assertEquals(remainder * 2f / 3f, table.columnWidth(0), 1f, "two thirds of what is left");
             assertEquals(remainder * 1f / 3f, table.columnWidth(2), 1f, "and one third");
-            assertEquals(TABLE_W, table.columnWidth(0) + table.columnWidth(1) + table.columnWidth(2), 1f,
-                    "and together they are the table");
+            assertEquals(bodyWidth(table), table.columnWidth(0) + table.columnWidth(1) + table.columnWidth(2), 1f,
+                    "and together they are the body");
         }
     }
 
@@ -131,6 +139,49 @@ class TableTest {
         }
     }
 
+    /**
+     * The columns are solved against the <b>body's</b> viewport rather than the table's. The body is a scroller,
+     * so it is narrower than the table by its scrollbar; solving against the table pushes the last column under
+     * the bar, where it is clipped by exactly the width nobody accounted for.
+     */
+    @Test
+    void theColumnsAreSolvedAgainstTheBodyRatherThanTheTable() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Table<Person> table = mount(h, 1_000);   // long enough that the body really has a scrollbar
+            assertTrue(table.rows().node().layout().overflowY(), "the body is scrolling");
+
+            float body = table.rows().node().layout().viewW();
+            float total = table.columnWidth(0) + table.columnWidth(1) + table.columnWidth(2);
+            assertEquals(body, total, 1f, "the columns fill the body exactly");
+            assertTrue(total < table.node().layout().viewW() - 1f,
+                    "and stop short of the table by the scrollbar's width");
+        }
+    }
+
+    /**
+     * Nothing inside a table is a scroller but the body. Overflow scrolling is on by default, so a cell whose
+     * content is wider than its column would draw a scrollbar across its own text — which is what it does look
+     * like, and is not what anyone would guess from reading the code.
+     */
+    @Test
+    void noCellOrRowIsAScroller() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Table<Person> table = mount(h, 20);
+
+            assertNoScrolling(h, table.headerCell(0), "a header cell");
+            Person first = personNamed(table, "aa00");
+            assertNoScrolling(h, table.cell(first, 1), "a body cell");
+            assertNoScrolling(h, table.rows().rowNode(first), "a row");
+            assertTrue(h.retained(table.rows().node()).scrollYAllowed(), "but the body still scrolls");
+        }
+    }
+
+    private static void assertNoScrolling(HeadlessGui h, Node node, String what) {
+        assertNotNull(node, what + " exists");
+        assertFalse(h.retained(node).scrollXAllowed(), what + " must not scroll horizontally");
+        assertFalse(h.retained(node).scrollYAllowed(), what + " must not scroll vertically");
+    }
+
     // ------------------------------------------------------------------ resizing
 
     /**
@@ -147,7 +198,7 @@ class TableTest {
 
             assertEquals(before + 40f, table.columnWidth(0), 1.5f, "as wide as the pointer moved it");
             assertEquals(table.columnWidth(0), cellWidth(table, "aa01", 0), 0.5f, "and the rows went with it");
-            assertEquals(TABLE_W, table.columnWidth(0) + table.columnWidth(1) + table.columnWidth(2), 1.5f,
+            assertEquals(bodyWidth(table), table.columnWidth(0) + table.columnWidth(1) + table.columnWidth(2), 1.5f,
                     "the growing columns absorbed it, so the table is still the table");
         }
     }

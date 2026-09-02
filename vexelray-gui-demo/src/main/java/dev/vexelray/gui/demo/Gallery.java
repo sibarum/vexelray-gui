@@ -5,6 +5,7 @@ import dev.vexelray.gui.demo.chapter.DrawChapter;
 import dev.vexelray.gui.demo.chapter.LayoutChapter;
 import dev.vexelray.gui.demo.chapter.MotionChapter;
 import dev.vexelray.gui.demo.chapter.PlotChapter;
+import dev.vexelray.gui.demo.chapter.TableChapter;
 import dev.vexelray.gui.demo.chapter.TextChapter;
 import dev.vexelray.gui.demo.chapter.TreeChapter;
 import dev.vexelray.gui.demo.chapter.TypesetChapter;
@@ -17,8 +18,9 @@ import java.util.List;
  *
  * <p>Order is an argument, not an accident: text first because a text field is the deepest vertical in the
  * framework and the one most applications reach for first; then trees, then what a tree gained when drags
- * arrived; then the two modules that draw rather than lay out; then windows, motion and layout, which are about
- * the frame rather than about anything in it.
+ * arrived; then the same selection worked out one dimension further, in a table long enough that most of its
+ * rows do not exist; then the two modules that draw rather than lay out; then windows, motion and layout, which
+ * are about the frame rather than about anything in it.
  */
 public final class Gallery {
 
@@ -28,6 +30,7 @@ public final class Gallery {
                 new TextChapter(),
                 new TreeChapter(),
                 new DragChapter(),
+                new TableChapter(),
                 new DrawChapter(),
                 new PlotChapter(),
                 new TypesetChapter(),

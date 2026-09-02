@@ -210,8 +210,14 @@ public final class ListView<T> implements AutoCloseable {
         return this;
     }
 
-    /** The order a range runs along: the items as they stand. Read live, so a range is never computed on stale. */
-    private SelectionModel.Order<T> order() {
+    /**
+     * The order a range runs along: the items as they stand. Read live, so a range is never computed on stale.
+     *
+     * <p>Public because {@link SelectionModel}'s range operations take one, so anything wiring a gesture of its
+     * own — a select-all button, a command that extends the selection — needs <em>this</em> order rather than a
+     * list of its own that a sort may since have reordered.
+     */
+    public SelectionModel.Order<T> order() {
         return SelectionModel.Order.of(items);
     }
 
@@ -292,7 +298,9 @@ public final class ListView<T> implements AutoCloseable {
     /** Build the row for {@code index} and put it at {@code at} among the root's children. */
     private Node buildRow(int index, int at) {
         T item = items.get(index);
-        Node row = gui.box().width(Length.FILL).height(Length.rem(rowRem))
+        // Not a scroller: overflow scrolling is on by default, and a row that scrolled would draw a scrollbar
+        // over its own contents the moment they were too wide for it.
+        Node row = gui.box().width(Length.FILL).height(Length.rem(rowRem)).scroll(false, false)
                 .background(fill(item));
         row.append(builder.build(gui, item));
         gui.onClick(row, e -> onRowClick(item, e));

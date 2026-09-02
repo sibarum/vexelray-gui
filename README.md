@@ -292,6 +292,12 @@ What sits between the GUI and the OS, all driven from the one main-thread loop:
   `Gui` to `watch` and the user's zoom is remembered too, restored before the first frame.
 - **Native file dialogs** (`vexelray-gui-nfd`) — open/save/pick-folder as `Optional<Path>`, bound
   straight to the window handle.
+- **Automation** (`vexelray-gui-automation`) — two lines, and an agent or a script can drive the running
+  application over a loopback socket: `AutomationServer.start(new Automation(gui, app.controls()))`, then
+  `printf 'find Save\nclick save\nsettle\n' | nc localhost 7654`. The pointer **travels** rather than
+  teleporting, so hover fires because it was provoked; nodes are addressed by role, name or `Gui.landmark`
+  rather than by coordinate; and with `-Dprobe.format=csv` the run writes one correlation log that
+  `sibarum.probe.CsvView --gaps` reads back. See [docs/automation.md](docs/automation.md).
 
 ## Going deeper
 
@@ -301,8 +307,8 @@ What sits between the GUI and the OS, all driven from the one main-thread loop:
   published read-model every consumer (renderer, hit-testing, widgets) shares
 - [docs/semantic-read-model.md](docs/semantic-read-model.md) — the other half of it: what each node
   *is* (role, name, structure, focus), for readers that are not the renderer
-- [docs/automation.md](docs/automation.md) — plan: driving the real app from an agent, and the one
-  correlation log that explains what happened
+- [docs/automation.md](docs/automation.md) — `vexelray-gui-automation`: driving the real app from an
+  agent with a pointer that never teleports, and the one correlation log that explains what happened
 - [docs/keyboard-focus-text.md](docs/keyboard-focus-text.md) — keys, focus, claims, and text editing
 - [docs/transfer.md](docs/transfer.md) — drag and drop, cut and paste: one resolution, several
   sources, and why what is shown is always what will happen

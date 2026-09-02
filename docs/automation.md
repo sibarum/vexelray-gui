@@ -173,24 +173,68 @@ invariant that makes the module worth having rather than a pile of helpers: it i
 in the same JVM today. When M1–M3 land it becomes a remote peer across an `ElektroBridge` with no change to its
 own code — which makes this a more demanding **M4** than the planned one, and one that gets used daily.
 
-Agent-facing surface: a line protocol on a socket, plus a thin CLI so it is drivable from a shell.
+### Switching it on
+
+Two lines at the application edge, and a flag on the command line:
+
+```java
+Automation driver = new Automation(gui, app.controls());   // controls: for `shot`
+AutomationServer server = AutomationServer.start(driver);  // loopback :7654, daemon thread
+```
+
+```
+-Dprobe=all -Dprobe.format=csv -Dprobe.out=run.csv
+```
+
+`AutomationServer` binds **loopback only**, deliberately and not configurably: this hands anyone who can reach
+it full control of the application's input, so it is a debugging instrument and not a service. It takes **one
+connection at a time** — a pointer is one hand, and two agents interleaving paths would produce a gesture
+neither asked for and a log of a run nobody performed. Pass `0` as the port to be given a free one and ask
+`server.port()`.
+
+The verbs are also callable directly — `driver.command("click 41")`, or `driver.cursor()` for the pointer — so
+a test can drive the same surface with no socket in the way.
+
+### The protocol
+
+One command per line in; one reply out, terminated by a line containing only `.`. Replies begin `ok` or `err`,
+so a script can branch on the first two characters without parsing anything.
+
+```bash
+printf 'find Save\nclick save\nsettle\nshot after.png\nquit\n' | nc localhost 7654
+```
 
 | Command | Meaning |
 |---|---|
-| `tree` | The joined semantic + layout snapshot, as an indented, ref-tagged outline. |
-| `find <query>` | Refs whose role/name/text match. Refs are node ids — no coordinate guessing, no OCR. |
-| `where` | Current virtual cursor position. |
-| `move <ref or x,y>` | Path the cursor there. Hover consequences are real. |
-| `click <ref or x,y>` | `move`, then press/release. |
-| `drag <from> <to>` | Press, path, release. |
-| `type <text>` / `key <chord>` | Through the ordinary key path. |
-| `scroll <ref> <dx> <dy>` | Wheel deltas. |
-| `settle` | Block until `version` advances with no pending mutations. |
-| `shot [path]` | PNG of the live window. |
-| `mark <text>` | Write an `agent` row into the CSV — how an agent annotates *why* it did something. |
+| `tree` | The joined semantic + layout snapshot as an indented outline: ref, role, name, `@landmark`, box, plus `hidden` / `focused`. |
+| `find <text>` | Refs whose role or name contains the text, case-insensitively. |
+| `where` | Where the pointer is now. |
+| `go <landmark>` | The framework's own navigation: reveal whatever conceals it, scroll it into view, focus it. |
+| `move <ref\|landmark\|x,y>` | Travel there. Hover happens on the way, and is recorded. |
+| `click` / `rightclick <target>` | Travel there, then press and release. |
+| `drag <target> <target>` | Press, travel, release. |
+| `scroll <target> <dx> <dy>` | Wheel notches there. |
+| `type <text>` | One code point at a time, through the ordinary character channel. |
+| `key <NAME>` | Press and release a named `Key`. |
+| `settle` | Wait for the loop to catch up with everything published so far. |
+| `shot [path]` | PNG of the window this driver is attached to. |
+| `mark <note>` | Write a row into the correlation log saying *why*. Changes nothing else. |
+| `help`, `quit` | The list; and end the session. |
 
-Main-thread discipline: `shot` and any window command post to `GuiApp`'s existing `tasks` queue. Reads post
-nothing — snapshots are lock-free by design.
+**Two ways to name a node, and the difference is durability.** A **ref** is a node id: minted per run, resolved
+to a box at the moment of acting — never a coordinate read a frame earlier, which is the classic automation
+flake and cannot be retried, because the click has already landed. A **landmark** (`Gui.landmark(name, node)`)
+is the name that still means something tomorrow, and unlike an id it can be *navigated* to, so a concealed
+target is revealed rather than refused. `tree` and `find` show it as `@name`. Anything written down — a script,
+a recorded session — should say the landmark.
+
+**What `settle` does and does not promise.** It waits on the layout commit signal until no frame is owed, so it
+is exact about the frame loop and never a sleep. It cannot see a handler still running on a worker: that
+handler has published nothing yet, so nothing reports it owed. An agent needing "the application has finished
+thinking" has to wait on something the application names.
+
+Main-thread discipline: `shot` posts to `GuiApp`'s existing `tasks` queue via `WindowControls`. Reads post
+nothing — snapshots are lock-free by design — and input goes on the bus, so no command touches GUI-thread state.
 
 ---
 

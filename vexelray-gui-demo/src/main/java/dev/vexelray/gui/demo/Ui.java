@@ -5,6 +5,7 @@ import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.text.TextLayout;
@@ -39,7 +40,7 @@ public final class Ui {
         return gui.column().width(Length.FILL).height(Length.FILL)
                 .background(theme.color(Role.PANEL)).corner(Length.rem(0.875f))
                 .border(Length.rem(0.1f), theme.color(Role.LINE))
-                .lit(theme.lit()).elevation(Length.rem(1.25f))
+                .lit(theme.lit()).elevation(theme.elevation(Relief.OVERLAY))
                 .padding(CARD_PAD).gap(GAP)
                 .children(children);
     }
@@ -112,7 +113,7 @@ public final class Ui {
                     // Letterpress only while the label is white-on-fill; the off state is low-contrast already.
                     .textSunken(v && theme.letterpress())
                     .background(theme.color(v ? Role.ACTION : Role.PANEL, state))
-                    .elevation(depth(state));
+                    .elevation(theme.elevation(Relief.CONTROL, state));
         };
         restyle.run();
         gui.onState(t, state -> {
@@ -142,8 +143,9 @@ public final class Ui {
     }
 
     /**
-     * The button body, without a handler. Depth is part of the feedback: hover lifts the control a little and
-     * pressing sets it down flush, so the shadow reports the gesture as well as the fill does.
+     * The button body, without a handler. Depth is part of the feedback, and the theme owns the response: the
+     * control names the rung it rests on and hover lifts it, pressing sets it flush, so the shadow reports the
+     * gesture as well as the fill does.
      */
     private static Node shell(Gui gui, String text, Role fg, Role fill, boolean bordered) {
         Node b = gui.text(text).role("button").width(Length.AUTO).height(Length.rem(2.5f))
@@ -152,20 +154,13 @@ public final class Ui {
                 .corner(Length.rem(0.5f)).textColor(gui.theme().color(fg))
                 .textSize(Length.rem(0.9375f))
                 .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE)
-                .lit(gui.theme().lit()).elevation(Length.rem(0.375f));
+                .lit(gui.theme().lit()).elevation(gui.theme().elevation(Relief.CONTROL));
         if (bordered) {
             b.border(Length.rem(0.1f), gui.theme().color(Role.LINE));
         }
-        gui.onState(b, state -> b.background(gui.theme().color(fill, state)).elevation(depth(state)));
+        gui.onState(b, state -> b.background(gui.theme().color(fill, state))
+                .elevation(gui.theme().elevation(Relief.CONTROL, state)));
         return b;
-    }
-
-    private static Length depth(InteractionState state) {
-        return switch (state) {
-            case NORMAL -> Length.rem(0.375f);
-            case HOVER -> Length.rem(0.625f);
-            case PRESSED -> Length.ZERO;
-        };
     }
 
     private Ui() {

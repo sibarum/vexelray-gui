@@ -235,13 +235,14 @@ Wanted eventually, deliberately not now.
   *Walking* one (Up/Down/Home/End, Enter to choose, Escape already works) belongs in `ContextMenu`,
   which would claim those chords at `ClaimScope.VISIBLE` exactly as it claims Escape, and needs a
   highlighted-row notion that hover and the keyboard share. Neither is hard; both were out of scope
-  the day the menu became declarative.
+  the day the menu became declarative. Sequenced in §4.3.
 - **Checkable and nested items.** `MenuItem` is a label, an action and an enabled flag. A tick ("Word
   wrap ✓"), an accelerator hint ("Copy   Ctrl+C") and a submenu are the three things a real menu adds
   next. The first two are fields on the record and rows in the presenter. A submenu is not: it is a
   second panel, a hover-open delay, and a hit region that spans both — the overlay primitive handles
   the drawing, but nothing in `MenuSink` can express "these items, under that one" yet, and the
   temptation to model it as a `MenuItem` with children is exactly how a menu stops being a list.
+  Sequenced in §4.3.
 - **A theme swapped at runtime.** `Gui.theme(Theme)` is read when a widget writes a prop, so a swap after the tree
   is built reaches the renderer's chrome (scrollbars, gutter, selection, shadow) and everything that restyles on
   interaction, but not the props already written — a live dark/light toggle would leave stale colours behind. The
@@ -251,14 +252,123 @@ Wanted eventually, deliberately not now.
   `PropKey.BACKGROUND` would carry a `Role` (a literal colour being the constant function), the renderer would ask
   the theme, and re-theming would cost one repaint and zero prop writes. What it needs is invalidation on theme
   change plus a decision about where interaction state is applied, since the renderer does not know it.
-- **Interaction depth from the theme.** Colour response to hover/press is one `Shading` for the whole UI; the
-  *depth* response is still a `switch (state)` over `Length`s, written out in `Modals.button` and twice in the
-  demo. It is the same shape of decision (one step, applied to whatever the control already is) and belongs
-  next to `Shading` — `Theme.elevation(base, state)` — rather than copied per widget.
+- ~~**Interaction depth from the theme.**~~ **Done** — see §4.1, which is where the shape was decided. The
+  signature is not the `Theme.elevation(base, state)` this note guessed: a base *length* cannot be stepped without
+  arithmetic on `Length`, and adding a scale operator would have meant a third switch over the sealed type §1.1
+  exists to remove. Depth is a ladder of rungs instead, so the response is a move rather than a sum.
 
 ---
 
-## 4. Engine-side (lands in `vexelray`, not here)
+## 4. Widget vocabulary — the components still missing
+
+`-widget` holds **interaction protocols**, not painted controls: `Tabs`, `TreeView`, `TextField`, `ContextMenu`,
+`Modal`, `Reorder`, `Popout`. A button, a toggle, a card and a heading are application code — `Ui` in the demo is
+the honest demonstration of that, and the reason it works is that a `Role` already knows its own hover and
+pressed shades, so nobody there writes a colour down. Promoting those would make the framework opinionated about
+appearance and buy no invariant. So a component earns a place here only when it carries an invariant application
+code cannot be trusted to re-derive: a selection anchor, a commit-or-revert, a virtualised row window, a claim on
+a chord.
+
+Two standing constraints shape almost every entry below. **Nothing appears, moves or expands on hover** — a
+popup opens on click, and space a control might need is reserved before it needs it. And **every device event
+arrives through Tactroller on the bus**; a component that wants a key reads a claim, it does not read a device.
+
+**Sequenced.** §4.1 first, then §4.2 in order: the first four unblock the most. §4.7 is scheduled against the C1
+proof in `architecture-proof-plan.md` rather than against this list.
+
+### 4.1 ~~Prerequisite: `Theme.elevation(base, state)`~~ — **Done**, as a ladder
+
+`Relief` is the depth half of what `Shading` is for colour, and `Theme.elevation(rung)` /
+`elevation(rung, state)` are how a widget asks for it. The seven hand-picked depths and the three copies of the
+`switch (state)` are gone; `ReliefGuardTest` is what stops an eighth.
+
+**The signature changed, and the reason is worth keeping.** `elevation(base, state)` would have to scale a
+`Length` — which needs an operator on `Length`, which is a third switch over the sealed type §1.1 exists to
+delete. So depth is a **ladder of rungs**, exactly as a `Palette` is a ladder of surfaces: hover is one rung up
+and press one rung down *whatever rung the control rests on*, the ladder is geometric (base × ratio per rung), and
+nothing adds or multiplies a `Length` anywhere. The quantisation is the ladder. A control names `Relief.CONTROL`,
+not a shadow size, and a flatter look is a different `Relief` on the theme rather than an edit per widget.
+
+Rungs: `FLUSH`, `CONTROL` (button, toggle, slider knob, selected tab), `RAISED` (a strip over a document, a
+popover), `FLOATING` (menu, tooltip, drag ghost), `OVERLAY` (card, dialog). Stepping clamps at both ends, so a
+widget cannot walk off the ladder, and the step table has `Shading`'s property: a state it says nothing about does
+not move, so a new `InteractionState` needs no case added.
+
+Existing depths were remapped onto the nearest rung, which moves a few of them by a fraction of a rem — the point
+of doing this first was that fifteen components should not each remember their own number.
+
+### 4.2 Selection, and the things that need it
+
+- **`SelectionModel`.** Single, multiple, and range-with-anchor, over `nav.Address`. `TreeView` has its own
+  today; a list and a table each want the same one. The invariant is *anchor + extent + a set*, and Shift-click,
+  Ctrl-click, Shift+Arrow and rubber-band are the same three operations over it — which is why this is one type
+  and not three widgets' worth of nearly-agreeing code. Build it before its consumers, not after.
+- **`ListView`.** Virtualised rows over an item count and a row builder. The invariant is that the retained tree
+  holds viewport-many nodes however long the list is, *and* that `Reveal` still resolves an item that has no node
+  yet — which is the half application code gets wrong. Precondition for `Table` and for `Select`'s popup.
+- **`Table`.** Sticky header, column resize by drag, sort by column, rows selected through `SelectionModel`. The
+  hard part is not the chrome: column width is a `Length` negotiation (fixed / fill / auto-to-content) resolved
+  once per frame, so this reaches `FlexLayout` as much as it reaches `-widget`.
+
+### 4.3 Choosers
+
+- **`Select`.** The overlay primitive plus a list plus a claim on Up/Down/Enter/Escape at `ClaimScope.VISIBLE`.
+  The no-hover rule is the specification, not a constraint on it: the popup opens on click, and the closed
+  control reserves its own chevron slot so nothing reflows when a value changes width.
+- **`MenuBar`, submenus, checkable items.** §3 already names all three halves and they stay accurate. `MenuItem`
+  wants a tick and an accelerator hint (fields on the record, rows in the presenter); a submenu needs `MenuSink`
+  to be able to say "these items, under that one" without a `MenuItem` growing children, which is how a menu
+  stops being a list. Opening a menu from the keyboard belongs next to `Gui.onContextMenu`, positioned from the
+  focused node's box in the layout read-model — not from the last pointer position, and not in the widget.
+- **`CommandPalette`.** `FindBar` is the precedent: a transient, claim-scoped strip over a filtered result list.
+  Small once `ListView` exists, and it is how every action becomes keyboard-reachable without waiting on the menu
+  work above.
+
+### 4.4 Commit protocol
+
+- **`Field<T>`.** Parse, validate, clamp, and commit-or-revert: Enter commits, Escape restores, focus loss
+  commits, an invalid value never reaches the application. `TextField` owns text; nothing owns "this text means a
+  number between 0 and 1". `NumberField`, and a `Slider` with a typed entry beside it, are both instances of it
+  rather than separate widgets.
+- **`RadioGroup`, and a tri-state `Check`.** Trivial to draw, which is why they look like application code and
+  are not: exclusivity across siblings, arrow keys traversing *within* the group while Tab leaves it entirely,
+  and indeterminate resolving to checked — never to unchecked — on click.
+
+### 4.5 Space and structure
+
+- **`SplitPane`.** A draggable divider with a per-pane minimum and a collapse threshold, persisted through
+  `WindowMemory` beside the window bounds that already live there. `Popout` covers the docking half; the divider
+  does not exist.
+- **`Toolbar` with overflow.** A real component precisely because of the no-movement rule: measure what fits,
+  move the remainder into a chevron menu, and keep the chevron's slot reserved so the bar never reflows as its
+  contents change.
+- **`Disclosure`.** One animated height over `LayoutMotion`, with the invariant that a collapsed section's
+  content is not merely clipped but out of the focus order.
+
+### 4.6 Status
+
+- **`Progress`,** determinate and indeterminate. Deliberately distinct from `Cue`, which is one-shot by design; a
+  long operation has a value that changes and usually a cancel beside it.
+- **`Toasts`.** A non-modal transient stack — the same ordering problem `ModalQueue` already solves, with a
+  timeout and no scrim.
+- **`StatusBar` and `Breadcrumb`.** Both are projections of state that already exists (`SemanticSnapshot`,
+  `nav.Address`) rather than new state, which is the reason to build them: they are a cheap check that the read
+  model is sufficient.
+
+### 4.7 `Scrollbar` as a widget
+
+Scrollbars are renderer chrome today. That is the same fact as `CaretScrollTest` proving behaviour lives in the
+renderer, and it is why **C1 is not yet provable** (`architecture-proof-plan.md` §1). Promoting the scrollbar is
+architecture work with a component-shaped output, so it is scheduled there rather than here.
+
+### 4.8 Not on this list
+
+Buttons, toggles, cards, headings, labels, paragraphs — application code, see above. Date and colour pickers
+likewise: each is `Select` plus a bespoke panel once `Select` exists, and neither adds an invariant of its own.
+
+---
+
+## 5. Engine-side (lands in `vexelray`, not here)
 
 - **A math face in the primary atlas.** Fully specified in `vexelray/docs/math-face.md`: the `<extraFont>` entry,
   the charset to take and in what priority, the atlas budget, and how to verify. It is a quality upgrade on a

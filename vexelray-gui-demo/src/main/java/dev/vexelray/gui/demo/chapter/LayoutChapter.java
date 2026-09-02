@@ -6,6 +6,7 @@ import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.gui.demo.Chapter;
@@ -122,6 +123,6 @@ public final class LayoutChapter implements Chapter {
                 .background(theme.color(fill)).corner(Length.rem(0.375f))
                 .textSize(Length.rem(0.8125f)).textColor(theme.color(Role.ON_ACTION))
                 .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE)
-                .lit(theme.lit()).elevation(Length.rem(0.5f));
+                .lit(theme.lit()).elevation(theme.elevation(Relief.RAISED));
     }
 }

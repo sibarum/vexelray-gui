@@ -4,6 +4,7 @@ import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
+import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
 
@@ -39,7 +40,7 @@ public final class Slider {
         Theme theme = gui.theme();
         Node thumb = gui.box().width(Length.rem(1.1f)).height(Length.percent(100))
                 .background(theme.color(Role.ACCENT)).corner(Length.rem(0.55f))
-                .lit(theme.lit()).elevation(Length.rem(0.25f));
+                .lit(theme.lit()).elevation(theme.elevation(Relief.CONTROL));
         this.track = gui.row().role("slider").height(Length.rem(1.1f))
                 .background(theme.color(Role.TRACK)).corner(Length.rem(0.55f))
                 .alignItems(AlignItems.CENTER).scroll(false, false) // a slider never scrolls

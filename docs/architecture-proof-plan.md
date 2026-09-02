@@ -79,6 +79,10 @@ order; every one leaves the tree green.
   - `ModelWriterGuardTest` — §2 rule 4: only the five declared stages write `RetainedNode` fields, detected as
     `PUTFIELD`/`PUTSTATIC` against that owner. The allowlist is the phase list of `Gui.frame`; widening it is an
     architectural decision, never a way to fix a red build.
+  - `PaletteGuardTest` — no framework class mints a `Color` of its own; a shade the vocabulary lacks is a `Role`.
+  - `ReliefGuardTest` — the same rule for depth: no framework class sizes a shadow of its own, detected as a
+    `Length` minted directly into `Node.elevation`. A depth the ladder lacks is a change to `Relief`, not a
+    literal at a call site.
 - **Acceptance:** green, and *demonstrated* red. Each guard carries self-tests that run its detector over
   synthesized bytecode — a violation must be reported, a legitimate write must not — because a detector that
   silently matches nothing is indistinguishable from a clean codebase. Verified end-to-end by reintroducing

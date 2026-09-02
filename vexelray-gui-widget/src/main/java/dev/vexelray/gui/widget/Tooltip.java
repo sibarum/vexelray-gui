@@ -4,6 +4,7 @@ import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.text.TextLayout;
 
@@ -53,7 +54,7 @@ public final class Tooltip implements AutoCloseable {
                 .background(gui.theme().color(Role.RAISED))
                 .corner(Length.rem(0.4f))
                 .border(Length.rem(0.08f), gui.theme().color(Role.EDGE))
-                .elevation(Length.rem(0.75f))
+                .elevation(gui.theme().elevation(Relief.FLOATING))
                 .textSize(Length.rem(0.9375f))
                 .textColor(gui.theme().color(Role.INK))
                 .padding(Length.dp(4), Length.dp(10))

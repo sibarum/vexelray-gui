@@ -8,6 +8,7 @@ import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.input.MenuSink;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.text.TextLayout;
@@ -633,6 +634,6 @@ public final class Tabs {
                 .background(selected ? gui.theme().color(Role.SELECTION) : gui.theme().color(Role.PANEL, state))
                 .textColor(gui.theme().color(selected ? Role.ACCENT : Role.DIM))
                 .lit(selected && gui.theme().lit())
-                .elevation(selected ? Length.rem(0.25f) : Length.ZERO);
+                .elevation(gui.theme().elevation(selected ? Relief.CONTROL : Relief.FLUSH));
     }
 }

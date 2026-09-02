@@ -6,10 +6,10 @@ import dev.vexelray.gui.core.WindowControls;
 import dev.vexelray.gui.core.app.GuiApp;
 import dev.vexelray.gui.core.app.Standing;
 import dev.vexelray.gui.core.app.WindowSpec;
-import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.os.Decorations;
@@ -285,10 +285,10 @@ public final class Modals implements AutoCloseable {
                 .border(Length.rem(0.1f), theme.color(Role.LINE))
                 .textSize(Length.rem(0.95f)).textColor(theme.color(label))
                 .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE)
-                .lit(theme.lit()).elevation(Length.rem(0.35f));
+                .lit(theme.lit()).elevation(theme.elevation(Relief.CONTROL));
         gui.onState(b, state -> {
             b.background(gui.theme().color(fill, state));
-            b.elevation(state == InteractionState.PRESSED ? Length.ZERO : Length.rem(0.35f));
+            b.elevation(gui.theme().elevation(Relief.CONTROL, state));
         });
         gui.onClick(b, () -> dismiss(spec));
         return b;

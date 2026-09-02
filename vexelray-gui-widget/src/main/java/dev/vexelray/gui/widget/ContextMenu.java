@@ -9,6 +9,7 @@ import dev.vexelray.gui.core.input.MenuItem;
 import dev.vexelray.gui.core.input.MenuPresenter;
 import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.text.TextLayout;
 import sibarum.atchung.Subscription;
@@ -90,7 +91,7 @@ public final class ContextMenu implements MenuPresenter {
                 .corner(Length.rem(0.5f))
                 .border(Length.rem(0.1f), gui.theme().color(Role.LINE))
                 .lit(gui.theme().lit())
-                .elevation(Length.rem(1f))
+                .elevation(gui.theme().elevation(Relief.FLOATING))
                 .padding(Length.dp(4))
                 .scroll(false, false);
         ownIds.add(menu.id());

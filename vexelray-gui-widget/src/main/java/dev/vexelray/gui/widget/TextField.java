@@ -13,6 +13,7 @@ import dev.vexelray.gui.core.input.MenuSink;
 import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.nav.Address;
+import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.text.Document;
 import dev.vexelray.gui.core.text.Edit;
@@ -735,7 +736,7 @@ public final class TextField implements AutoCloseable {
             bar.node()
                     .floatAt(Length.ZERO, Length.ZERO)
                     .corner(Length.rem(0.5f), Length.ZERO)   // seated in the top of the well, sharing its corner
-                    .elevation(Length.rem(0.5f));            // and lifted off it, because it covers the first line
+                    .elevation(gui.theme().elevation(Relief.RAISED));  // and lifted off it, because it covers the first line
             node.append(bar.node());
             find = bar;
         }

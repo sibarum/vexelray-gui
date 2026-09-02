@@ -5,6 +5,7 @@ import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.app.AppWindow;
 import dev.vexelray.gui.core.app.WindowSpec;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.gui.demo.Chapter;
@@ -181,7 +182,7 @@ public final class WindowChapter implements Chapter {
         Node card = p.column().width(Length.FILL).height(Length.FILL)
                 .background(theme.color(Role.PANEL)).corner(Length.rem(1))
                 .border(Length.rem(0.1f), theme.color(Role.LINE))
-                .lit(theme.lit()).elevation(Length.rem(1.25f))
+                .lit(theme.lit()).elevation(theme.elevation(Relief.OVERLAY))
                 .padding(Length.dp(16)).gap(Length.rem(0.5f))
                 .children(
                         p.text("A true OS window").height(Length.rem(2)).textSize(Length.rem(1.375f))

@@ -11,6 +11,7 @@ import dev.vexelray.gui.core.edit.Change;
 import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.Rect;
+import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.gui.demo.Chapter;
@@ -234,7 +235,7 @@ public final class DragChapter implements Chapter {
                 .corner(Length.rem(0.4f)).textColor(theme.color(Role.ON_ACTION))
                 .textSize(Length.rem(0.9375f))
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE)
-                .lit(theme.lit()).elevation(Length.rem(1f))
+                .lit(theme.lit()).elevation(theme.elevation(Relief.FLOATING))
                 .hitInert(true)
                 .visible(false);
         gui.root().append(ghost);

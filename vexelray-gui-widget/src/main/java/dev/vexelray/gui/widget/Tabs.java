@@ -261,7 +261,7 @@ public final class Tabs {
                 // translated child adds no overflow, so the automatic clipping that comes with scrolling would
                 // never notice one leaving.
                 .clip(true);
-        this.root = gui.column().width(Length.FILL).height(Length.FILL).children(bar, pages);
+        this.root = gui.column().role("tabs").width(Length.FILL).height(Length.FILL).children(bar, pages);
     }
 
     /** The node to place in a layout. */
@@ -319,7 +319,7 @@ public final class Tabs {
         int index = headers.size();
         // Only the height is the panel's: a header fills the bar. Everything else a header looks like is the
         // skin's, so that one function is the whole answer to "what does a tab look like here".
-        Node header = gui.text(title).height(Length.FILL);
+        Node header = gui.text(title).role("tab").height(Length.FILL);
 
         // Handlers resolve the header to its index at event time, not add time: tabs can be removed, so a
         // baked-in index would aim every surviving closure one tab off. The node's identity is the stable key.

@@ -143,6 +143,36 @@ class SemanticSnapshotTest {
     }
 
     @Test
+    void aNameDoesNotReachIntoContent() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            // The case declared roles alone do not cover: a container's *content* is ordinary application boxes
+            // that declare nothing, so without a depth bound this node would be named after everything in it.
+            Node page = h.gui.box().children(
+                    h.gui.box().children(
+                            h.gui.box().children(h.gui.text("a paragraph buried in the content"))));
+            Node panel = h.gui.box().role("panel").children(h.gui.text("Settings"), page);
+            h.gui.root().children(panel);
+            h.frame();
+
+            assertEquals("Settings", h.gui.semanticSnapshot().node(panel.id()).name(),
+                    "its own label, not a transcript of what it contains");
+        }
+    }
+
+    @Test
+    void widgetsSayWhatTheyAre() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TextField field = new TextField(h.gui, "abc");
+            h.gui.root().children(field.node());
+            h.frame();
+
+            // Without this an agent has a correctly-structured but anonymous tree: it can see a box at 12,40 and
+            // cannot tell that it is the thing you type into.
+            assertEquals("textfield", h.gui.semanticSnapshot().node(field.node().id()).role());
+        }
+    }
+
+    @Test
     void anAbsentNodeAnswersRatherThanFailing() {
         try (HeadlessGui h = new HeadlessGui()) {
             h.frame();

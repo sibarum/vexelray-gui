@@ -151,6 +151,7 @@ public final class TextField implements AutoCloseable {
         this.document = builder.build();
 
         this.node = gui.text(text())
+                .role("textfield")
                 .editable(true)
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE)
                 .textColor(gui.theme().color(Role.INK))

@@ -212,7 +212,7 @@ public final class Popout {
             rule.size(Length.FILL, Length.dp(1));
         }
 
-        this.root = (edge.vertical() ? host.row() : host.column()).scroll(false, false);
+        this.root = (edge.vertical() ? host.row() : host.column()).role("popout").scroll(false, false);
         if (edge.vertical()) {
             root.width(Length.AUTO).height(Length.FILL);
         } else {

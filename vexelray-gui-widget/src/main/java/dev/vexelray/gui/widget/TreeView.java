@@ -387,6 +387,7 @@ public final class TreeView<T> implements AutoCloseable {
                     .textColor(gui.theme().color(Role.INK))
                     .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
             this.rowNode = gui.row()
+                    .role("treeitem")
                     .width(Length.FILL)
                     .height(Length.em(ROW_EM))
                     .corner(Length.rem(0.4f))
@@ -586,6 +587,7 @@ public final class TreeView<T> implements AutoCloseable {
         // chrome; the rows go inside a scroller that fills what is left of it. One box could not do both: the bar
         // would be content, and content scrolls.
         this.root = gui.column()
+                .role("tree")
                 .width(Length.FILL)
                 .height(Length.FILL)
                 .background(gui.theme().color(Role.WELL))

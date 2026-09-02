@@ -40,7 +40,7 @@ public final class Slider {
         Node thumb = gui.box().width(Length.rem(1.1f)).height(Length.percent(100))
                 .background(theme.color(Role.ACCENT)).corner(Length.rem(0.55f))
                 .lit(theme.lit()).elevation(Length.rem(0.25f));
-        this.track = gui.row().height(Length.rem(1.1f))
+        this.track = gui.row().role("slider").height(Length.rem(1.1f))
                 .background(theme.color(Role.TRACK)).corner(Length.rem(0.55f))
                 .alignItems(AlignItems.CENTER).scroll(false, false) // a slider never scrolls
                 .children(leftSpacer, thumb, rightSpacer);

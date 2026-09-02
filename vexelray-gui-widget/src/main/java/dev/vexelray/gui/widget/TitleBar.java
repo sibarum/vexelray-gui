@@ -101,6 +101,7 @@ public final class TitleBar {
                 .children(minimize, maximize, close);
 
         this.root = gui.row()
+                .role("titlebar")
                 .width(Length.FILL)
                 .height(BAR_H)
                 .background(theme.color(Role.CHROME))

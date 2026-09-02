@@ -47,6 +47,7 @@ public final class Tooltip implements AutoCloseable {
     public Tooltip(Gui gui) {
         this.gui = gui;
         this.bubble = gui.text("")
+                .role("tooltip")
                 .visible(false)
                 .hitInert(true)
                 .background(gui.theme().color(Role.RAISED))

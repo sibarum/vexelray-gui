@@ -2056,9 +2056,21 @@ public final class Gui implements AutoCloseable {
      * joined in tree order. A {@code Button} is a box with a label inside it, so asking the box for its text
      * gets nothing — the name has to come from the composition, which is exactly what a person reads off it.
      *
-     * <p>Stops descending at a node that declares its own {@link RetainedNode#role() role}: a toolbar's name is
-     * not every button on it, and a list's name is not its whole contents. That single rule is what keeps the
-     * derived name from degenerating into the subtree's full text as trees get deeper.
+     * <p>A name <b>identifies</b> a node among its siblings; it is not a transcript of everything inside it. Two
+     * bounds keep the derivation from becoming one:
+     *
+     * <ul>
+     *   <li><b>Stop at a declared {@link RetainedNode#role() role}.</b> A toolbar's name is not every button on
+     *       it, and a tab strip's name is not its tabs — those are structure, addressable in their own right.</li>
+     *   <li><b>Stop at {@value #NAME_DEPTH} levels.</b> Roles alone are not enough, because the content a
+     *       container holds is ordinary application boxes that declare nothing: a {@code tabs} node would
+     *       otherwise be named after the entire text of every page inside it. A widget's own label is one or two
+     *       levels down — deeper than that and it belongs to something else, whether or not that something has
+     *       said so yet.</li>
+     * </ul>
+     *
+     * <p>A reader that wants the full text of a subtree walks the snapshot for it; that is a different question,
+     * and one the structure already answers.
      */
     private static String accessibleName(RetainedNode n) {
         String own = n.textString();
@@ -2066,11 +2078,17 @@ public final class Gui implements AutoCloseable {
             return own;
         }
         StringBuilder sb = new StringBuilder();
-        appendName(n, sb);
+        appendName(n, sb, NAME_DEPTH);
         return sb.toString();
     }
 
-    private static void appendName(RetainedNode n, StringBuilder sb) {
+    /** How far below a node its own label may be found. See {@link #accessibleName}. */
+    private static final int NAME_DEPTH = 2;
+
+    private static void appendName(RetainedNode n, StringBuilder sb, int depth) {
+        if (depth <= 0) {
+            return;
+        }
         for (RetainedNode c : n.children) {
             if (!c.role().isEmpty()) {
                 continue;               // a named thing of its own: part of the structure, not of this name
@@ -2082,7 +2100,7 @@ public final class Gui implements AutoCloseable {
                 }
                 sb.append(t);
             }
-            appendName(c, sb);
+            appendName(c, sb, depth - 1);
         }
     }
 

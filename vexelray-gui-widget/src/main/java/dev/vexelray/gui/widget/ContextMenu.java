@@ -84,6 +84,7 @@ public final class ContextMenu implements MenuPresenter {
     public ContextMenu(Gui gui) {
         this.gui = gui;
         this.menu = gui.column()
+                .role("menu")
                 .visible(false)
                 .background(gui.theme().color(Role.PANEL))
                 .corner(Length.rem(0.5f))
@@ -206,6 +207,7 @@ public final class ContextMenu implements MenuPresenter {
     /** One command row: full-width, hover-shaded while it can be chosen, dimmed and inert when it cannot. */
     private Node row(MenuItem item, boolean iconColumn) {
         Node row = own(gui.row()
+                .role("menuitem")
                 .width(Length.FILL)
                 .corner(Length.rem(0.4f))
                 .padding(Length.dp(4), Length.dp(12))

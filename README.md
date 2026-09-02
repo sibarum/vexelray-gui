@@ -299,6 +299,10 @@ What sits between the GUI and the OS, all driven from the one main-thread loop:
   retained model, dispatch, the effect system as built
 - [docs/layout-read-model.md](docs/layout-read-model.md) — the geometry pipeline and the
   published read-model every consumer (renderer, hit-testing, widgets) shares
+- [docs/semantic-read-model.md](docs/semantic-read-model.md) — the other half of it: what each node
+  *is* (role, name, structure, focus), for readers that are not the renderer
+- [docs/automation.md](docs/automation.md) — plan: driving the real app from an agent, and the one
+  correlation log that explains what happened
 - [docs/keyboard-focus-text.md](docs/keyboard-focus-text.md) — keys, focus, claims, and text editing
 - [docs/transfer.md](docs/transfer.md) — drag and drop, cut and paste: one resolution, several
   sources, and why what is shown is always what will happen

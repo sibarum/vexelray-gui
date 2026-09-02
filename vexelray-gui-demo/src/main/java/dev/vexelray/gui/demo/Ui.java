@@ -98,7 +98,7 @@ public final class Ui {
     public static Node toggle(Gui gui, String on, String off, boolean initial, Consumer<Boolean> onChange) {
         AtomicBoolean value = new AtomicBoolean(initial);
         AtomicReference<InteractionState> last = new AtomicReference<>(InteractionState.NORMAL);
-        Node t = gui.text(initial ? on : off).width(Length.rem(8.5f)).height(Length.rem(2.5f))
+        Node t = gui.text(initial ? on : off).role("toggle").width(Length.rem(8.5f)).height(Length.rem(2.5f))
                 .corner(Length.rem(0.5f)).border(Length.rem(0.1f), gui.theme().color(Role.LINE))
                 .textSize(Length.rem(0.9375f))
                 .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE)
@@ -146,7 +146,7 @@ public final class Ui {
      * pressing sets it down flush, so the shadow reports the gesture as well as the fill does.
      */
     private static Node shell(Gui gui, String text, Role fg, Role fill, boolean bordered) {
-        Node b = gui.text(text).width(Length.AUTO).height(Length.rem(2.5f))
+        Node b = gui.text(text).role("button").width(Length.AUTO).height(Length.rem(2.5f))
                 .padding(Length.ZERO, Length.em(0.875f))
                 .background(gui.theme().color(fill))
                 .corner(Length.rem(0.5f)).textColor(gui.theme().color(fg))

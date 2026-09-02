@@ -299,13 +299,53 @@ of doing this first was that fifteen components should not each remember their o
 
 ### 4.2 Selection, and the things that need it
 
-- **`SelectionModel`.** Single, multiple, and range-with-anchor, over `nav.Address`. `TreeView` has its own
-  today; a list and a table each want the same one. The invariant is *anchor + extent + a set*, and Shift-click,
-  Ctrl-click, Shift+Arrow and rubber-band are the same three operations over it — which is why this is one type
-  and not three widgets' worth of nearly-agreeing code. Build it before its consumers, not after.
-- **`ListView`.** Virtualised rows over an item count and a row builder. The invariant is that the retained tree
-  holds viewport-many nodes however long the list is, *and* that `Reveal` still resolves an item that has no node
-  yet — which is the half application code gets wrong. Precondition for `Table` and for `Select`'s popup.
+- ~~**`SelectionModel`.**~~ **Done.** The invariant was stated correctly — *anchor + extent + a set*, with
+  Shift-click, Ctrl-click, Shift+Arrow and rubber-band as the same three operations (`at`, `toggle`, `extendTo`)
+  over it. Two things about the note were wrong, and writing it is what found them:
+
+  **Not over `nav.Address`.** An address is a window plus a landmark, so keying a selection on one would require
+  every row to be a landmark — impossible for the virtualised list this exists to serve, and wrong for `TreeView`,
+  which selects items. What selection actually needs of its domain is equality *and an order to range along*, and
+  those are separable: `SelectionModel<T>` holds items and takes an `Order<T>` **per call** rather than holding
+  one. An `Address` is then just a `T` some consumer might use.
+
+  **Identity, not index.** A stored index silently comes to mean a different row after an expand, a sort, an
+  insert or a filter — the same four events a selection has to survive. Asking for the order only while a range is
+  being computed is what makes "the selection survives the rows moving underneath it" a test rather than a hope,
+  and it is also what lets a virtualised list select an item whose row does not exist yet.
+
+  `Mode` is a capability pair (`allowsMultiple`, `allowsRange`), not a case: an operation a mode does not permit
+  degrades to the nearest one it does, in one place, so a single-select list cannot be talked into holding two by
+  a widget that forgot to check.
+
+  **`TreeView` has not adopted it yet.** It is single-select with its own row-keyed state, so it would gain
+  sharing rather than behaviour, and it carries the most behavioural tests in `-widget`. Convert it once
+  `ListView` has proved the model against a second consumer — that is the point at which the two would otherwise
+  start to disagree.
+- ~~**`ListView`.**~~ **Done.** Virtualised rows over an item list and a row builder, holding viewport-many nodes
+  at a hundred thousand items. Three children — a top spacer, the window, a bottom spacer — so the scroller's
+  content is the whole list's height from the first frame and the scrollbar is honest before anything is built.
+  The window is recomputed from `Gui.layout()`, which already publishes the node's own `scrollY` and `viewH` per
+  frame, so virtualisation needed no frame callback of its own. Rows that stay in the window are kept, not
+  rebuilt: a scroll of one row builds one row, pinned by `scrollingByOneRowKeepsTheRowsThatStayed` asserting
+  node identity.
+
+  **Row height is uniform and stated in rem**, for the reason `Relief` is a ladder: the spacers need *n* times a
+  row, and nothing here multiplies a `Length`. Variable heights need a prefix-sum index and are not v1.
+
+  **The `Reveal` half of the note was wrong, and the invariant behind it was right.** `Reveal`'s own scope
+  excludes this case in as many words — "a container whose hidden children have no nodes at all" declares
+  nothing — so registering a `Reveal` on the list would never be consulted: `Gui.navigate` cannot resolve a
+  landmark that does not exist to begin with. What the invariant actually requires is that *the list* can address
+  an item with no row, which is `ListView.reveal(item)`: realize the window around the index first (geometrically
+  consistent at any scroll offset, because the spacers put a row where its index says), then let the row scroll
+  itself in. Everything else that addresses a row — Home/End, Shift+Arrow past the fold — goes through it.
+
+  **It needed one core change**, and the note for it was already written in `ClickEvent`'s javadoc: modifiers are
+  part of a click, but `Gui.onClick` handed the handler a bare `Runnable`, so Ctrl-click and Shift-click were
+  undeliverable. There is now an overload taking `Consumer<ClickEvent>`, exactly as `onContextClick` already did.
+  The alternative — reading `gui.modifiers()` inside a pointer handler — is a second channel alongside the event,
+  and is already wrong if the key came up while the handler was queued.
 - **`Table`.** Sticky header, column resize by drag, sort by column, rows selected through `SelectionModel`. The
   hard part is not the chrome: column width is a `Length` negotiation (fixed / fill / auto-to-content) resolved
   once per frame, so this reaches `FlexLayout` as much as it reaches `-widget`.

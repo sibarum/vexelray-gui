@@ -648,6 +648,21 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
+     * Register a click handler that is told <b>what the click meant</b>: the {@link ClickEvent} carries the
+     * modifiers held when the button was released, so Ctrl-click and Shift-click can be told apart from a click.
+     *
+     * <p>Without this a widget driving a selection would have to read keyboard state from somewhere else at the
+     * moment a pointer handler runs — a second channel alongside the event, and one that is already wrong if the
+     * key came up while the handler was queued. The modifiers were always part of the click (see
+     * {@link ClickEvent}); this hands them to the left-button handler as {@link #onContextClick} already does to
+     * the right-button one. Runs on a worker thread, like the plain form.
+     */
+    public Gui onClick(Node node, java.util.function.Consumer<ClickEvent> handler) {
+        input.onClick(node.id(), handler);
+        return this;
+    }
+
+    /**
      * Register a context-click handler for {@code node} — fired when a <em>right</em> press and release land on it
      * (bubbling to the nearest ancestor with a handler). The handler receives the {@link ClickEvent} because a
      * context action almost always needs the pointer position, to anchor a menu at it. A right click changes

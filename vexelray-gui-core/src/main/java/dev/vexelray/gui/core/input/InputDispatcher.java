@@ -116,7 +116,7 @@ public final class InputDispatcher {
     private final Runnable requestLayout;
     private final Pump pump;
     private final Subscription sub;
-    private final Map<Long, Runnable> clickHandlers = new ConcurrentHashMap<>();
+    private final Map<Long, Consumer<ClickEvent>> clickHandlers = new ConcurrentHashMap<>();
     private final Map<Long, Consumer<ClickEvent>> contextHandlers = new ConcurrentHashMap<>();
     // Context-menu sources, and the one thing that shows what they build. Sources accumulate like state observers
     // and for the same reason: a widget's own defaults and the application's additions are independent concerns
@@ -264,6 +264,16 @@ public final class InputDispatcher {
 
     /** Register a click handler for {@code nodeId}; replaces any prior handler for that node. */
     public void onClick(long nodeId, Runnable handler) {
+        clickHandlers.put(nodeId, e -> handler.run());
+    }
+
+    /**
+     * The same, for a handler that needs to know what the click <b>meant</b> — Ctrl-click and Shift-click are
+     * different commands from a click, and a selection cannot be driven without telling them apart. The modifiers
+     * are already part of the {@link ClickEvent}; this is what hands one to the left-button handler as well as to
+     * the right-button one.
+     */
+    public void onClick(long nodeId, Consumer<ClickEvent> handler) {
         clickHandlers.put(nodeId, handler);
     }
 
@@ -1339,14 +1349,15 @@ public final class InputDispatcher {
     }
 
     private void fireClick(RetainedNode target, float x, float y) {
+        ClickEvent e = new ClickEvent(target.id, MouseButton.LEFT, x, y, heldMods);
         for (RetainedNode n = target; n != null; n = n.parent) {
-            Runnable handler = clickHandlers.get(n.id);
+            Consumer<ClickEvent> handler = clickHandlers.get(n.id);
             if (handler != null) {
-                handlerExecutor.execute(handler);
+                handlerExecutor.execute(() -> handler.accept(e));
                 break; // consumed; bubbling stops at the first handler
             }
         }
-        bus.publish(clicks, new ClickEvent(target.id, MouseButton.LEFT, x, y, heldMods));
+        bus.publish(clicks, e);
     }
 
     /** The right-button twin of {@link #fireClick}: bubble to the first context handler, then publish. */

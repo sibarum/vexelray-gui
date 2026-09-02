@@ -1,6 +1,6 @@
 # Driving the app for real: `vexelray-gui-automation`
 
-Status: **plan**. A module that lets an out-of-process agent run the actual application — real window, real
+Status: **A0–A5 landed** (see §8). A module that lets an out-of-process agent run the actual application — real window, real
 Vulkan, real frame loop — and interact with it the way a person does, while emitting one correlation log that
 explains what happened.
 
@@ -47,6 +47,8 @@ This is not decoration. It is the requirement:
 Consequences, all deliberate:
 
 - **The module owns a virtual cursor.** Position is state, persisted across commands, reported by `where`.
+- **Hover is recorded, not just motion.** `state.hover` / `state.normal` rows name the node whose interaction
+  state changed, which is what says a crossing *mattered*; `pointer.move` alone never does.
 - **A path can have side effects.** Crossing an open menu, arming a hover-delay timer, dragging a splitter under
   a pressed button. This is correct — a person's pointer does the same. The path is deterministic and every
   step is logged, so a spurious hover is *visible in the CSV* rather than an invisible confound.
@@ -283,8 +285,13 @@ instrument, which is the strongest available guarantee that what the agent synth
   `loop.park`, without which a stall is indistinguishable from an idle window.
 - **A3 — Virtual cursor + paths.** *(Landed: `vexelray-gui-automation`, `Cursor` — stateful, stepped at 125Hz, real-time paced, `move`/`click`/`drag`/`scroll`.)*
 - **A4 — Protocol + CLI.** *(Landed: `Automation` + `AutomationServer`, a loopback line protocol. `go` reuses the framework's own navigation, so a concealed target is revealed rather than refused. `csvview` in atchung-probe.)*
-- **A5 — Prove it.** Reproduce a known hover-path bug from the CSV alone, without the app in front of us.
-  Until A5 passes, the instrument is not trusted for troubleshooting.
+- **A5 — Prove it.** *(Landed: `HoverPathDiagnosisTest`.)* A hover-path bug diagnosed from the CSV alone.
+  The bug is **planted**, and that is stated rather than glossed over: the historical one is not in the tree to
+  reproduce, so the test plants one of the same class — a control that resizes on hover, which this framework's
+  own UX rule forbids — and proves the log explains it. An instrument that cannot diagnose a defect placed in
+  front of it certainly cannot diagnose one nobody placed, so passing this is **necessary and not sufficient**.
+  The sufficient version is a real application nobody has instrumented for the occasion; the calculator is the
+  obvious first one.
 
 ## 9. Non-goals
 

@@ -25,4 +25,40 @@
             <artifactId>vexelray-gui-core</artifactId>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>**/HoverPathDiagnosisTest.java</exclude>
+                    </excludes>
+                </configuration>
+                <executions>
+                    <!-- A5 reads its own run back out of the correlation log, and whether the probe is on is
+                         decided once in a static initialiser — so it needs a JVM that was started recording.
+                         Same reason atchung-probe splits its CSV tests out, and the same shape. -->
+                    <execution>
+                        <id>correlation</id>
+                        <goals>
+                            <goal>test</goal>
+                        </goals>
+                        <configuration>
+                            <systemPropertyVariables>
+                                <probe>input,layout,frame,app</probe>
+                                <probe.format>csv</probe.format>
+                                <probe.out>target/a5-correlations.csv</probe.out>
+                            </systemPropertyVariables>
+                            <excludes combine.self="override"/>
+                            <includes>
+                                <include>**/HoverPathDiagnosisTest.java</include>
+                            </includes>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 </project>

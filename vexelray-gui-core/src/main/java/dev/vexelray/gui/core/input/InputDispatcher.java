@@ -9,6 +9,8 @@ import dev.vexelray.gui.core.drop.DropTarget;
 import dev.vexelray.gui.core.layout.LayoutEnums.ScrollLock;
 import dev.vexelray.gui.core.model.RetainedNode;
 import sibarum.atchung.Atchung;
+import sibarum.probe.Lane;
+import sibarum.probe.Probe;
 import sibarum.atchung.Backpressure;
 import sibarum.atchung.Pump;
 import sibarum.atchung.Subscription;
@@ -1233,6 +1235,14 @@ public final class InputDispatcher {
             InteractionState prev = reportedState.getOrDefault(id, InteractionState.NORMAL);
             if (now != prev) {
                 reportedState.put(id, now);
+                if (Probe.ON) {
+                    // The consequence of motion, not the motion itself. A path that crosses something records
+                    // pointer.move either way; what says the crossing *mattered* is the node that changed state
+                    // because of it — which is precisely the evidence a hover-path bug leaves and nothing else
+                    // does (docs/automation.md §2).
+                    Probe.mark(Lane.INPUT, "state." + now.name().toLowerCase(java.util.Locale.ROOT),
+                            "node=" + id);
+                }
                 InteractionState delivered = now;
                 for (Consumer<InteractionState> observer : entry.getValue()) {
                     handlerExecutor.execute(() -> observer.accept(delivered));

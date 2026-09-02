@@ -152,8 +152,15 @@ timestamps across threads cannot.
 
 ### Derived views
 
-A derived view is `awk`/`grep` over the one file, or a small `csvview` command projecting `--stream`, `--level`, `--node`, `--frame` ranges. These are generated on
-demand from the one file, so they are consistent with it by construction. No parallel writers, ever.
+Derived views come from `sibarum.probe.CsvView` — beside the writer, so it cannot drift from the format.
+`csvview run.csv --gaps [ms]` is the one that matters: it applies the rule above mechanically, judging every
+stretch without a frame against the park that precedes it and naming the last row before the silence. The rest
+is projection — `--lane`, `--kind`, `--thread`, `--grep`, `--tail` — generated on demand from the one file and
+so consistent with it by construction. No parallel writers, ever.
+
+It reports missing `seq` numbers before anything else and unconditionally: every other answer it gives is
+computed from the rows that are present, and a reader who is not told about the absent ones is being invited to
+conclude something from a hole.
 
 ---
 
@@ -275,7 +282,7 @@ instrument, which is the strongest available guarantee that what the agent synth
   Core, input and frame-loop events instrumented — including the unconditional `frame.present` heartbeat and
   `loop.park`, without which a stall is indistinguishable from an idle window.
 - **A3 — Virtual cursor + paths.** *(Landed: `vexelray-gui-automation`, `Cursor` — stateful, stepped at 125Hz, real-time paced, `move`/`click`/`drag`/`scroll`.)*
-- **A4 — Protocol + CLI.** *(Landed: `Automation` + `AutomationServer`, a loopback line protocol. `go` reuses the framework's own navigation, so a concealed target is revealed rather than refused. `csvview` still to do.)*
+- **A4 — Protocol + CLI.** *(Landed: `Automation` + `AutomationServer`, a loopback line protocol. `go` reuses the framework's own navigation, so a concealed target is revealed rather than refused. `csvview` in atchung-probe.)*
 - **A5 — Prove it.** Reproduce a known hover-path bug from the CSV alone, without the app in front of us.
   Until A5 passes, the instrument is not trusted for troubleshooting.
 

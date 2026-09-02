@@ -348,6 +348,23 @@ public final class Node {
         return prop(PropKey.HIT_INERT, inert ? Boolean.TRUE : null);
     }
 
+    /**
+     * Declare what this node <b>is</b> — {@code "button"}, {@code "textfield"}, {@code "tab"} — for readers that
+     * address a node by meaning rather than by position: an automation agent, a thin client, a screen reader
+     * (docs/automation.md §3). Pass {@code null} to clear.
+     *
+     * <p>Affects nothing drawn, laid out or hit-tested. It is published into
+     * {@link dev.vexelray.gui.core.layout.SemanticSnapshot} and read from there; core itself never branches on
+     * the value, so an application is free to invent roles for widgets this framework has never heard of.
+     *
+     * <p>Declared by the widget that owns the composition, on the node a user would say they were pointing at —
+     * a {@code Button}'s outer box, not the label inside it. The label is then that button's <em>name</em>,
+     * which the snapshot derives; it is not a second role.
+     */
+    public Node role(String role) {
+        return prop(PropKey.ROLE, role == null || role.isEmpty() ? null : role);
+    }
+
 
     /**
      * Declare what this node is to the window manager — the one thing a GUI drawing its own window chrome has to

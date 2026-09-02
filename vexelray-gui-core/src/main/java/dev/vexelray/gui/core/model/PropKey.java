@@ -182,7 +182,22 @@ public enum PropKey {
      * publishes the rectangles to the OS. Changes nothing about layout, drawing or hit-testing: the node is
      * ordinary UI, and this is a fact stated about it.
      */
-    WINDOW_REGION(false);
+    WINDOW_REGION(false),
+    /**
+     * What this node <b>means</b>: {@code "button"}, {@code "textfield"}, {@code "tab"}, {@code "treeitem"}.
+     * A free-form lower-case string, declared by whichever widget built the node, absent on a plain box.
+     *
+     * <p>Affects nothing that is drawn or laid out — it is published into
+     * {@link dev.vexelray.gui.core.layout.SemanticSnapshot} and read by consumers that must address a node by
+     * what it is rather than by where it is (docs/automation.md §3). {@link NodeKind} cannot serve: it is
+     * {@code BOX} or {@code TEXT}, which is everything rendering needs and nothing a reader outside the
+     * renderer needs.
+     *
+     * <p><b>A string, not an enum</b>, because the set is open by construction: an application composes
+     * widgets this module has never heard of, and it must be able to say what they are without editing a core
+     * enum. Nothing in core branches on the value, so an unrecognised role costs nothing.
+     */
+    ROLE(false);
 
     private final boolean layoutAffecting;
 

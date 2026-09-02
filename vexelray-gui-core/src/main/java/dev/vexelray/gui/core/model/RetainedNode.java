@@ -378,6 +378,12 @@ public final class RetainedNode {
         return len(PropKey.MARGIN, Length.ZERO);
     }
 
+    /** What this node means, or {@code ""} when the widget that built it declared nothing (see {@link PropKey#ROLE}). */
+    public String role() {
+        Object v = props.get(PropKey.ROLE);
+        return v instanceof String s ? s : "";
+    }
+
     /** Whether this node (and its subtree) is pointer-transparent (see {@link PropKey#HIT_INERT}). */
     public boolean hitInert() {
         return Boolean.TRUE.equals(props.get(PropKey.HIT_INERT));

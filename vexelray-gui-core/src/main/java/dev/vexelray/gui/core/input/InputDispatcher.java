@@ -621,6 +621,15 @@ public final class InputDispatcher {
         return focusedId;
     }
 
+    /**
+     * Whether {@code nodeId} can take keyboard focus — registered by {@link #setFocusable} or implied by
+     * registering a key/char handler. Read when publishing the semantic read-model, so a consumer can tell an
+     * interactive node from decoration without guessing from its role.
+     */
+    public boolean isFocusable(long nodeId) {
+        return focusable.contains(nodeId);
+    }
+
     /** The currently focused node id, or -1. */
     public long focused() {
         return focusedId;

@@ -28,13 +28,15 @@ final class Bytecode {
     static final String GUI_TYPESET = "vexelray-gui-typeset";
     static final String GUI_PLOT = "vexelray-gui-plot";
     static final String GUI_DRAW = "vexelray-gui-draw";
+    static final String GUI_AUTOMATION = "vexelray-gui-automation";
 
     /**
      * Every module the guards inspect. A new framework module belongs here the day it is created: a guard that
      * does not look at a module cannot fail for it, and the invariants are supposed to hold by build rather than
      * by whoever remembers them.
      */
-    static final List<String> INSPECTED = List.of(GUI_CORE, GUI_WIDGET, GUI_TYPESET, GUI_PLOT, GUI_DRAW);
+    static final List<String> INSPECTED =
+            List.of(GUI_CORE, GUI_WIDGET, GUI_TYPESET, GUI_PLOT, GUI_DRAW, GUI_AUTOMATION);
 
     private Bytecode() {
     }

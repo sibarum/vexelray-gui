@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>dev.vexelray.gui</groupId>
+        <artifactId>vexelray-gui</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>vexelray-gui-automation</artifactId>
+
+    <name>VexelRay GUI :: Automation</name>
+    <description>Drives a real application the way a person does, for troubleshooting: a stateful pointer
+        that never teleports, so hover and enter/leave fire because they were provoked rather than because
+        something remembered to simulate them. Input goes out on the ordinary Tactroller topic, which is why
+        there is no automation mode for the application to behave differently in. Speaks only bus message
+        types, so the same code is a remote peer once the bridge lands. See docs/automation.md.</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>dev.vexelray.gui</groupId>
+            <artifactId>vexelray-gui-core</artifactId>
+        </dependency>
+    </dependencies>
+</project>

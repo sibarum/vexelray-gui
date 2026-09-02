@@ -46,6 +46,9 @@
         <!-- Drives a real GuiApp loop under a test's control: synthetic input, an observable frame
              budget, and a wait that ends only when something asks for a frame. See docs/render-on-demand. -->
         <module>vexelray-gui-harness</module>
+        <!-- Drives a real application for troubleshooting: a pointer that never teleports, so the hover a
+             bug depended on is actually provoked. Speaks only bus types. See docs/automation.md. -->
+        <module>vexelray-gui-automation</module>
         <!-- Test-only: the automated separation-of-concerns guard (docs/architecture-proof-plan.md M0).
              Last, so it inspects the compiled output of everything above it. -->
         <module>vexelray-gui-architecture</module>
@@ -95,6 +98,11 @@
             <dependency>
                 <groupId>dev.vexelray.gui</groupId>
                 <artifactId>vexelray-gui-widget</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.vexelray.gui</groupId>
+                <artifactId>vexelray-gui-automation</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

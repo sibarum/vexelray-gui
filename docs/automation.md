@@ -274,7 +274,7 @@ instrument, which is the strongest available guarantee that what the agent synth
 - **A2 — The writer.** *(Landed: `probe.format=csv` in atchung — `seq`, two clocks, one row per physical line.)*
   Core, input and frame-loop events instrumented — including the unconditional `frame.present` heartbeat and
   `loop.park`, without which a stall is indistinguishable from an idle window.
-- **A3 — Virtual cursor + paths.** Stateful cursor, stepped motion, real-time pacing, `move`/`click`/`drag`.
+- **A3 — Virtual cursor + paths.** *(Landed: `vexelray-gui-automation`, `Cursor` — stateful, stepped at 125Hz, real-time paced, `move`/`click`/`drag`/`scroll`.)*
 - **A4 — Protocol + CLI.** Socket line protocol, `tree`/`find`/`settle`/`shot`/`mark`, `csvview`.
 - **A5 — Prove it.** Reproduce a known hover-path bug from the CSV alone, without the app in front of us.
   Until A5 passes, the instrument is not trusted for troubleshooting.

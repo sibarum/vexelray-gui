@@ -6,7 +6,6 @@ import dev.vexelray.gui.core.drop.PayloadType;
 import dev.vexelray.gui.core.edit.Change;
 import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.layout.Rect;
-import dev.vexelray.gui.core.model.NodeKind;
 import dev.vexelray.gui.core.model.RetainedNode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -45,7 +44,7 @@ class DropGestureTest {
     private RetainedNode body;
 
     private static RetainedNode node(long id, float x, float y, float w, float h) {
-        RetainedNode n = new RetainedNode(id, NodeKind.BOX);
+        RetainedNode n = new RetainedNode(id);
         n.x = x;
         n.y = y;
         n.w = w;

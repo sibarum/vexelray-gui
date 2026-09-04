@@ -5,7 +5,6 @@ import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
 import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
 import dev.vexelray.gui.core.layout.LayoutEnums.ScrollLock;
-import dev.vexelray.gui.core.model.NodeKind;
 import dev.vexelray.gui.core.model.PropKey;
 import dev.vexelray.gui.core.model.RetainedNode;
 import org.junit.jupiter.api.Test;
@@ -26,7 +25,7 @@ class ScrollLockTest {
 
     /** A vertical scroller of {@code lineCount} fixed-height lines inside a fixed viewport. */
     private static RetainedNode scroller(int lineCount, float lineH, float viewportH, ScrollLock lock) {
-        RetainedNode col = new RetainedNode(0, NodeKind.BOX);
+        RetainedNode col = new RetainedNode(0);
         col.set(PropKey.DIRECTION, Direction.COLUMN);
         col.set(PropKey.HEIGHT, px(viewportH));
         col.set(PropKey.WIDTH, px(100));
@@ -34,7 +33,7 @@ class ScrollLockTest {
             col.set(PropKey.SCROLL_LOCK, lock);
         }
         for (int i = 0; i < lineCount; i++) {
-            RetainedNode line = new RetainedNode(i + 1, NodeKind.BOX);
+            RetainedNode line = new RetainedNode(i + 1);
             line.set(PropKey.HEIGHT, px(lineH));
             line.set(PropKey.WIDTH, px(100));
             line.parent = col;
@@ -56,7 +55,7 @@ class ScrollLockTest {
         assertEquals(maxY, col.scrollY, 0.5f, "attached bottom lock opens pinned to the bottom");
 
         // Grow the content: a still-attached tail follows to the new bottom.
-        RetainedNode extra = new RetainedNode(999, NodeKind.BOX);
+        RetainedNode extra = new RetainedNode(999);
         extra.set(PropKey.HEIGHT, px(10));
         extra.set(PropKey.WIDTH, px(100));
         extra.parent = col;

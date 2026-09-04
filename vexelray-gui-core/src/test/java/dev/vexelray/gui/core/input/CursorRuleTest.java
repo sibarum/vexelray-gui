@@ -1,6 +1,5 @@
 package dev.vexelray.gui.core.input;
 
-import dev.vexelray.gui.core.model.NodeKind;
 import dev.vexelray.gui.core.model.PropKey;
 import dev.vexelray.gui.core.model.RetainedNode;
 import org.junit.jupiter.api.Test;
@@ -28,7 +27,7 @@ class CursorRuleTest {
     private static final Topic<ClickEvent> CLICKS = Topic.of("test.clicks", ClickEvent.class);
 
     private static RetainedNode box(long id, float x, float y, float w, float h) {
-        RetainedNode n = new RetainedNode(id, NodeKind.BOX);
+        RetainedNode n = new RetainedNode(id);
         n.x = x;
         n.y = y;
         n.w = w;
@@ -74,9 +73,12 @@ class CursorRuleTest {
     }
 
     private static RetainedNode editable(long id, float w, float h) {
-        RetainedNode n = new RetainedNode(id, NodeKind.TEXT);
+        RetainedNode n = new RetainedNode(id);
         n.w = w;
         n.h = h;
+        // A text node is a node with text, so an editable one says so — an empty string is a field nobody has
+        // typed into yet, which is exactly what this fixture is.
+        n.set(PropKey.TEXT, "");
         n.set(PropKey.EDITABLE, Boolean.TRUE);
         return n;
     }

@@ -45,7 +45,7 @@ public sealed interface Mutation
     record Cell(long id, PropKey key) {
     }
 
-    record Create(long id, NodeKind kind, Map<PropKey, Object> initial) implements Mutation {
+    record Create(long id, Map<PropKey, Object> initial) implements Mutation {
         @Override
         public long targetId() {
             return id;

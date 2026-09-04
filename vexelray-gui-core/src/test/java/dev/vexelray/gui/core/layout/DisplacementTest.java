@@ -1,6 +1,5 @@
 package dev.vexelray.gui.core.layout;
 
-import dev.vexelray.gui.core.model.NodeKind;
 import dev.vexelray.gui.core.model.RetainedNode;
 import org.junit.jupiter.api.Test;
 
@@ -46,7 +45,7 @@ class DisplacementTest {
     private static long nextId = 1;
 
     private static RetainedNode node(float x, float y) {
-        RetainedNode n = new RetainedNode(nextId++, NodeKind.BOX);
+        RetainedNode n = new RetainedNode(nextId++);
         n.x = x;
         n.y = y;
         n.viewX = x;

@@ -26,7 +26,6 @@ public final class RetainedNode {
     private static final Length DEFAULT_TEXT_SIZE = Length.rem(1f);
 
     public final long id;
-    public final NodeKind kind;
     private final Map<PropKey, Object> props = new EnumMap<>(PropKey.class);
     public final List<RetainedNode> children = new ArrayList<>();
     public RetainedNode parent;
@@ -115,9 +114,43 @@ public final class RetainedNode {
     // of being snapped back every frame. Clamping still runs unconditionally.
     public int caretFollowed = Integer.MIN_VALUE;
 
-    public RetainedNode(long id, NodeKind kind) {
+    public RetainedNode(long id) {
         this.id = id;
-        this.kind = kind;
+    }
+
+    /**
+     * Whether this node carries text — which is the <b>whole</b> of what makes it a text node.
+     *
+     * <h2>Why kind is derived and not stored</h2>
+     *
+     * It used to be stored, chosen once at {@code Gui.box()} or {@code Gui.text()} and never revisited, and that
+     * made it a <em>second</em> declaration of a fact the prop map already held. The two could disagree, and when
+     * they did the disagreement was silent and one-directional: layout and the renderer believed the kind, so a
+     * box with text laid out at zero height and drew nothing, while {@code accessibleName} believed the property,
+     * so the same label was still announced to automation and to a screen reader. A label present in every
+     * listing and absent from the screen is the hardest kind of bug to find, and it was reachable from one
+     * perfectly ordinary line: {@code gui.box().text("Volume")}.
+     *
+     * <p>So the axis that could disagree is gone. There is one fact — is there a string in the map — and kind is
+     * a <em>reading</em> of it. {@code gui.text(s)} is now sugar for a box with the text prop set, and
+     * {@code box().text(s)} is not a mistake to be rejected but the same thing spelled differently.
+     *
+     * <p><b>The test is presence, not emptiness.</b> {@code gui.text("")} is a label whose string has not arrived
+     * yet — a value column waiting for a number, a panel title waiting for a selection — and it must hold its
+     * line's height so the row does not jump when the text lands. So an empty string is still text; only a node
+     * that was never given the property at all is not.
+     */
+    public boolean hasText() {
+        return props.get(PropKey.TEXT) instanceof String;
+    }
+
+    /**
+     * How this node is drawn, as the read-model reports it. Derived from {@link #hasText()} — see its note. Kept
+     * as a {@link NodeKind} because it is part of the published semantic contract that automation reads, and what
+     * changed is where the answer comes from, not what the answer is.
+     */
+    public NodeKind kind() {
+        return hasText() ? NodeKind.TEXT : NodeKind.BOX;
     }
 
     public void set(PropKey key, Object value) {
@@ -412,7 +445,7 @@ public final class RetainedNode {
     public boolean scrollXAllowed() {
         // Wrapped text never scrolls horizontally: there is nothing to the right of a wrapped line to reach, so
         // an h-scrollbar there would be chrome for an axis that cannot move. Not overridable.
-        if (kind == NodeKind.TEXT && wrapsText()) {
+        if (hasText() && wrapsText()) {
             return false;
         }
         Object v = props.get(PropKey.SCROLL_X);
@@ -421,7 +454,7 @@ public final class RetainedNode {
         }
         // A single-line input masks its overflow at the edge and scrolls with the caret; a scrollbar under a
         // one-line box is chrome nobody asked for. Multi-line editors and containers still default to scrolling.
-        return !(kind == NodeKind.TEXT && editable() && !multiline());
+        return !(hasText() && editable() && !multiline());
     }
 
     /** Whether vertical overflow may scroll (default true = auto scrollbar). */

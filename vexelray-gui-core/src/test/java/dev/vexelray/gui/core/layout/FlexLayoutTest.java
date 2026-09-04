@@ -3,7 +3,6 @@ package dev.vexelray.gui.core.layout;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
 import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
-import dev.vexelray.gui.core.model.NodeKind;
 import dev.vexelray.gui.core.model.PropKey;
 import dev.vexelray.gui.core.model.RetainedNode;
 import org.junit.jupiter.api.Test;
@@ -27,7 +26,7 @@ class FlexLayoutTest {
                     : sizePx;
 
     private static RetainedNode box(long id) {
-        return new RetainedNode(id, NodeKind.BOX);
+        return new RetainedNode(id);
     }
 
     private static void add(RetainedNode parent, RetainedNode child) {
@@ -148,7 +147,7 @@ class FlexLayoutTest {
     void everythingHasSensibleDefaultsAndNothingIsNaN() {
         RetainedNode root = box(0);
         RetainedNode bare = box(1);          // nothing set: width/height AUTO, no children
-        RetainedNode label = new RetainedNode(2, NodeKind.TEXT);
+        RetainedNode label = new RetainedNode(2);
         label.set(PropKey.TEXT, "hi");
         add(root, bare);
         add(root, label);
@@ -184,7 +183,7 @@ class FlexLayoutTest {
         // not collapse to intrinsic content (regression: header/body must span the viewport).
         RetainedNode root = box(0);
         root.set(PropKey.DIRECTION, Direction.COLUMN);
-        RetainedNode header = new RetainedNode(1, NodeKind.TEXT);
+        RetainedNode header = new RetainedNode(1);
         header.set(PropKey.TEXT, "hi");            // narrow intrinsic width
         header.set(PropKey.WIDTH, Length.FILL);
         header.set(PropKey.HEIGHT, Length.rem(2));
@@ -280,7 +279,7 @@ class FlexLayoutTest {
     @Test
     void aFloatingAutoChildStillSizesToItsContent() {
         RetainedNode root = box(0);
-        RetainedNode tip = new RetainedNode(1, NodeKind.TEXT);
+        RetainedNode tip = new RetainedNode(1);
         tip.set(PropKey.TEXT, "abcd");            // 4 chars x 16px x 0.5 = 32 wide, 16 tall
         tip.set(PropKey.FLOAT_X, Length.ZERO);
         tip.set(PropKey.FLOAT_Y, Length.ZERO);
@@ -299,7 +298,7 @@ class FlexLayoutTest {
      */
     @Test
     void aTextLeafStillPlacesItsFloatingChild() {
-        RetainedNode field = new RetainedNode(0, NodeKind.TEXT);
+        RetainedNode field = new RetainedNode(0);
         field.set(PropKey.EDITABLE, Boolean.TRUE);
         field.set(PropKey.MULTILINE, Boolean.TRUE);
         field.set(PropKey.TEXT, "one\ntwo\nthree");

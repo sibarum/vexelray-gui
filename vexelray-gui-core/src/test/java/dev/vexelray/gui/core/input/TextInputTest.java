@@ -2,7 +2,6 @@ package dev.vexelray.gui.core.input;
 
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
 import dev.vexelray.gui.core.layout.TextMeasurer;
-import dev.vexelray.gui.core.model.NodeKind;
 import dev.vexelray.gui.core.model.PropKey;
 import dev.vexelray.gui.core.model.RetainedNode;
 import org.junit.jupiter.api.Test;
@@ -23,7 +22,7 @@ class TextInputTest {
     private static final Topic<ClickEvent> CLICKS = Topic.of("test.clicks", ClickEvent.class);
 
     private static RetainedNode textNode(long id, String text, float x, float w) {
-        RetainedNode n = new RetainedNode(id, NodeKind.TEXT);
+        RetainedNode n = new RetainedNode(id);
         n.x = x;
         n.y = 0;
         n.w = w;

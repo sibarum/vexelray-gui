@@ -3,7 +3,6 @@ package dev.vexelray.gui.core.app;
 import dev.vexelray.canvas.Canvas;
 import dev.vexelray.canvas.CanvasVertex;
 import dev.vexelray.canvas.Color;
-import dev.vexelray.gui.core.model.NodeKind;
 import dev.vexelray.gui.core.model.PropKey;
 import dev.vexelray.gui.core.model.RetainedNode;
 import dev.vexelray.text.TextLayout;
@@ -35,7 +34,7 @@ class CullTest {
 
     /** A 100x20 row at {@code y}, in {@code colour}. */
     private static RetainedNode row(float y, Color colour) {
-        RetainedNode n = new RetainedNode(nextId++, NodeKind.BOX);
+        RetainedNode n = new RetainedNode(nextId++);
         n.set(PropKey.BACKGROUND, colour);
         n.x = 0f;
         n.y = y;
@@ -49,7 +48,7 @@ class CullTest {
      * makes the renderer clip to that viewport, which is what there is to be culled against.
      */
     private static RetainedNode viewport() {
-        RetainedNode n = new RetainedNode(nextId++, NodeKind.BOX);
+        RetainedNode n = new RetainedNode(nextId++);
         n.set(PropKey.BACKGROUND, PAGE);
         n.w = 100f;
         n.h = 40f;

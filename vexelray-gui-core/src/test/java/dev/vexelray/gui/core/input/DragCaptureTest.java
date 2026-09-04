@@ -1,6 +1,5 @@
 package dev.vexelray.gui.core.input;
 
-import dev.vexelray.gui.core.model.NodeKind;
 import dev.vexelray.gui.core.model.RetainedNode;
 import org.junit.jupiter.api.Test;
 import sibarum.atchung.Atchung;
@@ -22,7 +21,7 @@ class DragCaptureTest {
     private static final Topic<ClickEvent> CLICKS = Topic.of("test.clicks", ClickEvent.class);
 
     private static RetainedNode node(long id, float x, float y, float w, float h) {
-        RetainedNode n = new RetainedNode(id, NodeKind.BOX);
+        RetainedNode n = new RetainedNode(id);
         n.x = x;
         n.y = y;
         n.w = w;

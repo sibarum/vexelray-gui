@@ -2,7 +2,6 @@ package dev.vexelray.gui.core;
 
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.model.Mutation;
-import dev.vexelray.gui.core.model.NodeKind;
 import dev.vexelray.gui.core.model.PropKey;
 import org.junit.jupiter.api.Test;
 import sibarum.atchung.Atchung;
@@ -57,7 +56,7 @@ class MutationFoldTest {
 
     @Test
     void structureIsNeverACell() {
-        assertNull(new Mutation.Create(7, NodeKind.BOX, Map.of()).cell());
+        assertNull(new Mutation.Create(7, Map.of()).cell());
         assertNull(new Mutation.Insert(1, 7, 0).cell(), "the same node inserted twice is two moves");
         assertNull(new Mutation.Remove(7).cell());
         assertNull(new Mutation.Batch(List.of()).cell(), "a batch was already coalesced by whoever grouped it");

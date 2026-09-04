@@ -3,7 +3,6 @@ package dev.vexelray.gui.core.app;
 import dev.vexelray.canvas.Canvas;
 import dev.vexelray.canvas.CanvasVertex;
 import dev.vexelray.canvas.Color;
-import dev.vexelray.gui.core.model.NodeKind;
 import dev.vexelray.gui.core.model.PropKey;
 import dev.vexelray.gui.core.model.RetainedNode;
 import dev.vexelray.gui.draw.Picture;
@@ -34,7 +33,7 @@ class OverlayNodeTest {
     private static long nextId = 1;
 
     private static RetainedNode box(Color bg) {
-        RetainedNode n = new RetainedNode(nextId++, NodeKind.BOX);
+        RetainedNode n = new RetainedNode(nextId++);
         n.set(PropKey.BACKGROUND, bg);
         n.w = 100f;
         n.h = 50f;

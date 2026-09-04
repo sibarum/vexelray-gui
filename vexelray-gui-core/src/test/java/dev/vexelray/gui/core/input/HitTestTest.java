@@ -1,7 +1,6 @@
 package dev.vexelray.gui.core.input;
 
 import dev.vexelray.gui.core.layout.Length;
-import dev.vexelray.gui.core.model.NodeKind;
 import dev.vexelray.gui.core.model.PropKey;
 import dev.vexelray.gui.core.model.RetainedNode;
 import org.junit.jupiter.api.Test;
@@ -12,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 class HitTestTest {
 
     private static RetainedNode node(long id, float x, float y, float w, float h) {
-        RetainedNode n = new RetainedNode(id, NodeKind.BOX);
+        RetainedNode n = new RetainedNode(id);
         n.x = x;
         n.y = y;
         n.w = w;

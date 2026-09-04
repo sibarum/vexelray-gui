@@ -2,7 +2,6 @@ package dev.vexelray.gui.krono;
 
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
-import dev.vexelray.gui.core.model.NodeKind;
 import dev.vexelray.gui.core.model.RetainedNode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,11 +35,11 @@ class TransitionsTest {
 
     /** A retained node standing in for one the layout pass would have produced. */
     private RetainedNode retained(Node handle) {
-        return new RetainedNode(handle == null ? nextId++ : handle.id(), NodeKind.BOX);
+        return new RetainedNode(handle == null ? nextId++ : handle.id());
     }
 
     private RetainedNode retainedUnder(RetainedNode parent) {
-        RetainedNode n = new RetainedNode(nextId++, NodeKind.BOX);
+        RetainedNode n = new RetainedNode(nextId++);
         n.parent = parent;
         parent.children.add(n);
         return n;
@@ -124,7 +123,7 @@ class TransitionsTest {
             moves.followChildren(body, OVER, Ease.LINEAR);
             moves.follow(special, Dur.ZERO, Ease.LINEAR);       // this one does not animate
             RetainedNode retainedBody = retained(body);
-            RetainedNode row = new RetainedNode(special.id(), NodeKind.BOX);
+            RetainedNode row = new RetainedNode(special.id());
             row.parent = retainedBody;
             retainedBody.children.add(row);
 
@@ -274,7 +273,7 @@ class TransitionsTest {
             moves.followChildren(list, Dur.ZERO, Ease.LINEAR);   // this list snaps, inside a page that does not
 
             RetainedNode pageNode = retained(page);
-            RetainedNode listNode = new RetainedNode(list.id(), NodeKind.BOX);
+            RetainedNode listNode = new RetainedNode(list.id());
             listNode.parent = pageNode;
             pageNode.children.add(listNode);
             RetainedNode row = retainedUnder(listNode);

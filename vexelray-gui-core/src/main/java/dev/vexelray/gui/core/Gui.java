@@ -18,7 +18,6 @@ import dev.vexelray.gui.core.layout.SemanticSnapshot;
 import dev.vexelray.gui.core.layout.Rect;
 import dev.vexelray.gui.core.layout.TextMeasurer;
 import dev.vexelray.gui.core.model.Mutation;
-import dev.vexelray.gui.core.model.NodeKind;
 import dev.vexelray.gui.core.model.PropKey;
 import dev.vexelray.gui.core.model.Reconciler;
 import dev.vexelray.gui.core.edit.History;
@@ -404,7 +403,7 @@ public final class Gui implements AutoCloseable {
         init.put(PropKey.DIRECTION, Direction.COLUMN);
         init.put(PropKey.WIDTH, Length.FILL);
         init.put(PropKey.HEIGHT, Length.FILL);
-        sink.post(new Mutation.Create(rootId, NodeKind.BOX, init));
+        sink.post(new Mutation.Create(rootId, init));
         this.root = new Node(rootId, sink, layoutReader);
     }
 
@@ -1369,35 +1368,46 @@ public final class Gui implements AutoCloseable {
 
     /** A generic box (defaults to a row). */
     public Node box() {
-        return create(NodeKind.BOX, null);
+        return create(null);
     }
 
     /** A horizontal box. */
     public Node row() {
-        return create(NodeKind.BOX, Direction.ROW);
+        return create(Direction.ROW);
     }
 
     /** A vertical box. */
     public Node column() {
-        return create(NodeKind.BOX, Direction.COLUMN);
+        return create(Direction.COLUMN);
     }
 
-    /** A text node carrying {@code s}. */
+    /**
+     * A node carrying {@code s} — which is the whole of what makes it a text node.
+     *
+     * <p><b>Sugar, not a second kind.</b> This is exactly {@code box().text(s)}, and the two are
+     * interchangeable: a node draws text when it has text, so there is no way to make one that holds a string
+     * and refuses to show it. That used to be possible and was the quietest bug in the framework — see
+     * {@code RetainedNode.hasText}. Prefer this spelling when the node <em>is</em> a label; reach for
+     * {@code box().text(...)} when text is arriving on a node that already exists for another reason.
+     *
+     * <p>An empty string is still text: it is a label whose content has not arrived, and it holds its line's
+     * height so the row around it does not jump when the content lands.
+     */
     public Node text(String s) {
         long id = ids.getAndIncrement();
         Map<PropKey, Object> init = new EnumMap<>(PropKey.class);
         init.put(PropKey.TEXT, s);
-        sink.post(new Mutation.Create(id, NodeKind.TEXT, init));
+        sink.post(new Mutation.Create(id, init));
         return new Node(id, sink, layoutReader);
     }
 
-    private Node create(NodeKind kind, Direction dir) {
+    private Node create(Direction dir) {
         long id = ids.getAndIncrement();
         Map<PropKey, Object> init = new EnumMap<>(PropKey.class);
         if (dir != null) {
             init.put(PropKey.DIRECTION, dir);
         }
-        sink.post(new Mutation.Create(id, kind, init));
+        sink.post(new Mutation.Create(id, init));
         return new Node(id, sink, layoutReader);
     }
 
@@ -1774,7 +1784,7 @@ public final class Gui implements AutoCloseable {
             n.textMetrics = null;
             return;
         }
-        if (n.kind == NodeKind.TEXT) {
+        if (n.hasText()) {
             resolveTextGeometry(n, tm);
         }
         for (RetainedNode c : n.children) {
@@ -2082,9 +2092,9 @@ public final class Gui implements AutoCloseable {
         for (RetainedNode c : n.children) {
             childIds.add(c.id);
         }
-        boolean text = n.kind == NodeKind.TEXT;
+        boolean text = n.hasText();
         out.put(n.id, new SemanticNode(
-                n.id, parentId, childIds, n.kind,
+                n.id, parentId, childIds, n.kind(),
                 n.role(), accessibleName(n), landmarkNames.getOrDefault(n.id, ""),
                 n.visible(), n.hitInert(), n.floating(),
                 input.isFocusable(n.id), input.focusedId() == n.id, n.editable(),

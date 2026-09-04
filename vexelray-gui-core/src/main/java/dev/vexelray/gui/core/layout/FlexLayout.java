@@ -4,7 +4,6 @@ import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
-import dev.vexelray.gui.core.model.NodeKind;
 import dev.vexelray.gui.core.model.RetainedNode;
 import dev.vexelray.gui.core.text.TextMetrics;
 
@@ -60,7 +59,7 @@ public final class FlexLayout {
 
         List<RetainedNode> kids = flowChildren(n);
         if (kids.isEmpty()) {
-            if (n.kind == NodeKind.TEXT) {
+            if (n.hasText()) {
                 layoutTextLeaf(n, ctx, tm);
                 return;
             }
@@ -462,7 +461,7 @@ public final class FlexLayout {
         }
         Length padAxis = axis == Axis.HORIZONTAL ? n.paddingX() : n.paddingY();
         float inset = n.borderWidth().scalarPx(ctx, 0f) + padAxis.scalarPx(ctx, 0f);
-        if (n.kind == NodeKind.TEXT) {
+        if (n.hasText()) {
             float textPx = Math.max(1f, n.textSize().scalarPx(ctx, emBasis(ctx)));
             // An editable node adds its caret gutter, so an auto-sized field measures to a width its text
             // actually fits in — the same invariant the label case gets from the inset being border+padding

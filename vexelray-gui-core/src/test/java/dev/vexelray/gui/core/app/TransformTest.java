@@ -3,7 +3,6 @@ package dev.vexelray.gui.core.app;
 import dev.vexelray.canvas.Canvas;
 import dev.vexelray.canvas.CanvasVertex;
 import dev.vexelray.canvas.Color;
-import dev.vexelray.gui.core.model.NodeKind;
 import dev.vexelray.gui.core.model.PropKey;
 import dev.vexelray.gui.core.model.RetainedNode;
 import dev.vexelray.text.TextLayout;
@@ -36,7 +35,7 @@ class TransformTest {
 
     /** A 100x100 box at the origin with a background, and whatever else the caller sets. */
     private static RetainedNode box(Color background) {
-        RetainedNode n = new RetainedNode(nextId++, NodeKind.BOX);
+        RetainedNode n = new RetainedNode(nextId++);
         n.set(PropKey.BACKGROUND, background);
         n.w = 100f;
         n.h = 100f;

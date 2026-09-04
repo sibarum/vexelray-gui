@@ -140,7 +140,7 @@ class ProjectionTest {
             for (RetainedNode c : container.children) {
                 assertTrue(h.gui.layoutSnapshot().node(c.id).present(),
                         "every projected node reaches the layout read-model");
-                assertTrue(c.w > 0 && c.h > 0, "with a real box: " + c.kind);
+                assertTrue(c.w > 0 && c.h > 0, "with a real box: " + c.kind());
             }
         }
     }
@@ -244,7 +244,7 @@ class ProjectionTest {
         RetainedNode find(RetainedNode root, TypesetBlock block) {
             RetainedNode found = search(root, block.node().id());
             assertNotNull(found, "the block's container is in the retained tree");
-            assertEquals(NodeKind.BOX, found.kind);
+            assertEquals(NodeKind.BOX, found.kind());
             return found;
         }
 

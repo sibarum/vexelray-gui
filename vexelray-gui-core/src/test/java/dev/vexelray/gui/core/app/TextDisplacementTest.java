@@ -3,7 +3,6 @@ package dev.vexelray.gui.core.app;
 import dev.vexelray.canvas.Canvas;
 import dev.vexelray.canvas.CanvasVertex;
 import dev.vexelray.canvas.Color;
-import dev.vexelray.gui.core.model.NodeKind;
 import dev.vexelray.gui.core.model.PropKey;
 import dev.vexelray.gui.core.model.RetainedNode;
 import dev.vexelray.gui.core.text.TextMetrics;
@@ -46,7 +45,7 @@ class TextDisplacementTest {
      * the glyph loop is then a no-op, so no atlas is consulted and the caret is the only thing drawn.
      */
     private static RetainedNode caretNode(float x, float y) {
-        RetainedNode n = new RetainedNode(nextId++, NodeKind.TEXT);
+        RetainedNode n = new RetainedNode(nextId++);
         n.x = x;
         n.y = y;
         n.w = 200f;

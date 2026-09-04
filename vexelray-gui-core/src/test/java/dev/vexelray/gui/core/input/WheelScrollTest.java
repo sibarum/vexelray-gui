@@ -1,6 +1,5 @@
 package dev.vexelray.gui.core.input;
 
-import dev.vexelray.gui.core.model.NodeKind;
 import dev.vexelray.gui.core.model.RetainedNode;
 import org.junit.jupiter.api.Test;
 import sibarum.atchung.Atchung;
@@ -21,7 +20,7 @@ class WheelScrollTest {
     private static final Topic<ClickEvent> CLICKS = Topic.of("test.clicks", ClickEvent.class);
 
     private static RetainedNode scrollable(long id) {
-        RetainedNode n = new RetainedNode(id, NodeKind.BOX);
+        RetainedNode n = new RetainedNode(id);
         n.x = 0;
         n.y = 0;
         n.w = 100;
@@ -150,7 +149,7 @@ class WheelScrollTest {
         AtomicInteger relayouts = new AtomicInteger();
         InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS, Runnable::run, relayouts::incrementAndGet);
 
-        RetainedNode node = new RetainedNode(1, NodeKind.BOX); // no overflow
+        RetainedNode node = new RetainedNode(1); // no overflow
         node.w = 100;
         node.h = 100;
 

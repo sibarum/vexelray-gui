@@ -97,7 +97,7 @@ public final class Reconciler {
     public void apply(Mutation m) {
         switch (m) {
             case Mutation.Create c -> {
-                RetainedNode n = new RetainedNode(c.id(), c.kind());
+                RetainedNode n = new RetainedNode(c.id());
                 c.initial().forEach(n::set);
                 index.put(c.id(), n);
                 if (c.id() == rootId) {

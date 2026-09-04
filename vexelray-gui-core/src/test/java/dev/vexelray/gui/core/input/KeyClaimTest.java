@@ -1,6 +1,5 @@
 package dev.vexelray.gui.core.input;
 
-import dev.vexelray.gui.core.model.NodeKind;
 import dev.vexelray.gui.core.model.RetainedNode;
 import org.junit.jupiter.api.Test;
 import sibarum.atchung.Atchung;
@@ -28,9 +27,9 @@ class KeyClaimTest {
 
     /** A root with two focusable children, so Tab traversal has somewhere to go. */
     private static RetainedNode tree() {
-        RetainedNode root = new RetainedNode(0, NodeKind.BOX);
+        RetainedNode root = new RetainedNode(0);
         for (long id = 1; id <= 2; id++) {
-            RetainedNode c = new RetainedNode(id, NodeKind.BOX);
+            RetainedNode c = new RetainedNode(id);
             c.w = 10;
             c.h = 10;
             c.parent = root;

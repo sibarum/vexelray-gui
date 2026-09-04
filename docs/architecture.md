@@ -224,6 +224,18 @@ attached state never orphans. Mutations: `Create · Insert · Remove · SetProp 
 sealed `Mutation` type). `Batch` posts one atomic group no frame boundary can split. Structural ops
 never coalesce; per-key `SetProp` coalescing is a later optimization (see §5).
 
+**A node has no stored kind.** `Create` carries an id and props, and nothing else — `NodeKind` is *derived*:
+`RetainedNode.kind()` answers `TEXT` when a string is in the prop map and `BOX` when there is not. It was
+stored once, chosen at `Gui.box()` or `Gui.text()` and never revisited, which made it a second declaration of a
+fact the prop map already held. The two could disagree, and the disagreement was silent and one-directional —
+layout and the renderer believed the kind, so `gui.box().text("Volume")` laid out at zero height and drew
+nothing, while `accessibleName` believed the property, so the label was still announced to automation and to a
+screen reader. A label present in every listing and absent from the screen is about the hardest bug there is to
+find, and it was reachable from one perfectly ordinary line. Deleting the axis that could disagree is the fix;
+`gui.text(s)` is now sugar for a box with the text prop, and `box().text(s)` is not a mistake to reject but the
+same thing spelled differently. The test is **presence, not emptiness** — `gui.text("")` is a label whose string
+has not arrived, and it holds its line's height so the row does not jump when it does.
+
 **The mutation channel is an Atchung topic, not a bespoke queue.** `Node` setters publish a `Mutation`
 to an internal `Topic<Mutation>`; the GUI thread owns a `Pump` subscribed to it and `drain()`s once per
 frame, applying each mutation to the tree through the single-writer `Reconciler`. Losslessness is

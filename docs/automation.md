@@ -215,7 +215,7 @@ printf 'find Save\nclick save\nsettle\nshot after.png\nquit\n' | nc localhost 76
 | Command | Meaning |
 |---|---|
 | `tree` | The joined semantic + layout snapshot as an indented outline: ref, role, name, `@landmark`, box, plus `hidden` / `focused`. |
-| `find <text>` | Refs whose role or name contains the text, case-insensitively. |
+| `find <text>` | Refs whose role, name or landmark contains the text, case-insensitively. |
 | `where` | Where the pointer is now. |
 | `go <landmark>` | The framework's own navigation: reveal whatever conceals it, scroll it into view, focus it. |
 | `move <ref\|landmark\|x,y>` | Travel there. Hover happens on the way, and is recorded. |
@@ -225,7 +225,8 @@ printf 'find Save\nclick save\nsettle\nshot after.png\nquit\n' | nc localhost 76
 | `type <text>` | One code point at a time, through the ordinary character channel. |
 | `key <NAME>` | Press and release a named `Key`. |
 | `settle` | Wait for the loop to catch up with everything published so far. |
-| `shot [path]` | PNG of the window this driver is attached to. |
+| `await <landmark> <text>` | Wait until that landmark's name contains the text — how an application's own readiness is waited on. |
+| `shot [path]` | PNG of the window this driver is attached to. Clears the target, waits for the file, `err` if none arrives. |
 | `mark <note>` | Write a row into the correlation log saying *why*. Changes nothing else. |
 | `help`, `quit` | The list; and end the session. |
 
@@ -241,8 +242,34 @@ is exact about the frame loop and never a sleep. It cannot see a handler still r
 handler has published nothing yet, so nothing reports it owed. An agent needing "the application has finished
 thinking" has to wait on something the application names.
 
+**`await` is how it waits on that**, and deliberately without an application-specific hook. An accessible name
+is published for every node and a landmark is already the durable way to say *which* node, so an application
+declares readiness by writing it down where it is legible — a landmark whose name says what state it is in —
+and `await <landmark> <text>` blocks on the layout commit signal until it does. The rejected alternative was a
+readiness predicate supplied by the host, which would have made each application's synchronisation a private
+arrangement with `Automation` instead of a fact in the read-model that `tree` and `find` can already see. The
+calculator's ray-marched preview is the first consumer: see
+[calculator-vexel-demo/docs/driving-the-preview.md](../../calculator-vexel-demo/docs/driving-the-preview.md).
+
+**`shot` waits for the picture, and can fail.** `WindowControls.capture` is asynchronous and cannot report, so
+a `shot` that replied on return said `ok` for a minimized window, for a host whose capture sink does nothing,
+and for a write that failed to `System.err` where no agent on a socket can see it — §6's exact prohibition, on
+the one command whose entire value is that its answer can be looked at. It now deletes the target first (a path
+photographed earlier in the session already holds a complete PNG, and "wait for it to appear" would be
+satisfied instantly by the previous run's picture), then waits for the file, which is sound rather than a sleep
+because `GuiWindow.capture` writes beside the path and moves it into place for precisely this consumer.
+
 Main-thread discipline: `shot` posts to `GuiApp`'s existing `tasks` queue via `WindowControls`. Reads post
 nothing — snapshots are lock-free by design — and input goes on the bus, so no command touches GUI-thread state.
+
+**And putting input on the bus is not enough on its own**, which is the one place the "nearly free" story in §1
+has a cost. A host loop that parks when nothing is looking at the window has three reasons to wake, and injected
+input is none of them: it is not a mutation, no clock has run out, and no OS event arrived carrying it. So the
+publish succeeds, every command answers `ok`, and nothing happens — no click lands, no key is typed, the tree
+never changes — until any real event arrives and it all comes right at once. That presents as *the application
+ignoring the clicks*, which is a bug hunt in the wrong program entirely. `Gui.wakeForInput()` is the fix and it
+is deliberately named for its caller's situation rather than made general: an application never needs it,
+because everything an application does to a tree goes through a mutation, and a mutation already wakes the loop.
 
 ---
 

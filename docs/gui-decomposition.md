@@ -1,12 +1,24 @@
 # Decomposing Gui
 
-`Gui` is 1929 lines, 86 public methods and 60-odd fields. It is the composition root, the frame loop, the tree
-factory, the mutation publisher, the zoom/DPI/viewport authority, the layout read-model publisher, the text
-geometry solver, the scroll-into-view solver, the resize-observer registry, the navigation engine, and a
-pass-through facade over `InputDispatcher`. Every new seam has landed on it, including the one added most
-recently.
+`Gui` is the composition root, the frame loop, the tree factory, the mutation publisher, the zoom/DPI/viewport
+authority, the layout read-model publisher, the text geometry solver, the scroll-into-view solver, the
+resize-observer registry, the navigation engine, and a pass-through facade over `InputDispatcher`. Every new
+seam has landed on it, including the one added most recently.
 
-This is the plan to stop that.
+This is the plan to stop that. **Nothing in §2 has been extracted yet**, and the measurement is the reason to
+say so plainly rather than leave the plan sitting there reading as though it were underway:
+
+| | when this was written | now |
+|---|---|---|
+| lines | 1,929 | 2,193 |
+| public methods | 86 | 91 |
+| fields | ~60 | ~68 |
+
+Five more methods and 264 more lines since 2026-08-30, which is what "every new seam lands here" looks like when
+it is left alone. The most recent 33 of those lines are `wakeForInput` and the derived-kind change, and both
+were the right change to make — that is the point. Nothing on this list is being *caused* by bad decisions
+downstream; the class is simply the place a good decision has nowhere else to go. The plan is not wrong, it has
+not been started, and the cost of not starting is now written down.
 
 ---
 

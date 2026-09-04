@@ -116,10 +116,30 @@ Declared by `-widget`:
 | `tree` / `treeitem` | `TreeView`'s root / each row |
 | `menu` / `menuitem` | `ContextMenu`'s column / each row |
 | `tooltip`, `titlebar`, `popout` | those widgets' roots |
+| `colorpicker` | `ColorPicker`'s panel |
+| `colorpicker.field` / `.hue` / `.alpha` | its three draggable ramps |
+| `colorpicker.preview` / `.recents` / `.swatch` | the sample, the recents strip, each slot in it |
+| `switch` | `Toggle`'s track |
+| `segment` / `segment-option` | `Segment`'s bar / each cell |
+| `swatches` / `swatch` | a `Property.swatches` column / each colour-map card in it |
+| `inspector`, `inspector-section`, `inspector-row` | `Inspector`'s panel, a section heading, one labelled row |
+| `inspector-card` / `inspector-card-head` | a folding card / the heading that folds it |
+| `rail`, `rail-item`, `rail-action` | `Rail`'s icon column, a page icon, a non-page action |
+| `rail-panel` / `rail-panel-head` | the panel beside it / its heading |
+
+**`ListView` and `Table` declare nothing**, and that is a gap rather than a decision. Naming them is the easy
+half; the hard half is that a virtualised body has no node for a row that is off screen, so the honest
+description of a hundred-thousand-row list is not the thirty rows that happen to exist. That wants a role able
+to carry a count and a realized range — the same shape of problem as §6's hidden nodes, and for the same reason:
+"no such node" is not an answer. Until then a reader sees the rows in the window and no statement about the
+rest. Tracked in `todo.md` §4.9.
 
 Declared by the demo (`Ui`): `button`, `toggle`. **There is no `Button` widget in the framework**, deliberately
 — `Ui` says why — so applications compose their own and declare the role themselves. That is the seam working as
-intended rather than a gap: `Node.role` is how an application says what it built.
+intended rather than a gap: `Node.role` is how an application says what it built. The demo's `toggle` and the
+framework's `switch` are two different things wearing similar words: the demo paints a text node that flips, and
+`Toggle` is the widget under **Widgets** in the README. A reader should not have to know which one it is looking
+at, and a later pass should reconcile the two words. Tracked in `todo.md` §4.9.
 
 ## 6. Two things that will bite
 

@@ -262,19 +262,34 @@ Wanted eventually, deliberately not now.
 ## 4. Widget vocabulary — the components still missing
 
 `-widget` holds **interaction protocols**, not painted controls: `Tabs`, `TreeView`, `TextField`, `ContextMenu`,
-`Modal`, `Reorder`, `Popout`. A button, a toggle, a card and a heading are application code — `Ui` in the demo is
-the honest demonstration of that, and the reason it works is that a `Role` already knows its own hover and
-pressed shades, so nobody there writes a colour down. Promoting those would make the framework opinionated about
-appearance and buy no invariant. So a component earns a place here only when it carries an invariant application
-code cannot be trusted to re-derive: a selection anchor, a commit-or-revert, a virtualised row window, a claim on
-a chord.
+`Modal`, `Reorder`, `Popout`, `ListView`, `Table`, `Rail`, `Inspector`, `ColorPicker`. A button, a card and a
+heading are application code — `Ui` in the demo is the honest demonstration of that, and the reason it works is
+that a `Role` already knows its own hover and pressed shades, so nobody there writes a colour down. Promoting
+those would make the framework opinionated about appearance and buy no invariant. So a component earns a place
+here only when it carries an invariant application code cannot be trusted to re-derive: a selection anchor, a
+commit-or-revert, a virtualised row window, a claim on a chord.
+
+**A toggle was on that list and is not any more**, and the correction is worth keeping because it was not a
+change of mind about appearance. `Property.flag` needs a switch: a declared property builds its own editor
+(§4.4), so every built-in row's control has to exist in the module that declares the row, or the vocabulary the
+inspector ships with is not closed. Building one then turned up the invariant that was hiding — a knob placed by
+a hand-computed inset is correct at exactly one rem size, and placing it by two grow-weighted spacers in the
+ratio `on : (1-on)` is correct at all of them. That is the same trick `Slider` uses, and "a switch is a slider
+that holds two values" is worth being literally true rather than nearly true. `Toggle` is therefore here;
+`Ui`'s painted one in the demo is not obsolete, it is still the demonstration that a control *can* be
+application code.
 
 Two standing constraints shape almost every entry below. **Nothing appears, moves or expands on hover** — a
 popup opens on click, and space a control might need is reserved before it needs it. And **every device event
 arrives through Tactroller on the bus**; a component that wants a key reads a claim, it does not read a device.
 
-**Sequenced.** §4.1 first, then §4.2 in order: the first four unblock the most. §4.7 is scheduled against the C1
-proof in `architecture-proof-plan.md` rather than against this list.
+**Sequenced.** §4.1 and §4.2 are done, and so are the entries struck through in §4.3–§4.5. What is left is no
+longer a queue. Two things are named by more than one remaining entry and are worth doing first for that reason:
+`Select` (§4.3), which §4.8's date picker still assumes, and the **resize `CursorShape`** §4.2 defers, which
+`Table`'s grip has already settled for `GRAB` and `SplitPane` (§4.5) will want the same one — they are one
+native binding, done together. §4.7 is scheduled against the C1 proof in
+`architecture-proof-plan.md` rather than against this list, and §4.9 is a gap in what the built widgets
+*publish* rather than a widget to build.
 
 ### 4.1 ~~Prerequisite: `Theme.elevation(base, state)`~~ — **Done**, as a ladder
 
@@ -384,6 +399,36 @@ of doing this first was that fifteen components should not each remember their o
 
 ### 4.3 Choosers
 
+- ~~**`Segment<T>`.**~~ **Done**, and it was not on this list — it arrived because `Property.choice` needed a
+  control for "one of a handful", and a `Select` that hides the alternatives is the wrong shape for three words.
+  The entry it should have had: a menu costs a click and a guess to find out what the options *are*, and three
+  switches say the wrong thing in the other direction, since nothing in their shape forbids turning two on, so
+  the exclusivity lives in a handler and the user meets it by being corrected. A segment says *one of these*
+  before it is touched. Options are `(label, value)` compared by `equals`, so an enum constant, a record or a
+  string all work and none has to become a string first — and nothing is keyed by an index that silently means a
+  different option after an insert.
+- ~~**`ColorPicker` / `ColorHistory`.**~~ **Done.** §4.8 said a colour picker was `Select` plus a bespoke panel
+  and added no invariant of its own. Both halves were wrong, and building it is what showed why:
+
+  **It never needed `Select`.** The panel is an ordinary node; where it appears — inline, in a `Popout`, floated
+  with `Node.floatAt` — is the application's decision. A widget that drew a picker *and* decided it was a
+  drop-down would be two things.
+
+  **It holds `Hsv`, not `Color`, and that is the invariant.** Grey has no hue and black has neither hue nor
+  saturation, so a picker that stored the resulting colour and re-derived its coordinates loses the user's place
+  every time they drag into a corner. That is the bug every hand-rolled picker has, it is invisible until
+  somebody drags to an edge, and it is exactly what "an invariant application code cannot be trusted to
+  re-derive" was written for.
+
+  **Two more fell out.** `onChange` (a drag moving — the live preview) and `onCommit` (a choice *made* — the undo
+  entry) are different events, and collapsing them makes either every pixel of a drag an undo step or the picker
+  impossible to watch; `color(...)` fires neither, because nobody chose anything. And a recents strip is only
+  useful because it is the *same* strip everywhere, so `ColorHistory` is handed to the pickers rather than owned
+  by one: a picker per property with a history each gives the user as many separate pasts as the panel has rows.
+
+  A date picker stays on §4.8 untouched by this — nothing about a calendar has a coordinate a value can fail to
+  recover.
+
 - **`Select`.** The overlay primitive plus a list plus a claim on Up/Down/Enter/Escape at `ClaimScope.VISIBLE`.
   The no-hover rule is the specification, not a constraint on it: the popup opens on click, and the closed
   control reserves its own chevron slot so nothing reflows when a value changes width.
@@ -402,11 +447,61 @@ of doing this first was that fifteen components should not each remember their o
   commits, an invalid value never reaches the application. `TextField` owns text; nothing owns "this text means a
   number between 0 and 1". `NumberField`, and a `Slider` with a typed entry beside it, are both instances of it
   rather than separate widgets.
+
+  ~~**`NumberField`.**~~ **Done** — as the concrete case, not yet as `Field<T>`. The generic type is still worth
+  extracting and this is the evidence for what its contract has to be, because writing it turned up the rule the
+  note above states too weakly. It is not that an invalid value never reaches the application; it is that **what
+  is on screen and what has been agreed are two different things, and validating per keystroke conflates them**.
+  Half of `-1.5` is `-1.`, and `-` alone is half of every negative number there is: a field that parsed each
+  keystroke would refuse both and make those numbers unreachable *by typing them*. So the text is left alone
+  while it is being edited and read only on commit, and `value()` answers the last agreed number until then. The
+  same fact settles the failure case — an unparseable commit puts the last agreed number back rather than
+  clearing, so the field always shows a number and the user always sees which one they are now holding.
+
+  Stepping is `BigDecimal`, because `0.1` ten times is not `1.0` and a field stepped up and down ten times should
+  read what it read before. The value handed out is a `double` because that is what the callers plot with; the
+  arithmetic getting there is not obliged to lose the same digits. `Field<T>` will need that distinction — the
+  agreed value's type and the arithmetic's type are not the same question.
 - **`RadioGroup`, and a tri-state `Check`.** Trivial to draw, which is why they look like application code and
   are not: exclusivity across siblings, arrow keys traversing *within* the group while Tab leaves it entirely,
   and indeterminate resolving to checked — never to unchecked — on click.
 
 ### 4.5 Space and structure
+
+- ~~**`Rail`.**~~ **Done**, and the reason it is not `Tabs` with an orientation flag is a state, not a look. A
+  tab bar answers *which of these documents am I looking at*, so one is always selected and the bar is part of
+  the content beneath it. A rail answers *which tool am I holding*, so **none** is a legitimate answer: clicking
+  the selected icon puts the panel away and leaves the rail. That is the whole reason a rail is worth having —
+  the work is the canvas and the panel is on loan from it — and it is a state the tab bar does not have and
+  should not grow.
+
+  Pages are builders, built the first time they are shown and kept thereafter — the same choice `Tabs` makes for
+  pages and `Popout` for its two hosts, for the same reason: registrations are keyed by node id inside the tree
+  that minted them and released when a node leaves, so a rebuilt page comes back drawing correctly and unable to
+  take a keystroke. Building lazily is the affordable half — six panels cost one panel's nodes until the others
+  are asked for. The icons keep their places whether the panel is open or shut and the panel takes its space
+  from the content, so the icon under the pointer when the panel opens is the icon under it afterwards.
+- ~~**`Inspector` / `Property`.**~~ **Done**, and it is the entry that most needed the "carries an invariant"
+  test applied honestly, because a settings panel looks like the most application-shaped thing there is. What
+  makes it not: a panel hand-built out of rows *is* the schema, so what is settable can only be read off the
+  layout code, and a second view of the same model — a search, a preset dump, a transcript of what the user
+  changed — has nothing to read. Declaring the properties puts the schema where a program can look at it and
+  makes the layout a consequence.
+
+  **There is no `Kind` enum and no switch**, which is the whole of what keeps the editor vocabulary open: a
+  `Property` builds its own editor and the inspector places the node it gets back, so a sixth kind is an
+  application class handed over rather than a change to the widget that displays it. Same shape as
+  `dev.vexelray.gui.plot.Expr`, same reason, and it is also what §1's dispatch rule requires. It costs
+  something and the cost is right: an inspector *cannot* special-case a kind, and a row that needs to look
+  different is a different `Property`.
+
+  Two decisions worth keeping. The **value column belongs to the inspector**, not to the row — reserved for
+  every row and written through a `Readout`, because a column that appeared only where there was something to
+  put in it would move the controls beside it as values came and went, which is the standing no-movement rule.
+  And factories take a **supplier and a consumer**, not an initial value and a callback: the model is the truth
+  and a property is a view onto it, so `refresh()` re-reads after a preset, a keystroke or a fit changed
+  something elsewhere. Sections are declared, never sorted — the order on screen is the order in the source, and
+  no comparator quietly decides that `Look` comes before `Sampling`.
 
 - **`SplitPane`.** A draggable divider with a per-pane minimum and a collapse threshold, persisted through
   `WindowMemory` beside the window bounds that already live there. `Popout` covers the docking half; the divider
@@ -435,8 +530,32 @@ architecture work with a component-shaped output, so it is scheduled there rathe
 
 ### 4.8 Not on this list
 
-Buttons, toggles, cards, headings, labels, paragraphs — application code, see above. Date and colour pickers
-likewise: each is `Select` plus a bespoke panel once `Select` exists, and neither adds an invariant of its own.
+Buttons, cards, headings, labels, paragraphs — application code, see above.
+
+~~Toggles.~~ ~~Date and colour pickers likewise: each is `Select` plus a bespoke panel once `Select` exists, and
+neither adds an invariant of its own.~~ **Two of those three were wrong** — see §4.3 for the colour picker and
+the §4 preamble for the toggle. The prediction failed the same way both times: it was made from what the control
+*looks like* rather than from what its state has to be, and the invariant only showed up once something was
+built. Worth remembering the next time this section is used to decline something.
+
+A **date picker** stays here, and now on a narrower claim than the one it was grouped under: a calendar is a
+grid of buttons over a value that survives every round trip through what is displayed, so there is no coordinate
+to lose and nothing an application would re-derive wrongly. If that turns out to be false, it will be false for
+a reason, and the reason goes here.
+
+### 4.9 Semantic roles the widgets do not declare
+
+`ListView` and `Table` publish no `role` at all, so an agent or a test reading `SemanticSnapshot` sees their
+rows and cannot tell it is looking at a list. Naming them is the easy half. The hard half is that a virtualised
+body has no node for a row that is off screen, so the honest description of a hundred-thousand-row list is not
+the thirty rows that happen to exist — it wants a role able to carry a count and a realized range. Until that is
+decided, adding a bare `list` role would publish a number that is quietly the window's rather than the list's,
+which is worse than saying nothing.
+
+Second, smaller: the demo's `Ui` declares `toggle` for a painted text node while `Toggle` declares `switch`, so
+one word covers two different things in a reader's view of the same tree. One of them should move.
+
+Both are `semantic-read-model.md` §5's table, which is where the current state is written down.
 
 ---
 

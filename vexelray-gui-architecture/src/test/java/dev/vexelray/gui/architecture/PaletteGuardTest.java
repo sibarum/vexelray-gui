@@ -34,7 +34,16 @@ class PaletteGuardTest {
             "dev/vexelray/gui/core/style/Role",
             // The model's last-resort default for a text node that never declared a colour. The renderer passes
             // the theme's ink in its place (RetainedNode.textColor(Color)), so this is a floor, not a look.
-            "dev/vexelray/gui/core/model/RetainedNode");
+            "dev/vexelray/gui/core/model/RetainedNode",
+            // The one widget whose *subject* is colour. Everything it wears -- panel, borders, wells, the
+            // accent on a hovered swatch -- still comes from a Role, and must. What is minted here is the
+            // opposite category: the red at 0 degrees on the hue ramp, the black whose coverage *is* the value
+            // axis, the alpha checkerboard, and the white-inside-black marker rings. None of those is a look
+            // decision, and a Role is exactly the wrong home for them -- a Role is a function of the palette, so
+            // a light theme would repaint the ramp and the ramp would then be lying about what it depicts. The
+            // marker is the same argument in physics rather than in semantics: it has to read against every
+            // colour the square can show, which is a constraint no palette can satisfy and none should try to.
+            "dev/vexelray/gui/widget/ColorPicker");
 
     @Test
     void noFrameworkClassMintsItsOwnColour() {

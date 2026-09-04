@@ -73,6 +73,23 @@ public final class Tooltip implements AutoCloseable {
      * is an added state observer, so the target's own hover styling keeps working.
      */
     public Tooltip attach(Node target, String text) {
+        return attach(target, () -> text);
+    }
+
+    /**
+     * The same, for a target whose help is a fact about the moment rather than about the control — a swatch that
+     * says which colour it currently holds, a button that says why it is unavailable <em>now</em>. The supplier is
+     * asked once per hover, at the moment the bubble would show, exactly as a context menu's source is asked once
+     * per click and for the same reason: only the caller knows what is true, and it is true at hover time or not
+     * at all.
+     *
+     * <p>Answering null or blank shows nothing, which is how a control that sometimes has nothing to say says so
+     * without the caller having to attach and detach.
+     *
+     * <p>Attach <b>once</b> per target: each call adds a state observer, so re-attaching to say something new is
+     * a leak. This overload exists so that there is never a reason to.
+     */
+    public Tooltip attach(Node target, java.util.function.Supplier<String> text) {
         // Only a *fresh* entry arms the bubble: HOVER reached from NORMAL. HOVER reached from PRESSED is the
         // release half of a click — the user just acted on the control, and a tooltip popping up over the result
         // would be help arriving after the decision. It stays away until the pointer leaves and comes back.
@@ -151,7 +168,11 @@ public final class Tooltip implements AutoCloseable {
 
     /** Place the bubble just below {@code target}'s published box and show it. Anchored to the box, not the
      *  pointer, so it appears once and stays put. */
-    private void showFor(Node target, String text) {
+    private void showFor(Node target, java.util.function.Supplier<String> source) {
+        String text = source.get();
+        if (text == null || text.isBlank()) {
+            return;   // nothing to say about this target right now
+        }
         var rect = target.layout().rect();
         if (rect.w() <= 0f || rect.h() <= 0f) {
             return;   // not laid out (or hidden since): nothing to anchor to

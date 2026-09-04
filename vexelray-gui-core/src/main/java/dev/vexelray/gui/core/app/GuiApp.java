@@ -23,6 +23,7 @@ import dev.vexelray.vulkan.present.GraphicsPipeline;
 import dev.vexelray.vulkan.present.OffscreenDraw;
 import dev.vexelray.vulkan.present.SampledColorTarget;
 import dev.vexelray.vulkan.present.SampledImage;
+import dev.vexelray.vulkan.present.StorageBuffer;
 import dev.vexelray.vulkan.present.VertexBuffer;
 import dev.vexelray.vulkan.present.VulkanRenderPass;
 import dev.vexelray.vulkan.present.VulkanSwapchain;
@@ -61,6 +62,7 @@ public final class GuiApp implements AutoCloseable {
     private final AtlasTexture noImage;
     /** Render targets minted by {@link #viewport}, closed with the application. */
     private final List<SampledColorTarget> viewports = new ArrayList<>();
+    private final List<StorageBuffer> buffers = new ArrayList<>();
     private final TextLayout[] text;
     private final TextMeasurer measurer;
 
@@ -200,6 +202,29 @@ public final class GuiApp implements AutoCloseable {
         SampledColorTarget target = new SampledColorTarget(device, Math.max(1, width), Math.max(1, height));
         viewports.add(target);
         return target;
+    }
+
+    /**
+     * A storage buffer of {@code floats} floats on this application's device, bound at set 0 / {@code binding} —
+     * what a shader reads when its data is too big, or too changeable, to be push constants.
+     *
+     * <p>Here for exactly the reason {@link #viewport} is: the device is deliberately not public, and a buffer
+     * allocated on a different one yields a descriptor this application's pipeline cannot bind. Asking the
+     * application for a size and a binding keeps that impossible.
+     *
+     * <p>The motivating case is a ray-marched viewport whose geometry is data rather than code. With the scene
+     * compiled into the shader, a new scene is new SPIR-V and a new pipeline — and building one was measured at
+     * five seconds, on the frame loop, which every window in the application shares. Reading the geometry from
+     * one of these makes the shader the same bytes whatever it draws, so the pipeline is built once.
+     *
+     * <p>Closed with the application, like a viewport, so an app that keeps one for the session need not track
+     * it. Unlike a viewport it is <b>not</b> resized for you and cannot be: the pipeline was built against its
+     * descriptor set layout, so a bigger buffer is a new pipeline. Size it for the worst case up front.
+     */
+    public StorageBuffer storage(int floats, int binding) {
+        StorageBuffer buffer = new StorageBuffer(device, Math.max(1, floats), binding);
+        buffers.add(buffer);
+        return buffer;
     }
 
     /** The OS window handle (an {@code HWND} on Windows) — used to attach input (tactroller) for client-space
@@ -841,6 +866,10 @@ public final class GuiApp implements AutoCloseable {
             v.close();
         }
         viewports.clear();
+        for (StorageBuffer b : buffers) {
+            b.close();
+        }
+        buffers.clear();
         atlas.close();
         noImage.close();
         device.close();

@@ -1507,6 +1507,29 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
+     * Tell a parked host loop a frame is owed because input arrived from <b>outside the OS event queue</b>.
+     *
+     * <p>For input that did not come from a device backend. Every other reason a frame is due already wakes the
+     * loop on its own: a mutation wakes it through {@link #publishMutation}, time passing wakes it through the
+     * clock, and a real click wakes it because the OS delivered the event that carried it. Input published
+     * straight onto the input topic has none of the three — it is not a mutation, and no event arrived — so a
+     * loop that parks indefinitely when nothing is looking at the window never dispatches it.
+     *
+     * <p><b>Which is a silence that reads exactly like a bug in the application.</b> The publish succeeds, an
+     * automation driver's every command answers {@code ok}, and nothing happens: no click lands, no key is
+     * typed, the tree never changes. It comes right the instant any real event arrives, so it presents as the
+     * clicks having been ignored rather than as the loop having been asleep — the same misreading
+     * {@link #onWork} exists to prevent for mutations, in the one place where a mutation is not what is
+     * waiting.
+     *
+     * <p>Named for its caller's situation rather than made general on purpose: an application has no reason to
+     * call this, because everything an application does to a tree goes through a mutation.
+     */
+    public void wakeForInput() {
+        wake("injected input");
+    }
+
+    /**
      * Whether a frame is currently owed — something has been published that no frame has drained yet.
      *
      * <p>The read side of the wake, for anything that needs to know whether the tree has settled: chiefly the

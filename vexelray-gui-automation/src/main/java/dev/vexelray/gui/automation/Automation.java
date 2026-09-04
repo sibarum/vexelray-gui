@@ -40,6 +40,26 @@ public final class Automation {
     /** How long {@link #settle} waits before giving up and saying so. */
     private static final long SETTLE_TIMEOUT_MS = 2_000L;
 
+    /**
+     * How long {@link #shot} waits for the picture to land before calling it a failure.
+     *
+     * <p>Longer than {@link #SETTLE_TIMEOUT_MS} on purpose: a capture builds an offscreen pass and pipeline the
+     * first time it is asked at a given size, and it queues behind whatever the frame loop is already doing.
+     */
+    private static final long SHOT_TIMEOUT_MS = 5_000L;
+
+    /** How often {@link #shot} looks. Off the frame loop, so this costs the application nothing. */
+    private static final long SHOT_POLL_MS = 10L;
+
+    /**
+     * How long {@link #await} waits for an application to say it is ready.
+     *
+     * <p>The most generous of the three, because it is the one waiting on application work rather than on the
+     * frame loop: compiling a shader for new geometry is the case it was added for, and that is seconds on a
+     * cold pipeline cache.
+     */
+    private static final long AWAIT_TIMEOUT_MS = 30_000L;
+
     private final Gui gui;
     private final WindowControls controls;
     private final Cursor cursor;
@@ -51,7 +71,10 @@ public final class Automation {
     public Automation(Gui gui, WindowControls controls) {
         this.gui = java.util.Objects.requireNonNull(gui, "gui");
         this.controls = controls == null ? WindowControls.NONE : controls;
-        this.cursor = new Cursor(gui.bus());
+        // Waking, because this host loop is entitled to be parked: injected input is neither a mutation nor an
+        // OS event, so it is the one reason a frame can be owed that nothing else reports. See
+        // Gui.wakeForInput, and §6's promise that this module has no interesting failure modes of its own.
+        this.cursor = new Cursor(gui.bus(), gui::wakeForInput);
     }
 
     /** The pointer this driver moves. One hand. */
@@ -92,6 +115,7 @@ public final class Automation {
             case "key" -> key(rest);
             case "go" -> go(rest);
             case "settle" -> settle();
+            case "await" -> await(rest);
             case "shot" -> shot(rest);
             case "mark" -> mark(rest);
             case "help" -> HELP;
@@ -123,7 +147,11 @@ public final class Automation {
         if (!n.present()) {
             return;
         }
-        boolean interesting = !n.role().isEmpty() || !n.name().isEmpty() || n.focusable();
+        // A landmark makes a node interesting on its own. Being named is the strongest possible statement that
+        // someone meant this node to be addressed from outside, so a bare box that has been given a name --
+        // a plot canvas, a drop zone -- was the one kind of node this outline would not list.
+        boolean interesting = !n.role().isEmpty() || !n.name().isEmpty() || n.focusable()
+                || !n.landmark().isEmpty();
         if (interesting) {
             sb.append("  ".repeat(Math.min(depth, 12)))
                     .append(id).append(' ')
@@ -157,7 +185,16 @@ public final class Automation {
         }
     }
 
-    /** Refs whose role or name contains {@code query}, case-insensitively. */
+    /**
+     * Refs whose role, name or <b>landmark</b> contains {@code query}, case-insensitively.
+     *
+     * <p>The landmark is matched and not merely displayed, and leaving it out was a hole rather than a
+     * simplification: a landmark exists precisely to name a node that cannot otherwise be picked out, so the
+     * nodes that most need finding are the ones with no role and no text. A ray-marched canvas is a bare box —
+     * {@code find} could not see it — and a caption button labelled {@code ↗} has a name no one will type. So
+     * the durable name this document tells agents to write down was the one thing {@code find} would not
+     * accept, and an agent following the advice got "nothing matches" for a node that was right there.
+     */
     public String find(String query) {
         if (query.isBlank()) {
             return "err find needs something to look for";
@@ -169,7 +206,8 @@ public final class Automation {
         int found = 0;
         for (SemanticNode n : sem.nodes().values()) {
             if (!n.role().toLowerCase(Locale.ROOT).contains(needle)
-                    && !n.name().toLowerCase(Locale.ROOT).contains(needle)) {
+                    && !n.name().toLowerCase(Locale.ROOT).contains(needle)
+                    && !n.landmark().toLowerCase(Locale.ROOT).contains(needle)) {
                 continue;
             }
             found++;
@@ -311,6 +349,7 @@ public final class Automation {
     private String type(String text) {
         text.codePoints().forEach(cp -> {
             gui.bus().publish(InputTopics.INPUT, new InputEvent.CharTyped(cp, 0));
+            gui.wakeForInput();
             if (Probe.ON) {
                 Probe.mark(Lane.INPUT, "type", new String(Character.toChars(cp)));
             }
@@ -327,7 +366,9 @@ public final class Automation {
             return "err no key named '" + name.trim() + "'";
         }
         gui.bus().publish(InputTopics.INPUT, new InputEvent.KeyPressed(k, 0));
+        gui.wakeForInput();
         gui.bus().publish(InputTopics.INPUT, new InputEvent.KeyReleased(k, 0));
+        gui.wakeForInput();
         if (Probe.ON) {
             Probe.mark(Lane.INPUT, "key", k.name());
         }
@@ -382,13 +423,125 @@ public final class Automation {
         return "err did not settle within " + SETTLE_TIMEOUT_MS + "ms (frame still owed)";
     }
 
+    /**
+     * Wait until the node at {@code landmark} is named something containing {@code text}.
+     *
+     * <p><b>The half of synchronising that {@link #settle} is structurally unable to do.</b> Settle is exact
+     * about the frame loop and blind to work in flight: a handler on a worker has published nothing, so nothing
+     * reports it owed. That is not a defect to be fixed there — a frame loop genuinely does not know what the
+     * application is still thinking about — and the note on {@code settle} has always ended by saying an agent
+     * needing "the application has finished thinking" must wait on something the application names.
+     *
+     * <p>This is how it waits on it, and the point is that nothing here is application-specific. An accessible
+     * name is already published for every node, and a landmark is already the durable way to say which node; so
+     * an application declares readiness by <em>writing it down where it is legible</em> — a landmark whose name
+     * says what state it is in — and needs no hook, no registry and no verb of its own. The alternative on the
+     * table was a readiness predicate supplied by the host, which would have made every application's
+     * synchronisation a private arrangement with this class rather than a fact in the read-model that
+     * {@code tree} and {@code find} can already see.
+     *
+     * <p>Bounded, and it says so when it gives up — a wait that returns quietly is how an agent comes to report
+     * confidently on a picture that was never drawn. Answers immediately when the condition already holds, so
+     * it is not a sleep even in the case where nothing further will be published.
+     *
+     * @param rest {@code <landmark> <text>} — the text is the whole remainder, spaces and all
+     */
+    public String await(String rest) {
+        String[] parts = rest.trim().split("\\s+", 2);
+        if (parts.length < 2 || parts[0].isBlank() || parts[1].isBlank()) {
+            return "err await needs a landmark and the text to wait for";
+        }
+        String landmark = parts[0];
+        String needle = parts[1].toLowerCase(Locale.ROOT);
+        long deadline = System.nanoTime() + AWAIT_TIMEOUT_MS * 1_000_000L;
+        java.util.concurrent.Semaphore published = new java.util.concurrent.Semaphore(0);
+        // Subscribed before the first look, or the publish that satisfies the wait can land in the gap between
+        // looking and subscribing -- and then nothing further is published, and the wait runs to its timeout
+        // having been true the whole time.
+        try (var sub = gui.layout().onCommit(v -> published.release())) {
+            while (true) {
+                String name = named(landmark);
+                if (name != null && name.toLowerCase(Locale.ROOT).contains(needle)) {
+                    return "ok " + name;
+                }
+                long remaining = deadline - System.nanoTime();
+                if (remaining <= 0) {
+                    return name == null
+                            ? "err no landmark '" + landmark + "' within " + AWAIT_TIMEOUT_MS + "ms; try tree"
+                            : "err " + landmark + " is \"" + name + "\" after " + AWAIT_TIMEOUT_MS + "ms, "
+                                    + "which does not contain '" + parts[1] + "'";
+                }
+                if (!published.tryAcquire(remaining, java.util.concurrent.TimeUnit.NANOSECONDS)) {
+                    // Timed out on the wait rather than on the deadline: look once more before saying so, since
+                    // the loop is entitled to have published nothing while still having settled.
+                    String last = named(landmark);
+                    if (last != null && last.toLowerCase(Locale.ROOT).contains(needle)) {
+                        return "ok " + last;
+                    }
+                }
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "err interrupted";
+        }
+    }
+
+    /** The accessible name of the node registered under {@code landmark}, or null if there is no such node. */
+    private String named(String landmark) {
+        for (SemanticNode n : gui.semanticSnapshot().nodes().values()) {
+            if (n.landmark().equals(landmark)) {
+                return n.name();
+            }
+        }
+        return null;
+    }
+
     // --- the rest ----------------------------------------------------------
 
-    /** Photograph the window this driver is attached to. */
+    /**
+     * Photograph the window this driver is attached to, and <b>wait for the picture</b>.
+     *
+     * <p>The waiting is the whole command. {@link WindowControls#capture} is asynchronous and cannot report:
+     * it posts to the frame loop and returns, so a {@code shot} that replied on return said {@code ok} for a
+     * window that was minimized (no pixels, and {@code GuiWindow.capture} correctly declines), for a host whose
+     * capture sink does nothing, and for a write that failed and complained to {@code System.err} where no
+     * agent on a socket can see it. That is the failure mode §6 of automation.md exists to forbid, and it is
+     * worse here than elsewhere: a photograph is the one command whose entire value is that its answer can be
+     * looked at, so an {@code ok} naming a file that is not there is the instrument lying about the only thing
+     * it was asked.
+     *
+     * <p>Waiting for the file is sound rather than a sleep in disguise, because the capture is written beside
+     * the target and moved into place — so a file that exists is a complete PNG, which is a contract
+     * {@code GuiWindow.capture} states and keeps for exactly this consumer.
+     *
+     * <p><b>The target is removed first</b>, and that is what makes the wait mean anything: a path photographed
+     * earlier in the same session already holds a complete PNG, so "wait for it to appear" would be satisfied
+     * instantly by the previous run's picture. An agent comparing two shots would be handed the same one twice,
+     * which is a wrong answer that looks like a working instrument.
+     */
     private String shot(String path) {
         String file = path.isBlank() ? "shot.png" : path.trim();
+        java.io.File target = new java.io.File(file);
+        if (target.exists() && !target.delete()) {
+            // Said rather than photographed over. A stale picture returned as a fresh one is the failure this
+            // whole method is about, so being unable to rule it out is a refusal.
+            return "err could not clear the previous " + target.getAbsolutePath();
+        }
         controls.capture(file);
-        return "ok " + file;
+        long deadline = System.nanoTime() + SHOT_TIMEOUT_MS * 1_000_000L;
+        while (System.nanoTime() < deadline) {
+            if (target.isFile() && target.length() > 0) {
+                return "ok " + target.getAbsolutePath() + " " + target.length() + " bytes";
+            }
+            try {
+                Thread.sleep(SHOT_POLL_MS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return "err interrupted waiting for " + target.getAbsolutePath();
+            }
+        }
+        return "err no picture appeared at " + target.getAbsolutePath()
+                + " within " + SHOT_TIMEOUT_MS + "ms";
     }
 
     /**
@@ -412,7 +565,7 @@ public final class Automation {
     private static final String HELP = String.join("\n", List.of(
             "ok",
             "tree                     the addressable tree: ref, role, name, box",
-            "find <text>              refs whose role or name matches",
+            "find <text>              refs whose role, name or landmark matches",
             "go <landmark>           navigate: reveal, scroll into view, focus",
             "where                    where the pointer is",
             "move <ref|x,y>           travel there (hover happens on the way)",
@@ -423,6 +576,7 @@ public final class Automation {
             "type <text>              one code point at a time, as typing",
             "key <NAME>               press and release a named key",
             "settle                   wait for the loop to catch up",
-            "shot [path]              photograph this window",
+            "await <landmark> <text>  wait until that landmark is named something containing text",
+            "shot [path]              photograph this window, and wait for the file (err if none arrives)",
             "mark <note>              write why into the correlation log"));
 }

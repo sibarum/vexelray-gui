@@ -61,17 +61,38 @@ public final class Cursor {
     private static final int MAX_STEPS = 64;
 
     private final Atchung bus;
+    /** Run after every publish. See {@link #Cursor(Atchung, Runnable)}. */
+    private final Runnable wake;
     private int x;
     private int y;
 
-    /** A cursor resting at the origin. */
+    /** A cursor resting at the origin, publishing to a loop that does not need waking. */
     public Cursor(Atchung bus) {
-        this(bus, 0, 0);
+        this(bus, null, 0, 0);
+    }
+
+    /**
+     * A cursor that wakes the host loop after each publish, resting at the origin.
+     *
+     * <p><b>Needed by any host loop that parks</b>, and its absence is not a slow driver but a silent one.
+     * Publishing on the input topic is not a mutation and is not an OS event, so it is the one reason a frame
+     * can be due that nothing else reports: a loop parked because nothing is looking at the window goes on
+     * parking, and every command here answers {@code ok} while no click ever lands. Pass
+     * {@code gui::wakeForInput}, which is what that method exists for.
+     */
+    public Cursor(Atchung bus, Runnable wake) {
+        this(bus, wake, 0, 0);
     }
 
     /** A cursor resting at {@code (x, y)} — where the pointer already is, if that is known. */
     public Cursor(Atchung bus, int x, int y) {
+        this(bus, null, x, y);
+    }
+
+    /** A waking cursor resting at {@code (x, y)}. */
+    public Cursor(Atchung bus, Runnable wake, int x, int y) {
         this.bus = java.util.Objects.requireNonNull(bus, "bus");
+        this.wake = wake == null ? () -> { } : wake;
         this.x = x;
         this.y = y;
     }
@@ -185,9 +206,13 @@ public final class Cursor {
         publish(new InputEvent.PointerMoved(nx, ny, dx, dy, 0), "pointer.move", nx + "," + ny);
     }
 
-    /** Publish one edge on the ordinary input topic, and record it. */
+    /** Publish one edge on the ordinary input topic, wake whoever has to dispatch it, and record it. */
     private void publish(InputEvent event, String kind, String detail) {
         bus.publish(InputTopics.INPUT, event);
+        // Every edge, not once per gesture: a path is dispatched step by step, and a loop woken only at the end
+        // of one would dispatch a teleport -- which is the fidelity §2 of automation.md is entirely about. The
+        // wake collapses to nothing when a frame is already owed, so this is not a wake per event.
+        wake.run();
         if (Probe.ON) {
             Probe.mark(Lane.INPUT, kind, detail);
         }

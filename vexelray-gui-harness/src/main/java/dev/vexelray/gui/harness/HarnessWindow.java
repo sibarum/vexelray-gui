@@ -13,9 +13,25 @@ import java.util.List;
  *
  * <p>Everything Vulkan needs — the surface, the size, the handle — is delegated to a genuine
  * {@link NativeWindow}, so rendering, the swapchain and the presenter all behave exactly as they do in
- * the application. {@link #show()} is a no-op, so the window is created and never mapped. What is
- * <em>intercepted</em> is the four methods the host loop uses to decide whether to draw:
- * {@link #pumpEvents()}, {@link #waitEvents(long)}, {@link #postWake()} and {@link #isFocused()}.
+ * the application. What is <em>intercepted</em> is the four methods the host loop uses to decide whether
+ * to draw: {@link #pumpEvents()}, {@link #waitEvents(long)}, {@link #postWake()} and
+ * {@link #isFocused()}.
+ *
+ * <p><b>Never mapped takes both halves.</b> {@link HarnessApp} asks the platform for the window off
+ * screen ({@link dev.vexelray.os.WindowConfig#hidden}) and {@link #show()} here is a no-op, and neither
+ * alone is enough: a window is on screen from the instant the platform makes it — painted with the class
+ * background so a slow Vulkan bring-up has something to sit behind — so refusing to show it later refuses
+ * a thing that already happened, while a window created hidden would still be revealed by the presenter's
+ * first successful present. Together they mean the window is created, rendered into, and never seen.
+ *
+ * <p><b>One of these per window, not one per application.</b> {@link HarnessApp} hands the framework a
+ * window factory rather than a window, so the popup a menu opens and the dialog a button raises come
+ * from the same place the main window did. It has to be per window because the thing being suppressed is
+ * per window: the presenter shows <em>its own</em> window on its first successful present, so a second
+ * window that reached the presenter unwrapped is on screen — holding the keyboard — while this class is
+ * still reporting {@link #isVisible()} as false about the first one. Only the main window's
+ * {@link #waitEvents} is ever called, since the loop parks on the thread's queue rather than on any one
+ * window; the rest of a popup's wrapper is pump and delegation.
  *
  * <h2>The wait really waits</h2>
  *
@@ -42,9 +58,12 @@ public final class HarnessWindow implements NativeWindow {
     private boolean focused = true;
     private boolean closing;
     private long waits;
+    private long shows;
 
     /**
-     * Wrap {@code real}, which should be a freshly created window that has not been shown.
+     * Wrap {@code real}, which should be a freshly created window asked for off screen
+     * ({@link dev.vexelray.os.WindowConfig#hidden}) — this suppresses the shows that come <em>after</em>
+     * creation, and has no way to undo one that happened during it.
      *
      * <p>The caller keeps ownership: this closes the wrapped window when the application closes it,
      * because that is what the application would have done to a window of its own.
@@ -107,6 +126,22 @@ public final class HarnessWindow implements NativeWindow {
         }
     }
 
+    /**
+     * The genuine OS window underneath — for asking the operating system a question this wrapper cannot be
+     * trusted to answer about itself.
+     *
+     * <p>{@link #isVisible()} here returns false by construction, which makes it worthless as evidence that
+     * nothing was put on screen: it would say the same thing about a window the window manager had mapped
+     * and focused. {@code real().isVisible()} is the platform's own answer, and it is the assertion a test
+     * that cares about mapping should make.
+     *
+     * <p>Not a general-purpose escape hatch. Driving the window through this is driving it around the
+     * harness — the wait would not be the wait the loop parks on, and the show would be a real one.
+     */
+    public NativeWindow real() {
+        return real;
+    }
+
     // ---- what a test drives -----------------------------------------------------------------------
 
     /** Whether the application should believe anyone is looking at it. */
@@ -142,6 +177,20 @@ public final class HarnessWindow implements NativeWindow {
         }
     }
 
+    /**
+     * How many times the framework has asked for this window to be put on screen — and been refused.
+     *
+     * <p>This is what makes "it was never shown" worth asserting. The presenter calls {@link #show()} once its
+     * first frame is actually on the GPU, so a window that reached that point and stayed off screen is a
+     * suppression that <em>did</em> something; a window that never presented is off screen for no reason worth
+     * testing, and an assertion about it would go green forever, including on the day the suppression broke.
+     */
+    public long shows() {
+        synchronized (lock) {
+            return shows;
+        }
+    }
+
     /** Forget the recorded budgets, so a test can measure one interaction rather than the whole run. */
     public void resetBudgets() {
         synchronized (lock) {
@@ -161,9 +210,15 @@ public final class HarnessWindow implements NativeWindow {
         return real.height();
     }
 
-    /** Deliberately nothing: the window exists, is rendered into, and is never put on screen. */
+    /**
+     * Deliberately nothing but counting. This is the presenter announcing that its first frame is on the GPU
+     * and the window may now be revealed — the window was created off screen, and this is what keeps it there.
+     */
     @Override
     public void show() {
+        synchronized (lock) {
+            shows++;
+        }
     }
 
     @Override

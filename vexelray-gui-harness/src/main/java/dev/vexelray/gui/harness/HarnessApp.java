@@ -9,6 +9,8 @@ import dev.vexelray.os.WindowConfig;
 import sibarum.tactroller.api.InputEvent;
 import sibarum.tactroller.api.MouseButton;
 
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -30,9 +32,16 @@ import java.util.concurrent.atomic.AtomicLong;
  * }
  * }</pre>
  *
- * <p>Everything the GPU touches is real: a genuine window is created and simply never shown, so the
+ * <p>Everything the GPU touches is real: genuine windows are created and simply never shown, so the
  * surface, swapchain, presenter and pixels behave exactly as in production. Only pump, wait, wake and
  * focus are intercepted — see {@link HarnessWindow}.
+ *
+ * <p><b>Every</b> window, not just the first. The application is constructed with a window factory
+ * ({@link GuiApp#GuiApp(WindowConfig, java.util.function.Function)}), so a menu, a dialog or a tool window
+ * opened by the interaction under test is asked for off screen and wrapped, exactly as the main window is.
+ * That is not tidiness: a mapped window takes real focus and real input, so a test asking where the keyboard
+ * went would be answered by the window manager rather than by the framework, and {@link #windows()} would be
+ * describing a screen it no longer matches.
  *
  * <p><b>Needs a Vulkan device.</b> This is an integration harness, not a unit test fixture; on a machine
  * with no GPU it will fail to start rather than silently prove nothing.
@@ -42,17 +51,24 @@ public final class HarnessApp implements AutoCloseable {
     private final Gui gui;
     private final GuiApp app;
     private final HarnessWindow window;
-    private final NativeWindow real;
     private final Thread loop;
     private final AtomicLong frames = new AtomicLong();
+
+    /**
+     * Every window this application has opened, in the order it opened them — the main window first. Written
+     * on the loop's thread as windows are created and read from the test's, hence the copy-on-write list.
+     */
+    private final List<HarnessWindow> opened = new CopyOnWriteArrayList<>();
 
     private volatile RuntimeException failure;
 
     private HarnessApp(Gui gui, WindowConfig config) {
         this.gui = gui;
-        this.real = NativePlatform.current().createWindow(config);
-        this.window = new HarnessWindow(real);
-        this.app = new GuiApp(config, window);
+        // The factory, not a window: this is what makes "never shown" true of the popup a test opens as well
+        // as of the window the test started with. GuiApp calls it synchronously for the main window while
+        // this constructor runs, which is why the wrapper is there to be read on the next line.
+        this.app = new GuiApp(config, this::create);
+        this.window = opened.get(0);
         this.loop = Thread.ofPlatform().name("harness-loop").unstarted(() -> {
             try {
                 app.run(gui, 0, frames::incrementAndGet);
@@ -74,9 +90,40 @@ public final class HarnessApp implements AutoCloseable {
         return app;
     }
 
-    /** The window, for driving focus and reading the budgets the loop parked on. */
+    /** The main window, for driving focus and reading the budgets the loop parked on. */
     public HarnessWindow window() {
         return window;
+    }
+
+    /**
+     * Every window the application has open, in the order it opened them — {@link #window()} is the first.
+     *
+     * <p>The list only grows: a window the application closed stays here, because what a test asks of it is
+     * "was this ever put on screen", and a wrapper that had been dropped could not answer. Each entry is the
+     * genuine window the framework is presenting to, wrapped — {@link HarnessWindow#real()} reaches the OS
+     * window underneath, which is where an assertion that nothing was <em>mapped</em> has to look.
+     */
+    public List<HarnessWindow> windows() {
+        return List.copyOf(opened);
+    }
+
+    /**
+     * The window factory the application is built with: a genuine window, asked for off screen, wrapped, and
+     * remembered.
+     *
+     * <p><b>{@link WindowConfig#hidden} is the load-bearing word</b>, not the wrapper. A window is on screen
+     * from the instant the platform makes it, painted with the class background so a slow Vulkan bring-up has
+     * something to sit behind — so a harness that created windows the ordinary way and merely refused to
+     * {@code show()} them was refusing to do a thing that had already happened. Asking for it hidden is what
+     * makes "created and never shown" literally true; {@link HarnessWindow#show()} then keeps it true when the
+     * presenter's first frame would have revealed it.
+     *
+     * <p>Called on the main thread, from inside window creation, so it does nothing but create and record.
+     */
+    private HarnessWindow create(WindowConfig config) {
+        HarnessWindow wrapped = new HarnessWindow(NativePlatform.current().createWindow(config.hidden(true)));
+        opened.add(wrapped);
+        return wrapped;
     }
 
     /** Frames presented since the loop started. */

@@ -118,11 +118,21 @@ final class GuiWindow implements AutoCloseable {
     /** The host's per-frame hook, held so a platform-pulled frame runs the same step the host loop would. */
     private Runnable beforeFrame = () -> { };
 
-    /** Create a fresh OS window (popups). Must run on the main thread. */
+    /**
+     * Create a fresh OS window (popups). Must run on the main thread.
+     *
+     * <p>{@code windows} is the host's window factory — {@link GuiApp#GuiApp(WindowConfig,
+     * java.util.function.Function)} — and it is <b>not optional</b>, because this constructor is the only
+     * place in the framework a window is born after start-up. Going to the platform directly from here is what
+     * made every window but the first invisible to a host that had said what its windows should be: under a
+     * test harness, a popup appearing on screen mid-run and taking the keyboard from whatever the test was
+     * actually measuring.
+     */
     GuiWindow(NativePlatform platform, VulkanInstance instance, VulkanDevice device, AtlasTexture atlas,
-              SampledImage noImage, TextLayout[] text, TextMeasurer measurer, Gui gui, WindowConfig config) {
+              SampledImage noImage, TextLayout[] text, TextMeasurer measurer, Gui gui, WindowConfig config,
+              java.util.function.Function<WindowConfig, NativeWindow> windows) {
         this(platform, instance, device, atlas, noImage, text, measurer, gui,
-                platform.createWindow(config), 0L, config.decorations());
+                windows.apply(config), 0L, config.decorations());
     }
 
     /**

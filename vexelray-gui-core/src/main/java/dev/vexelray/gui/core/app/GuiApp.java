@@ -56,6 +56,12 @@ public final class GuiApp implements AutoCloseable {
 
     // Shared engine context — one GPU bring-up serves every window.
     private final NativePlatform platform;
+    /**
+     * What makes every OS window this application opens — see {@link #GuiApp(WindowConfig,
+     * java.util.function.Function)}. The platform itself for an ordinary application; something else for a
+     * host that needs its windows to be other than exactly what the platform would have made.
+     */
+    private final java.util.function.Function<WindowConfig, NativeWindow> windows;
     private final VulkanInstance instance;
     private final VulkanDevice device;
     private final AtlasTexture atlas;
@@ -136,29 +142,72 @@ public final class GuiApp implements AutoCloseable {
      * after appearing (see {@code Settings}).
      */
     public GuiApp(WindowConfig config) {
-        this(config, null);
+        this(config, null, null);
     }
 
     /**
      * As {@link #GuiApp(WindowConfig)}, but around a window somebody else made.
      *
-     * <p>For a host that needs the loop to be real and the window not to be: a harness driving a whole
-     * application under test, where everything the GPU touches has to behave exactly as it does in
-     * production and only the four methods the frame loop uses — pump, wait, wake, focus — are the
-     * test's to control. Passing a wrapper around a genuine window keeps the swapchain, the presenter
-     * and every pixel honest, which a substitute renderer would not.
+     * <p><b>Covers the main window only</b>, which is why {@link #GuiApp(WindowConfig,
+     * java.util.function.Function)} stands beside it. An application opens more windows than the one it was
+     * constructed with — every popup, named window and modal dialog is created <em>here</em>, from a
+     * {@link WindowConfig} the host never sees — and a host that hands over one window has said nothing about
+     * those. They are created straight from the platform and shown, which for a test harness means a window
+     * appearing mid-run and taking real focus and real input. Hand over the factory instead of the window and
+     * every window this application opens comes from it.
      *
      * <p>{@code config} is still read for size, decorations and the rest; only the creation is skipped.
-     * A {@code null} window means create one, which is the ordinary path.
+     * A {@code null} window means create one — though say that as {@link #GuiApp(WindowConfig)} rather than
+     * as a bare {@code null} here, which no longer picks an overload on its own.
      */
     public GuiApp(WindowConfig config, NativeWindow window) {
+        this(config, window, null);
+    }
+
+    /**
+     * As {@link #GuiApp(WindowConfig)}, with <b>every</b> window this application opens made by
+     * {@code windows} — the main window at construction, and every popup, named window and dialog for the life
+     * of the application.
+     *
+     * <p>For a host that needs the loop to be real and the windows not to be: a harness driving a whole
+     * application under test, where everything the GPU touches has to behave exactly as it does in production
+     * and only the four methods the frame loop uses — pump, wait, wake, focus — are the test's to control.
+     * Such a host answers with a wrapper around a genuinely created window, asked for off screen
+     * ({@link WindowConfig#hidden}), which keeps the swapchain, the presenter and every pixel honest where a
+     * substitute renderer would not.
+     *
+     * <p><b>Why the whole creation and not a wrap around the result.</b> Two reasons, and each one alone is
+     * enough. A window is on screen from the moment the platform makes it, so anything handed the finished
+     * window is already too late to stop it being mapped — that is a property of the request, and the request
+     * is what arrives here. And the windows that matter do not exist yet: the menu, the dialog, the tool window
+     * opened by the interaction under test are all created from configs the host never wrote, so a seam that
+     * only covers the window the host happened to make is one every later window walks straight past —
+     * silently, and in exactly the tests that ask where the focus and the keyboard went.
+     *
+     * <p>Called on the main thread, in creation order, with the main window first. It is handed the fully
+     * resolved config — ownership and placement already settled ({@link Standing}) — and must return a window
+     * realising it; returning {@code null} is a bug. {@code NativePlatform.current()::createWindow} is exactly
+     * what the other constructors pass, so a factory that adds nothing is an ordinary application.
+     */
+    public GuiApp(WindowConfig config, java.util.function.Function<WindowConfig, NativeWindow> windows) {
+        this(config, null, windows);
+    }
+
+    /**
+     * The one that builds it: {@code adopted} is a main window the host already made (or null to make one), and
+     * {@code windows} makes every window from here on (or null for the platform's own).
+     */
+    private GuiApp(WindowConfig config, NativeWindow adopted,
+                   java.util.function.Function<WindowConfig, NativeWindow> windows) {
         this.platform = NativePlatform.current();
+        this.windows = windows == null ? platform::createWindow : windows;
         this.instance = new VulkanInstance(config.title(), platform.requiredVulkanInstanceExtensions());
 
         // Device selection needs a surface to prove present support, so the main window is created first and its
         // surface probed; popups then reuse the same device (scaffold caveat: same-queue present support for
         // sibling surfaces holds on every real platform, but is asserted per-surface only for this first one).
-        NativeWindow probe = window != null ? window : platform.createWindow(config);
+        // A window the host handed over whole is already whatever it wanted it to be, so it is not remade.
+        NativeWindow probe = adopted != null ? adopted : create(config);
         long probeSurface = probe.createVulkanSurface(instance.handleAddress(),
                 VkLoader.getInstanceProcAddrPointer());
         VulkanInstance.DeviceSelection selection = instance.selectGraphicsPresentDevice(probeSurface)
@@ -177,6 +226,19 @@ public final class GuiApp implements AutoCloseable {
         this.main = new GuiWindow(platform, instance, device, atlas, noImage, text, measurer, null,
                 probe, probeSurface, config.decorations());
         this.controls = controlsFor(main);
+    }
+
+    /**
+     * Make one window through the host's factory. Every window this application opens comes from here and
+     * nowhere else, which is the whole of the guarantee: there is one place to look to know that no window can
+     * escape whatever the host decided windows are.
+     */
+    private NativeWindow create(WindowConfig config) {
+        NativeWindow window = windows.apply(config);
+        if (window == null) {
+            throw new IllegalStateException("the window factory returned null; it must return a window");
+        }
+        return window;
     }
 
     /**
@@ -537,8 +599,10 @@ public final class GuiApp implements AutoCloseable {
         // OS settles a window's standing from the owner it was created with. A satellite that goes away with
         // its owner arrives back here as its own pump reporting closed, the same path as its close button.
         wireWake(spec.gui());
+        // From the same factory the main window came from: this is the path every popup, named window and
+        // dialog takes, and a window that skipped it is one the host was never given a say over.
         GuiWindow w = new GuiWindow(platform, instance, device, atlas, noImage, text, measurer, spec.gui(),
-                spec.standing().place(spec.config(), anchorHandle(spec)));
+                spec.standing().place(spec.config(), anchorHandle(spec)), this::create);
         WindowInput input = inputs.attach(w.window, spec.gui());
         OpenWindow entry = new OpenWindow(w, input, spec, owner);
         open.add(entry);

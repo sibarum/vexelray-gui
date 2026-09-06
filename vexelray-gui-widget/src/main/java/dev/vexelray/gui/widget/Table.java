@@ -53,6 +53,13 @@ import java.util.Set;
  * a column sizes to what it was sized against and then holds until the items change or the user drags it. A
  * later row that is wider is clipped, exactly as it would be in a fixed column.
  *
+ * <h2>What it calls itself</h2>
+ * {@code table}, containing a {@code row} of {@code columnheader}s — each with a {@code columngrip} to drag —
+ * and a {@code rowgroup} of {@code row}s. Declared because a table is the component whose whole content is
+ * structure: without it a reader that is not the renderer (an agent, a screen reader, a thin client) sees a
+ * hundred thousand anonymous boxes and has to guess which nesting level a row is. The rows are named after
+ * their cells, so {@code row "3 item-00023 binary"} is a thing that can be found by what is in it.
+ *
  * <h2>The header is sticky because it is not in the scroller</h2>
  * It is a sibling above the body, not something pinned inside it. There is nothing to keep in sync and nothing to
  * float, which is also why the body does not scroll horizontally: the columns are solved to the width there is.
@@ -167,11 +174,13 @@ public final class Table<T> implements AutoCloseable {
         java.util.Arrays.fill(latched, -1f);
         java.util.Arrays.fill(solved, -1f);
 
-        this.body = new ListView<>(gui, rowRem, this::buildRow);
-        this.root = gui.column().width(Length.FILL).height(Length.FILL).scroll(false, false);
+        // A list of rows, and it says so: the body is a ListView, but what it holds are this table's rows, and
+        // an agent told they are list items has been told the wrong thing about the structure it is here for.
+        this.body = new ListView<>(gui, rowRem, this::buildRow).roles("rowgroup", "row");
+        this.root = gui.column().role("table").width(Length.FILL).height(Length.FILL).scroll(false, false);
         // Cells stretch to the header's height rather than centring: a grip or an indicator slot that sizes to
         // its own (empty) content is a box of no height, which is nothing to aim at and nothing to draw in.
-        this.header = gui.row().width(Length.FILL).height(Length.rem(rowRem)).scroll(false, false)
+        this.header = gui.row().role("row").width(Length.FILL).height(Length.rem(rowRem)).scroll(false, false)
                 .background(gui.theme().color(Role.CHROME));
         buildHeader();
         root.children(header, body.node());
@@ -291,7 +300,8 @@ public final class Table<T> implements AutoCloseable {
 
             // The padding is on the label rather than on the cell, so the grip sits flush against the boundary
             // it moves. A grip inset by the padding is a grip the user has to aim off-target for.
-            Node cell = gui.row().width(widthOf(index)).height(Length.FILL).scroll(false, false);
+            Node cell = gui.row().role("columnheader")
+                    .width(widthOf(index)).height(Length.FILL).scroll(false, false);
             Node label = gui.text(column.title()).width(Length.FILL).height(Length.FILL)
                     .padding(Length.ZERO, CELL_PAD)
                     .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE)
@@ -299,7 +309,9 @@ public final class Table<T> implements AutoCloseable {
             // The indicator's slot exists whether or not this column is the sorted one: sorting must not move the
             // header's text, and a slot that appears when needed is exactly the movement the rule forbids.
             Node mark = gui.box().width(MARK_W).height(Length.FILL);
-            Node grip = gui.box().width(GRIP_W).height(Length.FILL)
+            // Declared, because it is the only control here a pointer can use and text cannot name: an agent
+            // that cannot address the grip has to compute where a boundary is and aim a few pixels off it.
+            Node grip = gui.box().role("columngrip").width(GRIP_W).height(Length.FILL)
                     .background(gui.theme().color(Role.LINE));
 
             cell.children(label, mark, grip);

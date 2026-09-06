@@ -545,12 +545,21 @@ a reason, and the reason goes here.
 
 ### 4.9 Semantic roles the widgets do not declare
 
-`ListView` and `Table` publish no `role` at all, so an agent or a test reading `SemanticSnapshot` sees their
-rows and cannot tell it is looking at a list. Naming them is the easy half. The hard half is that a virtualised
-body has no node for a row that is off screen, so the honest description of a hundred-thousand-row list is not
-the thirty rows that happen to exist — it wants a role able to carry a count and a realized range. Until that is
-decided, adding a bare `list` role would publish a number that is quietly the window's rather than the list's,
-which is worse than saying nothing.
+~~`ListView` and `Table` publish no `role` at all~~ — **the naming half is done.** `ListView` declares
+`list` / `listitem`, `Table` declares `table`, `row`, `columnheader`, `columngrip`, and gives its body the words
+`rowgroup` / `row` through `ListView.roles(container, item)`; the row role goes on what the row builder built,
+because a name is derived from the text below a node and the wrapper `ListView` puts around it is one level too
+far up. Found by driving a real table: without a role, the only handle an agent had on a hundred-thousand-row
+table was the header's derived name, and a stale ref for a scrolled-past row clicked that header instead.
+
+The objection recorded here — that a bare `list` role would publish a number that is quietly the window's — did
+not survive contact: no role publishes a count, and a reader counting `row` nodes gets the window with or
+without one. Declaring nothing did not withhold the count, it withheld the structure.
+
+**The hard half stands.** A virtualised body has no node for a row that is off screen, so the honest description
+of a hundred-thousand-row list is not the thirty rows that happen to exist — it wants a way to say a count and a
+realized range, which no role can carry today. A reader currently sees the window and no statement about the
+rest.
 
 Second, smaller: the demo's `Ui` declares `toggle` for a painted text node while `Toggle` declares `switch`, so
 one word covers two different things in a reader's view of the same tree. One of them should move.

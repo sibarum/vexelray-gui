@@ -2,6 +2,7 @@ package dev.vexelray.gui.core.app;
 
 import dev.vexelray.canvas.Canvas;
 import dev.vexelray.canvas.Color;
+import dev.vexelray.gui.core.ImageRegion;
 import dev.vexelray.gui.core.model.RetainedNode;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
@@ -330,7 +331,15 @@ public final class TreeRenderer {
         if (image != null && n.w > 0f && n.h > 0f) {
             // An alpha, not a colour: the tint multiplies the texel, so there is no shade to choose here — only
             // the subtree opacity this class applies to everything it draws.
-            canvas.image(n.x, n.y, n.w, n.h, rTop, rBottom, image, alpha);
+            ImageRegion region = n.imageRegion();
+            if (region == null || region.whole()) {
+                canvas.image(n.x, n.y, n.w, n.h, rTop, rBottom, image, alpha);
+            } else {
+                // One cell of a sheet. Same primitive, same run — only the four texture coordinates differ, which
+                // is why an animation costs no upload and no extra draw.
+                canvas.image(n.x, n.y, n.w, n.h, rTop, rBottom, image,
+                        region.u0(), region.v0(), region.u1(), region.v1(), alpha);
+            }
         }
         // A drawing goes over the image and under the border: an application's own marks belong inside the frame
         // the node draws around them.

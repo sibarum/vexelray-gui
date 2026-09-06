@@ -67,6 +67,29 @@ public final class Node {
      * image itself must stay valid until a frame that no longer names it has been presented.
      */
     public Node image(SampledImage image) {
+        prop(PropKey.IMAGE_REGION, null);
+        return prop(PropKey.IMAGE, image);
+    }
+
+    /**
+     * Draw the {@code region} of {@code image} across this node's box — one cell of a sheet, one frame of an
+     * animation, one icon of a set. Everything {@link #image(SampledImage)} says still holds; only the part of the
+     * texture sampled is narrowed.
+     *
+     * <p>This is what makes an animation cost nothing on the GPU. Bake the frames into <b>one</b> texture, hand it
+     * here once, and advance the region on a clock: no per-frame upload, no second descriptor set, and no run
+     * boundary in the vertex buffer, because the bound handle never changed. {@link ImageRegion#cell} is the
+     * sprite-sheet form of that.
+     *
+     * <pre>{@code
+     * node.image(sheet, ImageRegion.cell(frame, columns, rows));
+     * }</pre>
+     *
+     * <p>Passing a null region is {@link #image(SampledImage)}: the whole texture. Passing a null image clears
+     * both, so a node is never left sampling a region of a texture it no longer has.
+     */
+    public Node image(SampledImage image, ImageRegion region) {
+        prop(PropKey.IMAGE_REGION, image == null ? null : region);
         return prop(PropKey.IMAGE, image);
     }
 

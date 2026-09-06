@@ -214,7 +214,7 @@ printf 'find Save\nclick save\nsettle\nshot after.png\nquit\n' | nc localhost 76
 
 | Command | Meaning |
 |---|---|
-| `tree` | The joined semantic + layout snapshot as an indented outline: ref, role, name, `@landmark`, box, plus `hidden` / `focused`. |
+| `tree` | The joined semantic + layout snapshot as an indented outline: ref, role, name, `@landmark`, box, plus `clipped to […]` / `offscreen` / `hidden` / `focused`. |
 | `find <text>` | Refs whose role, name or landmark contains the text, case-insensitively. |
 | `where` | Where the pointer is now. |
 | `go <landmark>` | The framework's own navigation: reveal whatever conceals it, scroll it into view, focus it. |
@@ -236,6 +236,18 @@ flake and cannot be retried, because the click has already landed. A **landmark*
 is the name that still means something tomorrow, and unlike an id it can be *navigated* to, so a concealed
 target is revealed rather than refused. `tree` and `find` show it as `@name`. Anything written down — a script,
 a recorded session — should say the landmark.
+
+**A target is resolved to where it is, not to where it was put** — the centre of `NodeLayout.visibleRect`, its
+box less every clip its ancestors impose. The two differ exactly where automation is hardest: a virtualised
+list keeps rows it has scrolled past, lays each out where its index says, and a row above the window has a rect
+whose every pixel belongs to the sticky header drawn over it. Aiming at that rect sorted a table this driver
+had been told to select a row of, and answered `ok` — the one outcome an instrument may never produce.
+
+So a target that cannot be reached where it is gets the same answer as a concealed one, because there is only
+one answer worth giving: **reveal it, or refuse and say why**. A landmark is navigated to (`go` scrolls it into
+view) and then rechecked once the frame carrying that scroll has been published; a node with no landmark is
+refused, naming which kind of unreachable it was — `is not visible`, `has no laid-out box`, `is scrolled out of
+view`. A row half out of the window is neither: it is clicked on the half that is there.
 
 **What `settle` does and does not promise.** It waits on the layout commit signal until no frame is owed, so it
 is exact about the frame loop and never a sleep. It cannot see a handler still running on a worker: that
@@ -372,6 +384,12 @@ instrument, which is the strongest available guarantee that what the agent synth
   `loop.park`, without which a stall is indistinguishable from an idle window.
 - **A3 — Virtual cursor + paths.** *(Landed: `vexelray-gui-automation`, `Cursor` — stateful, stepped at 125Hz, real-time paced, `move`/`click`/`drag`/`scroll`.)*
 - **A4 — Protocol + CLI.** *(Landed: `Automation` + `AutomationServer`, a loopback line protocol. `go` reuses the framework's own navigation, so a concealed target is revealed rather than refused. `csvview` in atchung-probe.)*
+- **A6 — Clipping, found by driving a real table.** *(Landed: `NodeLayout.visibleRect` + `Clip` in core;
+  reveal-or-refuse in `Automation.target`; `table` / `row` / `columnheader` / `columngrip` / `rowgroup` roles on
+  `Table` and `list` / `listitem` on `ListView`.)* The driver clicked a ref for a row a hundred thousand-row
+  table had scrolled past, hit the header drawn over it, sorted the table, and said `ok`. Two gaps, one session:
+  a virtualised table was an anonymous box tree with no way to say "row" or "the Name column", and the geometry
+  read-model published where a node was put with nothing to say none of it was on screen.
 - **A5 — Prove it.** *(Landed: `HoverPathDiagnosisTest`.)* A hover-path bug diagnosed from the CSV alone.
   The bug is **planted**, and that is stated rather than glossed over: the historical one is not in the tree to
   reproduce, so the test plants one of the same class — a control that resizes on hover, which this framework's

@@ -169,6 +169,7 @@ public final class Automation {
                 Rect r = box.rect();
                 sb.append(" [").append(round(r.x())).append(',').append(round(r.y()))
                         .append(' ').append(round(r.w())).append('x').append(round(r.h())).append(']');
+                sb.append(clipping(box));
             }
             if (!n.visible()) {
                 // Said explicitly, because a rect is published for a hidden node too and finding one proves
@@ -221,6 +222,7 @@ public final class Automation {
                 Rect r = box.rect();
                 sb.append(" [").append(round(r.x())).append(',').append(round(r.y()))
                         .append(' ').append(round(r.w())).append('x').append(round(r.h())).append(']');
+                sb.append(clipping(box));
             }
             if (!n.visible()) {
                 sb.append(" hidden");
@@ -248,29 +250,94 @@ public final class Automation {
         if (!what.present()) {
             throw new IllegalArgumentException("no node " + s);
         }
-        if (!what.visible()) {
+        String why = unreachable(id);
+        if (why != null) {
             // Not a refusal if the framework can do something about it. A landmark is *reachable*: navigating
             // to one asks every container concealing it to un-conceal it (Reveal — the selected tab, the
             // collapsed branch, the closed drawer) and scrolls it into view. That is the hardest problem in UI
             // automation, already solved here, and re-solving it from the outside would mean this class
             // enumerating the containers that can hide something — an enumeration that is never finished.
             if (what.landmark().isEmpty()) {
-                throw new IllegalArgumentException("node " + id + " is not visible, and has no landmark to "
+                throw new IllegalArgumentException("node " + id + " " + why + ", and has no landmark to "
                         + "navigate to; only a named node can ask to be revealed");
             }
             go(what.landmark());
-            if (!gui.semanticSnapshot().node(id).visible()) {
+            String still = awaitReachable(id);
+            if (still != null) {
                 throw new IllegalArgumentException("navigated to '" + what.landmark()
-                        + "' and it is still not visible");
+                        + "' and it " + still);
             }
+        }
+        // The centre of what is *on screen*, not of where the node was put. For an unclipped node the two are
+        // the same point; for a row scrolled half out of its list they are not, and the difference is a click
+        // that lands on the row against one that lands on whatever the clip put there instead.
+        Rect r = gui.layoutSnapshot().node(id).visibleRect();
+        return new int[]{Math.round(r.centreX()), Math.round(r.centreY())};
+    }
+
+    /**
+     * Why {@code id} cannot be acted on where it is, as a phrase that completes "node 42 …" — or {@code null}
+     * when it can.
+     *
+     * <p>Three ways to be out of reach and one answer to all three, because the caller does the same thing
+     * about each: ask the framework to reveal it, and refuse if it will not. They are asked in the order they
+     * can be known — a node absent from the semantic snapshot has no geometry to ask about — and the phrase
+     * says which one it was, since "not visible" and "scrolled out of view" are different bugs when the reason
+     * an agent is here is that its click went somewhere else.
+     */
+    private String unreachable(long id) {
+        SemanticNode what = gui.semanticSnapshot().node(id);
+        if (!what.visible()) {
+            return "is not visible";
         }
         NodeLayout box = gui.layoutSnapshot().node(id);
         if (!box.present()) {
-            throw new IllegalArgumentException("node " + id + " has no laid-out box");
+            return "has no laid-out box";
         }
-        Rect r = box.rect();
-        // The centre: the one point in a box that is inside it for every shape a box can take.
-        return new int[]{Math.round(r.x() + r.w() * 0.5f), Math.round(r.y() + r.h() * 0.5f)};
+        if (box.clippedAway()) {
+            // The state a virtualised list is full of: the row exists, it has a rect, and every pixel of that
+            // rect belongs to something else. Clicking its centre is how an agent sorts a table it meant to
+            // select a row of, and gets `ok` for it.
+            return "is scrolled out of view (its box is clipped away by an ancestor)";
+        }
+        return null;
+    }
+
+    /**
+     * Wait, bounded, for a navigation's effect to arrive — {@code null} once {@code id} can be acted on, and
+     * the reason it still cannot if it never becomes so.
+     *
+     * <p>Arrival says the walk is over, not that the frame carrying its last act has been published: that act
+     * is a scroll, and a scroll is not true until it has been laid out. Rechecking against whatever snapshot
+     * happened to be current would refuse a node that had in fact just arrived — and only sometimes, which is
+     * the worst way for an instrument to be wrong.
+     *
+     * <p>Waits on the condition rather than on {@code frameOwed}: by this point the mutation has drained and
+     * nothing is owed, so {@link #settle} is exact and answers about the wrong question. It is the same shape
+     * as {@link #await} for the same reason — the only honest signal is the thing being waited for.
+     */
+    private String awaitReachable(long id) {
+        long deadline = System.nanoTime() + SETTLE_TIMEOUT_MS * 1_000_000L;
+        java.util.concurrent.Semaphore published = new java.util.concurrent.Semaphore(0);
+        String why;
+        try (var sub = gui.layout().onCommit(v -> published.release())) {
+            // Subscribed before the condition is read, never after: the frame carrying the scroll can land in
+            // between, and layout does not republish when nothing has moved — so a wait armed afterwards is a
+            // wait for a commit that is never coming again.
+            why = unreachable(id);
+            while (why != null) {
+                long remaining = deadline - System.nanoTime();
+                if (remaining <= 0
+                        || !published.tryAcquire(remaining, java.util.concurrent.TimeUnit.NANOSECONDS)) {
+                    break;
+                }
+                why = unreachable(id);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "was interrupted while being waited for";
+        }
+        return why;
     }
 
     /** The node registered under {@code landmark}, or a complaint naming what is available. */
@@ -560,6 +627,26 @@ public final class Automation {
 
     private static int round(float v) {
         return Math.round(v);
+    }
+
+    /**
+     * What an ancestor's clip has done to this box, as a suffix for a listing — {@code ""} when it has done
+     * nothing.
+     *
+     * <p>Printed next to the rect and not instead of it, because the two say different things: the rect is
+     * where the node was put, and this is how much of that a person could point at. A listing that showed only
+     * the rect is what let an agent read a position for a row behind a sticky header and aim there.
+     */
+    private static String clipping(NodeLayout box) {
+        if (box.clippedAway()) {
+            return " offscreen";
+        }
+        if (box.clipped()) {
+            Rect v = box.visibleRect();
+            return " clipped to [" + round(v.x()) + ',' + round(v.y())
+                    + ' ' + round(v.w()) + 'x' + round(v.h()) + ']';
+        }
+        return "";
     }
 
     private static final String HELP = String.join("\n", List.of(

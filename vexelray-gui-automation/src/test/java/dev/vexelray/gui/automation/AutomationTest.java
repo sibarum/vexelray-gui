@@ -4,6 +4,7 @@ import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.layout.NodeLayout;
 import dev.vexelray.gui.core.layout.TextMeasurer;
 import dev.vexelray.gui.core.model.RetainedNode;
 import org.junit.jupiter.api.Test;
@@ -184,6 +185,103 @@ class AutomationTest {
             // Never a set-the-text shortcut: what is under test is the field, and a field written to rather
             // than typed into has skipped every claim, caret move and edit the typing would have caused.
             assertEquals("hey", typed.toString());
+        }
+    }
+
+    /**
+     * The failure this exists to prevent, found by driving a real table: a virtualised list keeps rows it has
+     * scrolled past, those rows are laid out where their index says rather than where they can be seen, and
+     * the centre of that rect belongs to whatever is drawn there — a sticky header, the next panel down. The
+     * old resolution aimed at it, clicked something else, and answered {@code ok}, which is the one outcome an
+     * instrument may never produce: a confident wrong answer about a UI that did something else entirely.
+     */
+    @Test
+    void aRowClippedOutOfItsListIsRefusedRatherThanClickedThroughTo() {
+        try (Gui gui = deterministic()) {
+            AtomicInteger footerClicks = new AtomicInteger();
+            AtomicInteger rowClicks = new AtomicInteger();
+            // Four 40px rows in a 100px list: the last is laid out at y=120, which is inside the footer.
+            Node[] rows = new Node[4];
+            for (int i = 0; i < rows.length; i++) {
+                rows[i] = gui.box().width(Length.FILL).height(Length.dp(40));
+            }
+            Node list = gui.column().width(Length.dp(200)).height(Length.dp(100)).scroll(false, true)
+                    .children(rows);
+            Node footer = gui.box().width(Length.dp(200)).height(Length.dp(100));
+            gui.root().children(gui.column().width(Length.FILL).children(list, footer));
+            gui.onClick(footer, footerClicks::incrementAndGet);
+            gui.onClick(rows[3], rowClicks::incrementAndGet);
+            gui.frame(W, H, NO_TEXT);
+
+            NodeLayout scrolledOut = rows[3].layout();
+            assertTrue(scrolledOut.clippedAway(), "the premise: it has a rect, and none of it is on screen");
+            assertTrue(footer.layout().rect().contains(scrolledOut.rect().centreX(), scrolledOut.rect().centreY()),
+                    "and the point the old resolution would have aimed at belongs to the footer");
+
+            String out = new Automation(gui).command("click " + rows[3].id());
+            gui.frame(W, H, NO_TEXT);
+
+            assertTrue(out.startsWith("err"), out);
+            assertTrue(out.contains("scrolled out of view"), "and it says which kind of unreachable: " + out);
+            assertEquals(0, rowClicks.get(), "nothing was clicked");
+            assertEquals(0, footerClicks.get(), "least of all the node that happens to be drawn there");
+        }
+    }
+
+    /**
+     * The other half of the same answer: scrolled out is a state the framework can do something about, so a
+     * target that has a landmark is <em>scrolled to</em> and then clicked. Refusing every clipped node would
+     * have made this class the thing that decides what a scroller is, which is the enumeration
+     * {@link Automation#go} exists so that nobody here ever starts.
+     */
+    @Test
+    void aClippedTargetWithALandmarkIsScrolledToRatherThanRefused() {
+        try (Gui gui = new Gui(sibarum.atchung.Atchung.create())) {
+            AtomicInteger clicks = new AtomicInteger();
+            Node[] rows = new Node[6];
+            for (int i = 0; i < rows.length; i++) {
+                rows[i] = gui.box().width(Length.FILL).height(Length.dp(40));
+            }
+            Node list = gui.column().width(Length.dp(200)).height(Length.dp(100)).scroll(false, true)
+                    .children(rows);
+            gui.landmark("last", rows[5]);
+            gui.root().children(list);
+            gui.onClick(rows[5], clicks::incrementAndGet);
+            gui.frame(W, H, NO_TEXT);
+            assertTrue(rows[5].layout().clippedAway(), "the premise: the last row is nowhere on screen");
+
+            String out = drivenWithFramesRunning(gui, driver -> driver.command("click last"));
+            assertTrue(out.startsWith("ok"), out);
+            long deadline = System.nanoTime() + 2_000_000_000L;
+            while (clicks.get() == 0 && System.nanoTime() < deadline) {
+                gui.frame(W, H, NO_TEXT);
+                Thread.onSpinWait();
+            }
+            assertEquals(1, clicks.get(), "the row was scrolled into view and then clicked");
+        }
+    }
+
+    /** A row half out of the list is still clickable — on the half of it that is there, not on its centre. */
+    @Test
+    void aPartlyClippedRowIsClickedWhereItCanStillBeSeen() {
+        try (Gui gui = deterministic()) {
+            AtomicInteger clicks = new AtomicInteger();
+            Node[] rows = new Node[4];
+            for (int i = 0; i < rows.length; i++) {
+                rows[i] = gui.box().width(Length.FILL).height(Length.dp(40));
+            }
+            Node list = gui.column().width(Length.dp(200)).height(Length.dp(100)).scroll(false, true)
+                    .children(rows);
+            gui.root().children(list);
+            gui.onClick(rows[2], clicks::incrementAndGet);      // laid out at y=80..120, viewport ends at 100
+            gui.frame(W, H, NO_TEXT);
+
+            assertTrue(rows[2].layout().clipped(), "the premise: half of this row is past the bottom edge");
+            String out = new Automation(gui).command("click " + rows[2].id());
+            gui.frame(W, H, NO_TEXT);
+
+            assertTrue(out.startsWith("ok"), out);
+            assertEquals(1, clicks.get(), "the click landed on the part of the row that is on screen");
         }
     }
 

@@ -35,6 +35,19 @@ public enum PropKey {
      */
     IMAGE(false),
     /**
+     * Which part of {@link #IMAGE}'s texture this node samples — an {@code ImageRegion} in normalised texture
+     * coordinates, or absent for the whole of it.
+     *
+     * <p>Separate from {@link #IMAGE} because it changes on a different clock. A sheet is uploaded once and lives
+     * for the session; the region moves every frame of an animation, and moving it is four floats rather than a
+     * texture. That is the whole of what an animated image costs here: no per-frame upload, no second descriptor
+     * set, and no run boundary, since the bound handle never changed.
+     *
+     * <p>Meaningless without an image, and cleared by setting one with no region — so a node cannot be left
+     * sampling last frame's cell of a texture it no longer has.
+     */
+    IMAGE_REGION(false),
+    /**
      * A {@code Picture} drawn inside this node's box: an ordered list of marks in the box's own pixel frame, with
      * {@code (0, 0)} at its top-left corner. A plot, a diagram, a sparkline — anything an application wants to put
      * marks on the screen for, without one laid-out node per mark.

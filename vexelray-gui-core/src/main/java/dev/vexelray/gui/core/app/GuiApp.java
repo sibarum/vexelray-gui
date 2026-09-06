@@ -68,6 +68,8 @@ public final class GuiApp implements AutoCloseable {
     private final AtlasTexture noImage;
     /** Render targets minted by {@link #viewport}, closed with the application. */
     private final List<SampledColorTarget> viewports = new ArrayList<>();
+    /** Uploaded images minted by {@link #texture}, closed with the application. */
+    private final List<AtlasTexture> textures = new ArrayList<>();
     private final List<StorageBuffer> buffers = new ArrayList<>();
     private final TextLayout[] text;
     private final TextMeasurer measurer;
@@ -264,6 +266,40 @@ public final class GuiApp implements AutoCloseable {
         SampledColorTarget target = new SampledColorTarget(device, Math.max(1, width), Math.max(1, height));
         viewports.add(target);
         return target;
+    }
+
+    /**
+     * A sampled texture of {@code width} x {@code height} straight (non-premultiplied) RGBA8 texels, on this
+     * application's device — a decoded photograph, an icon sheet, an animation's frames — and the other thing a
+     * {@code Node.image(...)} can be handed.
+     *
+     * <p>Here for exactly the reason {@link #viewport} is: the device is deliberately not public, so without this
+     * an application could show a scene it marched but not a picture it loaded. Nothing about decoding belongs in
+     * this framework — pixels arrive as bytes from wherever the application got them, and the only thing asked of
+     * it is the one layout every sampler agrees on.
+     *
+     * <p><b>Uploaded once.</b> The texels are staged and copied at construction and there is no way to rewrite
+     * them, which is a deliberate limit rather than a missing method: a texture that changed under a frame in
+     * flight would tear. An animation is therefore <em>one</em> texture holding every frame, shown a cell at a
+     * time with {@code Node.image(image, ImageRegion.cell(...))} — no per-frame upload, and no run boundary in the
+     * vertex buffer because the bound handle never changes. Content that genuinely must change makes a new
+     * texture and closes the old one after a frame that no longer names it.
+     *
+     * <p>Textures made here are closed with the application, so an app that loads its icons at startup need not
+     * track them.
+     */
+    public AtlasTexture texture(byte[] rgba, int width, int height) {
+        if (width <= 0 || height <= 0) {
+            throw new IllegalArgumentException("a texture needs a positive size: " + width + "x" + height);
+        }
+        long expected = (long) width * height * 4L;
+        if (rgba == null || rgba.length != expected) {
+            throw new IllegalArgumentException("a " + width + "x" + height + " RGBA8 texture is " + expected
+                    + " bytes; was given " + (rgba == null ? "null" : rgba.length + " bytes"));
+        }
+        AtlasTexture texture = new AtlasTexture(device, width, height, rgba);
+        textures.add(texture);
+        return texture;
     }
 
     /**
@@ -930,6 +966,10 @@ public final class GuiApp implements AutoCloseable {
             v.close();
         }
         viewports.clear();
+        for (AtlasTexture t : textures) {
+            t.close();
+        }
+        textures.clear();
         for (StorageBuffer b : buffers) {
             b.close();
         }

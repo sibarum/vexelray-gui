@@ -30,6 +30,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * also what keeps a {@code LayoutMotion} implementation — {@code Transitions} in gui-krono, or anything an
  * application writes — out of the model entirely: a motion source reports two floats per node and never touches
  * a field, so this guard already covers every one that will ever exist without having to name any of them.
+ *
+ * <p>{@code Clip} was admitted on the same terms, and the guard is the reason it is a stage at all: the clipped
+ * rectangle was first worked out in {@code publishLayout}, where it would have been arithmetic in a projection —
+ * the exact thing layout-read-model.md §9 forbids and this test enforces. It runs inside {@code Gui.frame},
+ * after displacement, in every host, and writes nothing but derived geometry.
  */
 class ModelWriterGuardTest {
 
@@ -44,6 +49,7 @@ class ModelWriterGuardTest {
             "dev/vexelray/gui/core/input/InputDispatcher",  // dispatch stage: proposes scroll offsets, focus state
             "dev/vexelray/gui/core/layout/FlexLayout",      // compute stage: boxes, viewport, overflow, scroll clamp
             "dev/vexelray/gui/core/layout/Displacement",    // motion stage: where a node is drawn vs laid out
+            "dev/vexelray/gui/core/layout/Clip",            // compute stage: what survives the ancestors' clips
             "dev/vexelray/gui/core/Gui");                   // compute stage: caret-follow scroll + text metrics
 
     @Test

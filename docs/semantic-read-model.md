@@ -114,6 +114,11 @@ Declared by `-widget`:
 | `slider` | `Slider`'s track |
 | `tabs` / `tab` | `Tabs`' root / each header |
 | `tree` / `treeitem` | `TreeView`'s root / each row |
+| `list` / `listitem` | `ListView`'s root / each row — the words are an argument, see below |
+| `table` | `Table`'s root |
+| `row` | its header, and (via `ListView.roles`) each body row |
+| `columnheader` / `columngrip` | one header cell / the boundary a drag resizes it by |
+| `rowgroup` | the `ListView` a `Table` uses as its body |
 | `menu` / `menuitem` | `ContextMenu`'s column / each row |
 | `tooltip`, `titlebar`, `popout` | those widgets' roots |
 | `colorpicker` | `ColorPicker`'s panel |
@@ -127,8 +132,18 @@ Declared by `-widget`:
 | `rail`, `rail-item`, `rail-action` | `Rail`'s icon column, a page icon, a non-page action |
 | `rail-panel` / `rail-panel-head` | the panel beside it / its heading |
 
-**`ListView` and `Table` declare nothing**, and that is a gap rather than a decision. Naming them is the easy
-half; the hard half is that a virtualised body has no node for a row that is off screen, so the honest
+**`ListView` and `Table` declare their parts now**, which was the easy half of the gap this section used to
+describe. Two decisions inside it are worth keeping:
+
+- **The row role goes on what the builder built, not on the box `ListView` wraps it in.** Both are "the row" —
+  one carries the click and the selected look, the other the contents — and declaring both makes every row two
+  rows in the tree. The contents win because a name is derived from the text *below* a node (§4, depth 2) and
+  the wrapper is one level too far up: declared there, every row in a table reads `row ""`.
+- **The words are an argument** (`ListView.roles(container, item)`), because a `Table`'s body is one of these
+  and its rows are rows, not list items. The alternative was the composing widget declaring a second role over
+  the top of the first, which is two nodes claiming to be the same row.
+
+**The hard half is still open.** A virtualised body has no node for a row that is off screen, so the honest
 description of a hundred-thousand-row list is not the thirty rows that happen to exist. That wants a role able
 to carry a count and a realized range — the same shape of problem as §6's hidden nodes, and for the same reason:
 "no such node" is not an answer. Until then a reader sees the rows in the window and no statement about the
@@ -152,6 +167,13 @@ whatever rect it last had — only its derived text metrics are cleared. Finding
 about whether a node can be seen or clicked. Read `SemanticNode.visible()`. (`SemanticSnapshotTest` pins this
 asymmetry rather than assuming it away; whether the geometry snapshot *should* publish hidden rects is an open
 question, and a separate one.)
+
+**Visible is not the same as reachable, and the other one is geometry.** `visible` says a node is in the
+laid-out tree; it says nothing about a row scrolled out of its list, which is in the tree, has a rect, and is
+somewhere nobody can point at. That question is answered by `NodeLayout.visibleRect` — the part of a node's box
+that survives its ancestors' clips (`clipped()`, `clippedAway()`) — because clipping is geometry and belongs
+where the geometry is. A reader deciding whether it can click something has to ask both: `visible()` for "is it
+in the tree at all", `visibleRect` for "and is any of it on screen".
 
 ## 7. Testing
 

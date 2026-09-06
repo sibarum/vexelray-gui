@@ -1,6 +1,7 @@
 package dev.vexelray.gui.widget;
 
 import dev.vexelray.gui.core.Node;
+import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.SemanticSnapshot;
 import dev.vexelray.gui.core.model.SemanticNode;
 import org.junit.jupiter.api.Test;
@@ -169,6 +170,41 @@ class SemanticSnapshotTest {
             // Without this an agent has a correctly-structured but anonymous tree: it can see a box at 12,40 and
             // cannot tell that it is the thing you type into.
             assertEquals("textfield", h.gui.semanticSnapshot().node(field.node().id()).role());
+        }
+    }
+
+    /**
+     * A table is the component whose entire content is structure, so it is the one an anonymous box tree fails
+     * hardest: "row 5 of the table" and "the Name column's header" are the two things anybody addressing one
+     * ever says, and neither is sayable about a box. Every part declares what it is, and the rows keep being
+     * named after their cells — the reason the role is on what the builder built and not on the box around it.
+     */
+    @Test
+    void aTableSaysWhatItsPartsAre() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Table<String> table = new Table<>(h.gui, 2f, java.util.List.of(
+                    Table.Column.of("Name", Length.grow(1), (g, s) -> g.text(s)),
+                    Table.Column.of("Kind", Length.rem(6), (g, s) -> g.text("person"))));
+            table.items(java.util.List.of("alice", "bob"));
+            table.node().width(Length.FILL).height(Length.FILL);
+            h.gui.root().children(table.node());
+            h.frame().frame();      // one frame builds the rows, the next lays them out
+
+            SemanticSnapshot sem = h.gui.semanticSnapshot();
+            assertEquals("table", sem.node(table.node().id()).role());
+            assertEquals("rowgroup", sem.node(table.rows().node().id()).role(),
+                    "the body is a ListView, and what it holds are this table's rows rather than list items");
+
+            assertTrue(sem.nodes().values().stream()
+                            .anyMatch(n -> n.role().equals("columnheader") && n.name().equals("Name")),
+                    "the header a click sorts by is addressable by what it says");
+            assertTrue(sem.nodes().values().stream().anyMatch(n -> n.role().equals("columngrip")),
+                    "and the boundary a drag resizes by is addressable at all");
+
+            SemanticNode row = sem.nodes().values().stream()
+                    .filter(n -> n.role().equals("row") && n.name().contains("alice"))
+                    .findFirst().orElse(SemanticNode.ABSENT);
+            assertTrue(row.present(), "a row is named after the cells in it, or it cannot be found by them");
         }
     }
 

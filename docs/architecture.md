@@ -367,6 +367,9 @@ a label is likewise `em`, not `dp`, even though a toolbar feels like chrome.
 
 > **Built.** `PropKey.IMAGE`, `Node.image(SampledImage)`, `GuiApp.viewport(w, h)`, and the `TreeRenderer`
 > draw. Proven with an SDF scene marched into a target and composited beside a title and a status line.
+> **Also built:** `GuiApp.texture(rgba, w, h)` for an application's own pixels, and `PropKey.IMAGE_REGION` +
+> `Node.image(image, ImageRegion)` for showing one part of a texture. Proven by capture: ten marks of a
+> 640x256 sheet in ten nodes, from one upload.
 
 A **viewport** — a region showing a scene another pipeline rendered — is not a node kind. `NodeKind` stays
 `BOX` and `TEXT`, and the whole feature is one prop: an image handle the node draws across its border box.
@@ -387,6 +390,27 @@ allocated on a *different* device yields a descriptor set this application's pip
 validation error rather than a blank box. Asking for a size and nothing else keeps that impossible. Targets
 made there close with the application.
 
+**Where pixels come from.** `GuiApp.texture(byte[] rgba, width, height)` is the same method for the other kind
+of image: not a scene this frame marched, but bytes the application already has — a decoded photograph, an icon
+sheet, an animation's frames. It exists for precisely the reason `viewport` does (the device is not public), and
+it asks for nothing but the one layout every sampler agrees on: straight RGBA8, tightly packed, top row first.
+Decoding is not the framework's business and no format is named anywhere in it; where the bytes came from is the
+application's affair. Textures made there close with the application.
+
+**Uploaded once, deliberately.** The texels are staged and copied at construction and cannot be rewritten. A
+texture that changed under a frame in flight would tear, so content that genuinely changes makes a new texture
+and closes the old one after a frame that no longer names it.
+
+**Sheets, and why an animation is free.** `PropKey.IMAGE_REGION` narrows which part of the texture a node
+samples — normalised coordinates, absent meaning the whole of it. Normalised rather than pixels so the region
+survives the sheet being rebaked at 2x; `ImageRegion.cell(i, columns, rows)` is the sprite-sheet form and
+`ImageRegion.pixels(...)` converts a packer's output once, at the edge.
+
+This is what makes an animation cost nothing on the GPU. Bake every frame into one texture, upload it once, and
+advance the region on a clock: no per-frame upload, no second descriptor set, and *no run boundary*, because the
+bound handle never changed. It is also not layout-affecting, for the same reason `IMAGE` is not — a frame
+advancing must not nudge the node it is drawn in.
+
 **Not resized for you, on purpose.** A target has fixed pixels; the node is laid out by flex. A viewport whose
 box changed shape is upscaled by the sampler until the application makes a new target at the new size.
 Re-marching a scene is far too expensive to trigger from a resize the framework merely noticed, so the box is
@@ -394,7 +418,8 @@ readable from `Node.layout()` and the policy belongs to whoever owns the scene.
 
 **Cost.** A frame with N images is one set-0 bind, N rebinds of set 1, and N+1 draws over one vertex buffer in
 submission order. Alternating between two images costs a run each time; drawing an image's worth together
-costs one. A window with no images is one run and one draw, exactly as before.
+costs one. A window with no images is one run and one draw, exactly as before. Twenty icons packed into one
+sheet are also one run and one draw — which is the second reason to pack a sheet, after the single upload.
 
 ---
 

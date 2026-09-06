@@ -5,6 +5,7 @@ import dev.vexelray.gui.core.drop.DragSource;
 import dev.vexelray.gui.core.drop.DragState;
 import dev.vexelray.gui.core.drop.Transfer;
 import dev.vexelray.gui.core.drop.DropTarget;
+import dev.vexelray.gui.core.layout.Clip;
 import dev.vexelray.gui.core.layout.Displacement;
 import dev.vexelray.gui.core.layout.FlexLayout;
 import dev.vexelray.gui.core.layout.LayoutContext;
@@ -1710,6 +1711,10 @@ public final class Gui implements AutoCloseable {
                 moving = Displacement.displace(r, motion);
             }
             if (geometryChanged || moving) {
+                // Last of the compute phase, because it is a fact about the rects everything above just
+                // finished writing: displacement moves a node after layout placed it, and a clip resolved
+                // before that would describe a frame nobody sees.
+                Clip.resolve(r);
                 publishLayout(r);
             }
             publishDrag();
@@ -2093,6 +2098,9 @@ public final class Gui implements AutoCloseable {
         out.put(n.id, new NodeLayout(true,
                 new Rect(n.x, n.y, n.w, n.h),
                 new Rect(n.viewX, n.viewY, n.viewW, n.viewH),
+                // Copied, not computed: {@link Clip} resolved it in the compute phase, where the tree can be
+                // seen. Publish projects the model and works nothing out (docs/layout-read-model.md §9).
+                new Rect(n.clipX, n.clipY, n.clipW, n.clipH),
                 n.cornerPx, n.cornerBottomPx,
                 n.scrollX, n.scrollY, n.contentW, n.contentH, n.overflowX, n.overflowY, n.textSizePx,
                 n.textMetrics));

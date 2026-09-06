@@ -23,6 +23,12 @@ And it cannot draw a diagonal at all: `NodeKind` is `{BOX, TEXT}` and both are a
 A picture is the middle. It is not laid out, not hit-tested, and not reconciled mark by mark; it is a value, and
 replacing it is one prop write.
 
+> **That second lane has since become cheap, and this section is no longer the whole choice.** A target is one
+> call (`GuiApp.viewport(w, h)`) and the march is a component (`vexelray-technique-sdf`), so a marched scene now
+> costs a dependency rather than a rendering project. What has not changed is the *fit*: a picture is flat marks
+> in a pixel frame, and a marched surface is a shape in world space. **§7 is where that choice actually lies —
+> read it before reaching for a `Sketch` to draw something that has depth.**
+
 ## 2. What it looks like
 
 ```java
@@ -147,10 +153,52 @@ decides what the mark *is*. A picture holding `Role`s would need the renderer to
 change to how every prop is themed (see the runtime-theme-swap note in todo.md §3) rather than something this
 module should decide on its own.
 
-## 7. Still ahead
+## 7. When it should be a marched surface instead
+
+A picture is **flat marks in the box's own pixel frame**. The engine's `Surface` is **shape in world space**:
+`dev.vexelray.surface.Surface` (repo `vexelray`, module `vexelray-surface`) is a sealed record tree of spheres,
+boxes, capsules and their transforms and combinators, lowered by `SurfaceCompiler` to core IR, turned into a
+fullscreen ray-march fragment by `dev.vexelray.technique.sdf.SdfComposer`/`SdfScene`, marched into a target from
+`GuiApp.viewport(w, h)`, and shown as `Node.image(SampledImage)` — the box that samples, architecture.md §6.9.
+
+**The test is the subject, not the complexity.** If the thing being drawn has depth, is lit, or is something the
+user will orbit, it is a surface, and any picture of it is a projection maintained by hand — one that has to be
+re-derived every time the camera moves and re-authored every time the shape gains a case. Reach for a picture
+alone when the figure genuinely *is* flat (a chart, an axis, an enclosure band, a plot overlay), or when the SVG
+export is the point, which is the one thing a marched image cannot give back.
+
+**Not this framework's dependency, and deliberately.** `vexelray-gui` builds against `vexelray-canvas`,
+`-text`, `-vulkan` and `-os` — not `vexelray-surface` or `-technique-sdf`. The framework supplies the target and
+the box that samples; the application brings the technique, exactly as `SurfacePlot` is the consumer's in
+reliable-plotting.md. So `Surface` is not on this repo's classpath, which is a fact about the layering and not a
+verdict on the lane. (`vexelray-designer` is the worked example: `vexelray-gui-draw` and `vexelray-technique-sdf`
+side by side in one pom.)
+
+**Two meanings of the word, and they are unrelated.** `dev.vexelray.surface.Surface` is the engine's 3D distance
+field. A *plot* surface — `z = f(x, y)` over a `Cell`, in `vexelray-gui-plot` — is a different thing that happens
+to share the noun, and it renders as enclosure boxes rather than as a marched field, for the reasons in
+reliable-plotting.md.
+
+**Usually both, on one node.** `vexelray-designer`'s `Viewport` is the shape worth copying: the design is
+compiled to a distance field and marched for the image, and a `Sketch` draws the ground grid *over* it — between
+the image and the border, clipped to the box, one prop write to toggle, no shader and no recompile. The subject
+is marched; the annotations are sketched. Two things that pattern has to get right:
+
+- **The two layers must agree about projection by construction.** There, `Camera.project` is orthographic while
+  the march builds a perspective ray, so the viewport inverts `SdfComposer`'s own ray construction rather than
+  deriving a second projection that happens to match. Two derivations that agree today drift tomorrow.
+- **A drawn overlay is not occluded.** A sketched line behind a marched sphere still draws in front of it, until
+  the march's hit depth is available. For a grid that reads as an overlay anyway; for anything meant to sit
+  *inside* the scene it is wrong, and that is a reason to put it in the `Surface`.
+
+**Two kinds of dirty**, once a viewport exists: a scene change means new SPIR-V and a new pipeline, while a
+camera change is six floats of push constant. Orbiting recompiles nothing. A picture has neither — it is rebuilt
+from `onResize`, §4.
+
+## 8. Still ahead
 
 - **A filled polygon**, once the engine has a triangle or convex-polygon kind. The first things that will ask are
-  an enclosure band and a projected surface cell (which currently draws as its screen bounding rectangle).
+  an enclosure band and a projected plot-surface cell (which currently draws as its screen bounding rectangle).
 - **Typeset onto a picture.** `Placed.Sink` is `glyphs` + `bar`, and its node projection is axis-aligned — so a
   commutative-diagram arrow is unrepresentable there and expressible here. A picture is the target that unblocks
   it, and the two sinks are close enough that it is a projection rather than a redesign.

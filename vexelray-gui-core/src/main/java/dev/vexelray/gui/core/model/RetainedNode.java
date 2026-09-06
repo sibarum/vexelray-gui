@@ -1,6 +1,7 @@
 package dev.vexelray.gui.core.model;
 
 import dev.vexelray.canvas.Color;
+import dev.vexelray.gui.core.ImageRegion;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
@@ -87,6 +88,16 @@ public final class RetainedNode {
     public float contentW;
     public float contentH;
     public float scrollbarPx;
+
+    // Where this node actually is: its box intersected with every clip its ancestors impose, resolved once per
+    // changed frame by Clip.resolve after displacement has had its say (docs/layout-read-model.md §2.1). Zero
+    // width or height means the node is laid out somewhere nothing of it can be seen — the ordinary state of a
+    // virtualised row that has been scrolled past, and the difference between a rect a reader may aim at and
+    // one it may not.
+    public float clipX;
+    public float clipY;
+    public float clipW;
+    public float clipH;
     // Scroll-lock (§8.5) runtime state: whether the offset is currently pinned to the locked edge. Starts
     // attached so a freshly-built locked scroller opens at its edge; the dispatcher detaches/re-attaches it
     // as the user scrolls away from and back onto the edge.
@@ -230,6 +241,15 @@ public final class RetainedNode {
      */
     public Object image() {
         return props.get(PropKey.IMAGE);
+    }
+
+    /**
+     * Which part of {@link #image()}'s texture this node samples, or null for the whole of it (see
+     * {@link PropKey#IMAGE_REGION}). Typed, unlike the handle: a region is normalised coordinates the model can
+     * hold and a test can read, whereas the texture behind it is a GPU object only the renderer understands.
+     */
+    public ImageRegion imageRegion() {
+        return (ImageRegion) props.get(PropKey.IMAGE_REGION);
     }
 
     /**

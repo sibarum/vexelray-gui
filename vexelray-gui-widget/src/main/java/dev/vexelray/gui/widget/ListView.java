@@ -93,6 +93,10 @@ public final class ListView<T> implements AutoCloseable {
 
     private volatile Consumer<T> onActivate = t -> { };
 
+    /** What this list and its rows call themselves in the semantic read-model. See {@link #roles}. */
+    private String containerRole = "list";
+    private String itemRole = "listitem";
+
     public ListView(Gui gui, float rowRem, RowBuilder<T> builder) {
         this(gui, rowRem, builder, SelectionModel.range());
     }
@@ -106,7 +110,7 @@ public final class ListView<T> implements AutoCloseable {
         }
         this.rowRem = rowRem;
 
-        this.root = gui.column().width(Length.FILL).height(Length.FILL).scroll(false, true)
+        this.root = gui.column().role(containerRole).width(Length.FILL).height(Length.FILL).scroll(false, true)
                 .background(gui.theme().color(Role.WELL));
         this.spacerTop = gui.box().width(Length.FILL).height(Length.ZERO);
         this.spacerBottom = gui.box().width(Length.FILL).height(Length.ZERO);
@@ -126,6 +130,30 @@ public final class ListView<T> implements AutoCloseable {
     /** The node to place in a layout. */
     public Node node() {
         return root;
+    }
+
+    /**
+     * What this list and its rows are called in the semantic read-model — {@code list} and {@code listitem}
+     * unless something composing it says otherwise.
+     *
+     * <p>This exists because a {@link Table}'s body <em>is</em> one of these and is not a list: its rows are
+     * rows, and an agent told they are list items has been told the wrong thing about the one structure it
+     * came here to address. The alternative was for the composing widget to declare a second role over the
+     * top, which is two nodes claiming to be the same row — so the list takes the words it uses as an
+     * argument instead, and there is still exactly one declaration per node.
+     *
+     * <p>Set it before the items: rows already realized keep the role they were built with, and this rebuilds
+     * the window rather than pretending otherwise.
+     */
+    public ListView<T> roles(String container, String item) {
+        this.containerRole = Objects.requireNonNull(container, "container");
+        this.itemRole = Objects.requireNonNull(item, "item");
+        root.role(container);
+        synchronized (this) {
+            clearWindow();
+        }
+        update();
+        return this;
     }
 
     /** What is selected — wire handlers to it, or hand it a mode at construction. */
@@ -302,7 +330,12 @@ public final class ListView<T> implements AutoCloseable {
         // over its own contents the moment they were too wide for it.
         Node row = gui.box().width(Length.FILL).height(Length.rem(rowRem)).scroll(false, false)
                 .background(fill(item));
-        row.append(builder.build(gui, item));
+        // The role goes on what the application built, not on the box around it. Both are "the row" — this one
+        // carries the click and the selected look, that one carries the contents — and only one of them can be
+        // declared without the other becoming a second, anonymous row in the tree. The contents win, because a
+        // node's accessible name is derived from the text below it and the wrapper is one level too far up:
+        // declared here, every row in a table reads as `row "3 item-00023 binary"` instead of `row ""`.
+        row.append(builder.build(gui, item).role(itemRole));
         gui.onClick(row, e -> onRowClick(item, e));
         gui.onState(row, state -> row.background(hovered(item, state)));
         root.insert(row, at);

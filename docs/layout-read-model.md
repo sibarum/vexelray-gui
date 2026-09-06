@@ -57,6 +57,7 @@ the first draft of §11.3 merely moved that write into publish. Naming the missi
 | **Authored props** | text, caret, selection, editable, **scroll intent** | worker → `Mutation` → `pump.drain()` | command |
 | **Derived geometry** | `rect`, `content`, `contentW/H`, `overflow`, **effective scroll**, **text metrics**, gutter width | the layout pass | compute |
 | **Drawn position** | `x/y` and `viewX/viewY` again — the settled values, moved by however far a node is still short of them | `Displacement`, from a `LayoutMotion` | motion |
+| **Reachability** | `clipX/Y/W/H` — the box less every ancestor's clip | `Clip.resolve`, after motion | compute |
 | **Read-model** | `LayoutSnapshot` | `publishLayout` — a pure copy | publish |
 
 **Compute in the layout phase, displace in the motion phase, copy in the publish phase, read everywhere else.**
@@ -80,6 +81,11 @@ runs inside `Gui.frame`, in every host, so a transition behaves identically head
 `LayoutMotion` implementation — `Transitions` in `gui-krono`, or an application's own — writes nothing at all; it
 reports two floats per node and the framework does the arithmetic. The guard covers every motion source that
 will ever exist without naming one.
+
+`Clip` is a declared stage on the same terms, and the rule above is why it is a stage at all: the clipped
+rectangle was first worked out inside `publishLayout`, which is a projection and computes nothing. It runs last
+in the compute phase — after motion, because a node that is mid-flight is clipped where it is drawn, not where
+it will land — and writes only derived geometry.
 
 This adds no new concept. `FlexLayout.layout()` already writes `x/y/w/h`, `viewX/viewY`, `contentW/H` and
 `overflow` into `RetainedNode` — on the GUI thread, in the write phase, and nobody calls that a violation.
@@ -123,10 +129,21 @@ relayout, and a genuinely static frame still does neither.
 ```java
 NodeLayout L = node.layout();    // synchronous, lock-free: this node's entry in the latest snapshot
 L.present();                     // false until the node has been laid out at least once
-L.rect();                        // x,y,w,h in root space
+L.rect();                        // x,y,w,h in root space — where it was *put*
 L.content();                     // the inner viewport (border/padding/scrollbar inset)
+L.visibleRect();                 // ...less every clip its ancestors impose — where it *is*
+L.clipped(); L.clippedAway();    // whether anything, or everything, was taken off it
 L.scroll(); L.overflow(); L.contentSize();
 ```
+
+**`rect` and `visibleRect` were the same question until virtualisation.** A list of a hundred thousand rows
+realizes a screenful, lays each out where its index says, and relies on the clip to show the window. A row
+scrolled past the top is in the tree, has a rect, and every pixel of that rect belongs to whatever is drawn
+there instead — so a reader that treats "has a rect" as "can be pointed at" aims at a sticky header and reports
+success. `visibleRect` is that node's box intersected with the clip of every ancestor, by the rule `HitTest`
+descends by: inside each ancestor's box, inside the viewport of each that scrolls, and never the viewport for a
+floating child, which was not scrolled. Empty means laid out and nowhere on screen. Resolved by `Clip.resolve`
+in the compute phase (§2.1) — after displacement, so it describes the frame that is drawn.
 
 `node.layout()` reads a `volatile` reference to an immutable snapshot — **no lock, no poll into the live model**.
 It is **one frame stale**, which is exactly the latency the input dispatcher already embraces on purpose
@@ -206,7 +223,8 @@ matters for reads, so dropping intermediate ones (a slow/remote consumer) never 
 
 ```
 record Rect(float x, float y, float w, float h)
-record NodeLayout(boolean present, Rect rect, Rect content, float scrollX, float scrollY,
+record NodeLayout(boolean present, Rect rect, Rect content, Rect visibleRect,
+                  float cornerTopPx, float cornerBottomPx, float scrollX, float scrollY,
                   float contentW, float contentH, boolean overflowX, boolean overflowY,
                   float textSizePx, TextMetrics text /* nullable */)
 record LayoutSnapshot(long version, Map<Long,NodeLayout> nodes) { NodeLayout node(long id); }

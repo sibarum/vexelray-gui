@@ -93,6 +93,9 @@ public final class ListView<T> implements AutoCloseable {
 
     private volatile Consumer<T> onActivate = t -> { };
 
+    /** Whether a plain click flips a row's membership instead of replacing the selection. See {@link #clickToggles}. */
+    private volatile boolean clickToggles;
+
     /** What this list and its rows call themselves in the semantic read-model. See {@link #roles}. */
     private String containerRole = "list";
     private String itemRole = "listitem";
@@ -120,6 +123,7 @@ public final class ListView<T> implements AutoCloseable {
         // the whole of the virtualisation trigger: no polling, and no frame callback of our own.
         subs.add(gui.layout().onCommit(snapshot -> update()));
         selection.onChange(sel -> restyleAll());
+        selection.onLeadChange(lead -> restyleAll());
 
         // One tab stop for the whole list, as a tree is: registering the key stage is what makes the root
         // focusable, and rows are pointer targets rather than tab stops.
@@ -159,6 +163,23 @@ public final class ListView<T> implements AutoCloseable {
     /** What is selected — wire handlers to it, or hand it a mode at construction. */
     public SelectionModel<T> selection() {
         return selection;
+    }
+
+    /**
+     * What a <b>plain</b> click on a row means: replace the selection (the default), or flip that row's membership.
+     *
+     * <p>This is the difference between an explorer pane and a tick list, and it is a real one rather than a
+     * preference. In a pane, clicking a file and getting the previous one <em>as well</em> would be wrong, so a
+     * plain click replaces and Ctrl is how you add. In a list whose whole purpose is to build a set — the options
+     * inside a multi-select drop-down — requiring Ctrl for the ordinary case means the ordinary case silently
+     * throws away everything ticked so far. Ctrl-click and Shift-click are unaffected either way.
+     *
+     * <p>Nothing here checks the mode: {@code toggle} already degrades to {@code at} where only one item may be
+     * held, so a single-select list told to toggle behaves exactly as one told to replace.
+     */
+    public ListView<T> clickToggles(boolean toggles) {
+        this.clickToggles = toggles;
+        return this;
     }
 
     /** The items, in order. Replaces what was there; the selection keeps whatever survives. */
@@ -328,8 +349,8 @@ public final class ListView<T> implements AutoCloseable {
         T item = items.get(index);
         // Not a scroller: overflow scrolling is on by default, and a row that scrolled would draw a scrollbar
         // over its own contents the moment they were too wide for it.
-        Node row = gui.box().width(Length.FILL).height(Length.rem(rowRem)).scroll(false, false)
-                .background(fill(item));
+        Node row = gui.box().width(Length.FILL).height(Length.rem(rowRem)).scroll(false, false);
+        paint(item, row);
         // The role goes on what the application built, not on the box around it. Both are "the row" — this one
         // carries the click and the selected look, that one carries the contents — and only one of them can be
         // declared without the other becoming a second, anonymous row in the tree. The contents win, because a
@@ -367,11 +388,11 @@ public final class ListView<T> implements AutoCloseable {
 
     // ------------------------------------------------------------------ selection, as gestures
 
-    /** A click is one of the three operations; which one is what the modifiers say. */
+    /** A click is one of the operations; which one is what the modifiers say — and what a plain one means. */
     private void onRowClick(T item, ClickEvent e) {
         if (e.has(Modifier.SHIFT)) {
             selection.extendTo(item, order());
-        } else if (e.has(Modifier.CONTROL)) {
+        } else if (e.has(Modifier.CONTROL) || clickToggles) {
             selection.toggle(item);
         } else {
             selection.at(item);
@@ -441,9 +462,22 @@ public final class ListView<T> implements AutoCloseable {
     private void restyleAll() {
         synchronized (this) {
             for (Map.Entry<T, Node> e : shown.entrySet()) {
-                e.getValue().background(fill(e.getKey()));
+                paint(e.getKey(), e.getValue());
             }
         }
+    }
+
+    /**
+     * A row wears two independent facts: whether it is selected (the fill) and whether the cursor is on it (the
+     * outline). They are drawn separately because {@code SelectionModel.lead} moves one without the other — in a
+     * multi-select list the cursor is routinely on a row that is <em>not</em> chosen, and that row is the one
+     * Space is about to flip. In a single-select list the two always coincide, so the outline reads as the focus
+     * ring it would have been anyway and nothing looks different.
+     */
+    private void paint(T item, Node row) {
+        row.background(fill(item));
+        row.border(Length.dp(1),
+                gui.theme().color(Objects.equals(selection.lead(), item) ? Role.ACCENT : Role.NONE));
     }
 
     private dev.vexelray.canvas.Color fill(T item) {

@@ -326,6 +326,15 @@ Widgets are ordinary framework users — built entirely on public `Node`/`Gui` A
   a handler and the user meets it by being corrected. Options are `(label, value)`, so what comes back out of
   `onChange` is what the application already calls it rather than an index that quietly means something else
   after an insert.
+- **`Select<T>`** — the other end of the same choice: one line high whatever the list holds, with the
+  alternatives a click away. A closed strip over a floating `ListView`, so a select over ten thousand values
+  costs a popup's worth of nodes and opening scrolls to the current one rather than to the top. **Multi-select
+  is the mode, not a second widget** — hand it a `SelectionModel.range()` and every difference falls out of that
+  one answer, because `lead` degrades to `at` and `toggle` degrades to `at` wherever only one thing may be held,
+  so the same call is right in both. While the popup is up it owns Up/Down/Enter/Escape at `ClaimScope.VISIBLE`;
+  the claims are taken on opening and given back on closing, since a hidden node keeps its claims. `onCommit`
+  fires when a choice is *made*, Escape restores what the popup opened with, and the chevron slot is reserved
+  whether or not there is a value, so a longer one moves nothing beside it.
 - **`ColorPicker`** — a saturation/value square over hue and alpha ramps, a preview, a hex box and a
   strip of recents. The ramps are `Picture`s rather than subtrees, and the square is banded across
   saturation only: value in HSV is a multiply and the Canvas composites straight alpha, so black at
@@ -382,11 +391,14 @@ Widgets are ordinary framework users — built entirely on public `Node`/`Gui` A
   column that resized while you scrolled would violate the standing rule about targets that move.
 - **`SelectionModel<T>`** — what is selected, and where a range would grow from, as one type shared by
   the list, the table and the tree. Shift-click, Ctrl-click, Shift+Arrow and a rubber band are not
-  four features but **three operations over one invariant**: a base set, an anchor, and an extent
+  four features but **operations over one invariant**: a base set, an anchor, and an extent
   recomputed from that anchor rather than accumulated — which is why shift-clicking twice replaces the
   range instead of unioning two. It holds **items, not indices**, so a selection survives an insert, a
   refresh, or a row that does not exist yet. A `Mode` is a capability, not a branch: an operation the
-  mode does not permit degrades to the nearest one it does, once, here.
+  mode does not permit degrades to the nearest one it does, once, here. A fourth operation arrived with
+  `Select`: **`lead` moves the cursor without changing what is chosen**, which is what a multi-select
+  keyboard needs before Space has anything to flip — reaching the fourth row must not select it on the
+  way past. It degrades to `at` where only one item may be held, so one call drives both.
 - **Find** — Ctrl+F opens a strip that was not there before, with one query field and one line of
   status: typing searches, Enter steps, Shift+Enter steps back, Escape puts it away and hands the
   keyboard back. Both a multiline `TextField` and a `TreeView` grow the same bar from the same chord;

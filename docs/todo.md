@@ -262,7 +262,7 @@ Wanted eventually, deliberately not now.
 ## 4. Widget vocabulary — the components still missing
 
 `-widget` holds **interaction protocols**, not painted controls: `Tabs`, `TreeView`, `TextField`, `ContextMenu`,
-`Modal`, `Reorder`, `Popout`, `ListView`, `Table`, `Rail`, `Inspector`, `ColorPicker`. A button, a card and a
+`Modal`, `Reorder`, `Popout`, `ListView`, `Table`, `Rail`, `Inspector`, `ColorPicker`, `Select`. A button, a card and a
 heading are application code — `Ui` in the demo is the honest demonstration of that, and the reason it works is
 that a `Role` already knows its own hover and pressed shades, so nobody there writes a colour down. Promoting
 those would make the framework opinionated about appearance and buy no invariant. So a component earns a place
@@ -284,10 +284,10 @@ popup opens on click, and space a control might need is reserved before it needs
 arrives through Tactroller on the bus**; a component that wants a key reads a claim, it does not read a device.
 
 **Sequenced.** §4.1 and §4.2 are done, and so are the entries struck through in §4.3–§4.5. What is left is no
-longer a queue. Two things are named by more than one remaining entry and are worth doing first for that reason:
-`Select` (§4.3), which §4.8's date picker still assumes, and the **resize `CursorShape`** §4.2 defers, which
-`Table`'s grip has already settled for `GRAB` and `SplitPane` (§4.5) will want the same one — they are one
-native binding, done together. §4.7 is scheduled against the C1 proof in
+longer a queue. `Select` (§4.3) was the first of the two things named by more than one remaining entry and is
+now done, so §4.8's date picker has the half it was waiting on. The other is the **resize `CursorShape`** §4.2
+defers, which `Table`'s grip has already settled for `GRAB` and `SplitPane` (§4.5) will want the same one — they
+are one native binding, done together. §4.7 is scheduled against the C1 proof in
 `architecture-proof-plan.md` rather than against this list, and §4.9 is a gap in what the built widgets
 *publish* rather than a widget to build.
 
@@ -429,9 +429,34 @@ of doing this first was that fifteen components should not each remember their o
   A date picker stays on §4.8 untouched by this — nothing about a calendar has a coordinate a value can fail to
   recover.
 
-- **`Select`.** The overlay primitive plus a list plus a claim on Up/Down/Enter/Escape at `ClaimScope.VISIBLE`.
-  The no-hover rule is the specification, not a constraint on it: the popup opens on click, and the closed
-  control reserves its own chevron slot so nothing reflows when a value changes width.
+- ~~**`Select`.**~~ **Done**, and the sketch was right about all three parts: the overlay primitive, a list, and
+  a claim on Up/Down/Enter/Escape at `ClaimScope.VISIBLE`, taken on opening and given back on closing because a
+  hidden node keeps its claims. The no-hover rule was the specification and remains so — the popup opens on a
+  click or a key, and the chevron slot is reserved whether or not there is a value.
+
+  **The list is a `ListView`, and that is the whole implementation.** Rows are not built here. Composing brings
+  virtualisation (ten thousand options cost a popup's worth of nodes), `SelectionModel`, and `reveal` — which is
+  what makes opening scroll to the current value rather than to the top. A drop-down that grew its own rows
+  would be a second, worse list whose Shift+Down drifted from every other one.
+
+  **Multi-select turned out to be the mode, not a second entry on this list**, which is why there is no
+  `MultiSelect` above. `Mode` already makes "several" a capability, so the widget asks the model what it permits
+  and everything falls out of that: choosing shuts a single-choice popup and leaves a set-building one up, and
+  the strip reads out one label or several.
+
+  **What it cost was a fourth operation on `SelectionModel`, and finding it is the reason this entry is worth
+  keeping.** The three operations all answer *what is chosen*. A multi-select keyboard needs to answer *where am
+  I* first: with only `at`, `toggle` and `extendTo`, the sole way to reach the fourth option is to select it, and
+  reaching it is exactly what must not select it. So `lead(T)` moves the cursor and leaves the selection alone —
+  and, being one more operation over the same invariant, it degrades like the rest, to `at` where only one item
+  may be held. That degradation is what lets `Select` drive both modes with one call and no branch. Two smaller
+  things came with it: `onLeadChange`, because a cursor that moves without changing the selection announces
+  nothing on `onChange` and a row that drew it would draw it in the wrong place; and `ListView.clickToggles`,
+  the difference between an explorer pane (a plain click replaces) and a tick list (a plain click flips) —
+  unconditional in the popup, since `toggle` degrades to `at` too.
+
+  **Not done: it has no demo chapter**, which is the same gap `Segment` has. Neither is wrong, but the showcase
+  is where a control's look gets argued with, and two choosers are now unargued.
 - **`MenuBar`, submenus, checkable items.** §3 already names all three halves and they stay accurate. `MenuItem`
   wants a tick and an accelerator hint (fields on the record, rows in the presenter); a submenu needs `MenuSink`
   to be able to say "these items, under that one" without a `MenuItem` growing children, which is how a menu

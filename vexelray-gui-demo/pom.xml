@@ -27,6 +27,18 @@
           than one. See the plugin configuration below.
         -->
         <demo.args></demo.args>
+        <!--
+          Extra JVM flags for exec:exec, split on whitespace like demo.args.
+
+          Needed because a -D on the mvn command line sets a *Maven* property, and the commandlineArgs below
+          is a fixed string: nothing on that command line reaches the JVM, so `mvn exec:exec -Dsome.knob=48`
+          runs the demo with the default and reports a measurement of nothing. That is not hypothetical — a
+          seven-configuration performance sweep on this framework produced one identical number seven times
+          for exactly this reason, and was believed. Pass flags through here instead:
+
+              mvn -pl vexelray-gui-demo exec:exec -Ddemo.jvmArgs="-Dsome.knob=48 -Xmx2g"
+        -->
+        <demo.jvmArgs></demo.jvmArgs>
     </properties>
 
     <dependencies>
@@ -105,7 +117,7 @@
                       %classpath is exec:exec's own token for the runtime classpath. It is substituted after
                       the split, so it stays a single argument even where a path contains a space.
                     -->
-                    <commandlineArgs>--enable-native-access=ALL-UNNAMED -classpath %classpath ${demo.mainClass} ${demo.args}</commandlineArgs>
+                    <commandlineArgs>--enable-native-access=ALL-UNNAMED ${demo.jvmArgs} -classpath %classpath ${demo.mainClass} ${demo.args}</commandlineArgs>
                 </configuration>
             </plugin>
         </plugins>

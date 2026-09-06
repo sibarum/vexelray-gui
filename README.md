@@ -480,6 +480,35 @@ pixels in the node's own box, so nothing has to know where on screen it ended up
 The module sits **below** `-core` and depends on nothing but the engine's canvas and text: an exporter
 does not drag a GUI in behind it. See [docs/drawing.md](docs/drawing.md).
 
+## Images
+
+The other kind of picture: not marks the application authors, but pixels it brought with it.
+
+<p align="center">
+  <img src="docs/images-chapter.png" alt="The Images chapter: a decoded sheet, ten nodes each showing one cell of it, an animation whose upload counter stays at one, and one SVG rasterised at three sizes" width="720">
+</p>
+
+**The framework decodes nothing.** No module here names an image format. `app.texture(rgba, w, h)`
+takes the one layout every sampler agrees on — straight RGBA8, tightly packed, top row first — and what
+turns a PNG or an SVG into that is the application's business, at the application edge where the input
+backend and the clock already live. The gallery uses **`imagelib-wrapper`**, a sibling checkout — Panama
+bindings over one C ABI for PNG, JPEG, GIF, WebP, BMP, ICO, TIFF, TGA, PNM, QOI and SVG, stills and
+animations alike, all decoding to one value so a JPEG is a one-frame animation. Swapping it would touch
+one file.
+
+**A node showing a picture is still a box.** It sizes by flex, rounds at its corners, takes a border,
+clips, fades and translates with its subtree — because none of those ever knew what was inside a box.
+That is the same claim a viewport makes, which is why there is no image node kind.
+
+**One texture, many pictures.** `.image(texture, ImageRegion.cell(i, columns, rows))` names a rectangle
+of a sheet, so an icon set is one upload and one draw, and **an animation is free**: advancing a frame
+writes four floats, never touches the GPU, and adds no run boundary because the bound handle never
+changed. In the shot above the frame counter is at 14 and the upload counter is still 1.
+
+A raster file dictates its own pixel size; a vector document has none until a layout gives it one — so
+the bottom row is three *rasterisations* of one SVG rather than one bitmap scaled three ways. See
+[docs/architecture.md §6.9](docs/architecture.md) and `ImageChapter` in the demo.
+
 ## Motion
 
 Motion is opt-in everywhere, and the seam is one interface: a **`Ramp`** drives `progress` over
@@ -542,11 +571,14 @@ What sits between the GUI and the OS, all driven from the one main-thread loop:
   supply once how a device backend attaches to a window, and every window the framework opens from
   then on is interactive without further wiring.
 - **Device resources** — `app.viewport(w, h)` mints a render target another pipeline draws into and a node
-  shows with `.image(...)`; `app.storage(floats, binding)` mints a storage buffer at set 0 for a shader whose
-  data is too big, or too changeable, to be push constants. Both live on `GuiApp` for the same reason: the
+  shows with `.image(...)`; `app.texture(rgba, w, h)` mints one from pixels the application already has
+  (see [Images](#images)); `app.storage(floats, binding)` mints a storage buffer at set 0 for a shader whose
+  data is too big, or too changeable, to be push constants. All three live on `GuiApp` for the same reason: the
   device is deliberately not public, and a resource allocated on a different one yields a descriptor this
   application's pipeline cannot bind — asking the application for a size and a binding keeps that impossible.
-  Both close with the application. They differ in one way worth knowing: a viewport is resized for you and a
+  All close with the application. A texture is **uploaded once** and cannot be rewritten, because one changed
+  under a frame in flight would tear — which is why an animation is a sheet and a moving `ImageRegion` rather
+  than a stream of uploads. They differ in one more way worth knowing: a viewport is resized for you and a
   buffer **cannot be**, because the pipeline was built against its descriptor set layout, so a bigger buffer is
   a new pipeline. Size it for the worst case up front. The case that wanted it is a ray-marched viewport whose
   geometry is *data* rather than code — compiled into the shader, a new scene is new SPIR-V and a new pipeline,

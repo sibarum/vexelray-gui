@@ -3,6 +3,7 @@ package dev.vexelray.gui.demo;
 import dev.vexelray.gui.demo.chapter.ColorChapter;
 import dev.vexelray.gui.demo.chapter.DragChapter;
 import dev.vexelray.gui.demo.chapter.DrawChapter;
+import dev.vexelray.gui.demo.chapter.ImageChapter;
 import dev.vexelray.gui.demo.chapter.LayoutChapter;
 import dev.vexelray.gui.demo.chapter.MotionChapter;
 import dev.vexelray.gui.demo.chapter.PlotChapter;
@@ -21,7 +22,8 @@ import java.util.List;
  * framework and the one most applications reach for first; then trees, then what a tree gained when drags
  * arrived; then the same selection worked out one dimension further, in a table long enough that most of its
  * rows do not exist; then the modules that draw rather than lay out, with colour among them because a picker is
- * mostly a drawing; then windows, motion and layout, which
+ * mostly a drawing, and images last of those because they are the one kind of content the framework does not
+ * make — it takes them; then windows, motion and layout, which
  * are about the frame rather than about anything in it.
  */
 public final class Gallery {
@@ -36,6 +38,7 @@ public final class Gallery {
                 new DrawChapter(),
                 new ColorChapter(),
                 new PlotChapter(),
+                new ImageChapter(),
                 new TypesetChapter(),
                 new WindowChapter(),
                 new MotionChapter(),

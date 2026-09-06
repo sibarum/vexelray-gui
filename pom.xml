@@ -70,6 +70,10 @@
         <tactroller.version>1.0-SNAPSHOT</tactroller.version>
         <!-- Kronometer: logical time, rate domains, the signal graph. Application edge only. -->
         <kronometer.version>1.0-SNAPSHOT</kronometer.version>
+        <!-- imagelib: Panama bindings over one C ABI for every image format (PNG/JPEG/GIF/WebP/... and SVG).
+             Application edge only, and deliberately: decoding is not this framework's business, and no module
+             here names a format. The demo depends on it to show what GuiApp.texture is for. -->
+        <imagelib.version>0.1.0-SNAPSHOT</imagelib.version>
         <joml.version>1.10.7</joml.version>
         <junit.version>5.11.4</junit.version>
         <!-- ASM: bytecode reading for the architecture guard only (test scope, one module). -->
@@ -191,6 +195,12 @@
                 <groupId>sibarum.tactroller</groupId>
                 <artifactId>tactroller-clipboard</artifactId>
                 <version>${tactroller.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>sibarum.imagelib</groupId>
+                <artifactId>imagelib-wrapper</artifactId>
+                <version>${imagelib.version}</version>
             </dependency>
 
             <dependency>

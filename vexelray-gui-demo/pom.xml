@@ -69,6 +69,14 @@
             <groupId>sibarum.tactroller</groupId>
             <artifactId>tactroller-clipboard</artifactId>
         </dependency>
+        <!-- Decoding, at the application edge where it belongs. The framework supplies GuiApp.texture and
+             takes RGBA8; what turns a PNG or an SVG into RGBA8 is the application's affair, and no module in
+             this repo names an image format. ImageChapter is the worked example of that division. Carries a
+             native library of its own (extracted from its jar and loaded at first use). -->
+        <dependency>
+            <groupId>sibarum.imagelib</groupId>
+            <artifactId>imagelib-wrapper</artifactId>
+        </dependency>
     </dependencies>
 
     <build>
@@ -135,6 +143,12 @@
                                 <buildArg>-H:+ForeignAPISupport</buildArg>
                                 <buildArg>--enable-native-access=ALL-UNNAMED</buildArg>
                                 <buildArg>-H:IncludeResources=META-INF/supirvast/shaders/.*</buildArg>
+                                <!-- The chapter's own assets, and imagelib's native library: both are read as
+                                     classpath resources at runtime (the library is extracted from the jar and
+                                     loaded), so a native image that leaves them out fails at first decode
+                                     rather than at build. -->
+                                <buildArg>-H:IncludeResources=demo/.*</buildArg>
+                                <buildArg>-H:IncludeResources=natives/.*</buildArg>
                             </buildArgs>
                         </configuration>
                     </plugin>

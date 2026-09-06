@@ -491,10 +491,10 @@ The other kind of picture: not marks the application authors, but pixels it brou
 **The framework decodes nothing.** No module here names an image format. `app.texture(rgba, w, h)`
 takes the one layout every sampler agrees on — straight RGBA8, tightly packed, top row first — and what
 turns a PNG or an SVG into that is the application's business, at the application edge where the input
-backend and the clock already live. The gallery uses **`imagelib-wrapper`**, a sibling checkout — Panama
-bindings over one C ABI for PNG, JPEG, GIF, WebP, BMP, ICO, TIFF, TGA, PNM, QOI and SVG, stills and
-animations alike, all decoding to one value so a JPEG is a one-frame animation. Swapping it would touch
-one file.
+backend and the clock already live. The gallery uses
+[imagelib-wrapper](https://github.com/sibarum/imagelib-wrapper) — Panama bindings over one C ABI for
+PNG, JPEG, GIF, WebP, BMP, ICO, TIFF, TGA, PNM, QOI and SVG, stills and animations alike, all decoding
+to one value so a JPEG is a one-frame animation. Swapping it would touch one file.
 
 **A node showing a picture is still a box.** It sizes by flex, rounds at its corners, takes a border,
 clips, fades and translates with its subtree — because none of those ever knew what was inside a box.

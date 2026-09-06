@@ -137,6 +137,12 @@
                 <artifactId>vexelray-canvas</artifactId>
                 <version>${vexelray.version}</version>
             </dependency>
+            <!-- How a seam says it has silently dropped something the consumer asked for. Depends on nothing. -->
+            <dependency>
+                <groupId>dev.vexelray</groupId>
+                <artifactId>vexelray-diagnostics</artifactId>
+                <version>${vexelray.version}</version>
+            </dependency>
             <dependency>
                 <groupId>dev.vexelray</groupId>
                 <artifactId>vexelray-text</artifactId>

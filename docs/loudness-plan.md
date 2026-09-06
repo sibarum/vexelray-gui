@@ -87,6 +87,8 @@ is wrong in a way that reads as a taste decision.
 Each fix is one boolean and one warning. Five ad-hoc `System.err.println`s across three repos is five things to
 keep in step, so they share a mechanism.
 
+**Status: B1–B4 and B6 done; B5 not started.** The colour-space change is held deliberately — see below.
+
 ### B1 · `vexelray-diagnostics`
 
 A new zero-dependency module, one class:
@@ -130,6 +132,15 @@ Highest-leverage item in the stage: a set difference over data the plugin alread
 for every consumer of the framework, permanently. `x → (Re, Im)` drew as `x □ (Re, Im)` because nothing said
 Noto Sans has no arrow.
 
+**What it says about the primary atlas, on the first run:** 806 of 1,727 requested codepoints are absent —
+arrows (`U+2190..U+21FF`), box drawing (`U+2500..U+257F`) and dingbats (`U+2700..U+27BF`) *entirely*, and all
+but two of the maths operators. The mono face is complete at 191.
+
+The pom comment claimed all of those. It has been corrected in the same commit, because a comment that outran
+its implementation is the same defect as a doc that does — and this one is the direct cause of FN-16. The
+ranges stay in the request: asking costs nothing, a face that carries them can be added later, and the build
+now prints the difference on every run rather than the claim living in a comment nobody can check.
+
 ### B5 · FN-19 — the colour space
 
 Where a doc and the code disagree, pick one, and prefer changing the code. `SdfScene.Rgb` says linear; nothing
@@ -139,6 +150,12 @@ write, because everything downstream — canvas blend, swapchain — reads those
 **Flag:** every marched picture in every repo gets brighter, the designer's reference screenshots included.
 That is the correction landing rather than a regression, but it wants to be a deliberate commit with the
 re-takes in it.
+
+**Held, and not only for that reason.** `SdfComposer` is being actively rewritten for `Scalar`/`ParamBlock` at
+the time of writing, and the OETF goes in the fragment this composes. Two people editing one shader-building
+method is how a colour-space change and a parameter-block change become one unreviewable diff. It is the last
+item in the stage and the only one that changes every existing picture, so it loses nothing by waiting for that
+work to land.
 
 ### B6 · each warning gets a test that asserts it fired
 

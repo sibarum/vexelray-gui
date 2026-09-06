@@ -59,5 +59,10 @@
             <groupId>dev.vexelray</groupId>
             <artifactId>vexelray-os-api</artifactId>
         </dependency>
+        <!-- So a capture can say when it has dropped an image it cannot bind. See GuiApp.bind. -->
+        <dependency>
+            <groupId>dev.vexelray</groupId>
+            <artifactId>vexelray-diagnostics</artifactId>
+        </dependency>
     </dependencies>
 </project>

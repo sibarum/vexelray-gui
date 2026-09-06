@@ -22,6 +22,7 @@ import dev.vexelray.vulkan.present.AtlasTexture;
 import dev.vexelray.vulkan.present.GraphicsPipeline;
 import dev.vexelray.vulkan.present.OffscreenDraw;
 import dev.vexelray.vulkan.present.SampledColorTarget;
+import dev.vexelray.diag.Diagnostics;
 import dev.vexelray.vulkan.present.SampledImage;
 import dev.vexelray.vulkan.present.StorageBuffer;
 import dev.vexelray.vulkan.present.VertexBuffer;
@@ -1162,10 +1163,47 @@ public final class GuiApp implements AutoCloseable {
                 break;   // runs are in submission order, so the first one past the end ends the frame
             }
             int count = Math.min(r.vertexCount(), vertexCount - r.firstVertex());
-            long set = r.image() instanceof SampledImage img ? img.descriptorSet() : noImage.descriptorSet();
+            long set = r.image() instanceof SampledImage img && bindable(img.device(), noImage.device())
+                    ? img.descriptorSet()
+                    : noImage.descriptorSet();
             out.add(new WindowedPresenter.Run(set, r.firstVertex(), count));
         }
         return out;
+    }
+
+    /**
+     * Whether an image owned by {@code imageDevice} can be bound while drawing on {@code frameDevice} — and if
+     * it cannot, say so before falling back to the placeholder.
+     *
+     * <p>A descriptor set means nothing to a device other than the one that allocated it, and the case that
+     * arises in practice is {@link #capture}: it builds its own device and then walks a tree the application
+     * built against a window's. Anything in that tree with an {@code IMAGE} prop bound to a target from the
+     * other device is unbindable here.
+     *
+     * <p>The substitution is right and stays. What was missing is that it happened <b>silently</b>: a capture
+     * of a tree holding a marched viewport came out correct about every panel, label and border and blank
+     * exactly where the content was. That is a screenshot which looks like a screenshot — the one failure a
+     * reader has no reason to investigate, because nothing about it suggests a question was asked and declined.
+     * One line of stderr is the whole difference between a puzzling afternoon and a known limitation.
+     *
+     * <p>Keyed per call site rather than per image: this runs once per run per frame, and a capture holding
+     * three viewports has one thing wrong with it, not three.
+     *
+     * <p>The parameters are {@code Object} rather than {@code VulkanDevice} because the rule genuinely is
+     * reference identity, and because a device cannot be constructed without a GPU — typed, this decision could
+     * only be exercised by a test that needs one, which is how a warning ends up never having been watched to
+     * fire. The call site passes two devices and nothing else can reach it.
+     */
+    static boolean bindable(Object imageDevice, Object frameDevice) {
+        if (imageDevice == frameDevice) {
+            return true;
+        }
+        Diagnostics.dropped("GuiApp.bind/foreignDevice",
+                "an image belonging to another Vulkan device",
+                "its descriptor set cannot be bound here, so the placeholder is drawn instead — a headless"
+                        + " capture builds its own device, so a marched viewport in the tree comes out blank"
+                        + " while the rest of the frame is correct");
+        return false;
     }
 
     /**

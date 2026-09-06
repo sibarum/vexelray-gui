@@ -54,6 +54,12 @@ class ImageNodeTest {
         public long descriptorSetLayout() {
             return id;
         }
+
+        /** No device: these tests describe a tree, and nothing here binds anything. */
+        @Override
+        public dev.vexelray.vulkan.vk.VulkanDevice device() {
+            return null;
+        }
     }
 
     private static float noText(RetainedNode n, Axis axis, float px) {

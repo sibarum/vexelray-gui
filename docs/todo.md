@@ -455,8 +455,15 @@ of doing this first was that fifteen components should not each remember their o
   the difference between an explorer pane (a plain click replaces) and a tick list (a plain click flips) —
   unconditional in the popup, since `toggle` degrades to `at` too.
 
-  **Not done: it has no demo chapter**, which is the same gap `Segment` has. Neither is wrong, but the showcase
-  is where a control's look gets argued with, and two choosers are now unargued.
+  **The demo chapter closed the `Segment` gap with it.** `ChooserChapter` puts all three shapes of the one
+  question side by side — a segment with every option on show, a select over six, a select over ten thousand —
+  so the choice between them is made visible as what it is: a fact about how many options there are. It also
+  turned up the last thing wrong with the popup, which no test had asked for and no reader would have guessed:
+  a shut drop-down was holding a screenful of rows. A `ListView` that has never been laid out cannot tell
+  "hidden" from "waiting for its first frame", and the first-frame fallback guesses in favour of the second, so
+  it sized its window to the whole application and built rows behind a closed panel. `ListView.showing(boolean)`
+  is the owner saying which it is; the counter on the page reads `0 rows exist` while shut, and that number is
+  the demonstration.
 - **`MenuBar`, submenus, checkable items.** §3 already names all three halves and they stay accurate. `MenuItem`
   wants a tick and an accelerator hint (fields on the record, rows in the presenter); a submenu needs `MenuSink`
   to be able to say "these items, under that one" without a `MenuItem` growing children, which is how a menu

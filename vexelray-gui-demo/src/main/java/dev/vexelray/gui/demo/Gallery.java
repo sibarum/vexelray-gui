@@ -1,5 +1,6 @@
 package dev.vexelray.gui.demo;
 
+import dev.vexelray.gui.demo.chapter.ChooserChapter;
 import dev.vexelray.gui.demo.chapter.ColorChapter;
 import dev.vexelray.gui.demo.chapter.DragChapter;
 import dev.vexelray.gui.demo.chapter.DrawChapter;
@@ -21,7 +22,9 @@ import java.util.List;
  * <p>Order is an argument, not an accident: text first because a text field is the deepest vertical in the
  * framework and the one most applications reach for first; then trees, then what a tree gained when drags
  * arrived; then the same selection worked out one dimension further, in a table long enough that most of its
- * rows do not exist; then the modules that draw rather than lay out, with colour among them because a picker is
+ * rows do not exist; then choosers, which is where that same selection stops being about rows at all and the
+ * mode turns out to be the whole difference between picking one thing and picking several; then the modules
+ * that draw rather than lay out, with colour among them because a picker is
  * mostly a drawing, and images last of those because they are the one kind of content the framework does not
  * make — it takes them; then windows, motion and layout, which
  * are about the frame rather than about anything in it.
@@ -35,6 +38,7 @@ public final class Gallery {
                 new TreeChapter(),
                 new DragChapter(),
                 new TableChapter(),
+                new ChooserChapter(),
                 new DrawChapter(),
                 new ColorChapter(),
                 new PlotChapter(),

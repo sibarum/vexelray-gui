@@ -389,6 +389,34 @@ class SelectTest {
         }
     }
 
+    /**
+     * The other way a control leaves the screen: the page it is on is put away. A gallery, a tab strip and a
+     * collapsing panel all hide by {@code visible(false)} rather than by removing, and an overlay floated on the
+     * root does not go with them unless it is told to.
+     */
+    @Test
+    void hidingThePageTakesThePopupWithIt() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Select<String> select = new Select<>(h.gui, s -> s, SelectionModel.single());
+            select.options(SIZES);
+            Node page = h.gui.column().width(Length.FILL).height(Length.FILL).children(select.node());
+            h.gui.root().children(page);
+            h.frame();
+            h.frame();
+
+            clickControl(h, select);
+            h.frame();
+            assertTrue(select.shown());
+
+            page.visible(false);
+            h.frame();
+            h.frame();
+
+            assertFalse(select.shown(), "the page went away, so the panel floating over it did too");
+            select.close();
+        }
+    }
+
     // ------------------------------------------------------------------ what composing the list bought
 
     @Test

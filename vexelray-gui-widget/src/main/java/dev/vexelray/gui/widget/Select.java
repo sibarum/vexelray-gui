@@ -180,7 +180,10 @@ public final class Select<T> implements AutoCloseable {
                 // A row in a popup is a tick, not a file: a plain click flips it rather than throwing away
                 // everything ticked so far. Unconditional, because `toggle` degrades to `at` where only one may
                 // be held — so this is the right gesture in both modes without asking which one is in force.
-                .clickToggles(true);
+                .clickToggles(true)
+                // Shut, and not even attached yet: without this the list would guess the window it needs from the
+                // application's own height and build a screenful of rows behind a closed drop-down.
+                .showing(false);
         list.selection().onChange(chosen -> readOut());
         list.selection().onLeadChange(lead -> readOut());
 
@@ -197,7 +200,7 @@ public final class Select<T> implements AutoCloseable {
         // The popup follows the control: a page that scrolls, a window that resizes or a row that reflows all move
         // the thing this is anchored to, and an overlay that stayed put would be pointing at nothing. Read from the
         // same published layout the list virtualises against — no frame callback of this widget's own.
-        subs.add(gui.layout().onCommit(snapshot -> reanchor()));
+        subs.add(gui.layout().onCommit(snapshot -> reanchor(true)));
         subs.add(gui.bus().subscribe(gui.clicks(), this::onAnyClick));
 
         armClosed();
@@ -296,8 +299,9 @@ public final class Select<T> implements AutoCloseable {
         open = true;
         disarmClosed();   // FOCUSED outranks VISIBLE: the control must let go of Down before the list can have it
         popup.visible(true);
+        list.showing(true);
         anchoredTo = Rect.ZERO;   // force the first placement, whatever the control's rect happens to equal
-        reanchor();
+        reanchor(false);
         armOpen();
         T lead = selection.lead();
         if (lead != null) {
@@ -331,6 +335,7 @@ public final class Select<T> implements AutoCloseable {
     private void shut() {
         open = false;
         popup.visible(false);
+        list.showing(false);
         disarmOpen();
         armClosed();
         readOut();
@@ -429,16 +434,18 @@ public final class Select<T> implements AutoCloseable {
      * whatever is drawn underneath, pointing at nothing. {@code clippedAway} is the read-model answering exactly
      * that question, so the popup shuts instead.
      */
-    private void reanchor() {
+    private void reanchor(boolean fromLayout) {
         if (!open) {
             return;
         }
         NodeLayout l = control.layout();
-        if (!l.present()) {
-            return;
-        }
-        if (l.clippedAway()) {
-            commit();
+        if (!l.present() || l.clippedAway()) {
+            // Gone from the screen, by either route: scrolled out of its viewport, or hidden along with the page
+            // it is on — a tab switching, a panel collapsing. Only the layout path may conclude that, because the
+            // placement `open` does itself runs before the frame that would prove the control is still there.
+            if (fromLayout) {
+                commit();
+            }
             return;
         }
         Rect r = l.visibleRect();

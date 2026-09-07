@@ -96,6 +96,12 @@ public final class ListView<T> implements AutoCloseable {
     /** Whether a plain click flips a row's membership instead of replacing the selection. See {@link #clickToggles}. */
     private volatile boolean clickToggles;
 
+    /** Whether this list has ever had a published layout — what distinguishes "not yet" from "hidden". */
+    private boolean laidOut;
+
+    /** Whether the list is somewhere a user could see it. See {@link #showing}. */
+    private volatile boolean showing = true;
+
     /** What this list and its rows call themselves in the semantic read-model. See {@link #roles}. */
     private String containerRole = "list";
     private String itemRole = "listitem";
@@ -179,6 +185,29 @@ public final class ListView<T> implements AutoCloseable {
      */
     public ListView<T> clickToggles(boolean toggles) {
         this.clickToggles = toggles;
+        return this;
+    }
+
+    /**
+     * Whether the list is somewhere a user could see it. A list that is not holds <b>no rows at all</b>.
+     *
+     * <p>Hiding is usually detected rather than declared: a list that has been laid out and then loses its
+     * layout has been put away, and this class notices. The case it cannot notice is a list that has
+     * <em>never</em> been laid out, because "hidden since birth" and "waiting for its first frame" are the same
+     * absence, and the first-frame fallback below deliberately guesses in favour of the second — it bounds the
+     * window by the application's own height so the list arrives full rather than empty.
+     *
+     * <p>That guess is wrong exactly once: for a list built inside something that starts hidden and is not even
+     * attached yet — the popup of a shut {@link Select} is the case that found this. Left alone it would build a
+     * screenful of rows behind a closed drop-down, which is the one thing this class exists not to do. The owner
+     * is the only party that knows, so the owner says.
+     */
+    public ListView<T> showing(boolean showing) {
+        boolean was = this.showing;
+        this.showing = showing;
+        if (was != showing) {
+            update();
+        }
         return this;
     }
 
@@ -296,6 +325,18 @@ public final class ListView<T> implements AutoCloseable {
             }
             float rowPx = rowPx();
             NodeLayout l = root.layout();
+            // A list nobody can see holds no rows. "Cannot be seen" and "has not been laid out yet" arrive as the
+            // same absence — no published layout — so the flag is what tells them apart: before the first layout
+            // this is a list waiting for its first frame, and after it, one that has been hidden (a tab page put
+            // away, a drop-down shut) or scrolled entirely out of an ancestor. Without the distinction a hidden
+            // list falls through to the viewport fallback below and holds a screenful of rows it cannot show,
+            // which is the one thing this class exists not to do.
+            if (!showing || (laidOut && (!l.present() || l.clippedAway()))) {
+                clearWindow();
+                sizeSpacers();
+                return;
+            }
+            laidOut |= l.present();
             // Before the first layout the list's own viewport is unknown, and the window it will need cannot be
             // larger than the one the whole application is drawn in. Bounding by that fills the first frame with
             // rows rather than with nothing, and the real viewport replaces it a frame later.

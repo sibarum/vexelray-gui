@@ -55,6 +55,12 @@ the engine's `Surface`, and renders as enclosure boxes for the reasons in
   proximity.
 - **No sealed `switch` and no throwing `default`.** Both put behaviour outside the type it belongs to; invert to
   a method or a sink. `Picture.Mark` (open) with `Picture.Sink` (closed, no defaults) is the pattern.
+- **`Ramp` is the motion seam, and the word collides.** A colour ramp is also a ramp — the commoner meaning in a
+  drawing framework, and the one `ColorPicker` uses internally. Never *import* `dev.vexelray.gui.widget.Ramp`
+  into a file whose own package already has a `Ramp`: the import silently shadows the package member, with no
+  complaint at the import, and every `Ramp` in the file changes meaning. Write it out in full at the use site
+  (`calculator-vexel-demo`, whose `Ramp` is an enum of colour maps, does exactly that — it lost a working colour
+  picker to this once).
 
 ## Building
 

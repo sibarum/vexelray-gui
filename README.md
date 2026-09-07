@@ -358,7 +358,10 @@ Widgets are ordinary framework users — built entirely on public `Node`/`Gui` A
   truth and `refresh()` re-reads it after a preset, a keystroke or a fit changed it elsewhere. Sections are
   declared, never sorted: the order on screen is the order in the source. `card(...)` is the other shape — a
   heading with a switch and a badge over a body of rows that folds away — which is here rather than in an
-  application because a layer list is the same thing every time.
+  application because a layer list is the same thing every time. `motion(ramp)` gives the knobs of the switches
+  the panel builds itself — a card head's, a `flag` row's — their time, offered to every row the same way the
+  `Readout` is (`Property.motion`, default: ignore it), so a row with nothing to animate is not asked to have
+  any and a panel says it once rather than per row.
 - **`Tabs`** — headers over a page stack. Pages are hidden, never removed, so switching away and
   back returns the page exactly as it was — caret and all. Arrow keys walk the bar while a header
   has focus; the active tab floats forward (lit + elevated, rounded shoulders, flat seat).
@@ -370,7 +373,12 @@ Widgets are ordinary framework users — built entirely on public `Node`/`Gui` A
   shown and kept thereafter (a rebuilt page would come back drawing correctly and unable to take a keystroke,
   since registrations are keyed by node id and released when a node leaves the tree). The icons keep their
   places whether the panel is open or shut and the panel takes its space from the content, so nothing appears,
-  grows or shifts under the pointer.
+  grows or shifts under the pointer. A `PanelTransition` (`Rail.fade`, `Rail.slide`, or the application's own)
+  is where the *none* state costs something the other widget never pays: a panel on its way out has to still be
+  there while it goes, so **hiding it is the last thing that happens, not the first** — and `onSelect` is told at
+  the moment the selection changes rather than after the panel has gone, which is what lets a handler move
+  something of its own alongside. The three changes a transition is handed apart from each other (open, close,
+  swap) decide *what* moves: the panel when it appears or goes, the pages when they trade places.
 - **`TreeView<T>`** — a generic explorer for hierarchical data (a filesystem, an AST) over a
   four-method `Source<T>`. Children fetch lazily off the frame loop, exactly once per item;
   collapse hides the subtree rather than discarding it; one tab stop drives the whole tree
@@ -529,9 +537,15 @@ enters at the application edge — so `-krono` satisfies it without either modul
 exists, and the reduced-motion path is simply not calling it.
 
 ```java
-tabs.transition(Tabs.slide((p, done) -> krono.ramp(ms(200), Ease.LINEAR, p, done)));
+Ramp quick = (p, done) -> krono.ramp(ms(200), Ease.LINEAR, p, done);
+tabs.transition(Tabs.slide(quick));
+rail.transition(Rail.slide(quick, -1.5f));   // sign: which edge the rail is against
+inspector.motion(quick);                     // every switch the panel built itself
 Cues cues = new Cues((p, done) -> krono.ramp(ms(240), Ease.LINEAR, p, done));
 ```
+
+Which is the shape the seam is *for*: one ramp, declared once at the application edge, handed to
+every widget that has something to move. Reduced motion is then one place — hand out nothing.
 
 **`vexelray-gui-krono`** attaches [Kronometer](https://github.com/sibarum/kronometer) to the frame
 loop rather than replacing it: `KronoGui.attach(gui)`, ticked from `GuiApp.run`'s `beforeFrame` hook,

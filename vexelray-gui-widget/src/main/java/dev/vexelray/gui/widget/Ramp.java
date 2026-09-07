@@ -16,6 +16,22 @@ import java.util.function.DoubleConsumer;
  *
  * <p>A widget with no ramp installed does whatever it did before there was motion — which is what makes every
  * animation here opt-in, and makes the reduced-motion path simply not calling it.
+ *
+ * <h2>The name is taken twice over, so import this one carefully</h2>
+ *
+ * A <em>colour</em> ramp is also a ramp, and that meaning is the commoner one in a drawing framework — it is
+ * even the one {@link ColorPicker} uses, in this very package, for the strips it paints. So an application that
+ * has its own {@code Ramp} — a colour map, typically — must not import this one: a single-type import
+ * <b>shadows a type of the same name from the importing file's own package</b>, silently and with no complaint
+ * at the import itself, and every {@code Ramp} in that file then means this interface instead. Write this one
+ * out in full at the use site, which for an application installing motion is usually a single field:
+ *
+ * <pre>{@code
+ * private final dev.vexelray.gui.widget.Ramp knob;   // this file's own Ramp is the colour map
+ * }</pre>
+ *
+ * <p>Not hypothetical: it cost {@code calculator-vexel-demo} a working colour picker, whose {@code Ramp} is an
+ * enum of four colour maps.
  */
 @FunctionalInterface
 public interface Ramp {

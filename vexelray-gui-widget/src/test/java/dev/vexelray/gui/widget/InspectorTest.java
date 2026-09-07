@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.DoubleConsumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -336,6 +337,161 @@ class InspectorTest {
 
             assertTrue(t.on());
             assertEquals(1, fired.get());
+        }
+    }
+
+    /**
+     * A ramp that keeps every consumer that asked it for time, so a test can step them all — one panel hands the
+     * same ramp to every switch it built, and a stepper that only remembered the last would drive one knob.
+     */
+    private static final class Shared implements Ramp {
+        final List<DoubleConsumer> progress = new ArrayList<>();
+        final List<Runnable> done = new ArrayList<>();
+
+        @Override
+        public void run(DoubleConsumer p, Runnable d) {
+            progress.add(p);
+            done.add(d);
+        }
+
+        void to(double t) {
+            for (DoubleConsumer p : progress) {
+                p.accept(t);
+            }
+        }
+
+        void finish() {
+            for (Runnable d : done) {
+                d.run();
+            }
+        }
+    }
+
+    /**
+     * Where a switch's knob is across its track, 0 to 1, read from the two spacers that place it — which is the
+     * only honest way to ask, because that ratio <em>is</em> the mechanism (see {@link Toggle}).
+     */
+    private static float knobAt(HeadlessGui h, Node track) {
+        RetainedNode t = h.retained(track);
+        float before = t.children.get(0).w;
+        float after = t.children.get(2).w;
+        return before + after <= 0f ? 0f : before / (before + after);
+    }
+
+    @Test
+    void aKnobGivenTimeTravelsAcrossItsTrackInsteadOfJumping() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Shared ramp = new Shared();
+            Toggle t = new Toggle(h.gui, false).transition(ramp);
+            h.gui.root().children(t.node());
+            h.frame();
+            assertEquals(0f, knobAt(h, t.node()), 0.03f);
+
+            t.on(true);
+            h.frame();
+            assertTrue(t.on(), "the state is not what is being animated -- it changed at the click");
+            assertEquals(0f, knobAt(h, t.node()), 0.03f, "while the knob has not left yet: a ramp starts at 0");
+
+            ramp.to(0.5);
+            h.frame();
+            assertEquals(0.5f, knobAt(h, t.node()), 0.03f);
+
+            ramp.to(1.0);
+            ramp.finish();
+            h.frame();
+            assertEquals(1f, knobAt(h, t.node()), 0.03f);
+        }
+    }
+
+    /**
+     * A duration is a window in which the user can act again, and a switch is the control most likely to be
+     * clicked twice: a knob caught mid-track reverses <b>from where it is</b>, and the flip it superseded must
+     * not be able to finish and put the knob at the end the switch is no longer at. That last one is a wrong
+     * reading rather than a wrong animation, which is what makes it worth a generation and not just a comment.
+     */
+    @Test
+    void aSecondFlipReversesFromTheKnobAndDropsTheFlipItSuperseded() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Shared first = new Shared();
+            Toggle t = new Toggle(h.gui, false).transition(first);
+            h.gui.root().children(t.node());
+            h.frame();
+
+            t.on(true);
+            first.to(0.4);
+            h.frame();
+            assertEquals(0.4f, knobAt(h, t.node()), 0.03f);
+
+            Shared second = new Shared();
+            t.transition(second);
+            t.on(false);            // flipped back with the knob 40% of the way across
+            second.to(0.0);
+            h.frame();
+            assertEquals(0.4f, knobAt(h, t.node()), 0.03f, "it reverses from there, not from the far end");
+
+            second.to(0.5);
+            h.frame();
+            assertEquals(0.2f, knobAt(h, t.node()), 0.03f, "so half of the way back is a fifth of the track");
+
+            first.to(1.0);
+            first.finish();         // the flip that lost, reporting in from a loop that cannot be recalled
+            h.frame();
+            assertEquals(0.2f, knobAt(h, t.node()), 0.03f, "and it cannot move the knob");
+            assertFalse(t.on());
+
+            second.to(1.0);
+            second.finish();
+            h.frame();
+            assertEquals(0f, knobAt(h, t.node()), 0.03f);
+        }
+    }
+
+    /**
+     * The panel builds its own switches — a card head's is the card's, a {@link Property#flag} row's is the
+     * property's — so before {@link Inspector#motion} there was no reach into any of them, and the knob motion
+     * {@code Toggle} has always had was unreachable from a panel without replacing the widget.
+     *
+     * <p>Both are covered by one call, and the row here is declared <em>after</em> it, which is the case that
+     * needs the ramp remembered rather than merely forwarded.
+     */
+    @Test
+    void aPanelsMotionReachesTheSwitchesItBuiltItself() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Shared ramp = new Shared();
+            boolean[] enabled = {false};
+            boolean[] visible = {false};
+            Inspector ins = new Inspector(h.gui);
+            ins.card("Layer", "", () -> enabled[0], v -> enabled[0] = v);
+            ins.motion(ramp);
+            ins.add(Property.flag("", "Visible", () -> visible[0], v -> visible[0] = v));
+            h.gui.root().children(ins.node());
+            h.frame();
+
+            List<RetainedNode> tracks = new ArrayList<>();
+            for (RetainedNode n : allOf(h.retained(ins.node()))) {
+                if ("switch".equals(n.role())) {
+                    tracks.add(n);
+                }
+            }
+            assertEquals(2, tracks.size(), "the card head's switch and the flag row's");
+            for (RetainedNode track : tracks) {
+                h.click(track.x + track.w / 2f, track.y + track.h / 2f);
+            }
+            h.frame();
+
+            assertTrue(enabled[0], "the card switch flipped");
+            assertTrue(visible[0], "and so did the row's");
+            assertEquals(2, ramp.progress.size(), "and both asked the panel's ramp for their time");
+
+            ramp.to(0.5);
+            h.frame();
+            for (RetainedNode track : allOf(h.retained(ins.node()))) {
+                if ("switch".equals(track.role())) {
+                    float before = track.children.get(0).w;
+                    float after = track.children.get(2).w;
+                    assertEquals(0.5f, before / (before + after), 0.03f, "both knobs are mid-track");
+                }
+            }
         }
     }
 

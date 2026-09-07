@@ -60,6 +60,22 @@ public interface Property {
     default void refresh() {
     }
 
+    /**
+     * Offer this property the time for whatever its editor moves — a switch knob crossing its track, say. The
+     * default ignores it, which suits an editor with nothing to animate, and that is most of them.
+     *
+     * <p><b>The same bargain as {@link Readout}</b>, and here for the same reason. The panel owns something a row
+     * might want, hands it to every row, and has no opinion about which rows use it — so an inspector still never
+     * asks what kind a property is, and an application that wants its switches to travel says it once
+     * ({@link Inspector#motion}) rather than per row. A property with no use for a ramp is not asked to have one.
+     *
+     * <p>Called with whatever the panel has, whenever it has it: before {@link #editor} for a row added after the
+     * panel was given its motion, after it for one that was already there, and with null to mean no motion —
+     * which is the default and the whole of the reduced-motion path.
+     */
+    default void motion(Ramp ramp) {
+    }
+
     /** Where a property writes the number, word or nothing that belongs in the row's value column. */
     @FunctionalInterface
     interface Readout {
@@ -228,6 +244,8 @@ final class Rows {
         private final BooleanSupplier get;
         private final Consumer<Boolean> set;
         private Toggle toggle;
+        /** Kept, not just forwarded: the panel may be given its motion before this row is asked for a switch. */
+        private Ramp knob;
 
         Flag(String section, String name, BooleanSupplier get, Consumer<Boolean> set) {
             super(section, name);
@@ -239,6 +257,7 @@ final class Rows {
         public Node editor(Gui gui, Readout value) {
             this.toggle = new Toggle(gui, get.getAsBoolean());
             toggle.onChange(set);
+            toggle.transition(knob);
             return toggle.node();
         }
 
@@ -246,6 +265,14 @@ final class Rows {
         public void refresh() {
             if (toggle != null) {
                 toggle.on(get.getAsBoolean());
+            }
+        }
+
+        @Override
+        public void motion(Ramp ramp) {
+            this.knob = ramp;
+            if (toggle != null) {
+                toggle.transition(ramp);
             }
         }
     }

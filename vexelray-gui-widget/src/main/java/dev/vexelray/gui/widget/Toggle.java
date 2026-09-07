@@ -39,6 +39,10 @@ public final class Toggle {
     private volatile boolean on;
     private volatile Consumer<Boolean> onChange = v -> { };
     private volatile Ramp ramp;
+    /** Where the knob is, 0 to 1 — which is not {@link #on} while it is travelling. Guarded by {@code this}. */
+    private float at;
+    /** Which flip the knob is currently obeying; see {@link #move}. Guarded by {@code this}. */
+    private long generation;
 
     /** Build a switch on {@code gui} in the given initial state. */
     public Toggle(Gui gui, boolean initial) {
@@ -46,6 +50,7 @@ public final class Toggle {
         this.on = initial;
         Theme theme = gui.theme();
         float w = initial ? 1f : 0f;
+        this.at = w;
         this.before = gui.box().width(Length.grow(w)).height(Length.percent(100));
         this.after = gui.box().width(Length.grow(1f - w)).height(Length.percent(100));
         this.knob = gui.box().width(Length.rem(0.7f)).height(Length.rem(0.7f))
@@ -89,8 +94,9 @@ public final class Toggle {
     }
 
     /**
-     * Give the knob its time, so it travels rather than jumps. With no ramp installed the knob moves in one step
-     * — see the class note.
+     * Give the knob its time, so it travels rather than jumps. Passing null, or never calling this, moves the
+     * knob in one step — see the class note. A ramp installed mid-travel takes effect on the next flip; the one
+     * in flight finishes on the terms it started with.
      */
     public Toggle transition(Ramp ramp) {
         this.ramp = ramp;
@@ -101,22 +107,45 @@ public final class Toggle {
         set(!on);
     }
 
+    /** Change state, then tell the application — outside the lock, because the handler is not ours. */
     private void set(boolean value) {
-        boolean was = this.on;
-        this.on = value;
-        paint(false);
-        Ramp r = this.ramp;
-        if (r == null || was == value) {
-            place(value ? 1f : 0f);
-        } else {
-            float from = was ? 1f : 0f;
-            float to = value ? 1f : 0f;
-            r.run(p -> place(from + (to - from) * (float) p), () -> place(to));
-        }
+        move(value);
         onChange.accept(value);
     }
 
-    private void place(float t) {
+    /**
+     * Move the knob to {@code value}, over the ramp if there is one.
+     *
+     * <p><b>From where the knob actually is, not from the other end.</b> A switch flipped again mid-travel
+     * reverses from wherever it had got to; taking {@code from} to be the state it logically left would make a
+     * fast second click jump the knob to a position it was never in and then walk it back.
+     *
+     * <p>And <b>every flip supersedes the one before it</b>. A duration is a window in which the user can act
+     * again, and two ramps writing one pair of widths is a race whose loser then finishes and writes the target
+     * it was aiming at — leaving the knob at the end the switch is no longer at, a wrong reading rather than a
+     * wrong animation. The generation is what a superseded ramp finds when it tries: the last write of a lost
+     * flip is dropped, so a transition never has to learn that it lost.
+     */
+    private synchronized void move(boolean value) {
+        boolean was = this.on;
+        this.on = value;
+        paint(false);
+        long mine = ++generation;
+        Ramp r = this.ramp;
+        if (r == null || was == value) {
+            place(mine, value ? 1f : 0f);
+        } else {
+            float from = this.at;
+            float to = value ? 1f : 0f;
+            r.run(p -> place(mine, from + (to - from) * (float) p), () -> place(mine, to));
+        }
+    }
+
+    private synchronized void place(long forFlip, float t) {
+        if (forFlip != generation) {
+            return;
+        }
+        this.at = t;
         before.width(Length.grow(t));
         after.width(Length.grow(1f - t));
     }

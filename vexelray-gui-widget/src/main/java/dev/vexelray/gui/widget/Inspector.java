@@ -95,6 +95,8 @@ public final class Inspector {
     private final List<Property> properties = new ArrayList<>();
     private final Map<String, Node> headings = new LinkedHashMap<>();
     private final List<Card> cards = new ArrayList<>();
+    /** The time this panel gives whatever its controls move; null for none, which is the default. */
+    private volatile Ramp knobs;
 
     /** Build an empty inspector on {@code gui}. */
     public Inspector(Gui gui) {
@@ -139,6 +141,34 @@ public final class Inspector {
         cards.add(c);
         body.append(c.node());
         return c;
+    }
+
+    /**
+     * Give the switches in this panel their time, so a knob crosses its track rather than jumping — every card
+     * head's switch and every row whose editor has something to move, the ones already here and the ones added
+     * afterwards. Passing null, or never calling this, keeps the instant flip, which is what this panel did
+     * before there was any motion and is the whole of the reduced-motion path.
+     *
+     * <p><b>Why it is said here rather than to each control.</b> A panel builds its own switches — a card head's
+     * is the card's, and a {@link Property#flag} row's is the property's — so before this there was no reach into
+     * them at all and {@link Toggle#transition} was unreachable from the outside: the motion could only have been
+     * had by an application replacing the widget. So the panel offers the ramp to everything it built and lets
+     * each decide (see {@link Property#motion}), which keeps the routing one line here and asks nothing of a
+     * property that has nothing to animate.
+     *
+     * <p>Only the knobs. A card's <em>fold</em> is still instant — that is a layout animation rather than a
+     * transform, so it belongs with the one {@code TreeView} runs for a subtree and is not this method dressed
+     * up differently.
+     */
+    public Inspector motion(Ramp knobs) {
+        this.knobs = knobs;
+        for (Property p : properties) {
+            p.motion(knobs);
+        }
+        for (Card c : cards) {
+            c.motion(knobs);
+        }
+        return this;
     }
 
     /** Re-read every property and card from the model. See {@link Property} on getters rather than values. */
@@ -193,6 +223,9 @@ public final class Inspector {
                 .textColor(theme.color(Role.FAINT))
                 .align(dev.vexelray.text.TextLayout.HAlign.RIGHT, dev.vexelray.text.TextLayout.VAlign.MIDDLE);
         Node control = property.editor(gui, value::text);
+        // Offered to every row, wherever the row came from — the panel or one of its cards — so a row added
+        // after the panel was given its motion is not the one that jumps. Most rows ignore it.
+        property.motion(knobs);
         return gui.row().role("inspector-row")
                 .width(Length.grow(1f))
                 .gap(ROW_GAP)
@@ -227,7 +260,7 @@ public final class Inspector {
             this.toggle = new Toggle(gui, on.getAsBoolean()).onChange(v -> {
                 toggle.accept(v);
                 paint();
-            });
+            }).transition(knobs);
             Node name = gui.text(title).width(Length.grow(1f))
                     .textSize(TITLE_SIZE).wordWrap(false)
                     .textColor(theme.color(Role.INK));
@@ -304,6 +337,19 @@ public final class Inspector {
         /** Set the badge text. */
         public Card badge(String text) {
             badgeNode.text(text);
+            return this;
+        }
+
+        /**
+         * Give this card's switch, and the rows inside it, their time — one card's worth of what
+         * {@link Inspector#motion} says for the whole panel. A later panel-wide call wins, which is the point:
+         * the panel is where a reduced-motion setting is honoured in one place.
+         */
+        public Card motion(Ramp ramp) {
+            toggle.transition(ramp);
+            for (Property p : own) {
+                p.motion(ramp);
+            }
             return this;
         }
 

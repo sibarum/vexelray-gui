@@ -513,6 +513,16 @@ of doing this first was that fifteen components should not each remember their o
   take a keystroke. Building lazily is the affordable half — six panels cost one panel's nodes until the others
   are asked for. The icons keep their places whether the panel is open or shut and the panel takes its space
   from the content, so the icon under the pointer when the panel opens is the icon under it afterwards.
+
+  Motion arrived after the rest of it, and the *none* state is what made it a different problem from `Tabs`.
+  Hiding the panel was the first thing a close did, which left nothing to animate — not through a seam, because
+  there wasn't one, and not from outside either, because `onSelect` was told afterwards and so could only ever
+  have been looking at a panel already gone. So the order is inverted: the selection changes and the handler is
+  told, then the motion runs, and the panel is put away by `settle()` when it reports done. `PanelTransition`
+  gets the three changes apart — open, close, swap — which is what decides *what* moves: the panel when it
+  appears or goes, the pages when they trade places, never both at once. There is no paint order in `Rail.Change`
+  and that is not an omission — a rail's icons are tools rather than a sequence, so a swap has no direction; the
+  direction that exists is which edge the rail is against, and only the application knows it.
 - ~~**`Inspector` / `Property`.**~~ **Done**, and it is the entry that most needed the "carries an invariant"
   test applied honestly, because a settings panel looks like the most application-shaped thing there is. What
   makes it not: a panel hand-built out of rows *is* the schema, so what is settable can only be read off the

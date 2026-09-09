@@ -1132,6 +1132,39 @@ public final class TreeView<T> implements AutoCloseable {
         return this;
     }
 
+    /**
+     * Open the tree down to the last item of {@code chain} and select it — the reveal that has to <em>unfold</em>
+     * the tree to get there, where {@link #select} only ever lands on a row that is already open.
+     *
+     * <p><b>{@code chain} is the way down, not a search.</b> Its first item is a root row, each next is a child of
+     * the one before, and the last is the one to select. The tree cannot work that out for itself — a
+     * {@link Source} describes children and never parents — so the application, which knows its own hierarchy,
+     * says it. A caller with only the item and no way down wants {@link #expandAll} or the find bar instead.
+     *
+     * <p>The walk runs on the handler executor and opens each level as it lands, exactly as {@link #expandAll}
+     * does and for the same reason: every level may fetch children, and a fetch belongs nowhere near the frame
+     * loop. It is an action like any other, so it supersedes whatever was running and gives way to whatever comes
+     * next.
+     *
+     * <p>{@code then} runs once the walk has ended, on the handler executor — somewhere to put whatever wanted the
+     * row that now exists, a mark on it being the case this was written for. It does not run when the walk was
+     * superseded, which is the same rule the walk itself obeys.
+     *
+     * <p><b>Not reaching the end is not an error.</b> A level the source no longer offers stops the walk where it
+     * is: the tree is left open as far as it got, nothing is selected, and {@code then} still runs — the caller
+     * asked about a hierarchy that has moved under it, and that is an answer rather than a failure.
+     */
+    public TreeView<T> revealPath(List<T> chain, Runnable then) {
+        List<T> path = List.copyOf(chain);
+        Job job = begin();
+        gui.handlers().execute(() -> {
+            if (revealChain(path, job) && then != null) {
+                then.run();
+            }
+        });
+        return this;
+    }
+
     /** Select {@code item} if it has a row and every ancestor is expanded; otherwise a no-op. */
     public TreeView<T> select(T item) {
         Row r;
@@ -1590,6 +1623,49 @@ public final class TreeView<T> implements AutoCloseable {
                 }
             }
         }
+    }
+
+    /**
+     * Walk {@code path} from its root row down, opening every level but the last, and select what it ends on.
+     *
+     * <p><b>Each level is opened and fetched before the next is looked for</b>, which is the whole of why this is
+     * a walk on this thread rather than a handful of {@link #expand} calls: a row's children do not exist until
+     * its fetch has landed, so a caller that asked for the levels one after another would be looking for rows
+     * nobody had built yet, and would find the deepest of them missing every time.
+     *
+     * <p>Materialisation is claimed under the monitor and performed outside it, as {@link #expandDeep} does — a
+     * slow {@link Source#children} must not hold the lock the frame's stages need. A level whose fetch is already
+     * in flight from a click is left to that fetch, and this finds its children built or not at all.
+     *
+     * @return whether the walk reached its end rather than being superseded part way down
+     */
+    private boolean revealChain(List<T> path, Job job) {
+        for (int i = 0; i < path.size() - 1; i++) {
+            if (!job.live()) {
+                return false;
+            }
+            Row row;
+            synchronized (this) {
+                row = rowsByItem.get(path.get(i));
+            }
+            if (row == null) {
+                return true;   // a level that is no longer there: as far as this goes, and the caller still runs
+            }
+            if (openLocked(row)) {
+                materialize(row);   // may touch a disk: outside the monitor, on the handler executor
+            }
+        }
+        if (!job.live()) {
+            return false;
+        }
+        Row target;
+        synchronized (this) {
+            target = path.isEmpty() ? null : rowsByItem.get(path.getLast());
+        }
+        if (target != null) {
+            select(target, true);
+        }
+        return true;
     }
 
     /**

@@ -383,7 +383,11 @@ instrument, which is the strongest available guarantee that what the agent synth
   Core, input and frame-loop events instrumented — including the unconditional `frame.present` heartbeat and
   `loop.park`, without which a stall is indistinguishable from an idle window.
 - **A3 — Virtual cursor + paths.** *(Landed: `vexelray-gui-automation`, `Cursor` — stateful, stepped at 125Hz, real-time paced, `move`/`click`/`drag`/`scroll`.)*
-- **A4 — Protocol + CLI.** *(Landed: `Automation` + `AutomationServer`, a loopback line protocol. `go` reuses the framework's own navigation, so a concealed target is revealed rather than refused. `csvview` in atchung-probe.)*
+- **A4 — Protocol + CLI.** *(Protocol landed: `Automation` + `AutomationServer`, a loopback line protocol. `go` reuses the framework's own navigation, so a concealed target is revealed rather than refused. `csvview` in atchung-probe.)*
+  **The CLI half did not land** — there is no client on the stack, and `nc` is not present on the Windows
+  development box, so the usage example above is the format's documentation rather than a runnable command.
+  Designed in [automation-cli.md](automation-cli.md), together with the retirement of per-application
+  `--capture` that it unblocks.
 - **A6 — Clipping, found by driving a real table.** *(Landed: `NodeLayout.visibleRect` + `Clip` in core;
   reveal-or-refuse in `Automation.target`; `table` / `row` / `columnheader` / `columngrip` / `rowgroup` roles on
   `Table` and `list` / `listitem` on `ListView`.)* The driver clicked a ref for a row a hundred thousand-row

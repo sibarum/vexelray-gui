@@ -22,12 +22,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 /**
  * The application's dialogs: one entity, asked from anywhere, showing one dialog at a time.
  *
  * {@snippet :
- * Modals.install(app);                                    // once, at the application edge
+ * Modals.install(app, appearance::applyTo);               // once, at the application edge
  * ...
  * Modals.show(Modal.of("Delete file", "This cannot be undone.")
  *         .defaultButton("Delete", this::delete)
@@ -40,6 +41,14 @@ import java.util.concurrent.atomic.AtomicReference;
  * window of the application is <b>disabled by the window manager</b> and dimmed
  * ({@link GuiApp#modalWindow}): clicking a blocked window flashes the dialog rather than doing nothing quietly,
  * and the dimming says why. Modality is not the application remembering to ignore events.
+ *
+ * <p><b>The application's look reaches it, because it is asked for.</b> The dialogs own a {@link Gui} of
+ * their own, and a fresh {@code Gui} is {@link Theme#DARK} — so the look has to be handed in or the
+ * sentence above is a promise this class cannot keep. {@link #install(GuiApp, Consumer)} takes the
+ * application's own appearance seam rather than a {@link Theme}, because how far a window zooms and what
+ * colours it resolves are one decision about how it looks: a dialog matching the application's colours but
+ * not its zoom is the same defect one step smaller. The framework passes
+ * {@code shell.appearance()::applyTo}.
  *
  * <p><b>One at a time, in order.</b> Two worker threads that both decide to ask something do not produce two
  * dialogs fighting over the screen: the second waits ({@link ModalQueue}) and is presented when the first
@@ -85,8 +94,13 @@ public final class Modals implements AutoCloseable {
     private record Live(Modal modal, AtomicReference<NativeWindow> window, AtomicBoolean dismissed) {
     }
 
-    private Modals(GuiApp app) {
+    private Modals(GuiApp app, Consumer<Gui> appearance) {
         this.app = app;
+        // The look first, before a single prop is written: a role resolves at the moment a widget writes a
+        // colour, so a theme installed after the tree is built reaches nothing that is already in it.
+        if (appearance != null) {
+            appearance.accept(gui);
+        }
         this.bar = new TitleBar(gui, WindowControls.NONE, "");
         this.message = gui.text("")
                 .width(Length.FILL).height(Length.grow(1))
@@ -118,20 +132,40 @@ public final class Modals implements AutoCloseable {
     }
 
     /**
-     * Install the application's dialogs on {@code app} and make them reachable from the static methods here.
-     * Called once, at the application edge; installing again replaces the instance (the previous one's dialogs
-     * are left to close on their own).
+     * Install the application's dialogs on {@code app}, wearing the application's own look, and make them
+     * reachable from the static methods here. Called once, at the application edge; installing again replaces
+     * the instance (the previous one's dialogs are left to close on their own).
+     *
+     * <p>{@code appearance} is handed the dialogs' own {@link Gui} before their tree is built, so whatever it
+     * sets is what every dialog resolves its colours and its lengths against. It is the same seam every other
+     * window the framework opens goes through, and a dialog is exactly the window that seam was written for:
+     * one the framework opens, holding a tree the application never built and its look would otherwise never
+     * reach.
+     *
+     * @param appearance applied to the dialogs' tree before it is built, typically
+     *                   {@code shell.appearance()::applyTo}; {@code null} for the library default look, which
+     *                   is what {@link #install(GuiApp)} means
      */
-    public static Modals install(GuiApp app) {
+    public static Modals install(GuiApp app, Consumer<Gui> appearance) {
         if (app == null) {
             throw new IllegalArgumentException("app must not be null");
         }
-        Modals modals = new Modals(app);
+        Modals modals = new Modals(app, appearance);
         INSTANCE.set(modals);
         return modals;
     }
 
-    /** The installed instance, or null if {@link #install} has not been called. */
+    /**
+     * Install the dialogs with the library's default look — for an application that has made no decision
+     * about how it looks, and so has none to pass on. Anything else calls
+     * {@link #install(GuiApp, Consumer)}: a dialog drawn dark inside a light application is what this overload
+     * costs, and that is a choice here only because the other one exists to make.
+     */
+    public static Modals install(GuiApp app) {
+        return install(app, null);
+    }
+
+    /** The installed instance, or null if {@link #install(GuiApp, Consumer)} has not been called. */
     public static Modals instance() {
         return INSTANCE.get();
     }
@@ -140,7 +174,7 @@ public final class Modals implements AutoCloseable {
     public static void show(Modal modal) {
         Modals modals = INSTANCE.get();
         if (modals == null) {
-            throw new IllegalStateException("Modals.install(app) before showing a dialog");
+            throw new IllegalStateException("Modals.install(app, appearance) before showing a dialog");
         }
         modals.present(modal);
     }
@@ -201,6 +235,12 @@ public final class Modals implements AutoCloseable {
         Live current = new Live(modal, new AtomicReference<>(), new AtomicBoolean());
         live.set(current);
 
+        // The two colours the shared tree wrote once at construction, written again here. The buttons below
+        // are rebuilt per dialog and pick the theme up as they go; without these two, an application that
+        // changed its look after installing the dialogs would show a page and a message still wearing the old
+        // one.
+        gui.root().background(gui.theme().color(Role.PAGE));
+        message.textColor(gui.theme().color(Role.INK));
         bar.title(modal.title());
         message.text(modal.message());
         for (Node old : buttons) {

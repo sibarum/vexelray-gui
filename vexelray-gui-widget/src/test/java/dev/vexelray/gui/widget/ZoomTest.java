@@ -8,11 +8,11 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
- * Zoom is the check on §6's "no pixel unit": every length resolves through it, so doubling the factor must double
+ * Zoom is the check on Â§6's "no pixel unit": every length resolves through it, so doubling the factor must double
  * <em>everything</em>, and anything still pinned to device pixels stands still while the rest grows.
  *
  * <p>The text inset is the case worth pinning down, because it is the one that used to fail. It was a bare
- * {@code 10f} in two places while the scrollbar beside it was already {@code 0.85em} — so at 2× the box grew and
+ * {@code 10f} in two places while the scrollbar beside it was already {@code 0.85em} â so at 2Ã the box grew and
  * the gap between the border and the first glyph did not.
  */
 class ZoomTest {
@@ -33,7 +33,7 @@ class ZoomTest {
 
             float inset2x = f.node().layout().text().caretX(0) - f.node().layout().rect().x();
             assertEquals(2f * inset1x, inset2x, 0.5f,
-                    "at 2x the text inset doubles like everything else — it is an em, not ten pixels");
+                    "at 2x the text inset doubles like everything else â it is an em, not ten pixels");
         }
     }
 
@@ -54,14 +54,18 @@ class ZoomTest {
         }
     }
 
-    /** Zoom is clamped, so a runaway shortcut cannot drive the layout to zero or to absurdity. */
+    /**
+     * Zoom is clamped, so a runaway shortcut cannot drive the layout to zero or to absurdity — and clamped to
+     * {@code Gui}'s default range, which is the same 0.5 to 3 every application on this stack asks for. Pinned
+     * here so the library default and the ranges its consumers choose cannot drift apart quietly again.
+     */
     @Test
     void zoomIsClamped() {
         try (HeadlessGui h = new HeadlessGui()) {
             h.gui.zoom(1000f);
-            assertEquals(4f, h.gui.zoom().value(), 0.001f);
+            assertEquals(3f, h.gui.zoom().value(), 0.001f);
             h.gui.zoom(0f);
-            assertEquals(0.25f, h.gui.zoom().value(), 0.001f);
+            assertEquals(0.5f, h.gui.zoom().value(), 0.001f);
         }
     }
 

@@ -1,7 +1,9 @@
 # vexelray-gui — TODO
 
 Deferred work, each with enough context to pick up cold. Nothing here is a bug in shipped behaviour; it is work
-that was identified while doing something else and correctly left alone at the time.
+that was identified while doing something else and correctly left alone at the time. There was one exception,
+§6.2 — not a bug when it was written, and one from the moment the framework began installing the dialogs —
+and it is fixed.
 
 Ordered within each section by "would I regret not doing this", not by size.
 
@@ -64,16 +66,21 @@ CAS retry, and must stay pure. Any conversion inherits that, which suits methods
 **Done looks like:** `Edit.apply(Document)` per record; `Document.apply(Edit)` becomes one delegation.
 `TextEditTest` and `SpanTest` unchanged and green.
 
-### 1.4 `GuiApp:591` — a throwing default on our own value
+### 1.4 ~~`GuiApp` — a throwing default on our own value~~ — **Done**, by deletion
 
-`default -> throw new IllegalArgumentException("unsupported component count " + components)`.
+`default -> throw new IllegalArgumentException("unsupported component count " + components)`, in
+vertex-attribute setup. This and §6.7 were the same eight lines described twice, from opposite directions:
+here as a throwing default worth converting, there as the fifth copy of a mapping upstream had just
+deduplicated four times over. §6.7's answer settles both — the switch is gone rather than converted, because
+`GraphicsPipeline.VertexAttribute.floats` already owns the mapping beside the type that carries a
+`VK_FORMAT_*`.
 
-A switch on an int component count with a throwing default. Not a type switch, but the same smell: the value's
-domain is small and known, so it should be a type with the mapping on it rather than an int with an exception for
-the cases we did not enumerate.
-
-**Not urgent.** It is in vertex-attribute setup, it is our own data so the throw is unreachable in practice, and
-that unreachability is precisely the tell.
+**Worth keeping, because it is not what the note expected.** The note reached for "make it a type with the
+mapping on it", and the throw is still there — one layer down, in the module whose value it is. That is the
+same conclusion the rule reaches by a shorter route: behaviour belongs to the type it is about, and a
+`VK_FORMAT_*` is Vulkan's, not ours. The cheapest fix for a throwing default is sometimes finding out that
+somebody who owns the domain has already made the decision, and refusing 3 components is now theirs,
+documented, rather than ours by accident.
 
 ### 1.5 `InputEvent` — sealed, and the switch is the documented API
 
@@ -612,7 +619,285 @@ Both are `semantic-read-model.md` §5's table, which is where the current state 
 
 ## 5. Engine-side (lands in `vexelray`, not here)
 
+- **A `Canvas` that can be uploaded without being copied.** Stated with its measurement, and with the GUI-side
+  allocation it is paired with, in §6.6.
 - **A math face in the primary atlas.** Fully specified in `vexelray/docs/math-face.md`: the `<extraFont>` entry,
   the charset to take and in what priority, the atlas budget, and how to verify. It is a quality upgrade on a
   working feature, not a prerequisite — `-typeset` degrades to upright variables where the U+1D400 block is
   absent, and everything else already renders on today's atlas.
+
+---
+
+## 6. What the siblings moved under us
+
+Both repos below this one have just been through a refactor, and each ended somewhere that changes what the right
+answer is *here*. Nothing in this section was wrong when it was written; every item is something that became
+worth doing when a sibling landed.
+
+- **`vexelray`** replaced its sealed `Pass` enumeration with the open `RenderTechnique` SPI and grew a
+  `vexelray-engine` that owns instance, device, surface, swapchain, render pass, depth and the frame loop. It
+  ships `vexelray-technique-canvas`, and its own TODO gives the reason that module exists: *"six demos each carry
+  a copy of eighty lines of instance/device/swapchain/presenter wiring."*
+- **`vexelray-framework`** is absorbing the application edge — the ~350 lines every application on this stack
+  wrote for itself. Three are ported. Its `docs/TODO.md` has an **Upstream** section, and the single entry in it
+  is ours (§6.2).
+
+Ordered by leverage, as everywhere else on this page.
+
+**One of them had already stopped the build, and is fixed.** `Canvas.image` and `Canvas.Run.image` took
+`Object` until `vexelray` published `dev.vexelray.target.ImageHandle` — a marker whose whole content is
+*which side of the binding seam a value came from*, and whose own Javadoc names the GUI as the reason it
+exists. `RetainedNode.image()` was the last `Object` on that path and is now an `ImageHandle`; the model still
+names no GPU type, because the marker declares nothing. Nothing in this repo compiled against the current
+engine until that changed, so it is worth knowing that a sibling can move under us hard enough to break the
+build and not only to make an item on this page worth doing.
+
+### 6.1 `GuiApp` is the stack's seventh composition root
+
+`vexelray-engine` exists to end exactly the wiring `GuiApp` and `GuiWindow` do by hand, and the framework's TODO
+already names us: *"`vexelray-engine` is a second composition root, and `GuiApp` is the first."*
+
+The duplication is measurable. Across two files there are five `new GraphicsPipeline` sites and three
+`new VulkanRenderPass` sites — the windowed path, the per-window capture path and the headless one — and
+`CanvasTechnique` (224 lines, in `vexelray`) is our renderer written a second time: same fat-vertex format, same
+uber-shader, same one-bind-plus-N-rebinds run list. `vexelray-gui-core/pom.xml` names `vexelray-vulkan` and does
+not know that `vexelray-engine`, `vexelray-engine-api` or `vexelray-technique-canvas` exist.
+
+**This is not a straight swap, and the difference is the interesting part.** The engine drives *one* target;
+`GuiApp` drives N windows on one device, and `GuiWindow.frame` is not only a present — it pumps that window's
+input, republishes `WindowRegion`s to the OS for client-drawn chrome, and services the frames Windows demands
+mid-drag. The engine has no notion of a second window, so adopting it means either N engines on one device (which
+`EngineConfig` does not describe) or a multi-target engine (which is an upstream design, not a port).
+
+**And there is a reason to be slow.** `VexelEngine.create` resolves an `EngineProvider` through `ServiceLoader`.
+`GuiApp` says `new VulkanInstance` and reflects nowhere — which is precisely the property the framework's
+native-image story rests on, and it does not yet aggregate reachability metadata. Adopting the engine would hand
+every application metadata that nothing on the stack currently has a place for.
+
+**Done looks like:** the decision written down, either way. Today the duplication reads as an oversight; it
+should read as a choice, with the multi-window requirement and the `ServiceLoader` cost as its stated reasons. If
+the answer is eventually yes, the first movable piece is the *headless* path (§6.8), which is single-target and
+has none of the multi-window problem.
+
+### 6.2 ~~`Modals` draws in the wrong theme~~ — **Done**
+
+`Modals.install(GuiApp, Consumer<Gui>)` exists and is applied to the dialogs' `Gui` before their tree is
+built, which is the load-bearing order: a role resolves at the moment a widget writes a colour, so a theme
+installed after the fact reaches nothing already in the tree. A `Consumer` and not a `Theme`, for the reason
+the note gave and the framework's `Appearance.applyTo` already embodies — how far a window zooms and what
+colours it resolves are one decision, and a dialog matching an application's colours but not its zoom is the
+same defect one step smaller.
+
+**Two things the note did not anticipate.**
+
+- **The one-argument `install` stayed**, delegating with a null appearance, and is documented as the library
+  default look for an application that has made no decision to pass on. That is a different thing from an
+  application whose decision never arrived, and it is only a choice rather than an accident because the other
+  overload now exists to make.
+- **The look is re-derived per dialog, not only at install.** The shared tree writes the page background and
+  the message colour once at construction; the buttons are rebuilt per dialog and pick the theme up as they
+  go, so those two were the only parts that would still be wearing whatever the application looked like when
+  the dialogs were installed. `open` now rewrites them. An application that changes its theme at runtime gets
+  a correct next dialog rather than a stale one.
+
+`vexelray-gui-demo` passes its own look through, which is what makes this observable here at all: the demo
+already reads `theme=light` from its settings, and its frames-capped run puts a dialog up. Its theme and zoom
+range now come from one `look(Gui, Theme)` — the demo's own miniature of `Appearance.applyTo` — with the main
+window and the dialogs as its two callers, which is the whole point of the seam.
+
+**What is not done: an automated guard, and §6.11 is why.** `Modals.install` takes a `GuiApp`, so the seam
+cannot be reached without a real application; `vexelray-gui-harness` is exactly the thing that supplies one,
+and a dialog put up under it asserts correctly and then cannot be torn down. The test was written, passed its
+assertions, failed in teardown, and was withdrawn rather than left disabled. Also still owed: the framework's
+call site, which is one line (`Modals.install(app, shell.appearance()::applyTo)` at
+`VexelApplication.java:248`) and needs this repo installed first — the entry under **Upstream** in
+`vexelray-framework/docs/TODO.md` can be closed with it.
+
+### 6.3 ~~The zoom range default is the one range nobody chose~~ — **Done**, taken as 0.5–3
+
+`DEFAULT_MIN_ZOOM`/`DEFAULT_MAX_ZOOM` are `0.5f`/`3f`, which is what all five callers who had an opinion
+wrote. The wider bounds were not deliberate, and the decisive argument is that they were never a *limit* in
+the first place: `zoomRange` accepts anything down to 0.01, so tightening the default costs an application
+that wants to go further nothing but a line saying so. A default is for the caller who has no opinion, and
+every caller who had one agreed.
+
+The reason is now in the constant's Javadoc rather than nowhere, which was the actual complaint. Two tests
+pin it — `MinSizeAndZoomTest.narrowingTheRangeReclampsTheCurrentFactor` and `ZoomTest.zoomIsClamped` — so the
+library default and its consumers' ranges cannot drift apart quietly again.
+
+**Found while doing it, and fixed:** `Gui.zoom(float)`'s Javadoc said *clamped to `{@value #MIN_ZOOM}`,
+`{@value #MAX_ZOOM}`* against two constants that do not exist — a dangling `{@value}` and, worse, a
+description of a fixed clamp when the clamp has been configurable for some time. It now names the configured
+range and inlines the default.
+
+### 6.4 Three types are packed and waiting, and one artificial edge holds them
+
+Step 3 of the framework's absorption sweep moves `Settings`, `AppHome` and `WindowMemory` out of this repo. It is
+sequenced last and described as *"a single coordinated change or it is a broken build"* — Java has no type
+aliases, so no deprecation window is available.
+
+The good news is real: `GuiApp`'s only two mentions of `Settings` are prose (`:145` and `:337`, `{@code}`, not
+even `{@link}`), so the frame loop has **zero** compile coupling to the settings store. The three types reference
+each other, the demo, and their own tests.
+
+**~~And the single remaining edge into this repo is artificial.~~ — Done.** `WindowMemory.java`'s
+`Desktop PLATFORM` was `GuiApp::workArea`, and `GuiApp.workArea` is a one-line static delegate to
+`NativePlatform.current().workArea(x, y)` that touches no `GuiApp` state. It now calls `NativePlatform`
+directly, written as a lambda rather than a method reference so the platform is still resolved per call. The
+remaining mention of `GuiApp` in that file is `{@code}` prose saying what it used to point at, which is the
+same shape `GuiApp`'s own two mentions of `Settings` have.
+
+**The note overstated the result, and the correction matters for sequencing.** This did *not* leave the three
+types with no reference outside their own package: `WindowMemory` imports `dev.vexelray.gui.core.Gui`, and
+genuinely needs to — it remembers a window's *zoom*, and zoom is a `Gui` property (`watch` restores it,
+`poll` reads it back). That edge is not artificial and will not go away; the sweep moves a type that names
+`Gui`, which is fine because `Gui` is not moving. What has gone is the one reference that had no reason to be
+there, which was the point.
+
+### 6.5 Six capability drops go to the console; one goes to `Diagnostics`
+
+`vexelray-diagnostics` is a one-class module that depends on nothing, exists so a seam can say it silently
+dropped something a consumer asked for, and is reachable from every module here. The framework's `-shell` routes
+six reports through it. We route one — `GuiApp:1201`, the foreign-device capture case, and it is the newest code
+of the seven.
+
+The other six say it to the console instead:
+
+| Site | What is dropped |
+| --- | --- |
+| `GuiApp.java:627` | a screenshot that could not be written |
+| `GuiWindow.java:322` | a frame truncated because it needed more vertices than the buffer holds |
+| `WindowMemory.java:356` | window placement that could not be saved |
+| `Gui.java:1504` | an `onWork` listener that threw, so frames may stop arriving |
+| `AutomationServer.java:78` | a driver command that failed |
+| `Automation.java:574` (prose) | a capture sink that does nothing |
+
+`WindowMemory:356` uses `System.out`; the rest use `System.err`. That inconsistency is the tell — six
+independent decisions about where a dropped capability goes, taken one at a time, which is the state
+`Diagnostics` was written to end.
+
+**Done looks like:** the six route through `Diagnostics.dropped`, and a guard in `vexelray-gui-architecture` goes
+red on the seventh. That module already has the pattern — `LayeringGuardTest` scans the compiled constant pool
+and carries its own proof-of-life test, so a scan that had stopped matching could not pass for a clean codebase —
+and `System.err`/`System.out` in a main source is a simpler thing to look for than a forbidden package.
+
+### 6.6 Two allocations per window per frame
+
+`vexelray` has just been through this: *"No per-frame allocation in `SdfRaymarchTechnique.record`"* is a shipped
+item, and the fix was to write into caller-owned storage. The rule has not reached the GUI's frame path, which is
+the busiest one on the stack.
+
+- **`Canvas.toVertexArray()`** (`vexelray`, `Canvas.java:445`) is `new float[count]` plus an `arraycopy` of the
+  whole batch. `GuiWindow` calls it every frame, per window (`:303`, and again at `:237` on the capture path).
+  `CAPACITY_FLOATS` is 16 MB, so that is the ceiling on the garbage one window can produce per frame for no
+  reason other than that the accessor returns a copy.
+
+  **The fix is upstream, and we are the loudest consumer.** `CanvasTechnique:122` does the identical thing, so
+  this is a `Canvas` API gap rather than a GUI mistake — the shape is an accessor for the backing array beside
+  the existing `vertexCount()`, or a `VertexBuffer.update(Canvas)`, since `VertexBuffer.update(float[], int)`
+  already takes a length and never needed the array to be tight.
+
+- **`GuiApp.bind`** (`:1159`) allocates an `ArrayList` and a `WindowedPresenter.Run` per run, every frame, per
+  window. Unlike the above this one is entirely ours, and the run list is short — but it is called from inside
+  the frame budget and the storage could be owned by the `GuiWindow` that asks for it.
+
+**Done looks like:** a still window allocates nothing per frame. Worth measuring before doing: `Probe` already
+counts vertices and runs on the DRAW lane every frame (`GuiWindow:301`), so the number that would justify this is
+one the instrument can already produce.
+
+### 6.7 ~~A fifth copy of `vkFormat`, and it is a throwing default~~ — **Done**
+
+`GuiApp`'s private `vkFormat(int components)` is gone; `canvasConfig` builds its attributes with
+`GraphicsPipeline.VertexAttribute.floats(location, components, offset)`. One import fewer to write, one
+`default -> throw` on our own value retired — §1's rule collected rather than converted — and the refusal of
+3 components is now upstream's documented decision instead of a copy that looked like an oversight.
+
+Upstream has just deleted this function four times over. `GraphicsPipeline.VertexAttribute.floats(location,
+components, offset)` and `GraphicsPipeline.floatFormat(int)` exist now, with the same three cases, the same
+throw, and a Javadoc explaining that 3 components is refused deliberately rather than forgotten
+(`R32G32B32_SFLOAT` is not guaranteed as a vertex format). That dedup counted the copies *inside* `vexelray`;
+ours is in another repo and was out of its reach.
+
+
+### 6.8 The capture builds its own device, and that is why viewports come out blank
+
+`GuiApp.capture` (`:996`) is static and constructs a whole second world: its own `VulkanInstance`, its own
+`VulkanDevice`, its own render pass, atlas and pipeline. That is the direct cause of the one `Diagnostics` report
+we do route — a descriptor set means nothing to a device other than the one that allocated it, so a capture of a
+tree holding a marched viewport comes out correct about every panel and border and blank exactly where the
+content was.
+
+`bindable()`'s Javadoc calls the substitution *"right, and it stays"*, and for a genuinely device-less capture it
+is. But most captures are taken by an application that is *already running* and already has a device — and for
+those the whole problem is self-inflicted.
+
+**Done looks like:** an instance `capture(...)` on `GuiApp` that renders on this application's device and atlas.
+The foreign-device case then disappears for every application photographing its own tree, and the static overload
+stays for the one case that needs it. Two further reasons to want it:
+
+- It is the piece of §6.1 with no multi-window problem — single target, no swapchain — so it is where an
+  engine-backed path would start.
+- It goes through `OffscreenDraw`, one of the three private copies of the Vulkan struct layouts `vexelray`'s own
+  P2 wants to consolidate, and which its planned `Target.Kind.OFFSCREEN` / `OffscreenPresenter` work would
+  supersede. Fewer callers is strictly better for that migration. Note the upstream half is **not** available
+  yet: `OFFSCREEN` is authorable and throws.
+
+### 6.9 `Automation` is bound to one `Gui`, and the tree already knows how to name a window
+
+`Automation.java:71` takes one `Gui` and one `WindowControls` at construction. A multi-window application
+therefore needs one `Automation` and one socket per window: `vexelray-designer` binds its second itself at
+`Driver.port() + 1`, because `tree` on the first does not list the viewport and `shot` on it photographs the
+wrong window.
+
+The framework has recorded its half and declined to act — *"one application is not a census"* — and it also
+recorded the two things that make the designer's second driver awkward: a named window's controls arrive *after*
+the driver starts, and are replaced when the window is reopened.
+
+**Both of those are already solved here, for a different caller.** `GuiApp` keeps `named` windows and routes an
+`Address` that names one, and `Automation:365` already parses an `Address` for its own `go` command. So the
+addressing vocabulary exists and the driver simply does not use it — and resolving the window per command is
+exactly what makes late-and-replaceable controls a non-problem, since nothing is captured at construction.
+
+**Done looks like:** an `Automation` over a `GuiApp` that resolves its target window per command, so one socket
+drives an application rather than a window. Recorded here as the GUI half so the two halves are not proposed
+independently — the framework's sketched `Driver.open(shell, gui, controls, offset)` is the shape this would make
+unnecessary.
+
+### 6.10 Two smaller things, from reading the same files
+
+- **The vertex buffer does not grow.** `GuiWindow.java:77`, `CAPACITY_FLOATS`, 16 MB — and its own comment says
+  *"the real fix is a buffer that grows; until it does, `draw` degrades rather than throws."* Truncation is the
+  right failure and should stay as the backstop, but a plot dense enough to hit it is a plot drawn wrong, and the
+  arithmetic in that comment shows how reachable the ceiling is. Related to §6.6: an upload path that stopped
+  copying is the same code that would have to handle a resize.
+- **The device is selected against the first window's surface.** `GuiWindow`'s class Javadoc records this as a
+  scaffold caveat and calls a per-surface support check at creation a correctness follow-up. It was safe when it
+  was written, because there was one window. There are now two shipped multi-window applications on this stack
+  (the editor's three, the designer's two), so the follow-up has real users even though no platform has yet
+  produced the failure.
+
+### 6.11 The harness cannot host a test of anything modal
+
+Found trying to write §6.2's guard, and it is the reason there is not one. `HarnessApp` creates its **main
+window on the calling thread** — `new GuiApp(config, this::create)` runs in the constructor, and `GuiApp`
+calls the factory synchronously for the first window — and every window opened afterwards on the **loop
+thread**, because `requestWindow` posts. `close()` then joins the loop and calls `app.close()` from the
+calling thread, which destroys the loop thread's windows: on Windows, `DestroyWindow` refuses a window
+created by another thread with `ERROR_ACCESS_DENIED`.
+
+**It is latent, not visible, which is why it has not been noticed.** `PopupsAreNeverMappedTest` opens a
+second window, leaves it open, and tears down green. Bisected against that test, the trigger is
+`GuiApp.modalWindow(w)`: a satellite window is fine, `Decorations.CLIENT` is fine, both together are fine,
+and adding the one `modalWindow` call a dialog makes in its `onCreated` fails every time — still failing when
+modality is released with `modalWindow(null)` and settled before teardown. Disabling the main window is
+evidently enough to move activation onto the loop thread's queue for good, and the cross-thread teardown
+stops being survivable. So the passing test is passing by luck about activation, and the failing one is the
+same defect with the luck removed.
+
+**Done looks like:** `HarnessApp` builds its `GuiApp` *inside* the loop thread and closes it there too
+(`app.run(...)` in a `try`, `app.close()` in its `finally`), with `start` waiting on a latch for the
+application to exist before it returns. Then every window belongs to one thread and is destroyed by it, which
+is also what the rest of the stack means by *"Vulkan, the window and present stay on the main thread"* — the
+harness's loop thread **is** its main thread, and constructing the device on a different one was always the
+odd part. Two things follow immediately: §6.2 gets its guard, and `PopupsAreNeverMappedTest` stops depending
+on luck.

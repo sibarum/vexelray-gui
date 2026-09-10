@@ -1,6 +1,7 @@
 package dev.vexelray.gui.core.app;
 
 import dev.vexelray.gui.core.Gui;
+import dev.vexelray.os.NativePlatform;
 import dev.vexelray.os.NativeWindow;
 import dev.vexelray.os.WindowConfig;
 import dev.vexelray.os.WorkArea;
@@ -62,8 +63,12 @@ public final class WindowMemory {
     @FunctionalInterface
     public interface Desktop {
 
-        /** The platform's own answer. */
-        Desktop PLATFORM = GuiApp::workArea;
+        /**
+         * The platform's own answer. Asks {@link NativePlatform} rather than {@code GuiApp.workArea}, which
+         * is a static delegate to exactly this call: a window-memory clamp has no business naming the frame
+         * loop, and this leaves the three settings types with no reference outside their own package.
+         */
+        Desktop PLATFORM = (x, y) -> NativePlatform.current().workArea(x, y);
 
         /** The usable area of the monitor containing {@code (x, y)}, or empty if there is none (or none known). */
         Optional<WorkArea> covering(int x, int y);

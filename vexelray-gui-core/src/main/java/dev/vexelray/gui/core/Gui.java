@@ -103,9 +103,17 @@ public final class Gui implements AutoCloseable {
     /** The flat root em, in px, before zoom and DPI (§6 — no cascade). */
     private static final float ROOT_EM_PX = 16f;
 
-    /** Default zoom bounds and step; override with {@link #zoomRange}. */
-    private static final float DEFAULT_MIN_ZOOM = 0.25f;
-    private static final float DEFAULT_MAX_ZOOM = 4f;
+    /**
+     * Default zoom bounds and step; override with {@link #zoomRange}.
+     *
+     * <p>These are the numbers every application that has ever set a range wrote for itself — the demo here,
+     * and the four the framework counted before taking them as its own {@code Appearance.ZoomRange.DEFAULT}.
+     * They are the default because they are what everyone who cared chose, not because they are a limit:
+     * {@link #zoomRange} accepts anything down to 0.01, so an application that wants to go further still can.
+     * A default nobody has taken is worth less than a default five callers independently agreed on.
+     */
+    private static final float DEFAULT_MIN_ZOOM = 0.5f;
+    private static final float DEFAULT_MAX_ZOOM = 3f;
     private static final float DEFAULT_ZOOM_STEP = 1.25f;
 
     /** Density bounds: 1.0 conventional, 2.0 Retina-class, 3.0 exists; below 1 is not a real display. */
@@ -463,7 +471,8 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
-     * Set the zoom factor, clamped to [{@value #MIN_ZOOM}, {@value #MAX_ZOOM}]. Safe from any thread — it commits
+     * Set the zoom factor, clamped to the configured range ({@link #zoomRange}; by default
+     * {@value #DEFAULT_MIN_ZOOM} to {@value #DEFAULT_MAX_ZOOM}). Safe from any thread — it commits
      * to the {@code State}, and the next {@link #frame} notices the change and relays out, so nothing writes to
      * the reconciler off the GUI thread.
      */

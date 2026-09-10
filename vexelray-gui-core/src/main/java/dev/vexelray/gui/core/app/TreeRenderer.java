@@ -10,6 +10,7 @@ import dev.vexelray.gui.core.text.Span;
 import dev.vexelray.gui.core.text.TextMetrics;
 import dev.vexelray.gui.draw.CanvasSink;
 import dev.vexelray.gui.draw.Picture;
+import dev.vexelray.target.ImageHandle;
 import dev.vexelray.text.TextLayout;
 
 /**
@@ -327,7 +328,7 @@ public final class TreeRenderer {
         }
         // An image sits between the background and the border: a background shows through anything transparent in
         // it, and a border frames it. It takes the node's own radius, so a viewport rounds with the card it is in.
-        Object image = n.image();
+        ImageHandle image = n.image();
         if (image != null && n.w > 0f && n.h > 0f) {
             // An alpha, not a colour: the tint multiplies the texel, so there is no shade to choose here — only
             // the subtree opacity this class applies to everything it draws.

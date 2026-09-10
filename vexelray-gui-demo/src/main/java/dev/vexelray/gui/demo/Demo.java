@@ -51,7 +51,7 @@ public final class Demo {
     private static final int W = 1240;
     private static final int H = 780;
 
-    /** Zoom levels the capture ladder walks; the interactive shortcuts use {@link Gui#zoomRange} instead. */
+    /** Zoom levels the capture ladder walks; the interactive shortcuts move within {@link #look}'s range. */
     private static final float[] ZOOM_STEPS = {0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f, 3f};
 
     public static void main(String[] args) throws Exception {
@@ -63,11 +63,13 @@ public final class Demo {
         // below which two rails and a page stop making sense, which is a good deal lower.
         gui.minSize(Length.em(52), Length.em(30));
         // The look is a preference, so it lives where preferences live — and it is applied before the UI is
-        // built, because a role resolves when a prop is written. One line, and every widget, every piece of the
-        // renderer's own chrome and the clear colour below all follow it.
-        if ("light".equalsIgnoreCase(AppHome.of(APP).settings().getString("theme", "dark"))) {
-            gui.theme(Theme.LIGHT);
-        }
+        // built, because a role resolves when a prop is written. One call, and every widget, every piece of the
+        // renderer's own chrome and the clear colour below all follow it. Held as a value rather than applied
+        // and forgotten, because the dialogs further down need the same answer this window got.
+        Theme theme = "light".equalsIgnoreCase(AppHome.of(APP).settings().getString("theme", "dark"))
+                ? Theme.LIGHT
+                : Theme.DARK;
+        look(gui, theme);
         // The frame clock. Attached before the UI is built, because a widget that animates is handed its timing
         // at construction, and ticked from the run loop's beforeFrame hook below — one tick per presented frame.
         KronoGui krono = KronoGui.attach(gui);
@@ -127,7 +129,10 @@ public final class Demo {
             // One seam, and every window the framework opens from here on can hear the user: its own backend,
             // attached when the window is created, pumped by the loop, released with it.
             app.input(Demo::windowInput);
-            Modals.install(app);
+            // The dialogs get the look this window got. Modals builds a tree of its own, so anything not
+            // handed to it here is a window this application's look never reached — which is what a dialog
+            // drawn dark inside the light theme was, before the seam existed to hand it through.
+            Modals.install(app, dialog -> look(dialog, theme));
             // Everything a chapter registered against a window it could not yet have.
             shell.stage().started(app);
 
@@ -186,12 +191,22 @@ public final class Demo {
     }
 
     /**
+     * This application's look, applied to a tree: the theme, and how far that tree may zoom. One method with
+     * two callers, which is the whole point — the main window and the dialogs are separate trees, and a look
+     * applied to one of them is a look the other never heard about. The framework's {@code Appearance.applyTo}
+     * is this method, generalised; an application on the framework passes that instead.
+     */
+    private static Gui look(Gui gui, Theme theme) {
+        return gui.theme(theme).zoomRange(0.5f, 3f, 1.25f);
+    }
+
+    /**
      * Ctrl+= / Ctrl+- / Ctrl+0 — zoom in, out, reset. Registered here rather than in core because which chord
      * zooms (or whether zooming exists at all) is an application decision; {@code gui.shortcut} is an ordinary
-     * {@code GLOBAL} claim, so a focused element that wants these chords can outrank it.
+     * {@code GLOBAL} claim, so a focused element that wants these chords can outrank it. The range these move
+     * within is part of the look, and set in {@link #look}.
      */
     private static void zoomShortcuts(Gui gui) {
-        gui.zoomRange(0.5f, 3f, 1.25f);
         gui.shortcut(Key.EQUAL, gui::zoomIn, Modifier.CONTROL);
         gui.shortcut(Key.MINUS, gui::zoomOut, Modifier.CONTROL);
         gui.shortcut(Key.DIGIT_0, gui::resetZoom, Modifier.CONTROL);

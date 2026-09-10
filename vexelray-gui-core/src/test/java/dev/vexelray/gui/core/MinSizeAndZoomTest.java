@@ -99,8 +99,8 @@ class MinSizeAndZoomTest {
     @Test
     void narrowingTheRangeReclampsTheCurrentFactor() {
         try (Gui gui = new Gui(Atchung.create())) {
-            gui.zoom(4f);
-            assertEquals(4f, gui.zoom().value(), 0.001f, "allowed by the default range");
+            gui.zoom(3f);
+            assertEquals(3f, gui.zoom().value(), 0.001f, "allowed by the default range");
 
             gui.zoomRange(0.5f, 1.5f, 1.25f);
             assertEquals(1.5f, gui.zoom().value(), 0.001f, "pulled back into the new range at once");

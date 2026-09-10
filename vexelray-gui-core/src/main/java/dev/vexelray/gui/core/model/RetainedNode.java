@@ -8,6 +8,7 @@ import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.core.layout.LayoutEnums.ScrollLock;
 import dev.vexelray.gui.draw.Picture;
+import dev.vexelray.target.ImageHandle;
 import dev.vexelray.text.TextLayout;
 
 import java.util.ArrayList;
@@ -236,11 +237,17 @@ public final class RetainedNode {
     }
 
     /**
-     * The image or viewport drawn across this node's box, or null (see {@link PropKey#IMAGE}). Deliberately
-     * untyped here: the model describes a tree, not a GPU, and the renderer is what knows how to bind one.
+     * The image or viewport drawn across this node's box, or null (see {@link PropKey#IMAGE}).
+     *
+     * <p>An {@link ImageHandle} and not the concrete texture: the model describes a tree, not a GPU, and
+     * the renderer is what knows how to bind one. The marker declares nothing at all — it says only that
+     * this value came from a binding layer that can bind it, which is the one fact the model can carry
+     * honestly. It was {@code Object} here until {@code vexelray-core} published the marker; {@code Object}
+     * accepted a {@code String} just as readily, and the first thing to notice was a texture reading as
+     * garbage several layers away.
      */
-    public Object image() {
-        return props.get(PropKey.IMAGE);
+    public ImageHandle image() {
+        return (ImageHandle) props.get(PropKey.IMAGE);
     }
 
     /**

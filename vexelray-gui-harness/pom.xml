@@ -24,5 +24,13 @@
             <groupId>dev.vexelray.gui</groupId>
             <artifactId>vexelray-gui-core</artifactId>
         </dependency>
+        <!-- Test scope only, and only for the dialogs. Modals lives in -widget and takes a GuiApp, so the
+             seam that hands it the application's look cannot be reached without an application to install it
+             on, which is the one thing this module exists to supply. Nothing shipped here names -widget. -->
+        <dependency>
+            <groupId>dev.vexelray.gui</groupId>
+            <artifactId>vexelray-gui-widget</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>

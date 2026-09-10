@@ -705,13 +705,17 @@ already reads `theme=light` from its settings, and its frames-capped run puts a 
 range now come from one `look(Gui, Theme)` — the demo's own miniature of `Appearance.applyTo` — with the main
 window and the dialogs as its two callers, which is the whole point of the seam.
 
-**What is not done: an automated guard, and §6.11 is why.** `Modals.install` takes a `GuiApp`, so the seam
-cannot be reached without a real application; `vexelray-gui-harness` is exactly the thing that supplies one,
-and a dialog put up under it asserts correctly and then cannot be torn down. The test was written, passed its
-assertions, failed in teardown, and was withdrawn rather than left disabled. Also still owed: the framework's
-call site, which is one line (`Modals.install(app, shell.appearance()::applyTo)` at
-`VexelApplication.java:248`) and needs this repo installed first — the entry under **Upstream** in
-`vexelray-framework/docs/TODO.md` can be closed with it.
+**Guarded, by way of §6.11.** `DialogsWearTheApplicationsLookTest` (in `-harness`, which now takes
+`-widget` at test scope for this one purpose) installs the dialogs with a `LIGHT` appearance, puts a dialog
+up, and asserts the seam was handed *the tree the dialogs are built on* rather than merely a `Gui` — which
+is the half a plausible-looking regression would get wrong. It also re-asserts the theme after the dialog is
+built, and that the dialog window was never mapped. Writing it is what found §6.11; it could not pass until
+that was fixed.
+
+**Still owed, and it is one line.** `Modals.install(app, shell.appearance()::applyTo)` at
+`vexelray-framework/.../VexelApplication.java:248`, which needs this repo installed first — the entry under
+**Upstream** in `vexelray-framework/docs/TODO.md` can be closed with it. Until then the framework's dialogs
+take the one-argument overload and still draw dark; the seam exists, and nobody is using it yet.
 
 ### 6.3 ~~The zoom range default is the one range nobody chose~~ — **Done**, taken as 0.5–3
 
@@ -876,28 +880,38 @@ unnecessary.
   (the editor's three, the designer's two), so the follow-up has real users even though no platform has yet
   produced the failure.
 
-### 6.11 The harness cannot host a test of anything modal
+### 6.11 ~~The harness cannot host a test of anything modal~~ — **Done**
 
-Found trying to write §6.2's guard, and it is the reason there is not one. `HarnessApp` creates its **main
-window on the calling thread** — `new GuiApp(config, this::create)` runs in the constructor, and `GuiApp`
-calls the factory synchronously for the first window — and every window opened afterwards on the **loop
-thread**, because `requestWindow` posts. `close()` then joins the loop and calls `app.close()` from the
-calling thread, which destroys the loop thread's windows: on Windows, `DestroyWindow` refuses a window
-created by another thread with `ERROR_ACCESS_DENIED`.
+Found trying to write §6.2's guard, and it was why there was not one. `HarnessApp` created its **main window
+on the calling thread** — `new GuiApp(config, this::create)` ran in the constructor, and `GuiApp` calls the
+factory synchronously for the first window — and every window opened afterwards on the **loop thread**,
+because `requestWindow` posts. `close()` then joined the loop and called `app.close()` from the calling
+thread, destroying the loop thread's windows: on Windows, `DestroyWindow` refuses a window created by another
+thread with `ERROR_ACCESS_DENIED`.
 
-**It is latent, not visible, which is why it has not been noticed.** `PopupsAreNeverMappedTest` opens a
-second window, leaves it open, and tears down green. Bisected against that test, the trigger is
-`GuiApp.modalWindow(w)`: a satellite window is fine, `Decorations.CLIENT` is fine, both together are fine,
-and adding the one `modalWindow` call a dialog makes in its `onCreated` fails every time — still failing when
-modality is released with `modalWindow(null)` and settled before teardown. Disabling the main window is
-evidently enough to move activation onto the loop thread's queue for good, and the cross-thread teardown
-stops being survivable. So the passing test is passing by luck about activation, and the failing one is the
-same defect with the luck removed.
+**It was latent rather than visible, which is why it went unnoticed.** `PopupsAreNeverMappedTest` opens a
+second window, leaves it open, and tore down green. Bisected against that test, the trigger was
+`GuiApp.modalWindow(w)`: a satellite window was fine, `Decorations.CLIENT` was fine, both together were
+fine, and adding the one `modalWindow` call a dialog makes in its `onCreated` failed every time — still
+failing when modality was released with `modalWindow(null)` and settled before teardown. Disabling the main
+window is evidently enough to move activation onto the loop thread's queue for good, and the cross-thread
+teardown stopped being survivable. So the test that passed was passing on luck about activation, and the one
+that failed was the same defect with the luck removed.
 
-**Done looks like:** `HarnessApp` builds its `GuiApp` *inside* the loop thread and closes it there too
-(`app.run(...)` in a `try`, `app.close()` in its `finally`), with `start` waiting on a latch for the
-application to exist before it returns. Then every window belongs to one thread and is destroyed by it, which
-is also what the rest of the stack means by *"Vulkan, the window and present stay on the main thread"* — the
-harness's loop thread **is** its main thread, and constructing the device on a different one was always the
-odd part. Two things follow immediately: §6.2 gets its guard, and `PopupsAreNeverMappedTest` stops depending
-on luck.
+**Fixed as described.** `HarnessApp.live()` is the loop thread's whole life — build the `GuiApp`, run it,
+release it in a `finally` — and `start` waits on a latch for the application to exist before it returns.
+`close()` now only asks the loop to stop, joins, and reports; it closes nothing itself, which is the whole of
+the fix. Every window belongs to one thread and is destroyed by it, which is also what the rest of the stack
+means by *"Vulkan, the window and present stay on the main thread"*: the harness's loop thread **is** its
+main thread, and building the device on a different one was always the odd part.
+
+**Three things worth keeping from doing it.**
+
+- **A failed start is now loud and early.** `start` throws rather than returning a harness whose `app` is
+  null, and the latch is released from a `finally` so a build that threw does not make every caller wait out
+  the timeout to find out. `rethrow` distinguishes *never came up* from *the frame loop died*, because with
+  construction on the loop thread those became two different failures reported through one field.
+- **A start that got halfway used to leak a device.** If the `GuiApp` was built and reading its first window
+  then failed, nothing would ever hold that reference again. `release(GuiApp)` covers both exits.
+- **The dialog test runs in under a second**, against the ten-plus of the capture tests. It was never slow;
+  it was failing in teardown, and a five-second join was most of what the earlier attempts were measuring.

@@ -11,6 +11,8 @@ import sibarum.tactroller.api.MouseButton;
 
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -43,16 +45,48 @@ import java.util.concurrent.atomic.AtomicLong;
  * went would be answered by the window manager rather than by the framework, and {@link #windows()} would be
  * describing a screen it no longer matches.
  *
+ * <p><b>One thread owns the application, and it is not the test's.</b> The {@code GuiApp} is constructed,
+ * run and closed entirely on the loop thread — {@link #start} does not return until it exists. That is the
+ * same rule the rest of the stack states as <i>"Vulkan, the window and present stay on the main thread"</i>,
+ * with the loop thread as this harness's main thread; the test drives it through the bus, a wake, and the
+ * waits below, and never touches a window itself.
+ *
+ * <p>It reads like an implementation detail and is not. Windows will not let a thread destroy a window
+ * another thread created, so a harness that made its first window on the test's thread and every later one
+ * on the loop's had no thread that could take them all down. It survived that for as long as no test put up
+ * anything modal: disabling a window moves activation, and a teardown that had been getting away with the
+ * split stopped being able to.
+ *
  * <p><b>Needs a Vulkan device.</b> This is an integration harness, not a unit test fixture; on a machine
  * with no GPU it will fail to start rather than silently prove nothing.
  */
 public final class HarnessApp implements AutoCloseable {
 
+    /**
+     * How long {@link #start} waits for the application to exist. Generous, because what happens inside it
+     * is a Vulkan instance, a device and a swapchain on a cold driver — and a timeout here is a diagnosis,
+     * not a budget: nothing legitimate takes seconds, so anything that reaches this has hung.
+     */
+    private static final long START_TIMEOUT_SECONDS = 30L;
+
+    /** How long {@link #close} waits for the loop to stop and give its windows back. */
+    private static final long CLOSE_TIMEOUT_MILLIS = 5_000L;
+
     private final Gui gui;
-    private final GuiApp app;
-    private final HarnessWindow window;
+    private final WindowConfig config;
     private final Thread loop;
     private final AtomicLong frames = new AtomicLong();
+
+    /** Released once the application exists, or once building it has failed; {@link #start} waits on it. */
+    private final CountDownLatch up = new CountDownLatch(1);
+
+    /**
+     * The application and its first window, built on the loop thread and read from the test's. Not final,
+     * because the thread that owns a window has to be the thread that made it, and that cannot be the one
+     * running this constructor.
+     */
+    private volatile GuiApp app;
+    private volatile HarnessWindow window;
 
     /**
      * Every window this application has opened, in the order it opened them — the main window first. Written
@@ -64,25 +98,92 @@ public final class HarnessApp implements AutoCloseable {
 
     private HarnessApp(Gui gui, WindowConfig config) {
         this.gui = gui;
-        // The factory, not a window: this is what makes "never shown" true of the popup a test opens as well
-        // as of the window the test started with. GuiApp calls it synchronously for the main window while
-        // this constructor runs, which is why the wrapper is there to be read on the next line.
-        this.app = new GuiApp(config, this::create);
-        this.window = opened.get(0);
-        this.loop = Thread.ofPlatform().name("harness-loop").unstarted(() -> {
-            try {
-                app.run(gui, 0, frames::incrementAndGet);
-            } catch (RuntimeException e) {
-                failure = e;
-            }
-        });
+        this.config = config;
+        this.loop = Thread.ofPlatform().name("harness-loop").unstarted(this::live);
     }
 
-    /** Start the application and its loop. Returns once the loop thread is running, not once it is idle. */
+    /**
+     * Start the application and its loop. Returns once the application exists and its first window has been
+     * made — not once it is idle, which is what {@link #settle} is for.
+     *
+     * @throws IllegalStateException if the application could not be built, which on a machine with no Vulkan
+     *         device is the expected outcome and is meant to be loud
+     */
     public static HarnessApp start(Gui gui, WindowConfig config) {
         HarnessApp harness = new HarnessApp(gui, config);
         harness.loop.start();
+        harness.awaitUp();
         return harness;
+    }
+
+    /**
+     * The loop thread's whole life: build the application, run it, and take it down again.
+     *
+     * <p><b>All three, on this thread.</b> The build is here because a window belongs to the thread that
+     * created it and only that thread may destroy it; the close is here for the same reason, and in a
+     * {@code finally} so a loop that died still gives its windows back.
+     */
+    private void live() {
+        GuiApp built = null;
+        try {
+            // The factory, not a window: this is what makes "never shown" true of the popup a test opens as
+            // well as of the window the test started with. GuiApp calls it synchronously for the main window
+            // while it is being constructed, which is why the wrapper is there to be read straight after.
+            built = new GuiApp(config, this::create);
+            window = opened.get(0);
+            app = built;   // last, so a non-null app means "came up whole" and nothing has to track that twice
+        } catch (RuntimeException e) {
+            failure = e;
+        } finally {
+            up.countDown();   // whether it came up or not: a test waiting on this must not wait for a timeout
+        }
+        if (app == null) {
+            // It may still have got as far as owning a device. Nothing else will ever hold this reference, so
+            // giving it back here is the difference between a failed start and a leaked one.
+            release(built);
+            return;
+        }
+        try {
+            app.run(gui, 0, frames::incrementAndGet);
+        } catch (RuntimeException e) {
+            failure = e;
+        } finally {
+            release(app);
+        }
+    }
+
+    /**
+     * Give an application's windows and device back, on the thread that made them.
+     *
+     * <p>Keeps a teardown failure rather than throwing it: nothing is watching this thread's stack, and the
+     * test's {@link #close} is what reports it. Never over a failure already recorded — the reason the loop
+     * stopped is the more useful of the two.
+     */
+    private void release(GuiApp application) {
+        if (application == null) {
+            return;
+        }
+        try {
+            application.close();
+        } catch (RuntimeException e) {
+            if (failure == null) {
+                failure = e;
+            }
+        }
+    }
+
+    /** Wait for the loop thread to have built the application, and surface what happened if it could not. */
+    private void awaitUp() {
+        try {
+            if (!up.await(START_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("the application did not come up within "
+                        + START_TIMEOUT_SECONDS + "s");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted waiting for the application to come up", e);
+        }
+        rethrow();
     }
 
     /** The application, for wiring pacing, idle bounds and anything else a real host would set. */
@@ -118,7 +219,8 @@ public final class HarnessApp implements AutoCloseable {
      * makes "created and never shown" literally true; {@link HarnessWindow#show()} then keeps it true when the
      * presenter's first frame would have revealed it.
      *
-     * <p>Called on the main thread, from inside window creation, so it does nothing but create and record.
+     * <p>Called on the loop thread — for the first window as well as the rest, which is the point — from
+     * inside window creation, so it does nothing but create and record.
      */
     private HarnessWindow create(WindowConfig config) {
         HarnessWindow wrapped = new HarnessWindow(NativePlatform.current().createWindow(config.hidden(true)));
@@ -155,7 +257,7 @@ public final class HarnessApp implements AutoCloseable {
         // Input published on the bus is not an OS event, so nothing has told the loop it arrived. A real
         // click would have: this stands in for the WM_LBUTTONDOWN that wakes the loop before its own
         // dispatch ever sees the event. Everything *after* this wake is what is under test.
-        window.postWake();
+        window().postWake();
     }
 
     /**
@@ -247,20 +349,27 @@ public final class HarnessApp implements AutoCloseable {
     private void rethrow() {
         RuntimeException e = failure;
         if (e != null) {
-            throw new IllegalStateException("the application's frame loop died", e);
+            throw new IllegalStateException(app == null
+                    ? "the application never came up"
+                    : "the application's frame loop died", e);
         }
     }
 
     @Override
     public void close() {
-        window.requestStop();
-        window.postWake();
+        // Nothing is closed here, which is the whole of the fix: live()'s finally runs on the thread that
+        // made the windows, and this thread is not it. What is left is the request, the join, and reporting
+        // whatever the loop thread had no stack to report on.
+        HarnessWindow main = window;
+        if (main != null) {
+            main.requestStop();
+            main.postWake();
+        }
         try {
-            loop.join(5_000L);
+            loop.join(CLOSE_TIMEOUT_MILLIS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
-        app.close();
         rethrow();
     }
 }

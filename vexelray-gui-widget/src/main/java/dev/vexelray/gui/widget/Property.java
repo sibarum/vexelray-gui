@@ -316,6 +316,11 @@ final class Rows {
      * this module cannot express without minting colour between the stops, and the stops <em>are</em> the map. A
      * reader picking between Blurple and Steel is reading which hues are in it, which is exactly what a row of
      * stops says.
+     *
+     * <p>The label takes the width of its own text and the strip takes whatever is left, rather than the label
+     * being given a fixed column. A fixed column is wider than the whole card in a narrow panel, and a card
+     * whose children do not fit is not merely cramped here: see {@code editor} for what a card that overflows
+     * turns into.
      */
     static final class Swatches<T> extends Base {
         private final List<Property.Swatch<T>> options;
@@ -341,11 +346,20 @@ final class Rows {
                 for (Color stop : s.stops()) {
                     strip.append(gui.box().width(Length.grow(1f)).height(Length.percent(100)).background(stop));
                 }
-                Node label = gui.text(s.label()).width(Length.rem(4f));
+                Node label = gui.text(s.label()).width(Length.AUTO);
                 Node card = gui.row().role("swatch")
                         .gap(Length.rem(0.5f)).padding(Length.rem(0.2f))
                         .corner(Length.rem(0.3f))
                         .alignItems(AlignItems.CENTER)
+                        // A card is a control, not a container with a view onto something larger. Every node may
+                        // scroll by default, and a node that may scroll and does not fit becomes one: the layout
+                        // reserves a scrollbar strip on each overflowing axis, and the dispatcher *consumes* a
+                        // press anywhere in that strip -- before focus, before the click walk -- as a press on
+                        // the bar. A card narrower than its label therefore stopped being clickable at all, with
+                        // no exception and nothing in the tree to say why, and drew a scrollbar where its colours
+                        // should have been. Saying it here is the declaration; the framework has no other word
+                        // for "this box is a control", and infers scrolling from overflow alone.
+                        .scroll(false, false)
                         .children(strip, label);
                 gui.focusable(card, true);
                 gui.cursor(card, CursorShape.POINTER);

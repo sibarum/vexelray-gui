@@ -264,7 +264,25 @@ public final class GuiApp implements AutoCloseable {
      * because re-marching a scene is far too expensive to trigger from a resize it merely noticed.
      */
     public SampledColorTarget viewport(int width, int height) {
-        SampledColorTarget target = new SampledColorTarget(device, Math.max(1, width), Math.max(1, height));
+        return viewport(width, height, false);
+    }
+
+    /**
+     * The same, for a viewport that more than one thing draws into.
+     *
+     * <p>A target with no depth composites what is drawn into it <b>in submission order</b>: whatever records
+     * last wins every pixel it touches. That is right for a scene and then chrome over it, and wrong the moment
+     * two things in the same scene are supposed to occlude each other — a marched curve and a grid drawn under
+     * and around it, say, where the answer differs per pixel and depends on where the camera is.
+     *
+     * <p>With {@code depth}, a technique that declares it tests and writes a shared depth attachment, and the
+     * picture is the same one a single renderer drawing everything at once would have produced. It costs a
+     * second full-size image and a clear per pass, which is why it is asked for rather than assumed: a viewport
+     * showing one fullscreen effect has nothing to interleave with and should not pay for either.
+     */
+    public SampledColorTarget viewport(int width, int height, boolean depth) {
+        SampledColorTarget target =
+                new SampledColorTarget(device, Math.max(1, width), Math.max(1, height), depth);
         viewports.add(target);
         return target;
     }

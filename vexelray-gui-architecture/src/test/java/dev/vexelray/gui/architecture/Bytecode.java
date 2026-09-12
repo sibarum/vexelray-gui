@@ -29,14 +29,19 @@ final class Bytecode {
     static final String GUI_PLOT = "vexelray-gui-plot";
     static final String GUI_DRAW = "vexelray-gui-draw";
     static final String GUI_AUTOMATION = "vexelray-gui-automation";
+    static final String GUI_AUTOMATION_CLI = "vexelray-gui-automation-cli";
 
     /**
      * Every module the guards inspect. A new framework module belongs here the day it is created: a guard that
      * does not look at a module cannot fail for it, and the invariants are supposed to hold by build rather than
      * by whoever remembers them.
+     *
+     * <p>{@link #GUI_AUTOMATION_CLI} passes every guard vacuously today — it names no framework type at all,
+     * which is its own stated invariant — and is listed anyway, because "it cannot violate the rules" is a
+     * property of the code as it stands and not a property the build is checking.
      */
-    static final List<String> INSPECTED =
-            List.of(GUI_CORE, GUI_WIDGET, GUI_TYPESET, GUI_PLOT, GUI_DRAW, GUI_AUTOMATION);
+    static final List<String> INSPECTED = List.of(
+            GUI_CORE, GUI_WIDGET, GUI_TYPESET, GUI_PLOT, GUI_DRAW, GUI_AUTOMATION, GUI_AUTOMATION_CLI);
 
     private Bytecode() {
     }

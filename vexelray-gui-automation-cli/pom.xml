@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>dev.vexelray.gui</groupId>
+        <artifactId>vexelray-gui</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>vexelray-gui-automation-cli</artifactId>
+
+    <name>VexelRay GUI :: Automation CLI (ottermate)</name>
+    <description>
+        ottermate, the client for the automation protocol: attach to a running application's loopback socket,
+        run commands, print replies, and carry the verdict in the exit status. Optionally launch the application
+        first, reading its port from the line it prints on binding. Beside the server it speaks to, so the
+        reader cannot drift from the format — and with an empty dependency block, so it runs as a standalone
+        jar with none of the stack on its classpath. See docs/automation-cli.md.
+    </description>
+
+    <!-- No dependencies, and that is the design statement (docs/automation-cli.md §3, R3): a socket, line
+         I/O and ProcessBuilder. Nothing from -core, nothing from the framework, no Vulkan. A client that
+         needed the stack on its classpath would be a test fixture rather than a tool, and would quietly make
+         automation a runtime dependency of the applications it is supposed to stay out of (R7). -->
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <!-- Pinned here rather than in the root pluginManagement: this is the only module that asks
+                     anything of the jar plugin, and what it asks is a manifest. -->
+                <version>3.4.2</version>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <!-- With nothing on the classpath to add, the ordinary jar is the executable
+                                 one: `java -jar vexelray-gui-automation-cli-<version>.jar shot after.png`.
+                                 No shade, no assembly, no Class-Path entries to go stale. -->
+                            <mainClass>dev.vexelray.gui.automation.cli.Ottermate</mainClass>
+                        </manifest>
+                    </archive>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

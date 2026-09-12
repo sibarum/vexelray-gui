@@ -209,8 +209,14 @@ One command per line in; one reply out, terminated by a line containing only `.`
 so a script can branch on the first two characters without parsing anything.
 
 ```bash
-printf 'find Save\nclick save\nsettle\nshot after.png\nquit\n' | nc localhost 7654
+printf 'find Save\nclick save\nsettle\nshot after.png\n' | ottermate --script -
 ```
+
+The client is `vexelray-gui-automation-cli` ([automation-cli.md](automation-cli.md)); it is worth using
+rather than `nc` even where `nc` exists, because it carries the verdict in its exit status — an `err` reply
+fails the run. Anything that can open a loopback socket and read to a `.` speaks this, which is the point of
+a terminator rather than a length, but a caller that reimplements the frame also reimplements deciding
+whether the run succeeded.
 
 | Command | Meaning |
 |---|---|
@@ -384,10 +390,13 @@ instrument, which is the strongest available guarantee that what the agent synth
   `loop.park`, without which a stall is indistinguishable from an idle window.
 - **A3 — Virtual cursor + paths.** *(Landed: `vexelray-gui-automation`, `Cursor` — stateful, stepped at 125Hz, real-time paced, `move`/`click`/`drag`/`scroll`.)*
 - **A4 — Protocol + CLI.** *(Protocol landed: `Automation` + `AutomationServer`, a loopback line protocol. `go` reuses the framework's own navigation, so a concealed target is revealed rather than refused. `csvview` in atchung-probe.)*
-  **The CLI half did not land** — there is no client on the stack, and `nc` is not present on the Windows
-  development box, so the usage example above is the format's documentation rather than a runnable command.
-  Designed in [automation-cli.md](automation-cli.md), together with the retirement of per-application
-  `--capture` that it unblocks.
+  **The CLI half landed later**, in `vexelray-gui-automation-cli` — `ottermate`, an empty-dependency-block client
+  that attaches to a running application or launches one and reads the port off its own output, and whose
+  exit status is the verdict. It was missing for long enough that the usage example above was the format's
+  documentation rather than a runnable command, and an agent needing a picture rebuilt the protocol in
+  PowerShell from these notes. Designed in [automation-cli.md](automation-cli.md), together with the
+  retirement of per-application `--capture` that it unblocks and which has **not** happened yet: that waits
+  on the `zoom`, `resize` and timeline-aware `settle` verbs of its §5.
 - **A6 — Clipping, found by driving a real table.** *(Landed: `NodeLayout.visibleRect` + `Clip` in core;
   reveal-or-refuse in `Automation.target`; `table` / `row` / `columnheader` / `columngrip` / `rowgroup` roles on
   `Table` and `list` / `listitem` on `ListView`.)* The driver clicked a ref for a row a hundred thousand-row

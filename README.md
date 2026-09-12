@@ -570,6 +570,7 @@ down on arrival runs in the same batch as the final sample unless something sepa
 | **`-krono`** | The timing framework slotted into the existing loop and bus; see **Motion** |
 | **`-nfd`** | Native open/save/pick-folder dialogs as `Optional<Path>` |
 | **`-automation`** | Driving the running application the way a person does; see below and [docs/automation.md](docs/automation.md) |
+| **`-automation-cli`** | The client for that socket: `ottermate`, a command line that attaches to a running application or launches one, and carries the verdict in its exit status. **An empty dependency block** — a socket, line I/O and `ProcessBuilder` — so it runs as a standalone jar with none of the stack on its classpath, which is what keeps automation from becoming a runtime dependency of anything shipped. It lives beside the server rather than beside its callers for the reason `CsvView` lives beside the log it reads: a reader in another repo drifts from the format. See [docs/automation-cli.md](docs/automation-cli.md) |
 | **`-harness`** | A whole application running its **real** frame loop, with the loop under a test's control. The gap it fills is narrow and it is the one that matters: every hand-driven frame test is structurally unable to ask *after this click, does a frame arrive on its own?* — which is how five missing wakes shipped past a green suite. Real windows are created and never shown — **every** window, not just the one the test started with: the application is built with a window factory, so the popup a menu opens is asked for off screen (`WindowConfig.hidden`) and wrapped exactly as the main window is. Surface, swapchain and presenter therefore behave as in production; only pump, wait, wake and focus are intercepted. That matters because a mapped window takes real focus and real keyboard input, so a focus or routing assertion made beside one is answering a question about the window manager. Needs a Vulkan device, and fails to start rather than silently proving nothing |
 | **`-architecture`** | The rules, as tests that fail the build rather than as review comments. No framework class mints its own `Color` instead of naming a `Role` (`PaletteGuardTest`); no widget remembers a shadow depth instead of naming a `Relief` rung (`ReliefGuardTest`); nothing writes the retained model outside its single writer (`ModelWriterGuardTest`); no module reaches across a layer (`LayeringGuardTest`); and **no sealed type has its cases read from outside it, and no `default:` throws** (`DispatchGuardTest`) — both being the same failure, behaviour living somewhere other than the type it belongs to. That last one was learned the expensive way: `-typeset`'s IR began as a sealed interface of seven records with a seven-case engine switch, and the switch was exactly what made the vocabulary closed. Each guard carries its own proof-of-life test, because a detector that silently matched nothing would look exactly like a clean codebase |
 
@@ -641,11 +642,24 @@ What sits between the GUI and the OS, all driven from the one main-thread loop:
 - **Native file dialogs** (`vexelray-gui-nfd`) — open/save/pick-folder as `Optional<Path>`, bound
   straight to the window handle.
 - **Automation** (`vexelray-gui-automation`) — two lines, and an agent or a script can drive the running
-  application over a loopback socket: `AutomationServer.start(new Automation(gui, app.controls()))`, then
-  `printf 'find Save\nclick save\nsettle\n' | nc localhost 7654`. The pointer **travels** rather than
-  teleporting, so hover fires because it was provoked; nodes are addressed by role, name or `Gui.landmark`
-  rather than by coordinate; and with `-Dprobe.format=csv` the run writes one correlation log that
-  `sibarum.probe.CsvView --gaps` reads back. See [docs/automation.md](docs/automation.md).
+  application over a loopback socket: `AutomationServer.start(new Automation(gui, app.controls()))`. The
+  pointer **travels** rather than teleporting, so hover fires because it was provoked; nodes are addressed by
+  role, name or `Gui.landmark` rather than by coordinate; and with `-Dprobe.format=csv` the run writes one
+  correlation log that `sibarum.probe.CsvView --gaps` reads back. See
+  [docs/automation.md](docs/automation.md).
+- **Driving it** (`vexelray-gui-automation-cli`) — `ottermate`, the client:
+
+  ```bash
+  ottermate --port 7654 shot after.png                        # attach to a running application
+  ottermate --script panels.txt                               # a ladder of scenes, one command per line
+  ottermate --launch mvn exec:exec -Dautomation=0             # start it, drive it, take it down
+  ```
+
+  A reply beginning `err` — a `click` on a landmark that is not there, a `settle` that timed out, a `shot` whose
+  picture never arrived — fails the run, so a scene ladder in a build script cannot report success for a picture
+  nobody took. With `--launch` the port is read from the line the application prints on binding, which is why
+  `--automation=0` works and two runs at once do not collide. See
+  [docs/automation-cli.md](docs/automation-cli.md).
 
 ## Going deeper
 
@@ -657,6 +671,10 @@ What sits between the GUI and the OS, all driven from the one main-thread loop:
   *is* (role, name, structure, focus), for readers that are not the renderer
 - [docs/automation.md](docs/automation.md) — `vexelray-gui-automation`: driving the real app from an
   agent with a pointer that never teleports, and the one correlation log that explains what happened
+- [docs/ottermate.md](docs/ottermate.md) — **`ottermate`, the user guide**: worked examples against a real
+  application, the exit statuses, and the three things that will bite you
+- [docs/automation-cli.md](docs/automation-cli.md) — `vexelray-gui-automation-cli`: the design behind that
+  socket, and the retirement of per-application `--capture` that shipping it unblocks
 - [docs/keyboard-focus-text.md](docs/keyboard-focus-text.md) — keys, focus, claims, and text editing
 - [docs/transfer.md](docs/transfer.md) — drag and drop, cut and paste: one resolution, several
   sources, and why what is shown is always what will happen

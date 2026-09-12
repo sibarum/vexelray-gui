@@ -10,6 +10,11 @@ usage line and cannot photograph what the application draws, while `shot` over t
 and has no shipped client. Removing the first without shipping the second replaces "easy to find but wrong"
 with "right but unreachable", which is the same defect wearing different clothes.
 
+> **Status.** Step 1 of §6 has landed: `vexelray-gui-automation-cli`, the client, with `--launch`. Steps 2
+> and 3 have not — the verbs of §5 do not exist yet, so `--capture` **stays** where §7 lists it until
+> `resize` can express the scene that has twice caught a defect. Everything below is the design; §10 records
+> what shipped and where it differs.
+
 ---
 
 ## 1. The gap, and the evidence for it
@@ -84,8 +89,8 @@ argument that was true when the framework had a capture mode to be richer than.
 - **R3 — Zero dependencies.** A socket, line I/O, and `ProcessBuilder`. Nothing from `-core`, nothing from the
   framework, no Vulkan. So it runs as a standalone executable jar with none of the stack on its classpath —
   the difference between a tool and a test fixture.
-- **R4 — Both input forms.** Commands as arguments (`vexel shot out.png`) and a script file or stdin
-  (`vexel --script panels.txt`), because a scene ladder is a file and a one-off is not.
+- **R4 — Both input forms.** Commands as arguments (`ottermate shot out.png`) and a script file or stdin
+  (`ottermate --script panels.txt`), because a scene ladder is a file and a one-off is not.
 - **R5 — Exit status must carry the verdict.** Non-zero if any reply began `err`, and `settle`'s timeout is an
   `err` (see `Automation.settle`, which says so rather than swallowing it). A CLI that returns 0 after a failed
   `shot` recreates the exact failure mode §2 is about: a script that reports success for a picture nobody took.
@@ -175,9 +180,10 @@ move to the socket.
 
 ## 6. Ordering, and the one sequence to avoid
 
-1. **The client** (§3, §4) — fixes the reachability defect, changes no existing behaviour.
-2. **V1–V3** (§5) — closes the capability gap.
-3. **Remove `--capture`** (§7) — calculator and template together.
+1. ~~**The client** (§3, §4)~~ — **landed**; see §10. Fixed the reachability defect, changed no existing
+   behaviour.
+2. **V1–V3** (§5) — closes the capability gap. **Next.**
+3. **Remove `--capture`** (§7) — calculator and template together. **Blocked on 2, deliberately.**
 
 **3 before 2 is the sequence to avoid.** The calculator's `smallest` scene has twice caught a defect nothing
 else did — most recently a bottom key row clipped at minimum size after a tab strip was added, found because
@@ -229,8 +235,82 @@ binary — is `mainframe`'s territory if it is anyone's, and R3 exists so this t
 - **Whether `zoom` and `resize` belong to `WindowControls` or to a wider window API.** Both are things a person
   can already do by dragging a frame, which argues they are window capabilities that automation merely reaches,
   not automation features.
-- **Distribution.** Executable jar is the floor. A `vexel` / `vexel.cmd` wrapper makes it a command rather than
-  an incantation — worth deciding where such a script lives, given this repo ships no scripts today.
-- **Whether the client should offer a `capture`-shaped convenience** — a named ladder of shots in one
-  invocation — or leave that to script files (R4). A convenience that reintroduces scene names in the client is
-  how `--capture` grew the first time.
+- ~~**Distribution.**~~ **Settled at the floor, and the floor turned out to be enough.** With an empty
+  dependency block the ordinary jar *is* the executable one — a `Main-Class` manifest, no shade, no assembly,
+  no `Class-Path` to go stale. **Still open:** a `ottermate` / `ottermate.cmd` wrapper to make it a command rather
+  than an incantation, and where such a script lives given this repo ships none today. Nothing about the jar
+  forecloses one.
+- ~~**Whether the client should offer a `capture`-shaped convenience**~~ — **no.** A ladder is a script file
+  (R4), and the one concession is that the client skips blank lines and `#` comments so the file can say what
+  each scene is for; neither ever reaches the application. Naming scenes in the client is how `--capture`
+  grew the first time, and a scene name is the application's knowledge rather than the tool's.
+- **New, from building it: what a script should do after an `err`.** Shipped as stop-at-the-first, with
+  `--keep-going` to override, on the grounds that a ladder is a sequence in which each step assumes the last
+  one worked — carrying on past a `click` that hit nothing leaves every later step acting on a window
+  that is not in the state the script assumes, and photographs it. Unproven against a real ladder, because the real ladders still live in
+  `Capture.java` (§7) and have not moved yet.
+
+---
+
+## 10. What landed
+
+`vexelray-gui-automation-cli`, a sibling module with an empty dependency block, main class
+`dev.vexelray.gui.automation.cli.Ottermate`. Six classes and no surprises: `AutomationClient` (the wire, and the
+part worth depending on), `Reply`, `Options`, `Launch`, `Session`, `Ottermate`.
+
+```
+ottermate [options] [command...]     one command from the remaining arguments
+ottermate [options] --script <file>  one command per line; - is stdin
+ottermate [options]                  commands from stdin (a prompt, at a terminal)
+
+  --port <n>            attach to this port (default 7654)
+  --script <file|->     read commands from a file, or - for stdin
+  --launch <command...> start the application, drive it, shut it down; takes the rest of the line
+  --launch-timeout <s>  how long it may take to announce a port (default 60)
+  --timeout <s>         how long one reply may take (default 120)
+  --keep-going          run the rest after a reply that begins err (still exits non-zero)
+  --quiet, -q           print only err replies
+```
+
+**Requirements, against §3.** R1 attach-by-default, R2 `--launch` reading the port off the child's stdout,
+R3 an empty dependency block, R4 both input forms, R5 the exit status, R6 beside the writer, R7 never a
+runtime dependency of a shipped application — all as designed. 40 tests, against a hand-written fake that
+speaks the frame rather than against the real server, because depending on `vexelray-gui-automation` to test
+this would put `-core` on the test classpath of the one module whose whole claim is that it needs none of the
+stack.
+
+### The four decisions the design left to the implementation
+
+- **The exit status is five-valued, not two.** `0` all ok, `1` something answered `err`, `2` the command
+  line, `3` nothing to drive, `4` it went away mid-run. R5 asked only for non-zero-on-`err`, but a script
+  that cannot tell "the application refused" from "the application was never running" has to guess, and the
+  guess it makes is usually "retry", which is wrong for the first and right for the second.
+- **stdout is replies and nothing else.** This tool's own complaints and a launched application's relayed
+  output both go to stderr, so `ottermate tree > tree.txt` gets a tree. That is what makes `--launch` composable
+  rather than a demo.
+- **`err` is read off the first line only.** A `tree` listing a node whose accessible name contains the word
+  is a successful `tree`. Tested, because the obvious `contains("err")` reading passes every hand-written
+  example and fails the first real window.
+- **Printed text is ASCII.** The em dash in the usage line came out as a replacement character on the Windows
+  console this stack is built on, which is a small thing that makes a tool look broken at the first
+  impression it makes. The prose in the source keeps its dashes; what reaches a console does not.
+
+### Verified against a real application
+
+Driven end to end against `calculator-vexel-demo` — the real `Driver`, a real window, a real socket:
+
+```bash
+ottermate --launch mvn exec:exec -Dautomation=0
+# settle / find Save / shot out.png  ->  ok, 132904 bytes, exit 0
+```
+
+The picture contains the marched helix rather than the framework's placeholder, which is §2's whole argument
+in one file: this route photographs what the application draws. A deliberately wrong path in an earlier
+attempt produced `err no picture appeared` and **exit 1**, which is R5 doing the thing it exists for.
+
+### The one thing the zero-dependency rule costs
+
+`AutomationClient.DEFAULT_PORT` restates `AutomationServer.DEFAULT_PORT` rather than importing it — two
+literals, of the kind this stack usually refuses. It is the price of R3, and it is the sharpest argument for
+§4: the two are one commit apart, in one repo, and a change to either without the other is visible in the
+same diff.

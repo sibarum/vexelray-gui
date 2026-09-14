@@ -21,7 +21,7 @@ The rule was adopted after `-typeset` was designed under it. Everything below pr
 **The two halves are enforced at different widths.** *No throwing default* is checked on every module in
 `Bytecode.INSPECTED` — no module has one, so there was nothing to convert. *No sealed type* is checked on
 `DispatchGuardTest.RULED`, currently `[GUI_TYPESET, GUI_PLOT, GUI_DRAW]`; **adding a module to that list is the
-definition of done for converting it**, and the four conversions below are what `-core` owes before it can join.
+definition of done for converting it**. `-core` owes two more conversions before it can join: §1.3 and §1.5.
 
 ### 1.1 ~~`Length` — sealed, switches on itself twice~~ — **Done**
 
@@ -37,27 +37,27 @@ Nothing outside had to change. `FlexLayout` tests lengths with `instanceof`, whi
 well as a sealed one, and `krono`'s `Lengths.LERP` already carried a `default` arm because it is a *pairwise*
 blend and could never have been exhaustive on one operand anyway.
 
-**Still sealed, and blocking `-core` from `RULED`:** §1.2 `Mutation`, §1.3 `Edit`, §1.5 `InputEvent`.
+**Still sealed, and blocking `-core` from `RULED`:** §1.3 `Edit` and §1.5 `InputEvent`. Two left.
 
-### 1.2 `Mutation` — sealed, dispatched from outside
+### 1.2 ~~`Mutation` — sealed, dispatched from outside~~ — **Done**, as a sink
 
-`vexelray-gui-core/.../model/Mutation.java:11` (sealed), `.../model/Reconciler.java:73` (the switch).
+The sink shape, as argued for here: `Mutation.emitTo(Mutation.Sink)`, with `Reconciler` the only implementation.
+Each of the eight mutations calls the one sink method that means it, and `Reconciler.apply` is `m.emitTo(this)`.
 
-The real instance: `Reconciler.apply` switches over every mutation kind, so the model's single writer holds the
-knowledge of what each mutation *means*. Adding a mutation means editing two files that must agree.
+**`STAGES` did not move, which was the point.** A mutation record never touches a `RetainedNode` field — it
+names an operation, and the write stays in `Reconciler`, a class the model-writer guard already admits. The
+direct shape (`applyTo(root)`) would have been the shorter change and would have widened that list to eight more
+classes, dissolving the guarantee it exists to hold. `ModelWriterGuardTest` is untouched and green.
 
-Careful here — this one is load-bearing. `Reconciler` is the declared single writer of `RetainedNode`
-(`ModelWriterGuardTest`), so moving apply-logic onto the mutations moves *write* logic with it, and the
-model-writer guard's `STAGES` list would have to admit them. That is a real widening of who may write the model,
-and it is exactly the kind of thing that list exists to make deliberate.
+Named `Mutation.Sink` rather than `ModelWriter` as sketched above, to match `Picture.Mark`/`Picture.Sink` — the
+pattern CLAUDE.md names, and the one a reader will already have met.
 
-**Two candidate shapes**, and the choice matters more than the conversion:
-- `Mutation.applyTo(RetainedNode root, ...)` — direct, but widens `STAGES` to every mutation record.
-- A **sink**: `Mutation.emitTo(ModelWriter w)` where `ModelWriter` is the closed set of write operations and
-  `Reconciler` is its only implementation. `STAGES` stays exactly as it is, because `Reconciler` remains the only
-  thing that touches a field. Same inversion as `Placed.Draw`/`Placed.Sink`.
+The set of *operations* is closed (seven methods, no defaults, so a new one cannot be added without every sink
+answering for it) and the set of *mutations* is open. `Batch` needs no sink method: it emits its members in
+turn, because a group is a fact about how edits were queued rather than something done to the tree.
 
-The sink shape looks right and preserves the existing guarantee. Decide before writing.
+Nothing outside `Reconciler` pattern-matched on `Mutation`, so the switch really was the only thing that knew
+the kinds.
 
 ### 1.3 `Edit` — sealed, dispatched from `Document`
 

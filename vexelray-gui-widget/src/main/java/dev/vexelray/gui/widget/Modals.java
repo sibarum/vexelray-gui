@@ -97,12 +97,13 @@ public final class Modals implements AutoCloseable {
     private record Live(Modal modal, AtomicReference<NativeWindow> window, AtomicBoolean dismissed) {
     }
 
-    private Modals(GuiApp app, Atchung bus, Consumer<Gui> appearance) {
+    private Modals(GuiApp app, Consumer<Gui> appearance) {
         this.app = app;
-        // A private bus only when nobody offered one. Gui(Atchung) is the seam, and its own javadoc names this
-        // case: "hand in the same bus the application uses so input publishers, widgets, and workers all meet
-        // the framework on one fabric."
-        this.gui = bus == null ? new Gui() : new Gui(bus);
+        // A bus of its own, and it has to be: Gui's topics are static, so a second tree on the application's
+        // bus receives the first one's mutations into a mailbox nothing drains while no dialog is up -- and
+        // that mailbox is bounded and BLOCKs, so it eventually stops the application's own node setters. See
+        // Gui(Atchung), which says which things may share a bus and which may not.
+        this.gui = new Gui();
         // The look first, before a single prop is written: a role resolves at the moment a widget writes a
         // colour, so a theme installed after the tree is built reaches nothing that is already in it.
         if (appearance != null) {
@@ -154,35 +155,10 @@ public final class Modals implements AutoCloseable {
      *                   is what {@link #install(GuiApp)} means
      */
     public static Modals install(GuiApp app, Consumer<Gui> appearance) {
-        return install(app, null, appearance);
-    }
-
-    /**
-     * The same, on the application's own bus.
-     *
-     * <p><b>Why the bus is worth passing.</b> The dialogs hold a {@link Gui} of their own, and a {@code Gui}
-     * with no bus handed to it makes one — so an application that looks like it has one window has two buses
-     * and two handler pools, and the dialogs are a peer nothing else in the application can hear. Sharing the
-     * bus is what makes a dialog's answer an event on the same fabric as the click that asked the question,
-     * rather than something that has to be handed back through a captured field.
-     *
-     * <p>The parallel with {@code appearance} is exact, and it is why this is a third overload rather than a
-     * changed one: both are facts about the application that the dialogs cannot discover for themselves, and
-     * both have a library default that is correct only for an application which has made no decision. A host
-     * that embeds this widget without a bus of its own keeps the private one.
-     *
-     * <p>Only the bus is shared, not the tree and not the handler executor. One tree per dialog set is the
-     * invariant above, and {@code Gui} makes its own worker pool regardless of what it is handed — so what
-     * this buys today is one fabric, not one thread.
-     *
-     * @param bus        the application's bus, or {@code null} for a private one
-     * @param appearance applied to the dialogs' tree before it is built; {@code null} for the library default
-     */
-    public static Modals install(GuiApp app, Atchung bus, Consumer<Gui> appearance) {
         if (app == null) {
             throw new IllegalArgumentException("app must not be null");
         }
-        Modals modals = new Modals(app, bus, appearance);
+        Modals modals = new Modals(app, appearance);
         INSTANCE.set(modals);
         return modals;
     }

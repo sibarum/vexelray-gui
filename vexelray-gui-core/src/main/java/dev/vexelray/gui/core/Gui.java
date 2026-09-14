@@ -41,6 +41,7 @@ import dev.vexelray.gui.core.model.SemanticNode;
 import dev.vexelray.gui.core.nav.Address;
 import dev.vexelray.gui.core.nav.NavTopics;
 import dev.vexelray.gui.core.nav.Navigation;
+import dev.vexelray.gui.core.nav.Navigator;
 import dev.vexelray.gui.core.nav.Reveal;
 import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.gui.core.text.TextMetrics;
@@ -155,24 +156,11 @@ public final class Gui implements AutoCloseable {
     /** Navigation requests off the bus, drained on the GUI thread with everything else (see {@link #navigate}). */
     private final Subscription navSub;
     /**
-     * Named places in this tree, and the reverse map so a node leaving takes its name with it. A landmark is a
-     * name for a node, not for a position: the node may be reparented, restyled or rebuilt around and the name
-     * still means it.
+     * Named places in this tree, and taking the user to one — landmarks, revealers, the walks in flight, and the
+     * key this window is addressed by. See {@link Navigator}, which holds all of it and asks this class for only
+     * the three things a walk needs of the tree.
      */
-    private final java.util.concurrent.ConcurrentMap<String, Long> landmarks =
-            new java.util.concurrent.ConcurrentHashMap<>();
-    private final java.util.concurrent.ConcurrentMap<Long, String> landmarkNames =
-            new java.util.concurrent.ConcurrentHashMap<>();
-    /** How each concealing container un-conceals a descendant (see {@link #reveals}). */
-    private final java.util.concurrent.ConcurrentMap<Long, Reveal> revealers =
-            new java.util.concurrent.ConcurrentHashMap<>();
-    /** Navigations in flight, advanced one step per frame. Added from any thread, stepped on the GUI thread. */
-    private final java.util.Queue<Walk> walks = new java.util.concurrent.ConcurrentLinkedQueue<>();
-    /**
-     * The name this GUI's window is registered under ({@code GuiApp.window(key, ...)}), so an {@link Address}
-     * that names a window can be told from one meant for somebody else. Blank until an application says.
-     */
-    private volatile String windowKey = Address.ANY_WINDOW;
+    private final Navigator navigator;
     private final Reconciler reconciler;
     private final InputDispatcher input;
     private final Node root;
@@ -229,6 +217,18 @@ public final class Gui implements AutoCloseable {
     /**
      * Create a GUI on a shared Atchung bus — hand in the same bus the application uses so input publishers
      * ({@code tactroller-atchung}), widgets, and workers all meet the framework on one fabric.
+     *
+     * <p><b>One {@code Gui} per bus.</b> Share it with anything that is not a {@code Gui}; never with a second
+     * one. This class's topics are {@code static} — {@code vexelray.gui.mutations} is one name for every
+     * instance — so two trees on one bus each receive the other's mutations, and the mailbox they arrive in is
+     * bounded at {@value #MUTATION_MAILBOX} with {@link sibarum.atchung.Backpressure#BLOCK}. A tree that is not
+     * currently being presented never drains it, so the second {@code Gui} fills up and then <b>blocks the
+     * first one's node setters for good</b>: an application that freezes after some tens of thousands of
+     * edits, with no exception and nothing in a log.
+     *
+     * <p>Two windows means two buses today, and the cost is that a message cannot travel between them without
+     * something bridging it. Making one bus carry every tree is a real goal and a real change — the topics
+     * would have to be per instance rather than per class — and it is not this constructor.
      */
     public Gui(Atchung bus) {
         this(bus, null);
@@ -277,7 +277,24 @@ public final class Gui implements AutoCloseable {
         // Navigation requests arrive on the same pump, so a link clicked in another window, a macro step and a
         // test all enter this tree at the same point in the frame the tree's own edits do — before the drain,
         // never in the middle of one.
-        this.navSub = pump.subscribe(NavTopics.GO, this::accept, MUTATION_MAILBOX, Backpressure.BLOCK);
+        // What a walk needs of the tree, and nothing more: look a node up, make a handle, give it the keyboard.
+        this.navigator = new Navigator(new Navigator.Tree() {
+            @Override
+            public RetainedNode node(long id) {
+                return reconciler.node(id);
+            }
+
+            @Override
+            public Node handle(long id) {
+                return new Node(id, sink, layoutReader);
+            }
+
+            @Override
+            public void focus(Node node) {
+                Gui.this.focus(node);
+            }
+        }, bus, this::wake);
+        this.navSub = pump.subscribe(NavTopics.GO, navigator::accept, MUTATION_MAILBOX, Backpressure.BLOCK);
         // Framework input dispatch on the same bus; click handlers run on the worker executor (off the GUI thread).
         // Wheel scrolling mutates scroll offsets on the GUI thread and asks for a relayout next frame.
         // Every handler is followed by a wake, whatever it did.
@@ -337,7 +354,7 @@ public final class Gui implements AutoCloseable {
 
             @Override
             public String landmarkName(long id) {
-                return landmarkNames.getOrDefault(id, "");
+                return navigator.landmarkName(id);
             }
         }, handlers);
         this.layoutReader = readModels.reader();
@@ -906,11 +923,7 @@ public final class Gui implements AutoCloseable {
     private void releaseNodeId(long id) {
         input.clearHandlers(id);
         readModels.forget(id);
-        revealers.remove(id);
-        String name = landmarkNames.remove(id);
-        if (name != null) {
-            landmarks.remove(name, id);
-        }
+        navigator.forget(id);
     }
 
     /**
@@ -918,18 +931,7 @@ public final class Gui implements AutoCloseable {
      * a reveal it just asked for does nothing here beyond noticing that it is still waiting.
      */
     private void stepNavigations() {
-        if (walks.isEmpty()) {
-            return;
-        }
-        boolean working = false;
-        for (java.util.Iterator<Walk> it = walks.iterator(); it.hasNext(); ) {
-            if (it.next().step()) {
-                it.remove();
-            } else {
-                working = true;
-            }
-        }
-        if (working) {
+        if (navigator.step()) {
             // A walk mid-flight owes a frame whatever else happened: its next step is the only thing that will
             // carry it on, and in a loop that parks nothing else is going to ask.
             wake("navigation in flight");
@@ -965,33 +967,19 @@ public final class Gui implements AutoCloseable {
      * error. The binding is released with the node, like every other registration keyed by node id.
      */
     public Gui landmark(String name, Node node) {
-        if (name == null || name.isBlank()) {
-            throw new IllegalArgumentException("landmark name must not be blank");
-        }
-        if (name.indexOf(Address.SEPARATOR) >= 0) {
-            throw new IllegalArgumentException("landmark name must not contain '" + Address.SEPARATOR + "': " + name);
-        }
-        Long previous = landmarks.put(name, node.id());
-        if (previous != null && previous != node.id()) {
-            landmarkNames.remove(previous, name);
-        }
-        landmarkNames.put(node.id(), name);
+        navigator.landmark(name, node.id());
         return this;
     }
 
     /** Forget the landmark called {@code name}, if there is one. */
     public Gui clearLandmark(String name) {
-        Long id = landmarks.remove(name);
-        if (id != null) {
-            landmarkNames.remove(id, name);
-        }
+        navigator.clearLandmark(name);
         return this;
     }
 
     /** The node named by {@code name}, if this tree has that landmark. */
     public java.util.Optional<Node> landmarkNode(String name) {
-        Long id = landmarks.get(name);
-        return id == null ? java.util.Optional.empty() : java.util.Optional.of(new Node(id, sink, layoutReader));
+        return navigator.landmarkNode(name);
     }
 
     /**
@@ -1001,11 +989,7 @@ public final class Gui implements AutoCloseable {
      * them needs this only for a container it wrote itself.
      */
     public Gui reveals(Node node, Reveal reveal) {
-        if (reveal == null) {
-            revealers.remove(node.id());
-        } else {
-            revealers.put(node.id(), reveal);
-        }
+        navigator.reveals(node.id(), reveal);
         return this;
     }
 
@@ -1031,19 +1015,7 @@ public final class Gui implements AutoCloseable {
      * or no window at all is walked here.
      */
     public Navigation navigate(Address address) {
-        if (address.windowNamed() && !address.window().equals(windowKey)) {
-            Navigation forwarded = new Navigation(address);
-            bus.publish(NavTopics.GO, address);
-            // Somebody else's destination: this tree cannot say when it arrives, and pretending otherwise would
-            // hand back a future that never completes. The request is on the bus, which is the whole promise.
-            forwarded.arrival().completeExceptionally(new Navigation.Unreachable(
-                    "forwarded to window '" + address.window() + "'; that window reports its own arrival"));
-            return forwarded;
-        }
-        Navigation nav = new Navigation(address);
-        walks.add(new Walk(nav));
-        wake("navigation requested");
-        return nav;
+        return navigator.navigate(address);
     }
 
     /**
@@ -1051,112 +1023,13 @@ public final class Gui implements AutoCloseable {
      * {@code GuiApp} for every window it opens by name; an application embedding a {@link Gui} itself may set it.
      */
     public Gui windowKey(String key) {
-        this.windowKey = key == null ? Address.ANY_WINDOW : key;
+        navigator.windowKey(key);
         return this;
     }
 
     /** The name this GUI's window is known by, or blank if nothing has said. */
     public String windowKey() {
-        return windowKey;
-    }
-
-    /** A navigation request off the bus. Accepted only if it is for this window and this tree has the landmark. */
-    private void accept(Address address) {
-        if (address.windowNamed() && !address.window().equals(windowKey)) {
-            return;
-        }
-        if (!landmarks.containsKey(address.landmark())) {
-            return;   // not ours; another window on this bus owns that name, or nobody does
-        }
-        walks.add(new Walk(new Navigation(address)));
-    }
-
-    /**
-     * One navigation, advanced a step per frame.
-     *
-     * <p>The steps are: ask each concealing ancestor to reveal the target, outermost first and one per frame
-     * (each reveal changes what the next one is looking at); then reveal it to the scrollers and focus it; then,
-     * one frame later, report arrival — so "arrived" means the user can see it, not that the last command has
-     * been issued.
-     */
-    private final class Walk {
-
-        private final Navigation nav;
-        /** Ancestors already asked, so a container that declined is not asked again every frame. */
-        private final java.util.Set<Long> asked = new java.util.HashSet<>();
-        private int frames;
-        /** Set once the target has been scrolled to and focused; the next step reports arrival. */
-        private boolean settling;
-
-        Walk(Navigation nav) {
-            this.nav = nav;
-        }
-
-        /** @return whether this walk is finished and should be dropped. */
-        boolean step() {
-            if (nav.done()) {
-                return true;
-            }
-            if (++frames > MAX_NAV_FRAMES) {
-                return fail("gave up after " + MAX_NAV_FRAMES + " frames");
-            }
-            Long id = landmarks.get(nav.address().landmark());
-            if (id == null) {
-                return false;   // the tree may not have been built yet; the frame budget ends this if it never is
-            }
-            RetainedNode target = reconciler.node(id);
-            if (target == null) {
-                return false;   // named, but not in the tree yet
-            }
-            if (settling) {
-                nav.arrival().complete(new Node(id, sink, layoutReader));
-                return true;
-            }
-            for (RetainedNode a : ancestorsOutermostFirst(target)) {
-                Reveal reveal = revealers.get(a.id);
-                if (reveal == null || !asked.add(a.id)) {
-                    continue;
-                }
-                if (reveal.reveal(id)) {
-                    return false;   // it acted: let the frame apply and lay out what it did before going on
-                }
-            }
-            if (concealed(target)) {
-                return fail("still hidden after every container that could reveal it was asked — the container "
-                        + "concealing it declares no Reveal (see Reveal's class note)");
-            }
-            new Node(id, sink, layoutReader).scrollIntoView();
-            focus(new Node(id, sink, layoutReader));
-            settling = true;
-            wake("navigation arriving");
-            return false;
-        }
-
-        private boolean fail(String why) {
-            nav.arrival().completeExceptionally(
-                    new Navigation.Unreachable("cannot navigate to " + nav.address() + ": " + why));
-            return true;
-        }
-    }
-
-    /** {@code target}'s ancestors, root first — the order reveals must run in. */
-    private static java.util.List<RetainedNode> ancestorsOutermostFirst(RetainedNode target) {
-        java.util.List<RetainedNode> chain = new java.util.ArrayList<>();
-        for (RetainedNode a = target.parent; a != null; a = a.parent) {
-            chain.add(a);
-        }
-        java.util.Collections.reverse(chain);
-        return chain;
-    }
-
-    /** Whether {@code target} is hidden, itself or by any ancestor. */
-    private static boolean concealed(RetainedNode target) {
-        for (RetainedNode n = target; n != null; n = n.parent) {
-            if (!n.visible()) {
-                return true;
-            }
-        }
-        return false;
+        return navigator.windowKey();
     }
 
     /** Register a global keyboard shortcut. The command runs on a worker thread. */

@@ -98,33 +98,4 @@ class DialogsWearTheApplicationsLookTest {
         }
     }
 
-    /**
-     * The dialogs are on the application's bus when one is handed to them, and on a private one when it is not.
-     *
-     * <p>The same shape as the look, and for the same reason: a bus is a fact about the application that the
-     * dialogs cannot discover for themselves. Without it an application that looks like it has one window has
-     * two buses, and the dialogs are a peer nothing else in it can hear. The default stays private, because a
-     * host embedding this widget has not necessarily got a bus to offer.
-     *
-     * <p>Asserted through the appearance seam rather than a new accessor — it is already handed the tree the
-     * dialogs are built on, and {@code Gui.bus()} is public, so the question "which fabric is that tree on"
-     * is answerable without widening the API to ask it.
-     */
-    @Test
-    void theDialogsJoinTheApplicationsBusWhenThereIsOne() {
-        Gui gui = new Gui();
-        AtomicReference<Gui> shared = new AtomicReference<>();
-        AtomicReference<Gui> privately = new AtomicReference<>();
-        try (HarnessApp harness = HarnessApp.start(gui, WindowConfig.of("harness", 400, 300))) {
-            try (Modals ignored = Modals.install(harness.app(), gui.bus(), shared::set)) {
-                assertNotNull(shared.get(), "install never handed the appearance seam anything");
-                assertSame(gui.bus(), shared.get().bus(),
-                        "the dialogs built a bus of their own despite being handed the application's");
-            }
-            try (Modals ignored = Modals.install(harness.app(), null, privately::set)) {
-                assertNotSame(gui.bus(), privately.get().bus(),
-                        "a null bus is the library default and must not reach for the caller's");
-            }
-        }
-    }
 }

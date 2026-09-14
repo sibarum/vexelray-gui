@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Caret-follow scroll belongs to the computed-geometry phase, not to the renderer (docs/layout-read-model.md).
+ * Caret-follow scroll belongs to the computed-geometry phase, not to the renderer (docs/reference/layout-read-model.md).
  *
  * <p>Today it lives in {@code TreeRenderer.updateHScroll}, which only ever runs from {@code GuiApp} — so a field
  * that overflows scrolls when a Vulkan renderer is attached and does not scroll headless or on a remote client.
@@ -79,7 +79,7 @@ class CaretScrollTest {
     /**
      * Moving the caret reflows nothing — {@code CARET} is not layout-affecting — but it does move the view, so the
      * compute phase must re-run and the read-model republish off {@code geometryDirty} alone
-     * (docs/layout-read-model.md §2.3). Without that, the metrics a widget reads describe the previous scroll.
+     * (docs/reference/layout-read-model.md §2.3). Without that, the metrics a widget reads describe the previous scroll.
      */
     @Test
     void caretMoveRepublishesGeometryWithoutAReflow() {

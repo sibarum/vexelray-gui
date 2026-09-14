@@ -23,7 +23,7 @@ import java.util.regex.Pattern;
  * every concurrent run on the machine.
  *
  * <p><b>It does not know how to start anything.</b> It runs a command line it was given.
- * {@code docs/automation-cli.md} §8 puts application lifecycle out of scope on purpose: knowing that this
+ * {@code docs/reference/automation-cli.md} §8 puts application lifecycle out of scope on purpose: knowing that this
  * application is a Maven exec and that one is a native binary is {@code mainframe}'s territory if it is
  * anyone's, and the zero-dependency rule exists so this tool never grows that knowledge.
  *

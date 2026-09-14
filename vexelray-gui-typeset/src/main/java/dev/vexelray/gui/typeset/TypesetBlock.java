@@ -12,7 +12,7 @@ import java.util.List;
 
 /**
  * A typeset block as a component: one container {@link Node} whose children are the engine's draw list, each draw
- * a floating node. This is the whole of the projection (docs/typeset.md §8), and it is the only file in the module
+ * a floating node. This is the whole of the projection (docs/reference/typeset.md §8), and it is the only file in the module
  * that knows what a {@code Gui} is.
  *
  * <p><b>An atom in flex layout.</b> The container is sized exactly to the block and its children all float, so
@@ -23,14 +23,14 @@ import java.util.List;
  * posts mutations like any widget — the model-writer guard stays green by construction rather than by discipline.
  *
  * <h2>Why dp, and not em</h2>
- * The tone map solves in pixels because a legibility floor is physical (docs/typeset.md §4.3), so by the time
+ * The tone map solves in pixels because a legibility floor is physical (docs/reference/typeset.md §4.3), so by the time
  * there are coordinates the basis has already been applied and applying it again would be a second
  * multiplication. The block solves at {@code rootEmPx · zoom} and emits {@link Length#dp}, which resolves as
  * {@code v · dpi} — density and nothing else. Zoom is already inside the number; density is the one factor left,
  * and it is exactly the one {@code dp} supplies. Emitting {@code em} would apply the root em, zoom <em>and</em>
  * density all a second time.
  *
- * <p>docs/todo.md reached "emit dp" from a slightly wrong premise — that the solved basis already includes
+ * <p>docs/plans/todo.md reached "emit dp" from a slightly wrong premise — that the solved basis already includes
  * density. It does not, and must not: a 9px floor means 9px at density 1 and 18 at density 2, or the floor
  * shrinks physically on exactly the displays where legibility is at stake.
  *
@@ -169,7 +169,7 @@ public final class TypesetBlock implements AutoCloseable {
      * The projection itself, written as a {@link Placed.Sink} — two methods, no switch, and nothing here asks
      * what kind of draw it holds. A draw kind added later is a compile error in exactly this class and in every
      * other consumer, which is the visible, deliberate consequence widening a closed interface should have
-     * (docs/typeset.md §3.1).
+     * (docs/reference/typeset.md §3.1).
      */
     private final class Projection implements Placed.Sink {
 

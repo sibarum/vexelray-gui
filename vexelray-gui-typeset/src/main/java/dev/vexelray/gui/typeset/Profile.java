@@ -10,7 +10,7 @@ package dev.vexelray.gui.typeset;
  * clears the bar by {@code fractionGapAbove}" is an algorithm; {@code fractionGapAbove} is a number. {@link Recipes}
  * owns the algorithms and a profile supplies the numbers. Making recipes themselves data would mean building a
  * layout DSL on speculation — the deliberate later step, taken only if a real app needs a construct the built-ins
- * cannot compose (docs/typeset.md §7).
+ * cannot compose (docs/reference/typeset.md §7).
  *
  * <p>Every dimension here is in <b>em</b> of the box it applies to, except the two unitless ratio bounds and the
  * two pixel bounds in {@link ToneBounds}, which are the only place in the module that names a physical unit — and
@@ -23,7 +23,7 @@ public record Profile(String defaultFace, Sizes sizes, Metrics metrics, Spacing 
      * nesting level and left to compound: a script inside a script is {@code script²}, and nothing here clamps it.
      * That is deliberate. The classical approach carries a separate "script-script" size precisely to stop runaway
      * shrink, which is a local patch for a global problem; here the tone map handles the whole block's range at
-     * once (docs/typeset.md §4), so the authored ratios stay uniform and honest.
+     * once (docs/reference/typeset.md §4), so the authored ratios stay uniform and honest.
      *
      * @param script      a satellite relative to its nucleus — the classic ~0.7
      * @param numerator   a fraction's numerator relative to the fraction
@@ -108,7 +108,7 @@ public record Profile(String defaultFace, Sizes sizes, Metrics metrics, Spacing 
     }
 
     /**
-     * The bounds the tone map solves against (docs/typeset.md §4). The block's authored size ratios are fitted
+     * The bounds the tone map solves against (docs/reference/typeset.md §4). The block's authored size ratios are fitted
      * into {@code [floorPx, ceilPx]} by a single slope and offset in log space.
      *
      * <p>Hardness is <b>pre-declared</b>, because past some nesting depth these cannot all hold at once and the

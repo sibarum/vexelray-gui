@@ -12,7 +12,7 @@
  * cannot recover.
  *
  * <p>That last one is why {@link dev.vexelray.gui.widget.ColorPicker} and
- * {@link dev.vexelray.gui.widget.Toggle} are here after {@code docs/todo.md} predicted they would not be: a
+ * {@link dev.vexelray.gui.widget.Toggle} are here after {@code docs/plans/todo.md} predicted they would not be: a
  * picker holding {@code Color} instead of {@code Hsv} loses the user's place at every grey, and a knob placed by
  * a hand-computed inset is correct at one rem size. Both look like painted controls and neither is one.
  *
@@ -29,6 +29,6 @@
  * {@link dev.vexelray.gui.widget.ContextMenu}, {@code FindBar} and {@link dev.vexelray.gui.widget.Tooltip} all
  * answer to; whether a node is in the tree's layout is {@code Node.showing}.
  *
- * <p>What is still missing, and in what order, is {@code docs/todo.md} §4.
+ * <p>What is still missing, and in what order, is {@code docs/plans/todo.md} §4.
  */
 package dev.vexelray.gui.widget;

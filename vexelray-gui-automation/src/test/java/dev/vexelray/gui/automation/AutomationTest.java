@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The command surface an agent drives (docs/automation.md §5).
+ * The command surface an agent drives (docs/reference/automation.md §5).
  *
  * <p>Two things are worth pinning beyond "the verb runs". First, a ref resolves to a place <em>at the moment of
  * acting</em>, never to a coordinate the agent read a frame earlier — that stale-coordinate click is the classic
@@ -163,7 +163,7 @@ class AutomationTest {
 
             String out = new Automation(gui).command("click " + hidden.id());
             // Not a silent click at the rect a hidden node still publishes — that would hit whatever is on top
-            // of that spot and report success (docs/semantic-read-model.md §6).
+            // of that spot and report success (docs/reference/semantic-read-model.md §6).
             assertTrue(out.startsWith("err"), out);
             assertTrue(out.contains("not visible") && out.contains("landmark"),
                     "and it has to say what would have made it reachable: " + out);

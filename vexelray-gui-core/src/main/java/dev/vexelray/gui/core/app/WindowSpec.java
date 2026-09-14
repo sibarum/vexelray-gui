@@ -83,7 +83,7 @@ public record WindowSpec(WindowConfig config, Gui gui, Consumer<NativeWindow> on
      * that built its own controls from the native window therefore got a working minimize, maximize and close
      * and a <b>silent no-op screenshot</b> — every window except the main one, because the host wired the real
      * sink only there. Handing the controls down instead of letting the bar mint them is what makes
-     * "every window can photograph itself" true rather than merely intended (docs/automation.md §7).
+     * "every window can photograph itself" true rather than merely intended (docs/reference/automation.md §7).
      */
     public WindowSpec onControls(Consumer<WindowControls> onControls) {
         return new WindowSpec(config, gui, onCreated, onClosed, onCloseRequest, standing, anchor,

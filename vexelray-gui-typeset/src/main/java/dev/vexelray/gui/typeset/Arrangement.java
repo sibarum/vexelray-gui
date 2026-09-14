@@ -72,7 +72,7 @@ public interface Arrangement {
      * How far this box may extend its ascent past what its content naturally occupies before the container has to
      * grow around it, in pixels; {@link Double#POSITIVE_INFINITY} when nothing constrains it.
      *
-     * <p><b>This is TeX's cramped style, measured rather than declared</b> (docs/typeset.md §5). A superscript in
+     * <p><b>This is TeX's cramped style, measured rather than declared</b> (docs/reference/typeset.md §5). A superscript in
      * a fraction's denominator is raised less than the same one in a row — not because the denominator carries a
      * flag, but because the {@link Box.Stack} above it reserved exactly {@code fractionGapBelow} of slack between
      * the bar and the denominator, and that gap is the whole allowance. Room is <em>derived from the gaps a
@@ -93,7 +93,7 @@ public interface Arrangement {
     double footroom();
 
     /**
-     * The block's solved size transfer applied to an authored ratio, in pixels (docs/typeset.md §4).
+     * The block's solved size transfer applied to an authored ratio, in pixels (docs/reference/typeset.md §4).
      *
      * <p>Offered, never imposed. A box that picks its own sizes can route them through this to stay consistent
      * with the rest of the block, or ignore it entirely.

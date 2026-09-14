@@ -146,7 +146,7 @@ public final class Gui implements AutoCloseable {
     // `-Dprobe.format=csv` for the correlation log. There was a bespoke flag here writing to System.out, which
     // meant the two facts a stall is diagnosed from -- that the loop parked, and what woke it -- were being
     // written to two different streams with two different buffers. That is precisely the interleaving problem
-    // one writer exists to avoid, so it now goes where everything else goes (docs/automation.md §4).
+    // one writer exists to avoid, so it now goes where everything else goes (docs/reference/automation.md §4).
 
     /** The unset {@link #workListener}. Held by identity so an unwired GUI is answerable. */
     private static final Runnable NO_WAKE = () -> { };
@@ -226,10 +226,10 @@ public final class Gui implements AutoCloseable {
     // that Length resolved against this frame's zoom and density — read by the host right after frame().
     private volatile Length resizeBorder = Length.ZERO;
     private int resizeBorderPx;
-    // Computed-layout read-model (docs/layout-read-model.md): the latest snapshot workers read via Node.layout(),
+    // Computed-layout read-model (docs/reference/layout-read-model.md): the latest snapshot workers read via Node.layout(),
     // and the coalesced State observers subscribe to. Published after each layout pass.
     private final State<LayoutSnapshot> layoutState;
-    /** The live drag, as a coalesced State -- the read-model half of DragSession (docs/layout-read-model.md). */
+    /** The live drag, as a coalesced State -- the read-model half of DragSession (docs/reference/layout-read-model.md). */
     private final State<DragState> dragState;
     private final Committer<DragState, DragState> setDrag;
     private DragState lastDrag = DragState.NONE;
@@ -239,7 +239,7 @@ public final class Gui implements AutoCloseable {
     private final Committer<LayoutSnapshot, LayoutSnapshot> setLayout;
     private volatile LayoutSnapshot latestLayout = LayoutSnapshot.EMPTY;
     private long layoutVersion;
-    // The semantic read-model (docs/automation.md §3): what each node *is*, published beside the geometry from
+    // The semantic read-model (docs/reference/automation.md §3): what each node *is*, published beside the geometry from
     // the same walk and at the same version, so the two join by node id and by frame.
     private final State<SemanticSnapshot> semanticState;
     private final Committer<SemanticSnapshot, SemanticSnapshot> setSemantics;
@@ -596,7 +596,7 @@ public final class Gui implements AutoCloseable {
      *
      * <p><b>Who needs it:</b> anything that must solve in pixels before handing coordinates back as
      * {@code Length}s. {@code vexelray-gui-typeset} is the case that asked for it — its tone map has a physical
-     * legibility floor, so it cannot work in em and defer (docs/typeset.md §4.3).
+     * legibility floor, so it cannot work in em and defer (docs/reference/typeset.md §4.3).
      */
     public float rootEmPx() {
         return ROOT_EM_PX;
@@ -619,7 +619,7 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
-     * The computed-layout read-model as a coalesced {@code State} (docs/layout-read-model.md): every node's
+     * The computed-layout read-model as a coalesced {@code State} (docs/reference/layout-read-model.md): every node's
      * position/size/scroll after layout, republished per changed frame. Subscribe to react to layout changes, or
      * read a node's own via {@link Node#layout()}. The value is one frame stale (the framework's input latency).
      */
@@ -628,7 +628,7 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
-     * The semantic read-model as a coalesced {@code State} (docs/automation.md §3): what every node <b>is</b> —
+     * The semantic read-model as a coalesced {@code State} (docs/reference/automation.md §3): what every node <b>is</b> —
      * role, name, structure, focus — published on the same frames and at the same {@code version} as
      * {@link #layout()}, so the two join by node id and by frame.
      *
@@ -1006,7 +1006,7 @@ public final class Gui implements AutoCloseable {
         return this;
     }
 
-    // --- navigation (docs/navigation.md) ---
+    // --- navigation (docs/reference/navigation.md) ---
 
     /**
      * Name a place in this tree: {@code gui.landmark("prefs.theme.accent", swatch)}. From then on that name is an
@@ -1490,7 +1490,7 @@ public final class Gui implements AutoCloseable {
         if (Probe.ON) {
             String id = "Gui@" + Integer.toHexString(System.identityHashCode(this));
             if (workListener != NO_WAKE) {
-                // The other half of the gap analysis (docs/automation.md §4). loop.park says the loop went to
+                // The other half of the gap analysis (docs/reference/automation.md §4). loop.park says the loop went to
                 // sleep and for how long it was allowed to; this says what woke it, and why. A gap that ends in
                 // a wake and a gap that ends because the budget ran out are different findings.
                 Probe.mark(Lane.FRAME, "wake", why + " on " + id);
@@ -1544,7 +1544,7 @@ public final class Gui implements AutoCloseable {
      *
      * <p>The read side of the wake, for anything that needs to know whether the tree has settled: chiefly the
      * automation driver's {@code settle}, which waits for a mutation to be reflected before it reads or clicks
-     * again (docs/automation.md §5).
+     * again (docs/reference/automation.md §5).
      *
      * <p><b>What it does not say.</b> A handler still running on a worker has not published yet, so it is owed
      * nothing and this reports false while that work is still in flight — the same limit
@@ -1697,7 +1697,7 @@ public final class Gui implements AutoCloseable {
                     layoutRan = true;
                 }
             }
-            // The compute phase (docs/layout-read-model.md §2.1): resolve everything that is a pure function of the
+            // The compute phase (docs/reference/layout-read-model.md §2.1): resolve everything that is a pure function of the
             // laid-out tree — caret-follow scroll, text metrics — then publish. It runs whenever the geometry could
             // have moved, which includes a caret move that reflows nothing, and it runs in *every* host: this is
             // what makes a field behave identically headless, on screen, and over the wire. Static frames do
@@ -1811,7 +1811,7 @@ public final class Gui implements AutoCloseable {
     /**
      * The compute phase: walk the laid-out tree and write each node's derived geometry onto it. Runs on the GUI
      * thread, after layout and before publish, and is the <b>only</b> stage allowed to compute it — publish copies,
-     * renderers and widgets read (docs/layout-read-model.md §2.1).
+     * renderers and widgets read (docs/reference/layout-read-model.md §2.1).
      */
     private static void resolveGeometry(RetainedNode n, TextMeasurer tm) {
         if (!n.visible()) {
@@ -1940,7 +1940,7 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
-     * Narrow an editable node's scroll so the caret stays in view (docs/layout-read-model.md §2.2, §11.3 step 4).
+     * Narrow an editable node's scroll so the caret stays in view (docs/reference/layout-read-model.md §2.2, §11.3 step 4).
      * A wrapped node never scrolls horizontally — there is nothing to the right to reach — and a single-line node
      * never scrolls vertically.
      */
@@ -2045,7 +2045,7 @@ public final class Gui implements AutoCloseable {
         SemanticSnapshot sem = new SemanticSnapshot(version, root.id, meanings);
         latestSemantics = sem;
 
-        // The causality key (docs/automation.md §4). Timestamps answer "when", and across threads they can even
+        // The causality key (docs/reference/automation.md §4). Timestamps answer "when", and across threads they can even
         // answer it in the wrong order; this answers "which frame", which is the question actually being asked
         // when a click and the layout that was supposed to reflect it disagree. Recorded with the node count
         // because a version that republishes with a tree that did not change is its own kind of finding.
@@ -2108,7 +2108,7 @@ public final class Gui implements AutoCloseable {
                 new Rect(n.x, n.y, n.w, n.h),
                 new Rect(n.viewX, n.viewY, n.viewW, n.viewH),
                 // Copied, not computed: {@link Clip} resolved it in the compute phase, where the tree can be
-                // seen. Publish projects the model and works nothing out (docs/layout-read-model.md §9).
+                // seen. Publish projects the model and works nothing out (docs/reference/layout-read-model.md §9).
                 new Rect(n.clipX, n.clipY, n.clipW, n.clipH),
                 n.cornerPx, n.cornerBottomPx,
                 n.scrollX, n.scrollY, n.contentW, n.contentH, n.overflowX, n.overflowY, n.textSizePx,

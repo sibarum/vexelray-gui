@@ -933,7 +933,7 @@ public final class GuiApp implements AutoCloseable {
                 // The ceiling applies always. A zero budget means "immediately", which on a presenter
                 // that does not block is as fast as the machine goes; this is what stops that.
                 budget = Math.max(budget, minFrameNanos);
-                // The heartbeat, and the thing that makes a gap in the log readable (docs/automation.md §4).
+                // The heartbeat, and the thing that makes a gap in the log readable (docs/reference/automation.md §4).
                 //
                 // A run is read by sorting on time and looking for long stretches with no frame in them. That
                 // only distinguishes a stall from a nap if two things are recorded unconditionally: that a frame

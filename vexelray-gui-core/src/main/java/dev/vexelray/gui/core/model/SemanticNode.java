@@ -5,7 +5,7 @@ import java.util.List;
 /**
  * What one node <b>is</b>, as opposed to where it is: role, name, structure and interaction state. The
  * per-node element of {@link dev.vexelray.gui.core.layout.SemanticSnapshot}, and the half of the read-model
- * {@link dev.vexelray.gui.core.layout.NodeLayout} deliberately does not carry (docs/automation.md §3).
+ * {@link dev.vexelray.gui.core.layout.NodeLayout} deliberately does not carry (docs/reference/automation.md §3).
  *
  * <p>Keyed by the same node id and published at the same {@code version} as the layout snapshot, so the two
  * join by id and by frame. Pure data — no node references, no lengths, nothing to resolve — because a consumer

@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * A5 (docs/automation.md §8): diagnose a hover-path bug <b>from the log alone</b>.
+ * A5 (docs/reference/automation.md §8): diagnose a hover-path bug <b>from the log alone</b>.
  *
  * <p>Until this passes, the instrument is not trusted for troubleshooting — because everything else it does is
  * only worth having if a run it recorded can be read back by someone who was not there.

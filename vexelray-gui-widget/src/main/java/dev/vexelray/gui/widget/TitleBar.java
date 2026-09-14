@@ -109,7 +109,7 @@ public final class TitleBar {
         Node buttons = gui.row().height(Length.FILL).alignItems(AlignItems.STRETCH).scroll(false, false)
                 .children(minimize, maximize, close);
 
-        // Four zones, left to right: identity, caption, instruments, window controls (docs/automation.md §7).
+        // Four zones, left to right: identity, caption, instruments, window controls (docs/reference/automation.md §7).
         // The caption is a spacer that takes the slack rather than SPACE_BETWEEN spreading three groups, because
         // instruments have to sit *against* the caption buttons and not float in the middle of the bar. It stays
         // ordinary dead space, so it is still all draggable.

@@ -198,7 +198,7 @@ final class GuiWindow implements AutoCloseable {
      * Render this window's current tree offscreen and write it to {@code path} as a PNG.
      *
      * <p><b>Per window, and on the main thread.</b> Per window because a screenshot is of a window — the one
-     * whose title bar the instrument sits in (docs/automation.md §7) — and an application-level capture would
+     * whose title bar the instrument sits in (docs/reference/automation.md §7) — and an application-level capture would
      * only ever have had to be widened into this. On the main thread because everything Vulkan here is, so this
      * is called from the frame loop's task queue and never directly.
      *

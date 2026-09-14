@@ -1,7 +1,7 @@
 /**
  * The client for the automation protocol: a command line that drives a running application.
  *
- * <p>Designed in {@code docs/automation-cli.md}, which is the companion to {@code docs/automation.md} —
+ * <p>Designed in {@code docs/reference/automation-cli.md}, which is the companion to {@code docs/reference/automation.md} —
  * the first designs the instrument, this ships the thing that reaches it.
  *
  * <p>{@link dev.vexelray.gui.automation.cli.Ottermate} is the entry point;

@@ -39,7 +39,7 @@ public final class Node {
     }
 
     /**
-     * This node's computed layout from the latest published snapshot (docs/layout-read-model.md) — position,
+     * This node's computed layout from the latest published snapshot (docs/reference/layout-read-model.md) — position,
      * size, scroll and overflow. Synchronous and lock-free, and <b>one frame stale</b> (the latency the framework
      * already accepts for input); returns {@link NodeLayout#ABSENT} before the node's first layout. This is a read
      * of a published snapshot, not a live poke into the model — the handle stays write-only for mutations.
@@ -374,7 +374,7 @@ public final class Node {
     /**
      * Declare what this node <b>is</b> — {@code "button"}, {@code "textfield"}, {@code "tab"} — for readers that
      * address a node by meaning rather than by position: an automation agent, a thin client, a screen reader
-     * (docs/automation.md §3). Pass {@code null} to clear.
+     * (docs/reference/automation.md §3). Pass {@code null} to clear.
      *
      * <p>Affects nothing drawn, laid out or hit-tested. It is published into
      * {@link dev.vexelray.gui.core.layout.SemanticSnapshot} and read from there; core itself never branches on

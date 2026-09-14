@@ -2,7 +2,7 @@ package dev.vexelray.gui.typeset;
 
 /**
  * Fits a block's authored size ratios into the range a reader can actually see — the same operation as an HDR
- * transfer curve or an audio compressor, applied to type size (docs/typeset.md §4).
+ * transfer curve or an audio compressor, applied to type size (docs/reference/typeset.md §4).
  *
  * <p>Sizes in this module are declared <b>relative to the parent</b> and carry no absolute meaning. A leaf's
  * authored size is therefore the product of every ratio on the path down to it, and a block's authored
@@ -47,7 +47,7 @@ public record ToneMap(double slope, double gain) {
      * Solve for the transfer that fits {@code stats} into {@code bounds}, anchored so the authored ratio 1.0 sits
      * at {@code basePx} unless the floor forces it higher.
      *
-     * <p>The three constraints cannot always hold at once, so the yield order is pre-declared (docs/typeset.md
+     * <p>The three constraints cannot always hold at once, so the yield order is pre-declared (docs/reference/typeset.md
      * §4.2): the <b>size floor is hard</b> (legibility is the whole point), the <b>contrast floor is hard</b> (two
      * levels rendering the same size is worse than one being oversized), and the <b>size ceiling yields</b> — a
      * deeply nested block genuinely is large if every part of it must be readable, and it overflows and scrolls.

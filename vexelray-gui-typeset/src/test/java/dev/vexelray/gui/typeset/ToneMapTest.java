@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The P1 gate (docs/typeset.md §10): the tone map's solve, on its own.
+ * The P1 gate (docs/reference/typeset.md §10): the tone map's solve, on its own.
  *
  * <p>Pure numbers and no tree — {@link ToneMap#solve} takes a {@link ToneMap.Stats}, so most of this file hands it
  * one directly. That is the point of doing P1 before the engine: the solve can be wrong in ways geometry tests
@@ -126,7 +126,7 @@ class ToneMapTest {
         double window = Math.log(B.ceilPx() / B.floorPx());
         double slopeFloor = Math.log(B.ratioFloor()) / SCRIPT_STEP;
         double crossover = window / slopeFloor / SCRIPT_STEP;
-        assertEquals(6.96, crossover, 0.01, "the arithmetic in docs/typeset.md §4.2");
+        assertEquals(6.96, crossover, 0.01, "the arithmetic in docs/reference/typeset.md §4.2");
 
         assertFalse(yieldsTheCeiling(6), "six levels of nesting still fit");
         assertTrue(yieldsTheCeiling(7), "seven do not");
@@ -139,7 +139,7 @@ class ToneMapTest {
         return ToneMap.solve(s, B, BASE).px(Math.exp(s.maxLog())) > B.ceilPx() + 1e-6;
     }
 
-    // --- stability, which needs no policy (docs/typeset.md §4.3) --------------------------------------------------
+    // --- stability, which needs no policy (docs/reference/typeset.md §4.3) --------------------------------------------------
     // These four are the answer to "choose a hysteresis policy": the solve is already stable, on every axis that
     // could have made it jitter, and each reason is a property rather than an observation. Hysteresis would have
     // been state — the same document rendering two ways depending on how it was reached — bought for nothing.
@@ -213,7 +213,7 @@ class ToneMapTest {
 
     @Test
     void theDepthSweepInTheDocsIsWhatTheSolverActuallyProduces() {
-        // docs/typeset.md §4.2 prints this table, and a table in prose drifts. Pinning it here means the numbers
+        // docs/reference/typeset.md §4.2 prints this table, and a table in prose drifts. Pinning it here means the numbers
         // a reader is given are the numbers the code computes — and it is how the 34.9px that was printed against
         // seven levels was found to be wrong.
         StringBuilder table = new StringBuilder();

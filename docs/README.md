@@ -14,9 +14,9 @@ Three kinds of document live here, and the folder they are in is the claim they 
 ## Section numbers are an API
 
 Javadoc throughout the source cites these documents **by section** — `docs/reference/automation.md §3`,
-`docs/reference/layout-read-model.md §2.1` — 175 times at the last count. So renumbering a section silently
-breaks references that no build will catch. Add sections; do not renumber them, and do not fuse two documents
-that are cited this way. See [plans/reference-rewrite.md](plans/reference-rewrite.md).
+`docs/reference/layout-read-model.md §2.1` — 99 times, across 28 distinct sections. So renumbering a section
+silently breaks references that no build will catch. Add sections; do not renumber them, and do not fuse two
+documents that are cited this way. See [plans/reference-rewrite.md](plans/reference-rewrite.md).
 
 ---
 
@@ -90,4 +90,4 @@ because the feature is in three pieces.
 | [gui-decomposition.md](plans/gui-decomposition.md) | **Not started, and the cost is measured.** `Gui` was 1,929 lines when the plan was written and is 2,210 now. The target is under 400, with every other concern a component under 300 |
 | [loudness.md](plans/loudness.md) | **Stage A done; B1–B4 and B6 done, B5 held deliberately; C–E not started.** The framework explains itself well to a reader and does not yet complain to a consumer who asked for something it cannot do |
 | [architecture-proof.md](plans/architecture-proof.md) | **Plan, not started, and currently blocked:** it rests on Elektro-Q for the wire, which has no sibling checkout on this machine |
-| [reference-rewrite.md](plans/reference-rewrite.md) | **The locator.** Every rename and move from the 2026-09-14 restructure, with the inbound-reference count for each, so the javadoc and comment pass can be done deliberately rather than by blind find-and-replace |
+| [reference-rewrite.md](plans/reference-rewrite.md) | **Done** &mdash; the record of the 2026-09-14 restructure: every rename and move, with the inbound-reference count for each. All 99 source references were rewritten against it, and every `§N` citation still resolves |

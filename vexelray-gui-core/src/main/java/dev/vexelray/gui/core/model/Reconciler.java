@@ -27,7 +27,7 @@ public final class Reconciler {
     private boolean layoutDirty = true;
     // Derived geometry (caret-follow scroll, text metrics) can go stale without the flex layout changing — moving
     // the caret is the standing example. layoutDirty implies geometryDirty; the converse doesn't hold, so a caret
-    // move republishes the read-model without paying for a relayout (docs/layout-read-model.md §2.3).
+    // move republishes the read-model without paying for a relayout (docs/reference/layout-read-model.md §2.3).
     private boolean geometryDirty = true;
 
     public Reconciler(long rootId) {

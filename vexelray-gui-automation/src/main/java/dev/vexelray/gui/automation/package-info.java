@@ -1,5 +1,5 @@
 /**
- * Driving a real application the way a person does, for troubleshooting. See {@code docs/automation.md}.
+ * Driving a real application the way a person does, for troubleshooting. See {@code docs/reference/automation.md}.
  *
  * <p>Three classes. {@link dev.vexelray.gui.automation.Cursor} is a pointer with a position that
  * <b>never teleports</b>; {@link dev.vexelray.gui.automation.Automation} is the command surface and the only

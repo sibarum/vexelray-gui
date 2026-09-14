@@ -359,7 +359,7 @@ public final class TreeRenderer {
 
     /**
      * Draw a text node from its published {@link TextMetrics} — the single source of truth for where every glyph,
-     * selection rect and caret sits (docs/layout-read-model.md §11.4). The compute phase resolved scroll and
+     * selection rect and caret sits (docs/reference/layout-read-model.md §11.4). The compute phase resolved scroll and
      * alignment and baked each visual line's absolute caret x, so the renderer measures and aligns nothing.
      *
      * <p>Labels and fields share this path. They used to differ: a label drew through {@code canvas.text} with

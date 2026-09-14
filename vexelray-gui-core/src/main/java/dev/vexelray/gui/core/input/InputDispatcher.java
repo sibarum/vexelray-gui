@@ -1239,7 +1239,7 @@ public final class InputDispatcher {
                     // The consequence of motion, not the motion itself. A path that crosses something records
                     // pointer.move either way; what says the crossing *mattered* is the node that changed state
                     // because of it — which is precisely the evidence a hover-path bug leaves and nothing else
-                    // does (docs/automation.md §2).
+                    // does (docs/reference/automation.md §2).
                     Probe.mark(Lane.INPUT, "state." + now.name().toLowerCase(java.util.Locale.ROOT),
                             "node=" + id);
                 }

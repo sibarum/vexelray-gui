@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The P2 gate (docs/typeset.md §10): the engine, against the <b>real shipped atlas</b> rather than a fixture, so
+ * The P2 gate (docs/reference/typeset.md §10): the engine, against the <b>real shipped atlas</b> rather than a fixture, so
  * the geometry is measured with the metrics the GUI actually renders from.
  *
  * <p>Most assertions here are <b>relationships</b> — the bar centres on the axis, the numerator clears it by

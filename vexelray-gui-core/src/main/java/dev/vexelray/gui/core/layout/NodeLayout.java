@@ -1,7 +1,7 @@
 package dev.vexelray.gui.core.layout;
 
 /**
- * One node's computed layout, as published in a {@link LayoutSnapshot} (docs/layout-read-model.md). Pure,
+ * One node's computed layout, as published in a {@link LayoutSnapshot} (docs/reference/layout-read-model.md). Pure,
  * immutable, transport-serializable data — no reference to the live retained node or to any measurer — so a
  * widget (or a test, a devtools overlay, a remote client) reads a node's geometry without reaching into core's
  * single-writer model. Coordinates are pixels in root space.

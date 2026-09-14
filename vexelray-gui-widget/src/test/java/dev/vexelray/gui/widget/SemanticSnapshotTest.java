@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The semantic read-model must describe the tree a reader is actually looking at (docs/automation.md §3).
+ * The semantic read-model must describe the tree a reader is actually looking at (docs/reference/automation.md §3).
  *
  * <p>Like {@code LabelGeometryTest}, these are compliance conditions rather than features. The snapshot exists
  * so that something which is <em>not</em> the renderer — an automation agent, a thin client, a screen reader —

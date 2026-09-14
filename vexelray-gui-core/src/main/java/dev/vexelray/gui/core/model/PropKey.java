@@ -202,7 +202,7 @@ public enum PropKey {
      *
      * <p>Affects nothing that is drawn or laid out — it is published into
      * {@link dev.vexelray.gui.core.layout.SemanticSnapshot} and read by consumers that must address a node by
-     * what it is rather than by where it is (docs/automation.md §3). {@link NodeKind} cannot serve: it is
+     * what it is rather than by where it is (docs/reference/automation.md §3). {@link NodeKind} cannot serve: it is
      * {@code BOX} or {@code TEXT}, which is everything rendering needs and nothing a reader outside the
      * renderer needs.
      *
@@ -223,7 +223,7 @@ public enum PropKey {
     }
 
     /**
-     * Whether a change to this prop invalidates <b>derived geometry</b> (docs/layout-read-model.md §2.1–2.3) — so
+     * Whether a change to this prop invalidates <b>derived geometry</b> (docs/reference/layout-read-model.md §2.1–2.3) — so
      * the compute phase must re-run and the read-model republish, even when the flex layout itself is unchanged.
      * Every layout-affecting prop qualifies. {@link #CARET} additionally does, because caret-follow scroll (and
      * therefore the baked caret x positions) is a function of it: moving the caret with an arrow key reflows

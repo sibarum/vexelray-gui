@@ -18,7 +18,7 @@ import org.objectweb.asm.Opcodes;
  * an enum does that. Flagging it would penalise the fix and push authors back toward the switch.
  *
  * <p>The cost of the exclusion is that this guard cannot see an enum being switched over. That belongs to the
- * unmechanised half of the rule (docs/todo.md §1.6) and is hand-reviewed, so nothing is lost that was covered
+ * unmechanised half of the rule (docs/plans/todo.md §1.6) and is hand-reviewed, so nothing is lost that was covered
  * before.
  */
 final class Sealing {

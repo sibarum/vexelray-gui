@@ -18,7 +18,7 @@
  * keeps {@code TextField} fast: its layout stays one-dimensional and deterministic, and arbitrary
  * two-dimensional composition never enters it.
  *
- * <p>See {@code docs/typeset.md} for the design, including the log-space tone map that fits a block's authored
+ * <p>See {@code docs/reference/typeset.md} for the design, including the log-space tone map that fits a block's authored
  * size ratios into a legible pixel range.
  */
 package dev.vexelray.gui.typeset;

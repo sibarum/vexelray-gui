@@ -32,7 +32,7 @@ public interface WindowControls {
 
     /**
      * Screenshot <b>this window</b> to {@code path} as a PNG — the first of the framework-owned title-bar
-     * instruments (docs/automation.md §7).
+     * instruments (docs/reference/automation.md §7).
      *
      * <p>Here rather than on the application because a screenshot is of a window, and this interface is already
      * exactly "the things a title bar asks of the window it sits in". A bar in a popup captures the popup; the

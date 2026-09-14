@@ -67,7 +67,7 @@ public final class Typeset {
      * The face's ascender, in em — the distance from the top of a text node's box down to its first baseline.
      * The projection needs it and only it to convert a baseline-relative {@code y} into a node's top edge, and
      * keeping the conversion in one place matters: the moment a second backend exists it must use this one
-     * (docs/typeset.md §8).
+     * (docs/reference/typeset.md §8).
      */
     public double ascenderOf(String faceKey) {
         return atlas.face(faces.indexOf(faceKey)).metrics().ascender();

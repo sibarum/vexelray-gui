@@ -40,7 +40,7 @@ public interface TextMeasurer {
      * <p>This is the <b>only</b> seam through which line breaking enters the GUI: the compute phase and the
      * renderer both read the resulting {@code TextMetrics}, so they cannot disagree about where a line broke.
      * The default is a single unbroken line, which is what a single-line field wants; an app over a real glyph
-     * atlas overrides it (docs/layout-read-model.md §11.2).
+     * atlas overrides it (docs/reference/layout-read-model.md §11.2).
      */
     default java.util.List<dev.vexelray.text.TextLayout.LineSpan> lineSpans(String text, float wrapWidth,
                                                                            float textSizePx) {

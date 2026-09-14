@@ -7,7 +7,7 @@ import java.util.Map;
 /**
  * An immutable, versioned snapshot of what the tree <b>means</b> — role, name, structure and interaction state
  * for every node — published beside {@link LayoutSnapshot} and carrying the same {@link #version}, so the two
- * join by node id and by frame (docs/automation.md §3).
+ * join by node id and by frame (docs/reference/automation.md §3).
  *
  * <p>Same contract as its geometric twin and for the same reasons: pure data keyed by node id, so a local
  * widget, a test, an automation agent or a remote thin client all read the same state through

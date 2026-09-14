@@ -173,7 +173,7 @@ public final class Automation {
             }
             if (!n.visible()) {
                 // Said explicitly, because a rect is published for a hidden node too and finding one proves
-                // nothing about whether it can be seen or clicked (docs/semantic-read-model.md §6).
+                // nothing about whether it can be seen or clicked (docs/reference/semantic-read-model.md §6).
                 sb.append(" hidden");
             }
             if (n.focused()) {

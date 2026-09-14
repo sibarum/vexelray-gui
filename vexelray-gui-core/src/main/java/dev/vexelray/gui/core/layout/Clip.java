@@ -5,7 +5,7 @@ import dev.vexelray.gui.core.model.RetainedNode;
 /**
  * Where each node actually is: its box, less everything its ancestors clip away.
  *
- * <p>A compute-phase pass (docs/layout-read-model.md §2.1), run after layout and displacement have finished
+ * <p>A compute-phase pass (docs/reference/layout-read-model.md §2.1), run after layout and displacement have finished
  * moving things and before anything is published. It writes {@code clipX/Y/W/H} onto each node and computes
  * nothing at publish time, which is the rule: a value that needs working out belongs to the phase that can see
  * the tree, not to the projection that copies it out.

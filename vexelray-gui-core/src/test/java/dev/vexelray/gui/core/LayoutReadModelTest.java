@@ -10,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The layout read-model (docs/layout-read-model.md): after a frame, a {@link Node} reports its own computed box
+ * The layout read-model (docs/reference/layout-read-model.md): after a frame, a {@link Node} reports its own computed box
  * through {@link Node#layout()}, read lock-free off the published snapshot.
  */
 class LayoutReadModelTest {
@@ -61,7 +61,7 @@ class LayoutReadModelTest {
 
     /**
      * A resize relays out even with a clean tree, so it must also re-run the compute phase and republish — the
-     * geometry moved without any mutation to mark it dirty (docs/layout-read-model.md §2.3).
+     * geometry moved without any mutation to mark it dirty (docs/reference/layout-read-model.md §2.3).
      */
     @Test
     void resizingACleanTreeRepublishesTheSnapshot() {

@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Rules 1 and 3 of docs/architecture-proof-plan.md §2: the GUI speaks only {@code atchung-core}. Transport is
+ * Rules 1 and 3 of docs/plans/architecture-proof.md §2: the GUI speaks only {@code atchung-core}. Transport is
  * chosen at the application edge, so no class in {@code gui-core} or {@code gui-widget} may reference elektro-Q
  * or the bridge. That is what makes "the fast in-VM path never pays for the network" (claim C2) structural rather
  * than a matter of discipline, and it is what lets the same widget code run in-VM or over a wire (C1).

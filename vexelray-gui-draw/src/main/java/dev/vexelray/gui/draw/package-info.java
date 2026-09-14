@@ -7,6 +7,6 @@
  * picture on screen is a node prop in {@code -core}; what a picture <em>is</em> lives here, so an exporter does
  * not drag a GUI in behind it.
  *
- * <p>See docs/drawing.md.
+ * <p>See docs/reference/drawing.md.
  */
 package dev.vexelray.gui.draw;

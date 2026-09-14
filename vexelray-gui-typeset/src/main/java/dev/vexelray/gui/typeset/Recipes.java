@@ -25,7 +25,7 @@ import java.util.Map;
  * <p><b>Recipes are code, profiles are data.</b> "The numerator sits above the bar, separated by
  * {@code fractionGapAbove}" is an algorithm; the gap is a number. Making recipes themselves data would be a
  * layout DSL authored on speculation — the deliberate later step, and only if a real app needs a construct these
- * cannot compose (docs/typeset.md §7).
+ * cannot compose (docs/reference/typeset.md §7).
  */
 public final class Recipes {
 
@@ -79,7 +79,7 @@ public final class Recipes {
      * into the corners inline. {@code ∑} over a whole line carries its limits vertically; the same sum inside a
      * sentence must not push the line apart, so its bounds become scripts.
      *
-     * <p>This is the whole of what "display versus inline" amounts to here (docs/typeset.md §5), and it is worth
+     * <p>This is the whole of what "display versus inline" amounts to here (docs/reference/typeset.md §5), and it is worth
      * seeing how little it is: <b>a choice of which recipe to call</b>, made once where the tree is built, not a
      * mode threaded down the walk. Nothing in the engine, the SPI or the profile knows the distinction exists.
      * The same is true of the other half of the classical style context — cramped versus uncramped is
@@ -146,7 +146,7 @@ public final class Recipes {
     // an app would otherwise repeat at every call site. An app on a different profile writes its own.
 
     /** An italic variable. Where the atlas carries no italic-math face the binding degrades to the primary one
-     *  and the letter renders upright — legible, and better than a missing glyph (docs/typeset.md P5). */
+     *  and the letter renders upright — legible, and better than a missing glyph (docs/reference/typeset.md P5). */
     public static Box variable(String text) {
         return Box.run(text, Profile.FACE_MATH_ITALIC, MathClass.ORD);
     }

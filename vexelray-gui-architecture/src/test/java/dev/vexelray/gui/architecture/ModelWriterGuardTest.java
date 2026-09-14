@@ -13,7 +13,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
- * Rule 4 of docs/architecture-proof-plan.md §2: only the declared stages write the retained model.
+ * Rule 4 of docs/plans/architecture-proof.md §2: only the declared stages write the retained model.
  *
  * <p>{@code RetainedNode}'s fields are public, because the stages that legitimately write them span four packages
  * and Java has no friend mechanism. That openness is exactly why this guard exists: it enumerates the stages

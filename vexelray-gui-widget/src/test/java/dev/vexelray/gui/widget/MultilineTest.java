@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Multiline, word wrap and vertical navigation (docs/layout-read-model.md §11) — all of it pure widget code over
+ * Multiline, word wrap and vertical navigation (docs/reference/layout-read-model.md §11) — all of it pure widget code over
  * the published read-model, with no measurer or atlas at the call site and no seam added to core.
  *
  * <p>Geometry, with the monospace {@value HeadlessGui#CELL}px stub on an 800×600 headless viewport: the field is

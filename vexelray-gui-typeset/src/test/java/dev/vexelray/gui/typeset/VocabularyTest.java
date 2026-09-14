@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The P0 gate (docs/typeset.md §10): <b>every target construct composes from the built-in box kinds</b>, and the
+ * The P0 gate (docs/reference/typeset.md §10): <b>every target construct composes from the built-in box kinds</b>, and the
  * framework has <b>no privileged box kinds</b> — an application can write one over the same public SPI.
  *
  * <p>This is the test that can invalidate the design, which is why it comes before any engine exists. The second
@@ -49,7 +49,7 @@ class VocabularyTest {
         }
         assertFalse(Box.class.isSealed(),
                 "Box is deliberately open — a sealed interface would close the vocabulary to this file "
-                        + "(docs/typeset.md §3).");
+                        + "(docs/reference/typeset.md §3).");
     }
 
     @Test
@@ -168,7 +168,7 @@ class VocabularyTest {
     void authoredRatiosCompoundWithoutClamping() {
         // An exponent carrying its own exponent. The authored ratio is applied once per level and left to
         // compound: 0.7 then 0.7 again. Nothing here clamps it, because clamping is the block-wide tone map's
-        // job (docs/typeset.md §4) — this is precisely the special case the previous implementation hand-wrote
+        // job (docs/reference/typeset.md §4) — this is precisely the special case the previous implementation hand-wrote
         // into its fraction layout for want of anywhere better to put it.
         Box inner = Recipes.script(P, Recipes.variable("a"), Recipes.variable("b"), null);
         Box outer = Recipes.script(P, Recipes.variable("x"), inner, null);

@@ -1,10 +1,15 @@
 # The locator: updating source references to the moved documents
 
+Status: **done.** All 99 source references were rewritten on 2026-09-14, in the order below. Verified three
+ways: nothing in the tree still names the flat layout, every rewritten path resolves to a file, and all 28
+distinct `§N` citations resolve to a real heading in the document they now name. Kept as the record of what
+moved where, which is the thing a reader of an old commit or an old branch will want.
+
 On 2026-09-14 every document under `docs/` moved into one of three folders — `reference/`, `guides/`,
 `plans/` — and four were renamed. Markdown was updated in the same pass; **the source tree was deliberately
 not**, so that the javadoc and comment edits could be made deliberately rather than by blind find-and-replace.
 
-This is the record those edits work from.
+This is the record they worked from.
 
 ## The one thing that makes this safe
 

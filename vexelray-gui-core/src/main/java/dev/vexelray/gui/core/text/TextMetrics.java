@@ -7,7 +7,7 @@ import java.util.List;
 
 /**
  * Computed caret geometry for a text node, published as data in the layout read-model
- * (docs/layout-read-model.md). Pure and transport-serializable: the visual lines and the per-boundary x
+ * (docs/reference/layout-read-model.md). Pure and transport-serializable: the visual lines and the per-boundary x
  * positions are baked in <b>absolute root-space pixels</b> at publish time (core measures once, with the
  * atlas), so a widget — or a remote client with no atlas — answers point↔offset and vertical navigation as pure
  * lookups. Coordinates match {@code ClickEvent} and the renderer, so no pad/scroll bookkeeping leaks to callers.

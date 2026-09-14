@@ -4,7 +4,7 @@ import java.util.Map;
 
 /**
  * An immutable, versioned snapshot of the whole tree's computed layout — the framework's read-model
- * (docs/layout-read-model.md). Core publishes a new snapshot after each layout pass as a coalesced bus
+ * (docs/reference/layout-read-model.md). Core publishes a new snapshot after each layout pass as a coalesced bus
  * {@code State<LayoutSnapshot>} (mirroring {@code Gui.viewport()}); widgets and observers read it lock-free.
  *
  * <p>Pure data keyed by node id, so it is transport-serializable: a local widget, a test, or a remote thin

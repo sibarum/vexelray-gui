@@ -9,7 +9,7 @@ import java.util.Map;
  * A composable box: the unit this module lays out. Seven implementations ship built in (below), but the interface
  * is <b>open</b> — an application defines a new kind of composition by implementing it, with no framework change
  * and no privileged access. A structured-text tree is built from these by the calling application; the framework
- * holds no opinion about what markup produced it (docs/typeset.md §2).
+ * holds no opinion about what markup produced it (docs/reference/typeset.md §2).
  *
  * <p>Notation constructs are not implementations: a fraction, a radical, a matrix are <em>compositions</em>,
  * assembled by {@link Recipes} from the built-ins and parameterised by a {@link Profile}. That factoring is why
@@ -28,7 +28,7 @@ import java.util.Map;
  * free to diverge: a slash struck through a relation, a combining mark, an arrow derived from two other boxes'
  * positions have no logical child position, and the SPI does not pretend otherwise.
  *
- * <p><b>What that means for the tone map.</b> The block-wide tone map (docs/typeset.md §4) fits <em>declared</em>
+ * <p><b>What that means for the tone map.</b> The block-wide tone map (docs/reference/typeset.md §4) fits <em>declared</em>
  * sizes into a legible range. A box that chooses a size itself has opted out for that content and owns its
  * legibility — a scope boundary, not a loophole. The one thing an unpredictable implementation can do is make the
  * block larger than the declared ratios predict, and the size ceiling is already the constraint that yields.
@@ -63,7 +63,7 @@ public interface Box {
      * because that is how the construct is read.
      *
      * <p>The ordering is a published guarantee, not an implementation detail: it is what a future selection walks,
-     * and what makes each {@link Run#sourceRef} recoverable in a sensible sequence (docs/typeset.md §8). A box
+     * and what makes each {@link Run#sourceRef} recoverable in a sensible sequence (docs/reference/typeset.md §8). A box
      * that draws marks of its own with no logical position simply does not list them here.
      */
     List<Box> children();

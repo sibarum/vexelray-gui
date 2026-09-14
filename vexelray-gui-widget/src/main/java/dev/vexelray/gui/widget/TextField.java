@@ -53,7 +53,7 @@ import java.util.function.Consumer;
  * (see {@code HandlerOrderingTest}).
  *
  * <p>Everything geometric — where a click lands, where the line above is, how far a page scrolls — remains a pure
- * lookup on this node's published layout read-model ({@code node.layout().text()}, docs/layout-read-model.md). The
+ * lookup on this node's published layout read-model ({@code node.layout().text()}, docs/reference/layout-read-model.md). The
  * widget never sees a measurer or a glyph atlas, which is what lets the identical code drive a field on screen,
  * headless in a test, or on a remote client with no fonts of its own.
  *
@@ -653,7 +653,7 @@ public final class TextField implements AutoCloseable {
         barrier();
     }
 
-    // --- vertical navigation, as pure widget code over the layout read-model (docs/layout-read-model.md §11.5) ---
+    // --- vertical navigation, as pure widget code over the layout read-model (docs/reference/layout-read-model.md §11.5) ---
 
     /** Move the caret {@code lines} visual lines (negative = up), keeping the sticky desired column. */
     private void moveByLines(int lines, boolean extend) {

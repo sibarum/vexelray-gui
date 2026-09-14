@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The framework's own tools in the caption (docs/automation.md §7).
+ * The framework's own tools in the caption (docs/reference/automation.md §7).
  *
  * <p>What is worth pinning here is not that a button draws. It is the three properties that make an instrument
  * strip a framework facility rather than a convenience: it is <b>absent</b> unless asked for, it sits

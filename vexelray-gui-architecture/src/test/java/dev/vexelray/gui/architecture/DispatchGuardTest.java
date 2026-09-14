@@ -24,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * a sealed interface of seven records with a seven-case engine switch, and the switch was what made the
  * vocabulary closed: an application could not add a composition without editing the framework. Inverting it — an
  * open interface where each box arranges itself — is what let an application-defined box become a first-class
- * citizen (docs/typeset.md §3). The sealed switch was not a detail of that design; it <em>was</em> the design
+ * citizen (docs/reference/typeset.md §3). The sealed switch was not a detail of that design; it <em>was</em> the design
  * error.
  *
  * <p>Where a consumer genuinely must stay closed (a wire format, a renderer), the answer is a <b>sink</b>: the
@@ -57,7 +57,7 @@ class DispatchGuardTest {
         assertEquals(List.of(), violations,
                 "a sealed type is a closed vocabulary, and the only thing to do with one is switch on it. Put the "
                         + "behaviour on the type instead; where a consumer must stay closed, invert to a sink "
-                        + "(Placed.Draw is the worked example). See docs/typeset.md §3.1.");
+                        + "(Placed.Draw is the worked example). See docs/reference/typeset.md §3.1.");
     }
 
     /**

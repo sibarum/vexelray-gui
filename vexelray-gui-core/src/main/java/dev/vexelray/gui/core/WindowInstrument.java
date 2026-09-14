@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 /**
- * One framework-owned tool in a window's title bar — a screenshot, later a macro recorder (docs/automation.md
+ * One framework-owned tool in a window's title bar — a screenshot, later a macro recorder (docs/reference/automation.md
  * §7). A value: what to draw, what to call it, and what to ask the window when it is clicked.
  *
  * <p><b>Why the framework owns these and an application does not put its own buttons here.</b> A title bar is

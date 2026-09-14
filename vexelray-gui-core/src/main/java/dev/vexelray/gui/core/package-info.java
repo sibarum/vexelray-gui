@@ -5,6 +5,6 @@
  * framework-owned input dispatch, the {@code RichText} model, and the {@code GuiApp} frame loop.
  *
  * <p>Renders exclusively through VexelRay's native {@code Canvas} and passes messages exclusively through
- * Atchung; owns no rendering, windowing, input, or messaging machinery. See {@code docs/architecture.md}.
+ * Atchung; owns no rendering, windowing, input, or messaging machinery. See {@code docs/reference/architecture.md}.
  */
 package dev.vexelray.gui.core;

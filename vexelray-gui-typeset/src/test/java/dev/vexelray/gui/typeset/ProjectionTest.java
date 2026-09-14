@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The P4 gate (docs/typeset.md §10): the draw list becomes a subtree of floating nodes, the container bounds it
+ * The P4 gate (docs/reference/typeset.md §10): the draw list becomes a subtree of floating nodes, the container bounds it
  * exactly, node counts stay within budget, and a headless frame renders.
  *
  * <p>These run against a <b>real {@link Gui}</b> with no window and no Vulkan — the payoff of the framework

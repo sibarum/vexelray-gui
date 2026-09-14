@@ -47,6 +47,6 @@
  * <p><b>What is not here yet.</b> Drawing. A renderer needs a node vocabulary, which is a dependency this module
  * does not have and a decision that has not been taken; {@code calculator-vexel-demo} carries two built out of
  * boxes, which is all a column-wise plot or a cell-wise surface ever needs. Adaptive subdivision and affine
- * arithmetic are still ahead too — see {@code docs/reliable-plotting.md}.
+ * arithmetic are still ahead too — see {@code docs/reference/reliable-plotting.md}.
  */
 package dev.vexelray.gui.plot;

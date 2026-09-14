@@ -10,7 +10,7 @@ import sibarum.tactroller.api.MouseButton;
 /**
  * A pointer with a position, which moves.
  *
- * <p>This is the fidelity rule of the whole instrument (docs/automation.md §2), and it is one sentence:
+ * <p>This is the fidelity rule of the whole instrument (docs/reference/automation.md §2), and it is one sentence:
  * <b>the cursor never teleports</b>. Clicking something at {@code (412, 88)} while the pointer rests at
  * {@code (90, 640)} does not publish a click at {@code (412, 88)}. It publishes a path of pointer moves from
  * where the cursor actually is to where the target is, stepped and paced like a hand, and only then the press

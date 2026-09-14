@@ -28,7 +28,7 @@ import java.util.Set;
  *
  * <h2>A column width is a constraint the layout engine cannot express</h2>
  * Two cells in the same column live in different rows, so making them agree is a constraint <em>between
- * siblings' children</em> — the cross-tree solve the engine deliberately does not do (docs/todo.md §3). The table
+ * siblings' children</em> — the cross-tree solve the engine deliberately does not do (docs/plans/todo.md §3). The table
  * therefore does it itself, in the shape that decision names: <b>collect, solve, place</b>, once per frame. It
  * collects from the layout read-model, solves the widths, and writes each cell one width — and it writes only
  * when the answer changed, or the write would invalidate the layout that produced it, every frame, for ever.

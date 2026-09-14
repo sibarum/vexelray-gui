@@ -18,7 +18,7 @@ import java.util.List;
  *
  * <p>Twenty lines, which is the argument for writing them here once rather than at every point of use. The
  * protocol is small enough to reimplement in an afternoon and has been, in PowerShell, by an agent that needed
- * a picture and found no client on the stack — see {@code docs/automation-cli.md} §1. An instrument that has
+ * a picture and found no client on the stack — see {@code docs/reference/automation-cli.md} §1. An instrument that has
  * to be rebuilt where it is used is not shipped.
  *
  * <p><b>Loopback, and there is no option for anything else.</b> {@code AutomationServer} binds the loopback
@@ -41,10 +41,10 @@ public final class AutomationClient implements AutoCloseable {
      * The port when nobody says otherwise.
      *
      * <p>The same number as {@code AutomationServer.DEFAULT_PORT}, restated rather than imported: this module
-     * has an empty dependency block on purpose ({@code docs/automation-cli.md} §3, R3) so the tool runs with
+     * has an empty dependency block on purpose ({@code docs/reference/automation-cli.md} §3, R3) so the tool runs with
      * none of the stack on its classpath. That is the one duplicated literal the zero-dependency rule costs,
      * and it is why the client lives in this repo — a change to the server's default is one commit that
-     * touches both sides ({@code docs/automation-cli.md} §4).
+     * touches both sides ({@code docs/reference/automation-cli.md} §4).
      */
     public static final int DEFAULT_PORT = 7654;
 

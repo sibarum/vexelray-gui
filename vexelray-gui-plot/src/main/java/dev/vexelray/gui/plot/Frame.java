@@ -58,8 +58,19 @@ public record Frame(double xLo, double xHi, double yLo, double yHi) {
         return yHi - yLo;
     }
 
-    /** The plot-space width of one column when the viewport is divided into {@code columns} of them. */
+    /**
+     * The plot-space width of one column when the viewport is divided into {@code columns} of them.
+     *
+     * <p>Rejects a non-positive count rather than returning what the arithmetic would. Integer zero in a double
+     * division is {@code Infinity}, not an error, so a caller sizing from a viewport that has not been laid out
+     * yet would have carried an infinite width into an {@link Interval} bound and got an enclosure the algebra
+     * cannot mean anything by. {@link #column} asked this question already; asking it here is what makes the two
+     * public ways in agree.
+     */
     public double columnWidth(int columns) {
+        if (columns <= 0) {
+            throw new IllegalArgumentException("a frame is divided into at least one column, not " + columns);
+        }
         return width() / columns;
     }
 
@@ -68,9 +79,6 @@ public record Frame(double xLo, double xHi, double yLo, double yHi) {
      * over. Endpoints are shared with the neighbouring columns, so the columns tile the width without a seam.
      */
     public Interval column(int index, int columns) {
-        if (columns <= 0) {
-            throw new IllegalArgumentException("a frame is divided into at least one column");
-        }
         double w = columnWidth(columns);
         // Both edges from the same expression: column i's right edge is bit-for-bit column i+1's left edge.
         return new Interval(BigDecimal.valueOf(xLo + index * w), BigDecimal.valueOf(xLo + (index + 1) * w));

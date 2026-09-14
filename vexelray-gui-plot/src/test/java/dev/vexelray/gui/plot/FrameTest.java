@@ -81,4 +81,20 @@ class FrameTest {
         Frame frame = Frame.about(4, 2.5);
         assertTrue(frame.xLo() == -4 && frame.xHi() == 4 && frame.yLo() == -2.5 && frame.yHi() == 2.5);
     }
+
+    /**
+     * Both public ways to divide a frame refuse the same counts. {@code columnWidth} used to divide anyway, and
+     * integer zero in a double division is {@code Infinity} rather than an error — so a caller that sized from a
+     * viewport not yet laid out carried an infinite width into an {@link Interval} bound, and the enclosure
+     * algebra was handed a number it cannot mean anything by. Nothing in the arithmetic would have said so.
+     */
+    @Test
+    void aFrameIsDividedIntoAtLeastOneColumnWhicheverWayYouAsk() {
+        Frame frame = new Frame(0, 1, 0, 1);
+        for (int columns : new int[]{0, -1, Integer.MIN_VALUE}) {
+            assertThrows(IllegalArgumentException.class, () -> frame.columnWidth(columns), "columnWidth " + columns);
+            assertThrows(IllegalArgumentException.class, () -> frame.column(0, columns), "column " + columns);
+        }
+        assertEquals(0.25, frame.columnWidth(4), 1e-12, "and a real count still answers");
+    }
 }

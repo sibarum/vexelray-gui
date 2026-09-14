@@ -96,33 +96,21 @@ final class NativeLibLoader {
     }
 
     private static String libFileName(String libName) {
-        return switch (currentOs()) {
-            case WINDOWS -> libName + ".dll";
-            case MACOS   -> "lib" + libName + ".dylib";
-        };
+        return Os.current().libraryFileName(libName);
     }
 
     private static String osArchDir() {
-        String os = switch (currentOs()) {
-            case WINDOWS -> "windows";
-            case MACOS   -> "macos";
-        };
-        return os + "-" + currentArch();
-    }
-
-    private enum Os { WINDOWS, MACOS }
-
-    private static Os currentOs() {
-        String name = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-        if (name.contains("win")) return Os.WINDOWS;
-        if (name.contains("mac") || name.contains("darwin")) return Os.MACOS;
-        throw new UnsatisfiedLinkError("Unsupported OS: " + name);
+        return Os.current().resourceDirectory() + "-" + currentArch();
     }
 
     private static String currentArch() {
         String arch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
-        if (arch.contains("aarch64") || arch.contains("arm64")) return "aarch64";
-        if (arch.contains("64")) return "x64";
+        if (arch.contains("aarch64") || arch.contains("arm64")) {
+            return "aarch64";
+        }
+        if (arch.contains("64")) {
+            return "x64";
+        }
         throw new UnsatisfiedLinkError("Unsupported arch: " + arch);
     }
 }

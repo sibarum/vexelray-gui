@@ -3,7 +3,6 @@ package dev.vexelray.gui.nfd;
 import java.lang.foreign.MemorySegment;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -18,6 +17,9 @@ import java.util.Optional;
  * The parent handle is the raw OS window handle as returned by
  * {@code GuiApp.windowHandle()} — an HWND on Windows, an NSWindow* on
  * macOS. Pass 0 for no parent.
+ *
+ * NFDe is initialised lazily by the first dialog. {@link Nfd#quit()} pairs that, and the application calls it
+ * from the GUI thread when shutting down &mdash; see its note on why nothing calls it for you.
  */
 public final class FileDialog {
 
@@ -75,7 +77,8 @@ public final class FileDialog {
         return p == null ? null : p.toAbsolutePath().toString();
     }
 
-    private static String[][] toNfdFilters(List<Filter> filters) {
+    /** Package-private so the spec formatting can be tested without a native dialog to open. */
+    static String[][] toNfdFilters(List<Filter> filters) {
         if (filters == null || filters.isEmpty()) return null;
         String[][] out = new String[filters.size()][2];
         for (int i = 0; i < filters.size(); i++) {
@@ -98,10 +101,6 @@ public final class FileDialog {
     }
 
     private static long handleTypeOf(long parentWindow) {
-        if (parentWindow == 0L) return Nfd.NFD_WINDOW_HANDLE_TYPE_UNSET;
-        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-        if (os.contains("win"))                          return Nfd.NFD_WINDOW_HANDLE_TYPE_WINDOWS;
-        if (os.contains("mac") || os.contains("darwin")) return Nfd.NFD_WINDOW_HANDLE_TYPE_COCOA;
-        return Nfd.NFD_WINDOW_HANDLE_TYPE_UNSET;
+        return parentWindow == 0L ? Nfd.NFD_WINDOW_HANDLE_TYPE_UNSET : Os.current().windowHandleType();
     }
 }

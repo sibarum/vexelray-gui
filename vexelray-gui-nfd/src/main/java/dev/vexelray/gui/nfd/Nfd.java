@@ -9,7 +9,6 @@ import java.lang.invoke.MethodHandle;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-import java.util.Locale;
 
 import static java.lang.foreign.ValueLayout.ADDRESS;
 import static java.lang.foreign.ValueLayout.JAVA_BYTE;
@@ -44,16 +43,14 @@ public final class Nfd {
     /** Matches NFD_INTERFACE_VERSION in nfd.h; required first arg to every {@code _With_Impl}. */
     private static final long NFD_INTERFACE_VERSION = 1L;
 
-    private static final boolean WINDOWS;
-    public  static final Charset NATIVE_CHARSET;
-    private static final int CHAR_SIZE;
+    /** What platform this is, asked once. See {@link Os} for why it is asked in exactly one place. */
+    private static final Os OS = Os.current();
 
-    static {
-        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-        WINDOWS = os.contains("win");
-        NATIVE_CHARSET = WINDOWS ? StandardCharsets.UTF_16LE : StandardCharsets.UTF_8;
-        CHAR_SIZE = WINDOWS ? 2 : 1;
-    }
+    /** How NFDe's {@code nfdnchar_t} is encoded here. */
+    public static final Charset NATIVE_CHARSET = OS.charset();
+
+    /** The width of one {@code nfdnchar_t}, which is also the width of its null terminator. */
+    private static final int CHAR_SIZE = OS.charSize();
 
     private static final Linker LINKER = Linker.nativeLinker();
     private static final SymbolLookup LIB;
@@ -84,6 +81,13 @@ public final class Nfd {
 
     private static boolean initialized = false;
 
+    /**
+     * The thread that called {@link #ensureInit}, so {@link #quit} can refuse to unwind from another one.
+     * On Windows {@code NFD_Init} initialises a COM apartment, and an apartment belongs to the thread that
+     * entered it — {@code NFD_Quit} on a different thread does not balance it and is not a no-op.
+     */
+    private static Thread owner;
+
     private Nfd() {}
 
     /** Idempotent. NFDe requires NFD_Init before any dialog call. */
@@ -95,7 +99,33 @@ public final class Nfd {
                 throw new IllegalStateException("NFD_Init failed: " + lastError());
             }
             initialized = true;
+            owner = Thread.currentThread();
         } catch (Throwable t) { throw rethrow(t); }
+    }
+
+    /**
+     * Release NFDe, pairing the {@code NFD_Init} the first dialog performed. Idempotent, and a no-op if no
+     * dialog was ever opened.
+     *
+     * <p>Call it from the GUI thread when shutting the GUI down. Nothing calls it for you: a shutdown hook would
+     * be the obvious place and is the wrong one, because it runs on a thread of the JVM's choosing and the COM
+     * apartment {@code NFD_Init} entered belongs to the thread that opened the dialogs. For a process that is
+     * about to exit this is hygiene; for a host that tears the GUI down and builds another in the same process
+     * it is the difference between a second {@code NFD_Init} and a second one over state never given back.
+     */
+    public static synchronized void quit() {
+        if (!initialized) {
+            return;
+        }
+        if (Thread.currentThread() != owner) {
+            throw new IllegalStateException("NFD_Quit must run on the thread that opened the dialogs ("
+                    + owner.getName() + "), not " + Thread.currentThread().getName());
+        }
+        try {
+            NFD_QUIT.invokeExact();
+        } catch (Throwable t) { throw rethrow(t); }
+        initialized = false;
+        owner = null;
     }
 
     public static String lastError() {
@@ -221,7 +251,7 @@ public final class Nfd {
         if (ptr == null || ptr.address() == 0L) return null;
         MemorySegment reint = ptr.reinterpret(Long.MAX_VALUE);
         long byteLen = 0;
-        if (WINDOWS) {
+        if (CHAR_SIZE == 2) {
             while (reint.get(JAVA_SHORT, byteLen) != 0) byteLen += 2;
         } else {
             while (reint.get(JAVA_BYTE, byteLen) != 0) byteLen += 1;

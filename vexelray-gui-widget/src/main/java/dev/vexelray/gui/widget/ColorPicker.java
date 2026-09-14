@@ -210,8 +210,11 @@ public final class ColorPicker implements AutoCloseable {
     /**
      * Show {@code color}, as an application does when the selection changes under the picker. A <b>display</b>
      * change: neither callback fires and nothing is recorded, because nobody chose it here.
+     *
+     * <p>A sync is not an edit, and this is the sync — the name every control here uses for it. See
+     * {@link Toggle#show} for what goes wrong when one is reported as the other.
      */
-    public ColorPicker color(Color color) {
+    public ColorPicker show(Color color) {
         if (color != null) {
             this.hsv = Hsv.of(color);
             this.alpha = color.a();

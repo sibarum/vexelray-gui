@@ -351,7 +351,7 @@ public final class TextField implements AutoCloseable {
         } else {
             gui.releaseClaim(node, FindBar.FIND);
             FindBar bar = find;
-            if (bar != null && bar.shown()) {
+            if (bar != null && bar.isOpen()) {
                 bar.dismiss();   // a field that stopped being searchable is not left with a bar over its first line
             }
         }

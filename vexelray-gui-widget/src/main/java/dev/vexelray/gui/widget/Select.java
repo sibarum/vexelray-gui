@@ -229,8 +229,9 @@ public final class Select<T> implements AutoCloseable {
         return selection;
     }
 
-    /** Whether the popup is up. The word {@link ContextMenu} and {@code FindBar} use for the same question. */
-    public boolean shown() {
+    /** Whether the popup is up. The name {@link ContextMenu}, {@code FindBar} and {@link Tooltip} use for the same
+     *  question &mdash; and not to be read as a question about {@link #show(Object)}, which is about the value. */
+    public boolean isOpen() {
         return open;
     }
 
@@ -267,8 +268,14 @@ public final class Select<T> implements AutoCloseable {
         return selection.one();
     }
 
-    /** Choose {@code value} as the application rather than the user: no {@link #onCommit}, because nobody chose. */
-    public Select<T> value(T value) {
+    /**
+     * Show {@code value} as the application rather than the user: no {@link #onCommit}, because nobody chose.
+     *
+     * <p>A sync is not an edit, and this is the sync — the name every control here uses for it. See
+     * {@link Toggle#show} for what goes wrong when one is reported as the other. It is not a question about
+     * {@link #isOpen()}: that one is about the popup, this one is about the value.
+     */
+    public Select<T> show(T value) {
         selection.set(value == null ? List.of() : List.of(value));
         readOut();
         return this;

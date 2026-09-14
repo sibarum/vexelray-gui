@@ -44,7 +44,7 @@ class ContextMenuTest {
             h.rightClick(200f, 150f);
             h.frame();
 
-            assertTrue(menu.shown(), "a right press and release on the target opened the menu");
+            assertTrue(menu.isOpen(), "a right press and release on the target opened the menu");
             var r = menu.node().layout().rect();
             assertEquals(200f, r.x(), 0.5f, "anchored at the pointer x");
             assertEquals(150f, r.y(), 0.5f, "and the pointer y");
@@ -84,7 +84,7 @@ class ContextMenuTest {
             h.click(first.x() + first.w() / 2f, first.y() + first.h() / 2f);
 
             assertTrue(fired[0], "the click landed on the item drawn over the page");
-            assertFalse(menu.shown(), "and choosing an item closed the menu");
+            assertFalse(menu.isOpen(), "and choosing an item closed the menu");
             menu.close();
         }
     }
@@ -97,10 +97,10 @@ class ContextMenuTest {
 
             h.rightClick(200f, 150f);
             h.frame();
-            assertTrue(menu.shown());
+            assertTrue(menu.isOpen());
 
             h.tap(Key.ESCAPE);
-            assertFalse(menu.shown(), "Escape is claimed while the menu is up");
+            assertFalse(menu.isOpen(), "Escape is claimed while the menu is up");
             menu.close();
         }
     }
@@ -133,10 +133,10 @@ class ContextMenuTest {
 
             h.rightClick(200f, 150f);
             h.frame();
-            assertTrue(menu.shown());
+            assertTrue(menu.isOpen());
 
             h.click(600f, 500f);   // far from the menu
-            assertFalse(menu.shown(), "a left click that lands elsewhere dismisses");
+            assertFalse(menu.isOpen(), "a left click that lands elsewhere dismisses");
             menu.close();
         }
     }
@@ -153,7 +153,7 @@ class ContextMenuTest {
             h.rightClick(400f, 300f);
             h.frame();
 
-            assertTrue(menu.shown(), "the reopening right click did not race the menu closed");
+            assertTrue(menu.isOpen(), "the reopening right click did not race the menu closed");
             assertEquals(400f, menu.node().layout().rect().x(), 0.5f);
             assertEquals(300f, menu.node().layout().rect().y(), 0.5f);
             menu.close();
@@ -228,7 +228,7 @@ class ContextMenuTest {
 
             h.rightClick(200f, 150f);
 
-            assertFalse(menu.shown(), "a right click on a page that offers nothing shows nothing");
+            assertFalse(menu.isOpen(), "a right click on a page that offers nothing shows nothing");
             menu.close();
         }
     }
@@ -245,7 +245,7 @@ class ContextMenuTest {
 
             h.rightClick(200f, 150f);
 
-            assertFalse(menu.shown());
+            assertFalse(menu.isOpen());
             menu.close();
         }
     }
@@ -292,7 +292,7 @@ class ContextMenuTest {
             h.click(only.x() + only.w() / 2f, only.y() + only.h() / 2f);
 
             assertEquals(0, runs[0], "choosing it did nothing");
-            assertTrue(menu.shown(), "and it is still the menu's own row, so the menu stayed up");
+            assertTrue(menu.isOpen(), "and it is still the menu's own row, so the menu stayed up");
             menu.close();
         }
     }

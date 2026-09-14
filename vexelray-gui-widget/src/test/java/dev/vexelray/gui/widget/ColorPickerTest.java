@@ -167,7 +167,7 @@ class ColorPickerTest {
             Recorder rec = new Recorder();
             ColorPicker picker = mount(h, Color.WHITE, new ColorHistory(4), rec);
 
-            picker.color(Color.rgb(0x3366CC));
+            picker.show(Color.rgb(0x3366CC));
             h.frame();
 
             assertEquals("#3366cc", Hex.format(picker.color()));

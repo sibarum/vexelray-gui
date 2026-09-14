@@ -34,7 +34,7 @@ class TooltipTest {
             h.hover(100f, 50f);
             h.frame();
 
-            assertTrue(tip.shown(), "the pointer rested on the control");
+            assertTrue(tip.isOpen(), "the pointer rested on the control");
             var b = tip.node().layout().rect();
             var t = button.layout().rect();
             assertEquals(t.x(), b.x(), 0.5f, "anchored to the control's left edge");
@@ -51,10 +51,10 @@ class TooltipTest {
 
             h.hover(100f, 50f);
             h.frame();
-            assertTrue(tip.shown());
+            assertTrue(tip.isOpen());
 
             h.hover(600f, 400f);
-            assertFalse(tip.shown(), "the pointer left: the bubble goes with it");
+            assertFalse(tip.isOpen(), "the pointer left: the bubble goes with it");
             tip.close();
         }
     }
@@ -67,10 +67,10 @@ class TooltipTest {
 
             h.hover(100f, 50f);
             h.frame();
-            assertTrue(tip.shown());
+            assertTrue(tip.isOpen());
 
             h.click(100f, 50f);
-            assertFalse(tip.shown(), "a press means the user is acting, not reading");
+            assertFalse(tip.isOpen(), "a press means the user is acting, not reading");
             tip.close();
         }
     }
@@ -96,7 +96,7 @@ class TooltipTest {
 
             h.hover(100f, 50f);
             h.frame();
-            assertTrue(tip.shown());
+            assertTrue(tip.isOpen());
             var b = tip.node().layout().rect();
             float bx = b.x() + b.w() / 2f;
             float by = b.y() + b.h() / 2f;
@@ -128,7 +128,7 @@ class TooltipTest {
 
             assertTrue(seen.contains(InteractionState.HOVER),
                     "the restyle observer still heard the hover — attach() added, it did not replace");
-            assertTrue(tip.shown(), "and the tooltip heard it too");
+            assertTrue(tip.isOpen(), "and the tooltip heard it too");
             tip.close();
         }
     }
@@ -167,7 +167,7 @@ class TooltipTest {
 
             assertEquals(first.x(), second.x(), 0.01f, "same anchor, same place");
             assertEquals(first.y(), second.y(), 0.01f);
-            assertTrue(tip.shown());
+            assertTrue(tip.isOpen());
             tip.close();
         }
     }

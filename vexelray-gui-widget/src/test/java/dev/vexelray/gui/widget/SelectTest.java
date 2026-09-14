@@ -65,11 +65,11 @@ class SelectTest {
 
             Rect r = select.node().layout().visibleRect();
             h.hover(r.centreX(), r.centreY());
-            assertFalse(select.shown(), "nothing appears on hover — that is the rule, not an omission");
+            assertFalse(select.isOpen(), "nothing appears on hover — that is the rule, not an omission");
 
             h.click(r.centreX(), r.centreY());
             h.frame();
-            assertTrue(select.shown(), "a click is what opens it");
+            assertTrue(select.isOpen(), "a click is what opens it");
             assertTrue(select.popupNode().layout().rect().h() > 0f, "and the panel has a size once it is up");
             select.close();
         }
@@ -117,11 +117,11 @@ class SelectTest {
         try (HeadlessGui h = new HeadlessGui()) {
             Select<String> select = single(h);
 
-            select.value("Small");
+            select.show("Small");
             h.frame();
             Rect narrow = chevron(h, select);
 
-            select.value("Extra large");
+            select.show("Extra large");
             h.frame();
             Rect wide = chevron(h, select);
 
@@ -154,7 +154,7 @@ class SelectTest {
             clickRow(h, select, "Large");
             h.frame();
 
-            assertFalse(select.shown(), "one choice was permitted, so making it is the end of the gesture");
+            assertFalse(select.isOpen(), "one choice was permitted, so making it is the end of the gesture");
             assertEquals("Large", select.value());
             assertEquals(List.of(Set.of("Large")), commits, "committed once, with what was chosen");
             select.close();
@@ -172,7 +172,7 @@ class SelectTest {
             h.frame();
             clickRow(h, select, "Small");
             h.frame();
-            assertTrue(select.shown(), "a set is being built — shutting after the first tick would end it early");
+            assertTrue(select.isOpen(), "a set is being built — shutting after the first tick would end it early");
             assertEquals(List.of(), commits, "and nothing has been chosen yet, only ticked");
 
             clickRow(h, select, "Large");
@@ -181,7 +181,7 @@ class SelectTest {
 
             h.tap(Key.ENTER);
             h.frame();
-            assertFalse(select.shown());
+            assertFalse(select.isOpen());
             assertEquals(List.of(Set.of("Small", "Large")), commits, "one commit, when the popup closed");
             select.close();
         }
@@ -276,12 +276,12 @@ class SelectTest {
 
             h.tap(Key.DOWN);          // the control is focused and shut: this opens it
             h.frame();
-            assertTrue(select.shown(), "Down on the closed control opens it");
+            assertTrue(select.isOpen(), "Down on the closed control opens it");
 
             h.tap(Key.DOWN);          // now the popup owns Down
             h.frame();
             assertEquals("Small", select.selection().lead(), "the second Down moved the list, not the popup state");
-            assertTrue(select.shown(), "and it certainly did not reopen a popup that was already up");
+            assertTrue(select.isOpen(), "and it certainly did not reopen a popup that was already up");
             select.close();
         }
     }
@@ -292,7 +292,7 @@ class SelectTest {
             List<Set<String>> commits = new ArrayList<>();
             Select<String> select = single(h);
             select.onCommit(commits::add);
-            select.value("Medium");
+            select.show("Medium");
             h.frame();
             h.focus(select.node());
 
@@ -305,7 +305,7 @@ class SelectTest {
             h.tap(Key.ESCAPE);
             h.frame();
 
-            assertFalse(select.shown());
+            assertFalse(select.isOpen());
             assertEquals("Medium", select.value(), "Escape put back what the popup opened with");
             assertEquals(List.of(), commits, "taking a choice back is not making one");
             select.close();
@@ -327,7 +327,7 @@ class SelectTest {
             h.click(700f, 550f);   // the far corner of the page, well clear of both the strip and the panel
             h.frame();
 
-            assertFalse(select.shown(), "a click somewhere else shuts it");
+            assertFalse(select.isOpen(), "a click somewhere else shuts it");
             assertEquals(List.of(Set.of("Small")), commits, "and keeps what was ticked");
             select.close();
         }
@@ -375,7 +375,7 @@ class SelectTest {
 
             clickControl(h, select);
             h.frame();
-            assertTrue(select.shown(), "up, and anchored inside the scroller");
+            assertTrue(select.isOpen(), "up, and anchored inside the scroller");
 
             // Below the panel, which is floated over the top of the scroller and would otherwise take the wheel
             // itself — the popup is hit before the page, which is the whole point of it being a floating last child.
@@ -384,7 +384,7 @@ class SelectTest {
             h.frame();
 
             assertTrue(select.node().layout().clippedAway(), "the control really did scroll out of its viewport");
-            assertFalse(select.shown(), "the control is nowhere on screen, so its popup is not either");
+            assertFalse(select.isOpen(), "the control is nowhere on screen, so its popup is not either");
             select.close();
         }
     }
@@ -406,13 +406,13 @@ class SelectTest {
 
             clickControl(h, select);
             h.frame();
-            assertTrue(select.shown());
+            assertTrue(select.isOpen());
 
             page.visible(false);
             h.frame();
             h.frame();
 
-            assertFalse(select.shown(), "the page went away, so the panel floating over it did too");
+            assertFalse(select.isOpen(), "the page went away, so the panel floating over it did too");
             select.close();
         }
     }
@@ -447,7 +447,7 @@ class SelectTest {
                 many.add("option-" + i);
             }
             Select<String> select = mount(h, SelectionModel.single(), many);
-            select.value("option-400");
+            select.show("option-400");
             h.frame();
 
             assertNull(select.list().rowNode("option-400"), "nowhere near the window while the popup is shut");

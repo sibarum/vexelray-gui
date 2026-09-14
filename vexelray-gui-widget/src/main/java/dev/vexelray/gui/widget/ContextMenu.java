@@ -114,8 +114,9 @@ public final class ContextMenu implements MenuPresenter {
         return menu;
     }
 
-    /** Whether the menu is currently open. */
-    public boolean shown() {
+    /** Whether the menu is currently open. The question {@link Select}, {@code FindBar} and {@link Tooltip} answer
+     *  under the same name. */
+    public boolean isOpen() {
         return shown;
     }
 

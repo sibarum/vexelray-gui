@@ -111,8 +111,8 @@ public final class Tooltip implements AutoCloseable {
         return bubble;
     }
 
-    /** Whether the bubble is currently visible. */
-    public boolean shown() {
+    /** Whether the bubble is currently up &mdash; the {@code isOpen} every transient overlay here answers. */
+    public boolean isOpen() {
         return shown;
     }
 

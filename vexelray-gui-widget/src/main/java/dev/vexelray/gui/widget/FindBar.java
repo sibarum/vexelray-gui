@@ -139,8 +139,8 @@ final class FindBar implements AutoCloseable {
         return field.text();
     }
 
-    /** Whether the bar is up. */
-    boolean shown() {
+    /** Whether the bar is up &mdash; the {@code isOpen} every transient overlay here answers. */
+    boolean isOpen() {
         return shown;
     }
 

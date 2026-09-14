@@ -300,7 +300,17 @@ scrolling a container does not. See [docs/reference/layout-read-model.md](docs/r
 
 ## Widgets (`vexelray-gui-widget`)
 
-Widgets are ordinary framework users — built entirely on public `Node`/`Gui` API:
+Widgets are ordinary framework users — built entirely on public `Node`/`Gui` API.
+
+**Every control has two setters, named after who moved it.** `show(x)` displays a value and tells nobody; the
+setter named for what the control *is* — `Toggle.on`, `Slider.value`, `Segment.select` — acts as the user would
+and fires the callback. A panel re-reading its model calls `show`; a preset button, which really is standing in
+for the user, calls the other. Get it backwards and you get a loop rather than a cosmetic slip: the row reports
+an edit, the application writes to the model, the model republishes the panel, the panel syncs the row again,
+without bound and whatever the value is. `SyncSeamGuardTest` fails the build if a `show` ever fires its own
+callback. `show` is always about a *value* — whether a popup or tooltip is up is `isOpen()`.
+
+The controls themselves:
 
 - **`TextField`** — single or `multiline(true)` editing: word wrap, line numbers, caret-follow
   scroll, selection, cut/copy/paste, sticky-column Up/Down, `onSubmit`. Formatting `Span`s
@@ -572,7 +582,7 @@ down on arrival runs in the same batch as the final sample unless something sepa
 | **`-automation`** | Driving the running application the way a person does; see below and [docs/reference/automation.md](docs/reference/automation.md) |
 | **`-automation-cli`** | The client for that socket: `ottermate`, a command line that attaches to a running application or launches one, and carries the verdict in its exit status. **An empty dependency block** — a socket, line I/O and `ProcessBuilder` — so it runs as a standalone jar with none of the stack on its classpath, which is what keeps automation from becoming a runtime dependency of anything shipped. It lives beside the server rather than beside its callers for the reason `CsvView` lives beside the log it reads: a reader in another repo drifts from the format. See [docs/reference/automation-cli.md](docs/reference/automation-cli.md) |
 | **`-harness`** | A whole application running its **real** frame loop, with the loop under a test's control. The gap it fills is narrow and it is the one that matters: every hand-driven frame test is structurally unable to ask *after this click, does a frame arrive on its own?* — which is how five missing wakes shipped past a green suite. Real windows are created and never shown — **every** window, not just the one the test started with: the application is built with a window factory, so the popup a menu opens is asked for off screen (`WindowConfig.hidden`) and wrapped exactly as the main window is. Surface, swapchain and presenter therefore behave as in production; only pump, wait, wake and focus are intercepted. That matters because a mapped window takes real focus and real keyboard input, so a focus or routing assertion made beside one is answering a question about the window manager. Needs a Vulkan device, and fails to start rather than silently proving nothing |
-| **`-architecture`** | The rules, as tests that fail the build rather than as review comments. No framework class mints its own `Color` instead of naming a `Role` (`PaletteGuardTest`); no widget remembers a shadow depth instead of naming a `Relief` rung (`ReliefGuardTest`); nothing writes the retained model outside its single writer (`ModelWriterGuardTest`); no module reaches across a layer (`LayeringGuardTest`); and **no sealed type has its cases read from outside it, and no `default:` throws** (`DispatchGuardTest`) — both being the same failure, behaviour living somewhere other than the type it belongs to. That last one was learned the expensive way: `-typeset`'s IR began as a sealed interface of seven records with a seven-case engine switch, and the switch was exactly what made the vocabulary closed. Each guard carries its own proof-of-life test, because a detector that silently matched nothing would look exactly like a clean codebase |
+| **`-architecture`** | The rules, as tests that fail the build rather than as review comments. No framework class mints its own `Color` instead of naming a `Role` (`PaletteGuardTest`); no widget remembers a shadow depth instead of naming a `Relief` rung (`ReliefGuardTest`); nothing writes the retained model outside its single writer (`ModelWriterGuardTest`); no module reaches across a layer (`LayeringGuardTest`); no control's `show(x)` fires its own callback, because a sync reported as an edit is an unbounded loop (`SyncSeamGuardTest`); and **no sealed type has its cases read from outside it, and no `default:` throws** (`DispatchGuardTest`) — both being the same failure, behaviour living somewhere other than the type it belongs to. That last one was learned the expensive way: `-typeset`'s IR began as a sealed interface of seven records with a seven-case engine switch, and the switch was exactly what made the vocabulary closed. Each guard carries its own proof-of-life test, because a detector that silently matched nothing would look exactly like a clean codebase |
 
 ## The application edge
 

@@ -81,7 +81,7 @@ public final class ChooserChapter implements Chapter {
         // ---- one of a handful, behind a chevron -------------------------------------------------------------
 
         Select<String> size = new Select<>(gui, s -> s);
-        size.options(SIZES).placeholder("Pick a size").value("Medium");
+        size.options(SIZES).placeholder("Pick a size").show("Medium");
         size.selection().onChange(chosen -> console.note("size preview: " + oneOf(chosen)));
         size.onCommit(chosen -> console.good("size chosen: " + oneOf(chosen)));
 
@@ -92,7 +92,7 @@ public final class ChooserChapter implements Chapter {
             many.add("swatch-" + String.format("%05d", i));
         }
         Select<String> deep = new Select<>(gui, s -> s);
-        deep.options(many).placeholder("Pick a swatch").value("swatch-06000");
+        deep.options(many).placeholder("Pick a swatch").show("swatch-06000");
         deep.onCommit(chosen -> console.good("swatch chosen: " + oneOf(chosen)));
 
         Node counter = gui.text("").width(Length.FILL).height(Length.rem(1.5f))
@@ -102,7 +102,7 @@ public final class ChooserChapter implements Chapter {
         // produced it, so a counter that wrote unconditionally would relayout for ever.
         gui.layout().onCommit(snapshot -> {
             String now = many.size() + " options  ·  " + deep.list().realizedRows() + " rows exist  ·  "
-                    + (deep.shown() ? "open" : "shut");
+                    + (deep.isOpen() ? "open" : "shut");
             if (!now.equals(lastCount)) {
                 lastCount = now;
                 counter.text(now);

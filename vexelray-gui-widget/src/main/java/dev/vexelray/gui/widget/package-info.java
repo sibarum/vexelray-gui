@@ -16,6 +16,19 @@
  * picker holding {@code Color} instead of {@code Hsv} loses the user's place at every grey, and a knob placed by
  * a hand-computed inset is correct at one rem size. Both look like painted controls and neither is one.
  *
+ * <p><b>A control names its setters after who moved it.</b> {@code show(x)} displays a value and tells nobody;
+ * the setter named for what the control <em>is</em> — {@link dev.vexelray.gui.widget.Toggle#on},
+ * {@link dev.vexelray.gui.widget.Slider#value}, {@link dev.vexelray.gui.widget.Segment#select} — acts as the
+ * user would and fires the callback. A panel re-reading its model calls {@code show}; only something genuinely
+ * standing in for the user calls the other. This is not a stylistic preference: reporting a sync as an edit is
+ * a loop, because the application writes to the model, the model republishes the panel, and the panel syncs
+ * again — without bound, and whatever the value is, since the notification never depended on anything moving.
+ *
+ * <p>{@code show} is about a <em>value</em>, never about visibility. Whether a transient overlay is up is
+ * {@code isOpen()} — the one name {@link dev.vexelray.gui.widget.Select},
+ * {@link dev.vexelray.gui.widget.ContextMenu}, {@code FindBar} and {@link dev.vexelray.gui.widget.Tooltip} all
+ * answer to; whether a node is in the tree's layout is {@code Node.showing}.
+ *
  * <p>What is still missing, and in what order, is {@code docs/todo.md} §4.
  */
 package dev.vexelray.gui.widget;

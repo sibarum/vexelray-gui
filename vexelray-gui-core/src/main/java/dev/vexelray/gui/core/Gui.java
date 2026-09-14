@@ -9,6 +9,7 @@ import dev.vexelray.gui.core.layout.Clip;
 import dev.vexelray.gui.core.layout.Displacement;
 import dev.vexelray.gui.core.layout.FlexLayout;
 import dev.vexelray.gui.core.layout.LayoutContext;
+import dev.vexelray.gui.core.layout.Metrics;
 import dev.vexelray.gui.core.layout.LayoutMotion;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
 import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
@@ -100,26 +101,6 @@ public final class Gui implements AutoCloseable {
      */
     private static final int MUTATION_MAILBOX = 1 << 16;
 
-    /** The flat root em, in px, before zoom and DPI (§6 — no cascade). */
-    private static final float ROOT_EM_PX = 16f;
-
-    /**
-     * Default zoom bounds and step; override with {@link #zoomRange}.
-     *
-     * <p>These are the numbers every application that has ever set a range wrote for itself — the demo here,
-     * and the four the framework counted before taking them as its own {@code Appearance.ZoomRange.DEFAULT}.
-     * They are the default because they are what everyone who cared chose, not because they are a limit:
-     * {@link #zoomRange} accepts anything down to 0.01, so an application that wants to go further still can.
-     * A default nobody has taken is worth less than a default five callers independently agreed on.
-     */
-    private static final float DEFAULT_MIN_ZOOM = 0.5f;
-    private static final float DEFAULT_MAX_ZOOM = 3f;
-    private static final float DEFAULT_ZOOM_STEP = 1.25f;
-
-    /** Density bounds: 1.0 conventional, 2.0 Retina-class, 3.0 exists; below 1 is not a real display. */
-    private static final float MIN_DPI = 1f;
-    private static final float MAX_DPI = 4f;
-
     /** Framework click events, resolved from raw input by the dispatcher; workers subscribe here. */
     private static final Topic<ClickEvent> CLICKS = Topic.of("vexelray.gui.clicks", ClickEvent.class);
 
@@ -194,38 +175,18 @@ public final class Gui implements AutoCloseable {
     private final Reconciler reconciler;
     private final InputDispatcher input;
     private final Node root;
-    private final State<Viewport> viewport;
-    private final Committer<Viewport, Viewport> setViewport;
-    // User zoom, as a coalesced State on the bus (mirroring the viewport): every Length resolves through it, so
-    // changing it rescales the whole UI rather than any one property. Read at the top of each frame; a change
-    // triggers a relayout the same way a resize does, with no cross-thread write to the reconciler.
-    private final State<Float> zoom;
-    private final Committer<Float, Float> setZoom;
+    /**
+     * Size and scale: the window, the zoom, the density, and the minimums and limits that shape them. Every
+     * {@link Length} resolves against what this holds, and {@link #frame} asks it once per pass — see
+     * {@link Metrics}, which owns the remembered values the dirty-check compares against.
+     */
+    private final Metrics metrics = new Metrics();
     /** Where nodes are drawn relative to where layout put them; NONE until a motion source is attached. */
     private volatile LayoutMotion motion = LayoutMotion.NONE;
     /** What is held for a paste. See {@link #transfer()}. */
     private volatile dev.vexelray.gui.core.drop.Transfer transfer = dev.vexelray.gui.core.drop.Transfer.NONE;
     /** Where drops and pastes record; the same stack, because they are the same change made two ways. */
     private volatile History transferHistory;
-    private float lastZoom = -1f;
-    // Display density (points -> pixels), the other ambient factor every Length resolves through. Separate from
-    // zoom because they answer different questions: density keeps a UI the same *physical* size on a denser
-    // screen, zoom is the user asking for bigger. Conflating them is why a unit can honour one and not the other.
-    private final State<Float> dpi;
-    private final Committer<Float, Float> setDpi;
-    private float lastDpi = -1f;
-    // Zoom limits and step, configurable (see zoomRange). Read on the GUI thread and by zoomIn/zoomOut, which
-    // may be called from a worker — volatile is enough, since a stale bound only misses by one step.
-    private volatile float minZoom = DEFAULT_MIN_ZOOM;
-    private volatile float maxZoom = DEFAULT_MAX_ZOOM;
-    private volatile float zoomStep = DEFAULT_ZOOM_STEP;
-    // The smallest canvas the UI is laid out on, whatever the window does (see minSize).
-    private volatile Length minWidth = Length.ZERO;
-    private volatile Length minHeight = Length.ZERO;
-    // How far into its own dead space this GUI hands the window manager a resize grip (see resizeBorder), and
-    // that Length resolved against this frame's zoom and density — read by the host right after frame().
-    private volatile Length resizeBorder = Length.ZERO;
-    private int resizeBorderPx;
     // Computed-layout read-model (docs/reference/layout-read-model.md): the latest snapshot workers read via Node.layout(),
     // and the coalesced State observers subscribe to. Published after each layout pass.
     private final State<LayoutSnapshot> layoutState;
@@ -252,10 +213,6 @@ public final class Gui implements AutoCloseable {
      */
     private final java.util.concurrent.ConcurrentMap<Long, ResizeWatch> resizeWatches =
             new java.util.concurrent.ConcurrentHashMap<>();
-    private float lastViewportW = -1f;
-    private float lastViewportH = -1f;
-    private float lastLayoutW = -1f;
-    private float lastLayoutH = -1f;
     private volatile TextClipboard clipboard = new TextClipboard.InMemory();
     // The look. Not a State on the bus like zoom is: a Length resolves against zoom every frame, whereas a colour
     // is resolved once and written into a prop, so there is nothing per-frame to coalesce (see Theme's class note
@@ -368,19 +325,8 @@ public final class Gui implements AutoCloseable {
         this.input.focusTopic(FOCUS);
         this.input.keyRoutedTopic(KEY_ROUTES);
 
-        // Window size as a coalesced, latest-wins State on the bus — the framework relays out from it and workers
-        // can observe resizes without coupling to the window.
-        State.Builder<Viewport> vb = State.of(new Viewport(0, 0));
-        this.setViewport = vb.mutation("set", (current, next) -> next);
-        this.viewport = vb.build();
-
-        State.Builder<Float> zb = State.of(1f);
-        this.setZoom = zb.mutation("set", (current, next) -> next);
-        this.zoom = zb.build();
-
-        State.Builder<Float> db = State.of(1f);
-        this.setDpi = db.mutation("set", (current, next) -> next);
-        this.dpi = db.build();
+        // The window size, zoom and density States are Metrics' own — built there, so that component can be
+        // constructed and exercised without any of this.
 
         // Computed-layout read-model as a coalesced State (mirrors the viewport State): published on change.
         State.Builder<LayoutSnapshot> lb = State.of(LayoutSnapshot.EMPTY);
@@ -452,7 +398,7 @@ public final class Gui implements AutoCloseable {
     }
 
     public State<Viewport> viewport() {
-        return viewport;
+        return metrics.viewport();
     }
 
     /**
@@ -467,17 +413,17 @@ public final class Gui implements AutoCloseable {
      * pixels.
      */
     public State<Float> zoom() {
-        return zoom;
+        return metrics.zoom();
     }
 
     /**
      * Set the zoom factor, clamped to the configured range ({@link #zoomRange}; by default
-     * {@value #DEFAULT_MIN_ZOOM} to {@value #DEFAULT_MAX_ZOOM}). Safe from any thread — it commits
+     * 0.5 to 3). Safe from any thread — it commits
      * to the {@code State}, and the next {@link #frame} notices the change and relays out, so nothing writes to
      * the reconciler off the GUI thread.
      */
     public Gui zoom(float factor) {
-        zoom.commit(setZoom, Math.max(minZoom, Math.min(maxZoom, factor)));
+        metrics.zoom(factor);
         return this;
     }
 
@@ -489,25 +435,26 @@ public final class Gui implements AutoCloseable {
      * <p>Re-clamps the current factor immediately, so narrowing the range cannot leave the UI outside it.
      */
     public Gui zoomRange(float min, float max, float step) {
-        this.minZoom = Math.max(0.01f, min);
-        this.maxZoom = Math.max(this.minZoom, max);
-        this.zoomStep = Math.max(1.0001f, step);
-        return zoom(zoom.value());
+        metrics.zoomRange(min, max, step);
+        return this;
     }
 
     /** Zoom in one step, clamped to the configured maximum. */
     public Gui zoomIn() {
-        return zoom(zoom.value() * zoomStep);
+        metrics.zoomIn();
+        return this;
     }
 
     /** Zoom out one step, clamped to the configured minimum. */
     public Gui zoomOut() {
-        return zoom(zoom.value() / zoomStep);
+        metrics.zoomOut();
+        return this;
     }
 
     /** Back to 1.0 — unscaled. */
     public Gui resetZoom() {
-        return zoom(1f);
+        metrics.resetZoom();
+        return this;
     }
 
     /**
@@ -530,8 +477,7 @@ public final class Gui implements AutoCloseable {
      * which wants the root to become a scroll viewport.
      */
     public Gui minSize(Length width, Length height) {
-        this.minWidth = width == null ? Length.ZERO : width;
-        this.minHeight = height == null ? Length.ZERO : height;
+        metrics.minSize(width, height);
         return this;
     }
 
@@ -559,7 +505,7 @@ public final class Gui implements AutoCloseable {
      * whose content runs to its edges wants.
      */
     public Gui resizeBorder(Length thickness) {
-        this.resizeBorder = thickness == null ? Length.ZERO : thickness;
+        metrics.resizeBorder(thickness);
         return this;
     }
 
@@ -568,7 +514,7 @@ public final class Gui implements AutoCloseable {
      * zoom and density that frame was laid out at. {@code 0} means "the platform's own".
      */
     public int resizeBorderPx() {
-        return resizeBorderPx;
+        return metrics.resizeBorderPx();
     }
 
     /**
@@ -581,7 +527,7 @@ public final class Gui implements AutoCloseable {
      * factors.
      */
     public State<Float> dpi() {
-        return dpi;
+        return metrics.dpi();
     }
 
     /**
@@ -599,11 +545,11 @@ public final class Gui implements AutoCloseable {
      * legibility floor, so it cannot work in em and defer (docs/reference/typeset.md §4.3).
      */
     public float rootEmPx() {
-        return ROOT_EM_PX;
+        return metrics.rootEmPx();
     }
 
     /**
-     * Set the display density (see {@link #dpi()}), clamped to [{@value #MIN_DPI}, {@value #MAX_DPI}].
+     * Set the display density (see {@link #dpi()}), clamped to the range {@link Metrics} declares.
      *
      * <p><b>Feed this from the real surface scale, and lay out in the same space input arrives in.</b> The
      * framework lays out in whatever viewport {@link #frame} is handed and hit-tests input against those rects,
@@ -613,8 +559,7 @@ public final class Gui implements AutoCloseable {
      * development on such a machine and surfaces on the first dense one.
      */
     public Gui dpi(float scale) {
-        float clamped = Math.max(MIN_DPI, Math.min(MAX_DPI, scale));
-        dpi.commit(setDpi, clamped);
+        metrics.dpi(scale);
         return this;
     }
 
@@ -1645,43 +1590,23 @@ public final class Gui implements AutoCloseable {
         // after. One step per frame is not a delay, it is the only honest cadence — see Navigation.
         stepNavigations();
         RetainedNode r = reconciler.root();
-        // Zoom is read here rather than pushed: a worker's shortcut commits to the State from its own thread, and
-        // the frame notices — so nothing outside this thread ever writes the reconciler's dirty flags.
-        float z = zoom.value();
-        float d = dpi.value();
-        boolean zoomChanged = z != lastZoom || d != lastDpi;
-        boolean viewportChanged = viewportW != lastViewportW || viewportH != lastViewportH;
-        // The canvas the layout actually runs on: never smaller than the configured minimum. Resolved against a
-        // context built from the *window* size, because a minimum in vw/vh against the clamped size would define
-        // itself; em/dp — the units this is for — do not consult the viewport at all.
-        LayoutContext windowCtx = new LayoutContext(ROOT_EM_PX, z, d, viewportW, viewportH);
-        float layoutW = Math.max(viewportW, minWidth.scalarPx(windowCtx, viewportW));
-        float layoutH = Math.max(viewportH, minHeight.scalarPx(windowCtx, viewportH));
-        // Resolved every frame like everything else: a zoomed UI whose gutter grew has a grip that grew with it.
-        resizeBorderPx = Math.round(resizeBorder.scalarPx(windowCtx, viewportW));
-        boolean clampChanged = layoutW != lastLayoutW || layoutH != lastLayoutH;
-        if (viewportChanged) {
-            // Publish the new size on the bus (coalesced State) before relaying out, so observers and the layout
-            // see the same value this frame.
-            viewport.commit(setViewport, new Viewport(Math.round(viewportW), Math.round(viewportH)));
-        }
+        // Size and scale, asked once. Metrics reads zoom and density rather than being pushed them: a worker's
+        // shortcut commits to the State from its own thread and the frame notices, so nothing outside this
+        // thread ever writes the reconciler's dirty flags. It also publishes the window size if it moved, before
+        // the relayout, so observers and the layout see the same value this frame.
+        Metrics.Frame m = metrics.measure(viewportW, viewportH);
+        float layoutW = m.layoutW();
+        float layoutH = m.layoutH();
         if (r != null) {
-            // vw/vh resolve against the laid-out canvas, which is the area that actually exists to fill.
-            LayoutContext layoutCtx = new LayoutContext(ROOT_EM_PX, z, d, layoutW, layoutH);
-            boolean layoutRan = reconciler.layoutDirty() || viewportChanged || zoomChanged || clampChanged;
+            boolean layoutRan = reconciler.layoutDirty() || m.moved();
             if (layoutRan) {
                 // Counted as well as timed. Render-on-demand means a still window should lay out almost never,
                 // so a layout count that tracks the frame count is not a slow layout - it is a dirty flag that
                 // is always set, and no amount of making the pass faster will fix that.
                 try (Zone probeZone = Probe.zone(Lane.LAYOUT, "flex layout")) {
-                    FlexLayout.layout(r, layoutW, layoutH, layoutCtx, tm);
+                    FlexLayout.layout(r, layoutW, layoutH, m.layoutCtx(), tm);
                 }
-                lastViewportW = viewportW;
-                lastViewportH = viewportH;
-                lastLayoutW = layoutW;
-                lastLayoutH = layoutH;
-                lastZoom = z;
-                lastDpi = d;
+                metrics.layoutRan(m);
             }
             // Reveal requests are answered here: after the layout that says where everything is, and before the
             // publish that tells everyone else. A scroller that moved is laid out a second time rather than left
@@ -1692,7 +1617,7 @@ public final class Gui implements AutoCloseable {
                 if (dev.vexelray.gui.core.layout.Scrolling.reveal(asked)) {
                     // The second pass the comment above pays for. Named apart so its cost is attributable.
                     try (Zone probeZone = Probe.zone(Lane.LAYOUT, "flex layout (reveal)")) {
-                        FlexLayout.layout(r, layoutW, layoutH, layoutCtx, tm);
+                        FlexLayout.layout(r, layoutW, layoutH, m.layoutCtx(), tm);
                     }
                     layoutRan = true;
                 }

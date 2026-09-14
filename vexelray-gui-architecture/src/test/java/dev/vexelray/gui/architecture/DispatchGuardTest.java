@@ -2,6 +2,8 @@ package dev.vexelray.gui.architecture;
 
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Label;
+import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
 import java.nio.file.Path;
@@ -31,16 +33,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * value gets {@code emitTo(Sink)} and the consumer implements {@code Sink}. The set of operations stays closed,
  * the set of value types stays open, and neither side switches. {@code Placed.Draw} is the worked example.
  *
- * <p><b>Scope.</b> Enforced on {@link Bytecode#GUI_TYPESET} and {@link Bytecode#GUI_PLOT}, the modules
- * designed under the rule — {@code -plot} was ported into this repo under it, which is why its enclosure
- * algebra is three types carrying the operations rather than the three-case switch it came from.
- * {@code -core} still has three sealed types predating it — {@code Length}, {@code Mutation}, {@code Edit},
+ * <p><b>Scope, and why the two halves differ.</b> <em>No throwing default</em> is enforced on every module in
+ * {@link Bytecode#INSPECTED}: nothing anywhere has one, so there is no conversion owed and no reason to hold the
+ * rule narrowly. <em>No sealed type</em> is enforced on {@link #RULED} — {@code -typeset}, {@code -plot} and
+ * {@code -draw}, the modules designed or ported under the rule, which is why {@code -plot}'s enclosure algebra is
+ * three types carrying the operations rather than the three-case switch it came from. {@code -core} still has
+ * four sealed types predating it — {@code Length}, {@code Mutation}, {@code Edit} and {@code InputEvent},
  * dispatched from {@code Length} itself, {@code Reconciler}, {@code Document} and {@code InputDispatcher} — and
- * widening {@link #RULED} to include them is the conversion's definition of done, not a box to tick early.
+ * widening {@link #RULED} to include them is the conversion's definition of done, not a box to tick early
+ * (docs/plans/todo.md §1).
  */
 class DispatchGuardTest {
 
-    /** The modules the rule is enforced on. Widening this list is what converting a module means. */
+    /** The modules the <em>sealed-type</em> half is enforced on. Widening this list is what converting one means. */
     private static final List<String> RULED = List.of(Bytecode.GUI_TYPESET, Bytecode.GUI_PLOT, Bytecode.GUI_DRAW);
 
     @Test
@@ -80,6 +85,93 @@ class DispatchGuardTest {
     void theGuardLetsAnEnumWithConstantBodiesThrough() {
         assertFalse(Sealing.isSealed(enumWithConstantBodies()),
                 "penalising a constant-specific body would push authors back toward the switch it replaced");
+    }
+
+    /**
+     * <b>Every inspected module, not just {@link #RULED}.</b> The two halves of the rule carry different debts.
+     * Converting a module away from sealed types is real work and {@code -core} has four still waiting, so that
+     * half is widened a module at a time. No module anywhere has a throwing default — that was checked before
+     * this was written, not assumed — so there is nothing to convert and no reason to enforce it narrowly. A
+     * property the whole codebase already has is one the build should be holding.
+     */
+    @Test
+    void noThrowingDefaults() {
+        List<String> violations = new ArrayList<>();
+        for (String module : Bytecode.INSPECTED) {
+            Path classes = Bytecode.classesOf(module);
+            for (Path classFile : Bytecode.classFiles(classes)) {
+                violations.addAll(ThrowingDefaults.thrownFrom(Bytecode.read(classFile)));
+            }
+        }
+        assertEquals(List.of(), violations,
+                "a default that throws says the type permits a state the code cannot handle, which means the type "
+                        + "is wrong and not that the case is impossible. Give the type the method, or invert to a "
+                        + "sink. See docs/reference/typeset.md §3.1.");
+    }
+
+    /** The guard's proof of life: an author's default that throws must be seen. */
+    @Test
+    void theGuardReportsAThrowingDefault() {
+        assertEquals(List.of("dev/vexelray/gui/typeset/Probe.pick answers an unhandled case by throwing: "
+                        + "java/lang/IllegalStateException"),
+                ThrowingDefaults.thrownFrom(classWhoseDefault(Opcodes.ATHROW, "java/lang/IllegalStateException")),
+                "the detector must catch the shape the rule is about");
+    }
+
+    /**
+     * And the case that decides whether the rule is satisfiable at all. An exhaustive switch <em>expression</em>
+     * has no {@code default:} in its source and javac emits one anyway — verified against real output, which for
+     * an enum on this JDK is {@code new MatchException; athrow} on the default target. Reporting that would make
+     * every exhaustive switch a violation, which would push authors toward the hand-written dispatch the rule
+     * exists to remove.
+     */
+    @Test
+    void theGuardLetsTheCompilersOwnFallbackThrough() {
+        for (String fallback : ThrowingDefaults.COMPILER_FALLBACKS) {
+            assertEquals(List.of(), ThrowingDefaults.thrownFrom(classWhoseDefault(Opcodes.ATHROW, fallback)),
+                    fallback + " is the compiler saying the class file and the world diverged, not an author "
+                            + "saying a case is impossible");
+        }
+    }
+
+    /** And a default that answers is the ordinary shape, which must stay green. */
+    @Test
+    void theGuardPermitsADefaultThatAnswers() {
+        assertEquals(List.of(), ThrowingDefaults.thrownFrom(classWhoseDefault(Opcodes.IRETURN, null)));
+    }
+
+    /**
+     * Bytecode for {@code static int pick(int k) { switch (k) { case 0: return 1; default: <ending> } }} — where
+     * the default block either throws {@code thrown} or returns.
+     */
+    private static byte[] classWhoseDefault(int ending, String thrown) {
+        ClassWriter cw = new ClassWriter(0);
+        cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, "dev/vexelray/gui/typeset/Probe", null, "java/lang/Object", null);
+        MethodVisitor mv = cw.visitMethod(Opcodes.ACC_STATIC, "pick", "(I)I", null, null);
+        Label caseZero = new Label();
+        Label dflt = new Label();
+        mv.visitCode();
+        mv.visitVarInsn(Opcodes.ILOAD, 0);
+        mv.visitTableSwitchInsn(0, 0, dflt, caseZero);
+
+        mv.visitLabel(caseZero);
+        mv.visitInsn(Opcodes.ICONST_1);
+        mv.visitInsn(Opcodes.IRETURN);
+
+        mv.visitLabel(dflt);
+        if (ending == Opcodes.ATHROW) {
+            mv.visitTypeInsn(Opcodes.NEW, thrown);
+            mv.visitInsn(Opcodes.DUP);
+            mv.visitMethodInsn(Opcodes.INVOKESPECIAL, thrown, "<init>", "()V", false);
+            mv.visitInsn(Opcodes.ATHROW);
+        } else {
+            mv.visitInsn(Opcodes.ICONST_0);
+            mv.visitInsn(Opcodes.IRETURN);
+        }
+        mv.visitMaxs(2, 1);
+        mv.visitEnd();
+        cw.visitEnd();
+        return cw.toByteArray();
     }
 
     /** Bytecode for {@code sealed interface Probe permits Probe$A {}}. */

@@ -16,9 +16,12 @@ default case that throws. Both are the same failure — behaviour living somewhe
 to. A switch over a type hierarchy is dispatch written by hand; a `default:` that throws says the type permits a
 state the code cannot handle, which means the type is wrong.
 
-The rule was adopted after `-typeset` was designed under it. Everything below predates it. The guard's scope list
-is `DispatchGuardTest.RULED`, currently `[GUI_TYPESET]`; **adding a module to that list is the definition of done
-for converting it.**
+The rule was adopted after `-typeset` was designed under it. Everything below predates it.
+
+**The two halves are enforced at different widths.** *No throwing default* is checked on every module in
+`Bytecode.INSPECTED` — no module has one, so there was nothing to convert. *No sealed type* is checked on
+`DispatchGuardTest.RULED`, currently `[GUI_TYPESET, GUI_PLOT, GUI_DRAW]`; **adding a module to that list is the
+definition of done for converting it**, and the four conversions below are what `-core` owes before it can join.
 
 ### 1.1 `Length` — sealed, switches on itself twice
 
@@ -132,13 +135,24 @@ conduit (`current = conduit.next()`) before dispatching, and that must stay exac
 `KeyClaimTest`, `WheelScrollTest`, `DragCaptureTest`, `KeyboardFocusTest` and `TextInputTest` are the ones that
 would notice.
 
-### 1.6 Mechanise the second half of the rule
+### 1.6 ~~Mechanise the second half of the rule~~ — **Done**
 
-`DispatchGuardTest` enforces "no sealed type" by reading the `PermittedSubclasses` attribute — exact and cheap.
-It does **not** enforce "no throwing default", which needs walking `tableswitch`/`lookupswitch` default targets to
-an `athrow` in the bytecode. Real work, not an attribute read.
+`ThrowingDefaults` walks from each `tableswitch`/`lookupswitch` default label to the first instruction that ends
+the block, and reports the ones ending at `athrow`. Enforced by `DispatchGuardTest.noThrowingDefaults` on every
+module in `Bytecode.INSPECTED`, not just `RULED` — the survey that preceded it found no throwing default
+anywhere, so unlike the sealed half there was no conversion to stage.
 
-Hand-reviewed today. Worth mechanising once there is a second module under `RULED`, not before.
+**The thing that made it more than a walk.** An exhaustive switch *expression* has no `default:` in its source
+and javac emits one regardless: `MatchException` when the patterns were exhaustive at compile time,
+`IncompatibleClassChangeError` when an enum has gained a constant since. Reporting those would have made the rule
+unsatisfiable — every exhaustive switch would violate it, which would push authors back toward the hand-written
+dispatch the rule exists to remove. So the thrown type decides, and `COMPILER_FALLBACKS` is the compiler's
+vocabulary. This was settled against real javac output rather than assumed: a fixture of five switch shapes
+compiled and scanned, where the exhaustive one does emit `new MatchException; athrow` on its default target.
+
+The walk stops at the first branch or return after the default's label, so a default that tests something and
+returns is not reported even when a `throw` appears further down the method. The cost is that a default throwing
+only after a branch is missed — that shape is not a case-is-impossible claim, which is what the rule is about.
 
 ---
 

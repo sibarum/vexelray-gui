@@ -14,19 +14,55 @@ import java.util.List;
  * <p>Ordering is a separate property and this does not supply it: two intents committed concurrently both apply,
  * but which lands first is decided by the race. Intents that must be sequenced are committed on the GUI thread's
  * drain, where a total order already exists (architecture.md §5, §8).
+ *
+ * <p><b>Each edit resolves itself.</b> {@code Document.apply} was a switch over every kind, which is dispatch
+ * written by hand and the reason this interface had to stay sealed — an edit an application defined could not be
+ * applied, because the switch would have had no case for it. No sink is needed the way {@code Mutation} needed
+ * one: a document is immutable and {@link #apply} returns a new one, so resolving an edit writes nothing and
+ * there is no single-writer guarantee to preserve.
  */
-public sealed interface Edit {
+public interface Edit {
+
+    /**
+     * Resolve this intent against {@code document} and return the result, or {@code document} itself when
+     * nothing changed — so a no-op commit does not burn a version.
+     *
+     * <p><b>Must be pure.</b> This runs as the body of a {@code State} committer, against whatever the current
+     * value is at commit time, and may run more than once if a CAS retries. An implementation that recorded
+     * something, or read a clock, would do it a number of times nobody chose.
+     */
+    Document apply(Document document);
 
     /** Insert {@code text} at the caret, replacing the selection if there is one. */
     record Insert(String text) implements Edit {
+        @Override
+        public Document apply(Document d) {
+            return d.replace(d.selectionStart(), d.selectionEnd() - d.selectionStart(), text);
+        }
     }
 
     /** Delete backwards from the caret — the selection, else one word or one code point. */
     record DeleteBack(boolean word) implements Edit {
+        @Override
+        public Document apply(Document d) {
+            if (d.hasSelection()) {
+                return d.replace(d.selectionStart(), d.selectionEnd() - d.selectionStart(), "");
+            }
+            int from = word ? d.previousWord(d.caret()) : d.previousBoundary(d.caret());
+            return from < d.caret() ? d.replace(from, d.caret() - from, "") : d;
+        }
     }
 
     /** Delete forwards from the caret — the selection, else one word or one code point. */
     record DeleteForward(boolean word) implements Edit {
+        @Override
+        public Document apply(Document d) {
+            if (d.hasSelection()) {
+                return d.replace(d.selectionStart(), d.selectionEnd() - d.selectionStart(), "");
+            }
+            int to = word ? d.nextWord(d.caret()) : d.nextBoundary(d.caret());
+            return to > d.caret() ? d.replace(d.caret(), to - d.caret(), "") : d;
+        }
     }
 
     /**
@@ -35,14 +71,33 @@ public sealed interface Edit {
      * would be wrong. Offsets are clamped to the current text rather than throwing.
      */
     record Replace(int at, int removeLen, String text) implements Edit {
+        @Override
+        public Document apply(Document d) {
+            int from = d.clampOffset(at);
+            return d.replace(from, Document.clamp(removeLen, 0, d.length() - from), text);
+        }
     }
 
     /** Move the caret to {@code to}; {@code extend} keeps the anchor, so the selection grows. */
     record Caret(int to, boolean extend) implements Edit {
+        @Override
+        public Document apply(Document d) {
+            int moved = d.clampOffset(to);
+            int newAnchor = extend ? d.anchor() : moved;
+            return moved == d.caret() && newAnchor == d.anchor()
+                    ? d
+                    : new Document(d.text(), moved, newAnchor, d.spans(), null);
+        }
     }
 
     /** Select the whole document. */
     record SelectAll() implements Edit {
+        @Override
+        public Document apply(Document d) {
+            return d.anchor() == 0 && d.caret() == d.length()
+                    ? d
+                    : new Document(d.text(), d.length(), 0, d.spans(), null);
+        }
     }
 
     /**
@@ -54,10 +109,21 @@ public sealed interface Edit {
      * the text is at commit time, all of it), which is why both exist.
      */
     record Select(int start, int end) implements Edit {
+        @Override
+        public Document apply(Document d) {
+            int from = d.clampOffset(start);
+            int to = d.clampOffset(end);
+            return to == d.caret() && from == d.anchor() ? d : new Document(d.text(), to, from, d.spans(), null);
+        }
     }
 
     /** Replace the entire text (a programmatic set): caret to the end, selection cleared, spans dropped. */
     record SetText(String text) implements Edit {
+        @Override
+        public Document apply(Document d) {
+            String next = text == null ? "" : text;
+            return new Document(next, next.length(), next.length(), List.of(), null);
+        }
     }
 
     /**
@@ -76,9 +142,18 @@ public sealed interface Edit {
      * point must not cost a Ctrl+Z that appears to do nothing.
      */
     record ReplaceAll(String text) implements Edit {
+        @Override
+        public Document apply(Document d) {
+            String next = text == null ? "" : text;
+            return next.equals(d.text()) ? d : d.replace(0, d.length(), next);
+        }
     }
 
     /** Replace the formatting span set, leaving the text and caret alone. */
     record SetSpans(List<Span> spans) implements Edit {
+        @Override
+        public Document apply(Document d) {
+            return new Document(d.text(), d.caret(), d.anchor(), spans == null ? List.of() : spans, null);
+        }
     }
 }

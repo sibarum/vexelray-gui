@@ -21,7 +21,7 @@ The rule was adopted after `-typeset` was designed under it. Everything below pr
 **The two halves are enforced at different widths.** *No throwing default* is checked on every module in
 `Bytecode.INSPECTED` — no module has one, so there was nothing to convert. *No sealed type* is checked on
 `DispatchGuardTest.RULED`, currently `[GUI_TYPESET, GUI_PLOT, GUI_DRAW]`; **adding a module to that list is the
-definition of done for converting it**. `-core` owes two more conversions before it can join: §1.3 and §1.5.
+definition of done for converting it**. `-core` owes one more conversion before it can join: §1.5.
 
 ### 1.1 ~~`Length` — sealed, switches on itself twice~~ — **Done**
 
@@ -37,7 +37,7 @@ Nothing outside had to change. `FlexLayout` tests lengths with `instanceof`, whi
 well as a sealed one, and `krono`'s `Lengths.LERP` already carried a `default` arm because it is a *pairwise*
 blend and could never have been exhaustive on one operand anyway.
 
-**Still sealed, and blocking `-core` from `RULED`:** §1.3 `Edit` and §1.5 `InputEvent`. Two left.
+**Still sealed, and blocking `-core` from `RULED`:** §1.5 `InputEvent`. One left.
 
 ### 1.2 ~~`Mutation` — sealed, dispatched from outside~~ — **Done**, as a sink
 
@@ -59,18 +59,21 @@ turn, because a group is a fact about how edits were queued rather than somethin
 Nothing outside `Reconciler` pattern-matched on `Mutation`, so the switch really was the only thing that knew
 the kinds.
 
-### 1.3 `Edit` — sealed, dispatched from `Document`
+### 1.3 ~~`Edit` — sealed, dispatched from `Document`~~ — **Done**
 
-`vexelray-gui-core/.../text/Edit.java:18` (sealed), `.../text/Document.java:83` (the switch).
+`Edit.apply(Document) -> Document` per record; `Document.apply(Edit)` is one delegation. `TextEditTest` and
+`SpanTest` unchanged and green.
 
-`Document.apply(Edit)` switches over the edit kinds. Cleaner than 1.2 because `Document` is immutable and `apply`
-returns a new one — no write-guard entanglement. Each `Edit` could carry `apply(Document) -> Document`.
+**No sink needed, unlike §1.2.** A document is immutable and `apply` returns a new one, so resolving an edit
+writes nothing and there is no single-writer guarantee to route around. The purity the Javadoc already required —
+this is a `State` committer body and may run more than once on CAS retry — carries over unchanged, which is what
+methods on immutable records are good at.
 
-Note the constraint in the existing Javadoc: `apply` runs inside a `State` committer, may run more than once on
-CAS retry, and must stay pure. Any conversion inherits that, which suits methods on immutable records fine.
-
-**Done looks like:** `Edit.apply(Document)` per record; `Document.apply(Edit)` becomes one delegation.
-`TextEditTest` and `SpanTest` unchanged and green.
+`Document.replace`, `previousBoundary`, `nextBoundary` and `clamp` went from private to package-private, because
+the edits resolve themselves now and those are what they resolve *to*. `replace` is still the one
+content-mutation path: an edit that changed content any other way would produce no `TextEdit`, so spans would not
+remap and history would have nothing to record. That is worth watching if an edit is ever added outside this
+package — the widening is to the package, not to the world.
 
 ### 1.4 ~~`GuiApp` — a throwing default on our own value~~ — **Done**, by deletion
 

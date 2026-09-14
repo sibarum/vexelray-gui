@@ -78,63 +78,25 @@ public record Document(String text, int caret, int anchor, List<Span> spans, Tex
      * (so a no-op commit does not burn a version). This is the body of the {@code State} committer: it runs
      * against whatever the current value is at commit time, and may run more than once if a CAS retries, so it
      * is pure and must stay that way.
+     *
+     * <p>One delegation. It was a switch over every kind of edit, which put the meaning of an edit in the
+     * document rather than in the edit, and kept {@link Edit} sealed because the switch was what closed it.
      */
     public Document apply(Edit edit) {
-        return switch (edit) {
-            case Edit.Insert i -> replace(selectionStart(), selectionEnd() - selectionStart(), i.text());
-            case Edit.DeleteBack d -> {
-                if (hasSelection()) {
-                    yield replace(selectionStart(), selectionEnd() - selectionStart(), "");
-                }
-                int from = d.word() ? previousWord(caret) : previousBoundary(caret);
-                yield from < caret ? replace(from, caret - from, "") : this;
-            }
-            case Edit.DeleteForward d -> {
-                if (hasSelection()) {
-                    yield replace(selectionStart(), selectionEnd() - selectionStart(), "");
-                }
-                int to = d.word() ? nextWord(caret) : nextBoundary(caret);
-                yield to > caret ? replace(caret, to - caret, "") : this;
-            }
-            case Edit.Replace r -> {
-                int at = clampOffset(r.at());
-                int removeLen = clamp(r.removeLen(), 0, text.length() - at);
-                yield replace(at, removeLen, r.text());
-            }
-            case Edit.Caret c -> {
-                int to = clampOffset(c.to());
-                int newAnchor = c.extend() ? anchor : to;
-                yield to == caret && newAnchor == anchor ? this
-                        : new Document(text, to, newAnchor, spans, null);
-            }
-            case Edit.SelectAll ignored -> anchor == 0 && caret == text.length() ? this
-                    : new Document(text, text.length(), 0, spans, null);
-            case Edit.Select s -> {
-                int from = clampOffset(s.start());
-                int to = clampOffset(s.end());
-                yield to == caret && from == anchor ? this : new Document(text, to, from, spans, null);
-            }
-            case Edit.ReplaceAll r -> {
-                String next = r.text() == null ? "" : r.text();
-                // Unchanged content is not an edit: no diff, so no history entry and no caret jump. See the
-                // record's own note on why a fixed point must not cost a Ctrl+Z that does nothing.
-                yield next.equals(text) ? this : replace(0, text.length(), next);
-            }
-            case Edit.SetText s -> {
-                String next = s.text() == null ? "" : s.text();
-                yield new Document(next, next.length(), next.length(), List.of(), null);
-            }
-            case Edit.SetSpans s -> new Document(text, caret, anchor,
-                    s.spans() == null ? List.of() : s.spans(), null);
-        };
+        return edit.apply(this);
     }
 
     /**
      * The one content-mutation path: replace {@code [at, at + removeLen)} with {@code insert}, move the caret to
      * the end of the insertion, and remap every span through the resulting diff so formatting stays attached to
      * its text (auto-diff, keyboard-focus-text.md §4.4).
+     *
+     * <p>Package-private rather than private, because the edits resolve themselves now and this is what they
+     * resolve <em>to</em>. Still the one path: an {@link Edit} that changed content any other way would not
+     * produce a {@link TextEdit}, so spans would not remap and history would have nothing to record. Callers are
+     * expected to have clamped {@code at} and {@code removeLen} into the text first.</p>
      */
-    private Document replace(int at, int removeLen, String insert) {
+    Document replace(int at, int removeLen, String insert) {
         String in = insert == null ? "" : insert;
         String removed = text.substring(at, at + removeLen);
         if (removed.isEmpty() && in.isEmpty()) {
@@ -162,11 +124,11 @@ public record Document(String text, int caret, int anchor, List<Span> spans, Tex
 
     // --- boundaries (offsets, not glyphs — the document knows nothing about layout) ---
 
-    private int previousBoundary(int from) {
+    int previousBoundary(int from) {
         return from > 0 ? text.offsetByCodePoints(from, -1) : 0;
     }
 
-    private int nextBoundary(int from) {
+    int nextBoundary(int from) {
         return from < text.length() ? text.offsetByCodePoints(from, 1) : from;
     }
 
@@ -229,7 +191,7 @@ public record Document(String text, int caret, int anchor, List<Span> spans, Tex
         return nextBoundary(clampOffset(from));
     }
 
-    private static int clamp(int v, int lo, int hi) {
+    static int clamp(int v, int lo, int hi) {
         return v < lo ? lo : Math.min(v, hi);
     }
 }

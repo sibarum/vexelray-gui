@@ -67,6 +67,19 @@ public final class Slider {
         return this;
     }
 
+    /**
+     * Show a value the slider did not choose, <b>without</b> notifying {@link #onChange}.
+     *
+     * <p>A sync is not an edit. Where a panel re-reads its model and writes what it finds back into its rows,
+     * {@link #value(float)} tells the application the user just dragged this — so it writes to the model, the
+     * model republishes the panel, and the panel syncs again, unbounded and regardless of the value. See
+     * {@link Toggle#show}.
+     */
+    public Slider show(float v) {
+        move(v);
+        return this;
+    }
+
     /** React to value changes (fired on drag and on {@link #value(float)}). Runs on a worker thread. */
     public Slider onChange(DoubleConsumer handler) {
         this.onChange = handler == null ? v -> { } : handler;
@@ -74,11 +87,16 @@ public final class Slider {
     }
 
     private void set(float raw) {
+        onChange.accept(move(raw));
+    }
+
+    /** Move the handle and report where it landed, telling nobody. */
+    private float move(float raw) {
         float v = clamp01(raw);
         this.value = v;
         leftSpacer.width(Length.grow(v));
         rightSpacer.width(Length.grow(1f - v));
-        onChange.accept(v);
+        return v;
     }
 
     private static float clamp01(float v) {

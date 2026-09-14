@@ -87,6 +87,24 @@ public final class Toggle {
         return this;
     }
 
+    /**
+     * Show a state the switch did not choose, <b>without</b> notifying {@link #onChange}.
+     *
+     * <p><b>A sync is not an edit, and reporting one as an edit is a loop.</b> Where a panel re-reads its model
+     * and writes what it finds back into its switches, {@link #on(boolean)} tells the application the user just
+     * flipped them — so the application writes to the model, the model tells the panel it changed, and the panel
+     * syncs again. That is unbounded regardless of the value, because the notification does not depend on the
+     * state actually moving. Use this for "the model changed under me" and {@code on(boolean)} only where
+     * something really is acting as the user would.
+     *
+     * <p>The knob still travels, because where the switch is standing is a question about the model and not
+     * about who moved it.
+     */
+    public Toggle show(boolean value) {
+        move(value);
+        return this;
+    }
+
     /** React to state changes (fired on click and on {@link #on(boolean)}). Runs on a worker thread. */
     public Toggle onChange(Consumer<Boolean> handler) {
         this.onChange = handler == null ? v -> { } : handler;

@@ -271,6 +271,85 @@ class InspectorTest {
         }
     }
 
+    @Test
+    void aRefreshWritesNothingBackToTheModel() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            AtomicBoolean flag = new AtomicBoolean(false);
+            AtomicReference<String> mode = new AtomicReference<>("solid");
+            AtomicReference<Double> scale = new AtomicReference<>(0.25);
+            AtomicReference<Double> count = new AtomicReference<>(3.0);
+            AtomicInteger writes = new AtomicInteger();
+
+            Inspector inspector = new Inspector(h.gui);
+            inspector.add(
+                    Property.flag("", "Wireframe", flag::get, v -> {
+                        writes.incrementAndGet();
+                        flag.set(v);
+                    }),
+                    Property.choice("", "Material",
+                            List.of(new Property.Option<>("Solid", "solid"), new Property.Option<>("SSS", "sss")),
+                            mode::get, v -> {
+                                writes.incrementAndGet();
+                                mode.set(v);
+                            }),
+                    Property.range("", "Scale", 0, 1, 0.01, scale::get, v -> {
+                        writes.incrementAndGet();
+                        scale.set(v);
+                    }),
+                    Property.number("", "Count", 1, 0, 10, count::get, v -> {
+                        writes.incrementAndGet();
+                        count.set(v);
+                    }));
+            h.gui.root().children(inspector.node());
+            h.frame();
+            writes.set(0);
+
+            // The model moved under the panel, and every row is asked to catch up.
+            flag.set(true);
+            mode.set("sss");
+            scale.set(0.75);
+            count.set(7.0);
+            inspector.refresh();
+            h.frame();
+
+            // A sync is not an edit. Were the rows to report one, the application would write to the model, the
+            // model would republish the panel, and the panel would refresh again -- without bound, and whatever
+            // the values were, because the notification never depended on anything having moved.
+            assertEquals(0, writes.get(), "a refresh told the application the user had edited every row");
+
+            // And the sync still happened: the rows hold what the model says, they just did not announce it.
+            assertTrue(flag.get());
+            assertEquals("sss", mode.get());
+            assertEquals(0.75, scale.get(), 1e-9);
+            assertEquals(7.0, count.get(), 1e-9);
+        }
+    }
+
+    @Test
+    void aSegmentShownAValueItDoesNotHaveReportsNothing() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            List<String> chosen = new ArrayList<>();
+            Segment<String> seg = new Segment<String>(h.gui).onChange(chosen::add);
+            h.gui.root().children(seg.node());
+            h.frame();
+
+            // No options at all: there is nothing to select, so nothing may be reported. Asking whether the
+            // selection *landed* cannot answer this -- with no options the selection is null, and so is the
+            // value, and "unchanged" reads as "taken". The question is whether the option exists.
+            seg.select(null);
+            assertEquals(List.of(), chosen, "an empty segment reported a selection it does not have");
+            assertNull(seg.selected());
+
+            seg.option("Solid", "solid").option("SSS", "sss");
+            seg.show("sss");
+            assertEquals("sss", seg.selected(), "show moves the selection");
+            assertEquals(List.of(), chosen, "but show is a sync, and a sync is not an edit");
+
+            seg.select("solid");
+            assertEquals(List.of("solid"), chosen, "select still reports, because that one is an edit");
+        }
+    }
+
     // ---------------------------------------------------------------- cards
 
     @Test

@@ -358,7 +358,10 @@ public final class Inspector {
         }
 
         void refresh() {
-            toggle.on(on.getAsBoolean());
+            // show, not on: this is the card being told what the model says, not the user flipping it. See
+            // Toggle.show -- reporting a sync as an edit made a refresh write back to the model, which
+            // republished the panel, which refreshed the card, without bound.
+            toggle.show(on.getAsBoolean());
             for (Property p : own) {
                 p.refresh();
             }

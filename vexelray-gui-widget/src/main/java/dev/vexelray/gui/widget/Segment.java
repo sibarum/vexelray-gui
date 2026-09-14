@@ -101,9 +101,25 @@ public final class Segment<T> {
         if (!cells.containsKey(value)) {
             return this;
         }
+        show(value);
+        onChange.accept(value);
+        return this;
+    }
+
+    /**
+     * Show a selection the segment did not make, <b>without</b> notifying {@link #onChange}. A value with no
+     * option is ignored.
+     *
+     * <p>A sync is not an edit. Where a panel re-reads its model and writes what it finds back into its rows,
+     * {@link #select} tells the application the user just clicked this — so it writes to the model, the model
+     * republishes the panel, and the panel syncs again, without bound. See {@link Toggle#show}.
+     */
+    public Segment<T> show(T value) {
+        if (!cells.containsKey(value)) {
+            return this;
+        }
         this.selected = value;
         paint();
-        onChange.accept(value);
         return this;
     }
 

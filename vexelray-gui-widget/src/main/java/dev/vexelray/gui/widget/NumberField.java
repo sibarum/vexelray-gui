@@ -101,6 +101,18 @@ public final class NumberField {
         return this;
     }
 
+    /**
+     * Show a number the field did not take, <b>without</b> notifying {@link #onChange}.
+     *
+     * <p>A sync is not an edit. Where a panel re-reads its model and writes what it finds back into its rows,
+     * {@link #value(double)} tells the application the user just typed this — so it writes to the model, the
+     * model republishes the panel, and the panel syncs again, without bound. See {@link Toggle#show}.
+     */
+    public NumberField show(double v) {
+        write(clamp(BigDecimal.valueOf(v)));
+        return this;
+    }
+
     /** React to agreed numbers only — on commit and on {@link #value(double)}. Runs on a worker thread. */
     public NumberField onChange(DoubleConsumer handler) {
         this.onChange = handler == null ? v -> { } : handler;
@@ -124,9 +136,14 @@ public final class NumberField {
     }
 
     private void put(BigDecimal v) {
+        write(v);
+        onChange.accept(v.doubleValue());
+    }
+
+    /** Take the number and show it, telling nobody. */
+    private void write(BigDecimal v) {
         this.value = v;
         field.text(plain(v));
-        onChange.accept(v.doubleValue());
     }
 
     private BigDecimal clamp(BigDecimal v) {

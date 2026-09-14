@@ -189,7 +189,8 @@ final class Rows {
                 return;
             }
             double current = get.getAsDouble();
-            slider.value((float) fraction(current));
+            // show, not value: a row re-reading its model is not the user dragging it. See Toggle.show.
+            slider.show((float) fraction(current));
             value.show(Text.of(current, step));
         }
 
@@ -235,7 +236,8 @@ final class Rows {
         @Override
         public void refresh() {
             if (field != null) {
-                field.value(get.getAsDouble());
+                // show, not value: a sync is not an edit. See Toggle.show.
+                field.show(get.getAsDouble());
             }
         }
     }
@@ -264,7 +266,8 @@ final class Rows {
         @Override
         public void refresh() {
             if (toggle != null) {
-                toggle.on(get.getAsBoolean());
+                // show, not on: a row re-reading its model is not the user flipping the switch. See Toggle.show.
+                toggle.show(get.getAsBoolean());
             }
         }
 
@@ -304,7 +307,8 @@ final class Rows {
         @Override
         public void refresh() {
             if (segment != null) {
-                segment.select(get.get());
+                // show, not select: a sync is not an edit. See Toggle.show.
+                segment.show(get.get());
             }
         }
     }

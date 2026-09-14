@@ -51,8 +51,9 @@ class ModelWriterGuardTest {
             "dev/vexelray/gui/core/layout/Displacement",    // motion stage: where a node is drawn vs laid out
             "dev/vexelray/gui/core/layout/Clip",            // compute stage: what survives the ancestors' clips
             "dev/vexelray/gui/core/text/TextGeometry",      // compute stage: text metrics + caret-follow scroll
-            // Shrinking as docs/plans/gui-decomposition.md proceeds. What is left here is scrollBy (step 2,
-            // Scrolling), resolveGeometry (step 4, LayoutPublisher) and draw. The entry goes when they do.
+            "dev/vexelray/gui/core/layout/Scrolling",       // reveal stage: scroll offsets that bring a node into view
+            // Shrinking as docs/plans/gui-decomposition.md proceeds. What is left here is
+            // resolveGeometry (step 4, LayoutPublisher) and draw. The entry goes when they do.
             "dev/vexelray/gui/core/Gui");                   // compute stage: what has not moved out yet
 
     @Test

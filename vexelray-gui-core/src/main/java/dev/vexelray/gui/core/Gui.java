@@ -120,7 +120,8 @@ public final class Gui implements AutoCloseable {
     /** Every routed key press, whatever took it — the observation channel (see {@link KeyRouted}). */
     private static final Topic<KeyRouted> KEY_ROUTES = Topic.of("vexelray.gui.keys", KeyRouted.class);
 
-    private final AtomicLong ids = new AtomicLong(1);
+    /** Where nodes come from: the id counter, the publisher seam, and the batch. See {@link Trees}. */
+    private final Trees trees;
     private final Atchung bus;
     private final MutationSink sink;
     private final Pump pump;
@@ -197,12 +198,6 @@ public final class Gui implements AutoCloseable {
     // them and from every state handler.
     private volatile Theme theme = Theme.DARK;
     private final Executor handlers;
-    /**
-     * Mutations buffered by an in-progress {@link #batch} on this thread, or null when not batching. Thread-local
-     * because a batch is one thread's group of edits: two workers batching at once must not braid their ops into
-     * each other's group, and per-producer FIFO already keeps each thread's own order.
-     */
-    private final ThreadLocal<List<Mutation>> batching = new ThreadLocal<>();
     private final ExecutorService workers = Executors.newCachedThreadPool(r -> {
         Thread t = new Thread(r, "vexelray-gui-worker");
         t.setDaemon(true);
@@ -244,18 +239,12 @@ public final class Gui implements AutoCloseable {
     public Gui(Atchung bus, java.util.concurrent.Executor handlerExecutor) {
         this.bus = bus;
         this.pump = bus.pump();
-        // Publisher seam for Node handles: every setter publishes a Mutation onto the bus from any thread — unless
-        // this thread is inside a batch, in which case the op joins the group and the whole group publishes once.
-        this.sink = m -> {
-            List<Mutation> group = batching.get();
-            if (group != null) {
-                group.add(m);
-            } else {
-                publishMutation(m);
-            }
-        };
-
-        long rootId = ids.getAndIncrement();
+        // Where nodes come from, and the seam their handles write through. It resolves Node.layout() through a
+        // reader that is consulted lazily, which is what lets it be built before the read-model it will read —
+        // a handle minted here does not ask about geometry until something reads one.
+        this.trees = new Trees(bus, MUTATIONS, this::wake, this::publishedLayout);
+        this.sink = trees.sink();
+        long rootId = trees.rootId();
         // A node leaving the tree releases everything keyed by its id. Without this, a removed node kept its
         // handlers, its claims and — if it had it — focus, so a deleted focused editor went on preempting the
         // chords it claimed forever.
@@ -378,12 +367,9 @@ public final class Gui implements AutoCloseable {
         this.modifierState = mb.build();
         input.onModifiers(held -> modifierState.commit(setModifiers, held));
 
-        Map<PropKey, Object> init = new EnumMap<>(PropKey.class);
-        init.put(PropKey.DIRECTION, Direction.COLUMN);
-        init.put(PropKey.WIDTH, Length.FILL);
-        init.put(PropKey.HEIGHT, Length.FILL);
-        sink.post(new Mutation.Create(rootId, init));
-        this.root = new Node(rootId, sink, layoutReader);
+        // The root is created here rather than when Trees was built: its id was needed before the subscription
+        // existed, and its Create must be published after it, or it goes onto the bus with nobody listening.
+        this.root = trees.createRoot();
     }
 
     /** The Atchung bus this GUI publishes mutations, events, and (via a bridge) input on. */
@@ -1199,17 +1185,17 @@ public final class Gui implements AutoCloseable {
 
     /** A generic box (defaults to a row). */
     public Node box() {
-        return create(null);
+        return trees.box();
     }
 
     /** A horizontal box. */
     public Node row() {
-        return create(Direction.ROW);
+        return trees.row();
     }
 
     /** A vertical box. */
     public Node column() {
-        return create(Direction.COLUMN);
+        return trees.column();
     }
 
     /**
@@ -1225,21 +1211,7 @@ public final class Gui implements AutoCloseable {
      * height so the row around it does not jump when the content lands.
      */
     public Node text(String s) {
-        long id = ids.getAndIncrement();
-        Map<PropKey, Object> init = new EnumMap<>(PropKey.class);
-        init.put(PropKey.TEXT, s);
-        sink.post(new Mutation.Create(id, init));
-        return new Node(id, sink, layoutReader);
-    }
-
-    private Node create(Direction dir) {
-        long id = ids.getAndIncrement();
-        Map<PropKey, Object> init = new EnumMap<>(PropKey.class);
-        if (dir != null) {
-            init.put(PropKey.DIRECTION, dir);
-        }
-        sink.post(new Mutation.Create(id, init));
-        return new Node(id, sink, layoutReader);
+        return trees.text(s);
     }
 
     /** Run {@code work} on a worker thread (app logic stays off the GUI thread). */
@@ -1269,32 +1241,7 @@ public final class Gui implements AutoCloseable {
      * composes into a caller's larger group.
      */
     public void batch(Runnable edits) {
-        if (batching.get() != null) {
-            edits.run();   // nested: the ops join the outer group, which publishes them
-            return;
-        }
-        List<Mutation> group = new ArrayList<>();
-        batching.set(group);
-        try {
-            edits.run();
-        } finally {
-            batching.remove();
-        }
-        if (!group.isEmpty()) {
-            publishMutation(new Mutation.Batch(List.copyOf(group)));
-        }
-    }
-
-    /**
-     * Put a mutation on the bus and tell whoever is driving frames that there is now something to draw.
-     *
-     * <p>Every publish goes through here, which is the point: the wake is easy to write once and easy
-     * to forget the second time, and forgetting it produces a window that stops updating rather than
-     * one that updates slowly.
-     */
-    private void publishMutation(Mutation m) {
-        bus.publish(MUTATIONS, m);
-        wake("mutation");
+        trees.batch(edits);
     }
 
     /**
@@ -1304,6 +1251,17 @@ public final class Gui implements AutoCloseable {
      * and it must not take the publish or the handler down with it, both of which have already
      * succeeded by the time this runs.
      */
+    /**
+     * The latest published layout, as a {@link LayoutReader} for the handles {@link Trees} mints.
+     *
+     * <p>A method reference rather than a lambda over the field, because {@code Trees} is built before
+     * {@code readModels} is and the compiler will not let a lambda close over a blank final that early. The
+     * laziness is real either way: a handle does not ask about geometry until something reads one.
+     */
+    private LayoutSnapshot publishedLayout() {
+        return readModels.layoutSnapshot();
+    }
+
     private void wake(String why) {
         if (!woken.compareAndSet(false, true)) {
             return;   // a frame is already owed, and saying so twice does not owe two

@@ -86,7 +86,7 @@ Ascending. Each step is one commit, and the suite (whole build, ~10s) is the saf
    reaching back, which is what lets the component be built with neither a dispatcher nor a navigator present.
 5. ~~**`Navigator`**~~ — **done.** Self-contained and freshly written, so it moved cleanly. Held until here only because it is
    the least urgent; move it earlier if navigation is being extended.
-6. **`Trees`** — touches the constructor and every node-creating call site indirectly. Do it once the file is
+6. ~~**`Trees`**~~ — **done.** Touches the constructor and every node-creating call site indirectly. Do it once the file is
    already half its size, so the diff is legible.
 7. **`Transfers`** — smallest payoff, do last or never.
 

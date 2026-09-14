@@ -1,14 +1,14 @@
 # `ottermate`: driving a running application from a shell
 
-<img src="../vexelray-gui-automation-cli/ottermate.jpg" width="200"
+<img src="../../vexelray-gui-automation-cli/ottermate.jpg" width="200"
      alt="ottermate: an otter in a hard hat, holding a screwdriver, one paw resting on a laptop showing a terminal prompt">
 
 The user guide for `vexelray-gui-automation-cli`. The transcripts below are real runs captured against
 `calculator-vexel-demo` while writing this — only the working directory in a path has been shortened to
 `C:\work`. Where a run is unreliable, the transcript shows it being unreliable rather than being tidied up.
 
-- [automation.md](automation.md) — what the socket is and why the pointer travels
-- [automation-cli.md](automation-cli.md) — why the client exists, and what is still missing
+- [automation.md](../reference/automation.md) — what the socket is and why the pointer travels
+- [automation-cli.md](../reference/automation-cli.md) — why the client exists, and what is still missing
 
 ---
 
@@ -263,7 +263,7 @@ nothing owed between animation ticks for `settle` to wait on.
 
 There is no client-side workaround today, and inventing one would be worse than the gap: a `sleep` verb is
 the flake this whole instrument was built to avoid. The fix is
-[automation-cli.md](automation-cli.md) §5 **V3** — teaching `settle` to ask the timeline whether it is
+[automation-cli.md](../reference/automation-cli.md) §5 **V3** — teaching `settle` to ask the timeline whether it is
 quiescent — and until it lands, **treat a shot taken straight after an animated transition as unreliable**,
 and prefer subjects that do not animate.
 

@@ -1,8 +1,19 @@
 # Reactive timing — how this GUI meets Kronometer
 
-> **Status: design note. Nothing here is implemented.** Kronometer is the substrate that owns this
-> problem; this note records only what is left for the GUI and input side, and how the seams meet.
-> See `kronometer/docs/architecture.md` for the model itself — it is the source of truth.
+> **Status: the integration landed as `vexelray-gui-krono`; the residue below has not.** Kronometer is the
+> substrate that owns this problem — see `kronometer/docs/architecture.md` for the model itself, which is the
+> source of truth. What this note records is the seam: how the GUI and input side meet it, and what neither
+> repo covers.
+>
+> **Landed.** The shape in "Integration shape" below is built: `KronoGui` attaches one `Kron` to a `Gui`,
+> ticks it per presented frame and exposes `kron()`; `KronoInput` drives a `Cell` from a bus `Topic`, so live
+> input enters the graph with `now` as its horizon; `Transitions` is the `LayoutMotion` that turns every move
+> into a decaying displacement on the frame clock; `Lengths` and `Colors` are the two `Interp`s Kronometer
+> deliberately leaves to whoever owns the type.
+>
+> **Not landed.** The residue in §"The residue" — most load-bearingly (1), message-based keyboard input in
+> tactroller's Windows backend. That is still `GetAsyncKeyState` diffing, so source timestamps remain
+> poll-derived and the kernel's precision still stops at the process boundary.
 
 ## What this note is now
 

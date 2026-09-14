@@ -1,9 +1,10 @@
 # The Layout Read-Model — computed GUI state, published on the bus
 
-Status: **design → in progress**. This is the framework's standing pattern for the question "how does a
-widget (or a test, a devtools overlay, a remote client) learn a node's computed layout — its position, size,
-scroll, and text metrics — that only core knows after it lays the tree out?" It generalizes the pattern already
-used for the window size (`Gui.viewport()` is a computed value published as a coalesced bus `State`).
+Status: **landed** — steps 1-4 and the label draw path are all in (§10, §11). This is the framework's standing
+pattern for the question "how does a widget (or a test, a devtools overlay, a remote client) learn a node's
+computed layout — its position, size, scroll, and text metrics — that only core knows after it lays the tree
+out?" It generalizes the pattern already used for the window size (`Gui.viewport()` is a computed value
+published as a coalesced bus `State`).
 
 Whenever a future scenario needs computed state to flow *from* core *to* a widget/observer, it uses this
 pattern. Do not add ad-hoc per-feature callbacks for it.

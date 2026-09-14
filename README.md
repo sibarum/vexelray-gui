@@ -23,7 +23,7 @@ It is the top of a three-sibling stack, each its own repo:
 | **[atchung](https://github.com/sibarum/atchung)** | Messages: the typed bus that carries input in and mutations through |
 
 The GUI's job is what sits above pixels and wire: **identity, layout, dispatch, motion**
-([docs/architecture.md](docs/architecture.md) is the deep version of this document).
+([docs/reference/architecture.md](docs/reference/architecture.md) is the deep version of this document).
 
 ## Building
 
@@ -239,7 +239,7 @@ gui.dropHistory(history);                            // until this is set, drops
   and it can tell the two apart from the rectangle it is handed rather than from a flag beside it that
   could disagree. Replaceable per widget, `DropIndicator.NONE` to draw nothing.
 
-[docs/transfer.md](docs/transfer.md) is the full record.
+[docs/reference/transfer.md](docs/reference/transfer.md) is the full record.
 
 ### Navigation and landmarks
 
@@ -260,7 +260,7 @@ a drawer without knowing what any of those are — the widgets that conceal thin
 so an application needs this only for a container it wrote itself. An `Address` may name a window
 (`"prefs/theme.accent"`); one naming another window is *published* rather than walked, and `GuiApp`
 opens that window if it is closed. `navigate` takes frames rather than returning done, and reports
-its arrival through the `Navigation` it hands back. See [docs/navigation.md](docs/navigation.md).
+its arrival through the `Navigation` it hands back. See [docs/reference/navigation.md](docs/reference/navigation.md).
 
 ### Undo
 
@@ -295,8 +295,8 @@ reported nothing, and was never asked again. It is an observer rather than a one
 registration covers every later resize, zoom and DPI change. `onResizeUi` is the same thing delivered
 inside the layout pass that produced it, for work that has to land in the same frame — measure, mutate
 a handle, return; anything that computes belongs on the plain one. Only a change of *box* fires it, so
-scrolling a container does not. See [docs/layout-read-model.md](docs/layout-read-model.md) and
-[docs/semantic-read-model.md](docs/semantic-read-model.md).
+scrolling a container does not. See [docs/reference/layout-read-model.md](docs/reference/layout-read-model.md) and
+[docs/reference/semantic-read-model.md](docs/reference/semantic-read-model.md).
 
 ## Widgets (`vexelray-gui-widget`)
 
@@ -498,7 +498,7 @@ means two different things on two targets is worse than one that cannot express 
 pixels in the node's own box, so nothing has to know where on screen it ended up.
 
 The module sits **below** `-core` and depends on nothing but the engine's canvas and text: an exporter
-does not drag a GUI in behind it. See [docs/drawing.md](docs/drawing.md).
+does not drag a GUI in behind it. See [docs/reference/drawing.md](docs/reference/drawing.md).
 
 ## Images
 
@@ -527,7 +527,7 @@ changed. In the shot above the frame counter is at 14 and the upload counter is 
 
 A raster file dictates its own pixel size; a vector document has none until a layout gives it one — so
 the bottom row is three *rasterisations* of one SVG rather than one bitmap scaled three ways. See
-[docs/architecture.md §6.9](docs/architecture.md) and `ImageChapter` in the demo.
+[docs/reference/architecture.md §6.9](docs/reference/architecture.md) and `ImageChapter` in the demo.
 
 ## Motion
 
@@ -565,12 +565,12 @@ down on arrival runs in the same batch as the final sample unless something sepa
 | **`-draw`** | `Picture`: marks in a pixel frame, to a canvas or to SVG. Below `-core`; see above |
 | **`-core`** | Identity, layout, dispatch, the read-models, the theme, navigation, transfer |
 | **`-widget`** | Everything under **Widgets**, built entirely on public `Node`/`Gui` API |
-| **`-typeset`** | Structured, **non-editable** rich text: an open set of composable `Box`es (seven built in), notation assembled by `Recipes`, per-content parameters as a `Profile`. It holds **no opinion about markup** — the application parses whatever it likes and builds the IR, which is what lets new formats be pioneered without touching the framework and what makes selection recoverable later (a run can carry a reference into the app's own source). A typeset block is an **atom** in flex layout, never content inside a `TextField`, which is what keeps the field's layout one-dimensional and deterministic. See [docs/typeset.md](docs/typeset.md) |
-| **`-plot`** | Reliable graphing's substrate. **Point sampling cannot be made honest** — a curve drawn by joining N samples will run a confident line straight through an asymptote, and no sample count fixes it. So an expression is evaluated over a *column* of x by interval arithmetic and returns an `Enclosure` that provably contains every value it takes there: a pole is found by the arithmetic, not by a solver. `Expr` is open (twelve nodes built in; a node encloses *and differentiates* itself), the region is a value (`Cell`), and evaluation is split from classification so panning in y re-classifies and re-evaluates nothing. See [docs/reliable-plotting.md](docs/reliable-plotting.md) |
+| **`-typeset`** | Structured, **non-editable** rich text: an open set of composable `Box`es (seven built in), notation assembled by `Recipes`, per-content parameters as a `Profile`. It holds **no opinion about markup** — the application parses whatever it likes and builds the IR, which is what lets new formats be pioneered without touching the framework and what makes selection recoverable later (a run can carry a reference into the app's own source). A typeset block is an **atom** in flex layout, never content inside a `TextField`, which is what keeps the field's layout one-dimensional and deterministic. See [docs/reference/typeset.md](docs/reference/typeset.md) |
+| **`-plot`** | Reliable graphing's substrate. **Point sampling cannot be made honest** — a curve drawn by joining N samples will run a confident line straight through an asymptote, and no sample count fixes it. So an expression is evaluated over a *column* of x by interval arithmetic and returns an `Enclosure` that provably contains every value it takes there: a pole is found by the arithmetic, not by a solver. `Expr` is open (twelve nodes built in; a node encloses *and differentiates* itself), the region is a value (`Cell`), and evaluation is split from classification so panning in y re-classifies and re-evaluates nothing. See [docs/reference/reliable-plotting.md](docs/reference/reliable-plotting.md) |
 | **`-krono`** | The timing framework slotted into the existing loop and bus; see **Motion** |
 | **`-nfd`** | Native open/save/pick-folder dialogs as `Optional<Path>` |
-| **`-automation`** | Driving the running application the way a person does; see below and [docs/automation.md](docs/automation.md) |
-| **`-automation-cli`** | The client for that socket: `ottermate`, a command line that attaches to a running application or launches one, and carries the verdict in its exit status. **An empty dependency block** — a socket, line I/O and `ProcessBuilder` — so it runs as a standalone jar with none of the stack on its classpath, which is what keeps automation from becoming a runtime dependency of anything shipped. It lives beside the server rather than beside its callers for the reason `CsvView` lives beside the log it reads: a reader in another repo drifts from the format. See [docs/automation-cli.md](docs/automation-cli.md) |
+| **`-automation`** | Driving the running application the way a person does; see below and [docs/reference/automation.md](docs/reference/automation.md) |
+| **`-automation-cli`** | The client for that socket: `ottermate`, a command line that attaches to a running application or launches one, and carries the verdict in its exit status. **An empty dependency block** — a socket, line I/O and `ProcessBuilder` — so it runs as a standalone jar with none of the stack on its classpath, which is what keeps automation from becoming a runtime dependency of anything shipped. It lives beside the server rather than beside its callers for the reason `CsvView` lives beside the log it reads: a reader in another repo drifts from the format. See [docs/reference/automation-cli.md](docs/reference/automation-cli.md) |
 | **`-harness`** | A whole application running its **real** frame loop, with the loop under a test's control. The gap it fills is narrow and it is the one that matters: every hand-driven frame test is structurally unable to ask *after this click, does a frame arrive on its own?* — which is how five missing wakes shipped past a green suite. Real windows are created and never shown — **every** window, not just the one the test started with: the application is built with a window factory, so the popup a menu opens is asked for off screen (`WindowConfig.hidden`) and wrapped exactly as the main window is. Surface, swapchain and presenter therefore behave as in production; only pump, wait, wake and focus are intercepted. That matters because a mapped window takes real focus and real keyboard input, so a focus or routing assertion made beside one is answering a question about the window manager. Needs a Vulkan device, and fails to start rather than silently proving nothing |
 | **`-architecture`** | The rules, as tests that fail the build rather than as review comments. No framework class mints its own `Color` instead of naming a `Role` (`PaletteGuardTest`); no widget remembers a shadow depth instead of naming a `Relief` rung (`ReliefGuardTest`); nothing writes the retained model outside its single writer (`ModelWriterGuardTest`); no module reaches across a layer (`LayeringGuardTest`); and **no sealed type has its cases read from outside it, and no `default:` throws** (`DispatchGuardTest`) — both being the same failure, behaviour living somewhere other than the type it belongs to. That last one was learned the expensive way: `-typeset`'s IR began as a sealed interface of seven records with a seven-case engine switch, and the switch was exactly what made the vocabulary closed. Each guard carries its own proof-of-life test, because a detector that silently matched nothing would look exactly like a clean codebase |
 
@@ -646,7 +646,7 @@ What sits between the GUI and the OS, all driven from the one main-thread loop:
   pointer **travels** rather than teleporting, so hover fires because it was provoked; nodes are addressed by
   role, name or `Gui.landmark` rather than by coordinate; and with `-Dprobe.format=csv` the run writes one
   correlation log that `sibarum.probe.CsvView --gaps` reads back. See
-  [docs/automation.md](docs/automation.md).
+  [docs/reference/automation.md](docs/reference/automation.md).
 - **Driving it** (`vexelray-gui-automation-cli`) — `ottermate`, the client:
 
   ```bash
@@ -663,31 +663,35 @@ What sits between the GUI and the OS, all driven from the one main-thread loop:
   picture never arrived — fails the run, so a scene ladder in a build script cannot report success for a picture
   nobody took. With `--launch` the port is read from the line the application prints on binding, which is why
   `--automation=0` works and two runs at once do not collide. See
-  [docs/ottermate.md](docs/ottermate.md) to use it and
-  [docs/automation-cli.md](docs/automation-cli.md) for why it is shaped this way.
+  [docs/guides/ottermate.md](docs/guides/ottermate.md) to use it and
+  [docs/reference/automation-cli.md](docs/reference/automation-cli.md) for why it is shaped this way.
 
 ## Going deeper
 
-- [docs/architecture.md](docs/architecture.md) — the full design: substrate contracts, the
+[docs/README.md](docs/README.md) indexes every document, grouped and with its status — whether a thing is
+built, partly built, or still only decided. The documents themselves live in `docs/reference/` (how it works,
+as built), `docs/guides/` (how to use it) and `docs/plans/` (decided, not done).
+
+- [docs/reference/architecture.md](docs/reference/architecture.md) — the full design: substrate contracts, the
   retained model, dispatch, the effect system as built
-- [docs/layout-read-model.md](docs/layout-read-model.md) — the geometry pipeline and the
+- [docs/reference/layout-read-model.md](docs/reference/layout-read-model.md) — the geometry pipeline and the
   published read-model every consumer (renderer, hit-testing, widgets) shares
-- [docs/semantic-read-model.md](docs/semantic-read-model.md) — the other half of it: what each node
+- [docs/reference/semantic-read-model.md](docs/reference/semantic-read-model.md) — the other half of it: what each node
   *is* (role, name, structure, focus), for readers that are not the renderer
-- [docs/automation.md](docs/automation.md) — `vexelray-gui-automation`: driving the real app from an
+- [docs/reference/automation.md](docs/reference/automation.md) — `vexelray-gui-automation`: driving the real app from an
   agent with a pointer that never teleports, and the one correlation log that explains what happened
-- [docs/ottermate.md](docs/ottermate.md) — **`ottermate`, the user guide**: worked examples against a real
+- [docs/guides/ottermate.md](docs/guides/ottermate.md) — **`ottermate`, the user guide**: worked examples against a real
   application, the exit statuses, and the three things that will bite you
-- [docs/automation-cli.md](docs/automation-cli.md) — `vexelray-gui-automation-cli`: the design behind that
+- [docs/reference/automation-cli.md](docs/reference/automation-cli.md) — `vexelray-gui-automation-cli`: the design behind that
   socket, and the retirement of per-application `--capture` that shipping it unblocks
-- [docs/keyboard-focus-text.md](docs/keyboard-focus-text.md) — keys, focus, claims, and text editing
-- [docs/transfer.md](docs/transfer.md) — drag and drop, cut and paste: one resolution, several
+- [docs/reference/keyboard-focus-text.md](docs/reference/keyboard-focus-text.md) — keys, focus, claims, and text editing
+- [docs/reference/transfer.md](docs/reference/transfer.md) — drag and drop, cut and paste: one resolution, several
   sources, and why what is shown is always what will happen
-- [docs/navigation.md](docs/navigation.md) — landmarks, addresses, and reveals: naming a node rather
+- [docs/reference/navigation.md](docs/reference/navigation.md) — landmarks, addresses, and reveals: naming a node rather
   than a route, and how arriving is the widgets' own commands rather than synthesised input
-- [docs/drawing.md](docs/drawing.md) — `Picture`, the four-mark alphabet and what bounds it, and the
+- [docs/reference/drawing.md](docs/reference/drawing.md) — `Picture`, the four-mark alphabet and what bounds it, and the
   two sinks that make the same drawing honest on screen and in a file
-- [docs/typeset.md](docs/typeset.md) — composable boxes, the parser kept deliberately outside, and the
+- [docs/reference/typeset.md](docs/reference/typeset.md) — composable boxes, the parser kept deliberately outside, and the
   log-space tone map that fits a block's authored size ratios into a legible pixel range
-- [docs/reliable-plotting.md](docs/reliable-plotting.md) — why point sampling cannot be made honest,
+- [docs/reference/reliable-plotting.md](docs/reference/reliable-plotting.md) — why point sampling cannot be made honest,
   and the interval substrate that replaces it

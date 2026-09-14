@@ -670,16 +670,39 @@ vexelray-gui           parent (pom), groupId dev.vexelray.gui, Java 25
 ├─ vexelray-gui-draw   a picture: marks in one pixel frame, and the two targets that consume one -- the
 │                      engine's Canvas, and an SVG writer. Below -core, and knows nothing of nodes, layout,
 │                      themes or the bus. See docs/drawing.md.          -> vexelray-canvas, -text
+├─ vexelray-gui-plot   the substrate for graphing that cannot lie: an expression evaluated over a column of
+│                      x by interval arithmetic, returning an Enclosure that provably contains every value it
+│                      takes there. Depends on nothing at all -- not even -core -- because an enclosure is
+│                      arithmetic and has no opinion about how it is drawn. See docs/reliable-plotting.md.
 ├─ vexelray-gui-core   the framework core: model (Node/RetainedNode, Mutation, reconciler), the
 │                      Atchung-backed mutation channel + event/state publishing, Length + flex layout,
 │                      lifecycle FSM + animation transform layer, framework-owned input dispatch,
 │                      RichText, and the app loop (GuiApp).
 │                      -> -draw, vexelray-canvas, -text, -vulkan, -os-api, atchung-core
 ├─ vexelray-gui-widget interaction protocols on core: tabs, tree, text field, slider, menus, … -> -core
+├─ vexelray-gui-typeset structured, non-editable rich text over an open set of composable Boxes, sized as
+│                      ratios and tone-mapped into a legible pixel range. Holds no opinion about markup: the
+│                      application parses and builds the IR. See docs/typeset.md.                     -> -core
+├─ vexelray-gui-krono  the timing framework slotted into the loop and bus that already exist: one Kron ticked
+│                      per presented frame, input entering the graph as a Topic driving a Cell, and the
+│                      Interp instances Kronometer leaves to whoever owns the type (Length, Color).
+│                      See docs/reactive-timing.md.   -> -core, kronometer-core/-anim/-atchung, tactroller-api
 ├─ vexelray-gui-nfd    the GUI's one native binding — a Panama nativefiledialog-extended facade;
 │                      results delivered back through Atchung.                                        -> -core
+├─ vexelray-gui-automation  an out-of-process agent driving the real application — real window, real Vulkan,
+│                      real frame loop — over a socket, emitting one correlation log that explains what
+│                      happened. See docs/automation.md.                                              -> -core
+├─ vexelray-gui-automation-cli  ottermate, the client for that socket. An empty dependency block — socket,
+│                      line I/O and ProcessBuilder — so it runs as a standalone jar with none of the stack on
+│                      its classpath, which is what keeps automation out of anything shipped.
+│                      See docs/automation-cli.md (design) and docs/ottermate.md (user guide).
 ├─ vexelray-gui-demo   canonical showcase app; wires tactroller-atchung for real input.
 │                      -> -widget, -nfd, tactroller-api, tactroller-windows, tactroller-atchung
+├─ vexelray-gui-harness  a whole application running its real frame loop, with the loop under a test's
+│                      control — the one way to ask "after this click, does a frame arrive on its own?".
+│                      Real windows are created and never shown; only pump, wait, wake and focus are
+│                      intercepted. Needs a Vulkan device, and fails to start rather than prove nothing.
+│                      -> -core, -widget
 └─ vexelray-gui-architecture   test-only: the separation-of-concerns guard. No main sources, test-scope
                        deps only, so nothing here reaches a runtime or a native image. Reads the compiled
                        classes of -core and -widget (bytecode, not source — an alias or a wildcard import

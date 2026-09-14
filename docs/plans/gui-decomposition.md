@@ -10,15 +10,16 @@ say so plainly rather than leave the plan sitting there reading as though it wer
 
 | | when this was written | now |
 |---|---|---|
-| lines | 1,929 | 2,193 |
+| lines | 1,929 | 2,210 |
 | public methods | 86 | 91 |
 | fields | ~60 | ~68 |
 
-Five more methods and 264 more lines since 2026-08-30, which is what "every new seam lands here" looks like when
-it is left alone. The most recent 33 of those lines are `wakeForInput` and the derived-kind change, and both
-were the right change to make — that is the point. Nothing on this list is being *caused* by bad decisions
-downstream; the class is simply the place a good decision has nowhere else to go. The plan is not wrong, it has
-not been started, and the cost of not starting is now written down.
+Five more methods and 281 more lines since 2026-08-30 — the "now" column re-measured 2026-09-14 — which is
+what "every new seam lands here" looks like when it is left alone. The most recent 33 of those lines are
+`wakeForInput` and the derived-kind change, and both were the right change to make — that is the point.
+Nothing on this list is being *caused* by bad decisions downstream; the class is simply the place a good
+decision has nowhere else to go. The plan is not wrong, it has not been started, and the cost of not starting
+is now written down.
 
 ---
 

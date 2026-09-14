@@ -181,7 +181,7 @@ the CPU.**
 - **C2.** `LensTest`'s hand-written Java `primaryRay` goes away; the round-trip runs against the *shipping*
   expression through the CPU backend. The forward transcription stops existing rather than being tested around.
 - **C3.** The calculator's `Lens` becomes a call into C1.
-- **C4.** The rule, into [architecture.md](architecture.md): **any value the framework serialises into generated
+- **C4.** The rule, into [architecture.md](../reference/architecture.md): **any value the framework serialises into generated
   code ships with a framework-side inverse**, because the consumer will need it and will otherwise write it
   themselves, once per application, slightly differently. The inventory says `cameraBytes` is the only
   production case with a non-trivial inverse; `MsdfShader`'s push constant is a screen scale the canvas already

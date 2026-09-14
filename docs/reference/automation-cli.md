@@ -356,7 +356,7 @@ attempt produced `err no picture appeared` and **exit 1**, which is R5 doing the
 Re-run on 2026-09-13 against the calculator as it stands now — `--capture` gone, so this is the only route
 left to a picture of it — and it still answers: `ok ...calc-shot.png 206465 bytes`, exit 0, the marched plot
 in the frame. What cost that run time was the command line around the tool rather than the protocol; those
-traps belong to the user guide and are now in [ottermate.md](ottermate.md) §3 and §6.
+traps belong to the user guide and are now in [ottermate.md](../guides/ottermate.md) §3 and §6.
 
 **One of them is a question for this module rather than for its reader.** Every `--launch mvn ...` line in
 these docs is a Unix line: on Windows the program is `mvn.cmd`, and `Launch.start` hands the command

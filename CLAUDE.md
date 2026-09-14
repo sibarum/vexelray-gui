@@ -2,7 +2,8 @@
 
 `vexelray-gui` is the top of a stack of sibling checkouts under `C:\Users\User\Documents\GitHub\`. Most of what
 is confusing here is not in this repo, so this file is the map. [README.md](README.md) is the tour;
-[docs/architecture.md](docs/architecture.md) is the deep version.
+[docs/reference/architecture.md](docs/reference/architecture.md) is the deep version, and
+[docs/README.md](docs/README.md) indexes every document by folder and status.
 
 ## The siblings, and what lives where
 
@@ -26,12 +27,12 @@ is not:
 
 - **Flat marks in a box** — `Sketch` → `Picture` → `Node.picture(...)`. Charts, axes, grids, markers, labels,
   enclosure bands. Also exports as SVG, which is the one thing the other lanes cannot do.
-  [docs/drawing.md](docs/drawing.md).
+  [docs/reference/drawing.md](docs/reference/drawing.md).
 - **Shape in world space** — `dev.vexelray.surface.Surface` (repo `vexelray`), lowered by `SurfaceCompiler`,
   marched by `dev.vexelray.technique.sdf.SdfComposer`, into a target from `GuiApp.viewport(w, h)`, shown as
   `Node.image(...)`. **If the subject has depth, is lit, or will be orbited, it goes here** — a picture of it is
-  a hand-maintained projection. [docs/architecture.md §6.9](docs/architecture.md), and
-  [docs/drawing.md §7](docs/drawing.md) for the decision.
+  a hand-maintained projection. [docs/reference/architecture.md §6.9](docs/reference/architecture.md), and
+  [docs/reference/drawing.md §7](docs/reference/drawing.md) for the decision.
 - **Usually both.** `vexelray-designer`'s `Viewport` marches the subject and sketches the grid over it, on one
   node. The subject is marched; the annotations are sketched.
 
@@ -42,7 +43,7 @@ you are working in this reactor. That is the layering, not a verdict on the lane
 
 Note the word collides: a *plot* surface (`z = f(x, y)` over a `Cell`, in `vexelray-gui-plot`) is unrelated to
 the engine's `Surface`, and renders as enclosure boxes for the reasons in
-[docs/reliable-plotting.md](docs/reliable-plotting.md).
+[docs/reference/reliable-plotting.md](docs/reference/reliable-plotting.md).
 
 ## Constraints that are not visible in the code
 

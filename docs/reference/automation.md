@@ -267,7 +267,7 @@ and `await <landmark> <text>` blocks on the layout commit signal until it does. 
 readiness predicate supplied by the host, which would have made each application's synchronisation a private
 arrangement with `Automation` instead of a fact in the read-model that `tree` and `find` can already see. The
 calculator's ray-marched preview is the first consumer: see
-[calculator-vexel-demo/docs/driving-the-preview.md](../../calculator-vexel-demo/docs/driving-the-preview.md).
+[calculator-vexel-demo/docs/driving-the-preview.md](../../../calculator-vexel-demo/docs/driving-the-preview.md).
 
 **`shot` waits for the picture, and can fail.** `WindowControls.capture` is asynchronous and cannot report, so
 a `shot` that replied on return said `ok` for a minimized window, for a host whose capture sink does nothing,

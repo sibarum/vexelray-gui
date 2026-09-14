@@ -1,25 +1,39 @@
 # Decomposing Gui
 
-`Gui` is the composition root, the frame loop, the tree factory, the mutation publisher, the zoom/DPI/viewport
+`Gui` was the composition root, the frame loop, the tree factory, the mutation publisher, the zoom/DPI/viewport
 authority, the layout read-model publisher, the text geometry solver, the scroll-into-view solver, the
 resize-observer registry, the navigation engine, and a pass-through facade over `InputDispatcher`. Every new
-seam has landed on it, including the one added most recently.
+seam had landed on it, including the one added most recently.
 
-This is the plan to stop that. **Nothing in §2 has been extracted yet**, and the measurement is the reason to
-say so plainly rather than leave the plan sitting there reading as though it were underway:
+**All seven steps of §3 are done** (2026-09-14). Seven components now hold what those concerns were, and each
+has a test that constructs it with no `Gui` in the room — which is §4's actual definition of an extraction.
 
-| | when this was written | now |
+| | when this was written | before the work | now |
+|---|---|---|---|
+| lines | 1,929 | 2,210 | **1,501** |
+| public methods | 86 | 91 | 91 |
+| fields | ~60 | ~68 | **22** |
+
+**The method count did not move, and that is the intended result rather than a disappointment.** §1 says so
+plainly: a class with 91 methods that each delegate one line is an index, not a god object — it holds nothing,
+decides nothing, and cannot be the reason two features collide. The fields are what mattered, and they went from
+about 68 to 22. What is left is the composition root, the frame loop, the wake discipline, `close()`, and the
+delegates.
+
+**The 400-line target is not met**, and the remaining 1,100 lines are almost entirely the delegates and their
+Javadoc — the documentation is on the facade, where a caller reads it. Getting under 400 from here is not more
+extraction; it is a decision about whether the delegates keep their prose or point at the components. §5 says
+deprecating delegates is a separate, later, optional decision, and that is still the right call.
+
+| Concern | Component | Lines |
 |---|---|---|
-| lines | 1,929 | 2,210 |
-| public methods | 86 | 91 |
-| fields | ~60 | ~68 |
-
-Five more methods and 281 more lines since 2026-08-30 — the "now" column re-measured 2026-09-14 — which is
-what "every new seam lands here" looks like when it is left alone. The most recent 33 of those lines are
-`wakeForInput` and the derived-kind change, and both were the right change to make — that is the point.
-Nothing on this list is being *caused* by bad decisions downstream; the class is simply the place a good
-decision has nowhere else to go. The plan is not wrong, it has not been started, and the cost of not starting
-is now written down.
+| text metrics, caret-follow scroll | `core.text.TextGeometry` | 204 |
+| scroll-into-view | `core.layout.Scrolling` | 89 |
+| zoom, density, window size, minimums | `core.layout.Metrics` | 238 |
+| both published read-models, resize watches | `core.layout.ReadModels` | 360 |
+| landmarks, revealers, walks | `core.nav.Navigator` | 325 |
+| ids, the publisher seam, batch, factories | `core.Trees` | 200 |
+| the held payload, the drag read-model | `core.drop.Transfers` | 86 |
 
 ---
 

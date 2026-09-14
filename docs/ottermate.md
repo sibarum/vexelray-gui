@@ -24,11 +24,20 @@ The jar is executable as it stands — the module has no dependencies, so there 
 java -jar vexelray-gui-automation-cli/target/vexelray-gui-automation-cli-0.1.0-SNAPSHOT.jar --help
 ```
 
-Worth an alias, because the rest of this guide reads much better as one word:
+**Then put `vexelray-gui-automation-cli` on your `PATH`, once**, and the rest of this guide runs as written:
 
 ```bash
-alias ottermate='java -jar ~/Documents/GitHub/vexelray-gui/vexelray-gui-automation-cli/target/vexelray-gui-automation-cli-0.1.0-SNAPSHOT.jar'
+export PATH="$PATH:$HOME/Documents/GitHub/vexelray-gui/vexelray-gui-automation-cli"
+ottermate --help
 ```
+
+`ottermate` (sh) and `ottermate.cmd` (Windows) sit beside the module's `pom.xml`. Both find the jar by
+glob rather than by name, so neither goes stale when the version moves, and both pass the exit status
+through unchanged — the status is the verdict, and this guide's §4 build-script example depends on it. If
+the jar is not built they say so and exit `127`, with the one command that builds it.
+
+Prefer either to an alias of the `java -jar` line above: an alias has the version number in it, which is
+the thing that goes stale, and it does not exist in a script, a `cmd` window, or anyone else's shell.
 
 ## 2. Switching the socket on
 
@@ -73,6 +82,14 @@ automation: localhost:50845
 ottermate: driving localhost:50845
 ok v2
 ```
+
+**"The entire rest of the line" is exact**, so every option `ottermate` itself takes — `--script`, `--quiet`,
+`--timeout` — has to come *before* `--launch`. Put one after and it is passed to the application, which will
+not know what to do with it.
+
+**On Windows the command is `mvn.cmd`.** The launched command line goes to `ProcessBuilder`, which does not
+consult `PATHEXT`, so a bare `mvn` never starts and is reported as `Cannot run program "mvn"`. Every
+`--launch mvn ...` line in these docs is written the Unix way; add the `.cmd` here.
 
 The application's own output and `ottermate`'s own messages both go to **stderr**. Only replies go to
 stdout, so `ottermate tree > tree.txt` gets a tree and nothing else.
@@ -288,6 +305,7 @@ slashes (`C:/work/after.png`) work everywhere.
 | What you see | What it means |
 | --- | --- |
 | `ottermate: nothing is listening on localhost:7654; start the application with --automation=7654` | The socket is off. It is off by default |
+| `ottermate: Cannot run program "mvn": CreateProcess error=2` | Windows: `mvn` is `mvn.cmd`, and `--launch` hands the line to `ProcessBuilder`, which does not consult `PATHEXT`. Name the real program |
 | `ottermate: launched '...' and it did not announce a port within 60s` | The command started something, but nothing printed `automation: localhost:<port>`. Add `--automation=0` to the launched command line |
 | `ottermate: launched '...' and it exited without announcing one (status 1)` | It fell over on startup. Its own output is above, on stderr |
 | `err no command 'shto'; try help` | The application does not know that verb. `ottermate help` lists what it does know |

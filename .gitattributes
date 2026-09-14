@@ -1,0 +1,7 @@
+# Line endings for the two wrapper scripts, which are not a style question.
+#
+# core.autocrlf is true on the Windows machine this stack is built on, so without these the sh wrapper is
+# checked out with CRLF and `#!/bin/sh<CR>` is a bad interpreter on every machine that is not this one. The
+# .cmd wants the opposite for the same reason: cmd.exe is the thing reading it.
+vexelray-gui-automation-cli/ottermate     text eol=lf
+vexelray-gui-automation-cli/ottermate.cmd text eol=crlf

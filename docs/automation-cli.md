@@ -10,10 +10,19 @@ usage line and cannot photograph what the application draws, while `shot` over t
 and has no shipped client. Removing the first without shipping the second replaces "easy to find but wrong"
 with "right but unreachable", which is the same defect wearing different clothes.
 
-> **Status.** Step 1 of §6 has landed: `vexelray-gui-automation-cli`, the client, with `--launch`. Steps 2
-> and 3 have not — the verbs of §5 do not exist yet, so `--capture` **stays** where §7 lists it until
-> `resize` can express the scene that has twice caught a defect. Everything below is the design; §10 records
-> what shipped and where it differs.
+> **Status.** Step 1 of §6 has landed: `vexelray-gui-automation-cli`, the client, with `--launch` — and,
+> since it was reachable only by typing the full path of a versioned jar, an `ottermate` wrapper beside it
+> (§10). Step 2 has not: none of the verbs of §5 exist.
+>
+> **Step 3 happened anyway, which is the sequence §6 says to avoid.** On 2026-09-10 `calculator-vexel-demo`
+> removed `Capture.java`, its `CaptureTreeTest`, the `--capture` pre-dispatch and the scene ladder, on §2's
+> reasoning rather than on this document's ordering — and the cost §6 predicted is the cost that arrived:
+> `smallest` and `zoom` have no replacement, so the minimum-size picture that has twice caught a clipped
+> bottom row cannot be taken at all until V2 exists. `mainframe-template`'s `vexel-desktop` still carries its
+> copy, so §7's removal list is half done and the stack sits in the state that section was written to keep it
+> out of: one application with no capture and no `resize`, one with both.
+>
+> Everything below is the design; §10 records what shipped and where it differs.
 
 ---
 
@@ -183,12 +192,21 @@ move to the socket.
 1. ~~**The client** (§3, §4)~~ — **landed**; see §10. Fixed the reachability defect, changed no existing
    behaviour.
 2. **V1–V3** (§5) — closes the capability gap. **Next.**
-3. **Remove `--capture`** (§7) — calculator and template together. **Blocked on 2, deliberately.**
+3. **Remove `--capture`** (§7) — calculator and template together. **Half done, out of order**: the
+   calculator's went on 2026-09-10; the template's is still there.
 
 **3 before 2 is the sequence to avoid.** The calculator's `smallest` scene has twice caught a defect nothing
 else did — most recently a bottom key row clipped at minimum size after a tab strip was added, found because
 the minimum is photographed rather than chosen by eye. Deleting that before `resize` exists trades a working
 instrument for a flakier one and loses a regression test that has earned its place.
+
+**And it is the sequence that was taken**, so this paragraph is now a record rather than a warning. The
+removal was argued on §2 — a capture of the calculator's marched viewport is a picture that lies, and that is
+true — but §2 is the case for *retiring* the instrument, not for retiring it *first*. The two scenes that had
+earned their place were not device-backed and were not lying about anything; they went with the scene ladder
+they happened to be written in. Nothing photographs the calculator at its minimum size today, which
+`Calculator.MIN_W_EM` records at the constant V2 will have to be handed. **The order this section argued for
+is still the right one for the template**, which is the copy still standing.
 
 ---
 
@@ -196,9 +214,14 @@ instrument for a flakier one and loses a regression test that has earned its pla
 
 **Goes:**
 
-- `calculator-vexel-demo`: `Capture.java`, `CaptureTreeTest`, the `--capture` pre-dispatch in
-  `Calculator.main` and the javadoc defending it, and the capture commands in `docs/`
-- `mainframe-template` `vexel-desktop`: `Capture.java`, the `App.java` dispatch, the usage lines
+- ~~`calculator-vexel-demo`: `Capture.java`, `CaptureTreeTest`, the `--capture` pre-dispatch in
+  `Calculator.main` and the javadoc defending it, and the capture commands in `docs/`~~ — **done, 2026-09-10,
+  ahead of V1–V3.** All three `CaptureTreeTest` assertions were re-homed rather than deleted, as this section
+  asked — though into the calculator's own `WiringTreeTest` and not where it guessed: the panel-name one did
+  not die with the scene list, because the names a driving script types are the same names, and the other two
+  reach the real wiring through `VexelApplication.tree` from here as well as they would from the framework
+- `mainframe-template` `vexel-desktop`: `Capture.java`, the `App.java` dispatch, the usage lines — **still
+  there**, and §6 is why it should stay there until V2 exists
 
 **Stays, deliberately:**
 
@@ -295,6 +318,28 @@ stack.
   console this stack is built on, which is a small thing that makes a tool look broken at the first
   impression it makes. The prose in the source keeps its dashes; what reaches a console does not.
 
+### Reachable as a command
+
+`ottermate` and `ottermate.cmd`, beside the module's `pom.xml`. Put that directory on `PATH` once and every
+example in this document runs as written.
+
+**They exist because the tool had the defect it was built to fix.** §1 is about an instrument reachable only
+by reconstructing it from its own design notes; a jar whose only invocation is
+`java -jar .../vexelray-gui-automation-cli-0.1.0-SNAPSHOT.jar` is a weaker version of the same thing — the
+version number is in the command, so the command goes stale on a bump, and nothing in the docs matches what
+anyone can type. The scripts glob for the jar rather than naming it, for that reason.
+
+Neither is a launcher in the wrapper-script sense: no classpath assembly, no `JAVA_OPTS`, no config file.
+That is R3 still paying — an empty dependency block is what makes the plain jar executable, so there is
+nothing for a wrapper to do but find it. Anything that accumulated in one would be state `java -jar` does not
+have, and the two would start behaving differently.
+
+Two things they do carry, both because getting either wrong reads as a broken tool rather than as a mistake:
+the exit status is passed through rather than replaced (`exec` and `exit /b %ERRORLEVEL%`) — the status *is*
+the verdict, and a wrapper returning its own would silently decide that every run succeeded — and a missing
+jar exits **127** with the one-line build command, that being the shell's own "not installed" rather than any
+of the tool's five statuses, none of which fits a socket that was never reached.
+
 ### Verified against a real application
 
 Driven end to end against `calculator-vexel-demo` — the real `Driver`, a real window, a real socket:
@@ -307,6 +352,20 @@ ottermate --launch mvn exec:exec -Dautomation=0
 The picture contains the marched helix rather than the framework's placeholder, which is §2's whole argument
 in one file: this route photographs what the application draws. A deliberately wrong path in an earlier
 attempt produced `err no picture appeared` and **exit 1**, which is R5 doing the thing it exists for.
+
+Re-run on 2026-09-13 against the calculator as it stands now — `--capture` gone, so this is the only route
+left to a picture of it — and it still answers: `ok ...calc-shot.png 206465 bytes`, exit 0, the marched plot
+in the frame. What cost that run time was the command line around the tool rather than the protocol; those
+traps belong to the user guide and are now in [ottermate.md](ottermate.md) §3 and §6.
+
+**One of them is a question for this module rather than for its reader.** Every `--launch mvn ...` line in
+these docs is a Unix line: on Windows the program is `mvn.cmd`, and `Launch.start` hands the command
+straight to `ProcessBuilder`, which does not consult `PATHEXT` — so a bare `mvn` never starts. That much is
+just a fact about the platform. What is arguably wrong is the report: it arrives as `Cannot run program`,
+routed through the same "nothing to drive" status as a socket that was never opened, when the two have
+nothing in common and only one of them is worth retrying. §8 keeps this tool out of knowing how applications
+start, and resolving an extension is not that knowledge — but the fix that matters is telling "not found"
+apart from "started and said nothing", which is `Launch`'s to make either way.
 
 ### The one thing the zero-dependency rule costs
 

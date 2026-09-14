@@ -655,11 +655,16 @@ What sits between the GUI and the OS, all driven from the one main-thread loop:
   ottermate --launch mvn exec:exec -Dautomation=0             # start it, drive it, take it down
   ```
 
+  `ottermate` is a script beside the module's `pom.xml` (`ottermate.cmd` on Windows); put
+  `vexelray-gui-automation-cli` on `PATH` once and those lines run as written. On Windows the launched
+  program is `mvn.cmd`, not `mvn`.
+
   A reply beginning `err` — a `click` on a landmark that is not there, a `settle` that timed out, a `shot` whose
   picture never arrived — fails the run, so a scene ladder in a build script cannot report success for a picture
   nobody took. With `--launch` the port is read from the line the application prints on binding, which is why
   `--automation=0` works and two runs at once do not collide. See
-  [docs/automation-cli.md](docs/automation-cli.md).
+  [docs/ottermate.md](docs/ottermate.md) to use it and
+  [docs/automation-cli.md](docs/automation-cli.md) for why it is shaped this way.
 
 ## Going deeper
 

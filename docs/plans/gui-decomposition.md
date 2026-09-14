@@ -88,7 +88,10 @@ Ascending. Each step is one commit, and the suite (whole build, ~10s) is the saf
    the least urgent; move it earlier if navigation is being extended.
 6. ~~**`Trees`**~~ — **done.** Touches the constructor and every node-creating call site indirectly. Do it once the file is
    already half its size, so the diff is legible.
-7. **`Transfers`** — smallest payoff, do last or never.
+7. ~~**`Transfers`**~~ — **done.** Smallest payoff, as predicted: most of what looked like transfer code on `Gui`
+   was already a pass-through to `InputDispatcher`, which deliberately stays. What was genuinely `Gui`'s was the
+   held payload and the drag read-model — and those two belong together, because a drag and a cut are the same
+   change made two ways.
 
 **Stop after step 4 if the appetite runs out.** Steps 1–4 remove roughly 650 lines and the two concerns that make
 `frame()` hard to read; 5–7 are tidying.

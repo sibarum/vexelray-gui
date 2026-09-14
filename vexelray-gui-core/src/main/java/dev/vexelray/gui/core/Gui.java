@@ -4,6 +4,7 @@ import dev.vexelray.gui.core.drop.DragSession;
 import dev.vexelray.gui.core.drop.DragSource;
 import dev.vexelray.gui.core.drop.DragState;
 import dev.vexelray.gui.core.drop.Transfer;
+import dev.vexelray.gui.core.drop.Transfers;
 import dev.vexelray.gui.core.drop.DropTarget;
 import dev.vexelray.gui.core.layout.Clip;
 import dev.vexelray.gui.core.layout.Displacement;
@@ -173,14 +174,11 @@ public final class Gui implements AutoCloseable {
     private final Metrics metrics = new Metrics();
     /** Where nodes are drawn relative to where layout put them; NONE until a motion source is attached. */
     private volatile LayoutMotion motion = LayoutMotion.NONE;
-    /** What is held for a paste. See {@link #transfer()}. */
-    private volatile dev.vexelray.gui.core.drop.Transfer transfer = dev.vexelray.gui.core.drop.Transfer.NONE;
-    /** Where drops and pastes record; the same stack, because they are the same change made two ways. */
-    private volatile History transferHistory;
-    /** The live drag, as a coalesced State -- the read-model half of DragSession (docs/reference/layout-read-model.md). */
-    private final State<DragState> dragState;
-    private final Committer<DragState, DragState> setDrag;
-    private DragState lastDrag = DragState.NONE;
+    /**
+     * What is held for a paste, and the live drag as a published read-model. A drag and a cut are the same
+     * change made two ways, which is why one component holds both — see {@link Transfers}.
+     */
+    private final Transfers transfers = new Transfers();
     /** The modifiers held right now (see {@link #modifiers}). */
     private final State<java.util.Set<Modifier>> modifierState;
     private final Committer<java.util.Set<Modifier>, java.util.Set<Modifier>> setModifiers;
@@ -354,12 +352,6 @@ public final class Gui implements AutoCloseable {
         }, handlers);
         this.layoutReader = readModels.reader();
 
-        // The live drag, published the same way. Latest-wins is exactly right for it: a subscriber that missed
-        // an intermediate position has missed nothing it could still have drawn.
-        State.Builder<DragState> gb = State.of(DragState.NONE);
-        this.setDrag = gb.mutation("set", (current, next) -> next);
-        this.dragState = gb.build();
-
         // The modifiers held right now, published the same way, and a State rather than a topic for the same
         // reason: this is a *condition*, not an event. Nobody wants the edges — they want to know what is held.
         State.Builder<java.util.Set<Modifier>> mb = State.of(java.util.Set.<Modifier>of());
@@ -384,7 +376,7 @@ public final class Gui implements AutoCloseable {
      * <p>Published once per frame, on change only, so a still pointer over a settled indicator costs nothing.
      */
     public State<DragState> drag() {
-        return dragState;
+        return transfers.drag();
     }
 
     /** The live window size as a bus {@code State} — subscribe with {@code gui.viewport().onCommit(...)}. */
@@ -757,7 +749,7 @@ public final class Gui implements AutoCloseable {
      */
     public Gui dropHistory(History history) {
         input.dropHistory(java.util.Objects.requireNonNull(history, "history"));
-        this.transferHistory = history;
+        transfers.history(history);
         return this;
     }
 
@@ -769,7 +761,7 @@ public final class Gui implements AutoCloseable {
      * transfer the user happened to do last rather than the last thing they did.
      */
     public History dropHistory() {
-        return transferHistory;
+        return transfers.history();
     }
 
     /**
@@ -784,12 +776,12 @@ public final class Gui implements AutoCloseable {
      * moment the menu is built, which is the moment the answer matters.
      */
     public Transfer transfer() {
-        return transfer;
+        return transfers.held();
     }
 
     /** Put something in hand for a paste, or {@link Transfer#NONE} to drop what is held. Safe from any thread. */
     public Gui transfer(Transfer held) {
-        this.transfer = held == null ? Transfer.NONE : held;
+        transfers.hold(held);
         return this;
     }
 
@@ -1485,7 +1477,7 @@ public final class Gui implements AutoCloseable {
                 Clip.resolve(r);
                 readModels.publish(r);
             }
-            publishDrag();
+            transfers.publish(input.dragSession());
             if (moving) {
                 // Something is short of where it belongs, so the next frame has work whether or not anything
                 // else asks for one. Self-limiting: a displacement that decays to zero stops waking, and one
@@ -1498,29 +1490,6 @@ public final class Gui implements AutoCloseable {
         return r;
     }
 
-
-    /**
-     * Publish the live drag, if it has changed since the last frame.
-     *
-     * <p>After layout and displacement, so the indicator a target resolved is published in the same frame the
-     * geometry it was resolved against is — a subscriber drawing from it is never a frame out of step with the
-     * rows it is drawing between.
-     *
-     * <p>On change only: a drag held still over one seam is the common case, and re-committing an identical value
-     * sixty times a second would wake every subscriber for nothing. The record's equality is what makes that
-     * comparison honest rather than a hand-written field-by-field check that forgets one.
-     */
-    private void publishDrag() {
-        DragSession live = input.dragSession();
-        DragState next = live == null
-                ? DragState.NONE
-                : new DragState(true, live.x(), live.y(), live.drop().effect(), live.drop().indicator());
-        if (next.equals(lastDrag)) {
-            return;
-        }
-        lastDrag = next;
-        dragState.commit(setDrag, next);
-    }
 
     @Override
     public void close() {

@@ -33,7 +33,7 @@ features collide. So the target is not "fewer methods on `Gui`". It is:
 - Every other concern is a component that owns its own state, is constructible and testable alone, and is under
   **300 lines**.
 - **Components communicate by value, never by calling back into `Gui`.** `Metrics` produces a `LayoutContext`;
-  `LayoutPublisher` consumes a laid-out tree and produces a `LayoutSnapshot`. Neither knows the other exists.
+  `ReadModels` consumes a laid-out tree and produces the two snapshots. Neither knows the other exists.
 - `frame()` becomes what the docs already describe it as: a fixed pipeline, readable in one screen —
   dispatch → drain → navigate → layout → reveal → compute → motion → publish.
 
@@ -49,7 +49,7 @@ Grouped by what they own, with the current members that move into each.
 | **`TextGeometry`** | `core.text` | nothing (pure) | `resolveTextGeometry`, `resolveTextScroll`, `lineIndexOf`, `clamp` | ~180 |
 | **`Scrolling`** | `core.layout` | nothing (pure) | `reveal(RetainedNode)`, `scrollDelta`, `scrollBy` | ~65 |
 | **`Metrics`** | `core.layout` | zoom, DPI, viewport States; min size; resize border | `zoom*`, `dpi*`, `viewport()`, `minSize`, `resizeBorder*`, `rootEmPx`, `lastZoom/lastDpi/lastViewport*/lastLayout*` | ~200 |
-| **`LayoutPublisher`** | `core.layout` | `latestLayout`, `layoutVersion`, resize watches | `layout()`, `layoutSnapshot()`, `onResize*`, `watchResize`, `publishLayout`, `deliverResizes`, `collectLayout`, `ResizeWatch`, `resolveGeometry` | ~200 |
+| **`ReadModels`** | `core.layout` | both snapshots, `version`, resize watches | `layout()`, `layoutSnapshot()`, `semantics()`, `onResize*`, `watchResize`, `publishLayout`, `deliverResizes`, `collectLayout`, `collectSemantics`, `accessibleName`, `ResizeWatch`, `resolveGeometry` | ~300 |
 | **`Navigator`** | `core.nav` | landmarks, revealers, walks, `windowKey` | `landmark*`, `reveals`, `navigate`, `windowKey*`, `accept`, `Walk`, `stepNavigations`, `ancestorsOutermostFirst`, `concealed` | ~230 |
 | **`Trees`** | `core` | id counter, `MutationSink`, batch thread-local | `root/box/row/column/text/create`, `batch`, `publishMutation`, `MUTATIONS` | ~150 |
 | **`Transfers`** | `core.drop` | held transfer, drop history | `onDrop`, `dropTargetsAt`, `onDragSource`, `dropHistory`, `transfer`, `dragSession`, `drag()`, `publishDrag` | ~120 |
@@ -65,15 +65,25 @@ Two things deliberately do **not** move:
 
 Ascending. Each step is one commit, and the suite (whole build, ~10s) is the safety net between them.
 
-1. **`TextGeometry`** — pure functions of a `RetainedNode` and a `TextMeasurer`. No state to move, nothing to get
+1. ~~**`TextGeometry`**~~ — **done.** Pure functions of a `RetainedNode` and a `TextMeasurer`. No state to move, nothing to get
    wrong, ~180 lines out of `Gui` immediately. Also the most obviously misplaced code in the file: text metric
    solving next to `zoomIn()`.
-2. **`Scrolling`** — same, ~65 lines. `Node.scrollIntoView`'s whole implementation, findable by its name.
-3. **`Metrics`** — first state move, but the state is three `State`s and five volatiles with no cross-talk. The
+2. ~~**`Scrolling`**~~ — **done.** Same, ~65 lines. `Node.scrollIntoView`'s whole implementation, findable by its name.
+3. ~~**`Metrics`**~~ — **done.** First state move, but the state is three `State`s and five volatiles with no cross-talk. The
    test is that `frame()` asks it for one `LayoutContext` and one clamped canvas size, and nothing else reads
    zoom or DPI directly.
-4. **`LayoutPublisher`** — depends on step 1 and 3 being done, so the compute phase has somewhere to live and a
-   context to run against. This is the step that makes `frame()` readable.
+4. ~~**`LayoutPublisher`**~~ — **done, as `ReadModels`.** Depends on steps 1 and 3, so the compute phase has
+   somewhere to live and a context to run against. This is the step that makes `frame()` readable.
+
+   **The table above was one component short of the truth.** `publishLayout` builds *both* read-models from one
+   walk, and its own comment says why: they are joined by node id and by version, so two walks would let a
+   reader join a box from one frame to a role from another and see nothing wrong. The semantic half therefore
+   had to come too, which made `LayoutPublisher` the wrong name — it would have said only the publish phase
+   while housing the compute walk, blurring the one distinction the read-model exists to hold. `ReadModels`
+   names what it owns instead.
+
+   What the tree cannot say about itself — focus, landmark names — arrives as a `Meanings` value rather than by
+   reaching back, which is what lets the component be built with neither a dispatcher nor a navigator present.
 5. **`Navigator`** — self-contained and freshly written, so it moves cleanly. Held until here only because it is
    the least urgent; move it earlier if navigation is being extended.
 6. **`Trees`** — touches the constructor and every node-creating call site indirectly. Do it once the file is

@@ -10,6 +10,7 @@ import dev.vexelray.gui.core.layout.Displacement;
 import dev.vexelray.gui.core.layout.FlexLayout;
 import dev.vexelray.gui.core.layout.LayoutContext;
 import dev.vexelray.gui.core.layout.Metrics;
+import dev.vexelray.gui.core.layout.ReadModels;
 import dev.vexelray.gui.core.layout.LayoutMotion;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
 import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
@@ -187,9 +188,6 @@ public final class Gui implements AutoCloseable {
     private volatile dev.vexelray.gui.core.drop.Transfer transfer = dev.vexelray.gui.core.drop.Transfer.NONE;
     /** Where drops and pastes record; the same stack, because they are the same change made two ways. */
     private volatile History transferHistory;
-    // Computed-layout read-model (docs/reference/layout-read-model.md): the latest snapshot workers read via Node.layout(),
-    // and the coalesced State observers subscribe to. Published after each layout pass.
-    private final State<LayoutSnapshot> layoutState;
     /** The live drag, as a coalesced State -- the read-model half of DragSession (docs/reference/layout-read-model.md). */
     private final State<DragState> dragState;
     private final Committer<DragState, DragState> setDrag;
@@ -197,22 +195,13 @@ public final class Gui implements AutoCloseable {
     /** The modifiers held right now (see {@link #modifiers}). */
     private final State<java.util.Set<Modifier>> modifierState;
     private final Committer<java.util.Set<Modifier>, java.util.Set<Modifier>> setModifiers;
-    private final Committer<LayoutSnapshot, LayoutSnapshot> setLayout;
-    private volatile LayoutSnapshot latestLayout = LayoutSnapshot.EMPTY;
-    private long layoutVersion;
-    // The semantic read-model (docs/reference/automation.md §3): what each node *is*, published beside the geometry from
-    // the same walk and at the same version, so the two join by node id and by frame.
-    private final State<SemanticSnapshot> semanticState;
-    private final Committer<SemanticSnapshot, SemanticSnapshot> setSemantics;
-    private volatile SemanticSnapshot latestSemantics = SemanticSnapshot.EMPTY;
-    private final LayoutReader layoutReader = () -> latestLayout;
     /**
-     * Geometry observers by node id (§ {@link #onResize}). Registered from any thread — a tree is often built
-     * off the GUI thread — and delivered from {@link #publishLayout}, so the map is concurrent while each
-     * watch's remembered box is read and written on the GUI thread alone.
+     * Both published views of the tree — where each node is, and what it is — computed and published together at
+     * one version from one walk. See {@link ReadModels} for why the two cannot be separated, and for the
+     * geometry observers that are delivered from the same pass.
      */
-    private final java.util.concurrent.ConcurrentMap<Long, ResizeWatch> resizeWatches =
-            new java.util.concurrent.ConcurrentHashMap<>();
+    private final ReadModels readModels;
+    private final LayoutReader layoutReader;
     private volatile TextClipboard clipboard = new TextClipboard.InMemory();
     // The look. Not a State on the bus like zoom is: a Length resolves against zoom every frame, whereas a colour
     // is resolved once and written into a prop, so there is nothing per-frame to coalesce (see Theme's class note
@@ -328,18 +317,30 @@ public final class Gui implements AutoCloseable {
         // The window size, zoom and density States are Metrics' own — built there, so that component can be
         // constructed and exercised without any of this.
 
-        // Computed-layout read-model as a coalesced State (mirrors the viewport State): published on change.
-        State.Builder<LayoutSnapshot> lb = State.of(LayoutSnapshot.EMPTY);
-        this.setLayout = lb.mutation("set", (current, next) -> next);
-        this.layoutState = lb.build();
+        // Both read-models, and the two States they publish on. Separate States rather than extra fields on
+        // NodeLayout: geometry republishes whenever a box moves, which is most frames of an animation, while
+        // what a node *is* changes far less often — and a consumer of one rarely wants the other at that rate.
+        // Same version on both is what keeps them joinable despite that, which is why one component owns both.
+        //
+        // What the tree cannot say about itself is handed over as a value: focus comes from the dispatcher and
+        // landmark names from the map beside it, and ReadModels holds neither of those objects.
+        this.readModels = new ReadModels(new ReadModels.Meanings() {
+            @Override
+            public boolean focusable(long id) {
+                return input.isFocusable(id);
+            }
 
-        // The semantic read-model, published on the same frames and by the same rules. A separate State rather
-        // than extra fields on NodeLayout: geometry republishes whenever a box moves, which is most frames of an
-        // animation, while what a node *is* changes far less often — and a consumer of one rarely wants the other
-        // at that rate. Same version on both is what keeps them joinable despite that.
-        State.Builder<SemanticSnapshot> sb = State.of(SemanticSnapshot.EMPTY);
-        this.setSemantics = sb.mutation("set", (current, next) -> next);
-        this.semanticState = sb.build();
+            @Override
+            public long focusedId() {
+                return input.focusedId();
+            }
+
+            @Override
+            public String landmarkName(long id) {
+                return landmarkNames.getOrDefault(id, "");
+            }
+        }, handlers);
+        this.layoutReader = readModels.reader();
 
         // The live drag, published the same way. Latest-wins is exactly right for it: a subscriber that missed
         // an intermediate position has missed nothing it could still have drawn.
@@ -569,7 +570,7 @@ public final class Gui implements AutoCloseable {
      * read a node's own via {@link Node#layout()}. The value is one frame stale (the framework's input latency).
      */
     public State<LayoutSnapshot> layout() {
-        return layoutState;
+        return readModels.layout();
     }
 
     /**
@@ -582,17 +583,17 @@ public final class Gui implements AutoCloseable {
      * automation agent, a thin client — reads this.
      */
     public State<SemanticSnapshot> semantics() {
-        return semanticState;
+        return readModels.semantics();
     }
 
     /** The latest semantic snapshot (never null; {@link SemanticSnapshot#EMPTY} before the first layout). */
     public SemanticSnapshot semanticSnapshot() {
-        return latestSemantics;
+        return readModels.semanticSnapshot();
     }
 
     /** The latest computed-layout snapshot (never null). Backs {@link Node#layout()}; also useful to tests/tools. */
     public LayoutSnapshot layoutSnapshot() {
-        return latestLayout;
+        return readModels.layoutSnapshot();
     }
 
     /**
@@ -825,11 +826,7 @@ public final class Gui implements AutoCloseable {
     }
 
     private Gui watchResize(Node node, java.util.function.Consumer<NodeLayout> handler, boolean ordered) {
-        if (handler == null) {
-            resizeWatches.remove(node.id());
-            return this;
-        }
-        resizeWatches.put(node.id(), new ResizeWatch(handler, ordered));
+        readModels.onResize(node.id(), handler, ordered);
         return this;
     }
 
@@ -908,7 +905,7 @@ public final class Gui implements AutoCloseable {
     /** The reconciler's removal seam: everything keyed by a node id is dropped when the node leaves the tree. */
     private void releaseNodeId(long id) {
         input.clearHandlers(id);
-        resizeWatches.remove(id);
+        readModels.forget(id);
         revealers.remove(id);
         String name = landmarkNames.remove(id);
         if (name != null) {
@@ -1630,7 +1627,7 @@ public final class Gui implements AutoCloseable {
             boolean geometryChanged = layoutRan || reconciler.geometryDirty();
             if (geometryChanged) {
                 try (Zone probeZone = Probe.zone(Lane.LAYOUT, "resolve geometry")) {
-                    resolveGeometry(r, tm);
+                    readModels.resolve(r, tm);
                 }
             }
             // Motion sits between the compute phase and publish, and the line matters in both directions
@@ -1649,7 +1646,7 @@ public final class Gui implements AutoCloseable {
                 // finished writing: displacement moves a node after layout placed it, and a clip resolved
                 // before that would describe a frame nobody sees.
                 Clip.resolve(r);
-                publishLayout(r);
+                readModels.publish(r);
             }
             publishDrag();
             if (moving) {
@@ -1665,29 +1662,6 @@ public final class Gui implements AutoCloseable {
     }
 
 
-    /**
-     * The compute phase: walk the laid-out tree and write each node's derived geometry onto it. Runs on the GUI
-     * thread, after layout and before publish, and is the <b>only</b> stage allowed to compute it — publish copies,
-     * renderers and widgets read (docs/reference/layout-read-model.md §2.1).
-     */
-    private static void resolveGeometry(RetainedNode n, TextMeasurer tm) {
-        if (!n.visible()) {
-            // A hidden subtree is not laid out, so baking metrics from its stale rect would publish geometry
-            // describing a position it does not occupy -- and a text node draws from those metrics, not from
-            // its rect, so that geometry would be drawn if anything ever read it.
-            n.textMetrics = null;
-            return;
-        }
-        if (n.hasText()) {
-            dev.vexelray.gui.core.text.TextGeometry.resolve(n, tm);
-        }
-        for (RetainedNode c : n.children) {
-            resolveGeometry(c, tm);
-        }
-    }
-
-
-    /** Copy the resolved tree into an immutable {@link LayoutSnapshot} and publish it. A pure copy — no arithmetic. */
     /**
      * Publish the live drag, if it has changed since the last frame.
      *
@@ -1709,175 +1683,6 @@ public final class Gui implements AutoCloseable {
         }
         lastDrag = next;
         dragState.commit(setDrag, next);
-    }
-
-    private void publishLayout(RetainedNode root) {
-        Map<Long, NodeLayout> nodes = new HashMap<>();
-        collectLayout(root, nodes);
-        long version = ++layoutVersion;
-        LayoutSnapshot snap = new LayoutSnapshot(version, nodes);
-        latestLayout = snap;             // volatile: Node.layout() reads this lock-free from any thread
-
-        // The semantic half, at the same version and from the same tree — the join between the two is by id and
-        // by version, so they must be built from one walk of one state or the join silently describes two frames.
-        Map<Long, SemanticNode> meanings = new HashMap<>();
-        collectSemantics(root, -1L, meanings);
-        SemanticSnapshot sem = new SemanticSnapshot(version, root.id, meanings);
-        latestSemantics = sem;
-
-        // The causality key (docs/reference/automation.md §4). Timestamps answer "when", and across threads they can even
-        // answer it in the wrong order; this answers "which frame", which is the question actually being asked
-        // when a click and the layout that was supposed to reflect it disagree. Recorded with the node count
-        // because a version that republishes with a tree that did not change is its own kind of finding.
-        if (Probe.ON) {
-            Probe.mark(Lane.LAYOUT, "layout.publish", "v" + version + " nodes=" + nodes.size());
-        }
-
-        deliverResizes(snap);            // before the State commit, so a handler's edits ride the same drain
-        layoutState.commit(setLayout, snap);
-        semanticState.commit(setSemantics, sem);
-    }
-
-    /**
-     * Tell each geometry observer whose box moved. Runs on the GUI thread, once per published layout, and does
-     * nothing at all when nobody is watching — the common case, and the reason this can sit on the frame path.
-     */
-    private void deliverResizes(LayoutSnapshot snap) {
-        if (resizeWatches.isEmpty()) {
-            return;
-        }
-        for (Map.Entry<Long, ResizeWatch> entry : resizeWatches.entrySet()) {
-            NodeLayout computed = snap.node(entry.getKey());
-            if (!computed.present()) {
-                continue;                // not in the tree (or not laid out yet): there is no box to report
-            }
-            ResizeWatch watch = entry.getValue();
-            if (computed.rect().equals(watch.box) && computed.content().equals(watch.content)) {
-                continue;
-            }
-            // Recorded before delivery, not after: an ordered handler may mutate, and a mutation that lands in
-            // this same frame must not be able to make the next pass look like a change we already announced.
-            watch.box = computed.rect();
-            watch.content = computed.content();
-            if (watch.ordered) {
-                watch.handler.accept(computed);
-            } else {
-                handlers.execute(() -> watch.handler.accept(computed));
-            }
-        }
-    }
-
-    /**
-     * One geometry observer: where to send it, and the box it was last told about. The two rects are the
-     * comparison, so a scroll — which moves contents inside an unchanged viewport — is not a resize.
-     */
-    private static final class ResizeWatch {
-        private final java.util.function.Consumer<NodeLayout> handler;
-        private final boolean ordered;
-        private Rect box;
-        private Rect content;
-
-        ResizeWatch(java.util.function.Consumer<NodeLayout> handler, boolean ordered) {
-            this.handler = handler;
-            this.ordered = ordered;
-        }
-    }
-
-    private static void collectLayout(RetainedNode n, Map<Long, NodeLayout> out) {
-        out.put(n.id, new NodeLayout(true,
-                new Rect(n.x, n.y, n.w, n.h),
-                new Rect(n.viewX, n.viewY, n.viewW, n.viewH),
-                // Copied, not computed: {@link Clip} resolved it in the compute phase, where the tree can be
-                // seen. Publish projects the model and works nothing out (docs/reference/layout-read-model.md §9).
-                new Rect(n.clipX, n.clipY, n.clipW, n.clipH),
-                n.cornerPx, n.cornerBottomPx,
-                n.scrollX, n.scrollY, n.contentW, n.contentH, n.overflowX, n.overflowY, n.textSizePx,
-                n.textMetrics));
-        for (RetainedNode c : n.children) {
-            collectLayout(c, out);
-        }
-    }
-
-    /**
-     * Collect what each node is, in tree order. Runs on the GUI thread inside {@link #publishLayout}, off the
-     * same tree the geometry was read from.
-     *
-     * <p>Hidden subtrees are described rather than skipped, unlike geometry: a reader asking "why can I not see
-     * the Save button" is asking about a node that exists and is not visible, and a snapshot that omitted it
-     * could only answer "no such node". Their {@code visible} flag says which case it is, and their geometry is
-     * correctly absent from the layout snapshot, so nothing can read a position for one.
-     */
-    private void collectSemantics(RetainedNode n, long parentId, Map<Long, SemanticNode> out) {
-        List<Long> childIds = new ArrayList<>(n.children.size());
-        for (RetainedNode c : n.children) {
-            childIds.add(c.id);
-        }
-        boolean text = n.hasText();
-        out.put(n.id, new SemanticNode(
-                n.id, parentId, childIds, n.kind(),
-                n.role(), accessibleName(n), landmarkNames.getOrDefault(n.id, ""),
-                n.visible(), n.hitInert(), n.floating(),
-                input.isFocusable(n.id), input.focusedId() == n.id, n.editable(),
-                text ? n.textString() : null,
-                text && n.editable() ? n.caret() : -1,
-                text ? n.selectStart() : -1,
-                text ? n.selectEnd() : -1));
-        for (RetainedNode c : n.children) {
-            collectSemantics(c, n.id, out);
-        }
-    }
-
-    /**
-     * The name a reader would call {@code n} by: its own text if it has any, else the text of its descendants
-     * joined in tree order. A {@code Button} is a box with a label inside it, so asking the box for its text
-     * gets nothing — the name has to come from the composition, which is exactly what a person reads off it.
-     *
-     * <p>A name <b>identifies</b> a node among its siblings; it is not a transcript of everything inside it. Two
-     * bounds keep the derivation from becoming one:
-     *
-     * <ul>
-     *   <li><b>Stop at a declared {@link RetainedNode#role() role}.</b> A toolbar's name is not every button on
-     *       it, and a tab strip's name is not its tabs — those are structure, addressable in their own right.</li>
-     *   <li><b>Stop at {@value #NAME_DEPTH} levels.</b> Roles alone are not enough, because the content a
-     *       container holds is ordinary application boxes that declare nothing: a {@code tabs} node would
-     *       otherwise be named after the entire text of every page inside it. A widget's own label is one or two
-     *       levels down — deeper than that and it belongs to something else, whether or not that something has
-     *       said so yet.</li>
-     * </ul>
-     *
-     * <p>A reader that wants the full text of a subtree walks the snapshot for it; that is a different question,
-     * and one the structure already answers.
-     */
-    private static String accessibleName(RetainedNode n) {
-        String own = n.textString();
-        if (own != null && !own.isEmpty()) {
-            return own;
-        }
-        StringBuilder sb = new StringBuilder();
-        appendName(n, sb, NAME_DEPTH);
-        return sb.toString();
-    }
-
-    /** How far below a node its own label may be found. See {@link #accessibleName}. */
-    private static final int NAME_DEPTH = 2;
-
-    private static void appendName(RetainedNode n, StringBuilder sb, int depth) {
-        if (depth <= 0) {
-            return;
-        }
-        for (RetainedNode c : n.children) {
-            if (!c.role().isEmpty()) {
-                continue;               // a named thing of its own: part of the structure, not of this name
-            }
-            String t = c.textString();
-            if (t != null && !t.isEmpty()) {
-                if (!sb.isEmpty()) {
-                    sb.append(' ');
-                }
-                sb.append(t);
-            }
-            appendName(c, sb, depth - 1);
-        }
     }
 
     @Override

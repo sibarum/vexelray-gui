@@ -52,9 +52,7 @@ class ModelWriterGuardTest {
             "dev/vexelray/gui/core/layout/Clip",            // compute stage: what survives the ancestors' clips
             "dev/vexelray/gui/core/text/TextGeometry",      // compute stage: text metrics + caret-follow scroll
             "dev/vexelray/gui/core/layout/Scrolling",       // reveal stage: scroll offsets that bring a node into view
-            // Shrinking as docs/plans/gui-decomposition.md proceeds. What is left here is
-            // resolveGeometry (step 4, LayoutPublisher) and draw. The entry goes when they do.
-            "dev/vexelray/gui/core/Gui");                   // compute stage: what has not moved out yet
+            "dev/vexelray/gui/core/layout/ReadModels");     // compute stage: the walk that resolves derived geometry
 
     @Test
     void onlyTheDeclaredStagesWriteTheRetainedModel() {
@@ -89,7 +87,9 @@ class ModelWriterGuardTest {
     /** And the converse: the same write from a declared stage is legitimate and must not be reported. */
     @Test
     void theGuardPermitsAWriteFromADeclaredStage() {
-        byte[] computeStage = classWritingScrollX("dev/vexelray/gui/core/Gui");
+        // Was Gui, which is no longer one: docs/plans/gui-decomposition.md moved every write it had onto a named
+        // stage, so the composition root writes no model field at all and has left the list.
+        byte[] computeStage = classWritingScrollX("dev/vexelray/gui/core/layout/Scrolling");
 
         assertEquals(List.of(), ModelWriters.writesOutside(STAGES, computeStage));
     }

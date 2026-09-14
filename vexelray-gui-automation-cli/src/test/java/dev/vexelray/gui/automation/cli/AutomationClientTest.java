@@ -74,7 +74,7 @@ class AutomationClientTest {
                 client.send("click 41");
                 client.send("type hello world");
             }
-            assertEquals(List.of("click 41", "type hello world", "quit"), app.received(),
+            assertEquals(List.of("click 41", "type hello world", "quit"), app.awaitReceived(3),
                     "close says goodbye, so the server's accept loop comes back round cleanly");
         }
     }

@@ -23,18 +23,21 @@ The rule was adopted after `-typeset` was designed under it. Everything below pr
 `DispatchGuardTest.RULED`, currently `[GUI_TYPESET, GUI_PLOT, GUI_DRAW]`; **adding a module to that list is the
 definition of done for converting it**, and the four conversions below are what `-core` owes before it can join.
 
-### 1.1 `Length` — sealed, switches on itself twice
+### 1.1 ~~`Length` — sealed, switches on itself twice~~ — **Done**
 
-`vexelray-gui-core/.../layout/Length.java:20` (sealed), `:95` and `:119` (the switches).
+`resolve` is abstract on `Length` and each of the nine records implements it; `growFactor` defaults to 0 and is
+overridden by the two lengths that have one, `Grow` and `FillT`. Both switches are gone with the seal, and so is
+the `default -> 0f` that the second one needed. `MinSizeAndZoomTest` and `FlexLayoutTest` are unchanged and
+green, which is what says the behaviour did not move.
 
-Eleven implementations, and `resolve(ctx, basis)` / `scalarPx(ctx, basis)` each switch over all of them. The
-behaviour *is* on the type, just written as a switch instead of as methods, so this is the mildest instance —
-but the mildness is what makes it worth converting first. Mechanical, low-risk, and it is the smallest possible
-demonstration of the rule on existing code.
+The `-1f` the flex keywords returned is now `Length.FLEX`, named because a caller testing for it is asking "did
+this defer to the layout?" rather than "is this negative?".
 
-**Done looks like:** `resolve` is abstract on `Length`; each record implements it; `Em.resolve` is one line. The
-`default -> 0f` at `:122` disappears with the switch. No behaviour change, `MinSizeAndZoomTest` and
-`FlexLayoutTest` unchanged and green.
+Nothing outside had to change. `FlexLayout` tests lengths with `instanceof`, which an open interface serves as
+well as a sealed one, and `krono`'s `Lengths.LERP` already carried a `default` arm because it is a *pairwise*
+blend and could never have been exhaustive on one operand anyway.
+
+**Still sealed, and blocking `-core` from `RULED`:** §1.2 `Mutation`, §1.3 `Edit`, §1.5 `InputEvent`.
 
 ### 1.2 `Mutation` — sealed, dispatched from outside
 

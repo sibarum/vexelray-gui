@@ -17,12 +17,21 @@ package dev.vexelray.gui.core.layout;
  * remaining main-axis space (grow 1); {@link Grow} takes remaining space weighted by its factor. For scalar
  * properties (padding, margin, border, gap, corner, text size) the flex keywords are meaningless and resolve to 0.
  */
-public sealed interface Length
-        permits Length.Em, Length.Rem, Length.Dp, Length.Percent, Length.Vw, Length.Vh,
-                Length.Grow, Length.Auto, Length.FillT {
+public interface Length {
 
-    record Em(float v) implements Length { }
-    record Rem(float v) implements Length { }
+    record Em(float v) implements Length {
+        @Override
+        public float resolve(LayoutContext ctx, float basisPx) {
+            return v * ctx.rootEmPx() * ctx.zoom() * ctx.dpi();
+        }
+    }
+
+    record Rem(float v) implements Length {
+        @Override
+        public float resolve(LayoutContext ctx, float basisPx) {
+            return v * ctx.rootEmPx() * ctx.zoom() * ctx.dpi();
+        }
+    }
 
     /**
      * Density-independent pixels: {@code v · dpi}, honouring display density but <b>not</b> zoom. One dp is one
@@ -39,17 +48,68 @@ public sealed interface Length
      * sizing or containing glyphs stays in {@link Em}, or at 3× you get triple-height text inside an unchanged
      * inset, nearly touching its border.
      */
-    record Dp(float v) implements Length { }
+    record Dp(float v) implements Length {
+        @Override
+        public float resolve(LayoutContext ctx, float basisPx) {
+            return v * ctx.dpi();   // density only: no root em, and deliberately no zoom
+        }
+    }
+
     /** Percentage of a caller-supplied basis (see the interface doc for which basis applies where). */
-    record Percent(float v) implements Length { }
-    record Vw(float v) implements Length { }
-    record Vh(float v) implements Length { }
+    record Percent(float v) implements Length {
+        @Override
+        public float resolve(LayoutContext ctx, float basisPx) {
+            return v / 100f * basisPx;
+        }
+    }
+
+    record Vw(float v) implements Length {
+        @Override
+        public float resolve(LayoutContext ctx, float basisPx) {
+            return v / 100f * ctx.viewportW();
+        }
+    }
+
+    record Vh(float v) implements Length {
+        @Override
+        public float resolve(LayoutContext ctx, float basisPx) {
+            return v / 100f * ctx.viewportH();
+        }
+    }
+
     /** Flex-grow weight; basis 0, shares remaining main-axis space in proportion to {@code factor}. */
-    record Grow(float factor) implements Length { }
+    record Grow(float factor) implements Length {
+        @Override
+        public float resolve(LayoutContext ctx, float basisPx) {
+            return FLEX;
+        }
+
+        @Override
+        public float growFactor() {
+            return Math.max(0f, factor);
+        }
+    }
+
     /** Size to intrinsic content (grow 0). */
-    record Auto() implements Length { }
+    record Auto() implements Length {
+        @Override
+        public float resolve(LayoutContext ctx, float basisPx) {
+            return FLEX;
+        }
+    }
+
     /** Take all remaining main-axis space (equivalent to {@code Grow(1)}). */
-    record FillT() implements Length { }
+    record FillT() implements Length {
+        @Override
+        public float resolve(LayoutContext ctx, float basisPx) {
+            return FLEX;
+        }
+
+        @Override
+        public float growFactor() {
+            return 1f;
+        }
+    }
 
     Length AUTO = new Auto();
     Length FILL = new FillT();
@@ -87,23 +147,22 @@ public sealed interface Length
     }
 
     /**
-     * Resolve a fixed length to pixels against {@code ctx} and {@code basisPx}, or return {@code -1} for the flex
-     * keywords (Auto/Fill/Grow) so the layout decides. {@link Percent} uses {@code basisPx}; pass {@code 0} when no
-     * basis is available (e.g. during intrinsic measure) and a percent resolves to 0.
+     * What {@link #resolve} answers for a length that carries no fixed size: the flex keywords, whose pixel width
+     * is not theirs to decide. Named rather than written as {@code -1} at each end, because a caller testing for
+     * it is asking "did this defer to the layout?" and not "is this negative?".
      */
-    default float resolve(LayoutContext ctx, float basisPx) {
-        return switch (this) {
-            case Em e -> e.v() * ctx.rootEmPx() * ctx.zoom() * ctx.dpi();
-            case Rem r -> r.v() * ctx.rootEmPx() * ctx.zoom() * ctx.dpi();
-            case Dp d -> d.v() * ctx.dpi();   // density only: no root em, and deliberately no zoom
-            case Percent p -> p.v() / 100f * basisPx;
-            case Vw w -> w.v() / 100f * ctx.viewportW();
-            case Vh h -> h.v() / 100f * ctx.viewportH();
-            case Grow g -> -1f;
-            case Auto a -> -1f;
-            case FillT f -> -1f;
-        };
-    }
+    float FLEX = -1f;
+
+    /**
+     * Resolve a fixed length to pixels against {@code ctx} and {@code basisPx}, or return {@link #FLEX} for the
+     * flex keywords (Auto/Fill/Grow) so the layout decides. {@link Percent} uses {@code basisPx}; pass {@code 0}
+     * when no basis is available (e.g. during intrinsic measure) and a percent resolves to 0.
+     *
+     * <p>Every length answers this itself. It was one switch over every implementation, which is dispatch written
+     * by hand and the reason the interface had to stay sealed — a length an application defined could not be
+     * resolved, because the switch would not have had a case for it.
+     */
+    float resolve(LayoutContext ctx, float basisPx);
 
     /**
      * Resolve to pixels for a <b>scalar</b> property (padding/margin/border/gap/corner/text size): fixed units
@@ -114,12 +173,11 @@ public sealed interface Length
         return px > 0f ? px : 0f;
     }
 
-    /** The flex-grow weight this length implies (Fill = 1, Grow(f) = f, everything else 0). */
+    /**
+     * The flex-grow weight this length implies. Zero unless a length says otherwise, which {@link FillT} and
+     * {@link Grow} do — the two that have one.
+     */
     default float growFactor() {
-        return switch (this) {
-            case FillT f -> 1f;
-            case Grow g -> Math.max(0f, g.factor());
-            default -> 0f;
-        };
+        return 0f;
     }
 }

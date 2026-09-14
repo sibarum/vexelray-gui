@@ -51,8 +51,30 @@ final class FakeApplication implements AutoCloseable {
         return socket.getLocalPort();
     }
 
-    /** Every command line this was sent, in order — including the goodbye. */
-    synchronized List<String> received() {
+    /**
+     * Every command line this was sent, in order — including the goodbye — once there are at least {@code count}
+     * of them.
+     *
+     * <p><b>There is deliberately no unconditional accessor.</b> Closing the client writes {@code quit} and
+     * returns; it does not wait for this thread to read it. So a test that closed a client and then asked what
+     * had arrived was asking whether a line had crossed a socket yet, and got a different answer under load than
+     * it did alone — four tests here did exactly that, passing on their own and failing in a full reactor run.
+     * Taking the count makes the question "have these arrived", which has an answer worth waiting for.
+     */
+    synchronized List<String> awaitReceived(int count) {
+        long deadline = System.currentTimeMillis() + 5_000;
+        while (received.size() < count) {
+            long remaining = deadline - System.currentTimeMillis();
+            if (remaining <= 0) {
+                throw new AssertionError("waited 5s for " + count + " lines, saw " + received);
+            }
+            try {
+                wait(remaining);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError("interrupted waiting for " + count + " lines, saw " + received, e);
+            }
+        }
         return List.copyOf(received);
     }
 
@@ -77,6 +99,7 @@ final class FakeApplication implements AutoCloseable {
         while ((line = in.readLine()) != null) {
             synchronized (this) {
                 received.add(line);
+                notifyAll();
             }
             if (line.trim().toLowerCase(Locale.ROOT).equals("quit")) {
                 return;

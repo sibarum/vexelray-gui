@@ -75,7 +75,7 @@ class OttermateTest {
         Path script = write(dir, "find Save", "click 41", "settle", "shot after.png");
         try (FakeApplication app = failingOn("click 41")) {
             assertEquals(Session.FAILED, runScript(app, script));
-            assertEquals(List.of("find Save", "click 41", "quit"), app.received(),
+            assertEquals(List.of("find Save", "click 41", "quit"), app.awaitReceived(3),
                     "settle and shot assumed the click landed; running them anyway photographs a window "
                             + "nobody put in that state");
             assertTrue(stderr().contains("--keep-going"), "the way to override it is worth naming: " + stderr());
@@ -90,7 +90,7 @@ class OttermateTest {
                     Ottermate.run(new String[]{"--keep-going", "--port", port(app), "--script", script.toString()},
                             new PrintStream(out, true, StandardCharsets.UTF_8),
                             new PrintStream(err, true, StandardCharsets.UTF_8)));
-            assertEquals(List.of("find Save", "click 41", "shot after.png", "quit"), app.received());
+            assertEquals(List.of("find Save", "click 41", "shot after.png", "quit"), app.awaitReceived(4));
         }
     }
 
@@ -99,7 +99,7 @@ class OttermateTest {
         Path script = write(dir, "# the smallest tree it will lay out", "", "  ", "shot smallest.png");
         try (FakeApplication app = FakeApplication.answering(c -> "ok")) {
             assertEquals(Session.OK, runScript(app, script));
-            assertEquals(List.of("shot smallest.png", "quit"), app.received());
+            assertEquals(List.of("shot smallest.png", "quit"), app.awaitReceived(2));
         }
     }
 
@@ -110,7 +110,7 @@ class OttermateTest {
         Path script = write(dir, "shot a.png", "quit", "shot b.png");
         try (FakeApplication app = FakeApplication.answering(c -> "ok")) {
             assertEquals(Session.OK, runScript(app, script));
-            assertEquals(List.of("shot a.png", "quit"), app.received());
+            assertEquals(List.of("shot a.png", "quit"), app.awaitReceived(2));
         }
     }
 
@@ -136,7 +136,7 @@ class OttermateTest {
                         new PrintStream(out, true, StandardCharsets.UTF_8),
                         new PrintStream(err, true, StandardCharsets.UTF_8)));
             });
-            assertEquals(List.of("settle", "shot after.png", "quit"), app.received());
+            assertEquals(List.of("settle", "shot after.png", "quit"), app.awaitReceived(3));
         }
     }
 

@@ -16,6 +16,7 @@ import dev.vexelray.os.Decorations;
 import dev.vexelray.os.NativeWindow;
 import dev.vexelray.os.WindowConfig;
 import dev.vexelray.text.TextLayout;
+import sibarum.atchung.Atchung;
 import sibarum.tactroller.api.Key;
 
 import java.util.ArrayList;
@@ -80,10 +81,12 @@ public final class Modals implements AutoCloseable {
     private final AtomicReference<Live> live = new AtomicReference<>();
 
     // One tree, reused by every dialog. Only one is ever on screen, so a second tree would only ever be a second
-    // bus, a second handler executor and a second set of viewport observers — leaked once per question asked.
+    // handler executor and a second set of viewport observers — leaked once per question asked.
     // What changes per dialog is the title, the message and the buttons; the window around them is new each time,
     // because a window cannot be resized to fit a message it has not been given yet.
-    private final Gui gui = new Gui();
+    //
+    // On the application's bus when it has one: see install(GuiApp, Atchung, Consumer).
+    private final Gui gui;
     private final TitleBar bar;
     private final Node message;
     private final Node buttonRow;
@@ -94,8 +97,12 @@ public final class Modals implements AutoCloseable {
     private record Live(Modal modal, AtomicReference<NativeWindow> window, AtomicBoolean dismissed) {
     }
 
-    private Modals(GuiApp app, Consumer<Gui> appearance) {
+    private Modals(GuiApp app, Atchung bus, Consumer<Gui> appearance) {
         this.app = app;
+        // A private bus only when nobody offered one. Gui(Atchung) is the seam, and its own javadoc names this
+        // case: "hand in the same bus the application uses so input publishers, widgets, and workers all meet
+        // the framework on one fabric."
+        this.gui = bus == null ? new Gui() : new Gui(bus);
         // The look first, before a single prop is written: a role resolves at the moment a widget writes a
         // colour, so a theme installed after the tree is built reaches nothing that is already in it.
         if (appearance != null) {
@@ -147,10 +154,35 @@ public final class Modals implements AutoCloseable {
      *                   is what {@link #install(GuiApp)} means
      */
     public static Modals install(GuiApp app, Consumer<Gui> appearance) {
+        return install(app, null, appearance);
+    }
+
+    /**
+     * The same, on the application's own bus.
+     *
+     * <p><b>Why the bus is worth passing.</b> The dialogs hold a {@link Gui} of their own, and a {@code Gui}
+     * with no bus handed to it makes one — so an application that looks like it has one window has two buses
+     * and two handler pools, and the dialogs are a peer nothing else in the application can hear. Sharing the
+     * bus is what makes a dialog's answer an event on the same fabric as the click that asked the question,
+     * rather than something that has to be handed back through a captured field.
+     *
+     * <p>The parallel with {@code appearance} is exact, and it is why this is a third overload rather than a
+     * changed one: both are facts about the application that the dialogs cannot discover for themselves, and
+     * both have a library default that is correct only for an application which has made no decision. A host
+     * that embeds this widget without a bus of its own keeps the private one.
+     *
+     * <p>Only the bus is shared, not the tree and not the handler executor. One tree per dialog set is the
+     * invariant above, and {@code Gui} makes its own worker pool regardless of what it is handed — so what
+     * this buys today is one fabric, not one thread.
+     *
+     * @param bus        the application's bus, or {@code null} for a private one
+     * @param appearance applied to the dialogs' tree before it is built; {@code null} for the library default
+     */
+    public static Modals install(GuiApp app, Atchung bus, Consumer<Gui> appearance) {
         if (app == null) {
             throw new IllegalArgumentException("app must not be null");
         }
-        Modals modals = new Modals(app, appearance);
+        Modals modals = new Modals(app, bus, appearance);
         INSTANCE.set(modals);
         return modals;
     }

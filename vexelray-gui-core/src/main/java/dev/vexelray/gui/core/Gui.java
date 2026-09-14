@@ -277,7 +277,8 @@ public final class Gui implements AutoCloseable {
         // Navigation requests arrive on the same pump, so a link clicked in another window, a macro step and a
         // test all enter this tree at the same point in the frame the tree's own edits do — before the drain,
         // never in the middle of one.
-        // What a walk needs of the tree, and nothing more: look a node up, make a handle, give it the keyboard.
+        // What a walk needs of the tree, and nothing more: look a node up, and issue the two commands it issues
+        // through the ordinary public API a click would have gone through.
         this.navigator = new Navigator(new Navigator.Tree() {
             @Override
             public RetainedNode node(long id) {
@@ -285,13 +286,18 @@ public final class Gui implements AutoCloseable {
             }
 
             @Override
-            public Node handle(long id) {
-                return new Node(id, sink, layoutReader);
+            public void scrollIntoView(long id) {
+                new Node(id, sink, layoutReader).scrollIntoView();
             }
 
             @Override
-            public void focus(Node node) {
-                Gui.this.focus(node);
+            public void focus(long id) {
+                Gui.this.focus(new Node(id, sink, layoutReader));
+            }
+
+            @Override
+            public Node arrived(long id) {
+                return new Node(id, sink, layoutReader);
             }
         }, bus, this::wake);
         this.navSub = pump.subscribe(NavTopics.GO, navigator::accept, MUTATION_MAILBOX, Backpressure.BLOCK);

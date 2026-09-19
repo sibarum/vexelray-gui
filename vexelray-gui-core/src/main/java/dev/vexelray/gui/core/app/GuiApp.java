@@ -643,6 +643,52 @@ public final class GuiApp implements AutoCloseable {
      * @param failed what to do when {@code work} threw, on the GUI thread. A report, usually — this is not a
      *               path that should take the application down, because the thing that failed was one request
      */
+    /**
+     * How long a posted task may hold this thread before {@link #reportStall} says something, in nanoseconds;
+     * zero switches the check off.
+     *
+     * <p>This queue is where an application's own structural work runs, on the thread that also draws — so it
+     * is the easiest place on the stack to write an ordinary blocking call and have nothing object. The text
+     * editor read and wrote files here, and the only reason anybody found out was a port that went looking.
+     *
+     * <p>Two hundred and fifty milliseconds is fifteen frames: long enough that the window has visibly stopped
+     * and nobody would call it jitter, and long enough that a heavy first frame does not cry wolf. Turn it
+     * down with {@code -Dvexelray.stall.ms=16} to find out what blocks rather than to be told that something
+     * did; {@code 0} switches it off for a run that does not care, such as a batch capture.
+     */
+    private static final long stallNanos = stallThreshold();
+
+    private static long stallThreshold() {
+        long ms = Long.getLong("vexelray.stall.ms", 250L);
+        return ms <= 0 ? 0L : java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(ms);
+    }
+
+    /**
+     * Name what held the loop, as precisely as a {@code Runnable} allows.
+     *
+     * <p>A posted task is almost always a lambda or a method reference, and such a class is named for the
+     * class that <em>created</em> it — {@code dev.vexelray.demo.editor.FileActions$$Lambda/0x...}. Trimming at
+     * the marker leaves the one fact worth printing: which class posted the thing that stopped the window.
+     * That is not the method, but it is a file to open, and the alternative is a duration with no address.
+     *
+     * <p>Warned once per source, because a task that blocks once usually blocks every time, and a warning
+     * repeated every frame is one that gets filtered out along with the first useful copy of it.
+     */
+    static void reportStall(Runnable task, long nanos) {
+        String source = task.getClass().getName();
+        int lambda = source.indexOf("$$Lambda");
+        if (lambda > 0) {
+            source = source.substring(0, lambda);
+        }
+        dev.vexelray.diag.Diagnostics.dropped("GuiApp.post/" + source,
+                "every frame owed while a task posted by " + source + " ran",
+                java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(nanos) + " ms on the GUI thread, so the"
+                        + " window did not draw and took no input for that long. This queue is for structural"
+                        + " work — opening a window, changing a tab — and not for work that blocks; put that"
+                        + " on the offload lane with offload(work, landed, failed), which runs it off this"
+                        + " thread and hands the result back here");
+    }
+
     public <T> void offload(java.util.concurrent.Callable<T> work, java.util.function.Consumer<T> landed,
                             java.util.function.Consumer<Exception> failed) {
         Gui gui = mainGui;
@@ -934,7 +980,14 @@ public final class GuiApp implements AutoCloseable {
             // Window creation, showing, hiding and closing all land here: posted from wherever they were asked
             // for, performed on the thread that is allowed to perform them.
             for (Runnable task; (task = tasks.poll()) != null; ) {
+                long taskStarted = stallNanos > 0 ? System.nanoTime() : 0L;
                 task.run();
+                if (stallNanos > 0) {
+                    long took = System.nanoTime() - taskStarted;
+                    if (took > stallNanos) {
+                        reportStall(task, took);
+                    }
+                }
             }
             // After the tasks, because opening a window is one of them: a tree that arrived this
             // iteration is presented this iteration, so it must be able to ask for the next one.

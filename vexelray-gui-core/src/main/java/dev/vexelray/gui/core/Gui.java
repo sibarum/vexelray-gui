@@ -67,6 +67,11 @@ import java.util.Map;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -196,11 +201,19 @@ public final class Gui implements AutoCloseable {
     // them and from every state handler.
     private volatile Theme theme = Theme.DARK;
     private final Executor handlers;
-    private final ExecutorService workers = Executors.newCachedThreadPool(r -> {
-        Thread t = new Thread(r, "vexelray-gui-worker");
-        t.setDaemon(true);
-        return t;
-    });
+    /**
+     * Where {@link #async} puts work — a different lane from {@link #handlers}, and the split is the point.
+     * "Worker thread" used to mean both, which is one name for two lanes with different rules in the
+     * documentation applications read: a handler is short, ordinary application code answering an input event,
+     * and an offloaded task is a file read, a decode or a network call that may outlast any number of frames.
+     */
+    private final Executor offload;
+    /**
+     * The lanes this {@code Gui} built because nobody handed it one, and the only ones {@link #close} may shut
+     * down. Empty when both were supplied, which is deliberate: a lane its embedder owns outlives the tree
+     * presented on it, so closing one window must not take the application's threads with it.
+     */
+    private final List<ExecutorService> ownedLanes = new ArrayList<>(2);
 
     /** Create a GUI on its own private Atchung bus. */
     public Gui() {
@@ -224,17 +237,45 @@ public final class Gui implements AutoCloseable {
      * would have to be per instance rather than per class — and it is not this constructor.
      */
     public Gui(Atchung bus) {
-        this(bus, null);
+        this(bus, null, null);
     }
 
     /**
      * Create a GUI on a shared bus with an explicit executor for input handlers (clicks, keys, chars, drags,
      * state). Pass a same-thread executor ({@code Runnable::run}) for a <b>deterministic, headless</b> GUI —
      * input published on the bus is handled synchronously inside {@link #frame}, so a test (or any embedder) has
-     * exact control over what fires and when, with no worker-thread races. {@code null} uses the default worker
-     * pool (handlers run off the GUI thread), which is what a live application wants.
+     * exact control over what fires and when, with no worker-thread races. {@code null} uses the default handler
+     * lane (handlers run off the GUI thread), which is what a live application wants.
+     *
+     * <p>Leaves the offload lane to this class, so {@link #async} still lands on a pool of this {@code Gui}'s
+     * own. An embedder that means to own the application's threads wants
+     * {@link #Gui(Atchung, Executor, Executor)} instead — passing a handler executor alone redirects handlers
+     * and leaves the pool, which is not the same thing.
      */
     public Gui(Atchung bus, java.util.concurrent.Executor handlerExecutor) {
+        this(bus, handlerExecutor, null);
+    }
+
+    /**
+     * Create a GUI on a shared bus with both lanes supplied — the constructor for an embedder that owns the
+     * application's threads rather than inheriting one set per tree.
+     *
+     * <p><b>The two lanes are not interchangeable.</b> {@code handlerExecutor} runs input handlers: clicks,
+     * keys, chars, drags and state, each followed by a wake. {@code offloadExecutor} is where {@link #async}
+     * puts work that is genuinely unbounded — file I/O, network, image decode — which is a different lane
+     * because it has different rules, not because two pools are tidier than one. Putting a blocking read on the
+     * handler lane is how click dispatch ends up waiting behind a wedged network mount.
+     *
+     * <p>Either may be {@code null}, and {@code null} means <em>this class builds that one and closes it</em>.
+     * A lane that was passed in is never shut down by {@link #close}: its lifetime is the embedder's, and a
+     * second window closing must not take the first one's threads with it.
+     *
+     * @param handlerExecutor the lane input handlers run on, or {@code null} for one of this {@code Gui}'s own
+     * @param offloadExecutor the lane {@link #async} submits to, or {@code null} for one of this {@code Gui}'s
+     *                        own
+     */
+    public Gui(Atchung bus, java.util.concurrent.Executor handlerExecutor,
+               java.util.concurrent.Executor offloadExecutor) {
         this.bus = bus;
         this.pump = bus.pump();
         // Where nodes come from, and the seam their handles write through. It resolves Node.layout() through a
@@ -305,7 +346,8 @@ public final class Gui implements AutoCloseable {
         // So the wake is hung on the one thing every such path has in common: a handler ran. Waking after
         // it finishes covers all of them, including the ones an application has not written yet, and
         // costs one frame per input event that finds nothing left to do.
-        Executor base = handlerExecutor != null ? handlerExecutor : workers;
+        Executor base = handlerExecutor != null ? handlerExecutor : own(handlerLane());
+        this.offload = offloadExecutor != null ? offloadExecutor : own(offloadLane());
         this.handlers = task -> base.execute(() -> {
             try {
                 task.run();
@@ -1206,9 +1248,82 @@ public final class Gui implements AutoCloseable {
         return trees.text(s);
     }
 
-    /** Run {@code work} on a worker thread (app logic stays off the GUI thread). */
+    /**
+     * Threads on the default offload lane. Bounded, because a pool that answers a full queue by growing has
+     * chosen the one policy the rest of this stack refuses. This was a {@code newCachedThreadPool}, which
+     * answers a wedged filesystem mount by making one more thread per blocked call — so the lane that exists to
+     * absorb a stall was the thing that multiplied it.
+     *
+     * <p>Bounded in <em>threads</em>, not in queue. A full lane makes work wait behind the work already on it,
+     * which is backpressure; a bounded queue would make it fail instead, and a caller of {@link #async} has
+     * nowhere to put a rejection. Choosing loss is a decision taken per channel, by whoever knows what the
+     * channel carries, and it is not this pool's to take on their behalf.
+     */
+    private static final int OFFLOAD_THREADS = Math.max(4, Runtime.getRuntime().availableProcessors());
+
+    /**
+     * The handler lane's default: unbounded in threads, as it has always been.
+     *
+     * <p>Deliberately <em>not</em> bounded yet. While {@link #async} is merely the documented place for blocking
+     * work rather than the only one, a handler that blocks — {@code text-editor-vexel-demo} reads and writes
+     * files straight from one — would fill a bounded handler lane and stop click dispatch dead. Bounding this
+     * one is a change that arrives after the blocking handlers move, not before it.
+     */
+    private static ExecutorService handlerLane() {
+        return Executors.newCachedThreadPool(named("vexelray-gui-handler"));
+    }
+
+    /** The offload lane's default — {@link #OFFLOAD_THREADS} is why it is bounded, and in what. */
+    private static ExecutorService offloadLane() {
+        ThreadPoolExecutor pool = new ThreadPoolExecutor(OFFLOAD_THREADS, OFFLOAD_THREADS, 30L, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(), named("vexelray-gui-offload"));
+        // An idle application should not sit on threads it is not using, and letting the core time out makes the
+        // bound a ceiling rather than a floor.
+        pool.allowCoreThreadTimeOut(true);
+        return pool;
+    }
+
+    /**
+     * Daemon platform threads, named for their lane — never virtual ones, and that is measured rather than
+     * stylistic. An application following Kronometer's advice sets
+     * {@code -Djdk.virtualThreadScheduler.parallelism=1}, worth 3x on the baton handoff. That is a global JVM
+     * property with no per-thread override in JDK 25, so a virtual lane would land on the one carrier the baton
+     * needs and deadlock against the serialization that makes it fast, rather than merely running slowly. The
+     * flag is the application's to set and correctness may not depend on it, so the default here has to be the
+     * one that is still right when it <em>is</em> set.
+     */
+    private static ThreadFactory named(String lane) {
+        AtomicInteger n = new AtomicInteger();
+        return r -> {
+            Thread t = new Thread(r, lane + "-" + n.incrementAndGet());
+            t.setDaemon(true);
+            return t;
+        };
+    }
+
+    /** Record {@code lane} as this {@code Gui}'s own to shut down, and return it. See {@link #ownedLanes}. */
+    private ExecutorService own(ExecutorService lane) {
+        ownedLanes.add(lane);
+        return lane;
+    }
+
+    /**
+     * Run {@code work} on the offload lane — file I/O, network, a decode: work that may outlast a frame, and
+     * which is on a different lane from input handlers for that reason.
+     *
+     * <p>What lands there must not touch the tree or the timeline in place. A result comes back by publishing
+     * on a topic, or through a node mutation, which is the same door a worker building UI already uses.
+     */
     public void async(Runnable work) {
-        workers.submit(work);
+        offload.execute(work);
+    }
+
+    /**
+     * The lane {@link #async} submits to, exposed so a widget that does its own blocking work puts it in the
+     * same place rather than on the handler lane beside click dispatch.
+     */
+    public Executor offload() {
+        return offload;
     }
 
     /**
@@ -1496,6 +1611,10 @@ public final class Gui implements AutoCloseable {
         input.close();
         mutationSub.close();
         navSub.close();
-        workers.shutdownNow();
+        // Only what this Gui built. A lane handed in belongs to whoever handed it over, and shutting one of
+        // those down here is how closing a dialog takes the application's threads with it.
+        for (ExecutorService lane : ownedLanes) {
+            lane.shutdownNow();
+        }
     }
 }

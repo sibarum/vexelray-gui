@@ -294,6 +294,39 @@ The GUI holds one `Atchung` bus (its own by default, or one handed in to share w
 application). Input publishers, widgets, workers, and — via Atchung's transport bridge — remote peers
 all meet on it.
 
+### 5.1 "Worker" was one name for two lanes, and now it is two names
+
+*"Worker thread"* above meant both the lane input handlers run on and the lane `Gui.async` submits to —
+one name for two things with different rules, in the documentation applications read. A handler is short
+application code answering an input event. An offloaded task is a file read, a decode or a network call
+that may outlast any number of frames. They are now separate, named apart (`vexelray-gui-handler`,
+`vexelray-gui-offload`), and `Gui.offload()` exposes the second so a widget doing its own blocking work
+puts it beside the other blocking work rather than beside click dispatch.
+
+**The ownership is the substantive half.** The pool was a field initializer, so a `Gui` built a
+`newCachedThreadPool` whatever it was handed: `Gui(Atchung, Executor)` redirected handlers and left the
+pool standing, and an application's thread count was a property of how many trees it happened to hold
+rather than of anything it decided. `Gui(Atchung, Executor, Executor)` takes both, `null` means *build
+that one and close it*, and `close()` shuts down only what this `Gui` built — because a lane the embedder
+owns outlives the tree presented on it, and a dialog closing must not take the application's threads with
+it. `LanesTest` holds all three claims.
+
+This is what lets a container decide placement in the wiring: until the pool could be handed over, nothing
+above this repo could put work on a thread of its own choosing.
+
+**The offload default is bounded; the handler default is not, yet.** A pool that answers a full queue by
+growing has chosen the one policy the rest of the stack refuses — a wedged filesystem mount answered
+backpressure by spawning a thread per blocked call, so the lane meant to absorb a stall was what
+multiplied it. It is bounded in *threads* rather than in queue, because a full lane should make work wait
+rather than fail and a caller of `async` has nowhere to put a rejection. The handler lane keeps its
+unbounded default while blocking handlers still exist upstream of it — `text-editor-vexel-demo` reads and
+writes files straight from one — since bounding it first would stop click dispatch dead rather than
+reveal the defect. That bound arrives after the blocking handlers move.
+
+Platform threads, never virtual, and that is measured: an application following Kronometer's advice sets
+`jdk.virtualThreadScheduler.parallelism=1`, a global JVM property with no per-thread override, so a
+virtual lane would land on the one carrier the baton needs and deadlock rather than merely run slowly.
+
 ---
 
 ## 6. Layout + units

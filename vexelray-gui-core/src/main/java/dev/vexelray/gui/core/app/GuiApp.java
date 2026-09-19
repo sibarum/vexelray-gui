@@ -618,6 +618,51 @@ public final class GuiApp implements AutoCloseable {
     }
 
     /**
+     * Do {@code work} on the offload lane and hand what it produced back here, on the GUI thread.
+     *
+     * <h2>Public for the same reason {@link #post} is</h2>
+     *
+     * That method was made public because applications were each growing a queue of their own. They have
+     * since moved up a level and are growing the <em>round trip</em>: submit to a pool, catch what it throws,
+     * post the result back, post the failure back. It is four lines that are wrong in a quiet way when they
+     * are wrong — a result applied on the pool thread works until the day it does not — and there is no
+     * reason for an application to write it.
+     *
+     * <p><b>This is the shortest correct way to do slow work, and that is deliberate.</b> Reading a file
+     * straight from a command handler is shorter still and stops the frame loop for as long as the disk takes;
+     * {@link Gui#async} is shorter and gives back no result, so a caller who needs one hand-rolls the way
+     * home. Making the correct round trip the least typing is the point of it being here.
+     *
+     * <p><b>What runs on the lane must touch nothing.</b> No node, no tab, no model — it computes a value and
+     * returns it. Everything that acts on that value runs in {@code landed}, on this thread, in order with
+     * every other request in the queue. That is the whole discipline, and it is checkable by reading one
+     * lambda.
+     *
+     * @param work   the slow part: I/O, a decode, a parse. Runs on the offload lane
+     * @param landed what to do with the result, on the GUI thread
+     * @param failed what to do when {@code work} threw, on the GUI thread. A report, usually — this is not a
+     *               path that should take the application down, because the thing that failed was one request
+     */
+    public <T> void offload(java.util.concurrent.Callable<T> work, java.util.function.Consumer<T> landed,
+                            java.util.function.Consumer<Exception> failed) {
+        Gui gui = mainGui;
+        if (gui == null) {
+            throw new IllegalStateException(
+                    "no tree yet: offload needs the lane the Gui was built on, which run() binds");
+        }
+        gui.offload().execute(() -> {
+            T value;
+            try {
+                value = work.call();
+            } catch (Exception e) {
+                post(() -> failed.accept(e));
+                return;
+            }
+            post(() -> landed.accept(value));
+        });
+    }
+
+    /**
      * Create a window for {@code spec} now, on the main thread: the OS window, its input backend, and its place
      * in the frame loop. {@code owner} is the named handle to keep in step, or null for an anonymous popup.
      */

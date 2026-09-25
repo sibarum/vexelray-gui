@@ -141,8 +141,8 @@ dependency block for its own reasons.
 ## 5. Requirements — the verbs `--capture` has and automation does not
 
 The calculator's `Capture` has four scenes: `zoom` (a 7-step ladder), `smallest` (the tree at exactly
-`minSize`), `panels` (every rail panel), and one named panel. Three capabilities are missing before those can
-move to the socket.
+`minSize`), `panels` (every rail panel), and one named panel. Three capabilities were missing before those can
+move to the socket; V3 has landed, and V1 and V2 remain.
 
 - **V1 — `zoom <factor>`.** `Gui.zoom(float)` already exists; there is no verb. **It must clamp to the
   application's own `Appearance.ZoomRange`**, not the library default — a verb that photographs a zoom level
@@ -153,9 +153,21 @@ move to the socket.
   - Units are an open question (§9). `minSize` is declared in **em**, so a pixel-only `resize` cannot express
     "the tree at exactly its minimum" without the caller duplicating the em→px conversion — which is the
     two-literals hazard `Calculator.MIN_W_EM` exists to avoid.
-- **V3 — `settle` must consult the timeline.** Today it gates entirely on `gui.frameOwed()` and a layout-commit
-  signal; it never asks the Kron clock. **An application mid-fade with no frame currently owed returns `ok`
-  immediately.** Since `Rail` began animating selection, `click rail.layers` → `settle` → `shot` therefore
+- ~~**V3 — `settle` must consult the timeline.**~~ **Landed.** `Automation` takes a `Timeline` — this module
+  still depends on `gui-core` alone — and `settle` waits for the frame loop, then for the timeline to go quiet,
+  then for the loop once more. A host hands over `krono::quiescentAtLastTick`, and `vexelray-framework`'s driver
+  does. Two things the implementation had to get right, recorded because both are easy to lose:
+  - **The sample, not the question.** `Kron.isQuiescent` walks effects' dependencies the timeline mutates, and
+    the driver answers on its own thread; so `KronoGui` takes the answer at the end of each tick and publishes
+    it.
+  - **A post since the tick counts as busy.** The field case is a click handler starting a fade on a worker and
+    changing nothing else: no frame is owed, the last sample says quiet, and the fade is sitting in the kernel's
+    inbox. `KronoGui` counts every post through `onTimeline` — `ramp` included, which used to post straight to
+    the kernel — and a sample stands only while no post has arrived since.
+
+  A timeline that never goes quiet — a repeating cue — is an `err` after 10 s naming `await` as the
+  alternative, which is the socket's form of "bounded rather than looped until quiet" below. What was found, as
+  it was found: Since `Rail` began animating selection, `click rail.layers` → `settle` → `shot` therefore
   photographs a panel part-way through its fade and reports success — verified in the field, three seconds
   before the transition completed. `Automation` holds a `Gui` and not a `KronoGui`, so closing this needs new
   API in this module rather than a fix inside `settle`.
@@ -182,8 +194,8 @@ move to the socket.
     than hang on. Both properties were learned the hard way and are easy to lose on a rewrite.
 
     A socket `settle` differs in one respect — it drives a *live* clock rather than a `Driven` one, so it waits
-    for quiescence instead of advancing time. `isQuiescent()` is the predicate either way, and it is the thing
-    `Automation` currently cannot reach.
+    for quiescence instead of advancing time. `isQuiescent()` is the predicate either way; `Automation` reaches
+    it now as a `Timeline`.
 
 ---
 
@@ -191,7 +203,7 @@ move to the socket.
 
 1. ~~**The client** (§3, §4)~~ — **landed**; see §10. Fixed the reachability defect, changed no existing
    behaviour.
-2. **V1–V3** (§5) — closes the capability gap. **Next.**
+2. **V1–V3** (§5) — closes the capability gap. **V3 landed; V1 and V2 next.**
 3. **Remove `--capture`** (§7) — calculator and template together. **Half done, out of order**: the
    calculator's went on 2026-09-10; the template's is still there.
 

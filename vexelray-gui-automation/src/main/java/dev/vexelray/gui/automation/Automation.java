@@ -60,8 +60,23 @@ public final class Automation {
      */
     private static final long AWAIT_TIMEOUT_MS = 30_000L;
 
+    /**
+     * How long {@link #settle} waits for the {@link Timeline} to go quiet, on top of the frame loop.
+     *
+     * <p>Longer than {@link #SETTLE_TIMEOUT_MS}, because it waits on motion a designer chose the length of rather
+     * than on the loop catching up: the transition that found this was three seconds long. Shorter than
+     * {@link #AWAIT_TIMEOUT_MS}, because a timeline that is still busy after this long is running something that
+     * never ends — a repeating cue — and the honest answer then is to say so.
+     */
+    private static final long TIMELINE_TIMEOUT_MS = 10_000L;
+
+    /** How often {@link #settle} looks at the timeline. Off the frame loop, so this costs the application nothing. */
+    private static final long TIMELINE_POLL_MS = 10L;
+
     private final Gui gui;
     private final WindowControls controls;
+    private final Timeline timeline;
+    private final long timelineTimeoutMs;
     private final Cursor cursor;
 
     public Automation(Gui gui) {
@@ -69,8 +84,23 @@ public final class Automation {
     }
 
     public Automation(Gui gui, WindowControls controls) {
+        this(gui, controls, Timeline.NONE);
+    }
+
+    /**
+     * A driver whose {@link #settle} also waits for {@code timeline} to go quiet — what a host with a clock hands
+     * over, so a transition in flight is not photographed as finished. See {@link Timeline}.
+     */
+    public Automation(Gui gui, WindowControls controls, Timeline timeline) {
+        this(gui, controls, timeline, TIMELINE_TIMEOUT_MS);
+    }
+
+    /** With a shorter timeline bound, so a test of the never-quiet case does not take ten seconds to fail. */
+    Automation(Gui gui, WindowControls controls, Timeline timeline, long timelineTimeoutMs) {
         this.gui = java.util.Objects.requireNonNull(gui, "gui");
         this.controls = controls == null ? WindowControls.NONE : controls;
+        this.timeline = timeline == null ? Timeline.NONE : timeline;
+        this.timelineTimeoutMs = timelineTimeoutMs;
         // Waking, because this host loop is entitled to be parked: injected input is neither a mutation nor an
         // OS event, so it is the one reason a frame can be owed that nothing else reports. See
         // Gui.wakeForInput, and §6's promise that this module has no interesting failure modes of its own.
@@ -453,14 +483,61 @@ public final class Automation {
      * one publish is not enough: a handler running on a worker posts its mutation after the frame that
      * dispatched the click has already drained.
      *
+     * <p><b>Then it waits for the {@link Timeline}</b>, when the host handed one over: a fade in flight with no
+     * frame owed is not settled, and answering at once is how a panel was photographed part-way through its
+     * transition and reported {@code ok}. Then the loop once more, because the tick that finished the motion
+     * posted its last frame's worth of mutations. A timeline that never goes quiet — a repeating cue — is
+     * reported by name rather than waited out.
+     *
      * <p><b>What it cannot see</b> is a handler that has not published yet — it is owed nothing, so nothing
      * reports it ({@link Gui#frameOwed()} says so from the other side). This is therefore exact about the frame
-     * loop and blind to application work still in flight. An agent that needs the second has to wait on
-     * something the application names.
+     * loop and the clock, and blind to application work still in flight. An agent that needs the second has to
+     * wait on something the application names.
      */
     public String settle() {
+        String loop = settleLoop();
+        if (loop != null) {
+            return loop;
+        }
+        if (timeline.quiet()) {
+            return "ok v" + gui.semanticSnapshot().version();
+        }
+        String clock = settleTimeline();
+        if (clock != null) {
+            return clock;
+        }
+        loop = settleLoop();
+        return loop != null ? loop : "ok v" + gui.semanticSnapshot().version();
+    }
+
+    /**
+     * Poll the timeline until it is quiet, bounded — {@code null} once it is, the refusal if it never is.
+     *
+     * <p>Polled rather than signalled, and not a sleep in disguise: the condition is read each time, and the
+     * interval only bounds how late the answer is. A signal would need the clock to announce going quiet, and a
+     * fade that changes only paint publishes no layout commit to wake on.
+     */
+    private String settleTimeline() {
+        long deadline = System.nanoTime() + timelineTimeoutMs * 1_000_000L;
+        while (!timeline.quiet()) {
+            if (System.nanoTime() >= deadline) {
+                return "err the timeline did not go quiet within " + timelineTimeoutMs + "ms — an animation or"
+                        + " a repeating cue is still running; wait on a landmark with await instead";
+            }
+            try {
+                Thread.sleep(TIMELINE_POLL_MS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return "err interrupted";
+            }
+        }
+        return null;
+    }
+
+    /** The frame loop half of {@link #settle}: {@code null} once nothing is owed, the refusal if it stays owed. */
+    private String settleLoop() {
         if (!gui.frameOwed()) {
-            return "ok v" + gui.semanticSnapshot().version();   // nothing outstanding; do not wait for news
+            return null;   // nothing outstanding; do not wait for news
         }
         long deadline = System.nanoTime() + SETTLE_TIMEOUT_MS * 1_000_000L;
         // Waited on a signal rather than on the version counter directly. State.await(version) blocks until the
@@ -479,7 +556,7 @@ public final class Automation {
                 }
             }
             if (!gui.frameOwed()) {
-                return "ok v" + gui.semanticSnapshot().version();
+                return null;
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -662,7 +739,7 @@ public final class Automation {
             "scroll <ref|x,y> dx dy   wheel notches there",
             "type <text>              one code point at a time, as typing",
             "key <NAME>               press and release a named key",
-            "settle                   wait for the loop to catch up",
+            "settle                   wait for the loop to catch up, and any animation to finish",
             "await <landmark> <text>  wait until that landmark is named something containing text",
             "shot [path]              photograph this window, and wait for the file (err if none arrives)",
             "mark <note>              write why into the correlation log"));

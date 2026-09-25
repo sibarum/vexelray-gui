@@ -73,6 +73,18 @@ public final class KronoGui implements AutoCloseable {
     private final Rate frames;
     private final Animator animator;
 
+    /**
+     * Work posted to the timeline from off it, counted — so a sample taken before a post can be told from one
+     * taken after it. See {@link #quiescentAtLastTick()}.
+     */
+    private final java.util.concurrent.atomic.AtomicLong posted = new java.util.concurrent.atomic.AtomicLong();
+
+    /**
+     * {@link #isQuiescent()} as the last tick left it, and how many posts that tick had seen, in one word so the
+     * two are read together: {@code seen << 1 | (quiescent ? 1 : 0)}.
+     */
+    private volatile long quiescentAtLastTick;
+
 
     private KronoGui(Gui gui, Kron kron) {
         this.gui = gui;
@@ -82,6 +94,8 @@ public final class KronoGui implements AutoCloseable {
         // A dynamic domain steps once per tick, after everything else scheduled in that window — the
         // right order for a pass that reads what the rest of the frame just produced.
         this.frames.each(step -> { });
+        // On the thread that will tick, which is the one entitled to ask.
+        sample(0L);
     }
 
     /** Attach a driven Kronometer to {@code gui}. Tick it from {@code GuiApp.run}'s {@code beforeFrame}. */
@@ -111,12 +125,22 @@ public final class KronoGui implements AutoCloseable {
      * before {@link Gui#frame} reconciles.
      */
     public void tick() {
+        // Read before the tick, so a post that lands during it counts as unseen: this tick may or may not place
+        // it, and "not quiet" is the answer that is safe to be wrong in.
+        long seen = posted.get();
         kron.tick();
+        sample(seen);
     }
 
     /** Advance to an explicit logical moment — for a scripted or headless run. */
     public void tick(Dur elapsed) {
+        long seen = posted.get();
         kron.tick(elapsed.nanos());
+        sample(seen);
+    }
+
+    private void sample(long seen) {
+        quiescentAtLastTick = seen << 1 | (kron.isQuiescent() ? 1L : 0L);
     }
 
     /**
@@ -133,6 +157,32 @@ public final class KronoGui implements AutoCloseable {
     /** Whether nothing is scheduled and nothing is animating, so the loop may sleep indefinitely. */
     public boolean isQuiescent() {
         return kron.isQuiescent();
+    }
+
+    /**
+     * {@link #isQuiescent()} as the last {@link #tick()} left it — the one form of the question that is safe from
+     * a thread that does not tick.
+     *
+     * <p><b>Why a copy rather than the question.</b> {@code Kron.isQuiescent} walks every live effect's
+     * dependencies, which the timeline mutates as effects run, and {@code Kron.nextDeadline} says to ask it from
+     * the timeline or from the host thread once {@code tick} has returned. An automation driver is neither: it
+     * answers a socket on a thread of its own. So the answer is taken where it is exact — at the end of each tick,
+     * with the batch complete — and published here. It is a frame old at worst, which is what a caller waiting
+     * for a fade to finish can afford.
+     *
+     * <p><b>Work posted since that tick counts as not quiescent</b>, and that is the case this exists for rather
+     * than an edge of it. A click handler runs on a worker, and starting a fade from one posts it through
+     * {@link #onTimeline} to be placed at the next tick — so for the moment between the click and that tick, the
+     * last sample says quiet and the fade is already on its way. A handler that starts a fade and changes nothing
+     * else leaves no frame owed either, so nothing else would have caught it. Every post through this class is
+     * counted, and a sample stands only while no post has arrived since the tick that took it. Posting straight to
+     * {@link #kron()} from off the timeline is not counted; route it through {@link #onTimeline}.
+     *
+     * <p>A repeating cue ({@link #every}) is never quiescent, by definition, so neither is this while one runs.
+     */
+    public boolean quiescentAtLastTick() {
+        long sample = quiescentAtLastTick;
+        return (sample & 1L) == 1L && posted.get() == sample >>> 1;
     }
 
     /** One line per reason the runtime is not quiescent. For "why is my loop never idle". */
@@ -177,6 +227,10 @@ public final class KronoGui implements AutoCloseable {
      * making that the caller's problem would mean every click handler needed to know about the baton.
      */
     public void onTimeline(Runnable work) {
+        if (!kron.isOnTimeline()) {
+            // Counted before it is posted, so no tick can take a sample that has placed it and not counted it.
+            posted.incrementAndGet();
+        }
         kron.onTimeline(work);
     }
 
@@ -286,7 +340,15 @@ public final class KronoGui implements AutoCloseable {
     public void ramp(Dur over, Ease ease, DoubleConsumer progress, Runnable done) {
         Objects.requireNonNull(progress, "progress");
         Objects.requireNonNull(done, "done");
-        Tween.rampOn(frames, over, ease, progress::accept, done);
+        Objects.requireNonNull(ease, "ease");
+        if (over.nanos() <= 0) {
+            // Refused here, to the caller, as Tween would have: deferred, it would surface on the timeline instead.
+            throw new IllegalArgumentException("extent must be positive: " + over);
+        }
+        // Through onTimeline rather than straight to Tween, which would post to the kernel itself: this is the
+        // seam every widget crossfade arrives by, so it is the post quiescentAtLastTick most needs to count. On
+        // the timeline, rampOn begins at once, so nothing else about it changes.
+        onTimeline(() -> Tween.rampOn(frames, over, ease, progress::accept, done));
     }
 
     /**

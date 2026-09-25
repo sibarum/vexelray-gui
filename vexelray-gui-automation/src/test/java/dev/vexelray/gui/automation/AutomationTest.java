@@ -285,6 +285,52 @@ class AutomationTest {
         }
     }
 
+    // --- settle and the clock (automation-cli.md §5, V3) ----------------------------------------------------
+
+    /**
+     * The defect as it was found: nothing owed, a transition in flight, and settle answering at once. Here the
+     * "transition" is a timeline that goes quiet 150 ms from now — which settle used to answer before, and must
+     * now answer after.
+     */
+    @Test
+    void settleWaitsForATransitionInFlightWhenNoFrameIsOwed() {
+        try (Gui gui = deterministic()) {
+            gui.root().children(gui.box().size(Length.dp(10), Length.dp(10)));
+            gui.frame(W, H, NO_TEXT);
+            assertFalse(gui.frameOwed(), "the precondition: the loop has nothing outstanding");
+
+            long quietAt = System.nanoTime() + 150_000_000L;
+            Automation driver = new Automation(gui, null, () -> System.nanoTime() >= quietAt);
+            String out = driver.command("settle");
+
+            assertTrue(out.startsWith("ok"), out);
+            assertTrue(System.nanoTime() >= quietAt, "settle answered before the transition finished");
+        }
+    }
+
+    @Test
+    void aTimelineThatNeverGoesQuietIsReportedRatherThanWaitedOut() {
+        try (Gui gui = deterministic()) {
+            gui.root().children(gui.box().size(Length.dp(10), Length.dp(10)));
+            gui.frame(W, H, NO_TEXT);
+
+            String out = new Automation(gui, null, () -> false, 100L).command("settle");
+
+            assertTrue(out.startsWith("err the timeline did not go quiet within 100ms"), out);
+            assertTrue(out.contains("await"), "the refusal names what to do instead: " + out);
+        }
+    }
+
+    @Test
+    void withNoClockSettleIsAboutTheFrameLoopAlone() {
+        try (Gui gui = deterministic()) {
+            gui.root().children(gui.box().size(Length.dp(10), Length.dp(10)));
+            gui.frame(W, H, NO_TEXT);
+
+            assertTrue(new Automation(gui).command("settle").startsWith("ok"));
+        }
+    }
+
     @Test
     void anUnknownCommandAnswersInsteadOfDying() {
         try (Gui gui = deterministic()) {

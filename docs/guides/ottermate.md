@@ -242,13 +242,22 @@ exits non-zero.
 
 ## 5. Three things that will bite you
 
-### `settle` does not wait for animation — and this is the big one
+### `settle` waits for animation only if the host handed it the clock
 
-`settle` waits for the frame loop to have nothing owed. It does **not** consult the clock, so an application
-mid-transition with no frame currently owed answers `ok` at once. Since the calculator's rail began
-animating, `click` → `settle` → `shot` therefore photographs a panel part-way through opening.
+`settle` waits for the frame loop to have nothing owed, and then for the timeline to go quiet — **when the
+host passed one in**. An application on `vexelray-framework` does: its driver is built with the application's
+clock. A host that builds `Automation` itself has to say so, or `settle` is about the frame loop alone:
 
-This is not theoretical. The same three-line script, run twice a minute apart:
+```java
+new Automation(gui, app.controls(), krono::quiescentAtLastTick)
+```
+
+`quiescentAtLastTick` rather than `isQuiescent`, because the driver answers on a thread of its own and the
+live question is only safe from the thread that ticks; see `KronoGui.quiescentAtLastTick`.
+
+Without it, an application mid-transition with no frame currently owed answers `ok` at once — which is what
+this section used to warn about, and what the rest of it records. It was not theoretical. The same
+three-line script, run twice a minute apart against the calculator before the fix:
 
 ```
 > click rail.view
@@ -261,11 +270,11 @@ ok v61              <- run two:  the panel is half-faded, its buttons clipped mi
 Extra `settle`s do not help — five of them produced a **byte-identical** picture to one, because there is
 nothing owed between animation ticks for `settle` to wait on.
 
-There is no client-side workaround today, and inventing one would be worse than the gap: a `sleep` verb is
-the flake this whole instrument was built to avoid. The fix is
-[automation-cli.md](../reference/automation-cli.md) §5 **V3** — teaching `settle` to ask the timeline whether it is
-quiescent — and until it lands, **treat a shot taken straight after an animated transition as unreliable**,
-and prefer subjects that do not animate.
+A `sleep` verb would have been the flake this whole instrument was built to avoid, so the fix went where the
+knowledge is: [automation-cli.md](../reference/automation-cli.md) §5 **V3**. One consequence to know about: a
+timeline that **never** goes quiet — a repeating cue, a clock face — makes `settle` answer
+`err the timeline did not go quiet within 10000ms` rather than wait forever. Wait on a landmark with `await`
+in an application like that.
 
 ### `await` is for the application having finished thinking
 
@@ -315,6 +324,7 @@ slashes (`C:/work/after.png`) work everywhere.
 | `ottermate: the application did not finish answering 'settle' within 120s` | It stopped answering. `--timeout` raises the bound; a hang is usually the finding |
 | `ottermate: the application exited on its own, status 1` | Printed after a `--launch` run where the application died before being shut down |
 | `err did not settle within 2000ms (frame still owed)` | The loop never caught up — a genuine stall, and worth keeping |
+| `err the timeline did not go quiet within 10000ms …` | Something on the clock never ends — a repeating cue. Use `await` on a landmark instead; `KronoGui.whyBusy()` names what is running |
 | Non-ASCII coming back as `?` | Fixed: replies print as UTF-8. If your console still shows boxes, that is its font, not the reply |
 
 ---

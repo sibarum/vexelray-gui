@@ -16,6 +16,8 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static sibarum.kronometer.Dur.ms;
 
@@ -147,6 +149,54 @@ class KronoGuiTest {
 
             krono.tick(ms(16));
             assertEquals(1, fired.get(), "the posted work should have run on the first tick");
+        }
+    }
+
+    /**
+     * What an automation driver's {@code settle} reads, from a thread that does not tick: busy from the moment a
+     * handler starts a ramp — before any tick has placed it, which is the case that photographed a fade
+     * part-way through — until the tick that finishes it, and quiet after.
+     */
+    @Test
+    @DisplayName("quiescentAtLastTick is busy from the post, through the ramp, and quiet after")
+    void quiescenceIsReadableFromAnotherThreadAndCountsAPostBeforeItsTick() throws Exception {
+        try (KronoGui krono = headless()) {
+            krono.tick(ms(16));
+            assertTrue(krono.quiescentAtLastTick(), "nothing scheduled, nothing animating");
+
+            Thread handler = Thread.ofPlatform().start(
+                    () -> krono.ramp(ms(100), Ease.LINEAR, p -> { }, () -> { }));
+            handler.join();
+            assertFalse(krono.quiescentAtLastTick(),
+                    "posted and not yet placed: the last sample says quiet, and the fade is already on its way");
+
+            krono.tick(ms(32));
+            assertFalse(krono.quiescentAtLastTick(), "mid-flight");
+            for (int frame = 3; frame <= 12; frame++) {
+                krono.tick(ms(16).times(frame));
+            }
+            assertTrue(krono.quiescentAtLastTick(), "the ramp has landed and nothing is left to do");
+        }
+    }
+
+    @Test
+    @DisplayName("a repeating cue is never quiescent, so quiescentAtLastTick never says it is")
+    void aRepeatingCueNeverGoesQuiet() {
+        try (KronoGui krono = headless()) {
+            krono.every(ms(30), () -> { });
+            for (int frame = 1; frame <= 10; frame++) {
+                krono.tick(ms(16).times(frame));
+                assertFalse(krono.quiescentAtLastTick(), "frame " + frame);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("ramp still refuses a non-positive duration at the call, not later on the timeline")
+    void rampRefusesANonPositiveDurationAtTheCall() {
+        try (KronoGui krono = headless()) {
+            assertThrows(IllegalArgumentException.class,
+                    () -> krono.ramp(ms(0), Ease.LINEAR, p -> { }, () -> { }));
         }
     }
 

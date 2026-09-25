@@ -30,7 +30,6 @@ import dev.vexelray.vulkan.vk.VkLoader;
 import dev.vexelray.vulkan.vk.VulkanDevice;
 import dev.vexelray.vulkan.vk.VulkanInstance;
 
-import javax.imageio.ImageIO;
 import java.io.File;
 
 /**
@@ -246,7 +245,7 @@ final class GuiWindow implements AutoCloseable {
         // Moving atomically makes "the file is there" mean "the file is complete", for every consumer, forever.
         File target = new File(path);
         File tmp = new File(target.getAbsolutePath() + ".part");
-        ImageIO.write(GuiApp.toImage(rgba, w, h), "PNG", tmp);
+        PngWriter.write(rgba, w, h, tmp.toPath());
         try {
             java.nio.file.Files.move(tmp.toPath(), target.toPath(),
                     java.nio.file.StandardCopyOption.REPLACE_EXISTING,

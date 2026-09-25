@@ -16,6 +16,7 @@ import dev.vexelray.os.NativeWindow;
 import dev.vexelray.os.WindowConfig;
 import dev.vexelray.shader.ComposedShader;
 import dev.vexelray.text.AtlasData;
+import dev.vexelray.text.AtlasPixels;
 import dev.vexelray.text.GlyphLayout;
 import dev.vexelray.text.TextLayout;
 import dev.vexelray.vulkan.present.AtlasTexture;
@@ -34,12 +35,8 @@ import dev.vexelray.vulkan.vk.VkLoader;
 import dev.vexelray.vulkan.vk.VulkanDevice;
 import dev.vexelray.vulkan.vk.VulkanInstance;
 
-import javax.imageio.ImageIO;
-import java.awt.image.BufferedImage;
-import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.UncheckedIOException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -53,7 +50,6 @@ import java.util.List;
 public final class GuiApp implements AutoCloseable {
 
     private static final String ATLAS_JSON = "/dev/vexelray/text/atlas/primary.json";
-    private static final String ATLAS_PNG = "/dev/vexelray/text/atlas/primary.png";
 
     // Shared engine context — one GPU bring-up serves every window.
     private final NativePlatform platform;
@@ -1147,7 +1143,7 @@ public final class GuiApp implements AutoCloseable {
                 // it presents — which is what makes the image kind checkable without a window.
                 byte[] rgba = OffscreenDraw.toRgba(device, rp.handle(), pipeline, width, height, vb.handle(),
                         atlas.descriptorSet(), bind(runs, vertexCount, noImage), bgR, bgG, bgB, 1f);
-                ImageIO.write(toImage(rgba, width, height), "PNG", new File(path));
+                PngWriter.write(rgba, width, height, Path.of(path));
             }
         }
     }
@@ -1340,43 +1336,15 @@ public final class GuiApp implements AutoCloseable {
                 Vk.SHADER_STAGE_FRAGMENT_BIT, 0, dynamicViewport);
     }
 
+    /**
+     * The font atlas's pixels, already RGBA8: vexelray-text ships them beside the PNG, so nothing here decodes one
+     * (the framework decodes nothing, and decoding a PNG in Java means AWT).
+     */
     private static byte[] loadAtlasRgba(int[] sizeOut) {
-        try (InputStream in = GuiApp.class.getResourceAsStream(ATLAS_PNG)) {
-            if (in == null) {
-                throw new IllegalStateException("atlas PNG not found on classpath: " + ATLAS_PNG);
-            }
-            BufferedImage img = ImageIO.read(in);
-            int w = img.getWidth();
-            int h = img.getHeight();
-            sizeOut[0] = w;
-            sizeOut[1] = h;
-            byte[] rgba = new byte[w * h * 4];
-            for (int y = 0; y < h; y++) {
-                for (int x = 0; x < w; x++) {
-                    int argb = img.getRGB(x, y);
-                    int i = (y * w + x) * 4;
-                    rgba[i] = (byte) ((argb >> 16) & 0xFF);
-                    rgba[i + 1] = (byte) ((argb >> 8) & 0xFF);
-                    rgba[i + 2] = (byte) (argb & 0xFF);
-                    rgba[i + 3] = (byte) ((argb >> 24) & 0xFF);
-                }
-            }
-            return rgba;
-        } catch (IOException e) {
-            throw new UncheckedIOException("failed reading atlas PNG " + ATLAS_PNG, e);
-        }
-    }
-
-    static BufferedImage toImage(byte[] rgba, int w, int h) {
-        BufferedImage image = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
-        for (int y = 0; y < h; y++) {
-            for (int x = 0; x < w; x++) {
-                int i = (y * w + x) * 4;
-                image.setRGB(x, y, ((rgba[i + 3] & 0xFF) << 24) | ((rgba[i] & 0xFF) << 16)
-                        | ((rgba[i + 1] & 0xFF) << 8) | (rgba[i + 2] & 0xFF));
-            }
-        }
-        return image;
+        AtlasPixels pixels = AtlasPixels.primary();
+        sizeOut[0] = pixels.width();
+        sizeOut[1] = pixels.height();
+        return pixels.rgba();
     }
 
 }

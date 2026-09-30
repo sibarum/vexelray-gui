@@ -116,6 +116,8 @@ public final class GuiApp implements AutoCloseable {
     private long maxIdleNanos = 200_000_000L;        // 5 Hz
     /** Shortest gap between presented frames. See {@link #maxFrameRate}. */
     private long minFrameNanos = 0L;                 // uncapped
+    /** Set by {@link #postWake}, consumed by the park: how a wake is told apart from OS input. */
+    private final java.util.concurrent.atomic.AtomicBoolean wakePosted = new java.util.concurrent.atomic.AtomicBoolean();
 
     /** The window a modal dialog is showing in, or null when nothing is modal. Main thread. */
     private NativeWindow modal;
@@ -906,8 +908,9 @@ public final class GuiApp implements AutoCloseable {
      * means "as fast as you can", and on a presenter that does not block that is 140 fps to show a
      * 60 Hz display. This bounds it without involving the presenter.
      *
-     * <p>Costs nothing in input latency: the wait ends early on OS input regardless, so this limits
-     * only how often the loop draws of its own accord.
+     * <p>Costs nothing in input latency: the wait ends early on OS input regardless. It does bound the
+     * frames a {@link #postWake} earns: a wake is remembered, not dropped, and draws no sooner than this
+     * gap after the last present. A wake that lands together with OS input is held to the same gap.
      */
     public GuiApp maxFrameRate(long minFrameNanos) {
         this.minFrameNanos = Math.max(0L, minFrameNanos);
@@ -918,6 +921,7 @@ public final class GuiApp implements AutoCloseable {
         if (Probe.ON) {
             Probe.mark(Lane.FRAME, "wake.post", "nudging the OS message queue");
         }
+        wakePosted.set(true);
         main.window.postWake();
     }
 
@@ -1023,6 +1027,8 @@ public final class GuiApp implements AutoCloseable {
             // are where a frame actually went. The wait below is deliberately outside it - a loop parked on an
             // empty event queue is idle, not slow, and counting the park as frame time would make a perfectly
             // healthy render-on-demand application look like the worst offender in the table.
+            wakePosted.set(false);   // a wake from here on was posted during this frame, so it is pending for the next
+            long frameStarted = System.nanoTime();   // the gap the ceiling holds is frame start to frame start
             try (Zone frameZone = Probe.zone(Lane.FRAME, "frame")) {
                 running = main.frame(beforeFrame) || mainGate.keepAlive(main.window, gui.handlers());
             }
@@ -1057,7 +1063,7 @@ public final class GuiApp implements AutoCloseable {
                 }
                 // The ceiling applies always. A zero budget means "immediately", which on a presenter
                 // that does not block is as fast as the machine goes; this is what stops that.
-                budget = Math.max(budget, minFrameNanos);
+                budget = Math.max(budget, minFrameNanos - (System.nanoTime() - frameStarted));
                 // The heartbeat, and the thing that makes a gap in the log readable (docs/reference/automation.md §4).
                 //
                 // A run is read by sorting on time and looking for long stretches with no frame in them. That
@@ -1078,6 +1084,15 @@ public final class GuiApp implements AutoCloseable {
                     // time is the signature of a loop that is spinning rather than sleeping.
                     try (Zone waitZone = Probe.idleZone(Lane.FRAME, "wait for events")) {
                         main.window.waitEvents(budget);
+                        // A wake ends the park like OS input does, so the ceiling would not hold for it.
+                        // Re-park for what is left of the gap while the only thing that woke us was a wake;
+                        // it stays pending, so the next iteration draws it. OS input still ends the re-park.
+                        long gapEnds = frameStarted + minFrameNanos;
+                        long left;
+                        while (minFrameNanos > 0 && wakePosted.getAndSet(false)
+                                && (left = gapEnds - System.nanoTime()) > 0) {
+                            java.util.concurrent.locks.LockSupport.parkNanos(left);
+                        }
                     }
                 }
             }

@@ -3,9 +3,109 @@
 Deferred work, each with enough context to pick up cold. Nothing here is a bug in shipped behaviour; it is work
 that was identified while doing something else and correctly left alone at the time. There was one exception,
 §6.2 — not a bug when it was written, and one from the moment the framework began installing the dialogs —
-and it is fixed.
+and it is fixed. There is now another, §0.1, and it is not.
 
 Ordered within each section by "would I regret not doing this", not by size.
+
+---
+
+## 0. Found by the framework's witnesses
+
+Both were found by `vexelray-framework`'s long-running witness (W3), a generated application whose one component
+ticks to itself about a hundred times a second, and are written up there in `docs/architecture.md`, *what the
+long-running witness found* and *what the pacing measurements found*. **§0.1 is a mismatch between the
+documented ceiling and shipped behaviour**, and after measuring it is a question about intent more than a defect.
+§0.2 is documented behaviour that turns out to be a trap.
+
+### 0.1 `GuiApp.maxFrameRate`'s 60 Hz is not in force, and it is not clear it should be
+
+**Revised after measuring the pacing (read this first; the paragraphs below it are the first reading).** On a
+machine whose display appears to run at 144 Hz: an ordinary 600 ms pulse ran **~143 frames a second**, and 35 million
+node writes in 3 s, with a wake behind each, plateaued at **~145**. So the ceiling holds nothing that wakes the
+loop, animations included (the krono clock's wake every tick ends the timed park just as a component's does),
+and **the presenter is what throttles**, to the display's rate. That means:
+
+- There is **no runaway.** The "busy loop at a kilohertz" below was inference and is wrong: the presenter blocks.
+- *Animate at vsync speed* is **already true**, by the presenter and not by any timer.
+- **Enforcing the ceiling would be a regression against that goal**: it would hold a 144 Hz display to 60.
+
+So the decision is what `maxFrameRate` is for. Either it goes, since the presenter is already the pacing, or it
+becomes an opt-in power saver below the display's rate, in which case it wants to be derived from the display
+rather than a constant, and *then* the wake has to be made honourable, which is what the rest of this entry
+works out. Nothing below is worth building until that is answered.
+
+Also measured, and not a problem: a wake from a parked loop reaches the next frame's start in a median
+**1.03 ms** (p95 1.6 ms), so the park does not cost latency on this path. The click path measures the same: a median
+1.3 ms from the frame that takes a click to the frame that draws its result. (An earlier version of this entry
+blamed Tactroller's 125 Hz polling thread for input latency; the framework never starts it and takes a `snapshot()`
+per frame instead, so that was wrong.) **What the measurements did find is a hiccup at the start of an animation**:
+one or two frame gaps of 20 to 30 ms, at about 30 ms and 60 ms in, every time, in a loop whose median gap is a steady
+6.94 ms. See `vexelray-framework/docs/architecture.md`, *what the pacing measurements found*.
+
+**The ceiling turns out to cost something, at one moment.** Probing that hiccup showed the loop's ceiling wait
+delays the frame after a click by 16.6 ms whenever a `krono.ramp` posted from a handler is waiting for its first
+tick: the post lands after the frame's CLOCK stage, nothing wakes the loop again, and `budget = max(0, minFrameNanos)`
+parks it for the whole gap. So in the animation's first ~20 to 30 ms the ceiling is the *cause* of the late frame,
+not the protection it is meant to be, which is a second argument for the "drop it" answer above. (On Windows 11 the
+wait then also overshoots to ~28 ms for a process whose window is not in front; see `vexelray-os-windows` below.)
+
+**The first reading, kept because its diagnosis of the mechanism still holds.** A component driving the loop by
+wake, about 100 a second, ran **104 frames a second** against
+`maxFrameRate(16_666_666)`, the 60 Hz the framework sets. Idle, the same loop ran about 7 a second and parked as
+designed, and stopped, it went back to parking, so the wake path itself is sound. It is the ceiling that is not.
+
+**Why:** the ceiling is a timed park. `budget = Math.max(budget, minFrameNanos)`, then
+`main.window.waitEvents(budget)`, so it bounds how long the loop *waits* and not how soon it *draws*. A wake
+posted by a worker (`GuiApp.postWake`, which is `main.window.postWake()`) is a message on that queue and ends the
+park early, exactly as OS input does. `maxFrameRate`'s own Javadoc says so — *"the wait ends early on OS
+input regardless"* — and a wake from a worker cannot be told apart from it. So the ceiling limits only frames the
+loop draws of its own accord (an animation), and anything that wakes it draws at its own rate until the presenter
+blocks.
+
+**Why it matters:** *(withdrawn: this said a busy loop at a kilohertz, and the storm measurement shows the
+presenter holds the loop at the refresh rate. The ceiling only matters if it is meant to lower that rate.)*
+
+**The shape of a fix, if the ceiling is kept:** a wake earns a frame no sooner than the ceiling allows since the last present, and is
+**remembered, not dropped**, since dropping a wake is the parked-loop failure this whole design exists to prevent.
+OS input has to stay exempt (*"costs nothing in input latency"* is the promise), so the two have to be told apart:
+either `postWake` sets a flag the loop reads before deciding how long to wait, or the loop re-parks for the
+remainder of the gap when the only thing that woke it was a wake. It changes frame timing under an unchanged
+signature, which is why it is a decision and not a slipped-in line.
+
+**Status: a fix is drafted in `GuiApp` (uncommitted) and does not work on Windows, measured.** It sets a
+`wakePosted` flag in `postWake` and re-parks for the rest of the gap when the flag is what ended the wait. With
+it installed, the witness still ran **99.8 frames a second**. The cause is one level down: `Win32Window.waitEvents`
+is `MsgWaitForInput`, which returns while any message is pending, and `postWake` posts `WM_NULL`, which stays in
+the queue until `pumpEvents` reads it. So the re-park's second `waitEvents(left)` returns at once with the wake
+message still queued, the flag is already consumed, and the loop draws. (`NativeWindow.waitEvents` says as much:
+*"peek drains whatever is there, this waits for there to be something"*.) The draft's logic is right and its
+premise, that a wait can be repeated, is not true of this backend. Two ways out: give `postWake` a wake that
+`waitEvents` consumes (a Win32 event object waited on beside the queue, so a wake never leaves a message
+behind), which is the clean one and is in `vexelray-os-windows`; or drain the queue before the re-park, which
+needs someone to say it is safe to call `pumpEvents` there, since it is also where input is read. The other
+backends need the same look before they are assumed to behave.
+
+**Guard:** the framework's `PacingMeasurementTest` prints the numbers (`PACING pulse #1 frames 88 in 610ms`,
+`PACING storm frames 434 in 3000ms`) and asserts nothing. Whichever way the decision goes, a harness test in
+`vexelray-gui-harness` is the right place for the assertion: frames counted across a pulse against the intended
+rate.
+
+### 0.2 `settle` answers `ok` for an application that never goes quiet
+
+The witness's metronome ticks to itself and `Automation.settle` answered `ok`, in the gap between two ticks. That
+is what its Javadoc says — *"exact about the frame loop and the clock, and blind to application work still in
+flight"* — and a component ticking to itself is that work. It is the same blindness the `Gui.frameOwed` note
+records from the other side.
+
+**The trap:** there is no way for the socket to say *this application does not go quiet*. A script that calls
+`settle` before `shot` on an animating window photographs it mid-change and is told `ok`, which is the flakiness
+`settle` was written to remove.
+
+**Two answers, and they can both be right.** An application-declared busy flag that `settle` also waits on, with
+the framework's own components (`Placement`, in `vexelray-framework`) setting it while a delivery is in flight or
+a mailbox is non-empty; or a louder sentence in `docs/reference/automation.md` that a photograph wants a landmark
+to wait on, which is what every assertion in the witness does. The first is more work and removes the trap; the
+second is a line and leaves it.
 
 ---
 
@@ -572,7 +672,7 @@ of doing this first was that fifteen components should not each remember their o
   something elsewhere. Sections are declared, never sorted — the order on screen is the order in the source, and
   no comparator quietly decides that `Look` comes before `Sampling`.
 
-- **`SplitPane`.** A draggable divider with a per-pane minimum and a collapse threshold, persisted through
+- ~~**`SplitPane`.**~~ **Done, without the collapse threshold.** Found by Vexplore (see `vexplore/docs/components.md`). One pane holds the size and the other takes the rest, per-pane minimums, displacement-read drag, `onResize` in dp for `WindowMemory`. **Still open:** a collapse threshold, and the resize `CursorShape` (it takes `GRAB` like `Table`). Original note: a draggable divider with a per-pane minimum and a collapse threshold, persisted through
   `WindowMemory` beside the window bounds that already live there. `Popout` covers the docking half; the divider
   does not exist.
 - **`Toolbar` with overflow.** A real component precisely because of the no-movement rule: measure what fits,
@@ -587,7 +687,7 @@ of doing this first was that fifteen components should not each remember their o
   long operation has a value that changes and usually a cancel beside it.
 - **`Toasts`.** A non-modal transient stack — the same ordering problem `ModalQueue` already solves, with a
   timeout and no scrim.
-- **`StatusBar` and `Breadcrumb`.** Both are projections of state that already exists (`SemanticSnapshot`,
+- ~~**`StatusBar` and `Breadcrumb`.**~~ **Done, but as projections of what the caller hands them, not of the read model** -- the question below is still open: whether `SemanticSnapshot` and `nav.Address` could have supplied them. Original note: both are projections of state that already exists (`SemanticSnapshot`,
   `nav.Address`) rather than new state, which is the reason to build them: they are a cheap check that the read
   model is sufficient.
 

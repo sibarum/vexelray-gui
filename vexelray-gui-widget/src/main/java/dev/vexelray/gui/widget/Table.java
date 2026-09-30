@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.BiConsumer;
 
 /**
  * Rows of columns: a header that stays put, columns the user can resize and sort by, and a body that is a
@@ -142,6 +143,7 @@ public final class Table<T> implements AutoCloseable {
     private final Node header;
     private final List<Node> headerCells = new ArrayList<>();
     private final List<Node> sortMarks = new ArrayList<>();
+    private final List<Node> headerLabels = new ArrayList<>();
     private final List<Subscription> subs = new ArrayList<>();
 
     /** The cells of every realized row, so a solved width can be written to them. Pruned against the body. */
@@ -161,6 +163,7 @@ public final class Table<T> implements AutoCloseable {
 
     private int sortColumn = -1;
     private Sort sort = Sort.NONE;
+    private volatile BiConsumer<Integer, Sort> onSort = (column, direction) -> { };
 
     public Table(Gui gui, float rowRem, List<Column<T>> columns) {
         this.gui = Objects.requireNonNull(gui, "gui");
@@ -222,6 +225,18 @@ public final class Table<T> implements AutoCloseable {
         }
         markSorted();
         apply();
+        onSort.accept(sortedColumn(), sortDirection());
+        return this;
+    }
+
+    /**
+     * Told the order after every change to it, whether the application asked ({@link #sortBy}) or the user clicked
+     * a header. The column is -1 and the direction {@link Sort#NONE} when the rows are in the order they were
+     * given. It exists because a status line that says "sorted by modified" has nowhere else to learn that the
+     * user just changed it. Runs on the thread that changed the order.
+     */
+    public Table<T> onSort(BiConsumer<Integer, Sort> handler) {
+        this.onSort = handler == null ? (column, direction) -> { } : handler;
         return this;
     }
 
@@ -242,6 +257,19 @@ public final class Table<T> implements AutoCloseable {
     /** The body, for the things a list already answers: reveal, activation, how many rows exist. */
     public ListView<T> rows() {
         return body;
+    }
+
+    /**
+     * How the column titles are set: the face, the size and the ink. A table's header is chrome the application
+     * has a look for — a small uppercase mono label in one design, the body face in another — and until it could
+     * say so every table on the framework came out in the default size, so a screen whose lists were meant to
+     * recede had a header louder than its rows.
+     */
+    public Table<T> headers(int face, Length size, Role ink) {
+        for (Node label : headerLabels) {
+            label.font(face).textSize(size).textColor(gui.theme().color(ink));
+        }
+        return this;
     }
 
     /** A column's header cell. For tests and tools; an application states a column and reads nothing. */
@@ -324,6 +352,7 @@ public final class Table<T> implements AutoCloseable {
             gui.onDrag(grip, e -> resize(index, e));
 
             headerCells.add(cell);
+            headerLabels.add(label);
             sortMarks.add(mark);
             header.append(cell);
         }

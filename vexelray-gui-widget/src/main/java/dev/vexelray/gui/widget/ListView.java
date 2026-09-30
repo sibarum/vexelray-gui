@@ -21,6 +21,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 /**
  * A list whose retained tree holds <b>viewport-many rows however long the list is</b>. The invariant, and the
@@ -92,6 +93,11 @@ public final class ListView<T> implements AutoCloseable {
     private final Map<T, Node> shown = new HashMap<>();
 
     private volatile Consumer<T> onActivate = t -> { };
+
+    /** Rows that are marked without being selected, and how selected and marked rows look. See {@link #marked}. */
+    private volatile Predicate<T> marked = t -> false;
+    private volatile Role selectedLook = Role.SELECTION;
+    private volatile Role markedLook = Role.HIGHLIGHT;
 
     /** Whether a plain click flips a row's membership instead of replacing the selection. See {@link #clickToggles}. */
     private volatile boolean clickToggles;
@@ -185,6 +191,41 @@ public final class ListView<T> implements AutoCloseable {
      */
     public ListView<T> clickToggles(boolean toggles) {
         this.clickToggles = toggles;
+        return this;
+    }
+
+    /**
+     * Rows that are <b>marked</b>: wearing a fill of their own without being selected.
+     *
+     * <p>A mark is a fact about a row that is not a choice — a search hit, a file a suggestion would reach, a row
+     * that differs from the other folder — and it exists because the alternative is to make it a selection, which
+     * is a claim about what the user chose. A preview that <em>is</em> the selection cannot be ignored for free:
+     * the user who wanted only the file they clicked has to undo it. Marks are read through a predicate rather than
+     * held as a set, so the list needs no copy of the application's state, and a row realized by a later scroll
+     * asks the same question the rows already on screen were asked.
+     *
+     * <p>Selected outranks marked. Call again (or {@link #remark}) when the answer changes.
+     */
+    public ListView<T> marked(Predicate<T> marked) {
+        this.marked = marked == null ? t -> false : marked;
+        restyleAll();
+        return this;
+    }
+
+    /** Re-read {@link #marked}'s predicate for every row on screen, when what it answers has changed. */
+    public ListView<T> remark() {
+        restyleAll();
+        return this;
+    }
+
+    /**
+     * What a selected row and a marked row look like, as roles — {@code SELECTION} and {@code HIGHLIGHT} unless
+     * an application says otherwise. A role rather than a colour, so a look change stays an edit to the theme.
+     */
+    public ListView<T> looks(Role selected, Role marked) {
+        this.selectedLook = selected == null ? Role.SELECTION : selected;
+        this.markedLook = marked == null ? Role.HIGHLIGHT : marked;
+        restyleAll();
         return this;
     }
 
@@ -521,12 +562,17 @@ public final class ListView<T> implements AutoCloseable {
                 gui.theme().color(Objects.equals(selection.lead(), item) ? Role.ACCENT : Role.NONE));
     }
 
+    /** The fill an item wears: selected outranks marked, because being chosen is the stronger fact. */
+    private Role look(T item) {
+        return selection.isSelected(item) ? selectedLook : marked.test(item) ? markedLook : Role.NONE;
+    }
+
     private dev.vexelray.canvas.Color fill(T item) {
-        return gui.theme().color(selection.isSelected(item) ? Role.SELECTION : Role.NONE);
+        return gui.theme().color(look(item));
     }
 
     private dev.vexelray.canvas.Color hovered(T item, dev.vexelray.gui.core.input.InteractionState state) {
-        return gui.theme().color(selection.isSelected(item) ? Role.SELECTION : Role.NONE, state);
+        return gui.theme().color(look(item), state);
     }
 
     @Override

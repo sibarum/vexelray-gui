@@ -336,6 +336,23 @@ The controls themselves:
   a handler and the user meets it by being corrected. Options are `(label, value)`, so what comes back out of
   `onChange` is what the application already calls it rather than an index that quietly means something else
   after an insert.
+- **`Button`** — and, with `toggle(true)`, a **chip**. It is here because what a hand-rolled button leaves out is
+  the keyboard: Enter and Space are claimed at `ClaimScope.FOCUSED`, and a disabled button leaves the focus order
+  rather than ignoring a click. Three kinds (`PRIMARY`, `SECONDARY`, `GHOST`) name how much a button is asking for,
+  never a colour. A chip's `pressed(v)` acts as the user would and `show(v)` does not, for `Toggle`'s reason.
+- **`Breadcrumb<T>`** — a chain from the root to the current place, each ancestor a ghost `Button`. A projection:
+  it owns no state, is handed the chain, and collapses from the left past `maxSegments` by *count*, never by
+  measurement, because a bar that re-decided what to show as the window moved would be the movement the standing
+  rule forbids.
+- **`StatusBar`** — declared slots on a left and a right side. A slot's place never changes, only what it says, so a
+  count gaining a digit moves nothing before it; `minWidth` reserves room for one that is known to grow.
+- **`SplitPane`** — two panes and a draggable divider, side by side or stacked. **One pane has the size and the
+  other takes the rest** (`sized(Pane)`), so a resized window moves the far edge and leaves the divider where the
+  user put it. Read as a displacement, like `Table`'s grip; `onResize` reports the size in dp for `WindowMemory`.
+- **`ListView.marked` / `looks`** — a row can be *marked* without being selected: a search hit, a file a suggestion
+  would reach, a row that differs from the other folder. A mark is a fact that is not a choice, so previewing one
+  does not have to be undone. `Table.headers(face, size, ink)` styles the column titles and `Table.onSort` says when
+  the order changed, however it changed.
 - **`Select<T>`** — the other end of the same choice: one line high whatever the list holds, with the
   alternatives a click away. A closed strip over a floating `ListView`, so a select over ten thousand values
   costs a popup's worth of nodes and opening scrolls to the current one rather than to the top. **Multi-select

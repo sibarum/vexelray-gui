@@ -27,6 +27,9 @@ import java.util.List;
  * @param keepGoing    run the rest of the script after a reply that begins {@code err}
  * @param quiet        print only {@code err} replies
  * @param help         print the usage and stop
+ * @param view         commands that set what is being photographed, run before anything else: the window to
+ *                     act on, then density, zoom and size, from {@code --window}, {@code --dpi}, {@code --zoom}
+ *                     and {@code --size}
  */
 record Options(int port,
                Path script,
@@ -36,7 +39,8 @@ record Options(int port,
                int replyTimeoutSeconds,
                boolean keepGoing,
                boolean quiet,
-               boolean help) {
+               boolean help,
+               List<String> view) {
 
     /** How long an application may take to say it is listening. Vulkan, a window, and a first frame. */
     static final int DEFAULT_LAUNCH_TIMEOUT_SECONDS = 60;
@@ -46,6 +50,7 @@ record Options(int port,
 
     Options {
         launch = List.copyOf(launch);
+        view = List.copyOf(view);
     }
 
     boolean launching() {
@@ -91,6 +96,10 @@ record Options(int port,
         boolean keepGoing = false;
         boolean quiet = false;
         boolean help = false;
+        String window = null;
+        String dpi = null;
+        String zoom = null;
+        String size = null;
         List<String> trailing = new ArrayList<>();
 
         for (int i = 0; i < args.length; i++) {
@@ -120,6 +129,14 @@ record Options(int port,
                 keepGoing = true;
             } else if (arg.equals("--quiet") || arg.equals("-q")) {
                 quiet = true;
+            } else if (arg.equals("--window")) {
+                window = value(args, ++i, "--window");
+            } else if (arg.equals("--dpi")) {
+                dpi = value(args, ++i, "--dpi");
+            } else if (arg.equals("--zoom")) {
+                zoom = value(args, ++i, "--zoom");
+            } else if (arg.equals("--size")) {
+                size = value(args, ++i, "--size");
             } else if (arg.startsWith("--")) {
                 throw new UsageException("no option '" + arg + "'");
             } else {
@@ -131,7 +148,22 @@ record Options(int port,
 
         if (help) {
             return new Options(AutomationClient.DEFAULT_PORT, null, null, List.of(),
-                    launchTimeout, replyTimeout, keepGoing, quiet, true);
+                    launchTimeout, replyTimeout, keepGoing, quiet, true, List.of());
+        }
+        // In the order that makes each one mean what it says: the window first, since the rest are about it;
+        // then density and zoom, which an em-sized --size is measured against; then the size.
+        List<String> view = new ArrayList<>();
+        if (window != null) {
+            view.add("window " + window);
+        }
+        if (dpi != null) {
+            view.add("dpi " + dpi);
+        }
+        if (zoom != null) {
+            view.add("zoom " + zoom);
+        }
+        if (size != null) {
+            view.add("resize " + size);
         }
         if (!launch.isEmpty() && port >= 0) {
             // Not merely redundant. A launched application is told its port by whoever wrote the --launch
@@ -147,7 +179,7 @@ record Options(int port,
                     + "' are two sources of commands; give one");
         }
         return new Options(port < 0 ? AutomationClient.DEFAULT_PORT : port, script, command, launch,
-                launchTimeout, replyTimeout, keepGoing, quiet, false);
+                launchTimeout, replyTimeout, keepGoing, quiet, false, view);
     }
 
     private static String value(String[] args, int at, String option) {

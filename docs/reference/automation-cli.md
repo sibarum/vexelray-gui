@@ -12,15 +12,17 @@ with "right but unreachable", which is the same defect wearing different clothes
 
 > **Status.** Step 1 of §6 has landed: `vexelray-gui-automation-cli`, the client, with `--launch` — and,
 > since it was reachable only by typing the full path of a versioned jar, an `ottermate` wrapper beside it
-> (§10). Step 2 has not: none of the verbs of §5 exist.
+> (§10). **Step 2 has landed (2026-09-30):** `zoom`, `dpi`, `resize`, `size`, and `windows` / `window` for an
+> application that owns more than one window; `ottermate` takes `--window`, `--dpi`, `--zoom` and `--size` to set the
+> view before a command. See §5.
 >
 > **Step 3 happened anyway, which is the sequence §6 says to avoid.** On 2026-09-10 `calculator-vexel-demo`
 > removed `Capture.java`, its `CaptureTreeTest`, the `--capture` pre-dispatch and the scene ladder, on §2's
 > reasoning rather than on this document's ordering — and the cost §6 predicted is the cost that arrived:
-> `smallest` and `zoom` have no replacement, so the minimum-size picture that has twice caught a clipped
-> bottom row cannot be taken at all until V2 exists. `mainframe-template`'s `vexel-desktop` still carries its
-> copy, so §7's removal list is half done and the stack sits in the state that section was written to keep it
-> out of: one application with no capture and no `resize`, one with both.
+> `smallest` and `zoom` had no replacement, so the minimum-size picture that has twice caught a clipped
+> bottom row could not be taken at all until V2 existed (it can now: `resize 24emx16em`). The framework's
+> `vexel-desktop` template has since dropped its `Capture.java` too, so the stack is no longer split: screenshots
+> are `ottermate`'s everywhere. `mainframe-template`'s copy, if it still exists, is the one left to remove.
 >
 > Everything below is the design; §10 records what shipped and where it differs.
 
@@ -142,7 +144,30 @@ dependency block for its own reasons.
 
 The calculator's `Capture` has four scenes: `zoom` (a 7-step ladder), `smallest` (the tree at exactly
 `minSize`), `panels` (every rail panel), and one named panel. Three capabilities were missing before those can
-move to the socket; V3 has landed, and V1 and V2 remain.
+move to the socket; all three have landed. What shipped, in one place:
+
+| Verb | Does |
+| --- | --- |
+| `size` | the window's pixels, zoom, dpi and em, in one line |
+| `zoom [factor]` | reads or sets the zoom; **answers with the factor it became**, and says when that is not the one asked for |
+| `dpi [factor]` | reads or sets the density factor, the same way. It is the framework's factor, not a real surface: `dpi 2` makes every em twice the pixels in the *same* window, so a denser display's proportions also want `resize` |
+| `resize <w>x<h>` | sizes the drawable area. **Pixels or em, from outside**: `1024x768`, `800px 40em`, `46emx30em`. An em resolves against the zoom and density in force. Answers with the size the window became |
+| `windows` | what the application has open: number, name, size and view, `*` on the chosen one |
+| `window <name\|n>` | chooses which window the other verbs act on (default: the main one) |
+
+The em-only rule is for an application's *own* layout and interactivity, where a pixel is a value that will be
+wrong at another zoom. A caller outside it is choosing a window, and a window is pixels; em is offered because it
+lets "the tree at exactly its minimum" be asked for without redoing the arithmetic.
+
+Each window has its own `Gui`, bus and pointer, so `windows` / `window` select a whole driver (`Automation` per
+window, behind `Windows`) rather than re-pointing one. A window that closes after being chosen is reported as gone,
+never silently replaced by another.
+
+`ottermate` sets the view before a command: `--window`, `--dpi`, `--zoom`, `--size`, in that order whatever order
+they were typed, and the run stops if one cannot be set, since a picture at the wrong zoom reported as the right
+one is the failure this tool exists to rule out.
+
+What was specified, for the record:
 
 - **V1 — `zoom <factor>`.** `Gui.zoom(float)` already exists; there is no verb. **It must clamp to the
   application's own `Appearance.ZoomRange`**, not the library default — a verb that photographs a zoom level
@@ -203,9 +228,9 @@ move to the socket; V3 has landed, and V1 and V2 remain.
 
 1. ~~**The client** (§3, §4)~~ — **landed**; see §10. Fixed the reachability defect, changed no existing
    behaviour.
-2. **V1–V3** (§5) — closes the capability gap. **V3 landed; V1 and V2 next.**
-3. **Remove `--capture`** (§7) — calculator and template together. **Half done, out of order**: the
-   calculator's went on 2026-09-10; the template's is still there.
+2. ~~**V1–V3** (§5)~~ — **landed**, with `dpi`, `size` and window selection beside them.
+3. **Remove `--capture`** (§7) — calculator and template together. **Done for both** (the calculator's on
+   2026-09-10, `vexelray-framework`'s template on 2026-09-30); `mainframe-template`'s copy is the one left.
 
 **3 before 2 is the sequence to avoid.** The calculator's `smallest` scene has twice caught a defect nothing
 else did — most recently a bottom key row clipped at minimum size after a tab strip was added, found because
@@ -232,8 +257,9 @@ is still the right one for the template**, which is the copy still standing.
   asked — though into the calculator's own `WiringTreeTest` and not where it guessed: the panel-name one did
   not die with the scene list, because the names a driving script types are the same names, and the other two
   reach the real wiring through `VexelApplication.tree` from here as well as they would from the framework
-- `mainframe-template` `vexel-desktop`: `Capture.java`, the `App.java` dispatch, the usage lines — **still
-  there**, and §6 is why it should stay there until V2 exists
+- ~~`vexelray-framework-template` `vexel-desktop`: `Capture.java`, the `App.java` dispatch, the usage lines~~ —
+  **done, 2026-09-30**, once V1–V3 had landed, which is the order §6 asked for. The README it generates teaches
+  `ottermate` instead. (`mainframe-template`'s older copy is the one left.)
 
 **Stays, deliberately:**
 
@@ -265,8 +291,9 @@ binary — is `mainframe`'s territory if it is anyone's, and R3 exists so this t
 
 ## 9. Open questions
 
-- **`resize` units.** em, px, or both with a suffix (`resize 46em 30em`)? em is what makes `smallest`
-  expressible without duplicating a conversion, and px is what a bug report quotes.
+- ~~**`resize` units.**~~ **Both, with a suffix, and pixels by default** (`resize 46em 30em`). The em-only rule
+  belongs to an application's own layout; from outside, em is what makes `smallest` expressible without
+  duplicating a conversion and px is what a bug report quotes.
 - **Whether `zoom` and `resize` belong to `WindowControls` or to a wider window API.** Both are things a person
   can already do by dragging a frame, which argues they are window capabilities that automation merely reaches,
   not automation features.
@@ -303,9 +330,16 @@ ottermate [options]                  commands from stdin (a prompt, at a termina
   --launch <command...> start the application, drive it, shut it down; takes the rest of the line
   --launch-timeout <s>  how long it may take to announce a port (default 60)
   --timeout <s>         how long one reply may take (default 120)
+  --window <name|n>     act on this window (default: the main one)
+  --dpi <factor>        set the display density first
+  --zoom <factor>       set the zoom first; clamped to the application's range, and the reply says so
+  --size <w>x<h>        size the window first: pixels, or em with a unit (1024x768, 46emx30em)
   --keep-going          run the rest after a reply that begins err (still exits non-zero)
   --quiet, -q           print only err replies
 ```
+
+The four view options go before `--launch`, which takes the rest of the line, and are sent first, in the order
+window, dpi, zoom, size. The run stops if one answers `err`.
 
 **Requirements, against §3.** R1 attach-by-default, R2 `--launch` reading the port off the child's stdout,
 R3 an empty dependency block, R4 both input forms, R5 the exit status, R6 beside the writer, R7 never a

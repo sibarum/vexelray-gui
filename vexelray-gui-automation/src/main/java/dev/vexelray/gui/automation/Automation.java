@@ -35,7 +35,7 @@ import java.util.Locale;
  * <p>Thread-safe to call from one driver thread. It reads snapshots lock-free and publishes to the bus; it
  * never touches GUI-thread state.
  */
-public final class Automation {
+public final class Automation implements Commands {
 
     /** How long {@link #settle} waits before giving up and saying so. */
     private static final long SETTLE_TIMEOUT_MS = 2_000L;
@@ -72,6 +72,10 @@ public final class Automation {
 
     /** How often {@link #settle} looks at the timeline. Off the frame loop, so this costs the application nothing. */
     private static final long TIMELINE_POLL_MS = 10L;
+
+    /** A width and a height, each a number with an optional px or em, parted by x or by space. */
+    private static final java.util.regex.Pattern SIZE = java.util.regex.Pattern.compile(
+            "(\\d+(?:\\.\\d+)?(?:px|em)?)\\s*(?:x|\\s)\\s*(\\d+(?:\\.\\d+)?(?:px|em)?)");
 
     private final Gui gui;
     private final WindowControls controls;
@@ -116,6 +120,7 @@ public final class Automation {
      * Run one command line and return what to print. Never throws: a driver that dies on a bad command is a
      * driver that loses the session it was in the middle of investigating.
      */
+    @Override
     public String command(String line) {
         String trimmed = line == null ? "" : line.trim();
         if (trimmed.isEmpty()) {
@@ -147,6 +152,10 @@ public final class Automation {
             case "settle" -> settle();
             case "await" -> await(rest);
             case "shot" -> shot(rest);
+            case "size" -> size();
+            case "zoom" -> zoom(rest);
+            case "dpi" -> dpi(rest);
+            case "resize" -> resize(rest);
             case "mark" -> mark(rest);
             case "help" -> HELP;
             default -> "err no command '" + verb + "'; try help";
@@ -640,6 +649,156 @@ public final class Automation {
         return null;
     }
 
+    // --- the view ----------------------------------------------------------
+
+    /**
+     * The window as a camera would meet it: its size in pixels and the three factors an em resolves against.
+     * Everything {@link #zoom}, {@link #dpi} and {@link #resize} can change, read back in one line.
+     */
+    public String size() {
+        float zoom = gui.zoom().value();
+        float dpi = gui.dpi().value();
+        return "ok " + controls.width() + "x" + controls.height() + " zoom=" + number(zoom) + " dpi=" + number(dpi)
+                + " em=" + number(gui.rootEmPx() * zoom * dpi) + "px";
+    }
+
+    /**
+     * Set the zoom factor, wait for the tree to be laid out at it, and say what it became.
+     *
+     * <p>Answers with the <b>actual</b> factor and says so when it is not the one asked for: the application
+     * declares the range it allows ({@link Gui#zoomRange}), and a photograph at a zoom the application would
+     * refuse is a picture of something no user can reach. So an out-of-range request is clamped exactly as the
+     * application's own zoom control would clamp it, and reported rather than granted.
+     */
+    private String zoom(String rest) {
+        if (rest.isBlank()) {
+            return "ok zoom=" + number(gui.zoom().value());
+        }
+        float asked = factor(rest, "zoom");
+        gui.zoom(asked);
+        String failed = relayout();
+        float got = gui.zoom().value();
+        return failed != null ? failed : "ok zoom=" + number(got) + clampNote(asked, got, "zoom");
+    }
+
+    /**
+     * Set the display density, wait for the tree to be laid out at it, and say what it became.
+     *
+     * <p>Density here is the framework's factor and not a real surface: the window's pixel size is whatever it
+     * is, so {@code dpi 2} makes every em twice as many pixels in the <em>same</em> window. A picture at a
+     * denser display's proportions wants {@link #resize} as well.
+     */
+    private String dpi(String rest) {
+        if (rest.isBlank()) {
+            return "ok dpi=" + number(gui.dpi().value());
+        }
+        float asked = factor(rest, "dpi");
+        gui.dpi(asked);
+        String failed = relayout();
+        float got = gui.dpi().value();
+        return failed != null ? failed : "ok dpi=" + number(got) + clampNote(asked, got, "dpi");
+    }
+
+    /**
+     * Size the window's drawable area: {@code resize 1024x768}, {@code resize 1024 768}, or with units --
+     * {@code resize 46em 30em}, {@code resize 800px 40em}. No unit means pixels.
+     *
+     * <p><b>Pixels and em are both allowed from here, and only here.</b> An application's own layout is declared
+     * in em so that it means the same thing at every zoom; a caller outside it is choosing a window, and a window
+     * is pixels. An em is resolved against the current zoom and density, so {@code 46em} is the size a person at
+     * this zoom would get by dragging to 46 ems, and "the tree at its declared minimum" can be asked for without
+     * the caller redoing the em-to-pixel arithmetic.
+     *
+     * <p>Answers with the size the window <b>became</b>, and says so when it is not the one asked for: the
+     * application's minimum and the desktop both have a say.
+     */
+    private String resize(String rest) {
+        if (rest.isBlank()) {
+            return "err resize needs a size, like 1024x768 or 46em 30em";
+        }
+        if (controls.width() <= 0) {
+            return "err there is no window to resize";
+        }
+        java.util.regex.Matcher m = SIZE.matcher(rest.trim().toLowerCase(Locale.ROOT));
+        if (!m.matches()) {
+            return "err resize needs a width and a height, like 1024x768 or 46em 30em";
+        }
+        String[] parts = {m.group(1), m.group(2)};
+        float em = gui.rootEmPx() * gui.zoom().value() * gui.dpi().value();
+        int w = pixels(parts[0], em);
+        int h = pixels(parts[1], em);
+        controls.resize(w, h);
+        long deadline = System.nanoTime() + SETTLE_TIMEOUT_MS * 1_000_000L;
+        while ((controls.width() != w || controls.height() != h) && System.nanoTime() < deadline) {
+            sleepQuietly(SHOT_POLL_MS);
+        }
+        String failed = relayout();
+        if (failed != null) {
+            return failed;
+        }
+        int gotW = controls.width();
+        int gotH = controls.height();
+        String note = gotW == w && gotH == h ? ""
+                : " (asked for " + w + "x" + h + "; the window would not go there)";
+        return "ok " + gotW + "x" + gotH + note;
+    }
+
+    /** Wake the loop so the change just made is drawn, then wait for it: {@code null} once settled. */
+    private String relayout() {
+        gui.wakeForInput();
+        String settled = settle();
+        return settled.startsWith("err") ? settled : null;
+    }
+
+    private static float factor(String text, String what) {
+        float v;
+        try {
+            v = Float.parseFloat(text.trim());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(what + " wants a number, and got '" + text.trim() + "'");
+        }
+        if (!Float.isFinite(v) || v <= 0f) {
+            throw new IllegalArgumentException(what + " wants a positive number, and got '" + text.trim() + "'");
+        }
+        return v;
+    }
+
+    /** {@code 800}, {@code 800px} or {@code 46em} as whole pixels, an em being {@code emPx} of them. */
+    private static int pixels(String text, float emPx) {
+        boolean inEm = text.endsWith("em");
+        String digits = inEm || text.endsWith("px") ? text.substring(0, text.length() - 2) : text;
+        float v;
+        try {
+            v = Float.parseFloat(digits);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("not a size: '" + text + "' (write 800, 800px or 46em)");
+        }
+        int px = Math.round(inEm ? v * emPx : v);
+        if (px <= 0) {
+            throw new IllegalArgumentException("a window cannot be " + px + "px across");
+        }
+        return px;
+    }
+
+    private static String clampNote(float asked, float got, String what) {
+        return Math.abs(asked - got) < 1e-4f ? ""
+                : " (asked for " + number(asked) + "; the application's " + what + " range allows " + number(got) + ")";
+    }
+
+    /** Short and stable: {@code 1.5}, {@code 2}, never {@code 1.5000001}. */
+    private static String number(float v) {
+        String s = String.format(Locale.ROOT, "%.3f", v);
+        return s.replaceAll("0+$", "").replaceAll("\\.$", "");
+    }
+
+    private static void sleepQuietly(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     // --- the rest ----------------------------------------------------------
 
     /**
@@ -742,5 +901,9 @@ public final class Automation {
             "settle                   wait for the loop to catch up, and any animation to finish",
             "await <landmark> <text>  wait until that landmark is named something containing text",
             "shot [path]              photograph this window, and wait for the file (err if none arrives)",
+            "size                     this window's pixels, zoom, dpi and em, in one line",
+            "zoom [factor]            read or set the zoom; clamped to the application's own range, and says so",
+            "dpi [factor]             read or set the display density factor",
+            "resize <w>x<h>           size the window: pixels, or em with a unit (resize 46em 30em)",
             "mark <note>              write why into the correlation log"));
 }

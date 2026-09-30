@@ -46,6 +46,34 @@ public interface WindowControls {
     void capture(String path);
 
     /**
+     * The window's drawable width in pixels — the space the tree is laid out and input arrives in — or
+     * {@code 0} where there is no window. A question rather than a value the GUI holds, like {@link #maximized}:
+     * the window manager can change it without being asked.
+     */
+    default int width() {
+        return 0;
+    }
+
+    /** The window's drawable height in pixels; see {@link #width}. */
+    default int height() {
+        return 0;
+    }
+
+    /**
+     * Ask for the window's <b>drawable</b> area to be {@code width} by {@code height} pixels, leaving its
+     * position alone. Not a title-bar command: it is for an instrument that has to photograph a window at a
+     * chosen size, which is the one thing capturing it cannot do for itself.
+     *
+     * <p><b>A request, and asynchronous.</b> The window manager and the application's own minimum size decide
+     * what the window actually becomes, so a caller that cares reads {@link #width} and {@link #height} after
+     * the frame loop has caught up rather than assuming. A window that is maximized or minimized has no size of
+     * its own to set, and ignores this.
+     */
+    default void resize(int width, int height) {
+        // no window to size
+    }
+
+    /**
      * Controls bound to a real OS window — what an application-drawn title bar in <em>any</em> window commands,
      * not just the main one. Close is a <em>request</em>, not a teardown: it travels the same route the system
      * close button's does, so the frame loop observes it and releases the window's resources in the order it
@@ -64,11 +92,48 @@ public interface WindowControls {
      * has offered a capture path for, and the same posture {@link #NONE} takes.
      */
     static WindowControls of(dev.vexelray.os.NativeWindow window, java.util.function.Consumer<String> capture) {
+        return of(window, capture, Runnable::run);
+    }
+
+    /**
+     * As above, with {@code mainThread} running the commands that have to happen on the thread that owns the
+     * window — today, {@link #resize}. A caller on the automation's own thread hands it the host's post; a
+     * title-bar click is already on the right side of the line and needs no hop.
+     */
+    static WindowControls of(dev.vexelray.os.NativeWindow window, java.util.function.Consumer<String> capture,
+                             java.util.function.Consumer<Runnable> mainThread) {
         return new WindowControls() {
 
             @Override
             public void capture(String path) {
                 capture.accept(path);
+            }
+
+            @Override
+            public int width() {
+                return window.width();
+            }
+
+            @Override
+            public int height() {
+                return window.height();
+            }
+
+            @Override
+            public void resize(int width, int height) {
+                if (width <= 0 || height <= 0) {
+                    throw new IllegalArgumentException("a window cannot be " + width + "x" + height);
+                }
+                mainThread.accept(() -> {
+                    if (window.isMaximized() || window.isMinimized()) {
+                        return;
+                    }
+                    // The outer rect is what the platform sizes, and the chrome around the drawable area is
+                    // whatever the two differ by now: a system frame has some, a client-drawn one has none.
+                    window.setBounds(window.screenX(), window.screenY(),
+                            window.outerWidth() + (width - window.width()),
+                            window.outerHeight() + (height - window.height()));
+                });
             }
 
             @Override

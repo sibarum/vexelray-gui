@@ -51,6 +51,11 @@ public final class Ottermate {
                     + Options.DEFAULT_LAUNCH_TIMEOUT_SECONDS + ")",
             "  --timeout <s>         how long one reply may take (default "
                     + AutomationClient.DEFAULT_REPLY_TIMEOUT_SECONDS + ")",
+            "  --window <name|n>     act on this window (default: the main one); 'ottermate windows' lists them",
+            "  --dpi <factor>        set the display density first",
+            "  --zoom <factor>       set the zoom first; clamped to the application's range, and the reply says so",
+            "  --size <w>x<h>        size the window first: pixels, or em with a unit, e.g. 1024x768 or 46emx30em",
+            "                        (view options go before --launch, which takes the rest of the line)",
             "  --keep-going          run the rest after a reply that begins err (still exits non-zero)",
             "  --quiet, -q           print only err replies",
             "  --help, -h            this",
@@ -116,6 +121,17 @@ public final class Ottermate {
                 // above its reply, where a terminal and a one-off both already have it on screen.
                 boolean interactive = options.readingStdin() && System.console() != null;
                 boolean echo = options.command() == null && !interactive && !options.quiet();
+                if (!options.view().isEmpty()) {
+                    // What is being photographed is settled before anything is asked of it, and a view that
+                    // could not be set stops the run: a picture at the wrong zoom reported as the right one is
+                    // the failure this tool exists to rule out.
+                    BufferedReader view = new BufferedReader(new java.io.StringReader(
+                            String.join("\n", options.view())));
+                    int status = Session.run(client, view, options, false, false, out, err);
+                    if (status != Session.OK) {
+                        return status;
+                    }
+                }
                 return Session.run(client, commands, options, echo, interactive, out, err);
             }
         } catch (IOException e) {

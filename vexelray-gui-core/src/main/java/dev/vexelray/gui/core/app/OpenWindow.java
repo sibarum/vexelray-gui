@@ -15,6 +15,9 @@ final class OpenWindow {
     /** The named handle to notify when this window is gone, or null for an anonymous popup. */
     final AppWindow owner;
 
+    /** How an outside observer lists this window; set by the loop once the window has its controls. */
+    WindowView view;
+
     OpenWindow(GuiWindow window, WindowInput input, WindowSpec spec, AppWindow owner) {
         this.window = window;
         this.input = input;

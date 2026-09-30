@@ -233,6 +233,10 @@ whether the run succeeded.
 | `settle` | Wait for the loop to catch up with everything published so far. |
 | `await <landmark> <text>` | Wait until that landmark's name contains the text — how an application's own readiness is waited on. |
 | `shot [path]` | PNG of the window this driver is attached to. Clears the target, waits for the file, `err` if none arrives. |
+| `size` | The window's pixels, zoom, dpi and em, in one line. |
+| `zoom [factor]`, `dpi [factor]` | Read, or set and wait for layout. Answer with the value the window *became*, and say when a clamp changed it. |
+| `resize <w>x<h>` | Size the drawable area — pixels, or em with a unit (`46emx30em`), which an em resolves at the zoom and density in force. Answers with the size reached. |
+| `windows`, `window <name\|n>` | List the application's open windows; choose the one the other verbs act on (default: the main one). Each window has its own driver. |
 | `mark <note>` | Write a row into the correlation log saying *why*. Changes nothing else. |
 | `help`, `quit` | The list; and end the session. |
 

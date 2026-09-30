@@ -99,4 +99,24 @@ class OptionsTest {
         assertTrue(Options.parse(new String[]{"--script", "a.txt", "shot", "--help"}).help(),
                 "somebody asking what the options are has not got them right yet");
     }
+
+    @Test
+    void theViewOptionsBecomeCommandsInTheOrderThatMakesEachMeanWhatItSays() {
+        Options options = Options.parse(new String[]{
+                "--size", "46emx30em", "--zoom", "1.5", "--window", "prefs", "--dpi", "2", "shot", "a.png"});
+        // The window first, then density and zoom (an em is measured against both), then the size -- whatever
+        // order they were typed in.
+        assertEquals(List.of("window prefs", "dpi 2", "zoom 1.5", "resize 46emx30em"), options.view());
+        assertEquals("shot a.png", options.command());
+    }
+
+    @Test
+    void noViewOptionsMeansNothingIsSentFirst() {
+        assertTrue(Options.parse(new String[]{"tree"}).view().isEmpty());
+    }
+
+    @Test
+    void aViewOptionWithoutAValueIsAUsageError() {
+        assertThrows(UsageException.class, () -> Options.parse(new String[]{"--zoom"}));
+    }
 }

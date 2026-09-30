@@ -78,6 +78,10 @@ public final class GuiApp implements AutoCloseable {
     private final WindowControls controls;
     private final List<OpenWindow> open = new ArrayList<>();
 
+    /** The non-main windows as {@link #windows} reports them: {@code open} seen from threads that may not read it. */
+    private final java.util.concurrent.CopyOnWriteArrayList<WindowView> listed =
+            new java.util.concurrent.CopyOnWriteArrayList<>();
+
     // Work that must happen on the main thread at the top of a frame: opening a window, showing, hiding or
     // closing one. Every thread-safe command on this class is one of these — enqueued here, performed there.
     private final java.util.concurrent.ConcurrentLinkedQueue<Runnable> tasks =
@@ -94,7 +98,7 @@ public final class GuiApp implements AutoCloseable {
     private final CloseGate mainGate = new CloseGate();
 
     /** The tree in the main window; bound by {@link #run}, and the executor application callbacks run on. */
-    private Gui mainGui;
+    private volatile Gui mainGui;
 
     // The wake/budget/frame chain traces through Probe on the FRAME lane; see the note in Gui for why the
     // bespoke flag that used to live here had to go.
@@ -731,7 +735,25 @@ public final class GuiApp implements AutoCloseable {
                 // that fails silently is the thing being troubleshot.
                 System.err.println("vexelray-gui: could not write capture to " + path + ": " + e.getMessage());
             }
-        }));
+        }), this::post);
+    }
+
+    /**
+     * Every window this application has open, the main one first — a snapshot, safe to take from any thread.
+     *
+     * <p>For an instrument that has to tell windows apart: the automation socket selects among them by name, and
+     * each has its own tree and its own controls. The list is rebuilt from what is open at the call, so a window
+     * opened or closed since the last one shows up or goes, and a caller asks again rather than caching.
+     * Empty of a main entry until {@link #run} has bound the main tree.
+     */
+    public List<WindowView> windows() {
+        List<WindowView> all = new ArrayList<>();
+        Gui gui = mainGui;
+        if (gui != null) {
+            all.add(new WindowView(mainKey, gui, controls, true));
+        }
+        all.addAll(listed);
+        return List.copyOf(all);
     }
 
     OpenWindow openWindow(WindowSpec spec, AppWindow owner) {
@@ -751,7 +773,11 @@ public final class GuiApp implements AutoCloseable {
         spec.onCreated().accept(w.window);
         // The controls this window can actually be commanded by, capture included. After onCreated, so a bar
         // that also listens there is already built by the time it is pointed at the window.
-        spec.onControls().accept(controlsFor(w));
+        WindowControls windowControls = controlsFor(w);
+        spec.onControls().accept(windowControls);
+        entry.view = new WindowView(owner != null ? owner.key() : spec.config().title(), spec.gui(),
+                windowControls, false);
+        listed.add(entry.view);
         if (modal != null) {
             // A window opened while a dialog is up must not be a way around it.
             w.window.setEnabled(w.window == modal);
@@ -1010,6 +1036,7 @@ public final class GuiApp implements AutoCloseable {
                 return true;
             });
             frame++;
+                listed.remove(w.view);
             if (running) {
                 // After presenting, never before: the frame the application just asked for is not the
                 // one to make it wait for. One call covers every window, because the wait is on this
@@ -1072,6 +1099,7 @@ public final class GuiApp implements AutoCloseable {
         device.waitIdle();
         for (OpenWindow w : open) {
             w.release();
+        listed.clear();
         }
         open.clear();
         main.close();
@@ -1089,6 +1117,7 @@ public final class GuiApp implements AutoCloseable {
         buffers.clear();
         atlas.close();
         noImage.close();
+        listed.clear();
         device.close();
         instance.close();
     }

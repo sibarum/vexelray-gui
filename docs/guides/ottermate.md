@@ -213,6 +213,57 @@ ok 44,224
 A run of several commands echoes each one above its reply, because a transcript of seven `ok` lines says
 nothing about which scene each belonged to. `--quiet` drops the `ok` replies and keeps the failures.
 
+### Choose what the picture is of: size, zoom, density, window
+
+Everything a screenshot can vary is a verb, so a ladder is still a file:
+
+```bash
+# sizes.txt
+size                          # ok 1180x720 zoom=1 dpi=1 em=16px
+shot normal.png
+zoom 1.5                      # ok zoom=1.5   (clamped, and said so, if the application will not go that far)
+shot zoomed.png
+zoom 1
+resize 24emx16em              # ok 384x256    -- the application's declared minimum, in em, at this zoom
+shot smallest.png
+resize 1600x900               # pixels need no unit
+dpi 2                         # ok dpi=2      -- the framework's density factor, in the same window
+shot dense.png
+```
+
+The same four as options, for a one-off. They are sent first, in the order window, dpi, zoom, size, and the run
+stops if one answers `err` — a picture at the wrong zoom reported as the right one is the thing to avoid:
+
+```bash
+ottermate --zoom 1.5 --size 1600x900 shot big.png --launch mvn.cmd compile exec:exec -Dautomation=0
+```
+
+An em is whatever the zoom and density in force make it, so set those first (the options already do). `resize`
+answers with the size the window *became* and says when it is not the one asked for: the application's minimum
+and the desktop both have a say. `dpi` is a factor, not a real surface, so `dpi 2` makes every em twice the pixels
+in the same window — for a denser display's proportions, `resize` as well.
+
+### An application with more than one window
+
+```bash
+$ ottermate windows
+ok 2
+1 main 1180x720 zoom=1 dpi=1 em=16px *
+2 settings 640x480 zoom=1 dpi=1 em=16px
+$ ottermate window settings        # or: window 2, or a unique beginning of the name
+ok settings
+```
+
+Every other verb then acts on the window chosen — `tree`, `click`, `zoom`, `resize`, `shot` — until another is.
+Each window has its own tree and its own pointer, so nothing carries across: a zoom set in one window is not set
+in the other. Two windows with the same title are `Inspector` and `Inspector#2`. A chosen window that closes is
+reported as gone, never quietly swapped for another. Over `--script` the choice lasts for the script; one-off
+commands each open their own connection, so use `--window` with them:
+
+```bash
+ottermate --window settings shot settings.png --launch ...
+```
+
 ### In a build script
 
 The exit status is the verdict, so no output parsing:

@@ -232,4 +232,25 @@ class OttermateTest {
     private String stderr() {
         return err.toString(StandardCharsets.UTF_8);
     }
+
+    @Test
+    void theViewIsSetBeforeTheCommandAndInOrder() throws IOException {
+        try (FakeApplication app = FakeApplication.answering(c -> "ok")) {
+            Ottermate.run(new String[]{"--port", port(app), "--zoom", "2", "--size", "800x600", "shot", "a.png"},
+                    new PrintStream(out, true, StandardCharsets.UTF_8),
+                    new PrintStream(err, true, StandardCharsets.UTF_8));
+            assertEquals(List.of("zoom 2", "resize 800x600", "shot a.png", "quit"), app.awaitReceived(4));
+        }
+    }
+
+    @Test
+    void aViewThatCouldNotBeSetStopsTheRunBeforeTheShot() throws IOException {
+        try (FakeApplication app = FakeApplication.answering(c -> c.startsWith("zoom") ? "err no" : "ok")) {
+            int status = Ottermate.run(new String[]{"--port", port(app), "--zoom", "2", "shot", "a.png"},
+                    new PrintStream(out, true, StandardCharsets.UTF_8),
+                    new PrintStream(err, true, StandardCharsets.UTF_8));
+            assertEquals(Session.FAILED, status);
+            assertEquals(List.of("zoom 2", "quit"), app.awaitReceived(2), "the shot must not be taken at the wrong zoom");
+        }
+    }
 }

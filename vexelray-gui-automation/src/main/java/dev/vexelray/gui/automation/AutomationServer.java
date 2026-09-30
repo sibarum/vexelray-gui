@@ -40,22 +40,22 @@ public final class AutomationServer implements AutoCloseable {
     /** The port, when nobody says otherwise. Arbitrary, high, and unregistered. */
     public static final int DEFAULT_PORT = 7654;
 
-    private final Automation automation;
+    private final Commands automation;
     private final ServerSocket socket;
     private final Thread thread;
     private volatile boolean running = true;
 
     /** Start listening on {@link #DEFAULT_PORT}. */
-    public static AutomationServer start(Automation automation) throws IOException {
+    public static AutomationServer start(Commands automation) throws IOException {
         return start(automation, DEFAULT_PORT);
     }
 
     /** Start listening on {@code port}; pass 0 to be given a free one, then ask {@link #port()}. */
-    public static AutomationServer start(Automation automation, int port) throws IOException {
+    public static AutomationServer start(Commands automation, int port) throws IOException {
         return new AutomationServer(automation, port);
     }
 
-    private AutomationServer(Automation automation, int port) throws IOException {
+    private AutomationServer(Commands automation, int port) throws IOException {
         this.automation = java.util.Objects.requireNonNull(automation, "automation");
         this.socket = new ServerSocket(port, 1, InetAddress.getLoopbackAddress());
         this.thread = new Thread(this::serve, "vexelray-automation");

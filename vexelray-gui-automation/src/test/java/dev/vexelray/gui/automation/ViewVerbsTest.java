@@ -283,4 +283,30 @@ class ViewVerbsTest {
             assertSame(main, open.get(0).gui());
         }
     }
+
+    // --- log -------------------------------------------------------------------------------------------------
+
+    @Test
+    void logReadsWhatIsInForceAndChangesItWhileRunning() {
+        sibarum.probe.LogConfig before = sibarum.probe.Logging.config();
+        try (Gui gui = deterministic()) {
+            sibarum.probe.Logging.configure(new sibarum.probe.LogConfig("t", sibarum.probe.Mode.AUTOMATION,
+                    sibarum.probe.Level.WARN, sibarum.probe.Level.OFF, java.util.Map.of(), null,
+                    sibarum.probe.LogConfig.Format.TEXT, 1024, 1, null, List.of()));
+            Automation automation = new Automation(gui);
+
+            String now = automation.command("log");
+            assertTrue(now.startsWith("ok mode=AUTOMATION console=WARN file=OFF (no file)"), now);
+
+            assertTrue(automation.command("log debug").contains("console=DEBUG"), "both sinks move");
+            String one = automation.command("log gui.frame trace");
+            assertTrue(one.contains("loggers={gui.frame=TRACE}"), one);
+            assertTrue(sibarum.probe.Log.of("gui.frame.pacing").isTrace(), "a logger already held sees the change");
+
+            assertTrue(automation.command("log loud").startsWith("err"), "a level that is not one is refused");
+            assertTrue(automation.command("log a b c").startsWith("err"));
+        } finally {
+            sibarum.probe.Logging.configure(before);
+        }
+    }
 }

@@ -91,6 +91,8 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public final class Gui implements AutoCloseable {
 
+    private static final sibarum.probe.Log LOG = sibarum.probe.Log.of("gui");
+
     /**
      * The internal tree-mutation channel. A private topic name so it never collides with application traffic on a
      * shared bus; losslessly drained on the GUI thread each frame.
@@ -1396,8 +1398,8 @@ public final class Gui implements AutoCloseable {
         } catch (Throwable t) {
             if (!warnedWakeFailed) {
                 warnedWakeFailed = true;
-                System.err.println("vexelray-gui: the onWork listener threw; frames may stop arriving "
-                        + "when nothing else wakes the loop. " + t);
+                LOG.warn("the onWork listener threw; frames may stop arriving "
+                        + "when nothing else wakes the loop", t);
             }
         }
     }

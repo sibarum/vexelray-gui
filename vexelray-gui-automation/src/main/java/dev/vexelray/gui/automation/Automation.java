@@ -9,6 +9,9 @@ import dev.vexelray.gui.core.layout.Rect;
 import dev.vexelray.gui.core.layout.SemanticSnapshot;
 import dev.vexelray.gui.core.model.SemanticNode;
 import sibarum.probe.Lane;
+import sibarum.probe.Level;
+import sibarum.probe.LogConfig;
+import sibarum.probe.Logging;
 import sibarum.probe.Probe;
 import sibarum.tactroller.api.InputEvent;
 import sibarum.tactroller.api.Key;
@@ -157,6 +160,7 @@ public final class Automation implements Commands {
             case "dpi" -> dpi(rest);
             case "resize" -> resize(rest);
             case "mark" -> mark(rest);
+            case "log" -> log(rest);
             case "help" -> HELP;
             default -> "err no command '" + verb + "'; try help";
         };
@@ -861,6 +865,36 @@ public final class Automation implements Commands {
         return "ok";
     }
 
+    /**
+     * Read or change how much the application logs, while it runs.
+     *
+     * <p>{@code log} says what is in force and where the file is — so an agent that wants to read what a run did
+     * knows where to look. {@code log debug} holds both sinks to a level; {@code log gui.frame trace} holds one
+     * logger and everything beneath it, which reaches every sink that is on (see {@code LogConfig}). The change
+     * is to the running process only: nothing is written anywhere to be remembered by the next launch.
+     *
+     * <p>Here because automation is how a run is watched, and asking for more detail in the middle of one — after
+     * a click did something unexpected, say — is the moment a launch flag is too late.
+     */
+    private String log(String rest) {
+        String[] args = rest.trim().isEmpty() ? new String[0] : rest.trim().split("\\s+");
+        if (args.length > 2) {
+            return "err log takes a level, or a logger and a level";
+        }
+        if (args.length > 0) {
+            Level level = Level.parse(args[args.length - 1]);
+            if (level == null) {
+                return "err '" + args[args.length - 1] + "' is not a level (trace, debug, info, warn, error, off)";
+            }
+            Logging.setLevel(args.length == 2 ? args[0] : null, level);
+        }
+        LogConfig c = Logging.config();
+        return "ok mode=" + c.mode() + " console=" + c.console() + " file=" + c.file()
+                + (c.fileEnabled() ? " -> " + c.logFile() : " (no file)")
+                + (Probe.ON ? " probe=on" : " probe=off")
+                + (c.overrides().isEmpty() ? "" : " loggers=" + c.overrides());
+    }
+
     private static int round(float v) {
         return Math.round(v);
     }
@@ -905,5 +939,6 @@ public final class Automation implements Commands {
             "zoom [factor]            read or set the zoom; clamped to the application's own range, and says so",
             "dpi [factor]             read or set the display density factor",
             "resize <w>x<h>           size the window: pixels, or em with a unit (resize 46em 30em)",
+            "log [logger] [level]     read, or set, how much is logged; the reply says where the file is",
             "mark <note>              write why into the correlation log"));
 }

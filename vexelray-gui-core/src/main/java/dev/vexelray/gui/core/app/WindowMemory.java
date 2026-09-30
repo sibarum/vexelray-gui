@@ -38,6 +38,8 @@ import java.util.Optional;
  */
 public final class WindowMemory {
 
+    private static final sibarum.probe.Log LOG = sibarum.probe.Log.of("gui.window.memory");
+
     /** How long a change must hold still before it is worth a disk write. */
     private static final long SETTLE_NANOS = 700_000_000L;
 
@@ -358,7 +360,7 @@ public final class WindowMemory {
             settings.save();
         } catch (RuntimeException e) {
             // Settings are a convenience. Failing to write them must not take the application down with it.
-            System.out.println("could not save window placement (" + e.getMessage() + ")");
+            LOG.warn("could not save window placement", e);
         }
     }
 

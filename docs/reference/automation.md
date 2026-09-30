@@ -237,6 +237,7 @@ whether the run succeeded.
 | `zoom [factor]`, `dpi [factor]` | Read, or set and wait for layout. Answer with the value the window *became*, and say when a clamp changed it. |
 | `resize <w>x<h>` | Size the drawable area — pixels, or em with a unit (`46emx30em`), which an em resolves at the zoom and density in force. Answers with the size reached. |
 | `windows`, `window <name\|n>` | List the application's open windows; choose the one the other verbs act on (default: the main one). Each window has its own driver. |
+| `log [logger] [level]` | Read how much is logged and where the file is; or set a level for both sinks, or for one logger and everything beneath it. To the running process only. A driven run is already the loudest mode (`TRACE` file, probe on) — see `atchung/docs/logging.md`. |
 | `mark <note>` | Write a row into the correlation log saying *why*. Changes nothing else. |
 | `help`, `quit` | The list; and end the session. |
 

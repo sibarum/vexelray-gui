@@ -37,6 +37,8 @@ import java.nio.charset.StandardCharsets;
  */
 public final class AutomationServer implements AutoCloseable {
 
+    private static final sibarum.probe.Log LOG = sibarum.probe.Log.of("automation.server");
+
     /** The port, when nobody says otherwise. Arbitrary, high, and unregistered. */
     public static final int DEFAULT_PORT = 7654;
 
@@ -75,7 +77,7 @@ public final class AutomationServer implements AutoCloseable {
             } catch (IOException e) {
                 if (running) {
                     // One client going away is not the end of the session; the next one is still welcome.
-                    System.err.println("vexelray-automation: " + e.getMessage());
+                    LOG.warn("client connection ended: " + e.getMessage());
                 }
             }
         }
@@ -96,7 +98,13 @@ public final class AutomationServer implements AutoCloseable {
                 // what lets a run be read back without the conversation that produced it.
                 Probe.mark(Lane.APP, "agent.command", line);
             }
-            out.println(automation.command(line));
+            LOG.debug("command: {}", line);
+            String reply = automation.command(line);
+            if (LOG.isDebug()) {
+                int end = reply.indexOf('\n');
+                LOG.debug("reply: {}", end < 0 ? reply : reply.substring(0, end) + " ... (" + reply.lines().count() + " lines)");
+            }
+            out.println(reply);
             out.println(".");
             out.flush();     // per reply: the other end is waiting on this one before it sends the next
         }

@@ -243,6 +243,21 @@ answers with the size the window *became* and says when it is not the one asked 
 and the desktop both have a say. `dpi` is a factor, not a real surface, so `dpi 2` makes every em twice the pixels
 in the same window — for a denser display's proportions, `resize` as well.
 
+### Reading what a run did
+
+A driven application is in its loudest mode on its own: `DEBUG` on the console, `TRACE` in a file, and the probe on
+with its trace beside the log — every command you send and its reply are in the file, in time order, next to what
+the application did about them. `log` says where it is:
+
+```bash
+$ ottermate log
+ok mode=AUTOMATION console=DEBUG file=TRACE -> C:\...\target\logs\calculator.log probe=on
+$ ottermate log gui.frame trace     # one logger and everything beneath it, from now on
+```
+
+The file is `<app>.log` and the trace is `<app>-probe.csv` beside it (`target/logs` in a checkout, `~/.<app>/logs`
+otherwise). Everything about levels, settings and locations is in `atchung/docs/logging.md`.
+
 ### An application with more than one window
 
 ```bash

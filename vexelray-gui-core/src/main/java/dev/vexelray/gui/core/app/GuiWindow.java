@@ -61,6 +61,8 @@ import java.io.File;
  */
 final class GuiWindow implements AutoCloseable {
 
+    private static final sibarum.probe.Log LOG = sibarum.probe.Log.of("gui.window");
+
     /**
      * The per-window vertex buffer, in floats. Host-visible and rewritten once a frame, so it is the ceiling on
      * how complicated one window's picture may be.
@@ -318,7 +320,7 @@ final class GuiWindow implements AutoCloseable {
         if (vertexCount > room) {
             if (!warnedOverCapacity) {
                 warnedOverCapacity = true;
-                System.err.println("vexelray-gui: window needs " + vertexCount + " vertices and the buffer holds "
+                LOG.warn("window needs " + vertexCount + " vertices and the buffer holds "
                         + room + "; drawing what fits. Raise GuiWindow.CAPACITY_FLOATS or draw less.");
             }
             vertexCount = room;

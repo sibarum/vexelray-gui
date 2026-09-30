@@ -49,6 +49,8 @@ import java.util.List;
  */
 public final class GuiApp implements AutoCloseable {
 
+    private static final sibarum.probe.Log LOG = sibarum.probe.Log.of("gui.app");
+
     private static final String ATLAS_JSON = "/dev/vexelray/text/atlas/primary.json";
 
     // Shared engine context — one GPU bring-up serves every window.
@@ -733,7 +735,7 @@ public final class GuiApp implements AutoCloseable {
                 // A screenshot that cannot be written is not a reason to take the application down mid-frame.
                 // Saying so once, with the path, is: the instrument is for troubleshooting, and an instrument
                 // that fails silently is the thing being troubleshot.
-                System.err.println("vexelray-gui: could not write capture to " + path + ": " + e.getMessage());
+                LOG.error("could not write capture to " + path, e);
             }
         }), this::post);
     }
@@ -769,6 +771,8 @@ public final class GuiApp implements AutoCloseable {
                 spec.standing().place(spec.config(), anchorHandle(spec)), this::create);
         WindowInput input = inputs.attach(w.window, spec.gui());
         OpenWindow entry = new OpenWindow(w, input, spec, owner);
+        LOG.info("window opened: \"{}\" {}x{}{}", spec.config().title(), spec.config().width(), spec.config().height(),
+                owner != null ? " (named " + owner.key() + ")" : "");
         open.add(entry);
         spec.onCreated().accept(w.window);
         // The controls this window can actually be commanded by, capture included. After onCreated, so a bar
@@ -1032,11 +1036,11 @@ public final class GuiApp implements AutoCloseable {
                     // leaves, or it spends one frame with every window disabled and nothing modal to explain it.
                     applyModal(null);
                 }
+                listed.remove(w.view);
                 w.release();   // this window's own resources only; the device and loop keep running
                 return true;
             });
             frame++;
-                listed.remove(w.view);
             if (running) {
                 // After presenting, never before: the frame the application just asked for is not the
                 // one to make it wait for. One call covers every window, because the wait is on this
@@ -1084,6 +1088,7 @@ public final class GuiApp implements AutoCloseable {
             w.release();
         }
         open.clear();
+        listed.clear();
     }
 
     public void run(Gui gui) {
@@ -1099,9 +1104,9 @@ public final class GuiApp implements AutoCloseable {
         device.waitIdle();
         for (OpenWindow w : open) {
             w.release();
-        listed.clear();
         }
         open.clear();
+        listed.clear();
         main.close();
         for (SampledColorTarget v : viewports) {
             v.close();
@@ -1117,7 +1122,6 @@ public final class GuiApp implements AutoCloseable {
         buffers.clear();
         atlas.close();
         noImage.close();
-        listed.clear();
         device.close();
         instance.close();
     }

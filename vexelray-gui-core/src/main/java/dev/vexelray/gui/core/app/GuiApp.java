@@ -30,6 +30,7 @@ import dev.vexelray.vulkan.present.VertexBuffer;
 import dev.vexelray.vulkan.present.VulkanRenderPass;
 import dev.vexelray.vulkan.present.VulkanSwapchain;
 import dev.vexelray.vulkan.present.WindowedPresenter;
+import dev.supirvast.vulkan.ComputeSupport;
 import dev.supirvast.vulkan.Vk;
 import dev.supirvast.vulkan.VkLoader;
 import dev.supirvast.vulkan.VulkanDevice;
@@ -223,7 +224,13 @@ public final class GuiApp implements AutoCloseable {
                 VkLoader.getInstanceProcAddrPointer());
         VulkanInstance.DeviceSelection selection = instance.selectGraphicsPresentDevice(probeSurface)
                 .orElseThrow(() -> new IllegalStateException("no graphics+present device"));
-        this.device = new VulkanDevice(instance.handle(), selection);
+        // Made able to compute as well as draw, so that whatever the application simulates can live on this
+        // device and be read by its pictures where it already is — a buffer cannot cross from one device to
+        // another, and a second device for compute would make every frame a copy. The features are enabled only
+        // where the driver supports them, so on a device that supports none this is the device it always was.
+        ComputeSupport compute = ComputeSupport.query(instance, selection.physicalDevice());
+        this.device = new VulkanDevice(instance.handle(), selection,
+                VulkanDevice.Request.presentAndCompute(compute));
 
         int[] atlasSize = new int[2];
         byte[] atlasRgba = loadAtlasRgba(atlasSize);
@@ -259,10 +266,11 @@ public final class GuiApp implements AutoCloseable {
      * {@code SampledColorTarget.renderInto}) before the frame that shows it. It is a {@code SampledImage}, so the
      * canvas draws it as a box that samples: it rounds, clips, fades and lays out like every other node.
      *
-     * <p>This exists because the device is deliberately not public — GPU lifetime is the framework's business, and
-     * a target allocated on a <em>different</em> device produces a descriptor set this application's pipeline
-     * cannot bind, which is a validation error rather than a blank box. Asking the application for its size and
-     * nothing else keeps that impossible. Targets made here are closed with the application, so an app that keeps
+     * <p>This exists so that a target is always made on <em>this</em> application's device: one allocated on a
+     * different device produces a descriptor set this application's pipeline cannot bind, which is a validation
+     * error rather than a blank box. Asking the application for its size and nothing else keeps that impossible.
+     * (The device itself is reachable through {@link #gpu()}, for the one thing that has to be on it — compute
+     * that shares its buffers with what is drawn.) Targets made here are closed with the application, so an app that keeps
      * one per viewport for the session need not track them; one that resizes a viewport should
      * {@link SampledColorTarget#close()} the old target itself, after a frame that no longer names it.
      *
@@ -350,6 +358,28 @@ public final class GuiApp implements AutoCloseable {
         StorageBuffer buffer = new StorageBuffer(device, Math.max(1, floats), binding);
         buffers.add(buffer);
         return buffer;
+    }
+
+    /**
+     * This application's Vulkan instance and device, for work that must run <b>on</b> them: a simulation that
+     * computes on the device the application draws on, so that a picture of its state reads the buffers the
+     * kernels wrote instead of a copy of them.
+     *
+     * <p>Everything made from these must be made on the main thread, which is where Vulkan stays, and closed
+     * before the application is: the device is closed with it. Nothing made from a different device can be bound
+     * by anything drawn here, which is why a compute context belongs on this one — {@code GpuContext.on} in
+     * {@code vastir-tools} takes exactly this pair. The device was made with the compute features its GPU
+     * supports, and its one queue is shared: whatever submits to it from here does so from the main thread.
+     */
+    public Gpu gpu() {
+        return new Gpu(instance, device);
+    }
+
+    /**
+     * The instance and device behind an application; see {@link #gpu()}. A picture of a buffer somebody else owns
+     * binds it with a {@code BoundStorageBuffer} on this device, and closes that itself, as it does its pipeline.
+     */
+    public record Gpu(VulkanInstance instance, VulkanDevice device) {
     }
 
     /** The OS window handle (an {@code HWND} on Windows) — used to attach input (tactroller) for client-space

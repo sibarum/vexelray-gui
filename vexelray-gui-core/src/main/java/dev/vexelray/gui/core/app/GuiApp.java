@@ -116,6 +116,10 @@ public final class GuiApp implements AutoCloseable {
     private long maxIdleNanos = 200_000_000L;        // 5 Hz
     /** Shortest gap between presented frames. See {@link #maxFrameRate}. */
     private long minFrameNanos = 0L;                 // uncapped
+    /** Whether {@link #minFrameNanos} follows the display. See {@link #maxFrameRateToDisplay}. */
+    private boolean ceilingFollowsDisplay;
+    /** When the display's interval was last read, so it is read about once a second and never per frame. */
+    private long displayReadAt;
     /** Set by {@link #postWake}, consumed by the park: how a wake is told apart from OS input. */
     private final java.util.concurrent.atomic.AtomicBoolean wakePosted = new java.util.concurrent.atomic.AtomicBoolean();
 
@@ -917,6 +921,35 @@ public final class GuiApp implements AutoCloseable {
         return this;
     }
 
+    /**
+     * {@link #maxFrameRate} set to one refresh of the display the main window is on, read from the window and read
+     * again about once a second, so a window dragged to a display of another rate follows it.
+     *
+     * <p>The value to hold the loop to: a ceiling above the display draws frames that are not shown, and one below it
+     * (a constant 60 Hz on a 144 Hz panel) caps the animation for nothing. {@code fallbackNanos} stands until the
+     * window can say, and for good where it cannot (a platform whose window reports no interval).
+     */
+    public GuiApp maxFrameRateToDisplay(long fallbackNanos) {
+        this.minFrameNanos = Math.max(0L, fallbackNanos);
+        this.ceilingFollowsDisplay = true;
+        return this;
+    }
+
+    /** Re-read the display's refresh interval if it is time to, and make it the ceiling. Main thread, outside the frame. */
+    private void followDisplay() {
+        long now = System.nanoTime();
+        if (displayReadAt != 0L && now - displayReadAt < 1_000_000_000L) {
+            return;
+        }
+        displayReadAt = now;
+        long interval = main.window.refreshIntervalNanos();
+        if (interval > 0L && interval != minFrameNanos) {
+            LOG.debug("frame ceiling follows the display: {} us a frame ({} Hz)", interval / 1_000L,
+                    Math.round(1e9 / interval));
+            minFrameNanos = interval;
+        }
+    }
+
     public void postWake() {
         if (Probe.ON) {
             Probe.mark(Lane.FRAME, "wake.post", "nudging the OS message queue");
@@ -1027,6 +1060,9 @@ public final class GuiApp implements AutoCloseable {
             // are where a frame actually went. The wait below is deliberately outside it - a loop parked on an
             // empty event queue is idle, not slow, and counting the park as frame time would make a perfectly
             // healthy render-on-demand application look like the worst offender in the table.
+            if (ceilingFollowsDisplay) {
+                followDisplay();
+            }
             wakePosted.set(false);   // a wake from here on was posted during this frame, so it is pending for the next
             long frameStarted = System.nanoTime();   // the gap the ceiling holds is frame start to frame start
             try (Zone frameZone = Probe.zone(Lane.FRAME, "frame")) {

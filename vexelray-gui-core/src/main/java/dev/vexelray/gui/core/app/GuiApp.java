@@ -912,9 +912,14 @@ public final class GuiApp implements AutoCloseable {
      * means "as fast as you can", and on a presenter that does not block that is 140 fps to show a
      * 60 Hz display. This bounds it without involving the presenter.
      *
-     * <p>Costs nothing in input latency: the wait ends early on OS input regardless. It does bound the
-     * frames a {@link #postWake} earns: a wake is remembered, not dropped, and draws no sooner than this
-     * gap after the last present. A wake that lands together with OS input is held to the same gap.
+     * <p>It bounds the frames a {@link #postWake} earns: a wake is remembered, not dropped, and draws no
+     * sooner than this gap after the previous frame <em>began</em>. A wake that lands together with OS input
+     * is held to the same gap.
+     *
+     * <p>Costs nothing in input latency while the loop is parked: the wait ends early on OS input. The
+     * exception is the remainder of a gap after a wake, which is a timed sleep and so is not ended by input
+     * ({@code waitEvents} cannot be repeated: it returns at once while the wake's message is unread). Input that
+     * lands there waits for it, at most this gap.
      */
     public GuiApp maxFrameRate(long minFrameNanos) {
         this.minFrameNanos = Math.max(0L, minFrameNanos);
@@ -1121,8 +1126,10 @@ public final class GuiApp implements AutoCloseable {
                     try (Zone waitZone = Probe.idleZone(Lane.FRAME, "wait for events")) {
                         main.window.waitEvents(budget);
                         // A wake ends the park like OS input does, so the ceiling would not hold for it.
-                        // Re-park for what is left of the gap while the only thing that woke us was a wake;
-                        // it stays pending, so the next iteration draws it. OS input still ends the re-park.
+                        // Sleep out what is left of the gap when a wake was posted; it stays pending, so the
+                        // next iteration draws it. A plain timed sleep and not waitEvents, which returns at
+                        // once while the wake's message is unread, so OS input does not end this one: it waits,
+                        // at most one gap.
                         long gapEnds = frameStarted + minFrameNanos;
                         long left;
                         while (minFrameNanos > 0 && wakePosted.getAndSet(false)

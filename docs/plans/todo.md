@@ -19,6 +19,38 @@ documented ceiling and shipped behaviour**, and after measuring it is a question
 
 ### 0.1 `GuiApp.maxFrameRate`'s 60 Hz is not in force, and it is not clear it should be
 
+**Resolved: the ceiling is kept, it holds against wakes, and it follows the display.** Read this first; everything below it
+is the reasoning that led here and is kept because its diagnosis of the mechanism holds. What probing the stall at the
+start of an animation found ([`vexelray-framework/docs/architecture.md`](../../../vexelray-framework/docs/architecture.md),
+*what the stall probes found*): the loop with no ceiling in force ran four to six frames about 1 ms apart after a park,
+all inside one refresh interval, until the present queue pushed back with a 14 to 20 ms wait. Each frame is stamped when
+it is drawn and shown a refresh later than the one before, so the animation crawled and then lurched. So the question
+this entry asked, *is a ceiling the intent*, has an answer: **a ceiling at the display's refresh interval is what makes
+the frame rate and the animation's clock agree**, and it is not a power saver. Three changes, all committed:
+
+- **The ceiling holds against wakes.** `postWake` sets a flag; if the only thing that ended the park was a wake, the loop
+  sleeps out the rest of the gap with `LockSupport.parkNanos` and draws then. The flag is cleared at the start of a frame,
+  so a wake posted *during* a frame, which is the usual case (the clock's tick wakes the loop from inside it), is kept.
+  The gap is measured from the frame's **start**, not its end; from the end it came to frame time plus the interval,
+  125 fps on a 144 Hz display.
+- **It follows the display.** `maxFrameRateToDisplay(fallbackNanos)` reads `NativeWindow.refreshIntervalNanos()` from the
+  main window about once a second and holds the loop to it; the fallback stands where the window cannot say. The
+  framework uses it with 60 Hz as the fallback. `maxFrameRate(nanos)` is unchanged, for a ceiling below the display.
+- **The earlier draft's premise was wrong, and this entry's own *Status* paragraph (below) says why**: a re-park that
+  calls `waitEvents` again returns at once, because `MsgWaitForInput` returns while the wake's `WM_NULL` is unread.
+  A timed sleep does not have that property, which is what makes it work, and it has a cost.
+
+**The cost, stated plainly: OS input that arrives during that sleep waits for it.** At most one refresh interval, 6.9 ms
+at 144 Hz and 16.7 at 60, and only when a wake (not input) ended the park, so a click on an idle window is unaffected and
+a click during an animation can be that late. The *Costs nothing in input latency* line in `maxFrameRate`'s javadoc is now
+true of input that ends a park, and not of input that lands inside the remainder of a gap. The clean answer is the one the
+*Status* paragraph names, a Win32 event waited on beside the queue so a wake never leaves a message behind and the
+re-park can be `waitEvents` again. That is in `vexelray-os-windows`, and it would restore the promise.
+
+Still open: the compositor's rate is read, not the window's monitor (a per-monitor read is not written), and Linux and
+macOS report no interval and keep the fallback. First animation after a cold start still has one late frame (4 to 6 ms
+before the animation's first tick arrives, most likely cold code; the thread hand-off is measured at 50 to 100 us).
+
 **Revised after measuring the pacing (read this first; the paragraphs below it are the first reading).** On a
 machine whose display appears to run at 144 Hz: an ordinary 600 ms pulse ran **~143 frames a second**, and 35 million
 node writes in 3 s, with a wake behind each, plateaued at **~145**. So the ceiling holds nothing that wakes the
@@ -72,7 +104,8 @@ either `postWake` sets a flag the loop reads before deciding how long to wait, o
 remainder of the gap when the only thing that woke it was a wake. It changes frame timing under an unchanged
 signature, which is why it is a decision and not a slipped-in line.
 
-**Status: a fix is drafted in `GuiApp` (uncommitted) and does not work on Windows, measured.** It sets a
+**Status (superseded by the resolution at the top: the same flag now re-parks with a timed sleep and works). The draft as
+first written, which does not work on Windows, measured.** It sets a
 `wakePosted` flag in `postWake` and re-parks for the rest of the gap when the flag is what ended the wait. With
 it installed, the witness still ran **99.8 frames a second**. The cause is one level down: `Win32Window.waitEvents`
 is `MsgWaitForInput`, which returns while any message is pending, and `postWake` posts `WM_NULL`, which stays in

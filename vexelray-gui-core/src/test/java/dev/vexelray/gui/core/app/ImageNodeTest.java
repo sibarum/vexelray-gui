@@ -57,7 +57,7 @@ class ImageNodeTest {
 
         /** No device: these tests describe a tree, and nothing here binds anything. */
         @Override
-        public dev.vexelray.vulkan.vk.VulkanDevice device() {
+        public dev.supirvast.vulkan.VulkanDevice device() {
             return null;
         }
     }

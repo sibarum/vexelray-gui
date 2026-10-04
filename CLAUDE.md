@@ -18,7 +18,7 @@ is theirs — if the right fix is in tactroller, change tactroller. A cross-repo
 | **atchung** | The typed bus: topics and versioned `State<T>`. Input in, mutations through. |
 | **supirvast** | `vastir` — the expression IR the engine's shaders are authored in. |
 | **kronometer** | Timing and animation, wrapped here as `vexelray-gui-krono`. |
-| **vexelray-designer**, **calculator-vexel-demo**, **text-editor-vexel-demo** | Applications built on this framework. They are where a renderer or a technique lives when it is the consumer's rather than the framework's. |
+| **mainframe**, **vexplore**, **vexelray-sim-fluid**, **calculator-vexel-demo** | Applications built on this framework, all through `vexelray-framework`. They are where a renderer or a technique lives when it is the consumer's rather than the framework's. `vexelray-designer` is still on disk but is not kept compiling. `text-editor-vexel-demo` is deliberately empty. |
 
 ## Drawing something: pick the lane before writing code
 
@@ -60,8 +60,8 @@ the engine's `Surface`, and renders as enclosure boxes for the reasons in
   drawing framework, and the one `ColorPicker` uses internally. Never *import* `dev.vexelray.gui.widget.Ramp`
   into a file whose own package already has a `Ramp`: the import silently shadows the package member, with no
   complaint at the import, and every `Ramp` in the file changes meaning. Write it out in full at the use site
-  (`calculator-vexel-demo`, whose `Ramp` is an enum of colour maps, does exactly that — it lost a working colour
-  picker to this once).
+  (the first `calculator-vexel-demo` had a `Ramp` enum of colour maps and lost a working colour picker to this
+  once).
 
 ## Building
 

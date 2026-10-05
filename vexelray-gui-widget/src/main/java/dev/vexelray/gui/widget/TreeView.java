@@ -308,8 +308,9 @@ public final class TreeView<T> implements AutoCloseable {
         final Node disclosure;   // the +/− glyph
         final Node checkBox;     // the tick box, out of the layout until the tree is checkable
         final Node checkMark;    // what is drawn inside it: a square for ON, a bar for MIXED
-        final Node label;
-        final Node kidsBox;      // hidden until expanded; children entries append here, never anywhere else
+        final Node label;        // the name, one line at its own width
+        final Node labelBox;     // the rest of the row, clipping the name at the row's edge
+        final Node kidsBox;     // hidden until expanded; children entries append here, never anywhere else
         boolean expanded;
         boolean materialized;    // whether Source.children has been asked
         final List<Row> children = new ArrayList<>();
@@ -379,13 +380,26 @@ public final class TreeView<T> implements AutoCloseable {
             gui.onState(checkBox, state -> checkBox.border(Length.rem(0.1f),
                     gui.theme().color(state == InteractionState.NORMAL ? Role.EDGE : Role.ACCENT)));
 
-            // grow(1), not auto: the label takes the row's remaining width, so the whole strip past the glyph
-            // belongs to the name — and a name longer than the row wraps at the row edge instead of widening it.
+            // One line, cut off at the row's edge. The row is a fixed height — that is what keeps paging exact —
+            // and a fixed-height row cannot hold a wrapped label: the second line spills out of the strip and
+            // draws over the row below. So the name is never wrapped and never widens the row either.
+            //
+            // Two nodes, because neither can do it alone. A label always wraps at its own width (wordWrap(false)
+            // is for editable fields only), so the label is left at AUTO width — its one-line width, which the
+            // flex never shrinks — and a grow(1) box takes the row's remaining width and clips it there. clip()
+            // masks a node's children, not its own glyphs, which is the other reason the box is a box. The same
+            // shape as a Table cell. There is no ellipsis anywhere in the text stack; the tooltip below is how a
+            // cut name is read in full.
             this.label = gui.text(source.label(item))
-                    .width(Length.grow(1))
                     .textSize(Length.rem(1))
                     .textColor(gui.theme().color(Role.INK))
                     .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
+            this.labelBox = gui.row()
+                    .width(Length.grow(1))
+                    .alignItems(LayoutEnums.AlignItems.CENTER)
+                    .scroll(false, false)   // a cut name is truncated, not scrolled: no bar across the row
+                    .clip(true)
+                    .children(label);
             this.rowNode = gui.row()
                     .role("treeitem")
                     .width(Length.FILL)
@@ -398,7 +412,7 @@ public final class TreeView<T> implements AutoCloseable {
                     // stretched to the row height is not a checkbox.
                     .alignItems(LayoutEnums.AlignItems.CENTER)
                     .scroll(false, false)
-                    .children(spacer, disclosure, checkBox, label);
+                    .children(spacer, disclosure, checkBox, labelBox);
             this.kidsBox = gui.column().width(Length.FILL).visible(false).scroll(false, false);
             this.entry = gui.column().width(Length.FILL).scroll(false, false).children(rowNode, kidsBox);
             // How a collapsed branch un-hides something inside it, for navigation (Gui.reveals). Only a branch
@@ -437,6 +451,17 @@ public final class TreeView<T> implements AutoCloseable {
                 toggle(this);
             });
             gui.onState(rowNode, state -> restyle(this, state));
+            // The full name, for a row that cuts it off — and nothing for one that does not. Asked at hover time
+            // rather than kept up to date, so a row costs one state observer until someone rests on it: whether a
+            // name is cut depends on the depth, the tree's width and the zoom, all of which move under it.
+            tips.attach(rowNode, () -> truncated() ? source.label(item) : null);
+        }
+
+        /** Whether the label is wider than the box that clips it — read from the published layout. */
+        boolean truncated() {
+            Rect name = label.layout().rect();
+            Rect room = labelBox.layout().rect();
+            return name != null && room != null && room.w() > 0f && name.w() > room.w() + 0.5f;
         }
 
         /**
@@ -554,6 +579,12 @@ public final class TreeView<T> implements AutoCloseable {
     /** The find bar: hidden until Ctrl+F, and no part of the layout or the Tab order until it is up. */
     private final FindBar find;
 
+    /**
+     * One bubble for the whole tree, showing the full name of a row whose label is cut off. Floating and hit-inert,
+     * so it is the framework's one sanctioned thing that appears on hover and changes nothing under the pointer.
+     */
+    private final Tooltip tips;
+
     /** How a row answers a query. Replaceable: only the application knows what its items are searchable by. */
     private volatile BiPredicate<T, String> matcher;
 
@@ -597,6 +628,7 @@ public final class TreeView<T> implements AutoCloseable {
                 .scroll(false, false);
         this.rows = gui.column().width(Length.FILL).height(Length.FILL);
         this.dropIndicator = DropIndicator.of(gui.theme().color(Role.ACCENT));
+        this.tips = new Tooltip(gui);   // before any row: every row attaches to it as it is built
 
         // Navigation is an ordered stage: moving a cursor is order-dependent under key repeat, and it is pure
         // lookups on the visible list — exactly what the GUI-thread lane is for. Registering it also makes the
@@ -1012,6 +1044,17 @@ public final class TreeView<T> implements AutoCloseable {
         return r == null ? null : r.checkBox;
     }
 
+    /** The text node of {@code item}'s label, or null with no row — package-private, so a test can measure it. */
+    synchronized Node labelNode(T item) {
+        Row r = rowsByItem.get(item);
+        return r == null ? null : r.label;
+    }
+
+    /** The tree's tooltip — package-private, so a test can zero its delay and read whether it is up. */
+    Tooltip tooltip() {
+        return tips;
+    }
+
     /** The find bar's strip — package-private, so a test can read whether the user can see it. */
     Node findBar() {
         return find.node();
@@ -1192,6 +1235,7 @@ public final class TreeView<T> implements AutoCloseable {
             dragSub.close();
         }
         find.close();   // takes the bar's own claims with it; the root's Ctrl+F goes with the root below
+        tips.close();
         synchronized (this) {
             for (Row r : rowsByItem.values()) {
                 gui.releaseNode(r.rowNode);

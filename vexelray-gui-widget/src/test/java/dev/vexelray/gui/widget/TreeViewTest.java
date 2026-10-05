@@ -334,6 +334,92 @@ class TreeViewTest {
         }
     }
 
+    /** A name far wider than a narrow tree, one level in, between two short rows. */
+    private static final String LONG = "BufferTestWithAVeryLongName.java";
+
+    /** Roots "dir" (holding {@link #LONG}) and "z.java" — enough to put a row directly under the long one. */
+    private static final class LongNameSource implements TreeView.Source<String> {
+        @Override
+        public List<String> roots() {
+            return List.of("dir", "z.java");
+        }
+
+        @Override
+        public String label(String item) {
+            return item;
+        }
+
+        @Override
+        public boolean hasChildren(String item) {
+            return item.equals("dir");
+        }
+
+        @Override
+        public List<String> children(String item) {
+            return item.equals("dir") ? List.of(LONG) : List.of();
+        }
+    }
+
+    /** Mount a {@link LongNameSource} tree 10 rem wide, with "dir" open and laid out. */
+    private static TreeView<String> narrowTree(HeadlessGui h) {
+        TreeView<String> tree = new TreeView<>(h.gui, new LongNameSource());
+        h.gui.root().children(h.gui.column()
+                .width(dev.vexelray.gui.core.layout.Length.rem(10))
+                .height(dev.vexelray.gui.core.layout.Length.FILL)
+                .children(tree.node()));
+        h.frame();
+        tree.expand("dir");
+        h.frame();
+        h.frame();   // the materialised row gets its rect
+        return tree;
+    }
+
+    /**
+     * A row is a fixed height, so a label that wrapped would spill out of it and draw over the row below — the
+     * name has to stay one line and be cut at the row's edge instead.
+     */
+    @Test
+    void aLongLabelInANarrowTreeStaysOneLineInsideItsRow() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TreeView<String> tree = narrowTree(h);
+
+            var row = tree.rowNode(LONG).layout().rect();
+            var below = tree.rowNode("z.java").layout().rect();
+            var label = tree.labelNode(LONG).layout().rect();
+
+            assertEquals(rowHeight(h, tree), row.h(), 0.5f, "the row keeps its one fixed height");
+            assertEquals(row.y() + row.h(), below.y(), 0.5f, "and the next row starts right under it");
+            assertEquals(HeadlessGui.CELL, label.h(), 0.5f, "the label is one line tall, not wrapped onto several");
+            assertTrue(label.y() >= row.y() && label.y() + label.h() <= row.y() + row.h(),
+                    "and sits inside its own row, not over the one below");
+            assertEquals(LONG.length() * HeadlessGui.CELL, label.w(), 0.5f,
+                    "laid out at its whole one-line width, which the row's clip then cuts");
+            assertTrue(label.x() + label.w() > row.x() + row.w(), "the name really is wider than the row here");
+            tree.close();
+        }
+    }
+
+    /** The full name of a cut-off row is one hover away; a row whose name fits says nothing. */
+    @Test
+    void hoveringACutOffRowShowsTheFullNameAndAFittingOneShowsNothing() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TreeView<String> tree = narrowTree(h);
+            tree.tooltip().delayMillis(0);
+
+            var cut = tree.rowNode(LONG).layout().rect();
+            h.hover(cut.x() + cut.w() / 2f, cut.y() + cut.h() / 2f);
+            h.frame();
+            assertTrue(tree.tooltip().isOpen(), "resting on a cut-off name shows it");
+            assertEquals(LONG, h.retained(tree.tooltip().node()).textString(), "in full");
+
+            var fits = tree.rowNode("z.java").layout().rect();
+            h.hover(fits.x() + fits.w() / 2f, fits.y() + fits.h() / 2f);
+            h.frame();
+            assertTrue(!tree.tooltip().isOpen(), "a name that fits has nothing more to show");
+            tree.close();
+        }
+    }
+
     // --- geometry helpers: read the published layout rather than guessing pixels ---
 
     private static float rowHeight(HeadlessGui h, TreeView<String> tree) {

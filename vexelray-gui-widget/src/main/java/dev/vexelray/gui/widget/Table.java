@@ -346,9 +346,9 @@ public final class Table<T> implements AutoCloseable {
             if (column.sortable()) {
                 gui.onClick(label, () -> cycleSort(index));
             }
-            // GRAB rather than a resize cursor, which the shape vocabulary does not have: a divider is exactly
-        // "something that can be grabbed and dragged", and a sixth shape is a native binding, not a widget.
-        gui.cursor(grip, CursorShape.GRAB);
+        // The column's edge is dragged to change its width, so the horizontal resize arrow, held for the whole
+        // drag. The same shape as SplitPane's divider, which is the same gesture.
+        gui.cursor(grip, CursorShape.RESIZE_HORIZONTAL);
             gui.onDrag(grip, e -> resize(index, e));
 
             headerCells.add(cell);

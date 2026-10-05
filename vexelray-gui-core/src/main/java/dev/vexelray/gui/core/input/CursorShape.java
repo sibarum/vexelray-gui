@@ -11,7 +11,8 @@ package dev.vexelray.gui.core.input;
  *
  * <ol>
  *   <li>{@link #GRABBING} — a grab is in progress (scrollbar thumb, slider). Holds until release, wherever the
- *       pointer wanders, because the pointer is captured and still driving that control.</li>
+ *       pointer wanders, because the pointer is captured and still driving that control. A resize held the same
+ *       way keeps its own shape: see {@link #whileDragging}.</li>
  *   <li>{@link #GRAB} — over something draggable: a scrollbar, or a node that declared it.</li>
  *   <li>{@link #POINTER} — over something clickable, i.e. it or an ancestor has a click handler. Same
  *       ancestor-or-self rule clicks themselves bubble by, so a button's label is part of the button.</li>
@@ -35,5 +36,34 @@ public enum CursorShape {
     GRAB,
 
     /** The closed hand, while a grab is actually in progress. */
-    GRABBING
+    GRABBING,
+
+    /**
+     * The two-headed horizontal arrow, over something whose width is dragged: a divider between side-by-side
+     * panes, a column's edge. Held for the whole drag.
+     */
+    RESIZE_HORIZONTAL {
+        @Override
+        public CursorShape whileDragging() {
+            return this;
+        }
+    },
+
+    /** The two-headed vertical arrow, over something whose height is dragged. Held for the whole drag. */
+    RESIZE_VERTICAL {
+        @Override
+        public CursorShape whileDragging() {
+            return this;
+        }
+    };
+
+    /**
+     * The shape to hold while a drag that started on a node declaring this shape is under way, wherever the
+     * pointer goes — or null if this shape is not held, and the pointer's position decides as usual. A grab
+     * closes its hand; a resize keeps its arrow, because a resize that turns back into an arrow halfway through
+     * the drag tells the user they have let go of it.
+     */
+    public CursorShape whileDragging() {
+        return this == GRAB ? GRABBING : null;
+    }
 }

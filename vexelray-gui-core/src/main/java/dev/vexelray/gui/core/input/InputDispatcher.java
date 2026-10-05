@@ -1273,8 +1273,12 @@ public final class InputDispatcher {
         if (scrollDrag != null) {
             return CursorShape.GRABBING;
         }
-        if (leftDown && dragCapture != null && declaredCursor(dragCapture) == CursorShape.GRAB) {
-            return CursorShape.GRABBING;
+        if (leftDown && dragCapture != null) {
+            CursorShape declared = declaredCursor(dragCapture);
+            CursorShape held = declared == null ? null : declared.whileDragging();
+            if (held != null) {
+                return held;
+            }
         }
         // A scrollbar under the pointer is grabbable -- framework chrome, so the framework knows it without
         // anyone declaring anything.

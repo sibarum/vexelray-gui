@@ -203,6 +203,26 @@ class CursorRuleTest {
         assertEquals(CursorShape.GRAB, h.last(), "released but still over it");
     }
 
+    /**
+     * A divider keeps its resize arrow for the whole drag, even with the pointer off it — a drag outruns what it
+     * moves — and gives it up on release once the pointer is elsewhere.
+     */
+    @Test
+    void aResizeKeepsItsArrowForTheWholeDrag() {
+        Harness h = harness();
+        RetainedNode root = box(0, 0, 0, 200, 200);
+        RetainedNode divider = box(1, 100, 0, 6, 200);
+        attach(root, divider);
+        h.dispatcher().onDrag(1, e -> { });
+        h.dispatcher().setCursor(1, CursorShape.RESIZE_HORIZONTAL);
+
+        assertEquals(CursorShape.RESIZE_HORIZONTAL, h.at(root, 102, 50));
+        h.press(root, 102, 50);
+        assertEquals(CursorShape.RESIZE_HORIZONTAL, h.at(root, 160, 50), "still the arrow, off the divider");
+        h.release(root, 160, 50);
+        assertEquals(CursorShape.DEFAULT, h.last(), "released elsewhere: the arrow goes");
+    }
+
     /** A text field's drag handler must not read as grabbable — the case that forced declaration over inference. */
     @Test
     void aTextFieldsDragHandlerDoesNotMakeItGrabbable() {

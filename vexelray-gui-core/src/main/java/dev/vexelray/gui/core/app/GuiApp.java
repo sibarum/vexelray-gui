@@ -1428,18 +1428,23 @@ public final class GuiApp implements AutoCloseable {
     /**
      * Map a requested {@link dev.vexelray.gui.core.input.CursorShape} onto the window API.
      *
-     * <p><b>The engine offers only {@code ARROW} and {@code TEXT}</b>, so the hand shapes -- pointer over
-     * anything clickable, open and closed hands over anything grabbable -- currently fall back to the arrow. The
-     * rule that decides them is framework-side and fully exercised ({@code CursorRuleTest}); what is missing is
-     * three cursor constants and their OS handles, which is an engine concern like E2-E4. Degrading to the arrow
-     * is the right fallback: a wrong-looking cursor is a cosmetic loss, where guessing at a shape the platform
-     * has no standard for would not be.
+     * <p><b>The engine offers the arrow, the I-beam and the two resize arrows</b> — the shapes every desktop has a
+     * system cursor for. The hand shapes — pointer over anything clickable, open and closed hands over anything
+     * grabbable — fall back to the arrow: Windows has a pointing hand but no open or closed one, so a grab hand
+     * would mean shipping cursor images. The rule that decides them is framework-side and fully exercised
+     * ({@code CursorRuleTest}). Degrading to the arrow is the right fallback: a wrong-looking cursor is a cosmetic
+     * loss, where guessing at a shape the platform has no standard for would not be.
      */
     private static NativeWindow.Cursor osCursor(dev.vexelray.gui.core.input.CursorShape shape) {
-        return shape == dev.vexelray.gui.core.input.CursorShape.TEXT
-                ? NativeWindow.Cursor.TEXT
-                : NativeWindow.Cursor.ARROW;
+        return OS_CURSORS.getOrDefault(shape, NativeWindow.Cursor.ARROW);
     }
+
+    /** The shapes the engine can show; anything absent is the arrow. */
+    private static final java.util.Map<dev.vexelray.gui.core.input.CursorShape, NativeWindow.Cursor> OS_CURSORS =
+            java.util.Map.of(
+                    dev.vexelray.gui.core.input.CursorShape.TEXT, NativeWindow.Cursor.TEXT,
+                    dev.vexelray.gui.core.input.CursorShape.RESIZE_HORIZONTAL, NativeWindow.Cursor.RESIZE_HORIZONTAL,
+                    dev.vexelray.gui.core.input.CursorShape.RESIZE_VERTICAL, NativeWindow.Cursor.RESIZE_VERTICAL);
 
     /**
      * Text intrinsic sizing over VexelRay's glyph layout: width = measured advance, height = line height.

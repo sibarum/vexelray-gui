@@ -14,8 +14,9 @@
 
     <description>
         The GUI's one native binding: a Panama (FFM) facade over nativefiledialog-extended
-        (open / save / pick-folder). Invoked on the GUI thread (NFD is modal/main-thread); the result is
-        delivered back to a worker through the core event queue.
+        (open / save / pick-folder). Asked from any thread; run on a dialog thread of its own on Windows, so the
+        window keeps drawing, and on the GUI thread on macOS, where AppKit requires it. The answer is a future
+        completed off the GUI thread.
     </description>
 
     <dependencies>

@@ -21,9 +21,15 @@ import static java.lang.foreign.ValueLayout.JAVA_SHORT;
  *
  * Use {@link FileDialog} for the typed Java API; this class is the FFM layer.
  *
- * Threading: dialogs are modal and must be invoked from the thread that owns
- * the window / pumps OS events (the main thread on macOS). Calls block until
- * the dialog is dismissed.
+ * <p><b>Threading.</b> Every call here blocks until the dialog is dismissed, on whatever thread makes it. Which
+ * thread that may be is the OS's rule, and {@link FileDialog}'s {@code *Async} methods apply it for you: on
+ * Windows a dialog thread of the module's own, on macOS the GUI thread. Calling in here directly is calling it on
+ * your own thread, with the rules that come with that thread.
+ *
+ * <p><b>Init and quit are per thread.</b> On Windows {@code NFD_Init} enters a COM apartment, and an apartment
+ * belongs to the thread that entered it — so {@link #ensureInit} initialises the calling thread, once, and
+ * {@link #quit} releases the calling thread's own init and nobody else's. A thread that never opened a dialog has
+ * nothing to quit, and calling it there does nothing.
  *
  * String encoding: NFDe's {@code nfdnchar_t} is {@code wchar_t} (UTF-16LE)
  * on Windows and {@code char} (UTF-8) on POSIX. The helpers in this class
@@ -79,53 +85,64 @@ public final class Nfd {
     private static final MethodHandle NFD_PICK_FOLDER_N    = dc("NFD_PickFolderN_With_Impl",  FunctionDescriptor.of(JAVA_INT, JAVA_LONG, ADDRESS, ADDRESS));
     private static final MethodHandle NFD_GET_ERROR        = dc("NFD_GetError",     FunctionDescriptor.of(ADDRESS));
 
-    private static boolean initialized = false;
+    /**
+     * Whether the calling thread has done {@code NFD_Init} and not yet {@code NFD_Quit}. Per thread, because on
+     * Windows what {@code NFD_Init} sets up is the calling thread's COM apartment: one thread's init does nothing
+     * for another's dialogs, and {@code NFD_Quit} on a different thread does not balance it.
+     */
+    private static final ThreadLocal<Boolean> INITIALISED = ThreadLocal.withInitial(() -> false);
 
     /**
-     * The thread that called {@link #ensureInit}, so {@link #quit} can refuse to unwind from another one.
-     * On Windows {@code NFD_Init} initialises a COM apartment, and an apartment belongs to the thread that
-     * entered it — {@code NFD_Quit} on a different thread does not balance it and is not a no-op.
+     * Held across {@code NFD_Init} and {@code NFD_Quit} only — never across a dialog. NFDe keeps the
+     * "did my init enter the apartment" answer in one process-wide variable, so two threads must not be in the
+     * middle of either at once.
      */
-    private static Thread owner;
+    private static final Object LIFECYCLE = new Object();
 
     private Nfd() {}
 
-    /** Idempotent. NFDe requires NFD_Init before any dialog call. */
-    public static synchronized void ensureInit() {
-        if (initialized) return;
-        try {
-            int r = (int) NFD_INIT.invokeExact();
-            if (r != NFD_OKAY) {
-                throw new IllegalStateException("NFD_Init failed: " + lastError());
-            }
-            initialized = true;
-            owner = Thread.currentThread();
-        } catch (Throwable t) { throw rethrow(t); }
+    /** Idempotent per thread. NFDe requires NFD_Init on the dialog's thread before any dialog call. */
+    public static void ensureInit() {
+        if (INITIALISED.get()) return;
+        synchronized (LIFECYCLE) {
+            try {
+                int r = (int) NFD_INIT.invokeExact();
+                if (r != NFD_OKAY) {
+                    throw new IllegalStateException("NFD_Init failed: " + lastError());
+                }
+            } catch (Throwable t) { throw rethrow(t); }
+        }
+        INITIALISED.set(true);
+    }
+
+    /** Whether the calling thread has NFDe initialised — for tests, and for nothing that has to act on it. */
+    static boolean initialisedHere() {
+        return INITIALISED.get();
     }
 
     /**
-     * Release NFDe, pairing the {@code NFD_Init} the first dialog performed. Idempotent, and a no-op if no
-     * dialog was ever opened.
+     * Release the calling thread's {@code NFD_Init}, if it did one. Idempotent, and a no-op on a thread that never
+     * opened a dialog — including the GUI thread of an application that only ever asked through
+     * {@link FileDialog}'s {@code *Async} methods.
      *
-     * <p>Call it from the GUI thread when shutting the GUI down. Nothing calls it for you: a shutdown hook would
-     * be the obvious place and is the wrong one, because it runs on a thread of the JVM's choosing and the COM
-     * apartment {@code NFD_Init} entered belongs to the thread that opened the dialogs. For a process that is
-     * about to exit this is hygiene; for a host that tears the GUI down and builds another in the same process
-     * it is the difference between a second {@code NFD_Init} and a second one over state never given back.
+     * <p><b>On Windows the dialog thread calls this for itself</b> as the JVM shuts down, so an application whose
+     * dialogs all went through the {@code *Async} methods has nothing to do. An application that opened dialogs
+     * synchronously on its own thread ({@link FileDialog#open} and friends) initialised that thread, and quits it
+     * from that thread when it is done — a shutdown hook is the wrong place, because it runs on a thread of the
+     * JVM's choosing. For a process about to exit this is hygiene; for a host that tears the GUI down and builds
+     * another in the same process it is the difference between a second {@code NFD_Init} and a second one over
+     * state never given back.
      */
-    public static synchronized void quit() {
-        if (!initialized) {
+    public static void quit() {
+        if (!INITIALISED.get()) {
             return;
         }
-        if (Thread.currentThread() != owner) {
-            throw new IllegalStateException("NFD_Quit must run on the thread that opened the dialogs ("
-                    + owner.getName() + "), not " + Thread.currentThread().getName());
+        synchronized (LIFECYCLE) {
+            try {
+                NFD_QUIT.invokeExact();
+            } catch (Throwable t) { throw rethrow(t); }
         }
-        try {
-            NFD_QUIT.invokeExact();
-        } catch (Throwable t) { throw rethrow(t); }
-        initialized = false;
-        owner = null;
+        INITIALISED.remove();
     }
 
     public static String lastError() {

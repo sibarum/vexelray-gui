@@ -3,6 +3,7 @@ package dev.vexelray.gui.nfd;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import java.util.concurrent.Executor;
 
 /**
  * The platform this is running on, and the only place in the module that reads {@code os.name}.
@@ -26,12 +27,28 @@ enum Os {
         String libraryFileName(String libName) {
             return libName + ".dll";
         }
+
+        /**
+         * The dialog thread. {@code IFileDialog} runs on any thread in a single-threaded COM apartment, provided
+         * the init, the dialogs and the quit are all on that one thread; a dialog owned by another thread's window
+         * disables that window while it is up, and the window's own thread goes on drawing.
+         */
+        @Override
+        Executor dialogLane(Executor guiThread) {
+            return DialogThread.shared();
+        }
     },
 
     MACOS(StandardCharsets.UTF_8, 1, Nfd.NFD_WINDOW_HANDLE_TYPE_COCOA, "macos") {
         @Override
         String libraryFileName(String libName) {
             return "lib" + libName + ".dylib";
+        }
+
+        /** The GUI thread: {@code NSOpenPanel} and {@code NSSavePanel} are AppKit, and AppKit is main-thread only. */
+        @Override
+        Executor dialogLane(Executor guiThread) {
+            return guiThread;
         }
     };
 
@@ -49,6 +66,16 @@ enum Os {
 
     /** What this platform calls a shared library named {@code libName}. */
     abstract String libraryFileName(String libName);
+
+    /**
+     * Where a native file dialog runs here, given {@code guiThread} — the way onto the thread that owns the window
+     * ({@code GuiApp::post}, {@code WindowControls::post}). The one place the module decides it.
+     *
+     * <p>There is no Linux constant, so no Linux answer: no Linux build of NFDe ships in this module (see
+     * {@link #of}). One that is added has to choose by backend — GTK's dialogs belong to the thread running GTK's
+     * main loop; the xdg-desktop-portal backend talks D-Bus and could take the dialog thread.
+     */
+    abstract Executor dialogLane(Executor guiThread);
 
     /**
      * How NFDe's {@code nfdnchar_t} is encoded here — {@code wchar_t} (UTF-16LE) on Windows, {@code char}

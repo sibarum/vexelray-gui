@@ -71,6 +71,17 @@ class OsTest {
     }
 
     /**
+     * Where a dialog runs is the one platform difference that is about threads: AppKit is main-thread only, and
+     * Windows' dialog has a thread of its own so the window keeps drawing.
+     */
+    @Test
+    void eachPlatformSaysWhereItsDialogsRun() {
+        java.util.concurrent.Executor guiThread = Runnable::run;
+        assertSame(guiThread, Os.MACOS.dialogLane(guiThread), "AppKit's panels are the main thread's");
+        assertSame(DialogThread.shared(), Os.WINDOWS.dialogLane(guiThread));
+    }
+
+    /**
      * A char's width and its charset have to agree, because {@code readNString} scans for the terminator in
      * units of the first and decodes with the second. They were two independent ternaries on one boolean before.
      */

@@ -416,6 +416,11 @@ final class GuiWindow implements AutoCloseable {
         return root;
     }
 
+    /** Whether the tree as the last update left it names {@code image} anywhere — see {@code GuiApp.release}. */
+    boolean shows(SampledImage image) {
+        return updated != null && GuiApp.names(updated, image);
+    }
+
     /** The raw OS window handle — for attaching input at the application edge. */
     long osHandle() {
         return window.osHandle();

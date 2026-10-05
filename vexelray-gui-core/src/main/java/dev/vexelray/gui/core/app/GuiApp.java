@@ -70,6 +70,10 @@ public final class GuiApp implements AutoCloseable {
     private final List<SampledColorTarget> viewports = new ArrayList<>();
     /** Uploaded images minted by {@link #texture}, closed with the application. */
     private final List<AtlasTexture> textures = new ArrayList<>();
+    /** Textures handed to {@link #release}, waiting for a frame that no longer names them. Main thread. */
+    private final List<Retiring> retiring = new ArrayList<>();
+    /** Loop iterations begun, so a released texture can be held for a whole one after it. Main thread. */
+    private long iteration;
     private final List<StorageBuffer> buffers = new ArrayList<>();
     private final TextLayout[] text;
     private final TextMeasurer measurer;
@@ -336,10 +340,11 @@ public final class GuiApp implements AutoCloseable {
      * flight would tear. An animation is therefore <em>one</em> texture holding every frame, shown a cell at a
      * time with {@code Node.image(image, ImageRegion.cell(...))} — no per-frame upload, and no run boundary in the
      * vertex buffer because the bound handle never changes. Content that genuinely must change makes a new
-     * texture and closes the old one after a frame that no longer names it.
+     * texture, points the node at it, and hands the old one to {@link #release}.
      *
      * <p>Textures made here are closed with the application, so an app that loads its icons at startup need not
-     * track them.
+     * track them. One that browses — a new picture per selection — releases each as it stops showing it, or holds
+     * every one it ever showed until exit.
      */
     public AtlasTexture texture(byte[] rgba, int width, int height) {
         if (width <= 0 || height <= 0) {
@@ -354,6 +359,129 @@ public final class GuiApp implements AutoCloseable {
         textures.removeIf(AtlasTexture::isClosed);   // see viewport: replaced ones are closed by the application
         textures.add(texture);
         return texture;
+    }
+
+    /**
+     * Give back a texture made by {@link #texture}, once no node needs it: it is closed when no frame can still
+     * sample it. Main thread, like {@link #texture}.
+     *
+     * <p><b>Why the application cannot simply close it.</b> Closing is safe once the GPU has finished every frame
+     * that drew the texture, and the frames in flight are behind the device this class keeps private on purpose —
+     * so the one party that knows a texture is finished with is the one that cannot see when that becomes true.
+     * Too early is a use-after-free on the GPU; never is a leak until exit. This is the half it can see.
+     *
+     * <p><b>The half that stays the application's</b> is the tree: call this after the last node showing the
+     * texture has been given another image (or none). The texture is held for one whole loop iteration after the
+     * call, so an edit posted just before it has been drained by every window, then closed after one device wait —
+     * which on a loop with one frame in flight costs what the next frame's own fence wait would have. A texture
+     * some window's tree still names is not closed: it is kept, said once in the log, and looked for again each
+     * frame, because a dangling descriptor is the one outcome worse than a leak.
+     *
+     * <p>Releasing a texture twice, or one already closed, does nothing. One this application did not make is a
+     * bug, and is refused here rather than at the frame that would have closed somebody else's.
+     */
+    public void release(AtlasTexture texture) {
+        if (texture == null) {
+            throw new IllegalArgumentException("release needs a texture; was given null");
+        }
+        if (texture.isClosed()) {
+            return;
+        }
+        if (!textures.contains(texture)) {
+            throw new IllegalArgumentException("only a texture made by this application's texture() can be "
+                    + "released here; " + texture + " was not");
+        }
+        for (Retiring r : retiring) {
+            if (r.texture == texture) {
+                return;
+            }
+        }
+        retiring.add(new Retiring(texture, iteration));
+    }
+
+    /** A texture handed to {@link #release}, and when. */
+    private static final class Retiring {
+        final AtlasTexture texture;
+        final long releasedAt;
+        /** Whether the log has already been told it is still shown, so a forgotten node is one line, not one a frame. */
+        boolean warned;
+
+        Retiring(AtlasTexture texture, long releasedAt) {
+            this.texture = texture;
+            this.releasedAt = releasedAt;
+        }
+    }
+
+    /** Whether some released texture is still waiting out its iteration — the loop must not park on it. */
+    private boolean retireDue() {
+        for (int i = 0; i < retiring.size(); i++) {
+            if (!aged(retiring.get(i))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Whether a whole loop iteration has begun and ended since {@code r} was released. */
+    private boolean aged(Retiring r) {
+        return r.releasedAt <= iteration - 2;
+    }
+
+    /**
+     * Close every released texture that no frame can still sample. Top of a loop iteration, before any window
+     * records, so nothing is drawing while the device waits.
+     */
+    private void retire() {
+        boolean waited = false;
+        for (int i = 0; i < retiring.size(); ) {
+            Retiring r = retiring.get(i);
+            if (!aged(r)) {
+                i++;
+                continue;
+            }
+            if (shown(r.texture)) {
+                if (!r.warned) {
+                    r.warned = true;
+                    LOG.warn("a released texture is still shown by a node, so it stays open until no tree names "
+                            + "it; give the node another image before releasing: " + r.texture);
+                }
+                i++;
+                continue;
+            }
+            if (!waited) {
+                device.waitIdle();
+                waited = true;
+            }
+            r.texture.close();
+            retiring.remove(i);
+        }
+    }
+
+    /** Whether any window's tree, as its last update left it, still names {@code image}. */
+    private boolean shown(SampledImage image) {
+        if (main.shows(image)) {
+            return true;
+        }
+        for (OpenWindow w : open) {
+            if (w.window.shows(image)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Whether {@code image} is on {@code node} or anywhere under it. */
+    static boolean names(RetainedNode node, dev.vexelray.target.ImageHandle image) {
+        if (node.image() == image) {
+            return true;
+        }
+        List<RetainedNode> children = node.children;
+        for (int i = 0; i < children.size(); i++) {
+            if (names(children.get(i), image)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -1110,6 +1238,10 @@ public final class GuiApp implements AutoCloseable {
             // After the tasks, because opening a window is one of them: a tree that arrived this
             // iteration is presented this iteration, so it must be able to ask for the next one.
             wireAllWakes();
+            iteration++;
+            if (!retiring.isEmpty()) {
+                retire();
+            }
             // One span per loop iteration, and it is the root of the whole report: every other span in every
             // other lane nests inside this one, so its self time is the loop's own overhead and its children
             // are where a frame actually went. The wait below is deliberately outside it - a loop parked on an
@@ -1146,7 +1278,8 @@ public final class GuiApp implements AutoCloseable {
                 // Never park on a queue that is already holding something: a window operation posted
                 // after this iteration's drain is owed the next frame, and it is the only one here that
                 // can say so.
-                long budget = tasks.isEmpty() ? pacing.getAsLong() : 0L;
+                // A texture waiting out its iteration (see release) is the same: parked, it is never closed.
+                long budget = tasks.isEmpty() && !retireDue() ? pacing.getAsLong() : 0L;
                 // Then the two bounds. The floor applies only while someone is looking: an unfocused
                 // window parks on whatever the application asked for, up to forever.
                 if (isFocused()) {
@@ -1224,6 +1357,7 @@ public final class GuiApp implements AutoCloseable {
             t.close();
         }
         textures.clear();
+        retiring.clear();   // every one of them was in textures, so closed just above
         for (StorageBuffer b : buffers) {
             b.close();
         }

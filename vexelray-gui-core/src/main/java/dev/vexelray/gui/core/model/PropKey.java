@@ -103,7 +103,7 @@ public enum PropKey {
      */
     OPACITY(false),
     /**
-     * Subtree displacement, in multiples of the node's own em — the second visual transform of architecture.md
+     * Subtree displacement, in multiples of the root em (under zoom and density; not the node's text size) — the second visual transform of architecture.md
      * §7, and like {@link #OPACITY} not a layout input: the node is <em>drawn</em> somewhere else and reflows
      * nothing, so a page can travel without a single measurement running.
      *

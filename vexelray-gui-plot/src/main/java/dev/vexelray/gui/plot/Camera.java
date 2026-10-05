@@ -1,8 +1,7 @@
 package dev.vexelray.gui.plot;
 
 /**
- * Where a surface is looked at from: an <b>axonometric</b> camera — a yaw, a pitch, and a magnification, with no
- * perspective at all.
+ * Where a surface is looked at from: an <b>axonometric</b> camera — a yaw and a pitch, with no perspective at all.
  *
  * <p>The absence of perspective is the design decision, not a simplification. A reliable surface is drawn as a
  * field of axis-aligned boxes standing over a grid, and under an orthographic projection the order those boxes
@@ -15,7 +14,8 @@ package dev.vexelray.gui.plot;
  * <h2>The space it projects</h2>
  * Coordinates arrive <b>normalised</b> — the volume on show mapped to {@code [-0.5, 0.5]} on each axis — so this
  * class knows nothing about {@link Volume} and a volume knows nothing about being looked at. What comes back is
- * in the same units: {@code u} to the right, {@code v} upward, both around zero.
+ * in the same units: {@code u} to the right, {@code v} upward, both around zero. Upward is the opposite of
+ * {@link Frame#fractionOf} and {@link Span}, which run down the screen.
  *
  * <p>There is deliberately <b>no magnification here</b>. A camera that carried one would be carrying half a
  * decision, since how large the picture should be depends on the viewport and this class has never heard of one;

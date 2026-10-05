@@ -170,7 +170,7 @@ class TransformTest {
      * {@code TRANSLATE} moves what is drawn and nothing else — the second visual transform of §7, and the one
      * that makes a transition read as motion rather than as a slideshow.
      *
-     * <p>In multiples of the node's own em, because of when it has to resolve: layout does not re-run for a
+     * <p>In multiples of the root em, because of when it has to resolve: layout does not re-run for a
      * purely visual prop, so a {@code Length} here would animate against px baked whenever layout last happened
      * to run. The em is already on the node, so the renderer scales by it the way it already scales the lit bevel
      * and the caret width.

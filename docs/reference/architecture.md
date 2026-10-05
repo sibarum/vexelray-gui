@@ -487,7 +487,8 @@ under the user pairs it with `hitInert`.
 
 **`TRANSLATE_X/Y`, as built.** A `Canvas.pushTranslate` around the node and its subtree — one addition where
 a vertex is written, moving both the position and the screen coordinate the clip SDF evaluates at, so a
-translated shape is clipped where it lands. Expressed in **multiples of the node's own em**, not a `Length`,
+translated shape is clipped where it lands. Expressed in **multiples of the em** — the flat root em under zoom and density, the same on every node and not
+its text size — rather than a `Length`,
 because of *when* it resolves: `Length`s are resolved to px by the layout pass, and layout deliberately does
 not re-run for a visual prop, so a `Length` here would animate against px baked whenever layout last happened
 to run — never, in a UI that is otherwise still. The em is already on the node. Hit-testing does **not**

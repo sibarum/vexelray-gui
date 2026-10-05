@@ -435,7 +435,6 @@ public final class Gui implements AutoCloseable {
         return transfers.drag();
     }
 
-    /** The live window size as a bus {@code State} — subscribe with {@code gui.viewport().onCommit(...)}. */
     /**
      * The modifier keys held right now, as a bus {@code State} — subscribe with
      * {@code gui.modifiers().onCommit(...)} to restyle while one is held, or read {@code .value()} inside a
@@ -455,6 +454,11 @@ public final class Gui implements AutoCloseable {
         return modifierState;
     }
 
+    /**
+     * The live window size as a bus {@code State} — subscribe with {@code gui.viewport().onCommit(...)}. The
+     * drawable area in layout px, the space {@link #layout()} rects and input events are in: always the real
+     * window, never the canvas {@link #minSize} may clamp it to, and not the OS outer rect a window is created at.
+     */
     public State<Viewport> viewport() {
         return metrics.viewport();
     }
@@ -468,7 +472,8 @@ public final class Gui implements AutoCloseable {
      * padding, border, corner radius, text size, the scrollbar thickness, the text insets and the wheel step —
      * in one step and in proportion. That is the whole point of §6's "no pixel unit", and zooming is the cheapest
      * way to see whether it actually holds: anything that fails to move with the rest is still pinned to device
-     * pixels.
+     * pixels. The one deliberate exception is {@link Length#dp}: chrome that honours density and opts out of zoom
+     * (§6), so a gap or a hairline in dp is meant to stay put.
      */
     public State<Float> zoom() {
         return metrics.zoom();

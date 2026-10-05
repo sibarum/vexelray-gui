@@ -20,7 +20,7 @@ import java.util.Map;
  * The live model node — GUI-thread-only, mutated exclusively by the {@link Reconciler}. Identity is the stable
  * {@code id} (the {@code Node} handle shares it). Props live in an untyped map keyed by {@link PropKey} and are
  * read through the typed accessors below; {@link #x}/{@link #y}/{@link #w}/{@link #h} are the layout-computed
- * rect (screen px), filled by the flex layout each dirty frame.
+ * rect (layout px, root space), filled by the flex layout each dirty frame.
  */
 public final class RetainedNode {
 
@@ -32,7 +32,8 @@ public final class RetainedNode {
     public final List<RetainedNode> children = new ArrayList<>();
     public RetainedNode parent;
 
-    // Layout-computed border-box rect, absolute screen px (Y-down). w/h include border + padding (border-box).
+    // Layout-computed border-box rect, absolute layout px from the window's drawable top-left (Y-down) —
+    // the space input events are in, not desktop screen coordinates. w/h include border + padding (border-box).
     public float x;
     public float y;
     public float w;
@@ -71,7 +72,10 @@ public final class RetainedNode {
     public float textPadXPx;
     public float textPadYPx;
     public float gutterPadPx;
-    /** One em in px at this node's layout ({@code rootEmPx · zoom · dpi}) — lets a later stage size relatively. */
+    /**
+     * One em in px at this node's layout ({@code rootEmPx · zoom · dpi}) — lets a later stage size relatively. The
+     * flat root em, so the same on every node of a frame whatever its text size.
+     */
     public float emPx = 16f;
 
     // Scroll state: scrollX/Y persist across frames. A staged pipeline value (docs/reference/layout-read-model.md §2.2) —

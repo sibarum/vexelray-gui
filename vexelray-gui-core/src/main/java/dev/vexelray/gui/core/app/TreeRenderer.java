@@ -319,7 +319,8 @@ public final class TreeRenderer {
         }
         if (bg != null) {
             if (n.lit()) {
-                // Bevel scales with the type size so the edge light stays proportionate under zoom.
+                // Bevel scales with the root em (not this node's text size) so the edge light stays
+                // proportionate under zoom.
                 canvas.litRoundRect(n.x, n.y, n.w, n.h, rTop, rBottom,
                         Math.max(2f, n.emPx * 0.22f), 0.05f, fade(bg));
             } else {

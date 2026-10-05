@@ -27,7 +27,8 @@ package dev.vexelray.gui.typeset;
  * outcome the soft ceiling already absorbs.
  *
  * <h2>Units</h2>
- * {@link #px} returns <b>pixels</b>, because a legibility floor is physical and nothing else in this module is.
+ * {@link #px} returns <b>pixels at density 1</b> (dp, which the block's projection scales by density), because a
+ * legibility floor is physical and nothing else in this module is.
  * {@link #relative} returns the same thing as a multiple of {@link #rootPx()}, which is what a layout working in
  * em of the block root wants. Which of the two the engine lays out in is P2's decision; both are exact and one is
  * a division of the other.

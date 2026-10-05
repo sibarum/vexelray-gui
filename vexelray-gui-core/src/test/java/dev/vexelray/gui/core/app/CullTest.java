@@ -140,7 +140,7 @@ class CullTest {
         RetainedNode moved = child(scroller, row(0f, PAGE));
         moved.h = 40f;
         moved.set(PropKey.TRANSLATE_Y, -100f);
-        moved.emPx = 1f;   // translate is in multiples of the node's own em
+        moved.emPx = 1f;   // translate is in multiples of the em baked on the node
         child(moved, row(4000f, GONE));
         child(moved, row(4100f, SEEN));
 

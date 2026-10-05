@@ -155,9 +155,9 @@ public final class Rail {
      * opens and back under it as it closes. Two pages trading places still only dissolve: a rail's tools have no
      * order, so a swap between two of them has no direction to travel in.
      *
-     * <p>{@code travel} is in multiples of the panel's own em, and <b>the sign is the application's</b> because
+     * <p>{@code travel} is in multiples of the root em, and <b>the sign is the application's</b> because
      * only it knows which edge the rail is against: negative when the rail is to the panel's left, so the panel
-     * comes out from beneath it, and positive when the rail is on its right. A rem or two is plenty — far enough
+     * comes out from beneath it, and positive when the rail is on its right. An em or two is plenty — far enough
      * to have a direction, near enough that nothing appears to fly.
      *
      * <p><b>The panel's parent has to clip</b>, or a panel mid-travel draws over the rail beside it: a

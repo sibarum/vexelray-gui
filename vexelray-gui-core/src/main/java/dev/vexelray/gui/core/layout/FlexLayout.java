@@ -441,7 +441,7 @@ public final class FlexLayout {
 
     /**
      * Intrinsic border-box size of {@code n} along {@code axis}: a fixed length if one is set in a basis-free unit
-     * (em/rem/vw/vh), otherwise content — text metrics for a text node, or the children's sizes for a box — plus
+     * (em/rem/dp/vw/vh), otherwise content — text metrics for a text node, or the children's sizes for a box — plus
      * the node's own border + padding. Percent/Auto/Fill/Grow have no intrinsic basis here, so they measure to
      * content. Always ≥ 0.
      */

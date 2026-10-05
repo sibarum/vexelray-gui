@@ -124,7 +124,7 @@ public final class TypesetBlock implements AutoCloseable {
         return this;
     }
 
-    /** The geometry behind the current projection, in pixels — the block's <em>ink</em> box and its draw list.
+    /** The geometry behind the current projection, in pixels at density 1 (dp) — the block's <em>ink</em> box and its draw list.
      *  For tests, tools, and anything aligning to the ink rather than to the container. */
     public Placed placed() {
         return placed;

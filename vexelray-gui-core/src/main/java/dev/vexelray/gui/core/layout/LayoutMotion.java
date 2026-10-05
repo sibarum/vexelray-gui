@@ -86,11 +86,11 @@ public interface LayoutMotion {
      */
     void moved(RetainedNode node, float fromX, float fromY, float toX, float toY);
 
-    /** How far left of where layout put it this node is drawn, px; 0 when it has caught up. Inherited by the
-     * subtree. */
+    /** How far right of where layout put it this node is drawn, px (negative is left); 0 when it has caught up.
+     * Added to the layout position, and inherited by the subtree. */
     float displacementX(RetainedNode node);
 
-    /** How far above where layout put it this node is drawn, px; 0 when it has caught up. Inherited by the
-     * subtree. */
+    /** How far below where layout put it this node is drawn, px (negative is above); 0 when it has caught up.
+     * Added to the layout position, and inherited by the subtree. */
     float displacementY(RetainedNode node);
 }

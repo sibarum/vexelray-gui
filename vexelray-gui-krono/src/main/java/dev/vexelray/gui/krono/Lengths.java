@@ -17,6 +17,11 @@ import sibarum.kronometer.Interp;
  * lerp between {@code dp(8)} and {@code rem(1)} — any number you produced would resolve to something
  * that matched neither endpoint at either end.
  *
+ * <p>The one pair this overstates is {@code em} and {@code rem}: under the flat root they resolve to the same
+ * number, so a blend between them would be meaningful. It still steps today, because the match below is on the
+ * class; whether em stays the root em for good is an open decision (vexelray-framework docs/units.md, U6), and
+ * this is the place to change if it does.
+ *
  * <p>Rather than invent one, a mixed-unit blend <b>holds the start value and switches at the end</b>. It
  * is the same choice {@link Interp#step()} makes, for the same reason: a discontinuity you can see beats
  * a smooth curve through meaningless values. If you want a smooth transition, animate within one unit —

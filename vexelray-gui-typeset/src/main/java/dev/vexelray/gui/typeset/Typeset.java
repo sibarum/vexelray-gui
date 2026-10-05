@@ -51,7 +51,7 @@ public final class Typeset {
 
     /**
      * Lay {@code root} out with its authored ratio 1.0 rendering at {@code basePx}, unless the tone map's floor
-     * lifts it. The returned {@link Placed} is in pixels, with x right, the baseline at y = 0 and y growing down.
+     * lifts it. The returned {@link Placed} is in pixels at density 1 (dp), with x right, the baseline at y = 0 and y growing down.
      */
     public Placed layout(Box root, double basePx) {
         ToneMap tone = toneMapFor(root, basePx);

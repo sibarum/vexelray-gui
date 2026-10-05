@@ -7,11 +7,15 @@ package dev.vexelray.gui.core.layout;
  *
  * <p>Fixed units resolve to a concrete pixel basis:
  * <ul>
- *   <li>{@link Em} / {@link Rem} — {@code v · rootEmPx · zoom · dpi} (flat root, no cascade)</li>
+ *   <li>{@link Em} / {@link Rem} — {@code v · rootEmPx · zoom · dpi} (flat root, no cascade: the two are the same
+ *       number, and an em is never a node's own text size)</li>
+ *   <li>{@link Dp} — {@code v · dpi}: density, but not zoom</li>
  *   <li>{@link Vw} / {@link Vh} — {@code v/100 · viewport width/height}</li>
  *   <li>{@link Percent} — {@code v/100 · basis}, where the basis is supplied by the caller (for width/height it is
- *       the parent's content extent along that axis; for padding/border/gap/corner it is the node's own border-box
- *       width; for a margin it is the parent's content extent along the main axis)</li>
+ *       the parent's content extent along that axis; for padding/border/gap/corner/elevation it is the node's own
+ *       border-box width; for a margin it is the parent's content extent along the main axis; for
+ *       {@code floatAt} it is the parent's border-box width for x and height for y; for text size it is the
+ *       root em)</li>
  * </ul>
  * The flex keywords carry no fixed size: {@link #AUTO} means "size to intrinsic content"; {@link #FILL} takes all
  * remaining main-axis space (grow 1); {@link Grow} takes remaining space weighted by its factor. For scalar

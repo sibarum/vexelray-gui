@@ -183,7 +183,7 @@ public final class Tabs {
         };
     }
 
-    /** How far the arriving page travels, in multiples of its own em. */
+    /** How far the arriving page travels, in multiples of the root em. */
     private static final float TRAVEL = 1.25f;
 
     /**

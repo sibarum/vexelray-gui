@@ -192,7 +192,9 @@ public final class Node {
     }
 
     /**
-     * Draw this node and its subtree offset by {@code (emX, emY)} multiples of its own em, without moving it.
+     * Draw this node and its subtree offset by {@code (emX, emY)} multiples of the em, without moving it.
+     * That is the root em under zoom and density, the basis every {@link Length#em} resolves against: the same
+     * number on every node, and <b>not</b> this node's text size.
      *
      * <p>The other half of the visual-transform layer (architecture.md §7), and the same bargain as
      * {@link #opacity}: nothing reflows, nothing is measured, so it is cheap enough to drive every frame. In em

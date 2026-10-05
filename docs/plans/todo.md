@@ -1068,3 +1068,17 @@ main thread, and building the device on a different one was always the odd part.
   then failed, nothing would ever hold that reference again. `release(GuiApp)` covers both exits.
 - **The dialog test runs in under a second**, against the ten-plus of the capture tests. It was never slow;
   it was failing in teardown, and a five-second join was most of what the earlier attempts were measuring.
+
+### 6.12 `Popout` has no live user, and is kept on purpose
+
+Built for a prototype UI and used by nothing now except `PopoutTest`. **Keep it** — it is the docking half of a
+layout an application will want again (§4.5 counts on it for that half beside `SplitPane`). Two things to settle the next time
+something adopts it, both found while chasing message storms (2026-10-04), neither yet measured in a live app:
+
+- **The second tree's mailbox may fill unread.** `Popout.java:227` builds the popped-out `Gui` on the *host's*
+  bus, eagerly, and that tree's mutations are drained only while its window is framing. Once the content has been
+  built there (first pop-out), every change the application's model makes to it while docked queues for a window
+  that is not running. Check the depth across a dock/undock cycle before relying on it.
+- **Its probe name is the host's.** Pumped-mailbox counters are keyed by topic alone (`atchung`'s `PumpedReg`),
+  so the two trees report as one `vexelray.gui.mutations` and a backlog in the hidden one is indistinguishable
+  from the live one. Per-owner mailbox names are on the storm-troubleshooting list and would settle this.

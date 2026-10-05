@@ -340,8 +340,13 @@ final class GuiWindow implements AutoCloseable {
     private RetainedNode update() {
         // On resize, rebuild the Canvas at the new size so its pixel→NDC mapping matches the (dynamic) viewport,
         // and feed the live size to the GUI, which relays out.
-        int ww = window.width();
-        int wh = window.height();
+        //
+        // The swapchain's size, not the window's: the viewport this frame is drawn through is the swapchain's,
+        // and laying out at the window's while the two disagree is a tree laid out for one rectangle and
+        // stretched into another — squashed frames for as long as a drag kept them apart. The presenter rebuilds
+        // to the window's size before it draws, so the two only differ by what the surface itself decided.
+        int ww = swapchain.width();
+        int wh = swapchain.height();
         if (ww > 0 && wh > 0 && (ww != canvas.width() || wh != canvas.height())) {
             canvas.resize(ww, wh);
         }

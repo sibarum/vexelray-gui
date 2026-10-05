@@ -299,6 +299,9 @@ public final class GuiApp implements AutoCloseable {
     public SampledColorTarget viewport(int width, int height, boolean depth) {
         SampledColorTarget target =
                 new SampledColorTarget(device, Math.max(1, width), Math.max(1, height), depth);
+        // Pruned here rather than nowhere: an application that re-mints its viewport on every resize closes the
+        // old one itself, and a list that kept it would grow by one per resize for the life of the window.
+        viewports.removeIf(SampledColorTarget::isClosed);
         viewports.add(target);
         return target;
     }
@@ -333,6 +336,7 @@ public final class GuiApp implements AutoCloseable {
                     + " bytes; was given " + (rgba == null ? "null" : rgba.length + " bytes"));
         }
         AtlasTexture texture = new AtlasTexture(device, width, height, rgba);
+        textures.removeIf(AtlasTexture::isClosed);   // see viewport: replaced ones are closed by the application
         textures.add(texture);
         return texture;
     }
@@ -356,6 +360,7 @@ public final class GuiApp implements AutoCloseable {
      */
     public StorageBuffer storage(int floats, int binding) {
         StorageBuffer buffer = new StorageBuffer(device, Math.max(1, floats), binding);
+        buffers.removeIf(StorageBuffer::isClosed);   // see viewport: replaced ones are closed by the application
         buffers.add(buffer);
         return buffer;
     }

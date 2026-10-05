@@ -74,6 +74,24 @@ public interface WindowControls {
     }
 
     /**
+     * The OS handle of this window — an {@code HWND} on Windows — or {@code 0} where there is no window. For an
+     * instrument that parents a native dialog to the window it was clicked in, so the dialog is modal to that
+     * window rather than to whichever one happens to be in front.
+     */
+    default long osHandle() {
+        return 0L;
+    }
+
+    /**
+     * Run {@code task} on the thread that owns this window. A caption button is clicked on a worker, and some of
+     * what an instrument does — a native file dialog — has to happen on the window's own thread. Where there is
+     * no window there is no such thread, and the task runs here.
+     */
+    default void post(Runnable task) {
+        task.run();
+    }
+
+    /**
      * Controls bound to a real OS window — what an application-drawn title bar in <em>any</em> window commands,
      * not just the main one. Close is a <em>request</em>, not a teardown: it travels the same route the system
      * close button's does, so the frame loop observes it and releases the window's resources in the order it
@@ -97,8 +115,8 @@ public interface WindowControls {
 
     /**
      * As above, with {@code mainThread} running the commands that have to happen on the thread that owns the
-     * window — today, {@link #resize}. A caller on the automation's own thread hands it the host's post; a
-     * title-bar click is already on the right side of the line and needs no hop.
+     * window — {@link #resize}, and whatever is handed to {@link #post}. A host hands it its post: a caller on the automation's own
+     * thread and a title-bar click (which runs on a worker, like every click) are both on the wrong side of the line.
      */
     static WindowControls of(dev.vexelray.os.NativeWindow window, java.util.function.Consumer<String> capture,
                              java.util.function.Consumer<Runnable> mainThread) {
@@ -107,6 +125,16 @@ public interface WindowControls {
             @Override
             public void capture(String path) {
                 capture.accept(path);
+            }
+
+            @Override
+            public long osHandle() {
+                return window.osHandle();
+            }
+
+            @Override
+            public void post(Runnable task) {
+                mainThread.accept(task);
             }
 
             @Override

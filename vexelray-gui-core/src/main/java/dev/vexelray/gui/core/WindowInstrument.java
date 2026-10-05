@@ -71,8 +71,16 @@ public record WindowInstrument(String role, String tooltip,
 
     /** As {@link #screenshot()}, naming each file through {@code path} — one call per click. */
     public static WindowInstrument screenshot(java.util.function.Supplier<String> path) {
-        return new WindowInstrument("instrument-screenshot", "Screenshot this window",
-                WindowInstrument::cameraMark, controls -> controls.capture(path.get()));
+        return screenshot("Screenshot this window", controls -> controls.capture(path.get()));
+    }
+
+    /**
+     * The screenshot button, with {@code take} deciding where the picture goes and taking it — for one that has
+     * to ask first, and may be told no. The same role and mark, so an agent finds it by the same name however it
+     * files its pictures. {@code vexelray-gui-nfd}'s {@code SaveScreenshot} is the one that asks.
+     */
+    public static WindowInstrument screenshot(String tooltip, Consumer<WindowControls> take) {
+        return new WindowInstrument("instrument-screenshot", tooltip, WindowInstrument::cameraMark, take);
     }
 
     /**

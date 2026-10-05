@@ -303,7 +303,22 @@ public final class GuiApp implements AutoCloseable {
         // old one itself, and a list that kept it would grow by one per resize for the life of the window.
         viewports.removeIf(SampledColorTarget::isClosed);
         viewports.add(target);
+        // A viewport's pixels change with no edit to any tree that shows it, and a loop that draws only on change
+        // would go on showing the old ones. So every render into it asks the trees for a frame, and an application
+        // drawing a scene never has to know the loop works this way (docs/plans/frame-loop.md, decided 1).
+        target.onRendered(this::requestFrames);
         return target;
+    }
+
+    /** Ask every tree this application shows to draw its next frame. Main thread, like everything that renders. */
+    private void requestFrames() {
+        Gui main = mainGui;
+        if (main != null) {
+            main.requestFrame();
+        }
+        for (OpenWindow w : open) {
+            w.spec.gui().requestFrame();
+        }
     }
 
     /**

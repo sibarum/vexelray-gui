@@ -118,6 +118,17 @@ final class GuiWindow implements AutoCloseable {
     private final boolean clientChrome;
     /** The host's per-frame hook, held so a platform-pulled frame runs the same step the host loop would. */
     private Runnable beforeFrame = () -> { };
+    /** The tree as the last update left it, for the draw that follows (or the one after, if this one is skipped). */
+    private RetainedNode updated;
+    /**
+     * A draw is owed and has not happened yet. Taken from the {@link Gui} after each update and cleared only by a
+     * draw that ran: the presenter may still skip a frame (minimized, out of date twice), and a change taken and
+     * then not drawn would leave the window showing what it showed before, until something else changed.
+     */
+    private boolean drawOwed = true;
+    /** The window size the last drawn frame was for. A different size is owed a draw even if the tree is not. */
+    private int drawnWidth = -1;
+    private int drawnHeight = -1;
 
     /**
      * Create a fresh OS window (popups). Must run on the main thread.
@@ -169,8 +180,10 @@ final class GuiWindow implements AutoCloseable {
         // Windows drags and resizes a window inside a message loop of its own, which suspends the host's loop for
         // as long as the gesture lasts. Handing the window a sink lets it pull the frames that loop would have
         // drawn — the difference between a window that resizes live and one that freezes until the mouse is let
-        // go. It renders without pumping, because the pump is what called it.
-        window.setFrameSink(() -> presenter.render(0, this::draw));
+        // go. It renders without pumping, because the pump is what called it — and on the same rule as every other
+        // frame: it always updates, and draws only if something changed. A drag that moves the window without
+        // resizing it pulls updates and no draws.
+        window.setFrameSink(this::pull);
     }
 
     /**
@@ -188,8 +201,37 @@ final class GuiWindow implements AutoCloseable {
             // even on screen to show for it. The rest of the frame still runs, so mutations from worker threads
             // keep draining and input keeps being consumed instead of piling up behind the taskbar button.
             this.beforeFrame.run();
-            update();
+            updated = update();
             idle();
+            return true;
+        }
+        return pull();
+    }
+
+    /**
+     * One frame: always the update, and the draw only if it is owed (docs/plans/frame-loop.md). Shared by the
+     * host loop and the modal move/resize loop's frame sink.
+     *
+     * <p>Update is everything a wake must do whether or not it shows anything — the host hook (input pump, clock),
+     * drain, reconcile, layout. Draw is emit, acquire, record, submit, present, and it needs a reason: an edit that
+     * changed the tree, a layout that moved something, a requested frame, or a window that is not the size it was
+     * last drawn at. Before this split, every wake was a full draw and present, so a pointer moving over a still
+     * window presented a frame per move.
+     */
+    private boolean pull() {
+        // The application edge - on a real app this is the input pump, so its cost is input's, not drawing's.
+        try (Zone z = Probe.zone(Lane.FRAME, "before frame")) {
+            beforeFrame.run();
+        }
+        updated = update();
+        if (gui == null || gui.takeDrawNeeded()) {
+            drawOwed = true;
+        }
+        if (window.width() != drawnWidth || window.height() != drawnHeight) {
+            drawOwed = true;   // a resize the tree did not notice is still a swapchain the presenter must rebuild
+        }
+        if (!drawOwed) {
+            Probe.count(Lane.FRAME, "draw skipped", 1);
             return true;
         }
         return presenter.render(0, this::draw);
@@ -285,13 +327,23 @@ final class GuiWindow implements AutoCloseable {
         }
     }
 
-    /** One frame's worth of work: host hook, layout, emit, and (for client chrome) republish the OS regions. */
+    /**
+     * The draw half of a frame: emit the tree {@link #pull} just updated. Called by the presenter after it has
+     * acquired an image, which is after any rebuild — so if the rebuild changed the size, the tree is laid out
+     * again here at the size it is about to be drawn at, rather than drawn at the size it was laid out for.
+     */
     private void draw(double dt, java.lang.foreign.MemorySegment pushConstants) {
-        // The application edge - on a real app this is the input pump, so its cost is input's, not drawing's.
-        try (Zone z = Probe.zone(Lane.FRAME, "before frame")) {
-            beforeFrame.run();
+        RetainedNode root = updated;
+        if (swapchain.width() != canvas.width() || swapchain.height() != canvas.height()) {
+            root = update();
+            updated = root;
+            if (gui != null) {
+                gui.takeDrawNeeded();   // this draw is the one that relayout asked for
+            }
         }
-        RetainedNode root = update();
+        drawOwed = false;
+        drawnWidth = window.width();
+        drawnHeight = window.height();
         try (Zone z = Probe.zone(Lane.DRAW, "emit canvas")) {
             canvas.begin();
             if (root != null) {

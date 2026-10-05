@@ -159,6 +159,18 @@ public final class Gui implements AutoCloseable {
      * -waking is a wasted frame, under-waking is a UI that stops updating.
      */
     private final java.util.concurrent.atomic.AtomicBoolean woken = new java.util.concurrent.atomic.AtomicBoolean();
+    /**
+     * Whether a frame is owed a <em>draw</em> — the half of render-on-change the wake is not (docs/plans/frame-loop.md).
+     *
+     * <p>A wake says "run a frame": drain, lay out, answer input. Whether that frame then has anything new to show
+     * is a different question, answered by what the frame found — an edit that changed the tree, a layout that
+     * moved something, motion — and by {@link #requestFrame} for what the tree cannot see. GUI thread only;
+     * {@link #frameRequested} is the cross-thread door into it. Starts true, because the first frame always draws.
+     */
+    private boolean drawNeeded = true;
+    /** Set from any thread by {@link #requestFrame}; folded into {@link #drawNeeded} by the next frame. */
+    private final java.util.concurrent.atomic.AtomicBoolean frameRequested =
+            new java.util.concurrent.atomic.AtomicBoolean();
     private volatile boolean warnedWakeFailed;
     private volatile boolean tracedUnwired;
     private final Subscription mutationSub;
@@ -1200,7 +1212,36 @@ public final class Gui implements AutoCloseable {
      */
     public Gui theme(Theme theme) {
         this.theme = theme == null ? Theme.DARK : theme;
+        // The renderer's own chrome reads the theme directly, not through a prop, so no edit announces this.
+        requestFrame();
         return this;
+    }
+
+    /**
+     * Ask for the next frame to be <em>drawn</em>, for a change the tree cannot see. Safe from any thread; any
+     * number of calls before the frame arrives ask for one draw.
+     *
+     * <p><b>Most code never needs this.</b> A frame draws whenever the tree changed — any {@code Node} write that
+     * actually changes a value, structure, layout, scroll, motion — because the change itself is what says so.
+     * What is left is content drawn outside the tree and shown in it: a viewport a GPU pass re-rendered (those from
+     * {@code GuiApp.viewport} ask on their own), a texture rewritten under a node whose props did not move.
+     */
+    public void requestFrame() {
+        frameRequested.set(true);
+        wake("frame requested");
+    }
+
+    /**
+     * Whether the frame just run has something new to show, and clear it — the host's question between
+     * {@link #frame} and drawing. A host that does not ask simply draws every frame, as before.
+     *
+     * <p>GUI thread, after {@link #frame}. Not cleared by {@code frame} itself: a frame that runs and is not drawn
+     * (a minimized window still drains) leaves the change owed to the next one that is.
+     */
+    public boolean takeDrawNeeded() {
+        boolean was = drawNeeded;
+        drawNeeded = false;
+        return was;
     }
 
     /** Install the clipboard implementation text widgets use (default: an in-memory, process-local one). */
@@ -1603,6 +1644,16 @@ public final class Gui implements AutoCloseable {
                 wake("motion");
             }
             reconciler.clearDirty();
+            // Render-on-change: everything above that could alter a pixel. The reconciler's bit covers edits that
+            // changed something (equal writes leave it clear); the layout covers a size or zoom change that no
+            // edit made; geometry covers a caret that moved without reflowing; motion covers a transition between
+            // frames. Taken with |=, because a frame that is run and not drawn keeps what it found for the next.
+            if (reconciler.takeDrawDirty() | layoutRan | geometryChanged | moving) {
+                drawNeeded = true;
+            }
+        }
+        if (frameRequested.getAndSet(false)) {
+            drawNeeded = true;
         }
         return r;
     }

@@ -34,6 +34,11 @@ public final class Reconciler implements Mutation.Sink {
     // the caret is the standing example. layoutDirty implies geometryDirty; the converse doesn't hold, so a caret
     // move republishes the read-model without paying for a relayout (docs/reference/layout-read-model.md §2.3).
     private boolean geometryDirty = true;
+    // Whether anything a frame would draw differently has changed since a frame was last drawn — the "something
+    // changed" of render-on-change (docs/plans/frame-loop.md). Set only by an edit that actually changed the tree:
+    // writing a prop the value it already has leaves it alone. Cleared by whoever draws, which is not the layout:
+    // a frame can lay out and then not draw, and the change it laid out is still owed a draw.
+    private boolean drawDirty = true;
 
     public Reconciler(long rootId) {
         this(rootId, id -> { });
@@ -91,6 +96,30 @@ public final class Reconciler implements Mutation.Sink {
     /** Force a relayout next frame — used when scroll offsets change (which reposition without a tree mutation). */
     public void markLayoutDirty() {
         layoutDirty = true;
+        drawDirty = true;
+    }
+
+    /**
+     * Whether the tree changed since the last {@link #takeDrawDirty}, and clear it. Read once per frame by the
+     * host deciding whether to draw; GUI thread only, like everything here.
+     */
+    public boolean takeDrawDirty() {
+        boolean was = drawDirty;
+        drawDirty = false;
+        return was;
+    }
+
+    /**
+     * Whether writing {@code value} over {@code old} changes nothing. Equal values change nothing, with one
+     * exception: a collection posted again <em>as the same object</em> may have been edited in place since it was
+     * last posted, and the reference cannot say whether it was, so it counts as a change. Every other prop value is
+     * an immutable record, a boxed primitive, an enum or a string, where equality is the whole story.
+     */
+    private static boolean unchanged(Object old, Object value) {
+        if (old == value) {
+            return !(value instanceof java.util.Collection<?> || value instanceof Map<?, ?>);
+        }
+        return old != null && old.equals(value);
     }
 
     public void applyAll(List<Mutation> mutations) {
@@ -120,6 +149,7 @@ public final class Reconciler implements Mutation.Sink {
             root = n;
         }
         layoutDirty = true;
+        drawDirty = true;
     }
 
     @Override
@@ -148,6 +178,7 @@ public final class Reconciler implements Mutation.Sink {
             }
         }
         layoutDirty = true;
+        drawDirty = true;
     }
 
     @Override
@@ -160,13 +191,20 @@ public final class Reconciler implements Mutation.Sink {
             removeSubtree(n);
         }
         layoutDirty = true;
+        drawDirty = true;
     }
 
     @Override
     public void setProp(long id, PropKey key, Object value) {
         RetainedNode n = index.get(id);
         if (n != null) {
+            // The change itself is what says a frame is owed, so a write that changes nothing says nothing: no
+            // relayout, no draw. Before this, setting a colour to the colour it already was cost a frame.
+            if (unchanged(n.raw(key), value)) {
+                return;
+            }
             n.set(key, value);
+            drawDirty = true;
             if (key.layoutAffecting()) {
                 layoutDirty = true;
             } else if (key.geometryAffecting()) {
@@ -179,8 +217,12 @@ public final class Reconciler implements Mutation.Sink {
     public void setText(long id, String text) {
         RetainedNode n = index.get(id);
         if (n != null) {
+            if (unchanged(n.raw(PropKey.TEXT), text)) {
+                return;
+            }
             n.set(PropKey.TEXT, text);
             layoutDirty = true;
+            drawDirty = true;
         }
     }
 
@@ -193,6 +235,7 @@ public final class Reconciler implements Mutation.Sink {
         if (n != null && n.scrollLock() != dev.vexelray.gui.core.layout.LayoutEnums.ScrollLock.NONE) {
             n.scrollAttached = true;
             layoutDirty = true;
+            drawDirty = true;
         }
     }
 

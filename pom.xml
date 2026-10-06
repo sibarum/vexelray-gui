@@ -65,8 +65,9 @@
         <!-- VexelRay: the Vulkan engine we build on. Installed to the local .m2 by `mvn install` in the
              sibling vexelray repo (which in turn requires SupirVast installed first). -->
         <vexelray.version>0.1.0-SNAPSHOT</vexelray.version>
-        <!-- SupirVast: transitive via VexelRay; pinned for any incidental direct use. -->
-        <supirvast.version>0.1.0-SNAPSHOT</supirvast.version>
+        <!-- SupirVast: transitive via VexelRay; pinned for any incidental direct use. Must match vexelray's own
+             supirvast.version: this pin is in dependencyManagement, so it wins over the transitive one here. -->
+        <supirvast.version>0.2.0-SNAPSHOT</supirvast.version>
         <!-- Atchung: the message bus the model + threading are built on (core to -core). -->
         <atchung.version>1.0-SNAPSHOT</atchung.version>
         <!-- Tactroller: keyboard/mouse/pointer/clipboard input, delivered as Atchung traffic. Enters at

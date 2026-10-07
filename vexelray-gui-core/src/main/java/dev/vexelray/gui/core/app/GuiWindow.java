@@ -20,10 +20,12 @@ import dev.vexelray.text.TextLayout;
 import dev.vexelray.vulkan.present.AtlasTexture;
 import dev.vexelray.vulkan.present.GraphicsPipeline;
 import dev.vexelray.vulkan.present.OffscreenDraw;
+import dev.vexelray.vulkan.present.PresenterProvider;
 import dev.vexelray.vulkan.present.SampledImage;
 import dev.vexelray.vulkan.present.VertexBuffer;
 import dev.vexelray.vulkan.present.VulkanRenderPass;
 import dev.vexelray.vulkan.present.VulkanSwapchain;
+import dev.vexelray.vulkan.present.WindowPresenter;
 import dev.vexelray.vulkan.present.WindowedPresenter;
 import dev.supirvast.vulkan.Vk;
 import dev.supirvast.vulkan.VkLoader;
@@ -104,12 +106,14 @@ final class GuiWindow implements AutoCloseable {
     private GraphicsPipeline capturePipeline;
     private int captureW;
     private int captureH;
+    /** The Vulkan surface, or 0 when a {@link PresenterProvider} presents this window and Vulkan has none. */
     private final long surface;
+    /** Null on a provider's path, which has no Vulkan swapchain. Sizes come from {@link #presenter} either way. */
     private final VulkanSwapchain swapchain;
     private final VulkanRenderPass renderPass;
     private final VertexBuffer vertexBuffer;
     private final GraphicsPipeline pipeline;
-    private final WindowedPresenter presenter;
+    private final WindowPresenter presenter;
     private final Canvas canvas;
     /** Bound at the image set for every span that draws no image -- see {@link AtlasTexture#placeholder}. */
     private final SampledImage noImage;
@@ -142,9 +146,9 @@ final class GuiWindow implements AutoCloseable {
      */
     GuiWindow(NativePlatform platform, VulkanInstance instance, VulkanDevice device, AtlasTexture atlas,
               SampledImage noImage, TextLayout[] text, TextMeasurer measurer, Gui gui, WindowConfig config,
-              java.util.function.Function<WindowConfig, NativeWindow> windows) {
+              java.util.function.Function<WindowConfig, NativeWindow> windows, PresenterProvider.Backend backend) {
         this(platform, instance, device, atlas, noImage, text, measurer, gui,
-                windows.apply(config), 0L, config.decorations());
+                windows.apply(config), 0L, config.decorations(), backend);
     }
 
     /**
@@ -152,10 +156,13 @@ final class GuiWindow implements AutoCloseable {
      * selection needs its surface to prove present support). {@code existingSurface} of 0 creates one here.
      * {@code decorations} is the mode that window was created with — it cannot be read back off the window, and
      * this bundle needs it to know whether the tree's chrome declarations are worth publishing.
+     *
+     * <p>{@code backend}, when not null, presents this window instead of a Vulkan swapchain (DXGI on Windows): no
+     * surface is made, and {@code existingSurface} must be 0.
      */
     GuiWindow(NativePlatform platform, VulkanInstance instance, VulkanDevice device, AtlasTexture atlas,
               SampledImage noImage, TextLayout[] text, TextMeasurer measurer, Gui gui, NativeWindow window,
-              long existingSurface, Decorations decorations) {
+              long existingSurface, Decorations decorations, PresenterProvider.Backend backend) {
         this.instance = instance;
         this.device = device;
         this.atlas = atlas;
@@ -165,25 +172,52 @@ final class GuiWindow implements AutoCloseable {
         this.measurer = measurer;
         this.window = window;
         this.clientChrome = decorations == Decorations.CLIENT;
-        this.surface = existingSurface != 0L ? existingSurface
-                : window.createVulkanSurface(instance.handleAddress(), VkLoader.getInstanceProcAddrPointer());
-        this.swapchain = new VulkanSwapchain(instance.handle(), device, surface, window.width(), window.height());
-        this.renderPass = new VulkanRenderPass(device, swapchain.format(), Vk.IMAGE_LAYOUT_PRESENT_SRC_KHR);
-        this.canvas = new Canvas(swapchain.width(), swapchain.height());
+        int initialWidth;
+        int initialHeight;
+        if (backend != null) {
+            // Presented by the provider: Vulkan only draws, so there is no surface and no swapchain to size from.
+            this.surface = 0L;
+            this.swapchain = null;
+            this.renderPass = new VulkanRenderPass(device, backend.colorFormat(), backend.finalLayout());
+            initialWidth = Math.max(1, window.width());
+            initialHeight = Math.max(1, window.height());
+        } else {
+            this.surface = existingSurface != 0L ? existingSurface
+                    : window.createVulkanSurface(instance.handleAddress(), VkLoader.getInstanceProcAddrPointer());
+            this.swapchain = new VulkanSwapchain(instance.handle(), device, surface, window.width(), window.height());
+            this.renderPass = new VulkanRenderPass(device, swapchain.format(), Vk.IMAGE_LAYOUT_PRESENT_SRC_KHR);
+            initialWidth = swapchain.width();
+            initialHeight = swapchain.height();
+        }
+        this.canvas = new Canvas(initialWidth, initialHeight);
         this.vertexBuffer = new VertexBuffer(device, CAPACITY_FLOATS);
         ComposedShader vs = CanvasShader.vertex();
         ComposedShader fs = CanvasShader.fragment();
-        this.pipeline = new GraphicsPipeline(device, renderPass.handle(), swapchain.width(), swapchain.height(),
+        this.pipeline = new GraphicsPipeline(device, renderPass.handle(), initialWidth, initialHeight,
                 vs.spirv(), "main", fs.spirv(), "main", GuiApp.canvasConfig(atlas, noImage, true));
-        this.presenter = new WindowedPresenter(device, swapchain, renderPass.handle(), pipeline, window);
+        this.presenter = backend != null
+                ? backend.create(window, renderPass.handle(), pipeline)
+                : new WindowedPresenter(device, swapchain, renderPass.handle(), pipeline, window);
         presenter.configureDraw(vertexBuffer.handle(), atlas.descriptorSet(), 0);
         // Windows drags and resizes a window inside a message loop of its own, which suspends the host's loop for
         // as long as the gesture lasts. Handing the window a sink lets it pull the frames that loop would have
         // drawn — the difference between a window that resizes live and one that freezes until the mouse is let
         // go. It renders without pumping, because the pump is what called it — and on the same rule as every other
         // frame: it always updates, and draws only if something changed. A drag that moves the window without
-        // resizing it pulls updates and no draws.
-        window.setFrameSink(this::pull);
+        // resizing it pulls updates and no draws. A resize inside it rebuilds the swapchain on the presenter's
+        // throttle, not on every pull; the host loop's first frame after the gesture is unthrottled, so the window
+        // ends at its final size (WindowedPresenter.throttleResize).
+        window.setFrameSink(this::pullLive);
+    }
+
+    /** A frame pulled from inside the platform's live move/resize loop: {@link #pull}, with resizes throttled. */
+    private void pullLive() {
+        presenter.throttleResize(true);
+        try {
+            pull();
+        } finally {
+            presenter.throttleResize(false);
+        }
     }
 
     /**
@@ -254,8 +288,8 @@ final class GuiWindow implements AutoCloseable {
      * nothing is unreadable, and every consumer of this wants to see what was on screen.
      */
     void capture(String path) throws java.io.IOException {
-        int w = swapchain.width();
-        int h = swapchain.height();
+        int w = presenter.width();
+        int h = presenter.height();
         if (w <= 0 || h <= 0) {
             return;                     // minimized: there is no picture, and asking for one is not an error
         }
@@ -334,7 +368,7 @@ final class GuiWindow implements AutoCloseable {
      */
     private void draw(double dt, java.lang.foreign.MemorySegment pushConstants) {
         RetainedNode root = updated;
-        if (swapchain.width() != canvas.width() || swapchain.height() != canvas.height()) {
+        if (presenter.width() != canvas.width() || presenter.height() != canvas.height()) {
             root = update();
             updated = root;
             if (gui != null) {
@@ -393,12 +427,12 @@ final class GuiWindow implements AutoCloseable {
         // On resize, rebuild the Canvas at the new size so its pixel→NDC mapping matches the (dynamic) viewport,
         // and feed the live size to the GUI, which relays out.
         //
-        // The swapchain's size, not the window's: the viewport this frame is drawn through is the swapchain's,
+        // The presenter's size, not the window's: the viewport this frame is drawn through is the presenter's,
         // and laying out at the window's while the two disagree is a tree laid out for one rectangle and
-        // stretched into another — squashed frames for as long as a drag kept them apart. The presenter rebuilds
-        // to the window's size before it draws, so the two only differ by what the surface itself decided.
-        int ww = swapchain.width();
-        int wh = swapchain.height();
+        // stretched into another — squashed frames for as long as a drag kept them apart. The presenter brings
+        // itself to the window's size before it draws, so the two only differ by what the surface itself decided.
+        int ww = presenter.width();
+        int wh = presenter.height();
         if (ww > 0 && wh > 0 && (ww != canvas.width() || wh != canvas.height())) {
             canvas.resize(ww, wh);
         }
@@ -439,8 +473,12 @@ final class GuiWindow implements AutoCloseable {
         pipeline.close();
         vertexBuffer.close();
         renderPass.close();
-        swapchain.close();
-        instance.destroySurface(surface);
+        if (swapchain != null) {
+            swapchain.close();
+        }
+        if (surface != 0L) {
+            instance.destroySurface(surface);
+        }
         window.close();
     }
 }

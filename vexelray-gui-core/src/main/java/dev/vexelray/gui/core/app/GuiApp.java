@@ -64,6 +64,11 @@ public final class GuiApp implements AutoCloseable {
     private final java.util.function.Function<WindowConfig, NativeWindow> windows;
     private final VulkanInstance instance;
     private final VulkanDevice device;
+    /**
+     * What presents every window when not a Vulkan swapchain — DXGI on Windows, chosen by
+     * {@code -Dvexelray.present} — or null for the swapchain path. Shared by all windows; closed after them.
+     */
+    private final dev.vexelray.vulkan.present.PresenterProvider.Backend presentBackend;
     private final AtlasTexture atlas;
     private final AtlasTexture noImage;
     /** Render targets minted by {@link #viewport}, closed with the application. */
@@ -233,8 +238,36 @@ public final class GuiApp implements AutoCloseable {
         // another, and a second device for compute would make every frame a copy. The features are enabled only
         // where the driver supports them, so on a device that supports none this is the device it always was.
         ComputeSupport compute = ComputeSupport.query(instance, selection.physicalDevice());
-        this.device = new VulkanDevice(instance.handle(), selection,
-                VulkanDevice.Request.presentAndCompute(compute));
+        VulkanDevice.Request request = VulkanDevice.Request.presentAndCompute(compute);
+
+        // A presentation path other than the swapchain, if one was asked for and is here. It has to be chosen
+        // before the device exists, because it needs device extensions; and anything failing on the way falls
+        // back to the swapchain path, which works everywhere, rather than leaving the application without a window.
+        dev.vexelray.vulkan.present.PresenterProvider provider = presenterProvider();
+        VulkanDevice made = null;
+        dev.vexelray.vulkan.present.PresenterProvider.Backend backend = null;
+        if (provider != null) {
+            try {
+                VulkanDevice.Request withProvider = request.withExtensions(provider.deviceExtensions());
+                if (provider.timelineSemaphore()) {
+                    withProvider = withProvider.withTimelineSemaphore();
+                }
+                made = new VulkanDevice(instance.handle(), selection, withProvider);
+                backend = provider.open(instance, made);
+                LOG.info("presenting through {}", provider.name());
+            } catch (RuntimeException e) {
+                LOG.warn("presenting through {} is not possible here, so windows use a Vulkan swapchain: {}",
+                        provider.name(), e.toString());
+                backend = null;   // a device made with the extra extensions is still a good device: kept
+            }
+        }
+        this.device = made != null ? made : new VulkanDevice(instance.handle(), selection, request);
+        this.presentBackend = backend;
+        if (backend != null) {
+            // The provider presents to the window itself; a Vulkan surface left on it would only be in the way.
+            instance.destroySurface(probeSurface);
+            probeSurface = 0L;
+        }
 
         int[] atlasSize = new int[2];
         byte[] atlasRgba = loadAtlasRgba(atlasSize);
@@ -246,8 +279,28 @@ public final class GuiApp implements AutoCloseable {
         this.measurer = measurer(text);
 
         this.main = new GuiWindow(platform, instance, device, atlas, noImage, text, measurer, null,
-                probe, probeSurface, config.decorations());
+                probe, probeSurface, config.decorations(), presentBackend);
         this.controls = controlsFor(main);
+    }
+
+    /**
+     * The presentation path {@code -Dvexelray.present} names, or null for the Vulkan swapchain. {@code vulkan}
+     * (the default) asks for the swapchain; any other name is looked up among the {@code PresenterProvider}s on
+     * the class path, and one that is absent or unsupported here is said and ignored.
+     */
+    private static dev.vexelray.vulkan.present.PresenterProvider presenterProvider() {
+        String name = System.getProperty("vexelray.present", "vulkan");
+        if (name.isBlank() || name.equals("vulkan")) {
+            return null;
+        }
+        java.util.Optional<dev.vexelray.vulkan.present.PresenterProvider> found =
+                dev.vexelray.vulkan.present.PresenterProvider.find(name);
+        if (found.isEmpty()) {
+            LOG.warn("-Dvexelray.present={} names no presentation path available here; using a Vulkan swapchain",
+                    name);
+            return null;
+        }
+        return found.get();
     }
 
     /**
@@ -952,7 +1005,7 @@ public final class GuiApp implements AutoCloseable {
         // From the same factory the main window came from: this is the path every popup, named window and
         // dialog takes, and a window that skipped it is one the host was never given a say over.
         GuiWindow w = new GuiWindow(platform, instance, device, atlas, noImage, text, measurer, spec.gui(),
-                spec.standing().place(spec.config(), anchorHandle(spec)), this::create);
+                spec.standing().place(spec.config(), anchorHandle(spec)), this::create, presentBackend);
         WindowInput input = inputs.attach(w.window, spec.gui());
         OpenWindow entry = new OpenWindow(w, input, spec, owner);
         LOG.info("window opened: \"{}\" {}x{}{}", spec.config().title(), spec.config().width(), spec.config().height(),
@@ -1349,6 +1402,9 @@ public final class GuiApp implements AutoCloseable {
         open.clear();
         listed.clear();
         main.close();
+        if (presentBackend != null) {
+            presentBackend.close();   // after every window it presented, before the device it was made on
+        }
         for (SampledColorTarget v : viewports) {
             v.close();
         }

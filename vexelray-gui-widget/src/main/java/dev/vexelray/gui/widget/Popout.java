@@ -13,11 +13,13 @@ import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.nav.NavTopics;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.os.Decorations;
 import dev.vexelray.os.WindowConfig;
 import dev.vexelray.text.TextLayout;
+import sibarum.atchung.Atchung;
 
 /**
  * A panel docked against one edge of a window, which the user can collapse to a rail, pop out into a window of
@@ -127,8 +129,14 @@ public final class Popout {
     /**
      * The popped-out window's tree. Minted in the constructor so there is exactly one place two trees are
      * created, and left <b>empty</b> until the first pop: an application that assembles a dozen panels and pops
-     * none of them pays for a dozen empty {@link Gui}s and no nodes. Shares the host's bus — every panel, in
-     * whichever window it currently is, is on the one bus the application's interactivity already rides.
+     * none of them pays for a dozen empty {@link Gui}s and no nodes.
+     *
+     * <p><b>On a bus of its own</b>, and never the host's. {@link Gui}'s topics are static and node ids start
+     * at 1 in every tree, so two trees on one bus apply each other's mutations: building the content here used
+     * to rewrite the host's nodes, and the window's input backend — which publishes on this tree's bus — was
+     * read by the host as clicks in its own coordinates. The host's lanes are kept, so a panel popping out
+     * costs no threads. The one thing that is meant to cross is navigation, and it is bridged explicitly
+     * ({@link #bridgeNavigation}).
      */
     private final Gui away;
 
@@ -224,7 +232,8 @@ public final class Popout {
             root.children(rule, panel);
         }
 
-        this.away = new Gui(host.bus());
+        this.away = new Gui(Atchung.create(), host.handlers(), host.offload());
+        bridgeNavigation();
 
         // The one thing a container that conceals has to declare. Popped out, the docked copy is hidden and the
         // live one is in another tree that this landmark is not in — so the reveal brings the panel home, which
@@ -453,6 +462,27 @@ public final class Popout {
                 .background(theme.color(Role.PAGE))
                 .children(awayBar.node(), awayBody);
         content.build(away, awayBody);
+    }
+
+    /**
+     * Carry navigation across the two buses, which is the one thing the shared bus used to do on purpose. A
+     * {@link Gui} publishes an address naming another window on its own bus, and {@code GuiApp} routes windows
+     * from the host's; so a link inside the popped-out panel is forwarded out, and a request naming this
+     * panel's window is forwarded in to the tree that has the landmark. Each direction forwards only what the
+     * other does not, so nothing echoes. The window's name is read per request, because {@code GuiApp} assigns
+     * it after this runs.
+     */
+    private void bridgeNavigation() {
+        away.bus().subscribe(NavTopics.GO, address -> {
+            if (address.windowNamed() && !address.window().equals(away.windowKey())) {
+                host.bus().publish(NavTopics.GO, address);
+            }
+        });
+        host.bus().subscribe(NavTopics.GO, address -> {
+            if (address.windowNamed() && address.window().equals(away.windowKey())) {
+                away.bus().publish(NavTopics.GO, address);
+            }
+        });
     }
 
     /**

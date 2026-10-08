@@ -1,18 +1,26 @@
 package dev.vexelray.gui.widget;
 
 import dev.vexelray.gui.core.Node;
+import dev.vexelray.gui.core.input.InputTopics;
 import dev.vexelray.gui.core.layout.LayoutContext;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.Rect;
 import dev.vexelray.gui.core.model.RetainedNode;
+import dev.vexelray.gui.core.nav.Address;
+import dev.vexelray.gui.core.nav.NavTopics;
 import dev.vexelray.gui.core.nav.Navigation;
 import org.junit.jupiter.api.Test;
+import sibarum.tactroller.api.InputEvent;
+import sibarum.tactroller.api.MouseButton;
 
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -226,6 +234,89 @@ class PopoutTest {
             assertFalse(panel.popped(),
                     "nothing to pop into is not a pop that half-happened: the docked panel is untouched");
             assertTrue(h.retained(panel.body()).visible(), "and its content is still showing");
+        }
+    }
+
+    /** Content that says which tree it was built into, so a tree showing the other's text is visible as such. */
+    private static Popout.Content saysWhichTree(HeadlessGui h) {
+        return (gui, into) -> into.append(gui.text(gui == h.gui ? "docked" : "away"));
+    }
+
+    @Test
+    void buildingTheWindowTreeLeavesTheHostTreeAlone() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Node content = h.gui.column();
+            Popout panel = dockRight(h, content, saysWhichTree(h));
+            h.frame().frame();
+            float open = panel.node().layout().rect().w();
+
+            panel.buildAway();   // what the first pop does
+            RetainedNode away = h.frame(panel.awayGui());
+            h.frame().frame();
+
+            RetainedNode host = h.retained(h.gui.root());
+            assertTrue(showsText(host, "docked"), "the host still shows its own copy of the content");
+            assertFalse(showsText(host, "away"),
+                    "and none of the window's: node ids start at 1 in every tree, so the window's mutations "
+                            + "applied here would rewrite the host's nodes");
+            assertFalse(showsText(away, "docked"), "nor the other way round");
+            assertTrue(h.retained(panel.body()).visible(), "the docked body is where it was");
+            assertEquals(open, panel.node().layout().rect().w(), 0.5f, "and the same size");
+            assertEquals(W - open, content.layout().rect().w(), 0.5f, "with the host's content beside it");
+            assertNotSame(h.gui.bus(), panel.awayGui().bus(),
+                    "two trees, two buses: Gui's topics are static, so a shared bus is a shared tree");
+        }
+    }
+
+    @Test
+    void inputForTheWindowDoesNotReachTheHost() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Popout panel = dockRight(h, h.gui.column(), saysWhichTree(h));
+            h.frame().frame();
+            // The away content is deliberately not built: on a shared bus that alone wrecks the host tree, and
+            // this is about where input goes, which is decided by the bus and not by what is in the window.
+
+            // A press in the popped-out window, at the point in the host where the collapse control is. The
+            // window's input backend publishes on its tree's bus; were that the host's bus, the host would read
+            // the press in its own coordinates and act on a click the user made somewhere else.
+            Rect header = panel.header().layout().rect();
+            int x = (int) (header.x() + header.w() - px(Length.dp(6)) - px(Length.dp(12)));
+            int y = (int) (header.y() + header.h() / 2f);
+            panel.awayGui().bus().publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, x, y, 0));
+            h.frame();
+            panel.awayGui().bus().publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, x, y, 0));
+            h.frame().frame();
+
+            assertFalse(panel.collapsed(), "a click in the window is not a click in the host");
+        }
+    }
+
+    @Test
+    void navigationStillCrossesBetweenTheTwoWindows() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Popout panel = dockRight(h, h.gui.column(), saysWhichTree(h));
+            h.frame().frame();
+            panel.buildAway();
+            // What GuiApp does for the main window and for every window it opens by name.
+            h.gui.windowKey("main");
+            panel.awayGui().windowKey("outline");
+
+            List<Address> atHost = new CopyOnWriteArrayList<>();
+            List<Address> atAway = new CopyOnWriteArrayList<>();
+            h.gui.bus().subscribe(NavTopics.GO, atHost::add);
+            panel.awayGui().bus().subscribe(NavTopics.GO, atAway::add);
+
+            // Outbound: a link inside the popped-out panel to another window has to reach the bus GuiApp routes
+            // windows from — the host's, for a panel docked in the main window.
+            Address toMain = Address.of("main", "editor");
+            panel.awayGui().navigate(toMain);
+            assertEquals(List.of(toMain), atHost, "a request from the window reaches the host's bus, once");
+
+            // Inbound: a request naming the window, published in the host, reaches the tree that has the landmark.
+            Address toOutline = Address.of("outline", "symbols");
+            h.gui.navigate(toOutline);
+            assertEquals(List.of(toMain, toOutline), atAway, "a request for the window reaches its bus, once");
+            assertEquals(List.of(toMain, toOutline), atHost, "and nothing echoes back and forth between the two");
         }
     }
 }

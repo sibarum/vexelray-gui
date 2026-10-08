@@ -6,28 +6,9 @@
       "methods": [
         {
           "name": "main",
-          "parameterTypes": [
-            "java.lang.String[]"
-          ]
+          "parameterTypes": ["java.lang.String[]"]
         }
       ]
-    },
-    {
-      "type": "dev.vexelray.os.windows.Win32Window",
-      "methods": [
-        {
-          "name": "wndProc",
-          "parameterTypes": [
-            "java.lang.foreign.MemorySegment",
-            "int",
-            "long",
-            "long"
-          ]
-        }
-      ]
-    },
-    {
-      "type": "dev.vexelray.os.windows.WindowsPlatform"
     },
     {
       "type": "java.awt.Insets",
@@ -49,12 +30,7 @@
       "methods": [
         {
           "name": "<init>",
-          "parameterTypes": [
-            "int",
-            "int",
-            "int",
-            "int"
-          ]
+          "parameterTypes": ["int", "int", "int", "int"]
         }
       ]
     },
@@ -68,9 +44,7 @@
         },
         {
           "name": "getFontMetrics",
-          "parameterTypes": [
-            "java.awt.Font"
-          ]
+          "parameterTypes": ["java.awt.Font"]
         }
       ]
     },
@@ -91,27 +65,11 @@
       "methods": [
         {
           "name": "getRGB",
-          "parameterTypes": [
-            "int",
-            "int",
-            "int",
-            "int",
-            "int[]",
-            "int",
-            "int"
-          ]
+          "parameterTypes": ["int", "int", "int", "int", "int[]", "int", "int"]
         },
         {
           "name": "setRGB",
-          "parameterTypes": [
-            "int",
-            "int",
-            "int",
-            "int",
-            "int[]",
-            "int",
-            "int"
-          ]
+          "parameterTypes": ["int", "int", "int", "int", "int[]", "int", "int"]
         }
       ]
     },
@@ -201,25 +159,11 @@
       "methods": [
         {
           "name": "getPixels",
-          "parameterTypes": [
-            "int",
-            "int",
-            "int",
-            "int",
-            "int[]",
-            "java.awt.image.DataBuffer"
-          ]
+          "parameterTypes": ["int", "int", "int", "int", "int[]", "java.awt.image.DataBuffer"]
         },
         {
           "name": "setPixels",
-          "parameterTypes": [
-            "int",
-            "int",
-            "int",
-            "int",
-            "int[]",
-            "java.awt.image.DataBuffer"
-          ]
+          "parameterTypes": ["int", "int", "int", "int", "int[]", "java.awt.image.DataBuffer"]
         }
       ]
     },
@@ -247,9 +191,7 @@
       "methods": [
         {
           "name": "getBoolean",
-          "parameterTypes": [
-            "java.lang.String"
-          ]
+          "parameterTypes": ["java.lang.String"]
         }
       ]
     },
@@ -261,20 +203,6 @@
     },
     {
       "type": "javax.imageio.spi.ImageWriterSpi"
-    },
-    {
-      "type": "sibarum.tactroller.windows.WindowsInputBackend",
-      "methods": [
-        {
-          "name": "wndProc",
-          "parameterTypes": [
-            "java.lang.foreign.MemorySegment",
-            "int",
-            "long",
-            "long"
-          ]
-        }
-      ]
     },
     {
       "type": "sun.awt.image.ByteComponentRaster",
@@ -303,11 +231,7 @@
       "methods": [
         {
           "name": "addRecord",
-          "parameterTypes": [
-            "java.lang.Object",
-            "long",
-            "long"
-          ]
+          "parameterTypes": ["java.lang.Object", "long", "long"]
         }
       ]
     },
@@ -334,9 +258,7 @@
       "methods": [
         {
           "name": "<init>",
-          "parameterTypes": [
-            "java.security.SecureRandomParameters"
-          ]
+          "parameterTypes": ["java.security.SecureRandomParameters"]
         }
       ]
     },
@@ -361,7 +283,10 @@
   ],
   "resources": [
     {
-      "glob": "META-INF/services/dev.vexelray.os.NativePlatform"
+      "glob": "demo/*"
+    },
+    {
+      "glob": "natives/windows-x86_64/imagelib.dll"
     },
     {
       "glob": "META-INF/services/javax.imageio.spi.ImageInputStreamSpi"
@@ -379,18 +304,6 @@
       "glob": "META-INF/services/javax.imageio.spi.ImageWriterSpi"
     },
     {
-      "glob": "META-INF/services/sibarum.tactroller.api.InputBackend"
-    },
-    {
-      "glob": "META-INF/supirvast/shaders/canvas.frag.spv"
-    },
-    {
-      "glob": "META-INF/supirvast/shaders/canvas.vert.spv"
-    },
-    {
-      "glob": "dev/vexelray/text/atlas/primary.json"
-    },
-    {
       "glob": "dev/vexelray/text/atlas/primary.png"
     },
     {
@@ -404,462 +317,5 @@
     {
       "bundle": "sun.awt.resources.awt"
     }
-  ],
-  "foreign": {
-    "upcalls": [
-      {
-        "returnType": "jlong",
-        "parameterTypes": [
-          "void*",
-          "jint",
-          "jlong",
-          "jlong"
-        ]
-      }
-    ],
-    "downcalls": [
-      {
-        "returnType": "jint",
-        "parameterTypes": [
-          "void*",
-          "void*",
-          "void*"
-        ]
-      },
-      {
-        "returnType": "jint",
-        "parameterTypes": [
-          "jint",
-          "jint"
-        ]
-      },
-      {
-        "returnType": "jlong",
-        "parameterTypes": [
-          "void*",
-          "jint",
-          "jlong",
-          "jlong"
-        ]
-      },
-      {
-        "returnType": "jint",
-        "parameterTypes": [
-          "void*",
-          "void*",
-          "void*",
-          "void*"
-        ]
-      },
-      {
-        "returnType": "void",
-        "parameterTypes": [
-          "void*",
-          "jint",
-          "jlong",
-          "jint",
-          "jint",
-          "void*",
-          "jint",
-          "void*"
-        ]
-      },
-      {
-        "returnType": "jint",
-        "parameterTypes": [
-          "void*",
-          "jint",
-          "void*"
-        ]
-      },
-      {
-        "returnType": "void*",
-        "parameterTypes": [
-          "void*",
-          "void*"
-        ]
-      },
-      {
-        "returnType": "jshort",
-        "parameterTypes": [
-          "jint"
-        ]
-      },
-      {
-        "returnType": "jint",
-        "parameterTypes": [
-          "void*",
-          "jint",
-          "jlong",
-          "void*"
-        ]
-      },
-      {
-        "returnType": "jint",
-        "parameterTypes": [
-          "void*",
-          "jlong",
-          "void*",
-          "void*"
-        ]
-      },
-      {
-        "returnType": "void",
-        "parameterTypes": [
-          "void*",
-          "jlong",
-          "jlong",
-          "jint",
-          "jint",
-          "void*"
-        ]
-      },
-      {
-        "returnType": "jint",
-        "parameterTypes": [
-          "void*",
-          "void*"
-        ]
-      },
-      {
-        "returnType": "jshort",
-        "parameterTypes": [
-          "void*"
-        ]
-      },
-      {
-        "returnType": "jint",
-        "parameterTypes": [
-          "void*",
-          "void*",
-          "jint",
-          "jint"
-        ]
-      },
-      {
-        "returnType": "void*",
-        "parameterTypes": [
-          "jint",
-          "void*"
-        ]
-      },
-      {
-        "returnType": "jint",
-        "parameterTypes": [
-          "void*",
-          "jlong",
-          "void*"
-        ]
-      },
-      {
-        "returnType": "void",
-        "parameterTypes": [
-          "void*",
-          "jint",
-          "jint",
-          "void*",
-          "void*"
-        ]
-      },
-      {
-        "returnType": "jint",
-        "parameterTypes": [
-          "void*",
-          "jint",
-          "void*",
-          "jlong"
-        ]
-      },
-      {
-        "returnType": "void*",
-        "parameterTypes": [
-          "void*"
-        ]
-      },
-      {
-        "returnType": "void",
-        "parameterTypes": [
-          "void*",
-          "jint",
-          "void*",
-          "jint",
-          "void*"
-        ]
-      },
-      {
-        "returnType": "jint",
-        "parameterTypes": [
-          "void*",
-          "jlong",
-          "jlong",
-          "jlong",
-          "jlong",
-          "void*"
-        ]
-      },
-      {
-        "returnType": "void",
-        "parameterTypes": [
-          "void*",
-          "jint",
-          "jint",
-          "void*"
-        ]
-      },
-      {
-        "returnType": "void",
-        "parameterTypes": [
-          "void*",
-          "void*",
-          "jint"
-        ]
-      },
-      {
-        "returnType": "void",
-        "parameterTypes": [
-          "void*"
-        ]
-      },
-      {
-        "returnType": "void*",
-        "parameterTypes": [
-          "jint",
-          "jlong"
-        ]
-      },
-      {
-        "returnType": "jint",
-        "parameterTypes": [
-          "void*",
-          "jlong",
-          "jint",
-          "void*",
-          "void*",
-          "void*"
-        ]
-      },
-      {
-        "returnType": "void",
-        "parameterTypes": [
-          "void*",
-          "jlong",
-          "jint",
-          "jint",
-          "jint",
-          "void*"
-        ]
-      },
-      {
-        "returnType": "void*",
-        "parameterTypes": [
-          "jint"
-        ]
-      },
-      {
-        "returnType": "jint",
-        "parameterTypes": [
-          "void*",
-          "jint"
-        ]
-      },
-      {
-        "returnType": "jint",
-        "parameterTypes": [
-          "void*",
-          "jint",
-          "void*",
-          "void*",
-          "jint"
-        ]
-      },
-      {
-        "returnType": "jint",
-        "parameterTypes": [
-          "void*",
-          "jint",
-          "jint"
-        ]
-      },
-      {
-        "returnType": "jint",
-        "parameterTypes": [
-          "void*",
-          "jlong",
-          "jlong",
-          "jlong",
-          "jint",
-          "void*"
-        ]
-      },
-      {
-        "returnType": "void",
-        "parameterTypes": [
-          "void*",
-          "void*",
-          "void*"
-        ]
-      },
-      {
-        "returnType": "jint",
-        "parameterTypes": [
-          "jint"
-        ]
-      },
-      {
-        "returnType": "jlong",
-        "parameterTypes": [
-          "void*"
-        ]
-      },
-      {
-        "returnType": "void",
-        "parameterTypes": [
-          "void*",
-          "jint",
-          "jint",
-          "jint",
-          "jint"
-        ]
-      },
-      {
-        "returnType": "jint",
-        "parameterTypes": [
-          "void*",
-          "jlong",
-          "jlong",
-          "jlong"
-        ]
-      },
-      {
-        "returnType": "void*",
-        "parameterTypes": []
-      },
-      {
-        "returnType": "void",
-        "parameterTypes": [
-          "void*",
-          "jint",
-          "jint",
-          "jint",
-          "jint",
-          "void*",
-          "jint",
-          "void*",
-          "jint",
-          "void*"
-        ]
-      },
-      {
-        "returnType": "void*",
-        "parameterTypes": [
-          "jint",
-          "void*",
-          "void*",
-          "jint",
-          "jint",
-          "jint",
-          "jint",
-          "jint",
-          "void*",
-          "void*",
-          "void*",
-          "void*"
-        ]
-      },
-      {
-        "returnType": "void",
-        "parameterTypes": [
-          "void*",
-          "jlong"
-        ]
-      },
-      {
-        "returnType": "jint",
-        "parameterTypes": [
-          "jint",
-          "jint",
-          "jlong",
-          "jlong"
-        ]
-      },
-      {
-        "returnType": "void",
-        "parameterTypes": [
-          "void*",
-          "jlong",
-          "void*"
-        ]
-      },
-      {
-        "returnType": "void",
-        "parameterTypes": [
-          "void*",
-          "void*"
-        ]
-      },
-      {
-        "returnType": "void",
-        "parameterTypes": [
-          "void*",
-          "jint",
-          "jlong"
-        ]
-      },
-      {
-        "returnType": "jint",
-        "parameterTypes": [
-          "void*"
-        ]
-      },
-      {
-        "returnType": "jint",
-        "parameterTypes": [
-          "jint",
-          "jint",
-          "void*",
-          "void*",
-          "jint",
-          "jint",
-          "void*"
-        ]
-      },
-      {
-        "returnType": "jint",
-        "parameterTypes": [
-          "void*",
-          "jint",
-          "void*",
-          "jint",
-          "jlong"
-        ]
-      },
-      {
-        "returnType": "jint",
-        "parameterTypes": []
-      },
-      {
-        "returnType": "jint",
-        "parameterTypes": [
-          "void*",
-          "void*",
-          "jint",
-          "jint",
-          "jint"
-        ]
-      }
-    ],
-    "directUpcalls": [
-      {
-        "class": "dev.vexelray.os.windows.Win32Window",
-        "method": "wndProc",
-        "returnType": "jlong",
-        "parameterTypes": [
-          "void*",
-          "jint",
-          "jlong",
-          "jlong"
-        ]
-      }
-    ]
-  }
+  ]
 }

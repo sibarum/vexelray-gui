@@ -127,8 +127,9 @@
         <!--
           GraalVM native image: mvn -Pnative -pl vexelray-gui-demo -am package  ->  target/vexelray-demo(.exe)
           Profile-gated because native-image takes minutes and needs a GraalVM JDK; an ordinary `package` on a
-          stock JDK must not pay for (or fail on) it. FFM downcall metadata is expected under
-          src/main/resources/META-INF/native-image/ (generate with a -agentlib:native-image-agent run).
+          stock JDK must not pay for (or fail on) it. The libraries carry their own metadata (FFM flags, downcalls,
+          shaders, fonts); the demo's own is under src/main/resources/META-INF/native-image/ (traced with a
+          -agentlib:native-image-agent run, then trimmed of what the libraries list).
         -->
         <profile>
             <id>native</id>
@@ -150,17 +151,13 @@
                             <imageName>vexelray-demo</imageName>
                             <mainClass>dev.vexelray.gui.demo.Demo</mainClass>
                             <buildArgs>
+                                <!-- The FFM flags, the shaders, the font atlas and nfd.dll come from the libraries'
+                                     own META-INF/native-image metadata. The demo's own metadata lists its assets
+                                     (demo/) and imagelib's DLL: both are read as classpath resources at runtime,
+                                     so an image that leaves them out fails at first decode rather than at build.
+                                     imagelib leaves embedding its DLL to the application, since one that links
+                                     imagelib in has no DLL to extract. -->
                                 <buildArg>--no-fallback</buildArg>
-                                <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
-                                <buildArg>-H:+ForeignAPISupport</buildArg>
-                                <buildArg>--enable-native-access=ALL-UNNAMED</buildArg>
-                                <buildArg>-H:IncludeResources=META-INF/supirvast/shaders/.*</buildArg>
-                                <!-- The chapter's own assets, and imagelib's native library: both are read as
-                                     classpath resources at runtime (the library is extracted from the jar and
-                                     loaded), so a native image that leaves them out fails at first decode
-                                     rather than at build. -->
-                                <buildArg>-H:IncludeResources=demo/.*</buildArg>
-                                <buildArg>-H:IncludeResources=natives/.*</buildArg>
                             </buildArgs>
                         </configuration>
                     </plugin>

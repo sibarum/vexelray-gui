@@ -9,14 +9,20 @@ import dev.vexelray.gui.demo.Chapter;
 import dev.vexelray.gui.demo.Console;
 import dev.vexelray.gui.demo.Stage;
 import dev.vexelray.gui.demo.Ui;
+import dev.vexelray.gui.widget.Lattice;
+import dev.vexelray.gui.widget.Ramp;
 import dev.vexelray.gui.widget.Segment;
 import dev.vexelray.gui.widget.Select;
 import dev.vexelray.gui.widget.SelectionModel;
+import dev.vexelray.gui.widget.Slider;
 import dev.vexelray.text.TextLayout;
+import sibarum.kronometer.Dur;
+import sibarum.kronometer.anim.Ease;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.function.DoubleFunction;
 
 /**
  * Choosing: the same question in three shapes, and which one is right is a fact about how many answers there are.
@@ -62,7 +68,8 @@ public final class ChooserChapter implements Chapter {
     @Override
     public String blurb() {
         return "One of a handful with all of them on show, one of ten thousand behind a chevron, and several at "
-                + "once — which is the same control in a different mode, not a different control.";
+                + "once — which is the same control in a different mode, not a different control. And a number "
+                + "that may only rest on a lattice, with the lattice on the track.";
     }
 
     @Override
@@ -161,12 +168,68 @@ public final class ChooserChapter implements Chapter {
                             console.note("cleared");
                         })));
 
+        // ---- a number on a lattice ---------------------------------------------------------------------------
+
+        Ramp settle = (progress, done) -> stage.krono().ramp(Dur.ms(140), Ease.OUT_CUBIC, progress, done);
+        // Four zooms an octave apart: the lattice is four points across the whole card, and the track says so.
+        Node zoom = lattice(gui, console, "Zoom", Lattice.intervals(3), settle, 2f / 3f,
+                f -> Math.round(25 * Math.pow(2, f * 3)) + "%");
+        // Fifty steps: too close to dot every one at this width, so the ticks thin like a ruler's, and the hold is
+        // slight.
+        Node opacity = lattice(gui, console, "Opacity", Lattice.intervals(50), settle, 0.8f,
+                f -> Math.round(f * 100) + "%");
+        // Octaves again, but here the scale is the point: an eighth to eight, the same travel per doubling.
+        Node speed = lattice(gui, console, "Speed", Lattice.intervals(6), settle, 0.5f,
+                f -> speed(Math.pow(2, Math.round(f * 6) - 3)));
+        Node free = lattice(gui, console, "Free", Lattice.none(), settle, 0.35f,
+                f -> String.format(java.util.Locale.ROOT, "%.3f", f));
+
+        Node numbers = Ui.strip(gui,
+                Ui.heading(gui, "A number on a lattice"),
+                zoom, opacity, speed, free,
+                Ui.prose(gui, "Each track is told where its value may rest, and draws those places. Drag across "
+                        + "Zoom: the thumb holds at each dot for a fifth of the gap and crosses the rest a little "
+                        + "faster than the pointer, so the steps are felt rather than leapt between, and on "
+                        + "release it settles onto the one the value names. The hold is a share of the gap, not "
+                        + "a distance, so Opacity's fifty points barely hold at all — and Free, which has no "
+                        + "points, is the same code with nothing to rest on. Click a track and use the arrow "
+                        + "keys to step one point."));
+
         return gui.column().width(Length.FILL).height(Length.FILL).gap(Ui.GAP)
                 .children(
                         Ui.strip(gui, Ui.heading(gui, "One of these"), choosers, counter),
                         Ui.strip(gui, Ui.heading(gui, "Several of these — the same control, a different mode"),
                                 field(gui, "Tags", Length.rem(18), tags.node())),
+                        numbers,
                         notes);
+    }
+
+    /** A captioned slider on {@code lattice}, with its value read out beside it in the caller's words. */
+    private static Node lattice(Gui gui, Console console, String caption, Lattice lattice, Ramp settle,
+                                float initial, DoubleFunction<String> text) {
+        Node readout = gui.text("").width(Length.rem(4)).height(Length.rem(1.5f))
+                .textSize(Length.rem(0.875f))
+                .align(TextLayout.HAlign.RIGHT, TextLayout.VAlign.MIDDLE);
+        Slider slider = new Slider(gui, initial).lattice(lattice).transition(settle);
+        readout.text(text.apply(slider.value()));
+        slider.onChange(f -> {
+            readout.text(text.apply(f));
+            console.note(caption.toLowerCase(java.util.Locale.ROOT) + ": " + text.apply(f));
+        });
+        return gui.row().width(Length.FILL).height(Length.AUTO).gap(Length.rem(0.75f))
+                .alignItems(AlignItems.CENTER).scroll(false, false)
+                .children(
+                        gui.text(caption).width(Length.rem(5)).height(Length.rem(1.5f))
+                                .textSize(Length.rem(0.875f))
+                                .textColor(gui.theme().color(Role.DIM))
+                                .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE),
+                        slider.node().width(Length.grow(1)),
+                        readout);
+    }
+
+    /** A playback speed as people say it: ⅛× is "1/8×", not "0.125×". */
+    private static String speed(double s) {
+        return s >= 1 ? Math.round(s) + "×" : "1/" + Math.round(1 / s) + "×";
     }
 
     /**

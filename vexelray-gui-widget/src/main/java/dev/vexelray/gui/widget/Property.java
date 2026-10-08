@@ -158,6 +158,8 @@ final class Rows {
         private final DoubleConsumer set;
         private Slider slider;
         private Readout value;
+        /** Kept, not just forwarded: the panel may be given its motion before this row is asked for a slider. */
+        private Ramp knob;
 
         Range(String section, String name, double min, double max, double step,
               DoubleSupplier get, DoubleConsumer set) {
@@ -173,9 +175,13 @@ final class Rows {
         public Node editor(Gui gui, Readout value) {
             this.value = value;
             double current = get.getAsDouble();
-            this.slider = new Slider(gui, (float) fraction(current));
+            // The step is the slider's to show and to rest on, so it is handed over as a lattice; the row only
+            // turns the point the slider settled on back into a value.
+            this.slider = new Slider(gui, (float) fraction(current))
+                    .lattice(max > min && step > 0 ? Lattice.every(step / (max - min)) : Lattice.none())
+                    .transition(knob);
             slider.onChange(f -> {
-                double v = snap(min + f * (max - min));
+                double v = exact(min + f * (max - min));
                 set.accept(v);
                 value.show(Text.of(v, step));
             });
@@ -198,8 +204,20 @@ final class Rows {
             return max <= min ? 0 : (v - min) / (max - min);
         }
 
-        /** A slider's fraction is continuous; the value it names is not, if a step was asked for. */
-        private double snap(double v) {
+        @Override
+        public void motion(Ramp ramp) {
+            this.knob = ramp;
+            if (slider != null) {
+                slider.transition(ramp);
+            }
+        }
+
+        /**
+         * The value a lattice point names, without the float dust a fraction picks up on the way: a point a
+         * quarter of the way along is {@code 0.25}, not {@code 0.25000000372}. Rounding to the step decides
+         * nothing here — the slider already chose the point.
+         */
+        private double exact(double v) {
             if (step <= 0) {
                 return v;
             }

@@ -107,6 +107,14 @@ public final class InputDispatcher {
     private static final int DRAG_DISTANCE_PX = 6;
     private static final long DRAG_HOLD_MS = 90L;
 
+    /**
+     * How close in time and place a left press must follow the one before it to continue its sequence — to make
+     * a double-click of a click, a triple of a double. Windows' defaults: 500ms, and a box four pixels wide at
+     * 96 DPI, which is a quarter of an em at the default 16px and so stays a quarter of an em at any zoom.
+     */
+    private static final long MULTI_CLICK_NANOS = 500_000_000L;
+    private static final float MULTI_CLICK_SLOP_EM = 0.25f;
+
     /** One em for {@code n}, from the layout; the default context's 16px if the node has not been laid out. */
     private static float em(RetainedNode n) {
         return n != null && n.emPx > 0f ? n.emPx : 16f;
@@ -213,6 +221,13 @@ public final class InputDispatcher {
 
     private RetainedNode currentRoot;
     private long pressTargetId = -1;
+    // Multi-click counting (DragEvent.clicks): the last left press — when, where and on what — and which press of
+    // its sequence it was. GUI-thread only, like the rest of the pointer state.
+    private long lastPressNanos;
+    private float lastPressX;
+    private float lastPressY;
+    private long lastPressHitId = -1;
+    private int pressCount;
     // The right button's own press/release pairing. It shares nothing with the left button's on purpose: a right
     // press never focuses, never sets PRESSED, never captures a drag — it either becomes a context click (press
     // and release on the same node) or it becomes nothing.
@@ -782,9 +797,11 @@ public final class InputDispatcher {
                 RetainedNode hit = HitTest.at(currentRoot, b.x(), b.y());
                 // A press on a scrollbar thumb starts a thumb drag and consumes the press (no click/hover/drag).
                 if (grabScrollbar(hit, b.x(), b.y())) {
+                    pressCount = 0;   // and a click after it starts a sequence of its own
                     updateCursor();   // the scrollbar took the press: the hand closes on it
                     return;
                 }
+                countPress(hit, b.x(), b.y(), b.timestampNanos());
                 // Click focuses the nearest focusable node (or clears focus on empty space).
                 RetainedNode focusTarget = ancestorFocusable(hit);
                 setFocus(focusTarget == null ? -1 : focusTarget.id);
@@ -1348,9 +1365,31 @@ public final class InputDispatcher {
         fireDrag(phase, x, y, 0f, 0f);
     }
 
+    /**
+     * Which press of its sequence this left press is: one more than the last if it came within
+     * {@link #MULTI_CLICK_NANOS} of it, within {@link #MULTI_CLICK_SLOP_EM} of where it was, and on the same node;
+     * otherwise the first of a new one.
+     *
+     * <p>"Within" means measurably after, not merely no later: a press stamped no later than the one before it has
+     * no time to compare, which is what every synthetic press carries (a test, a harness, a replay stamping zero),
+     * and two of those in a row are two clicks rather than a double-click nobody asked for.
+     */
+    private void countPress(RetainedNode hit, float x, float y, long nanos) {
+        long hitId = hit == null ? -1 : hit.id;
+        long gap = nanos - lastPressNanos;
+        float slop = MULTI_CLICK_SLOP_EM * em(hit);
+        boolean continues = pressCount > 0 && gap > 0 && gap <= MULTI_CLICK_NANOS && hitId == lastPressHitId
+                && Math.abs(x - lastPressX) <= slop && Math.abs(y - lastPressY) <= slop;
+        pressCount = continues ? pressCount + 1 : 1;
+        lastPressNanos = nanos;
+        lastPressX = x;
+        lastPressY = y;
+        lastPressHitId = hitId;
+    }
+
     private void fireDrag(DragEvent.Phase phase, float x, float y, float dx, float dy) {
         RetainedNode n = dragCapture;
-        DragEvent e = new DragEvent(phase, x, y, dx, dy, n.x, n.y, n.w, n.h);
+        DragEvent e = new DragEvent(phase, x, y, dx, dy, n.x, n.y, n.w, n.h, pressCount, heldMods);
         // Ordered first: click-to-caret moves the same document typing does, so it has to sequence with it.
         Consumer<DragEvent> stage = dragStages.get(n.id);
         if (stage != null) {

@@ -107,6 +107,16 @@ public final class TextField implements AutoCloseable {
     private float desiredX = Float.NaN;
 
     /**
+     * The word or line the pointer gesture in progress picked, which its drags extend away from; null when the
+     * gesture is by characters. Set by the press and read by its drags, on the ordered stage only.
+     */
+    private Document.Range gestureOrigin;
+    /** Whether {@link #gestureOrigin} is a line (a triple-click) rather than a word. */
+    private boolean gestureLines;
+    /** The press followed a link instead of starting a gesture, so its drags select nothing. */
+    private boolean gestureIgnored;
+
+    /**
      * The find bar, built by the first Ctrl+F and never before (see {@link #findBar()}), and the query it is
      * searching for — empty whenever nobody is searching, which is what the mirror checks before adding a wash.
      * The spans are the widget's own, kept apart from the document's for the reason the class doc gives.
@@ -130,6 +140,7 @@ public final class TextField implements AutoCloseable {
     private volatile Consumer<Link> onLink;
 
     private volatile boolean multiline;
+    private volatile boolean autoIndent;
     private volatile boolean readOnly;
     private volatile boolean focused;
     private volatile Consumer<MenuSink> contextMenu = menu -> { };
@@ -369,6 +380,16 @@ public final class TextField implements AutoCloseable {
     }
 
     /**
+     * Start each new line with the indentation of the line Enter split, as a code editor does. Off by default:
+     * a field of prose has no indentation to keep, and a field that starts a line with blanks the user did not
+     * type is surprising anywhere but in code. Only meaningful together with {@link #multiline}.
+     */
+    public TextField autoIndent(boolean autoIndent) {
+        this.autoIndent = autoIndent;
+        return this;
+    }
+
+    /**
      * Wrap long lines at the field's content width instead of scrolling horizontally. Only meaningful together
      * with {@link #multiline}; a wrapped field never scrolls horizontally.
      */
@@ -568,7 +589,22 @@ public final class TextField implements AutoCloseable {
     private void onKey(KeyEvent e) {
         boolean ctrl = e.has(Modifier.CONTROL);
         boolean shift = e.has(Modifier.SHIFT);
-        Key k = e.key();
+        Key k = e.key() == Key.NUMPAD_ENTER ? Key.ENTER : e.key();   // the keypad's Enter is Enter
+
+        // The older clipboard chords, still in a great many Windows hands: Ctrl+Insert copies, Shift+Insert
+        // pastes, Shift+Delete cuts. Ahead of motion and deletion, since plain Delete must not also run.
+        if (k == Key.INSERT && (ctrl || shift)) {
+            if (ctrl) {
+                copy();
+            } else {
+                paste();
+            }
+            return;
+        }
+        if (k == Key.DELETE && shift && !ctrl) {
+            cut();
+            return;
+        }
 
         if (ctrl) {
             switch (k) {
@@ -592,12 +628,17 @@ public final class TextField implements AutoCloseable {
         }
 
         Document d = document.value();
+        // A plain Left or Right over a selection lands on that side of it rather than stepping from the caret:
+        // the selection is what the user is looking at, and stepping would leave the caret one past its edge.
+        boolean collapse = !ctrl && !shift && d.hasSelection();
         switch (k) {
-            case LEFT -> moveCaret(ctrl ? d.previousWord(d.caret()) : d.stepLeft(d.caret()), shift);
-            case RIGHT -> moveCaret(ctrl ? d.nextWord(d.caret()) : d.stepRight(d.caret()), shift);
+            case LEFT -> moveCaret(collapse ? d.selectionStart()
+                    : ctrl ? d.previousWord(d.caret()) : d.stepLeft(d.caret()), shift);
+            case RIGHT -> moveCaret(collapse ? d.selectionEnd()
+                    : ctrl ? d.nextWord(d.caret()) : d.stepRight(d.caret()), shift);
             // Home/End are *visual* line ends on the read-model, so they stop at a wrap, not at a newline.
             // With Ctrl they address the whole document instead, as everywhere else.
-            case HOME -> moveCaret(ctrl ? 0 : visualLineStart(d), shift);
+            case HOME -> moveCaret(ctrl ? 0 : home(d), shift);
             case END -> moveCaret(ctrl ? d.length() : visualLineEnd(d), shift);
             case UP -> moveByLines(-1, shift);
             case DOWN -> moveByLines(1, shift);
@@ -613,18 +654,57 @@ public final class TextField implements AutoCloseable {
                     // A newline is an undo boundary on both sides: without the barriers it is just another
                     // one-character insert continuing the typing run, and a whole multi-line burst collapses
                     // into a single Ctrl+Z. Undo steps read "cd", then the newline, then "ab".
-                    apply(new Edit.Insert("\n"), true);
+                    apply(new Edit.Insert("\n" + carriedIndent(d)), true);
                     barrier();
                 } else {
                     String current = d.text();
                     gui.handlers().execute(() -> onSubmit.accept(current));
                 }
             }
+            // Escape lets go of a selection. Anything that owns Escape for itself — a find bar, a dialog — claims
+            // it, and a claim is heard before this.
+            case ESCAPE -> { if (d.hasSelection()) { moveCaret(d.caret(), false); } }
             default -> { /* not an edit command; typed text arrives via onCodePoint */ }
         }
     }
 
-    /** Map a pointer press/drag to a caret offset via this node's published text metrics, then place/extend. */
+    /**
+     * Where Home goes. In a multiline field it is the code editor's Home: to where the line's indentation ends,
+     * and from there to the very start, so one press reaches the text and a second the margin. Only on a hard
+     * line's first row — a wrapped continuation has no indentation of its own — and never in a single-line
+     * field, where leading blanks are content rather than layout.
+     */
+    private int home(Document d) {
+        int visual = visualLineStart(d);
+        if (!multiline || visual != d.lineStart(d.caret())) {
+            return visual;
+        }
+        int indent = d.indentEnd(d.caret());
+        return d.caret() == indent ? visual : indent;
+    }
+
+    /**
+     * The indentation a new line starts with: the line it was split from's, up to the caret — so Enter inside
+     * the indentation carries only what is left of the caret. Nothing unless {@link #autoIndent} is on.
+     */
+    private String carriedIndent(Document d) {
+        if (!autoIndent) {
+            return "";
+        }
+        int at = d.selectionStart();
+        int start = d.lineStart(at);
+        return d.text().substring(start, Math.min(d.indentEnd(at), at));
+    }
+
+    /**
+     * Map a pointer press/drag to a caret offset via this node's published text metrics, then place/extend.
+     *
+     * <p>What a press selects depends on which press of a sequence it is ({@link DragEvent#clicks()}): one places
+     * the caret, two select the word under the pointer, three the line. Holding the button after a double or a
+     * triple and dragging extends by that unit — whole words, whole lines — away from the one first selected, in
+     * either direction, so the selection always keeps what the press picked and never ends half way through a
+     * word. Shift+press extends the selection that is already there, from its anchor, as Shift+arrow would.
+     */
     private void onPointer(DragEvent e) {
         TextMetrics m = node.layout().text();
         if (m == null) {
@@ -637,20 +717,134 @@ public final class TextField implements AutoCloseable {
                 // Following a link is not a text gesture: the caret does not move and no selection starts, so
                 // going somewhere and coming back leaves the document exactly as it was found.
                 activate(hit);
+                gestureOrigin = null;
+                gestureIgnored = true;   // and the rest of the gesture is not one either: no drag-select after it
                 return;
             }
         }
         switch (e.phase()) {
-            case START -> moveCaret(offset, false);  // press positions the caret, collapsing any selection
-            case MOVE -> moveCaret(offset, true);    // drag extends the selection to the pointer
+            case START -> press(offset, glyphAt(m, offset, e.x()), e.clicks(), e.has(Modifier.SHIFT));
+            case MOVE -> drag(offset, glyphAt(m, offset, e.x()));
             case END -> { }
         }
     }
 
-    /** Soft tabs: {@value #SOFT_TAB_WIDTH} spaces, so the document contains no tab characters to disagree over. */
+    /**
+     * The character the pointer is on, from the caret offset nearest to it: the one before that offset when the
+     * pointer is left of it, unless the offset begins its row — left of a row's first character is the margin,
+     * not the end of the row above. Word and line gestures ask this; placing a caret asks for the offset.
+     */
+    private static int glyphAt(TextMetrics m, int offset, float x) {
+        return offset > m.lineStart(offset) && x < m.caretX(offset) ? offset - 1 : offset;
+    }
+
+    private void press(int offset, int glyph, int clicks, boolean shift) {
+        gestureIgnored = false;
+        Document d = document.value();
+        if (clicks >= 3) {
+            gestureLines = true;
+            gestureOrigin = lineAt(d, offset);
+        } else if (clicks == 2) {
+            gestureLines = false;
+            gestureOrigin = d.wordAt(glyph);
+        } else {
+            gestureOrigin = null;
+            moveCaret(offset, shift);   // press positions the caret, collapsing any selection — Shift keeps it
+            return;
+        }
+        selectRange(gestureOrigin.start(), gestureOrigin.end());
+    }
+
+    private void drag(int offset, int glyph) {
+        if (gestureIgnored) {
+            return;
+        }
+        Document.Range origin = gestureOrigin;
+        if (origin == null) {
+            moveCaret(offset, true);    // drag extends the selection to the pointer
+            return;
+        }
+        Document d = document.value();
+        Document.Range under = gestureLines ? lineAt(d, offset) : d.wordAt(glyph);
+        if (offset < origin.start()) {
+            selectRange(origin.end(), Math.min(under.start(), origin.start()));      // backwards: anchor at its far end
+        } else {
+            selectRange(origin.start(), Math.max(under.end(), origin.end()));
+        }
+    }
+
+    /** The hard line at {@code offset}, with its newline: what a triple-click selects, and what a line is to move. */
+    private static Document.Range lineAt(Document d, int offset) {
+        int end = d.lineEnd(offset);
+        return new Document.Range(d.lineStart(offset), end < d.length() ? end + 1 : end);
+    }
+
+    /** Select from {@code anchor} to {@code caret}, which may lie on either side of it. */
+    private void selectRange(int anchor, int caret) {
+        desiredX = Float.NaN;
+        apply(new Edit.Select(anchor, caret), false);   // no diff, so this ends the typing run like any caret move
+    }
+
+    /**
+     * Soft tabs: {@value #SOFT_TAB_WIDTH} spaces, so the document contains no tab characters to disagree over.
+     * Over a selection that spans lines, Tab indents those lines instead of replacing them with four spaces —
+     * a selection of lines given a Tab is a block being indented, never one being thrown away.
+     */
     private void insertSoftTab() {
+        Document d = document.value();
+        if (d.selectedText().indexOf('\n') >= 0) {
+            indentLines(d);
+            return;
+        }
         apply(new Edit.Insert(" ".repeat(SOFT_TAB_WIDTH)), true);
         barrier();
+    }
+
+    /**
+     * Indent every line the selection touches by one soft tab, as one undo entry, and keep the selection over the
+     * same text. Empty lines are left empty. A selection ending at the very start of a line, as a triple-click
+     * leaves it, does not reach into that line.
+     */
+    private void indentLines(Document d) {
+        String text = d.text();
+        int from = d.lineStart(d.selectionStart());
+        int last = d.selectionEnd();
+        if (last > from && text.charAt(last - 1) == '\n') {
+            last--;
+        }
+        int to = d.lineEnd(last);
+        String tab = " ".repeat(SOFT_TAB_WIDTH);
+        StringBuilder out = new StringBuilder(to - from + SOFT_TAB_WIDTH * 8);
+        List<Integer> indented = new ArrayList<>();
+        for (int line = from; line <= to; ) {
+            int end = text.indexOf('\n', line);
+            end = end < 0 || end > to ? to : end;
+            if (end > line) {
+                indented.add(line);
+                out.append(tab);
+            }
+            out.append(text, line, end);
+            if (end < to) {
+                out.append('\n');
+            }
+            line = end + 1;
+        }
+        int anchor = shifted(d.anchor(), indented);
+        int caret = shifted(d.caret(), indented);
+        apply(new Edit.Replace(from, to - from, out.toString()), true);
+        selectRange(anchor, caret);
+        barrier();
+    }
+
+    /** Where {@code offset} lands once a soft tab is put at each of {@code lineStarts}: after every one before it. */
+    private static int shifted(int offset, List<Integer> lineStarts) {
+        int moved = offset;
+        for (int start : lineStarts) {
+            if (start < offset) {
+                moved += SOFT_TAB_WIDTH;
+            }
+        }
+        return moved;
     }
 
     // --- vertical navigation, as pure widget code over the layout read-model (docs/reference/layout-read-model.md §11.5) ---

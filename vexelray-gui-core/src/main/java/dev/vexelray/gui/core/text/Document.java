@@ -181,6 +181,79 @@ public record Document(String text, int caret, int anchor, List<Span> spans, Tex
         return i;
     }
 
+    /** A range of offsets, {@code [start, end)}. */
+    public record Range(int start, int end) {
+    }
+
+    /** Whitespace other than a newline: what indentation and the gaps between words are made of. */
+    private static boolean isBlank(char c) {
+        return c != '\n' && Character.isWhitespace(c);
+    }
+
+    /** Which run {@code c} belongs to: 0 word characters, 1 blanks, 2 anything else. A newline belongs to none. */
+    private static int runOf(char c) {
+        return isWordChar(c) ? 0 : isBlank(c) ? 1 : 2;
+    }
+
+    /**
+     * The word holding the character at {@code index}: what a double-click on that character selects. A run of
+     * word characters, of blanks, or of other punctuation — the same three runs word motion stops at
+     * ({@link #previousWord}), so a double-click selects exactly what Ctrl+Shift+Right from its start would.
+     *
+     * <p>A <em>character</em> index, not a caret offset, and the difference matters: a caret offset is a place
+     * between two characters, and the nearest one to a click on the right half of the {@code .} in
+     * {@code a.b} is the one before {@code b} — so a double-click resolved by offset selects a word the pointer
+     * was not on. At a newline or the end of the text, where there is no character to hold, it is the run just
+     * before; a run never crosses a newline, and on an empty line the range is empty.
+     */
+    public Range wordAt(int index) {
+        int at = clampOffset(index);
+        int n = text.length();
+        int seed;
+        if (at < n && text.charAt(at) != '\n') {
+            seed = at;
+        } else if (at > 0 && text.charAt(at - 1) != '\n') {
+            seed = at - 1;
+        } else {
+            return new Range(at, at);
+        }
+        int run = runOf(text.charAt(seed));
+        int start = seed;
+        while (start > 0 && text.charAt(start - 1) != '\n' && runOf(text.charAt(start - 1)) == run) {
+            start--;
+        }
+        int end = seed + 1;
+        while (end < n && text.charAt(end) != '\n' && runOf(text.charAt(end)) == run) {
+            end++;
+        }
+        return new Range(start, end);
+    }
+
+    /**
+     * Where the line holding {@code offset} begins. A <em>hard</em> line, from newline to newline: the document
+     * knows nothing about wrapping, so a visual row is a question for the layout's metrics, not for this.
+     */
+    public int lineStart(int offset) {
+        int at = clampOffset(offset);
+        return at == 0 ? 0 : text.lastIndexOf('\n', at - 1) + 1;
+    }
+
+    /** Where the hard line holding {@code offset} ends: at its newline, or at the end of the text. */
+    public int lineEnd(int offset) {
+        int nl = text.indexOf('\n', clampOffset(offset));
+        return nl < 0 ? text.length() : nl;
+    }
+
+    /** Where the indentation of the hard line holding {@code offset} ends: its first character that is not blank. */
+    public int indentEnd(int offset) {
+        int i = lineStart(offset);
+        int end = lineEnd(offset);
+        while (i < end && isBlank(text.charAt(i))) {
+            i++;
+        }
+        return i;
+    }
+
     /** One code point left of the caret (or the caret, at the start). */
     public int stepLeft(int from) {
         return previousBoundary(clampOffset(from));

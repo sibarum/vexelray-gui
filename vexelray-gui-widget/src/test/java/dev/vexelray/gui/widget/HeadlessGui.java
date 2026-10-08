@@ -323,6 +323,50 @@ final class HeadlessGui implements AutoCloseable {
         return frame();
     }
 
+    /**
+     * The harness's own pointer clock, for presses that have to be told apart in time. {@link #click} stamps its
+     * presses zero, which the dispatcher reads as "no time to compare" — so plain clicks never join into a
+     * double-click — and these advance a clock instead, a tenth of a second per press, well inside the window.
+     */
+    private long pointerNanos = 1_000_000_000L;
+
+    /** Click {@code n} times at (x, y) in quick succession: a double-click for 2, a triple for 3. */
+    HeadlessGui clicks(float x, float y, int n) {
+        pressHeld(x, y, n);
+        return release(x, y);
+    }
+
+    /**
+     * Click {@code n - 1} times at (x, y) in quick succession and press an {@code n}th time, leaving the button
+     * down — the start of a double-click-and-drag for 2. Follow with {@link #hover} to drag, {@link #release} to end.
+     */
+    HeadlessGui pressHeld(float x, float y, int n) {
+        for (int i = 1; i < n; i++) {
+            press(x, y);
+            release(x, y);
+        }
+        return press(x, y);
+    }
+
+    /** A left press at (x, y), stamped on the pointer clock, dispatched. */
+    HeadlessGui press(float x, float y) {
+        pointerNanos += 100_000_000L;
+        bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, (int) x, (int) y, pointerNanos));
+        return frame();
+    }
+
+    /** A left release at (x, y), dispatched. */
+    HeadlessGui release(float x, float y) {
+        bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, (int) x, (int) y, pointerNanos));
+        return frame();
+    }
+
+    /** Let the pointer clock run past the multi-click window, so the next press starts a sequence of its own. */
+    HeadlessGui pause() {
+        pointerNanos += 2_000_000_000L;
+        return this;
+    }
+
     /** Move the pointer to absolute (x, y) and dispatch — drives hover and interaction state. */
     HeadlessGui hover(float x, float y) {
         bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved((int) x, (int) y, 0, 0, 0));

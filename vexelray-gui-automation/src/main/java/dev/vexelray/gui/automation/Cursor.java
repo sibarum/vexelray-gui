@@ -137,15 +137,18 @@ public final class Cursor {
         return this;
     }
 
-    /** Press {@code button} where the pointer is. */
+    /**
+     * Press {@code button} where the pointer is. Stamped with the real time, as the device would stamp it: the
+     * dispatcher counts double-clicks off these times, so a cursor that stamped zero could never double-click.
+     */
     public Cursor press(MouseButton button) {
-        publish(new InputEvent.ButtonPressed(button, x, y, 0), "pointer.press", button.name());
+        publish(new InputEvent.ButtonPressed(button, x, y, System.nanoTime()), "pointer.press", button.name());
         return this;
     }
 
     /** Release {@code button} where the pointer is. */
     public Cursor release(MouseButton button) {
-        publish(new InputEvent.ButtonReleased(button, x, y, 0), "pointer.release", button.name());
+        publish(new InputEvent.ButtonReleased(button, x, y, System.nanoTime()), "pointer.release", button.name());
         return this;
     }
 

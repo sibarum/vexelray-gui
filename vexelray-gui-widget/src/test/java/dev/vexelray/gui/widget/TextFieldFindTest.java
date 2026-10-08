@@ -138,11 +138,11 @@ class TextFieldFindTest {
             assertEquals("1 of 3", status(h, f));
 
             h.focus(f.node());          // back to the text, bar still up
-            h.tap(Key.RIGHT);           // collapse the selection past the match
+            h.tap(Key.RIGHT);           // collapse the selection to its end, just past the match
             h.type("beta");
             h.frame();
 
-            assertEquals("alpha beta\nbetabeta gamma\ndelta beta", f.text());
+            assertEquals("alpha betabeta\nbeta gamma\ndelta beta", f.text());
             assertEquals("4 matches", status(h, f),
                     "one more match, and the caret is on none of them, so there is nothing to be fourth of");
             assertEquals(4, h.retained(f.node()).spans().size(),

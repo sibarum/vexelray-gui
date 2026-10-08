@@ -149,6 +149,38 @@ class TitleBarTest {
         }
     }
 
+    /**
+     * The bar is a fixed-height strip, so what is drawn in it has to be fixed too. Its glyphs were once {@code rem}
+     * while the strip was {@code dp}: Ctrl+= grew the title and the close glyph and not the bar, and a few steps in
+     * they no longer fit in it.
+     */
+    @Test
+    void zoomLeavesTheBarsTextAlone() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TitleBar bar = bar(h, WindowControls.NONE);
+            java.util.Map<String, Float> before = textSizes(h.retained(bar.node()), new java.util.HashMap<>());
+
+            h.gui.zoom(3f);
+            h.frame();
+            java.util.Map<String, Float> after = textSizes(h.retained(bar.node()), new java.util.HashMap<>());
+
+            assertEquals(java.util.Set.of("Test", "×"), before.keySet(), "the title and the close glyph");
+            assertEquals(before, after, "zoom is the content's; the window's chrome stays the size the OS's is");
+        }
+    }
+
+    private static java.util.Map<String, Float> textSizes(dev.vexelray.gui.core.model.RetainedNode n,
+                                                          java.util.Map<String, Float> into) {
+        String text = n.textString();
+        if (text != null && !text.isEmpty()) {
+            into.put(text, n.textSizePx);
+        }
+        for (dev.vexelray.gui.core.model.RetainedNode child : n.children) {
+            textSizes(child, into);
+        }
+        return into;
+    }
+
     /** A window that only records what it was told to do. Everything else {@link NativeWindow} defaults. */
     private static final class RecordingWindow implements NativeWindow {
         private final List<String> calls = new ArrayList<>();

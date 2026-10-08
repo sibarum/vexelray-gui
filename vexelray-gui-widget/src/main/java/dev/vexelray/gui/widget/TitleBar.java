@@ -42,6 +42,14 @@ public final class TitleBar {
     /** Caption button footprint — the Windows caption-button metrics, in density-independent pixels. */
     private static final Length BUTTON_W = Length.dp(46);
     private static final Length BAR_H = Length.dp(32);
+    /**
+     * The bar's glyphs are chrome too, so they are {@code dp} like the strip they sit in — the native caption does
+     * not grow with an application's zoom either. In {@code rem} they zoomed and the bar did not, so a few steps of
+     * Ctrl+= pushed the title and the close glyph out of a 32dp strip. (Sizes are today's 0.85rem and 1.4rem at
+     * the 16px root, so nothing moves at 100%.)
+     */
+    private static final Length TITLE_SIZE = Length.dp(13.6f);
+    private static final Length CLOSE_SIZE = Length.dp(22.4f);
 
     private final Gui gui;
     /**
@@ -71,7 +79,7 @@ public final class TitleBar {
         Theme theme = gui.theme();
 
         this.titleText = gui.text(title == null ? "" : title)
-                .textSize(Length.rem(0.85f))
+                .textSize(TITLE_SIZE)
                 .textColor(theme.color(Role.DIM))
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
         this.leading = gui.row()
@@ -102,7 +110,7 @@ public final class TitleBar {
         Node maximize = button(gui.box().size(Length.dp(14), Length.dp(14)).scroll(false, false)
                         .children(maximizeIcon, restoreIcon),
                 WindowRegion.MAXIMIZE_BUTTON, Role.RAISED, () -> this.controls.toggleMaximize());
-        Node close = button(gui.text("×").textSize(Length.rem(1.4f)).textColor(theme.color(Role.INK))
+        Node close = button(gui.text("×").textSize(CLOSE_SIZE).textColor(theme.color(Role.INK))
                         .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE),
                 WindowRegion.INTERACTIVE, Role.DANGER, () -> this.controls.close());
 

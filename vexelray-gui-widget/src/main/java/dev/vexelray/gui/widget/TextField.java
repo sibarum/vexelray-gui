@@ -927,11 +927,12 @@ public final class TextField implements AutoCloseable {
     private synchronized FindBar findBar() {
         if (find == null) {
             FindBar bar = new FindBar(gui, new Finder());
-            bar.node()
-                    .floatAt(Length.ZERO, Length.ZERO)
-                    .corner(Length.rem(0.5f), Length.ZERO)   // seated in the top of the well, sharing its corner
-                    .elevation(gui.theme().elevation(Relief.RAISED));  // and lifted off it, because it covers the first line
-            node.append(bar.node());
+            // Inset past the field's border (0.1rem) with a hair to spare, its corners the well's radius less
+            // the inset so the two curves run parallel — a bar laid on the border box squared off the well.
+            bar.strip()
+                    .corner(Length.rem(0.25f))
+                    .elevation(gui.theme().elevation(Relief.RAISED));  // lifted off the well, because it covers the first line
+            node.append(bar.inset(Length.rem(0.25f)).floatAt(Length.ZERO, Length.ZERO));
             find = bar;
         }
         return find;

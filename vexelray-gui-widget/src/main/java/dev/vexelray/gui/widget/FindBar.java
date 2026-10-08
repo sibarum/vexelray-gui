@@ -3,7 +3,10 @@ package dev.vexelray.gui.widget;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.ClaimScope;
+import dev.vexelray.gui.core.input.CursorShape;
+import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.input.Shortcut;
+import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.text.TextLayout;
@@ -15,7 +18,7 @@ import java.util.function.Supplier;
 /**
  * The bar a find gesture is: a strip that is not there until Ctrl+F asks for it, carrying one query field and one
  * line of status about the answer — where typing searches, Enter steps to the next match, Shift+Enter to the
- * previous one, and Escape puts the bar away and hands the keyboard back.
+ * previous one, and Escape (or the × at its end) puts the bar away and hands the keyboard back.
  *
  * <p><b>The second thing to be searched is what makes this a widget.</b> The tree grew this bar first, and a
  * multiline field wants the same one: the same chord, the same keys, the same strip in the same place. What the
@@ -67,6 +70,9 @@ final class FindBar implements AutoCloseable {
     private final Node statusLine;
     private final Search search;
 
+    /** What showing and hiding the bar toggles: the strip itself, or the frame {@link #inset} put round it. */
+    private volatile Node toggled;
+
     /** Whether the bar is up. Kept here because a {@link Node} handle is write-only — it is told, never asked. */
     private volatile boolean shown;
 
@@ -84,14 +90,27 @@ final class FindBar implements AutoCloseable {
                 .textSize(Length.rem(0.85f))
                 .textColor(gui.theme().color(Role.DIM))
                 .align(TextLayout.HAlign.RIGHT, TextLayout.VAlign.MIDDLE);
+        // The way out that does not need the keyboard: Escape is the gesture, this is the same thing for a hand
+        // already on the mouse. Not a Tab stop — Tab from the query would land on a button whose only job Escape
+        // already does from where the caret is.
+        Node exit = gui.text("×").size(Length.rem(1.5f), Length.rem(1.5f))
+                .corner(Length.rem(0.25f))
+                .textColor(gui.theme().color(Role.FAINT))
+                .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE);
+        gui.cursor(exit, CursorShape.POINTER);
+        gui.onClick(exit, this::dismiss);
+        gui.onState(exit, s -> exit.background(
+                gui.theme().color(s == InteractionState.NORMAL ? Role.NONE : Role.SELECTION)));
         this.bar = gui.row()
                 .width(Length.FILL)
                 .visible(false)
                 .gap(Length.dp(6))
                 .padding(Length.dp(3), Length.dp(3))
+                .alignItems(AlignItems.CENTER)
                 .background(gui.theme().color(Role.CHROME))
                 .scroll(false, false)
-                .children(field.node(), statusLine);
+                .children(field.node(), statusLine, exit);
+        this.toggled = bar;
 
         // Every edit of the query is a search of its own, which is what makes it incremental: typing "src" is
         // three searches, and the owner is free to abandon the first two. Enter is the same query asked again from
@@ -119,9 +138,36 @@ final class FindBar implements AutoCloseable {
         return this;
     }
 
-    /** The strip. The owner places it — in flow above the thing it searches, or floating over it. */
+    /**
+     * What the owner places — in flow above the thing it searches, or floating over it — and what shows and hides:
+     * the strip, or the frame round it once {@link #inset} has made one.
+     */
     Node node() {
+        return toggled;
+    }
+
+    /** The strip itself, framed or not — for an owner styling its shape, and a test measuring where it landed. */
+    Node strip() {
         return bar;
+    }
+
+    /**
+     * Wrap the strip in a transparent frame {@code by} in from every edge, and return the frame for the owner to
+     * place instead of {@link #node()}. For an owner that floats the bar over itself: a float is placed against
+     * the parent's border box, so a bar that fills it sits on the parent's border and squares off its rounded
+     * corners. The frame is what shows and hides from here on, so a shut bar leaves no empty margin to be hit,
+     * and it is what {@link #node()} answers.
+     */
+    Node inset(Length by) {
+        bar.visible(true);
+        Node frame = gui.row()
+                .width(Length.FILL)
+                .padding(by)
+                .visible(shown)
+                .scroll(false, false)
+                .children(bar);
+        toggled = frame;
+        return frame;
     }
 
     /** The status line, for an owner that wants to restyle it and for a test that wants to read it. */
@@ -156,14 +202,14 @@ final class FindBar implements AutoCloseable {
         status("");
         field.text(seed == null ? "" : seed);
         shown = true;
-        bar.visible(true);
+        toggled.visible(true);
         gui.focus(field.node());
     }
 
     /** Shut the bar and tell the owner, which is what gets the keyboard back to the thing being searched. */
     void dismiss() {
         shown = false;
-        bar.visible(false);
+        toggled.visible(false);
         status("");
         search.closed();
     }

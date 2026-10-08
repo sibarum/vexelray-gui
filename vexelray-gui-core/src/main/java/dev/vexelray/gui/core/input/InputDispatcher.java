@@ -1351,11 +1351,19 @@ public final class InputDispatcher {
         return false;
     }
 
-    /** The nearest ancestor-or-self of {@code hit} with a drag handler, or {@code null}. */
+    /**
+     * The nearest ancestor-or-self of {@code hit} with a drag handler, or {@code null} — and {@code null} too when
+     * a node with a click handler comes first. A press belongs to the nearest thing that answers it: a button
+     * floated over a text field is the button's press, and letting it fall through to the field's drag would put
+     * the caret under the button as well as pressing it.
+     */
     private RetainedNode ancestorWithDragHandler(RetainedNode hit) {
         for (RetainedNode n = hit; n != null; n = n.parent) {
             if (dragHandlers.containsKey(n.id) || dragStages.containsKey(n.id)) {
                 return n;
+            }
+            if (clickHandlers.containsKey(n.id)) {
+                return null;
             }
         }
         return null;

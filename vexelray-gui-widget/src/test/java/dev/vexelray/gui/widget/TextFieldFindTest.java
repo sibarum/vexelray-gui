@@ -126,6 +126,26 @@ class TextFieldFindTest {
         }
     }
 
+    /** The × at the bar's end is Escape for a hand on the mouse: the bar goes, and the keyboard comes back. */
+    @Test
+    void theExitButtonShutsTheBarLikeEscape() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TextField f = find(h, TEXT, "beta");
+
+            RetainedNode strip = h.retained(f.finder().strip());
+            RetainedNode exit = strip.children.get(strip.children.size() - 1);
+            h.click(exit.x + exit.w / 2f, exit.y + exit.h / 2f);
+            h.frame();
+            assertFalse(h.retained(f.finder().node()).visible(), "the bar is away");
+            assertTrue(h.retained(f.node()).spans().isEmpty(), "and the washes went with it");
+
+            h.type("BETA");
+            h.frame();
+            assertEquals("alpha BETA\nbeta gamma\ndelta beta", f.text(), "the keyboard came back to the field");
+            f.close();
+        }
+    }
+
     /**
      * An edit under an open bar re-answers the search. Nothing is invalidated because nothing is stored: the
      * matches are read from the text and the query every time the field mirrors, so there is no list to go stale
@@ -177,6 +197,12 @@ class TextFieldFindTest {
             assertEquals(field.w, bar.w, 0.01f, "and the bar spans the whole box regardless");
             assertEquals(field.y, bar.y, 0.01f, "seated at the top of it");
             assertTrue(bar.x < field.viewX, "with its left edge inside the gutter the text starts after");
+
+            RetainedNode strip = h.retained(f.finder().strip());
+            float border = 0.1f * 16f;   // the field's 0.1rem border at the headless 16px rem
+            assertTrue(strip.x > field.x + border && strip.x + strip.w < field.x + field.w - border,
+                    "the visible strip stands clear of the field's border on both sides");
+            assertTrue(strip.y > field.y + border, "and below its top edge");
 
             RetainedNode query = h.retained(f.finder().queryNode());
             h.click(query.x + 5f, query.y + query.h / 2f);

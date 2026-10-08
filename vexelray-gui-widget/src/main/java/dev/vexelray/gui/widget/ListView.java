@@ -93,6 +93,7 @@ public final class ListView<T> implements AutoCloseable {
     private final Map<T, Node> shown = new HashMap<>();
 
     private volatile Consumer<T> onActivate = t -> { };
+    private volatile Consumer<T> onRowClicked = t -> { };
 
     /** Rows that are marked without being selected, and how selected and marked rows look. See {@link #marked}. */
     private volatile Predicate<T> marked = t -> false;
@@ -302,6 +303,19 @@ public final class ListView<T> implements AutoCloseable {
     }
 
     /**
+     * React to a row being clicked, <b>after</b> the click has been applied to the selection.
+     *
+     * <p>This is the only place that ordering holds. The click topic is a separate delivery on a separate thread,
+     * so a subscriber there may run before the row's handler has changed anything — and a drop-down that shut on
+     * the topic committed the old value about half the time. Anything that acts on "the user picked a row" hangs
+     * off this, not off the topic.
+     */
+    public ListView<T> onRowClicked(Consumer<T> handler) {
+        this.onRowClicked = handler == null ? t -> { } : handler;
+        return this;
+    }
+
+    /**
      * Scroll {@code item} into view, building its row if it does not have one.
      *
      * <p><b>This is the half an application gets wrong,</b> and the reason it cannot be left to one: an item
@@ -479,6 +493,7 @@ public final class ListView<T> implements AutoCloseable {
         } else {
             selection.at(item);
         }
+        onRowClicked.accept(item);
     }
 
     private void onKey(KeyEvent e) {

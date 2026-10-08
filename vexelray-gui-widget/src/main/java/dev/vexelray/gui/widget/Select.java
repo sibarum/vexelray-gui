@@ -48,7 +48,7 @@ import java.util.stream.Collectors;
  * {@link SelectionModel#at}, a click ticks one option or replaces the lot because {@link SelectionModel#toggle}
  * degrades the same way, and the closed strip reads out whatever is in the set. Those are one call each, not a
  * branch. <b>Exactly one thing here does ask</b> — whether making a choice ends the gesture, which is
- * {@code allowsMultiple()} in {@link #onAnyClick} — and asking a capability what it permits is what a capability
+ * {@code allowsMultiple()} where a row click lands — and asking a capability what it permits is what a capability
  * is for; a {@code switch} over the mode is what it is not.
  *
  * <h2>The list is a {@link ListView}, and that is the whole implementation</h2>
@@ -183,7 +183,16 @@ public final class Select<T> implements AutoCloseable {
                 .clickToggles(true)
                 // Shut, and not even attached yet: without this the list would guess the window it needs from the
                 // application's own height and build a screenful of rows behind a closed drop-down.
-                .showing(false);
+                .showing(false)
+                // A click on a row is a choice, and where only one thing may be chosen, making it ends the gesture.
+                // A multi-select popup stays up: the user is building a set, and shutting after the first tick
+                // would make the second one a second opening. Hung off the row, not the click topic: only here is
+                // the selection already the one the user just clicked.
+                .onRowClicked(item -> {
+                    if (!selection.mode().allowsMultiple()) {
+                        commit();
+                    }
+                });
         list.selection().onChange(chosen -> readOut());
         list.selection().onLeadChange(lead -> readOut());
 
@@ -504,19 +513,17 @@ public final class Select<T> implements AutoCloseable {
      * read-model publishes each node's parent, so "is this click inside me" is a walk up from where it landed.
      *
      * <p>Left button only, and nothing is blocked: the click that lands elsewhere still does what it always did.
+     *
+     * <p><b>A click inside the popup is not this method's business.</b> The topic is delivered apart from the
+     * row's own handler and in no fixed order with it, so a commit from here can run before the row has changed
+     * the selection — announcing the old value and shutting on it. Choosing a row commits from
+     * {@link ListView#onRowClicked}, where the order is guaranteed.
      */
     private void onAnyClick(ClickEvent e) {
         if (!open || e.button() != MouseButton.LEFT) {
             return;
         }
-        if (within(e.nodeId(), popup.id())) {
-            // A click on a row is a choice, and where only one thing may be chosen, making it ends the gesture. A
-            // multi-select popup stays up: the user is building a set, and shutting after the first tick would
-            // make the second one a second opening.
-            if (!selection.mode().allowsMultiple()) {
-                commit();
-            }
-        } else if (!within(e.nodeId(), control.id())) {
+        if (!within(e.nodeId(), popup.id()) && !within(e.nodeId(), control.id())) {
             commit();   // somewhere else entirely: shut, keeping what was chosen. The control's own click toggles.
         }
     }

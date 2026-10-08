@@ -68,6 +68,8 @@ public final class GuiApp implements AutoCloseable {
     private final VulkanDevice device;
     /** The queue family compute submits to: a compute-only family of its own, or the family that draws. */
     private final int computeFamily;
+    /** Whether the application asked for compute to have a queue of its own ({@link Compute#OWN_QUEUE}). */
+    private final boolean computeRequested;
     /**
      * What presents every window when not a Vulkan swapchain — DXGI on Windows, chosen by
      * {@code -Dvexelray.present} — or null for the swapchain path. Shared by all windows; closed after them.
@@ -327,6 +329,7 @@ public final class GuiApp implements AutoCloseable {
         this.device = made != null ? made : new VulkanDevice(instance.handle(), selection, request);
         this.presentBackend = backend;
         this.computeFamily = ownFamily >= 0 ? ownFamily : device.queueFamilyIndex();
+        this.computeRequested = compute == Compute.OWN_QUEUE;
         if (backend != null) {
             // The provider presents to the window itself; a Vulkan surface left on it would only be in the way.
             instance.destroySurface(probeSurface);
@@ -646,6 +649,30 @@ public final class GuiApp implements AutoCloseable {
      */
     public Gpu gpu() {
         return new Gpu(instance, device, computeFamily);
+    }
+
+    /** Whether {@link #lendComputeQueue} has been called: it lends once. */
+    private boolean lent;
+
+    /**
+     * The queue compute has of its own, lent once, to whoever will submit to it from a thread of its own; see
+     * {@link ComputeQueue}. Not {@linkplain ComputeQueue#available() available} where there is none: the application
+     * did not ask for one, or the device has no compute-only family.
+     *
+     * @throws IllegalStateException the second time: a queue lent twice is a queue two threads submit to
+     */
+    public ComputeQueue lendComputeQueue() {
+        if (lent) {
+            throw new IllegalStateException("the compute queue is lent already; it has one owner");
+        }
+        lent = true;
+        Gpu gpu = gpu();
+        if (gpu.ownQueue()) {
+            return ComputeQueue.of(instance, device, computeFamily);
+        }
+        return ComputeQueue.none(computeRequested
+                ? "the device has no compute-only queue family"
+                : "the application did not ask for one (GuiApp.Compute.OWN_QUEUE)");
     }
 
     /**

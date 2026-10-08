@@ -2,6 +2,7 @@ package dev.vexelray.gui.harness;
 
 import dev.supirvast.vulkan.VulkanInstance;
 import dev.vexelray.gui.core.Gui;
+import dev.vexelray.gui.core.app.ComputeQueue;
 import dev.vexelray.gui.core.app.GuiApp;
 import dev.vexelray.os.WindowConfig;
 import org.junit.jupiter.api.Test;
@@ -10,6 +11,8 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -62,6 +65,23 @@ class ComputeQueueTest {
             long was = harness.frames();
             gui.requestFrame();
             assertTrue(harness.awaitFrame(was, 5_000), "a device with two families still draws");
+
+            ComputeQueue lent = harness.app().lendComputeQueue();
+            assertTrue(lent.available(), lent.why());
+            assertEquals(gpu.computeFamily(), lent.family());
+            assertSame(gpu.device(), lent.device(), "the application's own device, so its pictures read the buffers");
+            assertThrows(IllegalStateException.class, () -> harness.app().lendComputeQueue(),
+                    "lent once: a queue lent twice is a queue two threads submit to");
+        }
+    }
+
+    @Test
+    void anApplicationThatDidNotAskHasNoQueueToLend() {
+        try (HarnessApp harness = HarnessApp.start(new Gui(), WindowConfig.of("nothing to lend", 200, 120))) {
+            ComputeQueue lent = harness.app().lendComputeQueue();
+            assertFalse(lent.available());
+            assertTrue(lent.why().contains("did not ask"), lent.why());
+            assertThrows(IllegalStateException.class, lent::device);
         }
     }
 }

@@ -74,6 +74,7 @@ public final class HarnessApp implements AutoCloseable {
 
     private final Gui gui;
     private final WindowConfig config;
+    private final GuiApp.Compute compute;
     private final Thread loop;
     private final AtomicLong frames = new AtomicLong();
 
@@ -96,9 +97,10 @@ public final class HarnessApp implements AutoCloseable {
 
     private volatile RuntimeException failure;
 
-    private HarnessApp(Gui gui, WindowConfig config) {
+    private HarnessApp(Gui gui, WindowConfig config, GuiApp.Compute compute) {
         this.gui = gui;
         this.config = config;
+        this.compute = compute;
         this.loop = Thread.ofPlatform().name("harness-loop").unstarted(this::live);
     }
 
@@ -110,7 +112,12 @@ public final class HarnessApp implements AutoCloseable {
      *         device is the expected outcome and is meant to be loud
      */
     public static HarnessApp start(Gui gui, WindowConfig config) {
-        HarnessApp harness = new HarnessApp(gui, config);
+        return start(gui, config, GuiApp.Compute.SHARED);
+    }
+
+    /** As {@link #start(Gui, WindowConfig)}, with the device made for {@code compute}. */
+    public static HarnessApp start(Gui gui, WindowConfig config, GuiApp.Compute compute) {
+        HarnessApp harness = new HarnessApp(gui, config, compute);
         harness.loop.start();
         harness.awaitUp();
         return harness;
@@ -129,7 +136,7 @@ public final class HarnessApp implements AutoCloseable {
             // The factory, not a window: this is what makes "never shown" true of the popup a test opens as
             // well as of the window the test started with. GuiApp calls it synchronously for the main window
             // while it is being constructed, which is why the wrapper is there to be read straight after.
-            built = new GuiApp(config, this::create);
+            built = new GuiApp(config, this::create, compute);
             window = opened.get(0);
             app = built;   // last, so a non-null app means "came up whole" and nothing has to track that twice
         } catch (RuntimeException e) {

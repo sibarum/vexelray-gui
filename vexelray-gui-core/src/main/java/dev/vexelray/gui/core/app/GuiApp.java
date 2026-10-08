@@ -50,6 +50,12 @@ public final class GuiApp implements AutoCloseable {
 
     private static final sibarum.probe.Log LOG = sibarum.probe.Log.of("gui.app");
 
+    /**
+     * How far compute's own queue ({@link Compute#OWN_QUEUE}) defers to drawing's, which is at 1: a hint to the
+     * driver of whose work to favour when both have some. Drivers may ignore it.
+     */
+    private static final float COMPUTE_PRIORITY = 0.5f;
+
     // Shared engine context — one GPU bring-up serves every window.
     private final NativePlatform platform;
     /**
@@ -60,6 +66,8 @@ public final class GuiApp implements AutoCloseable {
     private final java.util.function.Function<WindowConfig, NativeWindow> windows;
     private final VulkanInstance instance;
     private final VulkanDevice device;
+    /** The queue family compute submits to: a compute-only family of its own, or the family that draws. */
+    private final int computeFamily;
     /**
      * What presents every window when not a Vulkan swapchain — DXGI on Windows, chosen by
      * {@code -Dvexelray.present} — or null for the swapchain path. Shared by all windows; closed after them.
@@ -217,16 +225,55 @@ public final class GuiApp implements AutoCloseable {
      * what the other constructors pass, so a factory that adds nothing is an ordinary application.
      */
     public GuiApp(WindowConfig config, java.util.function.Function<WindowConfig, NativeWindow> windows) {
-        this(config, null, windows, TextFaces.standard());
+        this(config, null, windows, TextFaces.standard(), Compute.SHARED);
+    }
+
+    /**
+     * As {@link #GuiApp(WindowConfig, java.util.function.Function)}, with the device made for {@code compute}:
+     * {@link Compute#OWN_QUEUE} for an application whose simulation should run beside its drawing rather than in
+     * line with it. {@code windows} may be null for the platform's own.
+     */
+    public GuiApp(WindowConfig config, java.util.function.Function<WindowConfig, NativeWindow> windows,
+                  Compute compute) {
+        this(config, null, windows, TextFaces.standard(), compute);
+    }
+
+    /** As the one that builds it, below, with compute sharing the queue that draws. */
+    private GuiApp(WindowConfig config, NativeWindow adopted,
+                   java.util.function.Function<WindowConfig, NativeWindow> windows, TextFaces faces) {
+        this(config, adopted, windows, faces, Compute.SHARED);
+    }
+
+    /**
+     * What an application's compute gets of its device's queues.
+     *
+     * <p>Asked for before the device exists, because a queue is taken when the device is made and never after.
+     * {@link GuiApp.Gpu#computeFamily()} says what was got.
+     */
+    public enum Compute {
+        /**
+         * The queue that draws, which is the device every application had before there was a choice: compute is
+         * ordered with drawing by the order of submission, and both submit from the main thread.
+         */
+        SHARED,
+        /**
+         * A queue of a compute-only family, where the device has one (most discrete GPUs do, for asynchronous
+         * compute, and so does this machine's Intel GPU), at a lower priority than the queue that draws; and
+         * timeline semaphores, so that drawing can wait for compute inside the GPU. Its work runs beside
+         * drawing's, and is ordered against it only by what the two signal and wait for. On a device with no such
+         * family, the same as {@link #SHARED}.
+         */
+        OWN_QUEUE
     }
 
     /**
      * The one that builds it: {@code adopted} is a main window the host already made (or null to make one), and
-     * {@code windows} makes every window from here on (or null for the platform's own), and {@code faces} is the
-     * application's fonts.
+     * {@code windows} makes every window from here on (or null for the platform's own), {@code faces} is the
+     * application's fonts, and {@code compute} what its compute gets of the device's queues.
      */
     private GuiApp(WindowConfig config, NativeWindow adopted,
-                   java.util.function.Function<WindowConfig, NativeWindow> windows, TextFaces faces) {
+                   java.util.function.Function<WindowConfig, NativeWindow> windows, TextFaces faces,
+                   Compute compute) {
         this.platform = NativePlatform.current();
         this.windows = windows == null ? platform::createWindow : windows;
         this.instance = new VulkanInstance(config.title(), platform.requiredVulkanInstanceExtensions());
@@ -244,8 +291,17 @@ public final class GuiApp implements AutoCloseable {
         // device and be read by its pictures where it already is — a buffer cannot cross from one device to
         // another, and a second device for compute would make every frame a copy. The features are enabled only
         // where the driver supports them, so on a device that supports none this is the device it always was.
-        ComputeSupport compute = ComputeSupport.query(instance, selection.physicalDevice());
-        VulkanDevice.Request request = VulkanDevice.Request.presentAndCompute(compute);
+        ComputeSupport support = ComputeSupport.query(instance, selection.physicalDevice());
+        VulkanDevice.Request request = VulkanDevice.Request.presentAndCompute(support);
+        int ownFamily = compute == Compute.OWN_QUEUE
+                ? instance.computeOnlyQueueFamily(selection.physicalDevice()) : -1;
+        if (ownFamily >= 0) {
+            request = request.withQueues(ownFamily, 1, COMPUTE_PRIORITY).withTimelineSemaphore();
+            LOG.info("compute has a queue of its own, of family {}", ownFamily);
+        } else if (compute == Compute.OWN_QUEUE) {
+            LOG.info("{} has no compute-only queue family, so compute shares the queue that draws",
+                    selection.deviceName());
+        }
 
         // A presentation path other than the swapchain, if one was asked for and is here. It has to be chosen
         // before the device exists, because it needs device extensions; and anything failing on the way falls
@@ -270,6 +326,7 @@ public final class GuiApp implements AutoCloseable {
         }
         this.device = made != null ? made : new VulkanDevice(instance.handle(), selection, request);
         this.presentBackend = backend;
+        this.computeFamily = ownFamily >= 0 ? ownFamily : device.queueFamilyIndex();
         if (backend != null) {
             // The provider presents to the window itself; a Vulkan surface left on it would only be in the way.
             instance.destroySurface(probeSurface);
@@ -584,17 +641,30 @@ public final class GuiApp implements AutoCloseable {
      * before the application is: the device is closed with it. Nothing made from a different device can be bound
      * by anything drawn here, which is why a compute context belongs on this one — {@code GpuContext.on} in
      * {@code vastir-tools} takes exactly this pair. The device was made with the compute features its GPU
-     * supports, and its one queue is shared: whatever submits to it from here does so from the main thread.
+     * supports. Unless the application asked for {@link Compute#OWN_QUEUE} and got it, its one queue is shared:
+     * whatever submits to it from here does so from the main thread.
      */
     public Gpu gpu() {
-        return new Gpu(instance, device);
+        return new Gpu(instance, device, computeFamily);
     }
 
     /**
      * The instance and device behind an application; see {@link #gpu()}. A picture of a buffer somebody else owns
      * binds it with a {@code BoundStorageBuffer} on this device, and closes that itself, as it does its pipeline.
+     *
+     * @param computeFamily the queue family compute submits to ({@code GpuContext.on(instance, device, family)}):
+     *                      a compute-only family the device was made with for {@link Compute#OWN_QUEUE}, or the
+     *                      family that draws
      */
-    public record Gpu(VulkanInstance instance, VulkanDevice device) {
+    public record Gpu(VulkanInstance instance, VulkanDevice device, int computeFamily) {
+
+        /**
+         * Whether compute has a queue of its own. If it has, nothing orders its work against drawing's but what
+         * the two signal and wait for: a buffer compute writes while a frame still reads it is torn.
+         */
+        public boolean ownQueue() {
+            return computeFamily != device.queueFamilyIndex();
+        }
     }
 
     /** The OS window handle (an {@code HWND} on Windows) — used to attach input (tactroller) for client-space

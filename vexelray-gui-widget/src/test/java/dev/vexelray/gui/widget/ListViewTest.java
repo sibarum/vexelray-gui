@@ -238,7 +238,66 @@ class ListViewTest {
         }
     }
 
+    /** A right click selects the row under the pointer and asks for that item's menu, which is then shown. */
+    @Test
+    void aRightClickSelectsTheRowAndBuildsItsMenuAroundTheItem() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            ListView<String> list = mountTall(h, 10);
+            String[] asked = {null};
+            list.onContextMenu((item, menu) -> {
+                asked[0] = item;
+                menu.item("Open " + item, () -> { });
+            });
+            clickRow(h, list, "item00001");
+
+            rightClickRow(h, list, "item00003");
+
+            assertEquals(Set.of("item00003"), list.selection().selection(), "the row under the pointer, alone");
+            assertEquals("item00003", asked[0], "and the menu was asked about that item");
+            assertEquals(List.of("Open item00003"),
+                    ((ContextMenu) h.gui.menus()).items().stream().map(dev.vexelray.gui.core.input.MenuItem::label)
+                            .toList(),
+                    "on a presenter the list installed, so it is on screen");
+        }
+    }
+
+    /** A right click on one of several selected rows leaves them selected: the menu is about all of them. */
+    @Test
+    void aRightClickInsideTheSelectionKeepsIt() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            ListView<String> list = mountTall(h, 10);
+            list.onContextMenu((item, menu) -> menu.item("Delete", () -> { }));
+            clickRow(h, list, "item00002");
+            clickRow(h, list, "item00004", Key.LEFT_CONTROL);
+
+            rightClickRow(h, list, "item00004");
+
+            assertEquals(Set.of("item00002", "item00004"), list.selection().selection());
+        }
+    }
+
+    /** A list with no menu ignores a right click, so a drop-down's options are not picked by one. */
+    @Test
+    void withoutAMenuARightClickChangesNothing() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            ListView<String> list = mountTall(h, 10);
+            clickRow(h, list, "item00001");
+
+            rightClickRow(h, list, "item00003");
+
+            assertEquals(Set.of("item00001"), list.selection().selection());
+        }
+    }
+
     // ------------------------------------------------------------------ harness
+
+    private static void rightClickRow(HeadlessGui h, ListView<String> list, String item) {
+        Node row = list.rowNode(item);
+        assertNotNull(row, "the test means to click a row that exists: " + item);
+        Rect r = row.layout().rect();
+        h.rightClick(r.x() + r.w() / 2f, r.y() + r.h() / 2f);
+        h.frame();
+    }
 
     private static ListView<String> mount(HeadlessGui h, int count) {
         return mount(h, count, BOX_H);

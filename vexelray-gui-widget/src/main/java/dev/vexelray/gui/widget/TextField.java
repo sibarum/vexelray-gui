@@ -21,6 +21,7 @@ import dev.vexelray.gui.core.text.Link;
 import dev.vexelray.gui.core.text.Span;
 import dev.vexelray.gui.core.text.TextEdit;
 import dev.vexelray.gui.core.text.TextMetrics;
+import dev.vexelray.gui.core.text.Whitespace;
 import dev.vexelray.text.TextLayout;
 import sibarum.atchung.Committer;
 import sibarum.atchung.State;
@@ -404,6 +405,21 @@ public final class TextField implements AutoCloseable {
      */
     public TextField lineNumbers(boolean show) {
         node.lineNumbers(show);
+        return this;
+    }
+
+    /**
+     * Show whitespace as faint dots — {@link Whitespace#BOUNDARY} for indentation, trailing blanks and runs, as a
+     * code editor does. Drawn over the text, so it moves nothing.
+     */
+    public TextField whitespace(Whitespace mode) {
+        node.whitespace(mode);
+        return this;
+    }
+
+    /** Show a faint mark at the end of every line a newline ends. */
+    public TextField lineEnds(boolean show) {
+        node.lineEnds(show);
         return this;
     }
 

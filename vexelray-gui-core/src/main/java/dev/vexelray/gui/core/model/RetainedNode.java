@@ -406,6 +406,17 @@ public final class RetainedNode {
         return v instanceof Integer i ? i : -1;
     }
 
+    /** Which whitespace this text node marks with a dot. */
+    public dev.vexelray.gui.core.text.Whitespace whitespace() {
+        Object v = props.get(PropKey.WHITESPACE);
+        return v instanceof dev.vexelray.gui.core.text.Whitespace w ? w : dev.vexelray.gui.core.text.Whitespace.NONE;
+    }
+
+    /** Whether this text node marks where its newlines are. */
+    public boolean lineEnds() {
+        return Boolean.TRUE.equals(props.get(PropKey.LINE_ENDS));
+    }
+
     /** The formatting spans on this text node (empty if none). */
     @SuppressWarnings("unchecked")
     public java.util.List<dev.vexelray.gui.core.text.Span> spans() {

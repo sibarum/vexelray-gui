@@ -10,6 +10,7 @@ import dev.vexelray.gui.core.text.Span;
 import dev.vexelray.gui.core.text.Styling;
 import dev.vexelray.gui.core.text.TextFaces;
 import dev.vexelray.gui.core.text.TextMetrics;
+import dev.vexelray.gui.core.text.Whitespace;
 import dev.vexelray.gui.draw.CanvasSink;
 import dev.vexelray.gui.draw.Picture;
 import dev.vexelray.target.ImageHandle;
@@ -39,6 +40,7 @@ public final class TreeRenderer {
     private final Color scrollGrip;
     private final Color shadow;
     private final Color gutterInk;
+    private final Color marks;
     private final Color selection;
     private final Color ink;
 
@@ -75,6 +77,9 @@ public final class TreeRenderer {
         this.scrollGrip = theme.color(Role.GRIP);
         this.shadow = theme.color(Role.SHADOW);
         this.gutterInk = theme.color(Role.FAINT);
+        // Whitespace and line-end marks: the gutter's ink, lighter still. A line number is read; these are only
+        // noticed, and at full faint strength every indented line carries a row of them.
+        this.marks = Color.withAlpha(gutterInk, gutterInk.a() * 0.6f);
         this.selection = theme.color(Role.HIGHLIGHT);
         // The fallback for a text node that never declared a colour. The model answers white when asked with no
         // opinion (RetainedNode.textColor), which is only right on a dark page -- so the renderer supplies one.
@@ -485,6 +490,7 @@ public final class TreeRenderer {
                 fillLineRange(line, selLo, selHi, fade(selection), canvas);
             }
             drawLineText(n, s, line, lineSpans, faceIds, canvas);
+            drawMarks(n, s, line, canvas);
             for (Span sp : lineSpans) {
                 if (sp.underline()) {
                     underlineLineRange(n, line, sp.start(), sp.end(),
@@ -592,6 +598,35 @@ public final class TreeRenderer {
                 canvas.text(text, s.substring(i, j), x, line.top(), wRun, line.height(), style, faded);
             }
             i = j;
+        }
+    }
+
+    /**
+     * The node's whitespace dots and line-end marks on one visual line, in the faint ink. Both are shapes rather
+     * than glyphs: a middle dot or a pilcrow is only as present as the atlas the application baked, and a mark
+     * that renders as the missing-glyph box is worse than none.
+     */
+    private void drawMarks(RetainedNode n, String s, TextMetrics.VisualLine line, Canvas canvas) {
+        Whitespace mode = n.whitespace();
+        boolean ends = n.lineEnds() && line.end() < s.length() && s.charAt(line.end()) == '\n';
+        if (mode == Whitespace.NONE && !ends) {
+            return;
+        }
+        float px = n.textSizePx;
+        Color ink = fade(marks);
+        float mid = line.top() + line.height() * 0.55f;
+        float dot = Math.max(1.5f, px * 0.12f);
+        mode.mark(s, line.start(), line.end(), i -> {
+            float cx = (line.caretX(i) + line.caretX(i + 1)) * 0.5f;
+            canvas.fillRoundRect(cx - dot * 0.5f, mid - dot * 0.5f, dot, dot, dot * 0.5f, ink);
+        });
+        if (ends) {
+            // A "¬": a bar at mid-height with a short drop at its right end, a small gap past the last character.
+            float stroke = Math.max(1f, px * 0.07f);
+            float x = line.caretX(line.end()) + px * 0.15f;
+            float w = px * 0.4f;
+            canvas.fillRoundRect(x, mid - stroke * 0.5f, w, stroke, 0f, ink);
+            canvas.fillRoundRect(x + w - stroke, mid - stroke * 0.5f, stroke, px * 0.2f, 0f, ink);
         }
     }
 

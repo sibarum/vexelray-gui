@@ -68,6 +68,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -362,13 +363,19 @@ public final class Gui implements AutoCloseable {
         // costs one frame per input event that finds nothing left to do.
         Executor base = handlerExecutor != null ? handlerExecutor : own(handlerLane());
         this.offload = offloadExecutor != null ? offloadExecutor : own(offloadLane());
-        this.handlers = task -> base.execute(() -> {
+        this.handlers = task -> {
             try {
-                task.run();
-            } finally {
-                wake("handler returned");
+                base.execute(() -> {
+                    try {
+                        task.run();
+                    } finally {
+                        wake("handler returned");
+                    }
+                });
+            } catch (RejectedExecutionException e) {
+                dropIfStopped(base, e);
             }
-        });
+        };
         // Dirtying layout is a change like any other, and it is the one that publishes no Mutation: a
         // scroll offset moves, the tree has to be laid out again, and nothing on the bus says so. In a
         // loop that redrew unconditionally the distinction never mattered; in one that parks, a
@@ -1363,7 +1370,32 @@ public final class Gui implements AutoCloseable {
      * on a topic, or through a node mutation, which is the same door a worker building UI already uses.
      */
     public void async(Runnable work) {
-        offload.execute(work);
+        try {
+            offload.execute(work);
+        } catch (RejectedExecutionException e) {
+            dropIfStopped(offload, e);
+        }
+    }
+
+    /**
+     * Answer a lane's rejection: dropped when the lane has been shut down, rethrown when it has not.
+     *
+     * <p>Work arriving at a stopped lane is not the caller's mistake, it is shutdown's ordinary race. Offloaded
+     * work outlives frames by design, so a highlight or a file read in flight when the application quits
+     * finishes after the handler lane has stopped, and what it hands on — a widget's change notification, a
+     * follow-up {@code async} — has nowhere to go. The caller cannot see the shutdown coming and has nowhere to
+     * put the exception, so it surfaced as an uncaught error on an offload thread in any teardown that caught a
+     * task mid-flight. The work was for a tree that is going away, and dropping it is the trade {@link #close}
+     * (or whoever owns the lane) already made by stopping the lane at all.
+     *
+     * <p>Only a <em>stopped</em> lane is answered this way. A lane that rejects while running — a bounded queue an
+     * embedder chose — has made a decision about loss that belongs to whoever chose it, and it still throws.
+     */
+    private static void dropIfStopped(Executor lane, RejectedExecutionException e) {
+        if (lane instanceof ExecutorService s && s.isShutdown()) {
+            return;
+        }
+        throw e;
     }
 
     /**

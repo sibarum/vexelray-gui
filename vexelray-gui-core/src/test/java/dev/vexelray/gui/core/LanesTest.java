@@ -68,6 +68,32 @@ class LanesTest {
     }
 
     @Test
+    void workHandedToAStoppedLaneIsDroppedAndToARefusingOneStillThrows() {
+        // Shutdown's race: a highlight in flight on the offload lane finishes after the application stopped the
+        // handler lane, and the field it updates hands its change notification on. That caller cannot see the
+        // shutdown coming, so the stopped lane's rejection must not reach it.
+        ExecutorService handlers = Executors.newSingleThreadExecutor();
+        ExecutorService offload = Executors.newSingleThreadExecutor();
+        Gui gui = new Gui(Atchung.create(), handlers, offload);
+        handlers.shutdownNow();
+        offload.shutdownNow();
+        gui.handlers().execute(() -> { });
+        gui.async(() -> { });
+        gui.close();
+
+        // A lane that refuses while running chose that loss itself, and the choice is still its to report.
+        java.util.concurrent.Executor refusing = r -> {
+            throw new java.util.concurrent.RejectedExecutionException("full");
+        };
+        try (Gui running = new Gui(Atchung.create(), refusing, refusing)) {
+            org.junit.jupiter.api.Assertions.assertThrows(java.util.concurrent.RejectedExecutionException.class,
+                    () -> running.handlers().execute(() -> { }));
+            org.junit.jupiter.api.Assertions.assertThrows(java.util.concurrent.RejectedExecutionException.class,
+                    () -> running.async(() -> { }));
+        }
+    }
+
+    @Test
     void theTwoDefaultLanesAreDistinctAndNamedApart() throws Exception {
         // "Worker thread" meant both lanes, which is one name for two things with different rules in the
         // documentation applications read. A handler is short application code answering an input event; an

@@ -319,6 +319,23 @@ public final class Node {
         return prop(PropKey.LINE_NUMBERS, show);
     }
 
+    /**
+     * Mark whitespace with a faint dot, in the cell each blank already occupies — which blanks is {@code mode}'s
+     * call ({@link dev.vexelray.gui.core.text.Whitespace}). Drawn over the text, so nothing moves or reflows.
+     */
+    public Node whitespace(dev.vexelray.gui.core.text.Whitespace mode) {
+        return prop(PropKey.WHITESPACE, mode == null ? dev.vexelray.gui.core.text.Whitespace.NONE : mode);
+    }
+
+    /**
+     * Draw a faint mark just past the last character of every line a newline ends. The node cannot say what the
+     * newline was — by the time text reaches it, every line end is one {@code '\n'} — so whether line ends are worth
+     * marking is the application's call: typically, when its file uses a convention the platform does not.
+     */
+    public Node lineEnds(boolean show) {
+        return prop(PropKey.LINE_ENDS, show);
+    }
+
     /** Set the caret offset into the text (character index), or {@code -1} to hide the caret. */
     public Node caret(int offset) {
         return prop(PropKey.CARET, offset);

@@ -203,7 +203,34 @@ public final class WindowMemory {
     }
 
     /**
+     * {@code spec}, remembered under {@code key}: put back where it was left each time it opens, its zoom
+     * restored and followed, and no longer watched once it closes. <b>This is how a window that can close before
+     * the application does is remembered</b> — a named {@link AppWindow}, a settings window, a tool window.
+     *
+     * <p>Why it exists rather than {@link #restoreBounds} and {@link #watch} called from {@code onCreated}: a
+     * watch holds the window, and the window goes when the user closes it while the watch does not, unless
+     * something remembers to call {@link #forget}. Nothing did. The calculator's settings window was the first to
+     * close before its application, and the next {@link #poll} read the bounds of a window that no longer existed
+     * and took the frame loop down with it. Pairing the two ends here is what makes the second one impossible
+     * to leave out.
+     *
+     * @param defaultWidth  the size {@link #restoreBounds} falls back on; the same as {@link #config}'s
+     */
+    public WindowSpec remember(String key, WindowSpec spec, int defaultWidth, int defaultHeight) {
+        return spec
+                .onCreated(w -> {
+                    restoreBounds(key, w, defaultWidth, defaultHeight);
+                    watch(key, w, spec.gui());
+                })
+                .onClosed(() -> forget(key));
+    }
+
+    /**
      * Start watching {@code window} under {@code key}, and record the bounds it actually has.
+     *
+     * <p>A window that can close before the application does is {@link #remember}ed rather than watched: the
+     * watch lasts until {@link #forget}, and {@code remember} is what calls it. This is for the main window, whose
+     * watch ends with the application.
      *
      * <p>Recording at this point matters twice. On a first run there is nothing saved, so the placement the OS
      * just chose is the thing to remember — waiting for the user to move the window would throw away a perfectly

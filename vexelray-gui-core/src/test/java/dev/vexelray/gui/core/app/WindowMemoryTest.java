@@ -220,6 +220,37 @@ class WindowMemoryTest {
                 .config("main", "Calculator", 420, 632).x(), "and the last position is the one that lands");
     }
 
+    /**
+     * A remembered window stops being watched when it closes, and is watched again when it reopens. The stub
+     * throws once it is gone, the way {@code GetWindowRect} did on the calculator's settings window: the poll
+     * after the user closed it took the frame loop down.
+     */
+    @Test
+    void aRememberedWindowIsNotReadAfterItClosesAndIsFollowedAgainWhenItReopens(@TempDir Path dir) {
+        Path file = dir.resolve("settings.properties");
+        try (Gui gui = new Gui()) {
+            WindowMemory memory = new WindowMemory(Settings.at(file), ONE_SCREEN);
+            WindowSpec spec = memory.remember("settings", WindowSpec.of(WindowConfig.of("Settings", 400, 300), gui),
+                    400, 300);
+
+            Stub first = window(100, 100, 400, 300);
+            spec.onCreated().accept(first);
+            memory.poll();
+            first.gone = true;
+            spec.onClosed().run();
+            memory.poll();   // threw, before remember paired the close with forget
+
+            Stub second = window(0, 0, 400, 300);
+            spec.onCreated().accept(second);
+            assertEquals(100, second.x, "reopened where it was left");
+            second.x = 250;
+            memory.poll();
+            memory.save();
+        }
+        assertEquals(250, new WindowMemory(Settings.at(file), ONE_SCREEN)
+                .config("settings", "Settings", 400, 300).x(), "and the reopened window is the one followed");
+    }
+
     private static WindowMemory memory(Path dir, WindowMemory.Desktop desktop) {
         return new WindowMemory(Settings.at(dir.resolve("settings.properties")), desktop);
     }
@@ -264,9 +295,13 @@ class WindowMemoryTest {
         int height;
         boolean maximized;
         boolean minimized;
+        boolean gone;
 
         @Override
         public int screenX() {
+            if (gone) {
+                throw new IllegalStateException("read a window that was closed");
+            }
             return x;
         }
 

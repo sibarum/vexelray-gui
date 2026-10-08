@@ -153,4 +153,23 @@ class DrawOnChangeTest {
         r.setProp(1L, PropKey.SPANS, null);
         assertFalse(r.takeDrawDirty(), "clearing one that was already clear is not");
     }
+
+    /**
+     * Alignment does not resize the box, so it is not a layout change — but the indent is baked into the visual
+     * lines' x positions, so a draw alone would go on showing the old alignment.
+     */
+    @Test
+    void realigningTextRebakesItsGeometry() {
+        Reconciler r = new Reconciler(1L);
+        r.create(1L, Map.of());
+        r.clearDirty();
+
+        r.setProp(1L, PropKey.H_ALIGN, dev.vexelray.text.TextLayout.HAlign.CENTER);
+        assertFalse(r.layoutDirty(), "the box is the same size");
+        assertTrue(r.geometryDirty(), "the line indents are not the same");
+
+        r.clearDirty();
+        r.setProp(1L, PropKey.V_ALIGN, dev.vexelray.text.TextLayout.VAlign.BOTTOM);
+        assertTrue(r.geometryDirty(), "nor are the line tops");
+    }
 }

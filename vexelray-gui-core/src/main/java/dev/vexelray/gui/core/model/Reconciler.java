@@ -200,12 +200,13 @@ public final class Reconciler implements Mutation.Sink {
         if (n != null) {
             // The change itself is what says a frame is owed, so a write that changes nothing says nothing: no
             // relayout, no draw. Before this, setting a colour to the colour it already was cost a frame.
-            if (unchanged(n.raw(key), value)) {
+            Object before = n.raw(key);
+            if (unchanged(before, value)) {
                 return;
             }
             n.set(key, value);
             drawDirty = true;
-            if (key.layoutAffecting()) {
+            if (key.affectsLayout(before, value)) {
                 layoutDirty = true;
             } else if (key.geometryAffecting()) {
                 geometryDirty = true;

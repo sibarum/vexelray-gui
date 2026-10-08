@@ -144,12 +144,50 @@ public final class Node {
     }
 
     /**
-     * Select the atlas face this node's text measures and renders with: 0 (default) is the primary UI font,
-     * 1+ are the extra faces the atlas was built with (e.g. a monospace face for code). An index the atlas
-     * doesn't carry degrades to the primary font.
+     * Select the font family this node's text measures and renders in, by its index among the application's
+     * families in {@code fonts.json} order. In the standard set 0 is {@code sans}, the UI face, and 1 is
+     * {@code mono} — what these indices always meant. An index past the last family degrades to the last.
+     *
+     * @see #font(String) to name the family instead, which is the form that survives a reordered manifest
      */
-    public Node font(int face) {
-        return prop(PropKey.FONT, face);
+    public Node font(int family) {
+        return prop(PropKey.FONT, family);
+    }
+
+    /**
+     * Select the font family this node's text measures and renders in, by its key in the application's
+     * {@code FontSet} — {@code "sans"}, {@code "mono"}, or whatever the application's build named its families.
+     * A key the set does not have is a programming error, reported when the node is first measured.
+     */
+    public Node font(String family) {
+        return prop(PropKey.FONT, family);
+    }
+
+    /**
+     * The weight of this node's text, 100–1000: 700 is bold. Drawn and measured in the family's face nearest it
+     * (docs/plans/font-families.md §3.2), so a weight the family was not built with still gets a face. A span can
+     * set its own range differently.
+     */
+    public Node fontWeight(int weight) {
+        if (weight < 1 || weight > 1000) {
+            throw new IllegalArgumentException("a weight is 1-1000: " + weight);
+        }
+        return prop(PropKey.FONT_WEIGHT, weight);
+    }
+
+    /** Bold text — weight 700. */
+    public Node bold() {
+        return fontWeight(700);
+    }
+
+    /** The slope of this node's text: upright, italic or oblique. A span can set its own range differently. */
+    public Node fontSlope(dev.vexelray.text.FontSet.Slope slope) {
+        return prop(PropKey.FONT_SLOPE, java.util.Objects.requireNonNull(slope, "slope"));
+    }
+
+    /** Italic text. */
+    public Node italic() {
+        return fontSlope(dev.vexelray.text.FontSet.Slope.ITALIC);
     }
 
     public Node border(Length width, Color color) {

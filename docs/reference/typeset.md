@@ -8,7 +8,7 @@ a ratio and the renderer tone-maps the whole block into a legible range.
 | Module | `vexelray-gui-typeset` |
 | Depends on | `vexelray-gui-core` (only) |
 | Entry | application edge, optional |
-| Status | **P0–P4 complete** — vocabulary, SPI, tone map, engine, recipes, style and projection; P5 (atlas face) and P6 (demo) remain |
+| Status | **P0–P4 complete** — vocabulary, SPI, tone map, engine, recipes, style and projection. **P5's mechanism has landed** (faces are a family, weight and slope out of the GUI's own `TextFaces`), but its gate waits on an italic or math font being baked. **P6 (demo) remains** |
 
 ---
 
@@ -443,9 +443,11 @@ semantics.
 Compile-time records. No config format, no runtime parsing. A profile carries face keys, size-ratio constants,
 the spacing table, per-recipe anchoring constants, and the tone-map bounds.
 
-**Faces by key, not index.** `Node.font(int)` indexes a face array, and `AtlasData.face(i)` returns faces over one
-shared atlas image. So profiles name faces by *key* and the app supplies the key-to-index binding at
-construction. Profiles stay portable across whatever the atlas situation becomes.
+**Faces by key, not by font.** A profile names a face by its *role* — `text`, `math`, `mathItalic` — and the app
+supplies `FaceKeys` at construction, binding each key to a family, weight and slope of its `FontSet`:
+`bind("mathItalic", "sans", 400, ITALIC)`. Which fonts an application bakes is its own business, decided in its
+build; the profile stays portable across all of them. An unbound key is the set's first family, regular. The
+older `bind(key, int)` names a family by its manifest index, as `Node.font(int)` does.
 
 **Recipes are built in; profiles are data over them.** "The numerator is anchored so its bottom clears the bar by
 `gapNum`" is an algorithm, not a number. Ship built-in recipes and let profiles supply their constants.
@@ -461,7 +463,7 @@ and the only file in the module that knows what a `Gui` is.
 
 ```
 Glyphs(text, x, y, size, face)
-    → Node.text(text).font(idx).textSize(dp(size)).textColor(ink)
+    → Node.text(text).font(family).fontWeight(w).fontSlope(s).textSize(dp(size)).textColor(ink)
           .size(dp(advance·size), dp((ascender − descender)·size))
           .floatAt(dp(x), dp(y − ascender·size − top)).hitInert(true)
 
@@ -471,9 +473,9 @@ Bar(x, y, w, h)
 ```
 
 The `− ascender·size` term converts baseline-relative y to the node's top-left: a text node draws `VAlign.TOP`
-and the renderer places the first baseline at `box.y + ascender·size`. `ascender` is a per-face constant from the
-same `AtlasData` the layout already holds, and it lives in one named helper (`Typeset.ascenderOf`) — the moment a
-second backend exists it must use the identical conversion. `top` is the container's own top edge, below.
+and the renderer places the first baseline at `box.y + ascender·size`. `ascender` is a per-face constant of the
+face the key resolves to, and it lives in one named helper (`Typeset.ascenderOf`) — the moment a second backend
+exists it must use the identical conversion. `top` is the container's own top edge, below.
 
 **`dp`, not `em`.** The tone map solves in pixels because the legibility floor is physical, so by the time there
 are coordinates the basis has been applied and applying it again would be a second multiplication. The block
@@ -481,10 +483,15 @@ solves at `rootEmPx · zoom` and emits `dp`, which resolves as `v · dpi` — de
 already inside the number; density is the one factor left, and it is exactly the one `dp` supplies. Emitting `em`
 would apply the root em, zoom *and* density a second time.
 
-**Sizes are set, never measured.** Every node carries an explicit width and height computed from the same atlas
-metrics the engine laid out with, so the block does not depend on the application having supplied a
-`TextMeasurer` that agrees with the atlas — and the container's box is arithmetically guaranteed to fit its
-children rather than merely expected to.
+**Sizes are set, never measured.** Every node carries an explicit width and height computed from the same glyph
+metrics the engine laid out with, so the block does not depend on the layout's measurer agreeing with it — and
+the container's box is arithmetically guaranteed to fit its children rather than merely expected to.
+
+**And the metrics are the GUI's own.** `Typeset` takes the `TextFaces` the application draws with
+(`GuiApp.faces()`, or `TextFaces.standard()`), and `glyphOf` resolves a code point exactly as drawing does: the
+face, then its fallback chain, then the missing-glyph box. A code point that draws nothing (whitespace, a control)
+is nothing here too — no advance, no ink. Measured against a different set of fonts than it is drawn in, a block
+whose sizes are set rather than measured would simply be the wrong size, with nothing to correct it.
 
 ### 8.1 The container's box, which is not what this section first said
 
@@ -535,7 +542,7 @@ vexelray-gui-typeset        →  vexelray-gui-core   (only)
   Slot           the six attach corners                                             [P0 ✓]
   Profile        face keys, ratios, spacing table, recipe constants, tone bounds     [P0 ✓]
   Recipes        built-in compositions + the math profile's atom helpers             [P0 ✓ P3 ✓]
-  FaceKeys       key → face index, supplied by the app                               [P0 ✓]
+  FaceKeys       key → family, weight, slope; supplied by the app                    [P0 ✓ P5 ✓]
   Placed         draw list + metrics; the closed alphabet Glyphs | Bar               [P0 ✓]
   Arrangement    the layout service a box drives                                     [P0 ✓ P2 ✓ P3 ✓]
   ToneMap        the solve — pure numbers, zero dependencies                         [P1 ✓]
@@ -629,6 +636,10 @@ reference implementation's metrics API, so this is the least risky phase.
 
 **Result: passed.** `GeometryTest`, 18 assertions, green against `primary.json` with no face bindings — which is
 exactly how the module behaves on today's atlas, before P5.
+
+*Since P5:* the engine measures through `TextFaces`, and `GeometryTest` runs on `TextFaces.standard()`. Its
+`sans` face advances every code point of `primary.json` identically (vexelray-text `FontSetTest`), so the same 18
+assertions hold unchanged.
 
 Assertions are **relationships** wherever one exists: the bar centres on the axis, the numerator clears it by
 `fractionGapAbove`, the vinculum runs to the end of its radicand, a grown delimiter covers its content and
@@ -753,14 +764,26 @@ explicit size on every node, so nothing should ever consult it; if something sta
 fail loudly rather than the block quietly acquiring a dependency on the application's measurer agreeing with the
 atlas.
 
-### P5 — Atlas face
+### P5 — Atlas face — mechanism landed, gate open
 
-Lands in **vexelray**, not here — one `<extraFont>` alongside the existing mono face in `vexelray-text/pom.xml`,
-since faces share a single atlas image. No multi-texture work. Specified in that repo at
-`vexelray/docs/math-face.md`, including the charset to take, the budget, and how to verify it.
+**Planned as** one `<extraFont>` beside the mono face in `vexelray-text/pom.xml`, sharing the single atlas
+image. **Superseded** by font families (docs/plans/font-families.md): the plugin now bakes whole families, one
+atlas per face, and the GUI draws several atlases in one frame. There are two ways a math face can now arrive,
+and neither touches this module:
+- **An italic face.** Bake one into a family, and `FaceKeys.bind("mathItalic", "sans", 400, ITALIC)` draws
+  variables in it.
+- **A math family.** Bake one (Noto Sans Math, say) and name it in `FontSet.withFallback(...)`. Then U+1D44E and
+  the rest of the Mathematical Alphanumeric block draw from it wherever the text font lacks them, and measure at
+  its advances.
 
-**Gate:** italic-math renders; and the degradation path is verified — with no math face, probe for U+1D44E and
-pass variables through upright, so the module is useful on today's atlas.
+**Landed:**
+- `FaceKeys` binds keys to family, weight and slope.
+- `Typeset` takes `TextFaces` and resolves glyphs through the GUI's own chain.
+- `TypesetBlock` projects family, weight and slope onto each text node.
+
+**Gate, still open:** italic-math renders, which needs an italic or math font baked; vexelray-text ships Regular
+only. The degradation path needs no probe any more. With no italic face, an italic request resolves to the
+nearest face, regular, and variables pass through upright at regular's advances, measured and drawn alike.
 
 ### P6 — Demo panel
 
@@ -804,8 +827,10 @@ Tracked in docs/todo.md; repeated here only where a phase blocks on them.
 - ~~Choose the hysteresis policy for `s` before P6.~~ **Closed: there is no policy, because the solve is already
   stable** (§4.3.1). Four properties, all tested. The one that reframed it: the slope does not depend on the pixel
   basis, so zoom cannot make it shimmer.
-- Atlas budget: the primary face is roughly 1300 glyphs in a 2048 atlas at 32px, and the U+1D400 block adds about
-  1000 more. Trim to italic and bold-italic; skip fraktur, script and double-struck.
+- Atlas budget: a math face is now a family of its own, with its own atlas, so it no longer competes for room in
+  the primary one. The build prints every face's texture size and the total, and `msdf.fontBudgetMegabytes` can
+  hold a ceiling. A family's `<charset>` narrows it to italic and bold-italic if the whole U+1D400 block costs too
+  much; skip fraktur, script and double-struck first.
 - The projection rebuilds every node on each basis change. The tone map is stable; this is not yet measured, and
   it is the live-behaviour cost that replaced hysteresis as the thing to watch (docs/todo.md §2).
 - No reference front-end ships. Test input is hand-built IR trees, which prove the primitives rather than a

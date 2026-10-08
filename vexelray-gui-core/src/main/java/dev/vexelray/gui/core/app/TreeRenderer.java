@@ -7,6 +7,8 @@ import dev.vexelray.gui.core.model.RetainedNode;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.gui.core.text.Span;
+import dev.vexelray.gui.core.text.Styling;
+import dev.vexelray.gui.core.text.TextFaces;
 import dev.vexelray.gui.core.text.TextMetrics;
 import dev.vexelray.gui.draw.CanvasSink;
 import dev.vexelray.gui.draw.Picture;
@@ -63,7 +65,11 @@ public final class TreeRenderer {
     private float clipR = Float.POSITIVE_INFINITY;
     private float clipB = Float.POSITIVE_INFINITY;
 
-    private TreeRenderer(Theme theme) {
+    /** The application's fonts: which face each character is drawn in, the same answer the measurer gave. */
+    private final TextFaces faces;
+
+    private TreeRenderer(Theme theme, TextFaces faces) {
+        this.faces = faces;
         this.scrollEdge = theme.color(Role.EDGE);
         this.scrollTrough = theme.color(Role.CHROME);
         this.scrollGrip = theme.color(Role.GRIP);
@@ -75,29 +81,24 @@ public final class TreeRenderer {
         this.ink = theme.color(Role.INK);
     }
 
-    /** Single-face convenience: everything renders with {@code text} regardless of node font indices. */
-    public static void emit(RetainedNode node, Canvas canvas, TextLayout text) {
-        emit(node, canvas, new TextLayout[]{text}, Theme.DARK);
-    }
-
-    /** As {@link #emit(RetainedNode, Canvas, TextLayout[], Theme)}, in the framework's default theme. */
-    public static void emit(RetainedNode node, Canvas canvas, TextLayout[] faces) {
+    /** As {@link #emit(RetainedNode, Canvas, TextFaces, Theme)}, in the framework's default theme. */
+    public static void emit(RetainedNode node, Canvas canvas, TextFaces faces) {
         emit(node, canvas, faces, Theme.DARK);
     }
 
     /**
-     * Emit the whole tree rooted at {@code node} into {@code canvas}. {@code faces} holds one {@link TextLayout}
-     * per atlas face, index-aligned with {@code RetainedNode.font()}; each text node draws with its own face
-     * (out-of-range indices degrade to face 0, matching the measurer).
+     * Emit the whole tree rooted at {@code node} into {@code canvas}. Each character is drawn in the face
+     * {@code faces} resolves for it — the node's family and style, and its spans — which is the same resolution the
+     * measurer made, so every glyph lands on the caret position the metrics baked for it.
      *
      * <p>{@code theme} supplies only the chrome the tree does not declare (see the fields above); every colour a
      * node carries was resolved when the prop was written.
      */
-    public static void emit(RetainedNode node, Canvas canvas, TextLayout[] faces, Theme theme) {
-        new TreeRenderer(theme == null ? Theme.DARK : theme).walk(node, canvas, faces);
+    public static void emit(RetainedNode node, Canvas canvas, TextFaces faces, Theme theme) {
+        new TreeRenderer(theme == null ? Theme.DARK : theme, faces).walk(node, canvas);
     }
 
-    private void walk(RetainedNode node, Canvas canvas, TextLayout[] faces) {
+    private void walk(RetainedNode node, Canvas canvas) {
         if (!node.visible()) {
             return;   // hidden: nothing drawn, and the subtree is not walked
         }
@@ -118,7 +119,7 @@ public final class TreeRenderer {
                 transX += dx;
                 transY += dy;
             }
-            drawSelf(node, canvas, faceFor(faces, node));
+            drawSelf(node, canvas, faceFor(node));
             boolean scrollClip = node.overflowX || node.overflowY;
             // An overflowing container clips to its scroll viewport; a container that merely said so clips to its
             // whole border box. Both are the same mask, asked for two different ways, so only one is pushed.
@@ -150,7 +151,7 @@ public final class TreeRenderer {
             }
             for (RetainedNode child : node.children) {
                 if (!child.floating() && !masked(child)) {
-                    walk(child, canvas, faces);
+                    walk(child, canvas);
                 }
             }
             if (scrollClip) {
@@ -170,7 +171,7 @@ public final class TreeRenderer {
             // every sibling, which is what makes one an overlay.
             for (RetainedNode child : node.children) {
                 if (child.floating() && !masked(child)) {
-                    walk(child, canvas, faces);
+                    walk(child, canvas);
                 }
             }
             if (!scrollClip && node.clip()) {
@@ -180,7 +181,7 @@ public final class TreeRenderer {
             // and over every child, because something that says "this just happened to this box" that a label can
             // cover has failed at the one thing it does. Inside the node's translate, like its own picture: an
             // overlay decorates where the node is drawn, not where it was laid out.
-            drawOverlay(node, canvas, faceFor(faces, node));
+            drawOverlay(node, canvas, faceFor(node));
             if (moved) {
                 canvas.popTranslate();
             }
@@ -241,9 +242,9 @@ public final class TreeRenderer {
         return c == null || alpha >= 1f ? c : Color.withAlpha(c, c.a() * alpha);
     }
 
-    private static TextLayout faceFor(TextLayout[] faces, RetainedNode n) {
-        int f = n.font();
-        return faces[f <= 0 ? 0 : Math.min(f, faces.length - 1)];
+    /** The node's own face — its family and style, before any span — for what it draws that is not its text. */
+    private TextLayout faceFor(RetainedNode n) {
+        return faces.layout(Styling.base(n));
     }
 
     /** Draw the reserved-space scrollbars (outlined track + pill thumb) for an overflowing container — chrome. */
@@ -464,6 +465,9 @@ public final class TreeRenderer {
         float cullHi = clip ? settledViewY(n) + n.viewH : Float.POSITIVE_INFINITY;
         int selLo = Math.min(n.selectStart(), n.selectEnd());
         int selHi = Math.max(n.selectStart(), n.selectEnd());
+        // The face of every character, resolved once for the node — the same resolution the measurer made, so a
+        // bold run is drawn in the face whose advances placed it.
+        int[] faceIds = faces.faceIds(new Styling(n.font(), n.fontWeight(), n.fontSlope(), spans), s);
         for (TextMetrics.VisualLine line : m.lines()) {
             if (line.top() + line.height() < cullLo || line.top() > cullHi) {
                 continue;
@@ -480,7 +484,7 @@ public final class TreeRenderer {
             if (selHi > selLo) {
                 fillLineRange(line, selLo, selHi, fade(selection), canvas);
             }
-            drawLineText(n, s, line, lineSpans, canvas, text);
+            drawLineText(n, s, line, lineSpans, faceIds, canvas);
             for (Span sp : lineSpans) {
                 if (sp.underline()) {
                     underlineLineRange(n, line, sp.start(), sp.end(),
@@ -552,18 +556,24 @@ public final class TreeRenderer {
         canvas.fillRoundRect(x0, line.top(), Math.max(1f, x1 - x0), line.height(), 0f, color);
     }
 
-    /** Draw one visual line's glyphs, split into maximal runs of a constant effective foreground colour. */
+    /**
+     * Draw one visual line's glyphs, split into maximal runs of one effective foreground colour in one face. Each
+     * run starts at its baked x, which already counts every earlier run's own face's advances, so a bold word
+     * pushes what follows it exactly as far as the metrics said.
+     */
     private void drawLineText(RetainedNode n, String s, TextMetrics.VisualLine line,
-                                     java.util.List<Span> spans, Canvas canvas, TextLayout text) {
+                                     java.util.List<Span> spans, int[] faceIds, Canvas canvas) {
         int from = Math.max(0, line.start());
         int to = Math.min(s.length(), line.end());
         int i = from;
         while (i < to) {
             Color fg = fgAt(spans, i, n.textColor(ink));
+            int face = faceIds[i];
             int j = i + 1;
-            while (j < to && java.util.Objects.equals(fgAt(spans, j, n.textColor(ink)), fg)) {
+            while (j < to && faceIds[j] == face && java.util.Objects.equals(fgAt(spans, j, n.textColor(ink)), fg)) {
                 j++;
             }
+            TextLayout text = faces.layout(face);
             // Each run is drawn at its exact baked x, in a box exactly one line high, so the canvas does no
             // alignment or wrapping of its own — the metrics already decided all of it.
             TextLayout.TextStyle style = TextLayout.TextStyle.of(n.textSizePx)

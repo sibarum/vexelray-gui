@@ -15,10 +15,8 @@ import sibarum.probe.Zone;
 import dev.vexelray.os.NativeWindow;
 import dev.vexelray.os.WindowConfig;
 import dev.vexelray.shader.ComposedShader;
-import dev.vexelray.text.AtlasData;
-import dev.vexelray.text.AtlasPixels;
-import dev.vexelray.text.GlyphLayout;
-import dev.vexelray.text.TextLayout;
+import dev.vexelray.gui.core.text.TextFaces;
+import dev.vexelray.text.FontSet;
 import dev.vexelray.vulkan.present.AtlasTexture;
 import dev.vexelray.vulkan.present.GraphicsPipeline;
 import dev.vexelray.vulkan.present.OffscreenDraw;
@@ -52,8 +50,6 @@ public final class GuiApp implements AutoCloseable {
 
     private static final sibarum.probe.Log LOG = sibarum.probe.Log.of("gui.app");
 
-    private static final String ATLAS_JSON = "/dev/vexelray/text/atlas/primary.json";
-
     // Shared engine context — one GPU bring-up serves every window.
     private final NativePlatform platform;
     /**
@@ -69,7 +65,8 @@ public final class GuiApp implements AutoCloseable {
      * {@code -Dvexelray.present} — or null for the swapchain path. Shared by all windows; closed after them.
      */
     private final dev.vexelray.vulkan.present.PresenterProvider.Backend presentBackend;
-    private final AtlasTexture atlas;
+    /** Every face's glyph atlas, uploaded at startup, and the faces that measure them. Shared by every window. */
+    private final FontAtlases fonts;
     private final AtlasTexture noImage;
     /** Render targets minted by {@link #viewport}, closed with the application. */
     private final List<SampledColorTarget> viewports = new ArrayList<>();
@@ -80,8 +77,6 @@ public final class GuiApp implements AutoCloseable {
     /** Loop iterations begun, so a released texture can be held for a whole one after it. Main thread. */
     private long iteration;
     private final List<StorageBuffer> buffers = new ArrayList<>();
-    private final TextLayout[] text;
-    private final TextMeasurer measurer;
 
     // The main window, plus every other window this application has open. All of them live on the main thread
     // and are pumped/presented by the one loop in run(); another window closing removes only its own bundle, the
@@ -163,7 +158,18 @@ public final class GuiApp implements AutoCloseable {
      * after appearing (see {@code Settings}).
      */
     public GuiApp(WindowConfig config) {
-        this(config, null, null);
+        this(config, null, null, TextFaces.standard());
+    }
+
+    /**
+     * As {@link #GuiApp(WindowConfig)}, drawing text in {@code fonts} — the set the application's own build baked
+     * with vexelray-msdf-maven-plugin's {@code <families>}, read with {@link FontSet#fromClassPath}, and given its
+     * fallbacks with {@link FontSet#withFallback}. Every face in it is uploaded now, before the first window is
+     * shown (docs/plans/font-families.md §1); the other constructors use vexelray-text's {@code sans} and
+     * {@code mono}, each falling back to the other.
+     */
+    public GuiApp(WindowConfig config, FontSet fonts) {
+        this(config, null, null, new TextFaces(fonts));
     }
 
     /**
@@ -182,7 +188,7 @@ public final class GuiApp implements AutoCloseable {
      * as a bare {@code null} here, which no longer picks an overload on its own.
      */
     public GuiApp(WindowConfig config, NativeWindow window) {
-        this(config, window, null);
+        this(config, window, null, TextFaces.standard());
     }
 
     /**
@@ -211,15 +217,16 @@ public final class GuiApp implements AutoCloseable {
      * what the other constructors pass, so a factory that adds nothing is an ordinary application.
      */
     public GuiApp(WindowConfig config, java.util.function.Function<WindowConfig, NativeWindow> windows) {
-        this(config, null, windows);
+        this(config, null, windows, TextFaces.standard());
     }
 
     /**
      * The one that builds it: {@code adopted} is a main window the host already made (or null to make one), and
-     * {@code windows} makes every window from here on (or null for the platform's own).
+     * {@code windows} makes every window from here on (or null for the platform's own), and {@code faces} is the
+     * application's fonts.
      */
     private GuiApp(WindowConfig config, NativeWindow adopted,
-                   java.util.function.Function<WindowConfig, NativeWindow> windows) {
+                   java.util.function.Function<WindowConfig, NativeWindow> windows, TextFaces faces) {
         this.platform = NativePlatform.current();
         this.windows = windows == null ? platform::createWindow : windows;
         this.instance = new VulkanInstance(config.title(), platform.requiredVulkanInstanceExtensions());
@@ -269,16 +276,14 @@ public final class GuiApp implements AutoCloseable {
             probeSurface = 0L;
         }
 
-        int[] atlasSize = new int[2];
-        byte[] atlasRgba = loadAtlasRgba(atlasSize);
-        this.atlas = new AtlasTexture(device, atlasSize[0], atlasSize[1], atlasRgba);
+        // Every face's atlas, now: what the application holds on the GPU for text is fixed by what its build baked,
+        // not by what it goes on to show (docs/plans/font-families.md §1).
+        this.fonts = FontAtlases.upload(device, faces);
         // One placeholder for the device, not one per window: every window's canvas pipeline is built against the
         // same layout, and every span that draws no image binds this same 1x1 white.
         this.noImage = AtlasTexture.placeholder(device);
-        this.text = faces(AtlasData.loadFromResource(ATLAS_JSON));
-        this.measurer = measurer(text);
 
-        this.main = new GuiWindow(platform, instance, device, atlas, noImage, text, measurer, null,
+        this.main = new GuiWindow(platform, instance, device, fonts, noImage, null,
                 probe, probeSurface, config.decorations(), presentBackend);
         this.controls = controlsFor(main);
     }
@@ -376,6 +381,15 @@ public final class GuiApp implements AutoCloseable {
         for (OpenWindow w : open) {
             w.spec.gui().requestFrame();
         }
+    }
+
+    /**
+     * The fonts every window of this application measures and draws text in — for anything that sizes text itself
+     * rather than letting the layout measure it, such as a typeset block, which must use the same faces or be the
+     * wrong size.
+     */
+    public TextFaces faces() {
+        return fonts.faces();
     }
 
     /**
@@ -1004,7 +1018,7 @@ public final class GuiApp implements AutoCloseable {
         wireWake(spec.gui());
         // From the same factory the main window came from: this is the path every popup, named window and
         // dialog takes, and a window that skipped it is one the host was never given a say over.
-        GuiWindow w = new GuiWindow(platform, instance, device, atlas, noImage, text, measurer, spec.gui(),
+        GuiWindow w = new GuiWindow(platform, instance, device, fonts, noImage, spec.gui(),
                 spec.standing().place(spec.config(), anchorHandle(spec)), this::create, presentBackend);
         WindowInput input = inputs.attach(w.window, spec.gui());
         OpenWindow entry = new OpenWindow(w, input, spec, owner);
@@ -1418,7 +1432,7 @@ public final class GuiApp implements AutoCloseable {
             b.close();
         }
         buffers.clear();
-        atlas.close();
+        fonts.close();
         noImage.close();
         device.close();
         instance.close();
@@ -1426,31 +1440,33 @@ public final class GuiApp implements AutoCloseable {
 
     // --- headless capture ---
 
-    /** One {@link TextLayout} per face the atlas carries — index-aligned with {@code RetainedNode.font()}. */
-    private static TextLayout[] faces(AtlasData data) {
-        TextLayout[] faces = new TextLayout[data.faceCount()];
-        for (int i = 0; i < faces.length; i++) {
-            faces[i] = new TextLayout(data.face(i));
-        }
-        return faces;
-    }
-
-    /** Reconcile + lay out {@code gui} at {@code width}×{@code height}, render one frame, and write a PNG. */
+    /**
+     * Reconcile + lay out {@code gui} at {@code width}×{@code height}, render one frame, and write a PNG — in
+     * vexelray-text's standard fonts.
+     */
     public static void capture(Gui gui, int width, int height, float bgR, float bgG, float bgB, String path)
             throws IOException {
-        int[] atlasSize = new int[2];
-        byte[] atlasRgba = loadAtlasRgba(atlasSize);
-        TextLayout[] text = faces(AtlasData.loadFromResource(ATLAS_JSON));
+        capture(gui, TextFaces.standard(), width, height, bgR, bgG, bgB, path);
+    }
+
+    /** As {@link #capture(Gui, int, int, float, float, float, String)}, in an application's own fonts. */
+    public static void capture(Gui gui, FontSet fonts, int width, int height, float bgR, float bgG, float bgB,
+                               String path) throws IOException {
+        capture(gui, new TextFaces(fonts), width, height, bgR, bgG, bgB, path);
+    }
+
+    private static void capture(Gui gui, TextFaces faces, int width, int height, float bgR, float bgG, float bgB,
+                                String path) throws IOException {
         // Two frames, not one. Anything an application derives from its own measured box — a picture authored in
         // pixels is the clearest case — cannot exist during the first layout that produces that box: the observer
         // fires inside it, and the mutation it posts is applied by the next drain. A still image wants the settled
         // state rather than the instant before it, so the first frame is a warm-up and the second is the picture.
-        gui.frame(width, height, measurer(text));
-        RetainedNode root = gui.frame(width, height, measurer(text));
+        gui.frame(width, height, faces);
+        RetainedNode root = gui.frame(width, height, faces);
         Canvas canvas = new Canvas(width, height);
         canvas.begin();
         if (root != null) {
-            TreeRenderer.emit(root, canvas, text, gui.theme());
+            TreeRenderer.emit(root, canvas, faces, gui.theme());
         }
         float[] vertices = canvas.toVertexArray();
         int vertexCount = canvas.vertexCount();
@@ -1464,16 +1480,17 @@ public final class GuiApp implements AutoCloseable {
             try (VulkanDevice device = new VulkanDevice(instance.handle(), sel);
                  VulkanRenderPass rp = new VulkanRenderPass(device, Vk.FORMAT_R8G8B8A8_UNORM,
                          Vk.IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-                 AtlasTexture atlas = new AtlasTexture(device, atlasSize[0], atlasSize[1], atlasRgba);
+                 FontAtlases fonts = FontAtlases.upload(device, faces);
                  AtlasTexture noImage = AtlasTexture.placeholder(device);
                  VertexBuffer vb = new VertexBuffer(device, vertices);
                  GraphicsPipeline pipeline = new GraphicsPipeline(device, rp.handle(), width, height,
                          CanvasShader.vertex().spirv(), "main", CanvasShader.fragment().spirv(), "main",
-                         canvasConfig(atlas, noImage, false))) { // fixed viewport: offscreen, no resize
+                         canvasConfig(fonts.first(), noImage, false))) { // fixed viewport: offscreen, no resize
                 // The same run list the windowed path walks, so a tree holding images captures to PNG exactly as
                 // it presents — which is what makes the image kind checkable without a window.
                 byte[] rgba = OffscreenDraw.toRgba(device, rp.handle(), pipeline, width, height, vb.handle(),
-                        atlas.descriptorSet(), bind(runs, vertexCount, noImage), bgR, bgG, bgB, 1f);
+                        fonts.first().descriptorSet(), bind(runs, vertexCount, noImage, fonts.textures()),
+                        bgR, bgG, bgB, 1f);
                 PngWriter.write(rgba, width, height, Path.of(path));
             }
         }
@@ -1503,98 +1520,6 @@ public final class GuiApp implements AutoCloseable {
                     dev.vexelray.gui.core.input.CursorShape.RESIZE_VERTICAL, NativeWindow.Cursor.RESIZE_VERTICAL);
 
     /**
-     * Text intrinsic sizing over VexelRay's glyph layout: width = measured advance, height = line height.
-     * Measures with the face the node renders with ({@code RetainedNode.font()}); the face-less methods keep
-     * working against face 0, and out-of-range face indices degrade to face 0 the same way rendering does.
-     */
-    private static TextMeasurer measurer(TextLayout[] faces) {
-        return new TextMeasurer() {
-            private TextLayout tl(int font) {
-                return faces[font <= 0 ? 0 : Math.min(font, faces.length - 1)];
-            }
-
-            private GlyphLayout gl(int font) {
-                return tl(font).glyphLayout();
-            }
-
-            @Override
-            public float intrinsic(RetainedNode node, Axis axis, float textSizePx) {
-                GlyphLayout gl = gl(node.font());
-                String s = node.textString() == null ? "" : node.textString();
-                return axis == Axis.HORIZONTAL
-                        ? gl.measure(s, textSizePx)
-                        : gl.ascent(textSizePx) + gl.descent(textSizePx);
-            }
-
-            @Override
-            public int offsetAt(String s, float localX, float textSizePx) {
-                return offsetAt(0, s, localX, textSizePx);
-            }
-
-            @Override
-            public int offsetAt(int font, String s, float localX, float textSizePx) {
-                if (s == null || s.isEmpty() || localX <= 0f) {
-                    return 0;
-                }
-                GlyphLayout gl = gl(font);
-                // Walk character boundaries, returning the offset whose caret-x is nearest localX. O(n^2) over the
-                // prefix measures, but a single line is short; a prefix-advance scan is a later optimisation.
-                float prev = 0f;
-                for (int i = 1; i <= s.length(); i++) {
-                    float w = gl.measure(s.substring(0, i), textSizePx);
-                    if (localX < (prev + w) * 0.5f) {
-                        return i - 1;
-                    }
-                    prev = w;
-                }
-                return s.length();
-            }
-
-            @Override
-            public List<TextLayout.LineSpan> lineSpans(String s, float wrapWidth, float textSizePx) {
-                return lineSpans(0, s, wrapWidth, textSizePx);
-            }
-
-            @Override
-            public List<TextLayout.LineSpan> lineSpans(int font, String s, float wrapWidth, float textSizePx) {
-                // The engine already owns offset-aware line breaking; wrapWidth <= 0 disables wrapping there,
-                // so a single-line field falls through to "split on '\n' only".
-                return tl(font).breakLineSpans(s == null ? "" : s, textSizePx, wrapWidth,
-                        TextLayout.WrapMode.WORD_CHAR);
-            }
-
-            @Override
-            public float[] caretAdvances(String s, float textSizePx) {
-                return caretAdvances(0, s, textSizePx);
-            }
-
-            @Override
-            public float[] caretAdvances(int font, String s, float textSizePx) {
-                if (s == null) {
-                    return new float[] {0f};
-                }
-                GlyphLayout gl = gl(font);
-                // Cumulative advance at each character boundary (xs[0] = 0). Uses the glyph layout's per-codepoint
-                // advance so this is O(n), not O(n^2).
-                float[] xs = new float[s.length() + 1];
-                float x = 0f;
-                int i = 0;
-                while (i < s.length()) {
-                    int cp = s.codePointAt(i);
-                    int next = i + Character.charCount(cp);
-                    x += gl.advance(cp, textSizePx);
-                    // Fill the boundary for each char index the codepoint spans (surrogate pairs share an advance).
-                    for (int j = i + 1; j <= next; j++) {
-                        xs[j] = x;
-                    }
-                    i = next;
-                }
-                return xs;
-            }
-        };
-    }
-
-    /**
      * Resolve each {@link Canvas.Run}'s opaque image handle to the descriptor set to bind, clipped to the vertices
      * that actually reached the buffer. Shared by the windowed and capture paths, so the two cannot disagree about
      * which image a span draws with.
@@ -1604,7 +1529,8 @@ public final class GuiApp implements AutoCloseable {
      * tail. A handle that is not a {@link SampledImage} — or a null one, which is every shape and glyph — gets the
      * placeholder, so a tree carrying something unexpected shows a blank box rather than failing the frame.
      */
-    static List<WindowedPresenter.Run> bind(List<Canvas.Run> runs, int vertexCount, SampledImage noImage) {
+    static List<WindowedPresenter.Run> bind(List<Canvas.Run> runs, int vertexCount, SampledImage noImage,
+                                            List<? extends SampledImage> atlases) {
         List<WindowedPresenter.Run> out = new ArrayList<>(runs.size());
         for (Canvas.Run r : runs) {
             if (r.firstVertex() >= vertexCount) {
@@ -1614,7 +1540,9 @@ public final class GuiApp implements AutoCloseable {
             long set = r.image() instanceof SampledImage img && bindable(img.device(), noImage.device())
                     ? img.descriptorSet()
                     : noImage.descriptorSet();
-            out.add(new WindowedPresenter.Run(set, r.firstVertex(), count));
+            // Set 0 is the atlas of the face the run's glyphs came from. Every face id a canvas can name is one this
+            // application's FontSet gave out, and every face of that set was uploaded, so it is always in range.
+            out.add(new WindowedPresenter.Run(atlases.get(r.face()).descriptorSet(), set, r.firstVertex(), count));
         }
         return out;
     }
@@ -1670,17 +1598,6 @@ public final class GuiApp implements AutoCloseable {
         return new GraphicsPipeline.Config(CanvasVertex.STRIDE_BYTES, attrs,
                 new long[]{atlas.descriptorSetLayout(), image.descriptorSetLayout()}, true,
                 Vk.SHADER_STAGE_FRAGMENT_BIT, 0, dynamicViewport);
-    }
-
-    /**
-     * The font atlas's pixels, already RGBA8: vexelray-text ships them beside the PNG, so nothing here decodes one
-     * (the framework decodes nothing, and decoding a PNG in Java means AWT).
-     */
-    private static byte[] loadAtlasRgba(int[] sizeOut) {
-        AtlasPixels pixels = AtlasPixels.primary();
-        sizeOut[0] = pixels.width();
-        sizeOut[1] = pixels.height();
-        return pixels.rgba();
     }
 
 }

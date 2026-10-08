@@ -5,6 +5,7 @@ import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.text.Styling;
 import sibarum.atchung.Subscription;
 
 import java.util.ArrayList;
@@ -186,8 +187,15 @@ public final class TypesetBlock implements AutoCloseable {
             double boxTop = y - engine.ascenderOf(face) * size;
             double width = engine.advanceOf(face, text) * size;
             double height = (engine.ascenderOf(face) - engine.descenderOf(face)) * size;
-            add(gui.text(text)
-                            .font(engine.faceIndexOf(face))
+            Styling style = engine.styleOf(face);
+            Node node = gui.text(text);
+            if (style.font() instanceof String family) {
+                node.font(family);
+            } else if (style.font() instanceof Integer index) {
+                node.font(index);
+            }
+            add(node.fontWeight(style.weight())
+                            .fontSlope(style.slope())
                             .textSize(dp(size))
                             .textColor(ink)
                             .size(dp(width), dp(height)),

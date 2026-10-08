@@ -61,7 +61,7 @@ public final class TextGeometry {
             return;
         }
         float px = n.textSizePx;
-        float[] adv = tm.caretAdvances(n.font(), s, px);
+        float[] adv = tm.caretAdvances(Styling.of(n), s, px);
         if (adv == null) {
             return;           // a measurer with no glyph metrics (an atlas-less stub) — nothing to resolve
         }
@@ -77,7 +77,7 @@ public final class TextGeometry {
         // count the box was sized for and the lines drawn into it are the same object. The fallback covers a node
         // the layout has not reached yet.
         List<dev.vexelray.text.TextLayout.LineSpan> spans =
-                n.lineSpans != null ? n.lineSpans : tm.lineSpans(n.font(), s, wraps ? viewW : 0f, px);
+                n.lineSpans != null ? n.lineSpans : tm.lineSpans(Styling.of(n), s, wraps ? viewW : 0f, px);
 
         // Where the caret sits, in line-relative terms: everything below is expressed against this.
         int caret = n.caret();

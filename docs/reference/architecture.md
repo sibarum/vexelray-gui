@@ -60,13 +60,15 @@ Verified against the current libraries.
   corners with no scissor state. Submission order = paint order. `image(...)` is the same rounded box
   again, multiplied by a texel from a second descriptor set — which is how a decoded picture, an icon,
   or a **ray-marched scene** enters the batch. `toVertexArray()` / `vertexCount()`
-  feed a vertex buffer, and `runs()` divides it into spans sharing one bound image: still one buffer in
-  submission order, so a run says where to rebind and never where to reorder. No images = one run.
+  feed a vertex buffer, and `runs()` divides it into spans sharing one bound image and one glyph face — set 1
+  and set 0: still one buffer in submission order, so a run says where to rebind and never where to reorder.
+  No images and text in one face = one run.
   The uber-shader itself is authored as SupirVast core IR and **pre-compiled to
   SPIR-V at build time** (supirvast-maven-plugin); at runtime, pipeline creation is a resource read.
-- *Text (`vexelray-text`).* `AtlasData` (msdf-atlas-gen JSON, baked by `vexelray-msdf-maven-plugin`),
-  `GlyphLayout`, `TextLayout`: line breaking + wrapping, H/V alignment (incl. justify), `measure` →
-  bounds, fit queries, anchor placement.
+- *Text (`vexelray-text`).* `FontSet` — every face of every font family the build baked
+  (`vexelray-msdf-maven-plugin`'s `<families>`), one atlas each, listed in `fonts.json`, with per-code-point
+  fallback between faces — over `AtlasData` (one face's msdf-atlas-gen JSON). `GlyphLayout`, `TextLayout`:
+  line breaking + wrapping, H/V alignment (incl. justify), `measure` → bounds, fit queries, anchor placement.
 - *Runtime (`vexelray-vulkan`).* `VulkanInstance → Device → Swapchain → RenderPass → GraphicsPipeline →
   WindowedPresenter`. `WindowedPresenter` drives a **per-frame callback** with a **dynamic vertex
   buffer** at one frame in flight — rebuild-and-present each frame is a solved path
@@ -639,17 +641,28 @@ Coordinate space and focus gating are tactroller's job (`attach`, `setCoordinate
 
 ## 9. Text + RichText
 
-Reuse `vexelray-text` wholesale (atlas, `GlyphLayout`, `TextLayout`, MSDF via `Canvas.text`). Weight maps
-to the MSDF edge-shift the engine exposes; a highlight is a background `fillRoundRect` emitted before the
-glyphs; letterpress (`TEXT_SUNKEN` → `Canvas.textSunken`) is three glyph passes — shade nudged up, glint
+Reuse `vexelray-text` wholesale (`FontSet`, `GlyphLayout`, `TextLayout`, MSDF via `Canvas.text`). Weight and
+slope are real faces, not MSDF edge-shift and shear: the build bakes every face of a family, and the GUI picks one
+per character (below); a highlight is a background `fillRoundRect` emitted before the glyphs; letterpress (`TEXT_SUNKEN` → `Canvas.textSunken`) is three glyph passes — shade nudged up, glint
 nudged down, crisp fill — lit consistently with the panels' top-left light. The lesson from its first
 implementation is worth keeping: a symmetric outline kind was added to the shader and then deleted, because
 depth is directional — lighting-shaped effects should be composed as offsets against the global light, not
 grown as new geometry decorations. Clipboard for text fields is `tactroller-clipboard` (standalone, no
 input-subsystem coupling).
 
+**Which face draws a character.** All of an application's fonts are built in, and every face's atlas is
+uploaded when the `GuiApp` is made. Nothing is generated, loaded on demand or evicted, so the memory text takes is
+a fact of the build (docs/plans/font-families.md).
+- **One deciding class.** `TextFaces` (core.text) decides each character's face from the node's family, weight
+  and slope (`Node.font`, `fontWeight`, `fontSlope`) and its styled spans. A style the family lacks gets the
+  nearest face, by CSS font matching.
+- **One answer for everyone.** `TextFaces` is also the `TextMeasurer`, so layout, the compute phase, the renderer
+  and typeset share that one answer. Advances, line breaks and the alignment indent come from each character's own
+  face, and each glyph run is drawn in its face's atlas.
+
 **What shipped instead of the planned rope.** Spans are a plain `List<Span>` of `[start, end)` ranges
-carrying `{fg, bg, underline}`, and edits produce a `TextEdit(at, removed, inserted)` diff. That one diff
+carrying `{fg, bg, underline, weight, slope}`, and edits produce a `TextEdit(at, removed, inserted)` diff. Weight
+and slope choose a face, so a span carrying either is measured as well as drawn. That one diff
 does double duty exactly as intended (req 12): undo/redo replays it, and every span remaps its offsets
 through it, so formatting stays attached to its text across edits. A rope/piece-table is a later
 optimization for large documents, not a prerequisite — the diff was the load-bearing idea, not the

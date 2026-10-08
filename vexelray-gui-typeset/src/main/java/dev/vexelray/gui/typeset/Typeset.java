@@ -1,6 +1,8 @@
 package dev.vexelray.gui.typeset;
 
-import dev.vexelray.text.AtlasData;
+import dev.vexelray.gui.core.text.Styling;
+import dev.vexelray.gui.core.text.TextFaces;
+import dev.vexelray.text.FontSet;
 import dev.vexelray.text.GlyphData;
 import dev.vexelray.text.Rect;
 
@@ -35,16 +37,21 @@ public final class Typeset {
      *  through a {@code lay} that says nothing about room. */
     private static final double UNCONSTRAINED = Double.POSITIVE_INFINITY;
 
-    /** Stand-in metrics when the atlas has neither the glyph nor a missing-glyph box, so layout always has real
-     *  numbers. Roughly a lowercase letter: half an em wide, most of an x-height tall. */
-    private static final Arrangement.Glyph FALLBACK = new Arrangement.Glyph(0.5, 0.7, -0.2);
+    /** A code point that draws nothing — whitespace, a control — as the GUI measures it: no advance, no ink. */
+    private static final Arrangement.Glyph NOTHING = new Arrangement.Glyph(0, 0, 0);
 
-    private final AtlasData atlas;
+    private final TextFaces fonts;
     private final Profile profile;
     private final FaceKeys faces;
 
-    public Typeset(AtlasData atlas, Profile profile, FaceKeys faces) {
-        this.atlas = atlas;
+    /**
+     * An engine measuring in {@code fonts}, which must be the faces the application draws with — {@code
+     * GuiApp.faces()}, or {@link TextFaces#standard()} for an application in the standard fonts. The projection
+     * sizes every text node from these numbers rather than letting the layout measure it, so a block measured in
+     * one set of fonts and drawn in another would be the wrong size.
+     */
+    public Typeset(TextFaces fonts, Profile profile, FaceKeys faces) {
+        this.fonts = fonts;
         this.profile = profile;
         this.faces = faces;
     }
@@ -70,13 +77,22 @@ public final class Typeset {
      * (docs/reference/typeset.md §8).
      */
     public double ascenderOf(String faceKey) {
-        return atlas.face(faces.indexOf(faceKey)).metrics().ascender();
+        return faceOf(faceKey).atlas().metrics().ascender();
     }
 
     /** The face's descender, in em and <b>negative</b> — so a text box that exactly contains one line of this
      *  face is {@code (ascenderOf - descenderOf) · size} tall. */
     public double descenderOf(String faceKey) {
-        return atlas.face(faces.indexOf(faceKey)).metrics().descender();
+        return faceOf(faceKey).atlas().metrics().descender();
+    }
+
+    /** The family, weight and slope a key is drawn in — what a projected text node is given. */
+    public Styling styleOf(String faceKey) {
+        return faces.styleOf(faceKey);
+    }
+
+    private FontSet.Face faceOf(String faceKey) {
+        return fonts.face(faces.styleOf(faceKey));
     }
 
     /** The total advance of {@code text} in one face, in em. The projection needs a text node's width, and this
@@ -91,20 +107,15 @@ public final class Typeset {
         return advance;
     }
 
-    /** The atlas face index this profile's key binds to — what {@code Node.font(int)} wants. */
-    public int faceIndexOf(String faceKey) {
-        return faces.indexOf(faceKey);
-    }
-
-    /** Metrics for one glyph of one face key, in em; never {@code null}. */
+    /**
+     * Metrics for one glyph of one face key, in em; never {@code null}. Resolved exactly as the GUI resolves it to
+     * draw — the face, then its fallbacks, then the missing-glyph box — so the box the projection sizes is the box
+     * the glyph lands in.
+     */
     public Arrangement.Glyph glyphOf(String faceKey, int codepoint) {
-        AtlasData face = atlas.face(faces.indexOf(faceKey));
-        GlyphData g = face.glyph(codepoint);
+        GlyphData g = fonts.layout(faceOf(faceKey).id()).glyphLayout().resolve(codepoint);
         if (g == null) {
-            g = face.notdef();
-        }
-        if (g == null) {
-            return FALLBACK;
+            return NOTHING;
         }
         Rect bounds = g.planeBounds();
         return bounds == null

@@ -48,19 +48,19 @@ public interface TextMeasurer {
         return java.util.List.of(new dev.vexelray.text.TextLayout.LineSpan(0, end, true));
     }
 
-    // --- font-aware variants: {@code font} is the node's atlas face index (RetainedNode.font()). The defaults
-    // delegate to the face-less methods so single-font measurers (tests, stubs) keep working unchanged; a
-    // measurer over a multi-face atlas overrides these to measure with the face the node renders with.
+    // --- styled variants: {@code style} says which faces the text is in — the node's family and style, and the
+    // spans that change weight or slope over part of it (docs/plans/font-families.md §3.3). The defaults delegate
+    // to the unstyled methods, so a measurer with one face (tests, stubs) keeps working unchanged; the real one
+    // (TextFaces) measures each code point at its own face's advance.
 
-    default int offsetAt(int font, String text, float localX, float textSizePx) {
-        return offsetAt(text, localX, textSizePx);
-    }
-
-    default float[] caretAdvances(int font, String text, float textSizePx) {
+    /** As {@link #caretAdvances(String, float)}, with each character in the face {@code style} gives it. */
+    default float[] caretAdvances(dev.vexelray.gui.core.text.Styling style, String text, float textSizePx) {
         return caretAdvances(text, textSizePx);
     }
 
-    default java.util.List<dev.vexelray.text.TextLayout.LineSpan> lineSpans(int font, String text, float wrapWidth,
+    /** As {@link #lineSpans(String, float, float)}, breaking by the widths {@code style} gives the text. */
+    default java.util.List<dev.vexelray.text.TextLayout.LineSpan> lineSpans(dev.vexelray.gui.core.text.Styling style,
+                                                                            String text, float wrapWidth,
                                                                             float textSizePx) {
         return lineSpans(text, wrapWidth, textSizePx);
     }

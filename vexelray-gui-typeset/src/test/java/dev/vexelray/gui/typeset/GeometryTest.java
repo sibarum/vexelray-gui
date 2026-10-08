@@ -1,6 +1,6 @@
 package dev.vexelray.gui.typeset;
 
-import dev.vexelray.text.AtlasData;
+import dev.vexelray.gui.core.text.TextFaces;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -29,8 +29,7 @@ class GeometryTest {
     private static final double BASE = 16.0;
     /** No face bindings: every key resolves to face 0, which is the documented degradation before P5's math face
      *  and is exactly how the module behaves on today's atlas. */
-    private static final AtlasData ATLAS = AtlasData.loadFromResource("/dev/vexelray/text/atlas/primary.json");
-    private static final Typeset ENGINE = new Typeset(ATLAS, P, FaceKeys.single());
+    private static final Typeset ENGINE = new Typeset(TextFaces.standard(), P, FaceKeys.single());
 
     // --- containment: the one rule the framework enforces --------------------------------------------------------
 

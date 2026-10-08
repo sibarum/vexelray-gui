@@ -8,7 +8,6 @@ import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
 import dev.vexelray.gui.core.model.PropKey;
 import dev.vexelray.gui.core.model.RetainedNode;
-import dev.vexelray.text.TextLayout;
 import dev.vexelray.vulkan.present.SampledImage;
 import org.junit.jupiter.api.Test;
 import sibarum.atchung.Atchung;
@@ -78,7 +77,7 @@ class ImageNodeTest {
 
     private static Canvas draw(RetainedNode root) {
         Canvas canvas = new Canvas(W, H).begin();
-        TreeRenderer.emit(root, canvas, new TextLayout[]{null});
+        TreeRenderer.emit(root, canvas, dev.vexelray.gui.core.text.TextFaces.standard());
         return canvas;
     }
 

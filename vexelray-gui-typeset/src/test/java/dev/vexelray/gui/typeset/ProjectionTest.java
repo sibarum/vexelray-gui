@@ -5,7 +5,7 @@ import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
 import dev.vexelray.gui.core.layout.TextMeasurer;
 import dev.vexelray.gui.core.model.NodeKind;
 import dev.vexelray.gui.core.model.RetainedNode;
-import dev.vexelray.text.AtlasData;
+import dev.vexelray.gui.core.text.TextFaces;
 import org.junit.jupiter.api.Test;
 import sibarum.atchung.Atchung;
 
@@ -27,8 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ProjectionTest {
 
     private static final Profile P = Profile.math();
-    private static final AtlasData ATLAS = AtlasData.loadFromResource("/dev/vexelray/text/atlas/primary.json");
-    private static final Typeset ENGINE = new Typeset(ATLAS, P, FaceKeys.single());
+    private static final Typeset ENGINE = new Typeset(TextFaces.standard(), P, FaceKeys.single());
 
     /**
      * A text measurer that answers with a number no real glyph could produce. The projection sets an explicit

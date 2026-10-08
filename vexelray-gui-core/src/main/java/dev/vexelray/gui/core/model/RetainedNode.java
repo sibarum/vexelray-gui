@@ -320,10 +320,25 @@ public final class RetainedNode {
         return Boolean.TRUE.equals(props.get(PropKey.EDITABLE));
     }
 
-    /** Atlas face index this node's text renders and measures with (0 = primary/UI font). */
-    public int font() {
-        Object v = props.get(PropKey.FONT);
-        return v instanceof Integer i ? i : 0;
+    /**
+     * The font family this node's text is in, as it was set: a family key ({@code String}), a family index
+     * ({@code Integer}), or null for the font set's first family. Resolved against the application's set by
+     * {@code TextFaces}, not here — the model knows the request, not what fonts were baked.
+     */
+    public Object font() {
+        return props.get(PropKey.FONT);
+    }
+
+    /** This node's text weight, 100–1000; 400 when unset. */
+    public int fontWeight() {
+        Object v = props.get(PropKey.FONT_WEIGHT);
+        return v instanceof Integer i ? i : 400;
+    }
+
+    /** This node's text slope; upright when unset. */
+    public dev.vexelray.text.FontSet.Slope fontSlope() {
+        Object v = props.get(PropKey.FONT_SLOPE);
+        return v instanceof dev.vexelray.text.FontSet.Slope s ? s : dev.vexelray.text.FontSet.Slope.NORMAL;
     }
 
     /** Whether this text node holds multiple lines (Enter inserts '\n'; the node scrolls vertically). */

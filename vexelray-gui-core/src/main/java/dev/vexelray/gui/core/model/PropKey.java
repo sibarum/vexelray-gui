@@ -139,10 +139,30 @@ public enum PropKey {
     CARET_ON(false),     // caret blink phase: true = currently shown
     SELECT_START(false), // selection range start (Integer char offset); == SELECT_END means no selection
     SELECT_END(false),   // selection range end (Integer char offset)
-    SPANS(false),        // formatting spans (List<Span>): fg/bg/underline over character ranges
+    /**
+     * Formatting spans ({@code List<Span>}) over character ranges. Colour, background and underline are drawn and
+     * nothing else; weight and slope choose a face with its own advances, so a list that has, or had, a styled span
+     * reflows ({@link #affectsLayout}). Recolouring a span stays a draw.
+     */
+    SPANS(false) {
+        @Override
+        public boolean affectsLayout(Object before, Object after) {
+            return dev.vexelray.gui.core.text.Span.styles(before) || dev.vexelray.gui.core.text.Span.styles(after);
+        }
+    },
     // Multiline (§11): both change how the text breaks into visual lines, so both reflow.
     MULTILINE(true),     // Enter inserts '\n' instead of submitting; the field scrolls vertically
-    FONT(true),          // atlas face index (Integer): 0 = primary/UI, 1+ = extra faces (e.g. monospace)
+    /**
+     * The font family this node's text is in: a family key of the application's {@code FontSet} ({@code String},
+     * e.g. {@code "mono"}), or an {@code Integer} index into its families in manifest order — the older form, where
+     * 0 was the UI face and 1 the monospace one, which the standard set's order keeps meaning the same. Absent: the
+     * set's first family.
+     */
+    FONT(true),
+    /** The weight of this node's text (Integer, 100–1000; absent is 400). Chooses a face, so it reflows. */
+    FONT_WEIGHT(true),
+    /** The slope of this node's text ({@code FontSet.Slope}; absent is upright). Chooses a face, so it reflows. */
+    FONT_SLOPE(true),
     WORD_WRAP(true),     // wrap long lines at the content width instead of scrolling horizontally
     LINE_NUMBERS(true),  // a gutter of hard-line numbers, which narrows the text area and so reflows the wrap
     // Layout (border-box: border + padding inset the content, so border width is layout-affecting)
@@ -223,13 +243,23 @@ public enum PropKey {
     }
 
     /**
+     * Whether changing this prop from {@code before} to {@code after} must retrigger layout. For most keys that is a
+     * fact of the key ({@link #layoutAffecting()}); a key whose values range from purely visual to reflowing — spans,
+     * which may or may not choose a face — answers from the values themselves.
+     */
+    public boolean affectsLayout(Object before, Object after) {
+        return layoutAffecting;
+    }
+
+    /**
      * Whether a change to this prop invalidates <b>derived geometry</b> (docs/reference/layout-read-model.md §2.1–2.3) — so
      * the compute phase must re-run and the read-model republish, even when the flex layout itself is unchanged.
      * Every layout-affecting prop qualifies. {@link #CARET} additionally does, because caret-follow scroll (and
      * therefore the baked caret x positions) is a function of it: moving the caret with an arrow key reflows
-     * nothing, but it does move the view.
+     * nothing, but it does move the view. {@link #H_ALIGN} and {@link #V_ALIGN} do too: the box keeps its size, but
+     * the alignment indent is baked into each visual line's x positions, so the old indent would go on being drawn.
      */
     public boolean geometryAffecting() {
-        return layoutAffecting || this == CARET;
+        return layoutAffecting || this == CARET || this == H_ALIGN || this == V_ALIGN;
     }
 }

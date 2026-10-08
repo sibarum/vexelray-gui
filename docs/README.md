@@ -43,7 +43,7 @@ halves of one mechanism and are best read together.
 
 | | |
 | --- | --- |
-| [keyboard-focus-text.md](reference/keyboard-focus-text.md) | **Landed.** Keys, focus, claims declared in advance, and the text-editing widget that depends on all of it |
+| [keyboard-focus-text.md](reference/keyboard-focus-text.md) | **Landed.** Keys, focus, claims declared in advance, and the text-editing widget that depends on all of it — including real bold and italic, chosen per character (§5) |
 | [navigation.md](reference/navigation.md) | **Landed.** Landmarks, addresses and reveals: naming a node rather than a route, and arriving by the widgets' own commands rather than synthesised input |
 | [transfer.md](reference/transfer.md) | **Landed.** Drag and drop and cut and paste as one mechanism with two ways in — one resolution, several sources, and why what is shown is always what will happen |
 
@@ -52,7 +52,7 @@ halves of one mechanism and are best read together.
 | | |
 | --- | --- |
 | [drawing.md](reference/drawing.md) | **Landed**, §8 still ahead. `Picture`, the four-mark alphabet and what bounds it, and the two sinks that make one drawing honest on screen and in a file. §7 is the decision of when it should be a marched surface instead |
-| [typeset.md](reference/typeset.md) | **P0–P4 landed; P5 (atlas face) and P6 (demo panel) outstanding.** Structured non-editable rich text over an open set of composable boxes, sized as ratios and tone-mapped in log space into a legible pixel range |
+| [typeset.md](reference/typeset.md) | **P0–P4 landed; P5's mechanism landed, its gate waits on an italic or math font; P6 (demo panel) outstanding.** Structured non-editable rich text over an open set of composable boxes, sized as ratios and tone-mapped in log space into a legible pixel range |
 | [reliable-plotting.md](reference/reliable-plotting.md) | **Four of five units landed; drawing is the fifth and belongs to the consumer.** Why point sampling cannot be made honest, and the interval substrate that replaces it |
 
 ### Time
@@ -87,6 +87,7 @@ because the feature is in three pieces.
 | | |
 | --- | --- |
 | [todo.md](plans/todo.md) | The register of deferred work, each item with enough context to pick up cold. Nothing in it is a bug in shipped behaviour |
+| [font-families.md](plans/font-families.md) | **Approved; steps 1–3 and 5 done (plugin, `FontSet`, multi-atlas draw, styled spans in measurement).** Font families baked at build time — every face, every glyph, one atlas each — and all loaded at startup, because VRAM that varies with what is opened is instability. Spans gain weight and slope, and so become part of measurement |
 | [gui-decomposition.md](plans/gui-decomposition.md) | **Not started, and the cost is measured.** `Gui` was 1,929 lines when the plan was written and is 2,210 now. The target is under 400, with every other concern a component under 300 |
 | [loudness.md](plans/loudness.md) | **Stage A done; B1–B4 and B6 done, B5 held deliberately; C–E not started.** The framework explains itself well to a reader and does not yet complain to a consumer who asked for something it cannot do |
 | [architecture-proof.md](plans/architecture-proof.md) | **Plan, not started, and currently blocked:** it rests on Elektro-Q for the wire, which has no sibling checkout on this machine |

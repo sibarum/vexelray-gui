@@ -7,7 +7,6 @@ import dev.vexelray.gui.core.model.PropKey;
 import dev.vexelray.gui.core.model.RetainedNode;
 import dev.vexelray.gui.draw.Picture;
 import dev.vexelray.gui.draw.Sketch;
-import dev.vexelray.text.TextLayout;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -56,7 +55,7 @@ class PictureNodeTest {
 
     private static float[] emit(RetainedNode root) {
         Canvas canvas = new Canvas(400, 200).begin();
-        TreeRenderer.emit(root, canvas, new TextLayout[]{null});
+        TreeRenderer.emit(root, canvas, dev.vexelray.gui.core.text.TextFaces.standard());
         return Arrays.copyOf(canvas.toVertexArray(), canvas.vertexCount() * CanvasVertex.FLOATS_PER_VERTEX);
     }
 

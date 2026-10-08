@@ -95,8 +95,8 @@ final class GuiWindow implements AutoCloseable {
     private final VulkanInstance instance;
     /** Held for {@link #capture}: the offscreen pass and pipeline it needs are built on this window's device. */
     private final VulkanDevice device;
-    /** Held for {@link #capture}, which binds the same descriptor set the presenter draws with. */
-    private final AtlasTexture atlas;
+    /** The fonts, shared with every window: one atlas per face, and the faces that measure and resolve them. */
+    private final FontAtlases fonts;
     /**
      * The offscreen render pass and pipeline {@link #capture} draws through, built on first use and rebuilt when
      * the window's extent changes. Lazy because most windows are never captured, and a capture path that costs
@@ -117,7 +117,6 @@ final class GuiWindow implements AutoCloseable {
     private final Canvas canvas;
     /** Bound at the image set for every span that draws no image -- see {@link AtlasTexture#placeholder}. */
     private final SampledImage noImage;
-    private final TextLayout[] text;
     private final TextMeasurer measurer;
     private final boolean clientChrome;
     /** The host's per-frame hook, held so a platform-pulled frame runs the same step the host loop would. */
@@ -144,10 +143,10 @@ final class GuiWindow implements AutoCloseable {
      * test harness, a popup appearing on screen mid-run and taking the keyboard from whatever the test was
      * actually measuring.
      */
-    GuiWindow(NativePlatform platform, VulkanInstance instance, VulkanDevice device, AtlasTexture atlas,
-              SampledImage noImage, TextLayout[] text, TextMeasurer measurer, Gui gui, WindowConfig config,
+    GuiWindow(NativePlatform platform, VulkanInstance instance, VulkanDevice device, FontAtlases fonts,
+              SampledImage noImage, Gui gui, WindowConfig config,
               java.util.function.Function<WindowConfig, NativeWindow> windows, PresenterProvider.Backend backend) {
-        this(platform, instance, device, atlas, noImage, text, measurer, gui,
+        this(platform, instance, device, fonts, noImage, gui,
                 windows.apply(config), 0L, config.decorations(), backend);
     }
 
@@ -160,16 +159,15 @@ final class GuiWindow implements AutoCloseable {
      * <p>{@code backend}, when not null, presents this window instead of a Vulkan swapchain (DXGI on Windows): no
      * surface is made, and {@code existingSurface} must be 0.
      */
-    GuiWindow(NativePlatform platform, VulkanInstance instance, VulkanDevice device, AtlasTexture atlas,
-              SampledImage noImage, TextLayout[] text, TextMeasurer measurer, Gui gui, NativeWindow window,
+    GuiWindow(NativePlatform platform, VulkanInstance instance, VulkanDevice device, FontAtlases fonts,
+              SampledImage noImage, Gui gui, NativeWindow window,
               long existingSurface, Decorations decorations, PresenterProvider.Backend backend) {
         this.instance = instance;
         this.device = device;
-        this.atlas = atlas;
+        this.fonts = fonts;
         this.noImage = noImage;
         this.gui = gui;
-        this.text = text;
-        this.measurer = measurer;
+        this.measurer = fonts.faces();
         this.window = window;
         this.clientChrome = decorations == Decorations.CLIENT;
         int initialWidth;
@@ -194,11 +192,11 @@ final class GuiWindow implements AutoCloseable {
         ComposedShader vs = CanvasShader.vertex();
         ComposedShader fs = CanvasShader.fragment();
         this.pipeline = new GraphicsPipeline(device, renderPass.handle(), initialWidth, initialHeight,
-                vs.spirv(), "main", fs.spirv(), "main", GuiApp.canvasConfig(atlas, noImage, true));
+                vs.spirv(), "main", fs.spirv(), "main", GuiApp.canvasConfig(fonts.first(), noImage, true));
         this.presenter = backend != null
                 ? backend.create(window, renderPass.handle(), pipeline)
                 : new WindowedPresenter(device, swapchain, renderPass.handle(), pipeline, window);
-        presenter.configureDraw(vertexBuffer.handle(), atlas.descriptorSet(), 0);
+        presenter.configureDraw(vertexBuffer.handle(), fonts.first().descriptorSet(), 0);
         // Windows drags and resizes a window inside a message loop of its own, which suspends the host's loop for
         // as long as the gesture lasts. Handing the window a sink lets it pull the frames that loop would have
         // drawn — the difference between a window that resizes live and one that freezes until the mouse is let
@@ -299,7 +297,7 @@ final class GuiWindow implements AutoCloseable {
                     Vk.IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
             capturePipeline = new GraphicsPipeline(device, capturePass.handle(), w, h,
                     CanvasShader.vertex().spirv(), "main", CanvasShader.fragment().spirv(), "main",
-                    GuiApp.canvasConfig(atlas, noImage, false)); // fixed viewport: offscreen never resizes mid-draw
+                    GuiApp.canvasConfig(fonts.first(), noImage, false)); // fixed viewport: offscreen never resizes mid-draw
             captureW = w;
             captureH = h;
         }
@@ -307,7 +305,7 @@ final class GuiWindow implements AutoCloseable {
         RetainedNode root = update();
         canvas.begin();
         if (root != null) {
-            TreeRenderer.emit(root, canvas, text, gui.theme());
+            TreeRenderer.emit(root, canvas, fonts.faces(), gui.theme());
         }
         int vertexCount = Math.min(canvas.vertexCount(),
                 (int) (vertexBuffer.capacityFloats() / CanvasVertex.FLOATS_PER_VERTEX));
@@ -315,8 +313,8 @@ final class GuiWindow implements AutoCloseable {
 
         Color page = gui.theme().color(Role.PAGE);
         byte[] rgba = OffscreenDraw.toRgba(device, capturePass.handle(), capturePipeline, w, h,
-                vertexBuffer.handle(), atlas.descriptorSet(),
-                GuiApp.bind(canvas.runs(), vertexCount, noImage), page.r(), page.g(), page.b(), 1f);
+                vertexBuffer.handle(), fonts.first().descriptorSet(),
+                GuiApp.bind(canvas.runs(), vertexCount, noImage, fonts.textures()), page.r(), page.g(), page.b(), 1f);
         // Written beside the target and moved into place, never written at it. A capture is asynchronous, so
         // every consumer of one waits for the file to appear — and a PNG written in place is *visible* from its
         // first byte, so the natural way to wait produces a truncated read on a timing this test hit first try.
@@ -337,7 +335,7 @@ final class GuiWindow implements AutoCloseable {
         // The vertex buffer now holds the capture's geometry and the presenter's run list still describes the
         // last presented frame. Nothing reads either until the next frame rewrites both, but leaving the two
         // disagreeing is the kind of state that is only ever fine until something else is added here.
-        presenter.setRuns(GuiApp.bind(canvas.runs(), vertexCount, noImage));
+        presenter.setRuns(GuiApp.bind(canvas.runs(), vertexCount, noImage, fonts.textures()));
     }
 
     /** Release the offscreen pass and pipeline, if this window ever built them. */
@@ -381,7 +379,7 @@ final class GuiWindow implements AutoCloseable {
         try (Zone z = Probe.zone(Lane.DRAW, "emit canvas")) {
             canvas.begin();
             if (root != null) {
-                TreeRenderer.emit(root, canvas, text, gui.theme());
+                TreeRenderer.emit(root, canvas, fonts.faces(), gui.theme());
             }
             // The number the truncation warning below is about, recorded every frame rather than only when it
             // overflows: a buffer that is nearly full is the frame before the one that draws wrong.
@@ -412,7 +410,7 @@ final class GuiWindow implements AutoCloseable {
             vertexCount = room;
         }
         vertexBuffer.update(vertices, vertexCount * CanvasVertex.FLOATS_PER_VERTEX);
-        presenter.setRuns(GuiApp.bind(runs, vertexCount, noImage));
+        presenter.setRuns(GuiApp.bind(runs, vertexCount, noImage, fonts.textures()));
     }
 
     /**

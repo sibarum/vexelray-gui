@@ -7,11 +7,12 @@ and the record of decisions; it builds on the input dispatch already in place (`
 
 Status: **largely shipped.** Keyboard routing, focus, claims (§3), and the text field through multiline —
 wrap, vertical navigation, line numbers, spans, undo/redo, clipboard — are all in. What remains is called
-out per-section below; the short list is hyperlink/tooltip spans (needs an overlay layer), real
-bold/italic (needs multi-atlas), the `Disabled` property, and hard tabs.
+out per-section below; the short list is hyperlink/tooltip spans (needs an overlay layer), the `Disabled`
+property, and hard tabs.
 
-Two sections were **superseded by implementation** rather than merely completed, and are rewritten in
-place: §3 (shortcuts became claims) and §4.2 (the Tab question is resolved). Where this doc and
+Three sections were **superseded by implementation** rather than merely completed, and are rewritten in
+place: §3 (shortcuts became claims), §4.2 (the Tab question is resolved) and §5 (bold and italic are real
+faces, chosen per character, never faux). Where this doc and
 docs/layout-read-model.md overlap on text geometry, that one is authoritative.
 
 ---
@@ -135,8 +136,15 @@ or on a remote client with no fonts of its own.
   *[not yet]*
 - **Multiline** — single-line (Enter submits / is ignored) vs. multi-line (Enter inserts a newline).
   *[shipped: `TextField.multiline`, with vertical caret-follow scroll and Up/Down over the read-model]*
-- **Font (which atlas)** — the glyph atlas to render with. Implies **multi-atlas support** and a per-run
-  font selection (ties into formatting spans and bold/italic, §4.4 and §5). *[parked behind multi-atlas]*
+- **Font** — the family, weight and slope to render with. *[shipped]* The parts:
+  - **The family** is `Node.font("mono")`, a key of the application's `FontSet`. The older index form
+    `Node.font(1)` still works: it counts the manifest's families, so 0 is `sans` and 1 is `mono`.
+  - **The style** is `Node.fontWeight(int)`/`bold()` and `Node.fontSlope(...)`/`italic()`.
+  - **Style spans** override it per character range (§4.4).
+  - **Every face is a real one**, baked by the build with its own atlas, so a style the family was not built
+    with gets the nearest face (§5).
+  - **The widget is unaffected.** `TextField` still never sees a font. The face of each character is decided
+    in the compute phase, so the caret, selection and line metrics it reads already account for it.
 - **Size** — text size in **em/rem** (no px, per the layout rule); scales with root em/zoom/DPI. *[shipped]*
 - **Display Line Numbers** — a gutter with line numbers (multi-line/code use). *[shipped: numbers count
   hard lines, so a wrapped line is numbered once and its continuations are blank]*
@@ -184,8 +192,13 @@ or on a remote client with no fonts of its own.
 ### 4.4 Spans
 A span is a `[start, end)` range over the content carrying attributes. Kinds:
 
-- **Formatting spans** — visual only: **background color, text color, underline, bold, italics**.
-  (Bold/italics: see §5 — faux via MSDF/shear or real via bold/italic atlases.)
+- **Formatting spans** — **background color, text color, underline, weight, slope**
+  (`Span.bold`/`italic`/`weight`/`slope`).
+  - Colour, background and underline are visual only.
+  - Weight and slope choose a different face, with its own advances (§5). So a span carrying either is part
+    of **measurement**: caret positions, line breaks and the alignment indent all move with it.
+  - Which is why `SPANS` relays out only when the old or new span list has a styled span in it. Recolouring a
+    span is still just a draw.
 - **Hyperlink spans** — emit **hover and click events** for the spanned text.
   - If the input is **not editable**: events fire **whenever** the pointer hovers/clicks the span (while
     the span is active).
@@ -207,18 +220,33 @@ A span is a `[start, end)` range over the content carrying attributes. Kinds:
 
 ---
 
-## 5. Bold / italics — a rendering dependency
+## 5. Bold / italics — real faces, chosen per character — **superseded by implementation**
 
-The atlas is currently a single **Regular** face (Noto Sans). Bold and italic formatting spans need
-glyph coverage. Two options, not exclusive:
+The original plan was faux bold (MSDF edge-shift) and faux italic (shear) first, real faces later. Real faces
+came first, and faux is not needed (docs/plans/font-families.md).
 
-- **Faux (no new atlas):** MSDF supports a **weight/edge-shift** for faux-bold (architecture.md §9), and a
-  **shear transform** in the emitter gives faux-italic. Cheap, immediate, approximate.
-- **Real (multi-atlas):** bake **bold** and **italic** atlases and select the face per run (the "Font"
-  property, §4.1). Correct shapes, needs multi-atlas + font-fallback plumbing (also what icon glyphs
-  need — see the font-atlas notes).
+**Faces come from the build.** vexelray-msdf-maven-plugin's `<families>` bakes every face of a named font
+family, one atlas each, with every glyph the font maps. A face is static or a variable-font instance, named by
+style key: `regular`, `bold-italic`, `condensed-light`. The runtime does not add or evict anything: every face
+is uploaded when the `GuiApp` is constructed.
 
-Ship faux first; add real faces with the multi-atlas work.
+**A face is chosen per character.** `TextFaces` (core.text) decides it from the node's family, weight and slope
+plus its styled spans. A weight or slope the family lacks gets the nearest face by CSS font matching: stretch,
+then slope, then weight. `TextFaces` is also the measurer, so measurement, the compute phase and the renderer
+make that choice in one place and cannot disagree:
+- **Advances:** each code point is measured at its own face's advance.
+- **Line breaking:** runs on those same widths.
+- **Rendering:** each run is drawn in its face.
+- **Vertical metrics:** are the node's own face's, so a bold word sits on the line's baseline.
+
+**Glyphs a face lacks are borrowed.** A face's chain is the rest of its own family, nearest style first, then
+the families named in `FontSet.withFallback(...)`. A character comes from the first face in the chain that has
+it. In the standard set, `sans` and `mono` fall back to each other: sans text draws mono's arrows and box
+drawing rather than the missing-glyph box.
+
+**What is baked today:** vexelray-text bakes `sans` and `mono` from the Noto TTFs in `vexelray-text/fonts/`,
+and only their Regular files are there. Until the Bold and Italic files are added, a bold or italic request
+resolves to regular, the nearest face there is. Adding the files to that directory is all it takes.
 
 ---
 
@@ -228,7 +256,7 @@ Ship faux first; add real faces with the multi-atlas work.
 |------|-----|-------|
 | **`CharTyped` event** (WM_CHAR/IME) | typing real text | tactroller (proper) or interim US-layout map in GUI (§0) |
 | **Overlay / popup layer** | tooltip spans, and menus/dialogs generally | new GUI layer (z-above the tree; consumes E3 clip) |
-| **Multi-atlas + font fallback** | `Font` property, real bold/italic, icon glyphs | vexelray-text + GUI (faux bold/italic is the interim) |
+| **Multi-atlas + font fallback** | `Font` property, real bold/italic, icon glyphs | **landed**: `FontSet` in vexelray-text, per-run atlases in the canvas, `TextFaces` in the GUI (§5). Icon glyphs need only a family that has them, named as a fallback |
 | **Focus + shortcuts** | everything editing | this doc, foundation first |
 
 ---
@@ -239,7 +267,7 @@ Ship faux first; add real faces with the multi-atlas work.
 2. **`CharTyped` seam** — interim US-layout translation now; swap to tactroller `WM_CHAR` when it lands.
    **[done, interim]**
 3. **Text render** — formatting spans (fg/bg/underline), word wrap, line numbers, clipboard copy.
-   **[done; faux bold/italic still pending §5]**
+   **[done; bold/italic as real faces, §5]**
 4. **Editing** — caret, insert/delete, the edit-diff, undo/redo. **[done]**
 5. **Auto-diff spans** — remap all spans through the edit-diff; single + bulk span updates. **[done]**
 6. **Multiline** — Enter, wrap, Up/Down with a sticky desired column, visual Home/End, PageUp/Down,
@@ -279,3 +307,16 @@ Landed on top of the single-line editable field + selection/clipboard slices:
    user scrolls away from the edge it *detaches*; scrolling back onto the edge re-attaches. Purely a
    scroll-offset behavior over the existing overflow/scroll model — no geometry change (pointer-target
    rule).
+
+8.6 **Multi-click and Shift+click.** `DragEvent` carries `clicks()` — which press of a sequence started the
+   gesture — and the held modifiers. The dispatcher counts from the capture times on the press edges (500ms
+   and ¼em, Windows' defaults), and a press stamped no later than the one before it has no time to compare, so
+   synthetic presses stamped zero stay single clicks. In `TextField`: two clicks select the word under the
+   pointer (`Document.wordAt`, the same three runs as word motion, §8.2, taken from the *character* the
+   pointer is on rather than the nearest caret offset), three the hard line with its newline; dragging after
+   either extends by that unit away from what the press picked. Shift+press extends from the anchor.
+
+8.7 **Editor keys.** Plain Left/Right over a selection land on its edge. In a multiline field Home goes to
+   the end of the line's indentation, then to the margin; Tab over a selection spanning lines indents them as
+   one undo; `autoIndent(true)` makes Enter carry the indentation left of the caret. Escape drops a selection,
+   keypad Enter is Enter, and Ctrl+Insert / Shift+Insert / Shift+Delete copy, paste and cut.

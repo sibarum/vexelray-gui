@@ -5,6 +5,7 @@ import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.core.model.RetainedNode;
+import dev.vexelray.gui.core.text.Styling;
 import dev.vexelray.gui.core.text.TextMetrics;
 
 import java.util.List;
@@ -330,7 +331,7 @@ public final class FlexLayout {
         if (!n.lineNumbers()) {
             return 0f;
         }
-        float[] zero = tm.caretAdvances(n.font(), "0", px);
+        float[] zero = tm.caretAdvances(Styling.base(n), "0", px);
         float digitW = zero != null && zero.length > 1 ? zero[1] : px * 0.6f;
         int digits = Integer.toString(Math.max(1, n.hardLineCount())).length();
         return digits * digitW + 2f * n.gutterPadPx;
@@ -347,9 +348,9 @@ public final class FlexLayout {
             n.lineSpans = null;
             return new float[]{0f, 1f};
         }
-        var spans = tm.lineSpans(n.font(), s, n.wrapsText() ? textW : 0f, px);
+        var spans = tm.lineSpans(Styling.of(n), s, n.wrapsText() ? textW : 0f, px);
         n.lineSpans = spans;   // the one break-up of this text; the compute phase reads it rather than redoing it
-        float[] adv = tm.caretAdvances(n.font(), s, px);
+        float[] adv = tm.caretAdvances(Styling.of(n), s, px);
         float widest = 0f;
         if (adv == null) {
             widest = Math.max(0f, tm.intrinsic(n, Axis.HORIZONTAL, px));   // no glyph metrics: whole-run estimate
@@ -516,7 +517,7 @@ public final class FlexLayout {
         // Measure runs before this node's own layoutBox, so the insets are resolved here from ctx rather than read
         // off the node — same Lengths, same numbers, just not yet stored.
         float wrapWidth = n.wrapsText() ? TextMetrics.contentWidth(ctx, n, nodeW) : 0f;
-        int lineCount = Math.max(1, tm.lineSpans(n.font(), s, wrapWidth, textPx).size());
+        int lineCount = Math.max(1, tm.lineSpans(Styling.of(n), s, wrapWidth, textPx).size());
         // An editable field's text sits inside a vertical caret gutter, so an auto-sized one must be tall enough
         // for both; a label is the block itself. Border and declared padding are the caller's to add — this is
         // content height only.

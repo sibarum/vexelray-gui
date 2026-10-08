@@ -15,7 +15,7 @@ import dev.vexelray.gui.typeset.Profile;
 import dev.vexelray.gui.typeset.Recipes;
 import dev.vexelray.gui.typeset.Typeset;
 import dev.vexelray.gui.typeset.TypesetBlock;
-import dev.vexelray.text.AtlasData;
+import dev.vexelray.gui.core.text.TextFaces;
 
 import java.util.List;
 
@@ -39,9 +39,6 @@ import java.util.List;
  */
 public final class TypesetChapter implements Chapter {
 
-    /** The atlas the window renders from. The block measures against the same metrics it will be drawn with. */
-    private static final String ATLAS = "/dev/vexelray/text/atlas/primary.json";
-
     @Override
     public String title() {
         return "Typeset";
@@ -64,7 +61,7 @@ public final class TypesetChapter implements Chapter {
             // One face, because that is what this application baked. An unbound key resolves to face 0 rather
             // than failing — a missing face is a degraded render, in the primary face, and that is strictly
             // better than a blank block or an exception on the GUI thread.
-            engine = new Typeset(AtlasData.loadFromResource(ATLAS), profile, FaceKeys.single());
+            engine = new Typeset(TextFaces.standard(), profile, FaceKeys.single());
         } catch (RuntimeException e) {
             console.refused("typeset: no atlas on the classpath (" + e.getMessage() + ")");
             return Ui.card(gui, Ui.heading(gui, "Typeset"),

@@ -32,7 +32,7 @@ class TextGeometryTest {
         }
 
         @Override
-        public float[] caretAdvances(int font, String text, float textSizePx) {
+        public float[] caretAdvances(String text, float textSizePx) {
             float[] adv = new float[text.length() + 1];
             for (int i = 0; i <= text.length(); i++) {
                 adv[i] = i * ADVANCE;

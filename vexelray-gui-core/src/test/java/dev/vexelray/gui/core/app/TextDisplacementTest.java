@@ -6,7 +6,6 @@ import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.model.PropKey;
 import dev.vexelray.gui.core.model.RetainedNode;
 import dev.vexelray.gui.core.text.TextMetrics;
-import dev.vexelray.text.TextLayout;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -84,7 +83,7 @@ class TextDisplacementTest {
     private static float[] emit(RetainedNode root) {
         Canvas canvas = new Canvas(400, 400).begin();
         // A null face is safe: with empty text the glyph path never runs, and the caret is a plain quad.
-        TreeRenderer.emit(root, canvas, new TextLayout[]{null});
+        TreeRenderer.emit(root, canvas, dev.vexelray.gui.core.text.TextFaces.standard());
         return java.util.Arrays.copyOf(canvas.toVertexArray(),
                 canvas.vertexCount() * CanvasVertex.FLOATS_PER_VERTEX);
     }

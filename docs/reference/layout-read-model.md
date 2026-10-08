@@ -279,8 +279,9 @@ numbers) and the **label draw path** (§11.4) have all landed, and the `--captur
 
 This is the execution plan so a fresh session needs no re-derivation. Build order was **4·0 → 4a → 4b**: 4·0 came
 first because it was separately provable — `CaretScrollTest` was red before it and green after, with no multiline
-code involved. Font selection stays parked behind the multi-atlas engine work
-([[project-font-atlas-registry]] / keyboard-focus-text.md §5).
+code involved. Font selection has since landed (keyboard-focus-text.md §5). It changed none of this: the face of
+each character is decided by the measurer, so the advances the compute phase bakes into `TextMetrics` already
+count it, and the read-model stays the only thing the renderer and widgets consult.
 
 ### 11.1 Model (core)
 - New props (all layout-affecting): `MULTILINE`, `WORD_WRAP`. (`LINE_NUMBERS` in 4b.) Add `Node` setters +

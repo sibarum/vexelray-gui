@@ -430,7 +430,10 @@ public final class TreeView<T> implements AutoCloseable {
             // A row click selects; a click on the disclosure itself also toggles. Both arrive on the handler
             // executor and both funnel into synchronized transitions, so a click and a keystroke can interleave
             // but never tear the state.
-            gui.onClick(rowNode, () -> select(this, true));
+            gui.onClick(rowNode, () -> {
+                select(this, true);
+                onClick.accept(item);
+            });
             // A context click selects first — the convention every explorer follows — and that is true whether or
             // not anything ends up on the menu, so it stays a click handler rather than a side effect of building
             // one. It is also what makes the menu's commands legible: they act on the row that just lit up.
@@ -557,6 +560,7 @@ public final class TreeView<T> implements AutoCloseable {
     private volatile boolean focused;
     private volatile Consumer<T> onSelect = t -> { };
     private volatile Consumer<T> onActivate = t -> { };
+    private volatile Consumer<T> onClick = t -> { };
     private volatile BiConsumer<T, MenuSink> contextMenu = (item, menu) -> { };
 
     /**
@@ -1073,6 +1077,19 @@ public final class TreeView<T> implements AutoCloseable {
     /** React to the selection landing on an item (click or keyboard). Runs on the handler executor. */
     public TreeView<T> onSelect(Consumer<T> handler) {
         this.onSelect = handler == null ? t -> { } : handler;
+        return this;
+    }
+
+    /**
+     * React to a row being clicked: after it is selected, and whether or not it already was. Not the disclosure,
+     * which opens and closes. Runs on the handler executor.
+     *
+     * <p>{@link #onSelect} cannot stand in for this. It is the selection landing, and an arrow key lands it too, so
+     * a tree where a click <em>does</em> something (makes a folder the root, say) would do it at every step of a
+     * walk with the keyboard. Here the click is the command and the keys only move; Enter is {@link #onActivate}.
+     */
+    public TreeView<T> onClick(Consumer<T> handler) {
+        this.onClick = handler == null ? t -> { } : handler;
         return this;
     }
 

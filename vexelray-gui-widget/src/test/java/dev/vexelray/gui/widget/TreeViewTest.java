@@ -262,6 +262,37 @@ class TreeViewTest {
         }
     }
 
+    /** A click is heard as a click, again on a row already selected; an arrow key only selects. */
+    @Test
+    void aClickIsHeardAndAnArrowKeyIsNot() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            MapSource source = new MapSource();
+            List<String> clicked = new java.util.concurrent.CopyOnWriteArrayList<>();
+            TreeView<String> tree = new TreeView<>(h.gui, source).onClick(clicked::add);
+            h.gui.root().children(tree.node());
+            h.frame();
+            h.frame();
+
+            var treeRect = tree.node().layout().rect();
+            float x = treeRect.x() + treeRect.w() / 2f;
+            h.click(x, firstRowCenterY(h, tree));
+            h.frame();
+            assertEquals("src", tree.selected());
+            assertEquals(List.of("src"), clicked);
+
+            h.click(x, firstRowCenterY(h, tree));
+            h.frame();
+            assertEquals(List.of("src", "src"), clicked, "the row was already selected, and the click still counts");
+
+            tree.focus();
+            h.tap(Key.DOWN);
+            h.frame();
+            assertEquals("docs", tree.selected());
+            assertEquals(List.of("src", "src"), clicked, "walking with the keys is not clicking");
+            tree.close();
+        }
+    }
+
     /** An item whose source lists no children demotes to a leaf instead of showing an empty open branch. */
     @Test
     void anEmptyBranchDemotesToALeaf() {

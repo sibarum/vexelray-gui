@@ -75,6 +75,8 @@ public final class HarnessApp implements AutoCloseable {
     private final Gui gui;
     private final WindowConfig config;
     private final GuiApp.Compute compute;
+    /** Run on the loop thread at the top of every frame, after the frame is counted: a test's per-frame work. */
+    private final Runnable eachFrame;
     private final Thread loop;
     private final AtomicLong frames = new AtomicLong();
 
@@ -97,10 +99,11 @@ public final class HarnessApp implements AutoCloseable {
 
     private volatile RuntimeException failure;
 
-    private HarnessApp(Gui gui, WindowConfig config, GuiApp.Compute compute) {
+    private HarnessApp(Gui gui, WindowConfig config, GuiApp.Compute compute, Runnable eachFrame) {
         this.gui = gui;
         this.config = config;
         this.compute = compute;
+        this.eachFrame = eachFrame;
         this.loop = Thread.ofPlatform().name("harness-loop").unstarted(this::live);
     }
 
@@ -117,7 +120,16 @@ public final class HarnessApp implements AutoCloseable {
 
     /** As {@link #start(Gui, WindowConfig)}, with the device made for {@code compute}. */
     public static HarnessApp start(Gui gui, WindowConfig config, GuiApp.Compute compute) {
-        HarnessApp harness = new HarnessApp(gui, config, compute);
+        return start(gui, config, compute, () -> { });
+    }
+
+    /**
+     * As {@link #start(Gui, WindowConfig, GuiApp.Compute)}, running {@code eachFrame} on the loop thread at the top of
+     * every frame: the test's own per-frame work, such as drawing into a viewport, where an application's would be.
+     * It must not throw, and must not block.
+     */
+    public static HarnessApp start(Gui gui, WindowConfig config, GuiApp.Compute compute, Runnable eachFrame) {
+        HarnessApp harness = new HarnessApp(gui, config, compute, eachFrame);
         harness.loop.start();
         harness.awaitUp();
         return harness;
@@ -151,7 +163,10 @@ public final class HarnessApp implements AutoCloseable {
             return;
         }
         try {
-            app.run(gui, 0, frames::incrementAndGet);
+            app.run(gui, 0, () -> {
+                frames.incrementAndGet();
+                eachFrame.run();
+            });
         } catch (RuntimeException e) {
             failure = e;
         } finally {

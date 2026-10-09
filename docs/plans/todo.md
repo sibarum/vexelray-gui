@@ -364,6 +364,13 @@ Not open questions; decisions taken in P0 that later phases must honour. Listed 
 
 Wanted eventually, deliberately not now.
 
+- **`ottermate` attaches to a session with no port.** Part of the stack's environment plan, mainframe
+  `docs/stack-env.md` §2: with no `--port`, read the session files the framework's `Driver` writes
+  (`~/.vexelray/automation/<app>-<pid>.port`), use the one live session, list several and take `--app <name>`,
+  and fall back to the default port when there are none. So an agent never needs a port number, or a client of its
+  own. The guide's §1 then says to source `~/.mainframe/env.sh` rather than edit the `PATH` by hand.
+- **Headless running** (out of v1 of that plan): a frame loop that presents offscreen, input only from the socket.
+
 - **A diagonal draw.** `Placed.Sink` has `glyphs` and `bar`; `bar` is axis-aligned and a `Node` in the projection
   is too, so a diagonal line cannot be drawn at all. A commutative-diagram arrow is the first real thing an open
   box set will ask for. Widening `Sink` is the decision, and it reaches the node projection (which would have to

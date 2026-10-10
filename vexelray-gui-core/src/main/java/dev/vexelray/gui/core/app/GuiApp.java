@@ -13,6 +13,7 @@ import sibarum.probe.Lane;
 import sibarum.probe.Probe;
 import sibarum.probe.Zone;
 import dev.vexelray.os.NativeWindow;
+import dev.vexelray.os.Platform;
 import dev.vexelray.os.WindowConfig;
 import dev.vexelray.shader.ComposedShader;
 import dev.vexelray.gui.core.text.TextFaces;
@@ -71,8 +72,8 @@ public final class GuiApp implements AutoCloseable {
     /** Whether the application asked for compute to have a queue of its own ({@link Compute#OWN_QUEUE}). */
     private final boolean computeRequested;
     /**
-     * What presents every window when not a Vulkan swapchain — DXGI on Windows by default, chosen by
-     * {@code -Dvexelray.present} — or null for the swapchain path. Shared by all windows; closed after them.
+     * What presents every window when not a Vulkan swapchain — DXGI on Windows, always — or null for the
+     * swapchain path, which is every other platform's. Shared by all windows; closed after them.
      */
     private final dev.vexelray.vulkan.present.PresenterProvider.Backend presentBackend;
     /** Every face's glyph atlas, uploaded at startup, and the faces that measure them. Shared by every window. */
@@ -305,26 +306,26 @@ public final class GuiApp implements AutoCloseable {
                     selection.deviceName());
         }
 
-        // A presentation path other than the swapchain (DXGI, unless asked otherwise), if it is here. It has to be
-        // chosen before the device exists, because it needs device extensions; and anything failing on the way falls
-        // back to the swapchain path, which works everywhere, rather than leaving the application without a window.
-        dev.vexelray.vulkan.present.PresenterProvider provider = presenterProvider();
+        // On Windows every window presents through DXGI, and there is no fall-back: a Vulkan swapchain there is what
+        // DXGI replaces, because a resize that recreates it is fragile (on some machines it freezes the desktop). So
+        // an application that cannot present through DXGI does not start. The provider has to be chosen before the
+        // device exists, because it needs device extensions. Elsewhere windows use a Vulkan swapchain.
+        dev.vexelray.vulkan.present.PresenterProvider provider = presenterProvider(platform.platform());
         VulkanDevice made = null;
         dev.vexelray.vulkan.present.PresenterProvider.Backend backend = null;
         if (provider != null) {
+            VulkanDevice.Request withProvider = request.withExtensions(provider.deviceExtensions());
+            if (provider.timelineSemaphore()) {
+                withProvider = withProvider.withTimelineSemaphore();
+            }
             try {
-                VulkanDevice.Request withProvider = request.withExtensions(provider.deviceExtensions());
-                if (provider.timelineSemaphore()) {
-                    withProvider = withProvider.withTimelineSemaphore();
-                }
                 made = new VulkanDevice(instance.handle(), selection, withProvider);
                 backend = provider.open(instance, made);
-                LOG.info("presenting through {}", provider.name());
             } catch (RuntimeException e) {
-                LOG.warn("presenting through {} is not possible here, so windows use a Vulkan swapchain: {}",
-                        provider.name(), e.toString());
-                backend = null;   // a device made with the extra extensions is still a good device: kept
+                throw new IllegalStateException("VexelRay on Windows presents through " + provider.name()
+                        + ", and " + selection.deviceName() + " cannot: " + e.getMessage(), e);
             }
+            LOG.info("presenting through {}", provider.name());
         }
         this.device = made != null ? made : new VulkanDevice(instance.handle(), selection, request);
         this.presentBackend = backend;
@@ -349,35 +350,18 @@ public final class GuiApp implements AutoCloseable {
     }
 
     /**
-     * The presentation path {@code -Dvexelray.present} names, or null for the Vulkan swapchain. Unset, it is
-     * {@code dxgi}: on Windows a resize is then the OS's buffer resize rather than a new swapchain, and elsewhere
-     * the provider is unsupported (or absent) and the swapchain is used. {@code vulkan} asks for the swapchain;
-     * any other name is looked up among the {@code PresenterProvider}s on the class path, and one that was named
-     * but is absent or unsupported here is said and ignored.
+     * What presents this platform's windows, or null for a Vulkan swapchain. On Windows it is DXGI, which
+     * {@code vexelray-present-dxgi} provides; this module's {@code platform-windows} profile puts it on every
+     * application's class path, so its absence is a build that stepped around that, and is said at startup.
      */
-    private static dev.vexelray.vulkan.present.PresenterProvider presenterProvider() {
-        String asked = System.getProperty("vexelray.present");
-        String name = asked != null ? asked : DEFAULT_PRESENT;
-        if (name.isBlank() || name.equals("vulkan")) {
+    private static dev.vexelray.vulkan.present.PresenterProvider presenterProvider(Platform platform) {
+        if (platform != Platform.WINDOWS) {
             return null;
         }
-        java.util.Optional<dev.vexelray.vulkan.present.PresenterProvider> found =
-                dev.vexelray.vulkan.present.PresenterProvider.find(name);
-        if (found.isEmpty()) {
-            if (asked != null) {
-                LOG.warn("-Dvexelray.present={} names no presentation path available here; using a Vulkan swapchain",
-                        name);
-            } else {
-                LOG.info("no {} presentation path here (on Windows, vexelray-present-dxgi is not on the class path);"
-                        + " using a Vulkan swapchain", name);
-            }
-            return null;
-        }
-        return found.get();
+        return dev.vexelray.vulkan.present.PresenterProvider.find("dxgi").orElseThrow(() ->
+                new IllegalStateException("VexelRay on Windows presents through DXGI, and vexelray-present-dxgi is"
+                        + " not on the class path"));
     }
-
-    /** The presentation path asked for when {@code -Dvexelray.present} is unset. */
-    private static final String DEFAULT_PRESENT = "dxgi";
 
     /**
      * Make one window through the host's factory. Every window this application opens comes from here and

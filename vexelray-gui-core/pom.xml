@@ -65,4 +65,22 @@
             <artifactId>vexelray-diagnostics</artifactId>
         </dependency>
     </dependencies>
+
+    <profiles>
+        <!-- VexelRay on Windows presents through DXGI, with no fall-back to a Vulkan swapchain (GuiApp's
+             constructor says why). Carried here, so that every application on GuiApp has it the way it has
+             vexelray-os-windows through vexelray-vulkan: an application cannot leave it out by forgetting it. -->
+        <profile>
+            <id>platform-windows</id>
+            <activation><os><family>windows</family></os></activation>
+            <dependencies>
+                <dependency>
+                    <groupId>dev.vexelray</groupId>
+                    <artifactId>vexelray-present-dxgi</artifactId>
+                    <version>${vexelray.version}</version>
+                    <scope>runtime</scope>
+                </dependency>
+            </dependencies>
+        </profile>
+    </profiles>
 </project>

@@ -127,6 +127,7 @@ public final class InputDispatcher {
     private final Pump pump;
     private final Subscription sub;
     private final Map<Long, Consumer<ClickEvent>> clickHandlers = new ConcurrentHashMap<>();
+    private final Map<Long, Consumer<ClickEvent>> doubleClickHandlers = new ConcurrentHashMap<>();
     private final Map<Long, Consumer<ClickEvent>> contextHandlers = new ConcurrentHashMap<>();
     // Context-menu sources, and the one thing that shows what they build. Sources accumulate like state observers
     // and for the same reason: a widget's own defaults and the application's additions are independent concerns
@@ -221,7 +222,7 @@ public final class InputDispatcher {
 
     private RetainedNode currentRoot;
     private long pressTargetId = -1;
-    // Multi-click counting (DragEvent.clicks): the last left press — when, where and on what — and which press of
+    // Multi-click counting (ClickEvent.clicks, DragEvent.clicks): the last left press — when, where and on what — and which press of
     // its sequence it was. GUI-thread only, like the rest of the pointer state.
     private long lastPressNanos;
     private float lastPressX;
@@ -292,6 +293,25 @@ public final class InputDispatcher {
      */
     public void onClick(long nodeId, Consumer<ClickEvent> handler) {
         clickHandlers.put(nodeId, handler);
+    }
+
+    /**
+     * Register a double-click handler for {@code nodeId}; replaces any prior one. Fired on the release of the
+     * second click of a sequence (see {@link ClickEvent#clicks()}), bubbling leaf→root like a click but along its
+     * own walk, so a row may answer double-clicks while its list answers clicks.
+     *
+     * <p>It comes <b>in addition to</b> the click, never instead of it: the second click still reaches
+     * {@link #onClick} first. Holding every click back until the double-click window had passed would make each
+     * one half a second late, to spare a select-then-open handler from selecting twice — and selecting twice is
+     * harmless. A third click in the sequence does not fire it again.
+     */
+    public void onDoubleClick(long nodeId, Runnable handler) {
+        doubleClickHandlers.put(nodeId, e -> handler.run());
+    }
+
+    /** The same, for a handler that wants the {@link ClickEvent} — where the click landed, what was held. */
+    public void onDoubleClick(long nodeId, Consumer<ClickEvent> handler) {
+        doubleClickHandlers.put(nodeId, handler);
     }
 
     /**
@@ -665,6 +685,7 @@ public final class InputDispatcher {
     /** Drop {@code nodeId}'s handlers and focusability (call when the node is removed). */
     public void clearHandlers(long nodeId) {
         clickHandlers.remove(nodeId);
+        doubleClickHandlers.remove(nodeId);
         contextHandlers.remove(nodeId);
         menuSources.remove(nodeId);
         stateHandlers.remove(nodeId);
@@ -1326,10 +1347,10 @@ public final class InputDispatcher {
         return null;
     }
 
-    /** Whether {@code hit} or an ancestor has a click handler -- the same walk {@link #fireClick} uses. */
+    /** Whether {@code hit} or an ancestor answers clicks -- the same walk {@link #fireClick} uses. */
     private boolean isClickable(RetainedNode hit) {
         for (RetainedNode n = hit; n != null; n = n.parent) {
-            if (clickHandlers.containsKey(n.id)) {
+            if (answersClicks(n.id)) {
                 return true;
             }
         }
@@ -1362,11 +1383,16 @@ public final class InputDispatcher {
             if (dragHandlers.containsKey(n.id) || dragStages.containsKey(n.id)) {
                 return n;
             }
-            if (clickHandlers.containsKey(n.id)) {
+            if (answersClicks(n.id)) {
                 return null;
             }
         }
         return null;
+    }
+
+    /** Whether {@code nodeId} has a click or a double-click handler: either way, a press on it is its press. */
+    private boolean answersClicks(long nodeId) {
+        return clickHandlers.containsKey(nodeId) || doubleClickHandlers.containsKey(nodeId);
     }
 
     private void fireDrag(DragEvent.Phase phase, float x, float y) {
@@ -1410,13 +1436,12 @@ public final class InputDispatcher {
     }
 
     private void fireClick(RetainedNode target, float x, float y) {
-        ClickEvent e = new ClickEvent(target.id, MouseButton.LEFT, x, y, heldMods);
-        for (RetainedNode n = target; n != null; n = n.parent) {
-            Consumer<ClickEvent> handler = clickHandlers.get(n.id);
-            if (handler != null) {
-                handlerExecutor.execute(() -> handler.accept(e));
-                break; // consumed; bubbling stops at the first handler
-            }
+        // The press this release completes was counted when it went down; a click needs press and release on one
+        // node, as continuing a sequence does, so that count is this click's.
+        ClickEvent e = new ClickEvent(target.id, MouseButton.LEFT, x, y, pressCount, heldMods);
+        bubble(clickHandlers, target, e);
+        if (e.clicks() == 2) {
+            bubble(doubleClickHandlers, target, e);
         }
         bus.publish(clicks, e);
     }
@@ -1424,15 +1449,20 @@ public final class InputDispatcher {
     /** The right-button twin of {@link #fireClick}: bubble to the first context handler, then publish. */
     private void fireContextClick(RetainedNode target, float x, float y) {
         ClickEvent e = new ClickEvent(target.id, MouseButton.RIGHT, x, y, heldMods);
-        for (RetainedNode n = target; n != null; n = n.parent) {
-            Consumer<ClickEvent> handler = contextHandlers.get(n.id);
-            if (handler != null) {
-                handlerExecutor.execute(() -> handler.accept(e));
-                break; // consumed; bubbling stops at the first handler
-            }
-        }
+        bubble(contextHandlers, target, e);
         openMenu(target, e);
         bus.publish(clicks, e);
+    }
+
+    /** Hand {@code e} to the nearest ancestor-or-self of {@code target} with a handler in {@code handlers}. */
+    private void bubble(Map<Long, Consumer<ClickEvent>> handlers, RetainedNode target, ClickEvent e) {
+        for (RetainedNode n = target; n != null; n = n.parent) {
+            Consumer<ClickEvent> handler = handlers.get(n.id);
+            if (handler != null) {
+                handlerExecutor.execute(() -> handler.accept(e));
+                return; // consumed; bubbling stops at the first handler
+            }
+        }
     }
 
     /**

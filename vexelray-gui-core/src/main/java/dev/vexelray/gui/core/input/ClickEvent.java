@@ -20,21 +20,33 @@ import java.util.Set;
  * does not have. They travel here so that the handler which decides what the click <em>meant</em> is holding
  * everything that decided it.
  *
+ * <p><b>So is which click of a sequence it was.</b> {@link #clicks()} is 2 for the second of two quick clicks in one
+ * place, 3 for a third — counted by the dispatcher as {@code DragEvent.clicks()} is, from the press edges' capture
+ * times. A handler that only cares about double-clicks need not read it: {@code Gui.onDoubleClick} does.
+ *
  * @param nodeId    the id of the node the click resolved to (the topmost node under the pointer)
  * @param button    the mouse button that clicked
  * @param x         client-space x of the release, pixels
  * @param y         client-space y of the release, pixels
+ * @param clicks    which click of a sequence: 1 single, 2 double, 3 triple — never less than 1; always 1 for a
+ *                  right click, which is not counted
  * @param modifiers the modifier keys held when the button was released
  */
-public record ClickEvent(long nodeId, MouseButton button, float x, float y, Set<Modifier> modifiers) {
+public record ClickEvent(long nodeId, MouseButton button, float x, float y, int clicks, Set<Modifier> modifiers) {
 
     public ClickEvent {
+        clicks = Math.max(1, clicks);
         modifiers = modifiers == null || modifiers.isEmpty() ? Set.of() : Set.copyOf(modifiers);
     }
 
-    /** A click with nothing held — the plain kind. */
+    /** A single click. */
+    public ClickEvent(long nodeId, MouseButton button, float x, float y, Set<Modifier> modifiers) {
+        this(nodeId, button, x, y, 1, modifiers);
+    }
+
+    /** A single click with nothing held — the plain kind. */
     public ClickEvent(long nodeId, MouseButton button, float x, float y) {
-        this(nodeId, button, x, y, Set.of());
+        this(nodeId, button, x, y, 1, Set.of());
     }
 
     public boolean has(Modifier m) {

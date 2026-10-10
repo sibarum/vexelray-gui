@@ -690,6 +690,31 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
+     * Register a double-click handler for {@code node} — fired when the second of two quick left clicks in one
+     * place lands on it (bubbling to the nearest ancestor with a double-click handler).
+     *
+     * {@snippet :
+     * gui.onClick(row, () -> select(path))
+     *    .onDoubleClick(row, () -> open(path));
+     * }
+     *
+     * <p>The clicks still arrive as clicks: the second one reaches {@link #onClick} and then this. That is what
+     * keeps single clicks immediate — telling a lone click from the first half of a double would mean holding
+     * every click for the whole double-click window. For triple clicks and beyond, read
+     * {@link ClickEvent#clicks()} in an {@link #onClick} handler. Runs on a worker thread, like a click.
+     */
+    public Gui onDoubleClick(Node node, Runnable handler) {
+        input.onDoubleClick(node.id(), handler);
+        return this;
+    }
+
+    /** {@link #onDoubleClick(Node, Runnable)}, handed the {@link ClickEvent} — where it landed, what was held. */
+    public Gui onDoubleClick(Node node, java.util.function.Consumer<ClickEvent> handler) {
+        input.onDoubleClick(node.id(), handler);
+        return this;
+    }
+
+    /**
      * Register a context-click handler for {@code node} — fired when a <em>right</em> press and release land on it
      * (bubbling to the nearest ancestor with a handler). The handler receives the {@link ClickEvent} because a
      * context action almost always needs the pointer position, to anchor a menu at it. A right click changes

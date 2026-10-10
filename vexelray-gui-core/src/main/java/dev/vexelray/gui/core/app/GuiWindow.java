@@ -277,20 +277,56 @@ final class GuiWindow implements AutoCloseable {
      * only ever have had to be widened into this. On the main thread because everything Vulkan here is, so this
      * is called from the frame loop's task queue and never directly.
      *
-     * <p>It draws the tree <em>as it stands</em>: the same drain-and-lay-out step {@link #draw} runs, then the
-     * same {@link TreeRenderer} emit into the same {@link Canvas}, so a capture and the frame beside it cannot
-     * disagree. Unlike the static {@link GuiApp#capture} there is no warm-up frame — this window has been
-     * running, so whatever an observer wanted to settle has settled.
+     * <p><b>It is the frame on the screen.</b> The tree <em>as it stands</em> is presented, and that frame is read
+     * back from the image the presenter put on the screen ({@link WindowPresenter#readFrame}). It used to be drawn
+     * a second time, offscreen, through code the screen never runs: when the DXGI presenter bound the wrong font
+     * atlas, every glyph on the screen was garbled and every screenshot was perfect. Only a presenter that cannot
+     * read its frames back still gets the offscreen drawing ({@link #offscreen}), and that picture vouches for the
+     * tree and the canvas, not for how the window presents them.
      *
-     * <p>The background is the theme's page colour rather than transparent: a PNG of a translucent UI over
-     * nothing is unreadable, and every consumer of this wants to see what was on screen.
+     * <p>Unlike the static {@link GuiApp#capture} there is no warm-up frame — this window has been running, so
+     * whatever an observer wanted to settle has settled.
      */
     void capture(String path) throws java.io.IOException {
-        int w = presenter.width();
-        int h = presenter.height();
-        if (w <= 0 || h <= 0) {
+        if (window.isMinimized()) {
             return;                     // minimized: there is no picture, and asking for one is not an error
         }
+        updated = update();
+        drawOwed = true;
+        presenter.render(0, this::draw);
+        byte[] rgba = presenter.readFrame();
+        int w = presenter.width();
+        int h = presenter.height();
+        if (rgba == null) {
+            if (w <= 0 || h <= 0) {
+                return;
+            }
+            rgba = offscreen(w, h);
+        }
+        // Written beside the target and moved into place, never written at it. A capture is asynchronous, so
+        // every consumer of one waits for the file to appear — and a PNG written in place is *visible* from its
+        // first byte, so the natural way to wait produces a truncated read on a timing this test hit first try.
+        // Moving atomically makes "the file is there" mean "the file is complete", for every consumer, forever.
+        File target = new File(path);
+        File tmp = new File(target.getAbsolutePath() + ".part");
+        PngWriter.write(rgba, w, h, tmp.toPath());
+        try {
+            java.nio.file.Files.move(tmp.toPath(), target.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+        } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+            // Some filesystems cannot; a plain replace is still far narrower than writing in place.
+            java.nio.file.Files.move(tmp.toPath(), target.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    /**
+     * The tree drawn again offscreen, for a presenter that cannot read its frames back: the same drain-and-lay-out,
+     * the same {@link TreeRenderer} emit into the same {@link Canvas}, and the same runs. The background is the
+     * theme's page colour rather than transparent: a PNG of a translucent UI over nothing is unreadable.
+     */
+    private byte[] offscreen(int w, int h) {
         if (capturePass == null || captureW != w || captureH != h) {
             closeCapture();
             capturePass = new VulkanRenderPass(device, Vk.FORMAT_R8G8B8A8_UNORM,
@@ -315,27 +351,12 @@ final class GuiWindow implements AutoCloseable {
         byte[] rgba = OffscreenDraw.toRgba(device, capturePass.handle(), capturePipeline, w, h,
                 vertexBuffer.handle(), fonts.first().descriptorSet(),
                 GuiApp.bind(canvas.runs(), vertexCount, noImage, fonts.textures()), page.r(), page.g(), page.b(), 1f);
-        // Written beside the target and moved into place, never written at it. A capture is asynchronous, so
-        // every consumer of one waits for the file to appear — and a PNG written in place is *visible* from its
-        // first byte, so the natural way to wait produces a truncated read on a timing this test hit first try.
-        // Moving atomically makes "the file is there" mean "the file is complete", for every consumer, forever.
-        File target = new File(path);
-        File tmp = new File(target.getAbsolutePath() + ".part");
-        PngWriter.write(rgba, w, h, tmp.toPath());
-        try {
-            java.nio.file.Files.move(tmp.toPath(), target.toPath(),
-                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-                    java.nio.file.StandardCopyOption.ATOMIC_MOVE);
-        } catch (java.nio.file.AtomicMoveNotSupportedException e) {
-            // Some filesystems cannot; a plain replace is still far narrower than writing in place.
-            java.nio.file.Files.move(tmp.toPath(), target.toPath(),
-                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-        }
 
         // The vertex buffer now holds the capture's geometry and the presenter's run list still describes the
         // last presented frame. Nothing reads either until the next frame rewrites both, but leaving the two
         // disagreeing is the kind of state that is only ever fine until something else is added here.
         presenter.setRuns(GuiApp.bind(canvas.runs(), vertexCount, noImage, fonts.textures()));
+        return rgba;
     }
 
     /** Release the offscreen pass and pipeline, if this window ever built them. */

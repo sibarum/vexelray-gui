@@ -20,7 +20,7 @@ Three of the four primitives already exist, built for other reasons:
 | **Act** — inject input | Publishing `InputEvent` on the Tactroller topic *is* the input path (architecture.md §13.3). `HeadlessGui` already drives real widgets this way. | Exists |
 | **Read** — inspect state | `LayoutSnapshot`: immutable, **versioned**, keyed by stable node id, transport-serializable. | Exists |
 | **Settle** — know when a mutation landed | `LayoutSnapshot.version` increments per published frame. | Exists |
-| **See** — pixels | `GuiApp` offscreen capture on the live device. | Exists (see §8 A0) |
+| **See** — pixels | The presented frame, read back from the image the presenter put on the screen (`WindowPresenter.readFrame`; DXGI on Windows). A presenter that cannot read back falls back to an offscreen drawing of the tree, which shows nothing of how the window presents it. | Exists (see §8 A0) |
 | **Understand** — role, name, structure, state | — | **Missing (§3)** |
 
 Because injection is the ordinary input path, an agent is not a special mode the application can behave
@@ -232,7 +232,7 @@ whether the run succeeded.
 | `key <NAME>` | Press and release a named `Key`. |
 | `settle` | Wait for the loop to catch up with everything published so far. |
 | `await <landmark> <text>` | Wait until that landmark's name contains the text — how an application's own readiness is waited on. |
-| `shot [path]` | PNG of the window this driver is attached to. Clears the target, waits for the file, `err` if none arrives. |
+| `shot [path]` | PNG of the window this driver is attached to: its tree presented, then that frame read back from the presenter's image, so it is the screen's pixels, not a second drawing. Not the desktop compositor's: the window border and anything the compositor does are outside it. Clears the target, waits for the file, `err` if none arrives. |
 | `size` | The window's pixels, zoom, dpi and em, in one line. |
 | `zoom [factor]`, `dpi [factor]` | Read, or set and wait for layout. Answer with the value the window *became*, and say when a clamp changed it. |
 | `resize <w>x<h>` | Size the drawable area — pixels, or em with a unit (`46emx30em`), which an em resolves at the zoom and density in force. Answers with the size reached. |

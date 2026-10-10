@@ -9,6 +9,7 @@ import dev.vexelray.gui.core.drop.Payload;
 import dev.vexelray.gui.core.drop.PayloadType;
 import dev.vexelray.gui.core.edit.Change;
 import dev.vexelray.gui.core.input.ClickEvent;
+import dev.vexelray.gui.core.input.CursorShape;
 import dev.vexelray.gui.core.input.FocusEvent;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.layout.LayoutEnums;
@@ -413,6 +414,9 @@ public final class TreeView<T> implements AutoCloseable {
                     .alignItems(LayoutEnums.AlignItems.CENTER)
                     .scroll(false, false)
                     .children(spacer, disclosure, checkBox, labelBox);
+            if (rowCursor != null) {
+                gui.cursor(rowNode, rowCursor);
+            }
             this.kidsBox = gui.column().width(Length.FILL).visible(false).scroll(false, false);
             this.entry = gui.column().width(Length.FILL).scroll(false, false).children(rowNode, kidsBox);
             // How a collapsed branch un-hides something inside it, for navigation (Gui.reveals). Only a branch
@@ -453,7 +457,10 @@ public final class TreeView<T> implements AutoCloseable {
                 select(this, true);
                 toggle(this);
             });
-            gui.onState(rowNode, state -> restyle(this, state));
+            gui.onState(rowNode, state -> {
+                restyle(this, state);
+                hovered(this, state != InteractionState.NORMAL);
+            });
             // The full name, for a row that cuts it off — and nothing for one that does not. Asked at hover time
             // rather than kept up to date, so a row costs one state observer until someone rests on it: whether a
             // name is cut depends on the depth, the tree's width and the zoom, all of which move under it.
@@ -561,6 +568,12 @@ public final class TreeView<T> implements AutoCloseable {
     private volatile Consumer<T> onSelect = t -> { };
     private volatile Consumer<T> onActivate = t -> { };
     private volatile Consumer<T> onClick = t -> { };
+    private volatile Consumer<T> onHover = t -> { };
+    private volatile Role hoverFill = Role.PANEL;
+    private volatile Role hoverInk = Role.INK;
+    private volatile CursorShape rowCursor;
+    /** The row the pointer is on, or null. Guarded by {@code this}. */
+    private Row hoveredRow;
     private volatile BiConsumer<T, MenuSink> contextMenu = (item, menu) -> { };
 
     /**
@@ -1090,6 +1103,35 @@ public final class TreeView<T> implements AutoCloseable {
      */
     public TreeView<T> onClick(Consumer<T> handler) {
         this.onClick = handler == null ? t -> { } : handler;
+        return this;
+    }
+
+    /**
+     * React to the pointer coming onto a row ({@code item}) and leaving the rows altogether ({@code null}). Moving
+     * from one row to the next reports the next one; a null between them is dropped when the next row has already
+     * said so by the time it would go out. Runs on the handler executor.
+     *
+     * <p>For a tree whose rows are previewed before they are chosen: what is under the pointer is what a click
+     * would act on, so showing it there makes the click's consequence visible before it is made.
+     */
+    public TreeView<T> onHover(Consumer<T> handler) {
+        this.onHover = handler == null ? t -> { } : handler;
+        return this;
+    }
+
+    /**
+     * The fill and ink of a row under the pointer, where they are {@code PANEL} and {@code INK} by default: a quiet
+     * hover suits a tree whose click is cheap, and a tree whose click changes a great deal wants a loud one.
+     */
+    public TreeView<T> hoverStyle(Role fill, Role ink) {
+        this.hoverFill = fill == null ? Role.PANEL : fill;
+        this.hoverInk = ink == null ? Role.INK : ink;
+        return this;
+    }
+
+    /** The pointer's shape over every row; the default is the window's. Set it before the rows are built. */
+    public TreeView<T> rowCursor(CursorShape shape) {
+        this.rowCursor = shape;
         return this;
     }
 
@@ -2130,9 +2172,43 @@ public final class TreeView<T> implements AutoCloseable {
             row.label.textColor(theme.color(Role.ACCENT));
         } else {
             // Transparent at rest, so an unselected row is the well it sits in rather than a rectangle of its own.
-            row.rowNode.background(state == InteractionState.NORMAL ? null : theme.color(Role.PANEL));
-            row.label.textColor(theme.color(Role.INK));
+            boolean over = state != InteractionState.NORMAL;
+            row.rowNode.background(over ? theme.color(hoverFill) : null);
+            row.label.textColor(theme.color(over ? hoverInk : Role.INK));
         }
+    }
+
+    /**
+     * Track which row the pointer is on and report changes. The leave of one row and the enter of the next can
+     * arrive in either order, so a leave only clears the row that is still the hovered one, and the null goes out
+     * after a beat in which the next enter may land: off the rows altogether is the one null anyone hears.
+     */
+    private void hovered(Row row, boolean over) {
+        synchronized (this) {
+            if (over) {
+                if (hoveredRow == row) {
+                    return;
+                }
+                hoveredRow = row;
+            } else {
+                if (hoveredRow != row) {
+                    return;
+                }
+                hoveredRow = null;
+            }
+        }
+        if (over) {
+            onHover.accept(row.item);
+            return;
+        }
+        gui.handlers().execute(() -> {
+            synchronized (this) {
+                if (hoveredRow != null) {
+                    return;   // the pointer went straight onto another row, which has said so
+                }
+            }
+            onHover.accept(null);
+        });
     }
 
     private void onFocus(FocusEvent e) {

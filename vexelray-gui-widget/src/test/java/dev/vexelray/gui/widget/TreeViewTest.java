@@ -293,6 +293,34 @@ class TreeViewTest {
         }
     }
 
+    /** The row under the pointer is heard, the next one replaces it, and leaving the rows says null. */
+    @Test
+    void hoverReportsTheRowUnderThePointerAndNullOffIt() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            MapSource source = new MapSource();
+            List<String> heard = new java.util.concurrent.CopyOnWriteArrayList<>();
+            TreeView<String> tree = new TreeView<>(h.gui, source).onHover(heard::add);
+            h.gui.root().children(tree.node());
+            h.frame();
+            h.frame();
+
+            var treeRect = tree.node().layout().rect();
+            float x = treeRect.x() + treeRect.w() / 2f;
+            float first = firstRowCenterY(h, tree);
+            h.hover(x, first);
+            h.frame();
+            h.hover(x, first + rowHeight(h, tree));
+            h.frame();
+            assertEquals(List.of("src", "docs"), heard.stream().filter(java.util.Objects::nonNull).toList());
+            assertTrue(heard.getLast() != null, "still on a row");
+
+            h.hover(treeRect.x() + treeRect.w() / 2f, treeRect.y() + treeRect.h() - 2f);
+            h.frame();
+            assertNull(heard.getLast(), "off the rows");
+            tree.close();
+        }
+    }
+
     /** An item whose source lists no children demotes to a leaf instead of showing an empty open branch. */
     @Test
     void anEmptyBranchDemotesToALeaf() {

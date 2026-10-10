@@ -9,7 +9,10 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * The title bar's caption buttons, and the one property the widget's binding story rests on: a bar built before
@@ -167,6 +170,62 @@ class TitleBarTest {
             assertEquals(java.util.Set.of("Test", "×"), before.keySet(), "the title and the close glyph");
             assertEquals(before, after, "zoom is the content's; the window's chrome stays the size the OS's is");
         }
+    }
+
+    /**
+     * The mark goes where the native caption puts a window's icon: first, before the title. Through
+     * {@code addLeading} it could only follow the title.
+     */
+    @Test
+    void theMarkSitsBeforeTheTitleAndIsReplacedNotAdded() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TitleBar bar = bar(h, WindowControls.NONE);
+            dev.vexelray.gui.core.Node first = mark(h);
+            bar.icon(first);
+            h.frame();
+            assertTrue(x(h, h.retained(first)) < x(h, byText(h.retained(bar.node()), "Test")),
+                    "the mark is left of the title");
+
+            dev.vexelray.gui.core.Node second = mark(h);
+            bar.icon(second);
+            h.frame();
+            assertNull(HeadlessGui.find(h.retained(bar.node()), first), "the old mark is taken down");
+            assertTrue(x(h, h.retained(second)) < x(h, byText(h.retained(bar.node()), "Test")));
+
+            bar.icon((dev.vexelray.gui.core.Node) null);
+            h.frame();
+            assertNull(HeadlessGui.find(h.retained(bar.node()), second), "null takes the mark off");
+        }
+    }
+
+    /** An icon's straight ARGB, as the straight RGBA a texture takes: channels moved, nothing premultiplied. */
+    @Test
+    void anIconsPixelsReachTheTextureInRgbaOrder() {
+        dev.vexelray.os.Icon.Image image = new dev.vexelray.os.Icon.Image(2, 1, new int[] {0x80FF4020, 0xFF0000FF});
+        assertArrayEquals(new byte[] {(byte) 0xFF, 0x40, 0x20, (byte) 0x80, 0, 0, (byte) 0xFF, (byte) 0xFF},
+                TitleBar.rgba(image));
+    }
+
+    private static dev.vexelray.gui.core.Node mark(HeadlessGui h) {
+        return h.gui.box().size(dev.vexelray.gui.core.layout.Length.dp(16), dev.vexelray.gui.core.layout.Length.dp(16));
+    }
+
+    private static float x(HeadlessGui h, dev.vexelray.gui.core.model.RetainedNode n) {
+        return h.gui.layoutSnapshot().node(n.id).rect().x();
+    }
+
+    private static dev.vexelray.gui.core.model.RetainedNode byText(dev.vexelray.gui.core.model.RetainedNode n,
+                                                                  String text) {
+        if (text.equals(n.textString())) {
+            return n;
+        }
+        for (dev.vexelray.gui.core.model.RetainedNode child : n.children) {
+            dev.vexelray.gui.core.model.RetainedNode found = byText(child, text);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
     }
 
     private static java.util.Map<String, Float> textSizes(dev.vexelray.gui.core.model.RetainedNode n,

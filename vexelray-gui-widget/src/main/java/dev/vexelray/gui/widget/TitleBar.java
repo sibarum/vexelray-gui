@@ -5,6 +5,7 @@ import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.WindowControls;
 import dev.vexelray.gui.core.WindowInstrument;
 import dev.vexelray.gui.core.WindowRegion;
+import dev.vexelray.gui.core.app.GuiApp;
 import dev.vexelray.gui.core.app.WindowSpec;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
@@ -12,6 +13,7 @@ import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
+import dev.vexelray.os.Icon;
 import dev.vexelray.text.TextLayout;
 
 /**
@@ -50,6 +52,8 @@ public final class TitleBar {
      */
     private static final Length TITLE_SIZE = Length.dp(13.6f);
     private static final Length CLOSE_SIZE = Length.dp(22.4f);
+    /** The mark's side: the native caption's small icon, 16px at 100%. */
+    private static final int ICON_DP = 16;
 
     private final Gui gui;
     /**
@@ -68,6 +72,8 @@ public final class TitleBar {
     /** Built on first use: a bar with no instruments needs no tooltip machinery. */
     private Tooltip instrumentTips;
     private final Node leading;
+    /** The application's mark, first in {@link #leading}; null until given one. */
+    private Node icon;
     private final Node titleText;
     private final Node maximizeIcon;
     private final Node restoreIcon;
@@ -255,9 +261,77 @@ public final class TitleBar {
     }
 
     /**
-     * Add a node to the left-hand slot, after the title — an application icon, a menu bar, a tab strip. Anything
-     * clickable placed here must declare {@link WindowRegion#INTERACTIVE} itself (directly, or on each of its own
-     * clickable parts), or the window manager will start a window drag from it instead of letting the click land.
+     * Put the application's mark at the far left, before the title, where the native caption puts a window's
+     * icon. {@link #addLeading} cannot: it appends, so a mark added there lands <em>after</em> the title.
+     *
+     * <p>Replacing rather than appending, like {@link #instruments}: a window wears one mark, and {@code null}
+     * takes it off. The node is the caller's to build — a drawn {@link dev.vexelray.gui.draw.Picture}, an image,
+     * anything — and it stays caption unless it declares otherwise, so the window can be dragged by its mark as by
+     * the native one. {@link #icon(GuiApp, Icon)} builds it from the {@link Icon} the window itself wears.
+     */
+    public TitleBar icon(Node node) {
+        if (icon != null) {
+            icon.remove();
+        }
+        icon = node;
+        if (node != null) {
+            leading.insert(node, 0);
+        }
+        return this;
+    }
+
+    /**
+     * The mark the window wears in the taskbar, worn in this bar too: {@code mark} shown {@value #ICON_DP}dp
+     * square, as the native caption shows a window's small icon. {@code null} takes the mark off.
+     *
+     * <p><b>Each size the icon was drawn at stays that size.</b> An {@link Icon} is a set of sizes, and a
+     * 16-pixel mark is not a 256-pixel one reduced, so the bar shows whichever image is nearest the pixels its box
+     * has at the window's current scale, and changes image when the window moves to a display of another scale.
+     * The sizes it can choose between are uploaded here, once — which is why this takes the {@code GuiApp}, is
+     * called on the main thread once the window exists, and leaves the textures to close with the application.
+     */
+    public TitleBar icon(GuiApp app, Icon mark) {
+        if (mark == null) {
+            return icon((Node) null);
+        }
+        // Up to 4x the caption size: a 400% display wants 64px. Larger sizes are for Alt-Tab and Explorer, and
+        // would only be sampled down here -- unless they are all the mark has, so the one nearest 64 always goes.
+        java.util.Map<Icon.Image, dev.vexelray.vulkan.present.SampledImage> sizes = new java.util.LinkedHashMap<>();
+        for (Icon.Image image : mark.images()) {
+            if (Math.max(image.width(), image.height()) <= ICON_DP * 4) {
+                sizes.put(image, app.texture(rgba(image), image.width(), image.height()));
+            }
+        }
+        sizes.computeIfAbsent(mark.bestFor(ICON_DP * 4),
+                image -> app.texture(rgba(image), image.width(), image.height()));
+        Icon uploaded = new Icon(java.util.List.copyOf(sizes.keySet()));
+
+        Node node = gui.box().size(Length.dp(ICON_DP), Length.dp(ICON_DP)).scroll(false, false);
+        // Chosen against the box the layout settled on, which is in pixels and so already carries the scale.
+        gui.onResizeUi(node, computed -> node.image(sizes.get(uploaded.bestFor(
+                Math.round(Math.max(computed.rect().w(), computed.rect().h()))))));
+        return icon(node);
+    }
+
+    /** {@code image}'s straight {@code 0xAARRGGBB} pixels as the straight RGBA8 bytes a texture takes. */
+    static byte[] rgba(Icon.Image image) {
+        int[] argb = image.argb();
+        byte[] out = new byte[argb.length * 4];
+        for (int i = 0; i < argb.length; i++) {
+            int p = argb[i];
+            out[i * 4] = (byte) (p >>> 16);
+            out[i * 4 + 1] = (byte) (p >>> 8);
+            out[i * 4 + 2] = (byte) p;
+            out[i * 4 + 3] = (byte) (p >>> 24);
+        }
+        return out;
+    }
+
+    /**
+     * Add a node to the left-hand slot, after the title — a menu bar, a tab strip; the mark goes in {@link #icon}.
+     * Anything clickable placed here must declare {@link WindowRegion#INTERACTIVE} itself (directly, or on each of
+     * its own clickable parts), or the window manager will start a window drag from it instead of letting the click
+     * land.
      */
     public TitleBar addLeading(Node node) {
         leading.append(node);

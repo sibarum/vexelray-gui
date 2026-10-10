@@ -71,7 +71,7 @@ public final class GuiApp implements AutoCloseable {
     /** Whether the application asked for compute to have a queue of its own ({@link Compute#OWN_QUEUE}). */
     private final boolean computeRequested;
     /**
-     * What presents every window when not a Vulkan swapchain — DXGI on Windows, chosen by
+     * What presents every window when not a Vulkan swapchain — DXGI on Windows by default, chosen by
      * {@code -Dvexelray.present} — or null for the swapchain path. Shared by all windows; closed after them.
      */
     private final dev.vexelray.vulkan.present.PresenterProvider.Backend presentBackend;
@@ -305,8 +305,8 @@ public final class GuiApp implements AutoCloseable {
                     selection.deviceName());
         }
 
-        // A presentation path other than the swapchain, if one was asked for and is here. It has to be chosen
-        // before the device exists, because it needs device extensions; and anything failing on the way falls
+        // A presentation path other than the swapchain (DXGI, unless asked otherwise), if it is here. It has to be
+        // chosen before the device exists, because it needs device extensions; and anything failing on the way falls
         // back to the swapchain path, which works everywhere, rather than leaving the application without a window.
         dev.vexelray.vulkan.present.PresenterProvider provider = presenterProvider();
         VulkanDevice made = null;
@@ -349,24 +349,35 @@ public final class GuiApp implements AutoCloseable {
     }
 
     /**
-     * The presentation path {@code -Dvexelray.present} names, or null for the Vulkan swapchain. {@code vulkan}
-     * (the default) asks for the swapchain; any other name is looked up among the {@code PresenterProvider}s on
-     * the class path, and one that is absent or unsupported here is said and ignored.
+     * The presentation path {@code -Dvexelray.present} names, or null for the Vulkan swapchain. Unset, it is
+     * {@code dxgi}: on Windows a resize is then the OS's buffer resize rather than a new swapchain, and elsewhere
+     * the provider is unsupported (or absent) and the swapchain is used. {@code vulkan} asks for the swapchain;
+     * any other name is looked up among the {@code PresenterProvider}s on the class path, and one that was named
+     * but is absent or unsupported here is said and ignored.
      */
     private static dev.vexelray.vulkan.present.PresenterProvider presenterProvider() {
-        String name = System.getProperty("vexelray.present", "vulkan");
+        String asked = System.getProperty("vexelray.present");
+        String name = asked != null ? asked : DEFAULT_PRESENT;
         if (name.isBlank() || name.equals("vulkan")) {
             return null;
         }
         java.util.Optional<dev.vexelray.vulkan.present.PresenterProvider> found =
                 dev.vexelray.vulkan.present.PresenterProvider.find(name);
         if (found.isEmpty()) {
-            LOG.warn("-Dvexelray.present={} names no presentation path available here; using a Vulkan swapchain",
-                    name);
+            if (asked != null) {
+                LOG.warn("-Dvexelray.present={} names no presentation path available here; using a Vulkan swapchain",
+                        name);
+            } else {
+                LOG.info("no {} presentation path here (on Windows, vexelray-present-dxgi is not on the class path);"
+                        + " using a Vulkan swapchain", name);
+            }
             return null;
         }
         return found.get();
     }
+
+    /** The presentation path asked for when {@code -Dvexelray.present} is unset. */
+    private static final String DEFAULT_PRESENT = "dxgi";
 
     /**
      * Make one window through the host's factory. Every window this application opens comes from here and

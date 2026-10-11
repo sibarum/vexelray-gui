@@ -282,8 +282,9 @@ public final class DragChapter implements Chapter {
                         + "an outer quarter each side for before and after, the middle half for into — and a "
                         + "leaf divides in two, because a band that always refused would be a third of a row "
                         + "that looks live and is not. Below the last row is the top level, which is the only "
-                        + "way to drag a task out of its column. Escape cancels; a flick too quick to have been "
-                        + "drawn commits nothing."));
+                        + "way to drag a task out of its column. Let go of the button and the task stays with the "
+                        + "pointer; a click puts it down. Escape or a right click cancels; a flick too quick "
+                        + "to have been drawn commits nothing."));
 
         return gui.column().width(Length.FILL).height(Length.FILL).gap(Ui.GAP)
                 .children(

@@ -167,6 +167,16 @@ class BoardTest {
         h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, (int) x, (int) y, 0));
     }
 
+    /**
+     * The click that puts a carried card down, where the pointer is. Letting go of the button kept it, latched;
+     * this is the drop.
+     */
+    private void putDown(HeadlessGui h) {
+        h.frame();
+        h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, lastX, lastY, 0));
+        h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, lastX, lastY, 0));
+    }
+
     /** Finish every motion and let the frames that follow lay the result out. */
     private void rest(HeadlessGui h) {
         hand.finish();
@@ -247,6 +257,7 @@ class BoardTest {
             assertEquals(105f, rectOf(board, "c").y(), 0.01f, "and c has stood aside for a's gap");
 
             release(h, 100, 70);
+            putDown(h);
             h.frame();
             rest(h);
 
@@ -279,6 +290,7 @@ class BoardTest {
             h.frame();
             float letGo = rectOf(board, "a").y();
             release(h, 100, 80);
+            putDown(h);
             h.frame();
             assertEquals(letGo, rectOf(board, "a").y(), 0.01f, "the release itself moves nothing");
 
@@ -380,6 +392,7 @@ class BoardTest {
             assertEquals(x.y() + CARD, rectOf(board, "x").y(), 0.01f, "x stands aside for the card above it");
 
             release(h, 600, 20);
+            putDown(h);
             h.frame();
             rest(h);
 
@@ -483,6 +496,7 @@ class BoardTest {
             assertEquals(5f, rectOf(board, "b").y(), 0.01f, "over the bin, the card would leave, so its gap closes");
 
             release(h, 600, 300);
+            putDown(h);
             h.frame();
             hand.at(0.5);
             h.frame();
@@ -526,13 +540,138 @@ class BoardTest {
     }
 
     @Test
-    @DisplayName("a click is a click: a press that never travels lifts nothing")
+    @DisplayName("a click is a click: the card sinks while held, then springs back, and nothing was carried")
     void aClickLiftsNothing() {
         try (HeadlessGui h = new HeadlessGui()) {
             Board<String> board = board(h, Map.of("todo", List.of("a", "b")));
+            Rect a = rectOf(board, "a");
+
             h.click(100, 20);
+            assertFalse(hand.idle(), "held, it showed: the press is a state of its own");
+            rest(h);
+
             assertTrue(board.settled());
-            assertTrue(hand.idle());
+            assertEquals(a, rectOf(board, "a"), "and it is back exactly where it was");
+            assertEquals(List.of("a", "b"), model.columns.get("todo"));
+        }
+    }
+
+    @Test
+    @DisplayName("held before the threshold, the card follows the hand part of the way, then comes loose to it")
+    void heldThenLoose() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Board<String> board = board(h, Map.of("todo", List.of("a", "b", "c")));
+
+            press(h, 100, 20);
+            move(h, 100, 23);   // inside the threshold: held, not loose
+            h.frame();
+            hand.finish();
+            h.frame();
+            assertEquals(5f, rectOf(board, "a").y(), 0.01f,
+                    "a press moves nothing in the layout: the lane does not reflow under what may be a click");
+            assertFalse(board.settled(), "but the card is held, which is a state");
+
+            move(h, 100, 60);   // loose
+            h.frame();
+            float loose = rectOf(board, "a").y();
+            assertTrue(loose >= 5f && loose < 45f, "it comes away from where the pull had it: " + loose);
+            hand.finish();
+            h.frame();
+            assertEquals(60f - 15f, rectOf(board, "a").y(), 0.01f, "and then follows exactly");
+        }
+    }
+
+    @Test
+    @DisplayName("let go, the card stays with the pointer; a click puts it down where it is aimed")
+    void letGoAndClick() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Board<String> board = board(h, Map.of("todo", List.of("a", "b", "c")));
+            press(h, 100, 20);
+            move(h, 100, 30);
+            h.frame();
+            release(h, 100, 30);
+            h.frame();
+            hand.finish();
+
+            move(h, 100, 70);
+            h.frame();
+            hand.finish();
+            h.frame();
+            assertEquals(70f - 15f, rectOf(board, "a").y(), 0.01f, "carried with no button down");
+            assertEquals(List.of("a", "b", "c"), model.columns.get("todo"), "and nothing done yet");
+
+            putDown(h);
+            h.frame();
+            rest(h);
+            assertEquals(List.of("b", "a", "c"), model.columns.get("todo"));
+        }
+    }
+
+    @Test
+    @DisplayName("a card carried and held still owes no frames: a still hand is a still loop")
+    void aStillCarryParks() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            board(h, Map.of("todo", List.of("a", "b", "c")));
+            press(h, 100, 20);
+            move(h, 100, 30);
+            h.frame();
+            release(h, 100, 30);
+            h.frame();
+            rest(h);
+            h.frame();
+            h.frame();
+
+            assertFalse(h.gui.frameOwed(), "nothing changed, so nothing was written, so nothing is owed");
+        }
+    }
+
+    @Test
+    @DisplayName("a press held still owes no frames either")
+    void aStillPressParks() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            board(h, Map.of("todo", List.of("a", "b", "c")));
+            press(h, 100, 20);
+            move(h, 100, 22);
+            h.frame();
+            rest(h);
+            h.frame();
+            h.frame();
+
+            assertFalse(h.gui.frameOwed());
+        }
+    }
+
+    @Test
+    @DisplayName("Escape after the lane was scrolled puts the lane back as well as the card")
+    void cancellingScrollsBack() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            List<String> many = new ArrayList<>();
+            for (int i = 0; i < 30; i++) {
+                many.add("c" + i);
+            }
+            Board<String> board = board(h, Map.of("todo", many));
+            Deck<String> deck = model.decks.get("todo");
+            press(h, 100, 20);
+            move(h, 100, 30);
+            h.frame();
+            release(h, 100, 30);
+            h.frame();
+            hand.finish();
+            h.wheel(0, -5, 100, 300);   // the lane scrolls under the carried card
+            float scrolled = deck.node().layout().scrollY();
+            assertTrue(scrolled > 0f, "the wheel works while carrying");
+
+            h.bus.publish(InputTopics.INPUT, new InputEvent.KeyPressed(Key.ESCAPE, 0));
+            h.frame();
+            hand.at(0.5);
+            h.frame();
+            float midway = deck.node().layout().scrollY();
+            assertTrue(midway > 0f && midway < scrolled, "the lane glides back with the card: " + midway);
+            rest(h);
+
+            assertEquals(0f, deck.node().layout().scrollY(), 0.01f, "where it was looking when the card came loose");
+            assertEquals(5f, rectOf(board, "c0").y(), 0.01f, "and the card is home");
+            assertTrue(board.settled());
         }
     }
 }

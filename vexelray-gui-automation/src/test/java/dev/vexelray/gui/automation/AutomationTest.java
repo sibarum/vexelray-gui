@@ -195,7 +195,11 @@ class AutomationTest {
 
             assertTrue(driver.command("up").startsWith("ok 20,90"));
             gui.frame(W, H, NO_TEXT);
-            assertTrue(gui.dragSession() == null, "let go where the pointer was");
+            assertTrue(gui.dragSession() != null && gui.dragSession().latched(),
+                    "let go: and a drag that is let go stays with the pointer, latched, until a click");
+            driver.command("click 20,90");
+            gui.frame(W, H, NO_TEXT);
+            assertTrue(gui.dragSession() == null, "put down");
         }
     }
 

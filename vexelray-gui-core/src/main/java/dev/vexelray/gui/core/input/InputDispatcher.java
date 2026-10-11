@@ -262,8 +262,23 @@ public final class InputDispatcher {
     private boolean leftDown;
     // Last pointer position, kept so the cursor rule can ask whether it is over a scrollbar strip -- that is a
     // geometric question about chrome, not about a node, so a hit-test result alone cannot answer it.
-    private float pointerX;
-    private float pointerY;
+    // Volatile because a PointerRide reads them from the thread driving its animation, to tell its own steps
+    // from the hand's.
+    private volatile float pointerX;
+    private volatile float pointerY;
+    /** A left press is down somewhere a drag could begin, and has not yet become one. See {@link #showArmed}. */
+    private boolean armed;
+    private float armedX;
+    private float armedY;
+    /** The release that pairs with a press a latched drag used up, so it does not click whatever is under it. */
+    private boolean swallowLeftRelease;
+    private boolean swallowRightRelease;
+    /** The wheel, as motion. */
+    private final ScrollGlide glide = new ScrollGlide();
+    /** A glided container re-decides its scroll lock by where it is heading; one instance, not one per frame. */
+    private final Consumer<RetainedNode> relock = n -> refreshScrollLock(n, glide.targetY(n));
+    /** Where the host puts the pointer when the GUI asks; nothing moves until one is installed. */
+    private volatile PointerWarp pointerWarp = PointerWarp.NONE;
     /** Cursor shapes declared per node (see {@link #setCursor}); consulted ancestor-or-self. */
     private final Map<Long, CursorShape> nodeCursors = new ConcurrentHashMap<>();
     // Cursor shape reporting (§8.3): the app-installed sink and the last shape reported (to fire only on change).
@@ -433,7 +448,7 @@ public final class InputDispatcher {
     }
 
     private static DragState stateOf(DragSession s) {
-        return new DragState(true, s.x(), s.y(), s.drop().effect(), s.drop().indicator());
+        return DragState.of(s);
     }
 
     /** Where a completed drop records its change. Until one is set, drops resolve and draw but commit nothing —
@@ -491,6 +506,9 @@ public final class InputDispatcher {
      * the user grabbed.
      */
     private void openSession(sibarum.tactroller.api.DragEvent.DragStarted started) {
+        // Whatever happens next, the press has stopped being a candidate: it is a drag now, or nothing is.
+        boolean wasArmed = armed;
+        armed = false;
         RetainedNode from = HitTest.at(currentRoot, started.startX(), started.startY());
         for (RetainedNode n = from; n != null; n = n.parent) {
             DragSource source = dragSources.get(n.id);
@@ -507,21 +525,47 @@ public final class InputDispatcher {
             // A source that declines does not stop an ancestor answering: the empty space below a tree's rows
             // belongs to the tree, and the tree may well want to offer something for it.
         }
+        if (wasArmed) {
+            disarmWatches();   // nothing here could be picked up after all
+        }
     }
 
-    /** Commit or abandon the session, and put focus where the drop landed. */
+    /**
+     * The button came up on a drag: keep it, latched, rather than dropping where the pointer happened to be. Or the
+     * gesture was cancelled, by Escape while the button was down.
+     *
+     * <p>Picking something up is a gesture, not a posture — see {@link DragSession#latch}. Letting go of the button
+     * is the hand relaxing, not an instruction to put the thing down here: a long list is not a test of grip, and
+     * a slipped finger is not a drop. The drop is the next click, aimed.
+     */
     private void endSession(sibarum.tactroller.api.DragEvent.DragEnded ended) {
         if (session == null) {
             return;
         }
         if (ended.cancelled()) {
-            DragState last = stateOf(session);
-            session.cancel();
-            session = null;
-            endWatches(last, DropEffect.NONE);
+            cancelSession();
             return;
         }
         session.moveTo(ended.x(), ended.y(), this::dropTargetsAt);
+        session.latch();
+        updateCursor();   // the hand opens; the thing stays with it
+        showWatches();    // and the source is told in this frame, so it can show the difference
+    }
+
+    /** End the drag without performing anything, and tell everyone that is all it did. */
+    private void cancelSession() {
+        DragState last = stateOf(session);
+        session.cancel();
+        session = null;
+        endWatches(last, DropEffect.NONE);
+    }
+
+    /**
+     * Put the latched drag down at {@code (x, y)}: the click that ends a carry. Performs the resolved change through
+     * the drop history, and puts focus where the drop landed.
+     */
+    private void commitSession(float x, float y) {
+        session.moveTo(x, y, this::dropTargetsAt);
         DragState last = stateOf(session);
         History history = dropHistory;
         Drop performed = history == null ? Drop.NONE : session.commit(history);
@@ -532,13 +576,87 @@ public final class InputDispatcher {
             // dropping a row while a text field still held focus would send the user's first undo to the field's
             // typing history instead of to the drop they just made. Focusing what a click here would focus
             // realigns the two, and is what the user expects anyway: the thing just moved is the thing now acted on.
-            RetainedNode landed = ancestorFocusable(HitTest.at(currentRoot, ended.x(), ended.y()));
+            RetainedNode landed = ancestorFocusable(HitTest.at(currentRoot, x, y));
             setFocus(landed == null ? -1 : landed.id, FocusCause.POINTER);
         }
-        // After focus has moved, not before: what is under the release point is often not the thing that was
-        // moved — a carried card is pointer-transparent while it flies, so the hit finds the lane beneath it —
-        // and a watch that knows better is the last word on where focus lands.
+        // After focus has moved, not before: what is under the drop point is often not the thing that was moved —
+        // a carried card is pointer-transparent while it flies, so the hit finds the lane beneath it — and a watch
+        // that knows better is the last word on where focus lands.
         endWatches(last, performed.effect());
+    }
+
+    /**
+     * While a drag is latched, the pointer belongs to it: moves carry the thing, a left click puts it down, a right
+     * click takes it home. Each press is consumed with the release that pairs with it, so the click that drops a
+     * card is not also a click on whatever was under it, and the right click that cancels opens no menu. The wheel
+     * is not taken — scrolling under a carried thing is the reason the hand was freed.
+     *
+     * @return whether the event was used up here
+     */
+    private boolean latchedPointer(InputEvent e) {
+        if (e instanceof InputEvent.ButtonReleased r) {
+            if (r.button() == MouseButton.LEFT && swallowLeftRelease) {
+                swallowLeftRelease = false;
+                pointerX = r.x();
+                pointerY = r.y();
+                return true;
+            }
+            if (r.button() == MouseButton.RIGHT && swallowRightRelease) {
+                swallowRightRelease = false;
+                return true;
+            }
+        }
+        DragSession s = session;
+        if (s == null || s.ended() || !s.latched()) {
+            return false;
+        }
+        if (e instanceof InputEvent.PointerMoved m) {
+            pointerX = m.x();
+            pointerY = m.y();
+            hoverHit = HitTest.at(currentRoot, m.x(), m.y());
+            s.moveTo(m.x(), m.y(), this::dropTargetsAt);
+            return true;
+        }
+        if (e instanceof InputEvent.ButtonPressed b && b.button() == MouseButton.LEFT) {
+            pointerX = b.x();
+            pointerY = b.y();
+            swallowLeftRelease = true;
+            commitSession(b.x(), b.y());
+            return true;
+        }
+        if (e instanceof InputEvent.ButtonPressed b && b.button() == MouseButton.RIGHT) {
+            swallowRightRelease = true;
+            cancelSession();
+            return true;
+        }
+        return false;
+    }
+
+    /** Tell every watch the press it was shown is over, without having become a drag. */
+    private void disarmWatches() {
+        for (Watch w : dragWatches) {
+            w.watch().disarmed();
+        }
+    }
+
+    /** Show every watch the press that is not yet a drag, once per frame while it lasts. */
+    private void showArmed() {
+        if (!armed || session != null) {
+            return;
+        }
+        for (Watch w : dragWatches) {
+            w.watch().armed(armedX, armedY, pointerX, pointerY);
+        }
+    }
+
+    /** Whether a press here could become a drag: something on the way to the root offers one. */
+    private boolean canDrag(RetainedNode hit) {
+        for (RetainedNode n = hit; n != null; n = n.parent) {
+            if (dragSources.containsKey(n.id)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -557,11 +675,11 @@ public final class InputDispatcher {
         if (key != Key.ESCAPE || session == null || session.ended()) {
             return false;
         }
-        DragState last = stateOf(session);
-        session.cancel();
-        session = null;
-        drags.reset();   // the button is still down; without this its release would complete a cancelled gesture
-        endWatches(last, DropEffect.NONE);
+        boolean held = !session.latched();
+        cancelSession();
+        if (held) {
+            drags.reset();   // the button is still down; without this its release would complete a cancelled gesture
+        }
         return true;
     }
 
@@ -694,6 +812,33 @@ public final class InputDispatcher {
         this.cursorSink = sink == null ? s -> { } : sink;
     }
 
+    /** Install where the pointer is put when the GUI asks — see {@link PointerRide}. */
+    public void pointerWarp(PointerWarp warp) {
+        this.pointerWarp = warp == null ? PointerWarp.NONE : warp;
+    }
+
+    /** Begin carrying the pointer with an animation, from where it is now. Safe from any thread. */
+    public PointerRide ridePointer() {
+        return new PointerRide(this, pointerWarp, pointerX, pointerY);
+    }
+
+    /** Where the pointer was last seen, client-space px. Safe from any thread; as fresh as the last drain. */
+    float pointerX() {
+        return pointerX;
+    }
+
+    float pointerY() {
+        return pointerY;
+    }
+
+    /**
+     * Glide wheel scrolling, closing half the distance to the target every {@code halfLifeNanos}; zero (the
+     * default) scrolls at once. See {@link ScrollGlide}.
+     */
+    public void scrollGlide(long halfLifeNanos) {
+        glide.halfLife(halfLifeNanos);
+    }
+
     /**
      * Declare that a drag captured by {@code nodeId} should hold the pointer for its duration — the pointer is
      * locked on {@code START} and released on {@code END}.
@@ -780,6 +925,7 @@ public final class InputDispatcher {
             requestPointerLock(false);
         }
         dragLocks.remove(nodeId);
+        glide.forget(nodeId);
         if (scrollDrag != null && scrollDrag.id == nodeId) {
             scrollDrag = null;
         }
@@ -803,7 +949,13 @@ public final class InputDispatcher {
         pump.drain();
         pumpKeyRepeat();
         pumpDragGesture();
+        // After this frame's notches have moved their targets, before the layout that places the content: the
+        // offset written here is the one this frame is drawn at. Each step owes the next frame until it arrives.
+        if (glide.step(System.nanoTime(), relock)) {
+            requestLayout.run();
+        }
         settleDragSession();
+        showArmed();
     }
 
     /**
@@ -862,6 +1014,12 @@ public final class InputDispatcher {
         // Sequence every edge, not just the ones that publish an observation: a consumer that only ever sees key
         // routes still needs the gaps between them to be countable.
         current = conduit.next();
+        // A latched drag owns the pointer outright, ahead of everything, recogniser included: the click that puts
+        // a carried thing down is not the start of a new gesture or a click on what is beneath it.
+        if (latchedPointer(e)) {
+            updateCursor();
+            return;
+        }
         // The drag recogniser observes the same stream, ahead of routing and without consuming from it: presses,
         // releases and moves still reach clicks, scrollbars and onDrag exactly as before, so nothing already
         // working has to learn that drags exist.
@@ -901,6 +1059,12 @@ public final class InputDispatcher {
                 pressHit = hit;
                 hoverHit = hit;
                 leftDown = true;
+                // Held on something that could be picked up: a state of its own until it becomes a drag or a click.
+                if (session == null && canDrag(hit)) {
+                    armed = true;
+                    armedX = b.x();
+                    armedY = b.y();
+                }
                 // Capture for drag if the hit (or an ancestor) registered a drag handler.
                 dragCapture = ancestorWithDragHandler(hit);
                 if (dragCapture != null) {
@@ -933,6 +1097,10 @@ public final class InputDispatcher {
                 pressHit = null;
                 hoverHit = hit;
                 leftDown = false;
+                if (armed) {
+                    armed = false;
+                    disarmWatches();   // it came up before it came loose: a click, and whatever was held springs back
+                }
                 refreshStates();
             }
             case InputEvent.ButtonPressed b when b.button() == MouseButton.RIGHT -> {
@@ -956,21 +1124,23 @@ public final class InputDispatcher {
             case InputEvent.Scrolled s -> {
                 RetainedNode hit = HitTest.at(currentRoot, s.x(), s.y());
                 boolean changed = false;
+                long now = System.nanoTime();
+                // A notch is a fixed distance — position control, and reversible — delivered as a glide when the
+                // application has asked for one (ScrollGlide), and at once when it has not.
                 if (s.yOffset() != 0) {
                     RetainedNode t = ancestorScrollable(hit, false);
                     if (t != null) {
-                        t.scrollY = clamp(t.scrollY - (float) s.yOffset() * WHEEL_STEP_EM * em(t), 0f,
-                                Math.max(0f, t.contentH - t.viewH));
-                        refreshScrollLock(t);
-                        changed = true;
+                        changed |= glide.by(t, 0f, -(float) s.yOffset() * WHEEL_STEP_EM * em(t), now);
+                        // Judged by where the wheel is heading, not where the view has got to: a lock that stayed
+                        // attached until the glide had left the edge would pin it back there every pass, and a
+                        // tail-following view could never be scrolled up.
+                        refreshScrollLock(t, glide.targetY(t));
                     }
                 }
                 if (s.xOffset() != 0) {
                     RetainedNode t = ancestorScrollable(hit, true);
                     if (t != null) {
-                        t.scrollX = clamp(t.scrollX + (float) s.xOffset() * WHEEL_STEP_EM * em(t), 0f,
-                                Math.max(0f, t.contentW - t.viewW));
-                        changed = true;
+                        changed |= glide.by(t, (float) s.xOffset() * WHEEL_STEP_EM * em(t), 0f, now);
                     }
                 }
                 if (changed) {
@@ -1346,6 +1516,11 @@ public final class InputDispatcher {
      * offset sits at the locked edge, detached once the user scrolls away. A no-op for unlocked containers.
      */
     private static void refreshScrollLock(RetainedNode n) {
+        refreshScrollLock(n, n.scrollY);
+    }
+
+    /** As {@link #refreshScrollLock(RetainedNode)}, judging attachment by offset {@code y} rather than the current. */
+    private static void refreshScrollLock(RetainedNode n, float y) {
         ScrollLock lock = n.scrollLock();
         if (lock == ScrollLock.NONE) {
             return;
@@ -1353,8 +1528,8 @@ public final class InputDispatcher {
         float maxY = Math.max(0f, n.contentH - n.viewH);
         float eps = LOCK_EDGE_EPS_EM * em(n);
         n.scrollAttached = lock == ScrollLock.BOTTOM
-                ? n.scrollY >= maxY - eps
-                : n.scrollY <= eps;
+                ? y >= maxY - eps
+                : y <= eps;
     }
 
     /** Recompute each observed node's interaction state and tell every observer on any change. */
@@ -1409,8 +1584,12 @@ public final class InputDispatcher {
         // Something is being grabbed: the pointer is captured and still driving it, wherever it has wandered to.
         // A drag in flight is the same fact said by the transfer layer — the hand is holding what it picked up,
         // whatever it is passing over, and an I-beam above a text field on the way would promise the wrong gesture.
-        if (scrollDrag != null || (session != null && !session.ended())) {
+        if (scrollDrag != null) {
             return CursorShape.GRABBING;
+        }
+        // Latched, the hand has let go and the thing stays with it, waiting to be put down: open, not closed.
+        if (session != null && !session.ended()) {
+            return session.latched() ? CursorShape.GRAB : CursorShape.GRABBING;
         }
         if (leftDown && dragCapture != null) {
             CursorShape declared = declaredCursor(dragCapture);
@@ -1426,15 +1605,23 @@ public final class InputDispatcher {
                 return CursorShape.GRAB;
             }
         }
-        // An explicit declaration on the node or an ancestor (a slider says GRAB), then the inferred rules.
-        CursorShape declared = declaredCursor(hoverHit);
-        if (declared != null) {
-            return declared;
+        // The nearest node that has something to say decides: an explicit declaration (a slider says GRAB), or what
+        // the node answers to. Nearest, not "declarations first": a card says GRAB because it can be picked up, and
+        // a button on the card is still a button — the pointer over it is about to click it, not to pick up the
+        // card it sits on. A declaration on the very node wins over what is inferred about it.
+        for (RetainedNode n = hoverHit; n != null; n = n.parent) {
+            CursorShape declared = nodeCursors.get(n.id);
+            if (declared != null) {
+                return declared;
+            }
+            if (answersClicks(n.id)) {
+                return CursorShape.POINTER;
+            }
+            if (isTextTarget(n)) {
+                return CursorShape.TEXT;
+            }
         }
-        if (isClickable(hoverHit)) {
-            return CursorShape.POINTER;
-        }
-        return isTextTarget(hoverHit) ? CursorShape.TEXT : CursorShape.DEFAULT;
+        return CursorShape.DEFAULT;
     }
 
     /** The nearest declared cursor on {@code hit} or an ancestor, or null if none declared one. */
@@ -1446,16 +1633,6 @@ public final class InputDispatcher {
             }
         }
         return null;
-    }
-
-    /** Whether {@code hit} or an ancestor answers clicks -- the same walk {@link #fireClick} uses. */
-    private boolean isClickable(RetainedNode hit) {
-        for (RetainedNode n = hit; n != null; n = n.parent) {
-            if (answersClicks(n.id)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /** Whether {@code n} is a text node that takes the text-placement cursor (editable, or selectable later). */

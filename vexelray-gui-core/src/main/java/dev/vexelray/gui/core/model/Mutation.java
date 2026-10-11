@@ -56,6 +56,9 @@ public interface Mutation {
         /** Re-attach a scroll-locked container to its locked edge. */
         void scrollToEdge(long id);
 
+        /** Put a scrolling container's view at an offset, in layout px, clamped to what it can scroll. */
+        void scrollTo(long id, float x, float y);
+
         /** Record that a node should be brought into view once the layout knows where it is. */
         void reveal(long id);
     }
@@ -191,6 +194,37 @@ public interface Mutation {
         @Override
         public void emitTo(Sink sink) {
             sink.scrollToEdge(id);
+        }
+    }
+
+    /**
+     * Put a scrolling container's view at an offset, in layout px — for something that is animating where a view
+     * looks, a step per frame, alongside other things it is moving: a carried card flying home while the lane it
+     * came from scrolls back to where it was when the card was picked up. Both are written in one batch, so the two
+     * land on the same frame and stay in step.
+     *
+     * <p>A cell per container: two offsets written before the next frame are one write, and the later one is the
+     * only one anybody could have seen.
+     */
+    record ScrollTo(long id, float x, float y) implements Mutation {
+
+        /** What two writes to the same container's offset share. */
+        private record Cell(long id) {
+        }
+
+        @Override
+        public long targetId() {
+            return id;
+        }
+
+        @Override
+        public Object cell() {
+            return new Cell(id);
+        }
+
+        @Override
+        public void emitTo(Sink sink) {
+            sink.scrollTo(id, x, y);
         }
     }
 

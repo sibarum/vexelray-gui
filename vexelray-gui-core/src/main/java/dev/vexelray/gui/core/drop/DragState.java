@@ -20,11 +20,21 @@ import dev.vexelray.gui.core.layout.Rect;
  * @param y         pointer y in client-space px
  * @param effect    what releasing now would do; {@link DropEffect#NONE} over a point that accepts nothing
  * @param indicator where to show it, in the same client-space px — meaningful only when {@code effect} accepts
+ * @param latched   whether the button has been let go and the thing stays with the pointer until a click puts it
+ *                  down — see {@link DragSession#latch}. A different state for the user, so drawn differently
  */
-public record DragState(boolean active, float x, float y, DropEffect effect, Rect indicator) {
+public record DragState(boolean active, float x, float y, DropEffect effect, Rect indicator, boolean latched) {
 
     /** No drag. The resting value, and what is published the moment one ends. */
-    public static final DragState NONE = new DragState(false, 0f, 0f, DropEffect.NONE, Rect.ZERO);
+    public static final DragState NONE = new DragState(false, 0f, 0f, DropEffect.NONE, Rect.ZERO, false);
+
+    /** The live session as it stands, or {@link #NONE} for no session. */
+    public static DragState of(DragSession live) {
+        return live == null
+                ? NONE
+                : new DragState(true, live.x(), live.y(), live.drop().effect(), live.drop().indicator(),
+                        live.latched());
+    }
 
     /** Whether a drag is in flight <em>and</em> would land somewhere. */
     public boolean accepts() {

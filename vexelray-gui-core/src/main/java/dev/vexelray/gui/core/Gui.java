@@ -1287,6 +1287,38 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
+     * Install where the pointer is put when this tree asks to carry it — the host's half of
+     * {@link #ridePointer}. The same seam as {@link #onPointerLock}: core can say where it wants the pointer and
+     * cannot reach an OS to put it there. Until one is installed, a ride moves nothing.
+     */
+    public Gui onPointerWarp(dev.vexelray.gui.core.input.PointerWarp warp) {
+        input.pointerWarp(warp);
+        return this;
+    }
+
+    /**
+     * Begin carrying the pointer along with an animation, until the hand takes it back — see
+     * {@link dev.vexelray.gui.core.input.PointerRide}. Safe from any thread.
+     */
+    public dev.vexelray.gui.core.input.PointerRide ridePointer() {
+        return input.ridePointer();
+    }
+
+    /**
+     * Glide the wheel: each notch moves where the view is heading, and the view closes half the remaining distance
+     * every {@code halfLife}. {@link java.time.Duration#ZERO} (the default) scrolls at once, which is the
+     * reduced-motion setting, and what a test that steps frames by hand wants.
+     *
+     * <p>Opt-in for the reason every motion here is: the application decides how its time passes. A notch is still a
+     * fixed distance either way — the wheel is position control, and that is not changed — only its delivery is.
+     * See {@code ScrollGlide} for why the curve is a half-life and not a duration.
+     */
+    public Gui scrollGlide(java.time.Duration halfLife) {
+        input.scrollGlide(halfLife.toNanos());
+        return this;
+    }
+
+    /**
      * The look every widget and the renderer's own chrome resolve their colours through — {@link Theme#DARK}
      * unless replaced. There is no other source of colour in the framework.
      */

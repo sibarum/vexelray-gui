@@ -102,12 +102,23 @@ class TreeReorderTest {
         h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, (int) x, (int) y, 0));
     }
 
-    /** A drag from one row to a point, over enough frames that the user would have seen it. */
+    /** The click that puts a latched drag down: a press and its release. */
+    private static void click(HeadlessGui h, float x, float y) {
+        press(h, x, y);
+        release(h, x, y);
+    }
+
+    /**
+     * A drag from one row to a point, over enough frames that the user would have seen it: picked up, let go —
+     * which keeps it, latched — and put down with a click.
+     */
     private static void drag(HeadlessGui h, float fromY, float toY) {
         press(h, 40f, fromY);
         move(h, 40f, toY);
         h.frame();          // the drag becomes visible here
         release(h, 40f, toY);
+        h.frame();
+        click(h, 40f, toY);
         h.frame();
     }
 
@@ -259,6 +270,7 @@ class TreeReorderTest {
             assertFalse(h.gui.dragSession().drop().accepts());
 
             release(h, 40f, midOf(tree, "src"));
+            click(h, 40f, midOf(tree, "src"));
             h.frame();
             assertEquals(List.of(), moves);
             tree.close();
@@ -282,6 +294,7 @@ class TreeReorderTest {
             press(h, 40f, from);
             move(h, 40f, to);
             release(h, 40f, to);
+            click(h, 40f, to);
             h.frame();          // the whole gesture inside one drain: never drawn
 
             assertEquals(List.of(), moves, "the user saw no drag, so there was no drop");

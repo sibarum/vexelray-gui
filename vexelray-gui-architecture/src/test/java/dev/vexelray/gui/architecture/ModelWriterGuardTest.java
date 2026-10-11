@@ -47,6 +47,7 @@ class ModelWriterGuardTest {
             "dev/vexelray/gui/core/model/RetainedNode",     // the model's own typed accessors
             "dev/vexelray/gui/core/model/Reconciler",       // command stage: applies Mutations (the single writer)
             "dev/vexelray/gui/core/input/InputDispatcher",  // dispatch stage: proposes scroll offsets, focus state
+            "dev/vexelray/gui/core/input/ScrollGlide",      // dispatch stage: the wheel's offsets, stepped per frame
             "dev/vexelray/gui/core/layout/FlexLayout",      // compute stage: boxes, viewport, overflow, scroll clamp
             "dev/vexelray/gui/core/layout/Displacement",    // motion stage: where a node is drawn vs laid out
             "dev/vexelray/gui/core/layout/Clip",            // compute stage: what survives the ancestors' clips

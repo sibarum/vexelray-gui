@@ -107,8 +107,10 @@ something out of a branch.
 
 This is the protection against the gesture that was meant to be a click. A fast press-twitch-release satisfies
 any distance threshold — `DragGesture` reports it as a drag, correctly, because distance is what separates a drag
-from a click. Without this rule it would land a real, undoable mutation from a drag that never appeared on screen
-for a single frame.
+from a click. Since a release latches rather than drops (§13), such a twitch now leaves the thing in hand where the
+user can see it; the rule still holds for the click that puts it down, which a burst of input can deliver in the
+same drain as the pick-up. Without it that would land a real, undoable mutation from a drag that never appeared on
+screen for a single frame.
 
 Thresholds help and are tuned for it — the drop path uses 6px/90ms where the slider path uses 2px and no delay,
 because a tree row is usually clicked and has to survive the hand movement of an ordinary click. But thresholds
@@ -145,7 +147,8 @@ back, happening silently, is worse than one that does not happen.
 
 ## 7. Escape belongs to the drag
 
-Escape while a drag is in flight cancels it and goes no further. Two things about that are deliberate.
+Escape while a drag is in flight cancels it and goes no further — and so, once the drag is latched (§13), does a
+right click, which is used up by cancelling and opens no menu. Two things about Escape are deliberate.
 
 **`DragGesture` is fed pointer events only.** It cancels on Escape if it is fed keys — and it *observes* the
 stream rather than consuming from it, so it would cancel the drag and the same key would go on to dismiss a modal
@@ -211,7 +214,7 @@ is when the answer matters.
 |---|---|
 | **Cross-window, same process** | The capture work already makes this tractable — only the window that saw the press gets the motion and the release, so there is exactly one session and no ambiguity about the source. What it needs is the session lifted from `Gui` to `GuiApp`, because each window has its own `Gui`, bus and dispatcher. The drop window must be resolved by asking each window's `isPointerTarget()` (which the OS answers, so occlusion and z-order come free) rather than by rectangle maths over window bounds. **A cross-window drag must not take the pointer lock** — `ClipCursor`/`SetCursorPos` are process-global, and the lock destroys the absolute position a drop needs. |
 | **OS file drop** | Cannot come through Tactroller at all: the source process owns the mouse, so there is no `ButtonPressed` in this process and `DragGesture` is blind to it by construction. `RegisterDragDrop` needs the real HWND on an STA thread with a message pump — Tactroller attaches to an HWND it does not own and pumps a message-only window on its own thread. The real window proc is in `vexelray-os-windows`, alongside the client-decoration work, and that is where it belongs. |
-| **Auto-scroll near an edge** | Not an oversight. Scroll-while-dragging works today because the wheel is routed positionally and never consults the drag. An edge-triggered auto-scroll changes layout in response to hovering, which conflicts with the rule that hovering must never move the pointer's target. If it is built it needs its own visual cue and a deliberate decision, not an inherited convention. |
+| **Auto-scroll near an edge** | **Ruled out (2026-10-11), not deferred** — see §13.2. Every edge auto-scroll is rate control: the pointer's position sets a speed, so the hand steers an integrator through a curve somebody tuned, and however smooth the curve the result is a magic spot that races and a margin that crawls. With the drag latched (§13.1) the hand is free, and the wheel — already position control, already reversible, already learned — scrolls underneath the carried thing. |
 | **Multi-select payloads** | `Payload` can already carry a list; nothing else is designed for it, and it should be driven by a real requirement rather than guessed at. |
 | **Decks other than a column** | A row, a grid and free placement are each a deck that measures its slots differently (§12.4). The flights, the gaps, the lift and the drag do not change. A row is the column with the axes swapped; a grid needs gaps that reflow across a line break, which a height alone cannot express; free placement has no slots at all and is a flight that lands where it was let go. Built when an application needs one. |
 | **Cards between a board and something else** | A deck takes only its own board's `itemType`, and the board's cards can be dropped on any target that asks for that type (one that moves it makes the card fade where it was let go). The other direction — a tree row dropped into a deck — needs the deck to build a card for an item it did not hand out, which is a conversion only the application can supply. |
@@ -244,6 +247,13 @@ singular and lives in the GUI.** Adding a source should touch nothing in `DropTa
 | Home is not an edit | `BoardTest.homeIsNotAnEdit` |
 | A gap wandered back to reopens rather than doubling | `BoardTest.wanderingReopensTheSameGap` |
 | Undo flies the same card back | `BoardTest.aDropLands`, `BoardTest.betweenDecks` |
+| Letting go keeps the drag; a click drops it | `DragWatchTest.releasingLatches`, `BoardTest.letGoAndClick` |
+| A latched right click cancels and opens no menu | `DragWatchTest.aRightClickCancels` |
+| A press is armed until it comes loose or comes up | `DragWatchTest.armedThenLooseOrClick`, `BoardTest.heldThenLoose` |
+| A click springs back to exactly where it was | `BoardTest.aClickLiftsNothing` |
+| A cancel scrolls the lanes back with the card | `BoardTest.cancellingScrollsBack` |
+| A still carry, or a still press, owes no frames | `BoardTest.aStillCarryParks`, `BoardTest.aStillPressParks` |
+| The wheel glides, accumulates, lands exactly, and yields | `ScrollGlideTest` |
 
 ---
 
@@ -322,3 +332,74 @@ A carried card is ringed in the accent, inside its own corners. A focused card a
 two accent outlines a few pixels apart is one too many — so while a card is up its focus ring is off, and if the
 ring was showing when the card was picked up the outline starts at full strength rather than fading in, so the
 ring is replaced rather than blinking out. The ring comes back when the card has set down.
+
+---
+
+## 13. Picking up is a gesture
+
+### 13.1 Letting go of the button does not drop
+
+A drag is recognised as before — a press that travels and holds — but releasing the button **latches** it: the
+thing stays with the pointer, the button is free, and the next left click puts it down where it is aimed. Escape,
+or a right click, takes it home. `DragSession.latch` is the state; the dispatcher's `latchedPointer` is the
+protocol, and it consumes the click that drops and the click that cancels together with their releases, so neither
+is also a click on whatever was underneath.
+
+**Why (ruled 2026-10-11, by the user):** holding a button for the length of a carry is what makes the far end of a
+long list a feat of grip, and what turns a slipped finger into a drop in the wrong place. Picking something up is a
+gesture; carrying it should not be a posture. Every drag in the framework latches — the tree's as well as the
+board's — because two drag protocols in one application would be the one inconsistency a user cannot learn around.
+
+### 13.2 The wheel, not the edge
+
+With the hand free, scrolling while carrying is the wheel, which already reached the scroller under the pointer.
+
+**Why (ruled 2026-10-11, by the user):** edge auto-scroll was ruled out above (§10), and the reason is the order of
+the relationship, not its tuning. A position-to-speed mapping makes the hand steer an integrator: hold still and
+the content keeps moving, and the only control left is how long to wait. The wheel is position control — a notch
+is a fixed distance, the next one back undoes it, and time plays no part — and every user already has one.
+
+What the wheel lacked was delivery: a notch moved the content three ems in one frame, the slideshow scrolling the
+eye has to re-find its place after. It now glides (`ScrollGlide`, opted into with `Gui.scrollGlide` and turned on
+by the framework's shell for every window): a notch moves where the view is heading and the view closes half the
+remaining distance per half-life, so notches add up, the speed is the same at any frame rate, and there is no end
+to jump at. A glide gives way to anything else that moves the view — the thumb, a reveal, a scroll lock — rather
+than pulling against it.
+
+### 13.3 Every state shows, and none of them in words
+
+**Ruled 2026-10-11, by the user:** every state the drag can be in has its own visible sign, acting out what the
+state means, and none of it is text. The states and their signs, as built:
+
+| State | Means | Shows as |
+|---|---|---|
+| Hover over a card | can be picked up | the open hand — the one thing hover may change |
+| Pressed, before the threshold | held, not yet loose | the card sinks a rung toward its lane and follows the pointer part of the way, held back (`DragWatch.armed`) |
+| The threshold | loose | the card catches up with the hand and rises: the transition point |
+| Carried, button down | gripped | top rung of elevation, the accent outline, the closed hand |
+| Carried, button up | hanging from the pointer | a rung lower, and the open hand |
+| Over a slot that takes it | it goes here | that lane opens a gap with the landing pad |
+| Over home, nothing, or a refusal | letting go sends it home | its own gap reopens, with the pad |
+| Over a target that is not a lane | it will leave | every gap closes |
+| Wheel while carrying | the lane moves under it | the lane glides; the gap follows |
+| Dropped | settling | the card flies into its gap and sinks to rest, focused |
+| Cancelled | going back | lanes scroll back, the card flies home, the pointer rides on it |
+
+A click that never came loose springs back from its pull and rises from its sink: the press showed, and so does
+its ending.
+
+### 13.4 A cancel undoes the gesture, not only the card
+
+Escape puts back everything the carry changed: every lane the wheel moved scrolls back to where it was looking when
+the card came loose, the card flies home, and the pointer rides home on it at the point it was gripped — all on the
+card's own travel, a step per frame, so the card arrives in a slot that has stopped moving and the pointer ends
+where the drag began, over the card, which is focused.
+
+The pointer is moved through `Gui.ridePointer`, which the host backs with `Gui.onPointerWarp` (tactroller's new
+`warpPointer`). **The hand wins**: a ride checks each step against where the pointer actually is, and once the user
+has moved it themselves, every later step is refused and the card goes home alone. Moving a pointer the user has
+started moving would be the worst kind of jump — one that fights them.
+
+`Node.scrollTo` is the instrument the lanes are scrolled back with: immediate, so a lane and the card going home
+are written in one batch and land on one frame, on one clock. A second clock is how a card arrives in a slot that is
+still moving.

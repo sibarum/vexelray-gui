@@ -40,6 +40,27 @@ package dev.vexelray.gui.core.drop;
 public interface DragWatch {
 
     /**
+     * A press has landed somewhere a drag could begin, and the gesture is not yet a drag: the button is down and
+     * the pointer has not yet travelled far enough, or been held long enough, to tell a drag from a click. Called
+     * every frame of that, with where the press landed and where the pointer is now.
+     *
+     * <p>A state the user is in, and so one that should show: whatever was pressed is <em>held</em> and has not
+     * come loose. The moment it does is the first {@link #moved}; if it never does, {@link #disarmed} — the
+     * gesture was a click after all.
+     *
+     * @param pressX where the press landed, client-space px
+     * @param pressY where the press landed, client-space px
+     * @param x      where the pointer is now
+     * @param y      where the pointer is now
+     */
+    default void armed(float pressX, float pressY, float x, float y) {
+    }
+
+    /** The press that {@link #armed} was about ended without becoming a drag: a click, or a press abandoned. */
+    default void disarmed() {
+    }
+
+    /**
      * The drag as it stands this frame, after it was re-resolved against the tree. Called every frame a drag is
      * in flight, including the frame it began on — whether or not the pointer moved, since the tree under a
      * still pointer can move.

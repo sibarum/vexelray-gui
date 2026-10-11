@@ -241,6 +241,23 @@ public final class Reconciler implements Mutation.Sink {
     }
 
     @Override
+    public void scrollTo(long id, float x, float y) {
+        RetainedNode n = index.get(id);
+        if (n == null) {
+            return;
+        }
+        // Written as asked; the layout pass clamps it to what the content allows, against the content measured
+        // in the same pass rather than the one before.
+        n.scrollX = Math.max(0f, x);
+        n.scrollY = Math.max(0f, y);
+        // An offset chosen by the application is a position away from a locked edge, and the lock would otherwise
+        // pin it straight back. Put at the edge, the next scroll re-attaches it as the user's own would.
+        n.scrollAttached = false;
+        layoutDirty = true;
+        drawDirty = true;
+    }
+
+    @Override
     public void reveal(long id) {
         RetainedNode n = index.get(id);
         // Recorded, not answered: where the node is has not been decided yet this frame. The frame reads

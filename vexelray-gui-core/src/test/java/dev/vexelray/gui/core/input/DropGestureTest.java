@@ -111,13 +111,17 @@ class DropGestureTest {
     }
 
     @Test
-    @DisplayName("a drag released over a target commits its change, once, undoably")
+    @DisplayName("a drag put down over a target commits its change, once, undoably")
     void aDropCommits() {
         tree();
         press(20, 20);
         move(20, 60, 0, 40);
         frame();
 
+        release(20, 60);
+        frame();
+        assertEquals(List.of(), applied, "letting go of the button is not putting it down");
+        press(20, 60);
         release(20, 60);
         frame();
 
@@ -130,8 +134,9 @@ class DropGestureTest {
     }
 
     /**
-     * The protection the requirement asked for by name. Press, twitch, release inside one drain: the recogniser
-     * reports it as a drag because the distance was met, but no frame ever rendered it, so nothing commits.
+     * The protection the requirement asked for by name. Press, twitch, release, click inside one drain: the
+     * recogniser reports a drag because the distance was met, and the click puts it down, but no frame ever
+     * rendered it, so nothing commits.
      */
     @Test
     @DisplayName("a click too fast to see does not reorganise anything")
@@ -140,6 +145,8 @@ class DropGestureTest {
 
         press(20, 20);
         move(20, 60, 0, 40);
+        release(20, 60);
+        press(20, 60);
         release(20, 60);
         frame();
 
@@ -252,6 +259,8 @@ class DropGestureTest {
         assertTrue(dispatcher.dragSession().drop().accepts(), "it still resolves, so the indicator still draws");
 
         release(20, 60);
+        press(20, 60);
+        release(20, 60);
         frame();
 
         assertEquals(List.of(), applied, "a mutation with no way back must not happen silently");
@@ -266,6 +275,8 @@ class DropGestureTest {
         press(20, 20);
         move(20, 60, 0, 40);
         frame();
+        release(20, 60);
+        press(20, 60);
         release(20, 60);
         frame();
 

@@ -532,6 +532,25 @@ public final class Node {
     }
 
     /**
+     * Look at this scrolling container's content from {@code (x, y)}, in layout px — the space
+     * {@link dev.vexelray.gui.core.layout.NodeLayout#scrollX()} reports it in — clamped by the layout to what the
+     * content allows.
+     *
+     * <p><b>At once, not glided.</b> This is for something animating where a view looks alongside other things it
+     * is moving, a step per frame: a lane scrolling back to where it was while the card that left it flies home.
+     * Written in the same batch as the card's position, the two land on the same frame and cannot drift apart. A
+     * glide here would be a second clock, and two clocks are how a card ends up arriving in a slot that is still
+     * moving. The wheel glides on its own; this is the instrument it glides with.
+     *
+     * <p>A container with a scroll lock is detached by this, as by the user's own scroll; brought back to the edge,
+     * it re-attaches the same way.
+     */
+    public Node scrollTo(float x, float y) {
+        sink.post(new Mutation.ScrollTo(id, x, y));
+        return this;
+    }
+
+    /**
      * Ask every scrolling ancestor to bring this node inside its viewport, by the least scrolling that does it.
      *
      * <p><b>Least, and leading-edge first.</b> A node just past the bottom edge comes up by exactly the shortfall

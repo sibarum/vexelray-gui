@@ -229,7 +229,9 @@ public final class Demo {
      * is this method, generalised; an application on the framework passes that instead.
      */
     private static Gui look(Gui gui, Theme theme) {
-        return gui.theme(theme).zoomRange(0.5f, 3f, 1.25f);
+        // The wheel glides rather than jumping a notch at a time: each notch is still a fixed distance, delivered
+        // over a few frames, closing half of what is left every 45 ms.
+        return gui.theme(theme).zoomRange(0.5f, 3f, 1.25f).scrollGlide(java.time.Duration.ofMillis(45));
     }
 
     /**
@@ -289,6 +291,17 @@ public final class Demo {
         try {
             input.attach(NativeWindow.ofHwnd(app.windowHandle()));
             input.setCoordinateSpace(CoordinateSpace.CLIENT);
+            // The GUI may carry the pointer along with something it animates — a cancelled card flying home with
+            // the hand on it. Positions are in the CLIENT space just configured, the same space they arrive in.
+            if (input.supportsPointerWarp()) {
+                gui.onPointerWarp((x, y) -> {
+                    try {
+                        input.warpPointer(Math.round(x), Math.round(y));
+                    } catch (BackendException e) {
+                        // Best effort: a pointer that stays put is a ride that yields, not a failure.
+                    }
+                });
+            }
             System.out.println("display scale: " + input.contentScale()
                     + "x (not applied — see attachInput; the canvas is logical, the OS already scales it)");
         } catch (BackendException e) {

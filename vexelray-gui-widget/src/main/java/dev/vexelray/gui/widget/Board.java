@@ -113,7 +113,27 @@ public final class Board<T> {
         public void ended(DragState last, DropEffect performed) {
             Board.this.ended(performed);
         }
+
+        @Override
+        public void armed(float pressX, float pressY, float x, float y) {
+            Board.this.armed(pressX, pressY, x, y);
+        }
+
+        @Override
+        public void disarmed() {
+            Board.this.disarmed();
+        }
     };
+
+    /**
+     * How much of the pointer's travel a pressed card follows before it comes loose. Less than all of it, so the
+     * card visibly resists — it is held in its lane, and being pulled — and more than none, so the hand can see it
+     * has hold of it. The moment it comes loose it catches up the rest, which is the transition.
+     */
+    private static final float PULL = 0.35f;
+
+    /** The card pressed and not yet loose, or null. Guarded by this. */
+    private Card<T> armedCard;
 
     private volatile Ramp motion;
     private volatile Length spacing = Length.rem(0.3125f);
@@ -195,7 +215,7 @@ public final class Board<T> {
      * shrinking. For a test, or a script waiting to photograph the board at rest.
      */
     public synchronized boolean settled() {
-        if (held != null || !flights.isEmpty()) {
+        if (held != null || armedCard != null || !flights.isEmpty()) {
             return false;
         }
         for (Deck<T> deck : decks) {
@@ -206,7 +226,7 @@ public final class Board<T> {
             }
         }
         for (Card<T> card : cards.values()) {
-            if (card.lift.running) {
+            if (card.lift.running || card.press.running || card.give.running || card.hold.running) {
                 return false;
             }
         }
@@ -239,13 +259,34 @@ public final class Board<T> {
         float rimFloor;
         /** Whether the board has taken the focus ring off the face for the carry, and owes it back. */
         boolean ringOff;
+        /** 0 at rest .. 1 pressed into its lane: held, and not yet come loose. */
+        final Tween press;
+        /** 1 gripped (the button is down) .. 0 hanging from the pointer (latched, the hand let go). */
+        final Tween hold;
+        /**
+         * How much of {@link #pullX}/{@link #pullY} is drawn: 1 while held before the threshold, easing to 0 when
+         * the press turns out to be a click and the card springs back.
+         */
+        final Tween give;
+        /** How far the held card has been pulled toward the pointer before coming loose, px. */
+        float pullX;
+        float pullY;
+        /** Whether a pull is drawn on it that has to be cleared. */
+        boolean pullPainted;
 
         Card(Board<T> board, T item, Node carrier, Node face) {
             this.item = item;
             this.carrier = carrier;
             this.face = face;
             this.lift = new Tween(board, 0f);
+            this.press = new Tween(board, 0f);
+            this.hold = new Tween(board, 1f);
+            this.give = new Tween(board, 0f);
         }
+    }
+
+    /** A lane's view being put back where it was when the drag began, on the same clock as the card going home. */
+    record ScrollBack<T>(Deck<T> deck, float fromX, float fromY, float toX, float toY) {
     }
 
     /** A place in a deck: a card resting, a card arriving or leaving, or an empty gap opening or closing. */
@@ -297,6 +338,12 @@ public final class Board<T> {
         Slot<T> to;
         /** Following the pointer. */
         boolean held;
+        /** The lanes scrolling back with it, on a cancel. Empty otherwise. */
+        List<ScrollBack<T>> scrollBacks = List.of();
+        /** The pointer riding home on it at the grip, on a cancel; null otherwise, or once the hand took it back. */
+        dev.vexelray.gui.core.input.PointerRide ride;
+        float gripX;
+        float gripY;
 
         Flight(Board<T> board, Card<T> card, float x, float y, float w, float opacity) {
             this.card = card;
@@ -339,6 +386,8 @@ public final class Board<T> {
         /** Where the release committed to, once the drop's change has been performed. */
         Deck<T> landDeck;
         Placement<T> landAt;
+        /** Where every lane was looking when the card came loose, so a cancel can put them all back. */
+        Map<Deck<T>, float[]> scrolledAt = Map.of();
 
         Held(Board<T> board, long token, Card<T> card, Deck<T> home, T homeBefore, float pressX, float pressY,
              Rect at) {
@@ -615,6 +664,9 @@ public final class Board<T> {
         gui.claim(face, Shortcut.of(Key.DOWN, Modifier.ALT), ClaimScope.FOCUSED, () -> nudge(card, 0, 1));
         gui.claim(face, Shortcut.of(Key.LEFT, Modifier.ALT), ClaimScope.FOCUSED, () -> nudge(card, -1, 0));
         gui.claim(face, Shortcut.of(Key.RIGHT, Modifier.ALT), ClaimScope.FOCUSED, () -> nudge(card, 1, 0));
+        // An open hand over a card: it can be picked up. Hover changes nothing on screen but the pointer, which is
+        // the one thing that may. A button on the card keeps its own pointer — the nearer node decides.
+        gui.cursor(face, dev.vexelray.gui.core.input.CursorShape.GRAB);
         cards.put(item, card);
         return card;
     }
@@ -716,6 +768,11 @@ public final class Board<T> {
         slot.box.append(card.carrier);
         card.carrier.unfloat().width(Length.FILL).hitInert(false).opacity(1f);
         slot.paintedPx = Float.NaN;
+        if (flight.ride != null) {
+            flight.ride.end();   // home, and the pointer with it
+            flight.ride = null;
+        }
+        flight.scrollBacks = List.of();
     }
 
     // ------------------------------------------------------------------------------------------- the gaps
@@ -1030,9 +1087,12 @@ public final class Board<T> {
             if (now == lastMoved) {
                 return;
             }
-            lastMoved = now;
             Held<T> h = held;
-            if (h == null) {
+            // The same drag as last frame — a hand held still, a card carried and waiting — writes nothing. Every
+            // write owes a frame, and a carry repainted every frame for no change is a loop that never parks.
+            boolean same = lastMoved != null && now.equals(lastMoved) && h != null && h.lifted;
+            lastMoved = now;
+            if (h == null || same) {
                 return;
             }
             gui.batch(() -> {
@@ -1041,6 +1101,8 @@ public final class Board<T> {
                 }
                 h.px = now.x();
                 h.py = now.y();
+                // Gripped while the button is down; hanging from the pointer, a rung lower, once it is up.
+                h.card.hold.toward(now.latched() ? 0f : 1f);
                 if (now.accepts() && now.indicator().equals(h.aimRect)) {
                     h.gap = gapAt(h.aimDeck, h.aimAt);
                 } else if (now.accepts()) {
@@ -1072,21 +1134,41 @@ public final class Board<T> {
         Card<T> card = h.card;
         Slot<T> slot = card.slot;
         Rect r = card.carrier.layout().rect();
+        // Where the press had pulled it to, which is where it is drawn: the flight starts there, not at its slot.
+        float pulledX = 0f;
+        float pulledY = 0f;
+        if (armedCard == card) {
+            pulledX = card.pullX * card.give.value;
+            pulledY = card.pullY * card.give.value;
+            card.give.snap(0f);   // the pull is now the flight's offset, written in the same batch
+            card.press.toward(0f);
+            armedCard = null;
+        } else if (armedCard != null) {
+            disarm();
+        }
         card.h = r.h();
         slot.card = null;
         slot.full = r.h();
         slot.open.snap(1f);
         slot.marked = true;
         card.slot = null;
-        Flight<T> flight = new Flight<>(this, card, r.x(), r.y(), r.w(), 1f);
+        Flight<T> flight = new Flight<>(this, card, r.x() + pulledX, r.y() + pulledY, r.w(), 1f);
         flight.held = true;
         h.flight = flight;
         takeOff(card, flight);
-        h.offX = h.pressX - now.x();
-        h.offY = h.pressY - now.y();
+        // The rest of the way to the grip, which the card catches up: the transition the user sees as "loose".
+        h.offX = h.pressX + pulledX - now.x();
+        h.offY = h.pressY + pulledY - now.y();
         h.catchUp.snap(1f);
         h.catchUp.toward(0f);
         card.lift.toward(1f);
+        card.hold.snap(1f);
+        Map<Deck<T>, float[]> at = new HashMap<>();
+        for (Deck<T> deck : decks) {
+            NodeLayout l = deck.node.layout();
+            at.put(deck, new float[] {l.scrollX(), l.scrollY()});
+        }
+        h.scrolledAt = at;
         dev.vexelray.gui.core.input.FocusState focus = gui.focusState();
         card.rimFloor = focus.nodeId() == card.face.id() && gui.theme().focusRing().shows(focus.cause(), false)
                 ? 1f : 0f;
@@ -1134,6 +1216,7 @@ public final class Board<T> {
                     Slot<T> gap = gapAt(h.home, homePlacement(h));
                     gap.marked = true;
                     land(flight, gap);
+                    goBack(h, flight);
                 }
                 aimGaps();
                 reconcileAll();
@@ -1141,6 +1224,102 @@ public final class Board<T> {
             });
         }
         flush();
+    }
+
+    /**
+     * Undo the whole gesture, not only the card's part of it: every lane the wheel moved while the card was carried
+     * scrolls back to where it was looking when the card came loose, and the pointer rides home on the card at the
+     * point it was gripped — all of it on the card's own travel, a step per frame, so the card arrives in a slot that
+     * has stopped moving and the pointer ends where the drag began. The card is focused, which is where the drag
+     * began too.
+     */
+    private void goBack(Held<T> h, Flight<T> flight) {
+        List<ScrollBack<T>> back = new ArrayList<>();
+        for (Map.Entry<Deck<T>, float[]> e : h.scrolledAt.entrySet()) {
+            NodeLayout now = e.getKey().node.layout();
+            float[] was = e.getValue();
+            if (now.scrollX() != was[0] || now.scrollY() != was[1]) {
+                back.add(new ScrollBack<>(e.getKey(), now.scrollX(), now.scrollY(), was[0], was[1]));
+            }
+        }
+        flight.scrollBacks = back;
+        flight.gripX = h.grabX;
+        flight.gripY = h.grabY;
+        flight.ride = gui.ridePointer();
+        gui.focus(flight.card.face);
+    }
+
+    /**
+     * A press is held on a card and has not come loose: the card sinks into its lane and follows the pointer part of
+     * the way, held back. Called every frame of it, so the pull tracks the hand exactly.
+     */
+    private void armed(float pressX, float pressY, float x, float y) {
+        synchronized (this) {
+            if (held != null && held.lifted) {
+                return;
+            }
+            Card<T> card = armedCard;
+            if (card == null) {
+                card = cardAt(pressX, pressY);
+                if (card == null) {
+                    return;   // a press on something that is not one of this board's cards
+                }
+                armedCard = card;
+                card.give.snap(1f);
+                card.press.toward(1f);
+            }
+            float pullX = (x - pressX) * PULL;
+            float pullY = (y - pressY) * PULL;
+            if (pullX == card.pullX && pullY == card.pullY && armedCard == card && card.give.value == 1f
+                    && !card.press.running) {
+                return;   // held still: nothing to draw, and a write would owe a frame for nothing
+            }
+            card.pullX = pullX;
+            card.pullY = pullY;
+            gui.batch(this::paint);
+        }
+        flush();
+    }
+
+    /** The press came up before it came loose: a click, and the card springs back. */
+    private void disarmed() {
+        synchronized (this) {
+            if (armedCard == null) {
+                return;
+            }
+            gui.batch(() -> {
+                disarm();
+                paint();
+            });
+        }
+        flush();
+    }
+
+    /** The armed card was clicked, not carried: it springs back into its lane and rises back to rest. */
+    private void disarm() {
+        Card<T> card = armedCard;
+        armedCard = null;
+        card.give.toward(0f);
+        card.press.toward(0f);
+    }
+
+    /** The card resting under {@code (x, y)} in a deck cards can be picked up from, or null. */
+    private Card<T> cardAt(float x, float y) {
+        for (Deck<T> deck : decks) {
+            if (deck.reorder == null) {
+                continue;
+            }
+            for (Slot<T> slot : deck.slots) {
+                if (!slot.natural()) {
+                    continue;
+                }
+                Rect r = slot.card.carrier.layout().rect();
+                if (y >= r.y() && y < r.y() + r.h() && x >= r.x() && x < r.x() + r.w()) {
+                    return slot.card;
+                }
+            }
+        }
+        return null;
     }
 
     /**
@@ -1239,14 +1418,23 @@ public final class Board<T> {
     private Rect slotRect(Slot<T> slot) {
         Deck<T> deck = slot.deck;
         Rect inner = deck.inner.layout().rect();
+        float x = inner.x();
         float y = inner.y();
+        // A lane being scrolled back in this very batch: the layout read is the last frame's, and this frame's offset
+        // is the one being written, so the column is where the last frame had it less the scroll it is about to do.
+        // Without this the card going home trails its slot by a frame's scroll all the way back.
+        if (!Float.isNaN(deck.scrollWriteY)) {
+            NodeLayout view = deck.node.layout();
+            x += view.scrollX() - deck.scrollWriteX;
+            y += view.scrollY() - deck.scrollWriteY;
+        }
         for (Slot<T> s : deck.slots) {
             if (s == slot) {
                 break;
             }
             y += slotPx(s);
         }
-        return new Rect(inner.x(), y, inner.w(), slotPx(slot));
+        return new Rect(x, y, inner.w(), slotPx(slot));
     }
 
     private float dpi() {
@@ -1257,12 +1445,29 @@ public final class Board<T> {
         return Length.dp(px / dpi());
     }
 
-    /** A card's elevation at {@code lift}, between its resting rung and the top of the ladder. */
+    /** A card's elevation at rest: what it is built with. */
     private Length elevation(float lift) {
         Relief relief = gui.theme().relief();
         float rest = rungRem(relief, restRung);
         float carried = rungRem(relief, Relief.OVERLAY);
         return Length.rem(rest + (carried - rest) * lift);
+    }
+
+    /**
+     * Where a card stands off the page for the state it is in. Pressed, it sinks a rung toward its lane — held, and
+     * not loose. Lifted, it rises to the top of the ladder while the button grips it, and a rung below that once the
+     * hand has let go and it hangs from the pointer. Every state its own depth, and every change between them a
+     * tween, so the depth never steps.
+     */
+    private Length elevation(Card<T> card) {
+        Relief relief = gui.theme().relief();
+        float rest = rungRem(relief, restRung);
+        float pressed = rungRem(relief, restRung - 1);
+        float base = rest + (pressed - rest) * card.press.value;
+        float hanging = rungRem(relief, Relief.FLOATING);
+        float gripped = rungRem(relief, Relief.OVERLAY);
+        float carried = hanging + (gripped - hanging) * card.hold.value;
+        return Length.rem(base + (carried - base) * card.lift.value);
     }
 
     private static float rungRem(Relief relief, int rung) {
@@ -1278,6 +1483,25 @@ public final class Board<T> {
      */
     private void paint() {
         Color accent = gui.theme().color(Role.ACCENT);
+        // Lanes scrolling back go first, so every slot measured below is measured against the offset this batch
+        // writes rather than the one the last frame drew.
+        for (Deck<T> deck : decks) {
+            deck.scrollWriteX = Float.NaN;
+            deck.scrollWriteY = Float.NaN;
+        }
+        for (Flight<T> flight : flights) {
+            if (flight.to == null || flight.scrollBacks.isEmpty()) {
+                continue;
+            }
+            float t = flight.travel.value;
+            for (ScrollBack<T> back : flight.scrollBacks) {
+                float sx = back.fromX() + (back.toX() - back.fromX()) * t;
+                float sy = back.fromY() + (back.toY() - back.fromY()) * t;
+                back.deck().node.scrollTo(sx, sy);
+                back.deck().scrollWriteX = sx;
+                back.deck().scrollWriteY = sy;
+            }
+        }
         for (Deck<T> deck : decks) {
             if (deck.orderDirty) {
                 deck.orderDirty = false;
@@ -1366,8 +1590,28 @@ public final class Board<T> {
             flight.x = flight.fromX + (to.x() - flight.fromX) * t;
             flight.y = flight.fromY + (to.y() - flight.fromY) * t;
             flight.w = flight.fromW + (to.w() - flight.fromW) * t;
+            // The hand rides home on the card, at the grip: the same step, so the two cannot come apart. If the
+            // hand has moved the pointer itself, the ride has yielded and the card goes on alone.
+            if (flight.ride != null && !flight.ride.to(flight.x + flight.gripX, flight.y + flight.gripY)) {
+                flight.ride.end();
+                flight.ride = null;
+            }
         }
         flight.card.carrier.floatAt(px(flight.x), px(flight.y)).width(px(flight.w)).opacity(flight.fade.value);
+    }
+
+    /**
+     * A pressed card, pulled part of the way toward the pointer: drawn displaced inside its slot, which does not move.
+     * A visual offset rather than a layout one, so the lane does not reflow under a press that may yet be a click.
+     */
+    private void paintPull(Card<T> card) {
+        float give = card.give.value;
+        if (give <= 0f && !card.pullPainted) {
+            return;
+        }
+        float em = gui.rootEmPx() * gui.zoom().value() * dpi();
+        card.carrier.translate(card.pullX * give / em, card.pullY * give / em);
+        card.pullPainted = give > 0f;
     }
 
     /**
@@ -1378,8 +1622,13 @@ public final class Board<T> {
      * card has set down.
      */
     private void paintLift(Card<T> card, Color accent) {
+        paintPull(card);
         float lift = card.lift.value;
         float rim = Math.max(lift, card.rimFloor);
+        boolean depth = lift > 0f || card.press.value > 0f || card.press.running || card.hold.running;
+        if (depth) {
+            card.face.elevation(elevation(card));
+        }
         if (rim > 0f && !card.ringOff) {
             card.face.focusRing(dev.vexelray.gui.core.style.FocusRing.NONE);
             card.ringOff = true;
@@ -1390,7 +1639,9 @@ public final class Board<T> {
         if (rim <= 0f && !card.liftPainted) {
             return;
         }
-        card.face.elevation(elevation(lift));
+        if (!depth) {
+            card.face.elevation(elevation(card));   // the last step down, back to rest
+        }
         card.liftPainted = rim > 0f;
         if (!card.liftPainted) {
             card.carrier.overlay(null);

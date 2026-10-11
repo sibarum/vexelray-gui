@@ -143,11 +143,15 @@ class DragWatchTest {
         press(20, 20);
         move(20, 60);
         frame();
+        release(20, 60);
+        frame();
+        move(20, 70);
+        press(20, 70);   // the click that puts it down
         release(20, 70);
         frame();
 
         assertEquals("w:ended 70 MOVE -> MOVE", heard.getLast(),
-                "where it was let go, what was resolved there, and what was actually done");
+                "where it was put down, what was resolved there, and what was actually done");
 
         heard.clear();
         press(20, 20);
@@ -165,14 +169,115 @@ class DragWatchTest {
     void anUnseenDropPerformedNothing() {
         tree();
 
+        // Picked up, let go and clicked down, all inside one drain: no frame ever drew it.
         press(20, 20);
         move(20, 60);
         release(20, 60);
+        press(20, 60);
+        release(20, 60);
         frame();
 
-        assertEquals(List.of("w:ended 60 MOVE -> NONE"), heard,
+        assertEquals("w:ended 60 MOVE -> NONE", heard.getLast(),
                 "no frame drew it, so there is nothing to settle — but the source still has to put it back");
         assertFalse(history.canUndo());
+    }
+
+    @Test
+    @DisplayName("letting go of the button keeps the drag: the hand is free, and the next click puts it down")
+    void releasingLatches() {
+        tree();
+        List<DragState> seen = new ArrayList<>();
+        dispatcher.watchDrag(7, new DragWatch() {
+            @Override
+            public void moved(DragState now) {
+                seen.add(now);
+            }
+
+            @Override
+            public void ended(DragState last, DropEffect performed) {
+            }
+        });
+
+        press(20, 20);
+        move(20, 60);
+        frame();
+        assertFalse(seen.getLast().latched(), "held while the button is down");
+        release(20, 60);
+        frame();
+        assertTrue(seen.getLast().latched(), "and still carried, latched, once it is up");
+        assertFalse(history.canUndo(), "letting go is not dropping");
+
+        move(20, 90);
+        frame();
+        assertEquals(90f, seen.getLast().y(), "the pointer still carries it, with no button down");
+        press(20, 90);
+        release(20, 90);
+        frame();
+        assertTrue(history.canUndo(), "the click did");
+        assertEquals("w:ended 90 MOVE -> MOVE", heard.getLast());
+    }
+
+    @Test
+    @DisplayName("while latched, a right click takes it home and opens no menu")
+    void aRightClickCancels() {
+        tree();
+        List<String> menus = new ArrayList<>();
+        dispatcher.onContextClick(7, e -> menus.add("menu"));
+        press(20, 20);
+        move(20, 60);
+        frame();
+        release(20, 60);
+        frame();
+
+        bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.RIGHT, 20, 60, 0));
+        bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.RIGHT, 20, 60, 0));
+        frame();
+
+        assertEquals("w:ended 60 MOVE -> NONE", heard.getLast());
+        assertEquals(List.of(), menus, "the click that cancelled is used up by cancelling");
+        assertFalse(history.canUndo());
+    }
+
+    @Test
+    @DisplayName("a press on something draggable is armed until it comes loose or comes up")
+    void armedThenLooseOrClick() {
+        tree();
+        List<String> arming = new ArrayList<>();
+        dispatcher.watchDrag(7, new DragWatch() {
+            @Override
+            public void armed(float pressX, float pressY, float x, float y) {
+                arming.add("armed " + Math.round(y));
+            }
+
+            @Override
+            public void disarmed() {
+                arming.add("disarmed");
+            }
+
+            @Override
+            public void moved(DragState now) {
+                arming.add("moved");
+            }
+
+            @Override
+            public void ended(DragState last, DropEffect performed) {
+            }
+        });
+
+        press(20, 20);
+        move(21, 23);   // inside the deadzone
+        frame();
+        release(21, 23);
+        frame();
+        assertEquals(List.of("armed 23", "disarmed"), arming, "held, then a click: it springs back");
+
+        arming.clear();
+        press(20, 20);
+        move(20, 22);
+        frame();
+        move(20, 60);
+        frame();
+        assertEquals(List.of("armed 22", "moved"), arming, "held, then loose: the first moved is the transition");
     }
 
     @Test
@@ -231,6 +336,11 @@ class DragWatchTest {
 
         release(20, 60);
         frame();
-        assertEquals(CursorShape.DEFAULT, shapes.getLast(), "and it opens again on the release");
+        assertEquals(CursorShape.GRAB, shapes.getLast(), "let go and still carrying: the hand opens, the thing stays");
+
+        press(20, 60);
+        release(20, 60);
+        frame();
+        assertEquals(CursorShape.DEFAULT, shapes.getLast(), "and it is an ordinary pointer once it is put down");
     }
 }

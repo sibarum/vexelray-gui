@@ -58,6 +58,9 @@ public final class Deck<T> {
     boolean orderDirty;
     /** Whether the deck has been given a list before. Its first is shown as it stands, not animated in. */
     boolean shown;
+    /** The offset this paint is scrolling the deck to, or NaN when it is not being scrolled. Guarded by the board. */
+    float scrollWriteX = Float.NaN;
+    float scrollWriteY = Float.NaN;
 
     Deck(Board<T> board, Gui gui) {
         this.board = board;

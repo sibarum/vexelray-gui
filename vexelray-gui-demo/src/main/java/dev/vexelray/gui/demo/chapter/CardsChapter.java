@@ -112,12 +112,12 @@ public final class CardsChapter implements Chapter {
                         Ui.button(gui, "Add a card", this::addCard),
                         Ui.button(gui, "Shuffle the backlog", this::shuffleBacklog),
                         Ui.button(gui, "Clear done", this::clearDone)),
-                Ui.prose(gui, "Press a card and drag it. It lifts off the lane and stays under your hand exactly where "
-                        + "you took hold of it; the lane opens a gap where it would land, and closes the one it left. "
-                        + "Over its own gap, or over nothing, letting go sends it home. Escape does the same at any "
-                        + "point. With a card focused, Alt+Up and Alt+Down move it within its lane and Alt+Left and "
-                        + "Alt+Right to the next one. Every move is one undo, and undo moves the card back rather "
-                        + "than redrawing the board around it."));
+                Ui.prose(gui, "Press a card: it sinks, held. Pull, and it comes loose and stays under your hand "
+                        + "exactly where you took hold of it. Let go of the button and it stays with the pointer; "
+                        + "the wheel scrolls a lane beneath it, and a click puts it down where you aim. Escape or a "
+                        + "right click sends it home, scrolling the lanes back with it. With a card focused, Alt+Up "
+                        + "and Alt+Down move it within its lane and Alt+Left and Alt+Right to the next one. Every "
+                        + "move is one undo, and undo moves the card back rather than redrawing the board."));
 
         return gui.column().width(Length.FILL).height(Length.FILL).gap(Ui.GAP).children(row, tools);
     }

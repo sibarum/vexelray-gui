@@ -1174,3 +1174,20 @@ A deck scrolls, and a scroller clips to its own box, so a card's elevation is cu
 deck is padded wider than the shadow. `CardsChapter` pads its decks by `dp(8)` horizontally and says why. The deck
 could pad itself by the carried rung's depth, but that is a layout decision made on the application's behalf;
 recorded until a second application has to remember it too.
+
+### 9.4 Two docs describe a pointer lock the code does not take
+
+Found surveying the stack for the pointer ride (transfer.md §13.4). tactroller's README (the scope table) and
+`WindowsInputBackend`'s javadoc say the lock "manipulates `ClipCursor`"; `ClipCursor` is bound and never called.
+And `DragEvent`'s javadoc, with this repo's README, says that under a `RAW` lock the absolute position is pinned;
+on Windows nothing pins the hidden cursor under `RAW` — the OS cursor keeps moving, so `PointerMoved.x/y` keep
+changing and can leave the window, and only the restore on unlock hides it. Either the docs say what the code does,
+or `RAW` clips to the client rect while locked, which is what the docs promise and what a mouselook wants.
+
+### 9.5 A pointer ride moves the real cursor under an automated run
+
+`ottermate`'s pointer is a virtual one on the bus; a cancelled card's `PointerRide` moves the OS cursor through
+tactroller. In a scripted run that cancels a drag, the real cursor jumps into the window for the length of the
+flight, and the next poll reports it as motion. Harmless, and the ride still behaves — it is the hand that wins,
+and the automation's pointer agrees with the ride's steps — but a run on a desk somebody is using moves their
+mouse. Automation could install a `PointerWarp` that moves its own `Cursor` instead.

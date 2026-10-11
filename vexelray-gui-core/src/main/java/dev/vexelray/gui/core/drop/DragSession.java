@@ -62,6 +62,7 @@ public final class DragSession {
     private Drop drop = Drop.NONE;
     private int framesSeen;
     private boolean ended;
+    private boolean latched;
 
     private DragSession(Payload payload, float x, float y) {
         this.payload = Objects.requireNonNull(payload, "payload");
@@ -110,6 +111,29 @@ public final class DragSession {
     /** Whether this session has already been committed or cancelled. */
     public boolean ended() {
         return ended;
+    }
+
+    /**
+     * Keep the drag going after the button has come up: what was picked up stays with the pointer, and the next
+     * click puts it down.
+     *
+     * <p>Picking something up is a gesture, not a posture. Holding a button down for the length of a carry is what
+     * makes the far end of a long list a feat of endurance, and what turns a slipped finger into a drop in the
+     * wrong place. Latched, the hand is free: the wheel scrolls underneath the carried thing, and the drop is a
+     * deliberate click where the user has aimed. Cancelling is the same as ever — Escape, or the other button.
+     *
+     * <p>A source's business, like everything about how a drag began and ends: this is only the state, so that
+     * whoever draws the drag can show which of the two the user is in.
+     */
+    public void latch() {
+        if (!ended) {
+            latched = true;
+        }
+    }
+
+    /** Whether the button has come up and the drag stayed: see {@link #latch}. */
+    public boolean latched() {
+        return latched;
     }
 
     /**

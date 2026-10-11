@@ -74,9 +74,7 @@ public final class Transfers {
      * that comparison honest rather than a hand-written field-by-field check that forgets one.
      */
     public void publish(DragSession live) {
-        DragState next = live == null
-                ? DragState.NONE
-                : new DragState(true, live.x(), live.y(), live.drop().effect(), live.drop().indicator());
+        DragState next = DragState.of(live);
         if (next.equals(lastPublished)) {
             return;
         }

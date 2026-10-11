@@ -224,6 +224,11 @@ gui.dropHistory(history);                            // until this is set, drops
   far enough and held long enough, and the source is asked for a payload at *that* moment, not at the
   press — with the point where the press *landed*, not where the pointer has since wandered.
   Answering null leaves it an ordinary click.
+- **Picking up is a gesture, not a posture.** Letting go of the button keeps the drag: the thing stays
+  with the pointer and the next click puts it down where it is aimed; Escape or a right click takes it
+  home. With the hand free, the wheel scrolls underneath — there is no edge auto-scroll, by ruling: it
+  maps where the pointer is to a *speed*, which is the "one magic spot" every implementation of it has.
+  The wheel glides (`gui.scrollGlide`) rather than jumping a notch per frame.
 - **A drop target answers for every point, not for the good ones.** That is the stronger obligation
   on purpose: it rules out the drop that works in some places and silently does nothing in others, so
   the user learns to hunt for the spot that "takes". `Drop.NONE` is a legitimate answer — the point is
@@ -252,10 +257,14 @@ Deck<Task> todo = board.column().items(model.todo())
 model.onChange(() -> todo.items(model.todo()));    // every edit ends here, undo included
 ```
 
-- **The card lifts off and follows the hand from where it was grabbed.** It catches up with the pointer over
-  the first moment rather than jumping the drag threshold, rises a rung of elevation, and is ringed in the
-  accent. The deck opens a gap where it would land and closes the one it left; over nothing, the gap it came
-  from reopens, because that is where letting go would put it.
+- **Every state shows, and none of it in words.** Pressed, the card sinks into its lane and follows the
+  pointer only part of the way, held back; at the threshold it comes loose, catches up with the hand and
+  rises, ringed in the accent. Let go, it hangs a rung lower from the open hand. The deck opens a gap where it
+  would land and closes the one it left; over nothing, the gap it came from reopens, because that is where
+  it would go. A click that never came loose springs back.
+- **A cancel undoes the gesture, not only the card.** Every lane the wheel moved scrolls back, the card flies
+  home, and the pointer rides home on it at the grip — one clock, a step per frame — ending where the drag
+  began, over the card, focused. If the hand moves the pointer itself, the ride yields at once.
 - **A slot boundary does not move with the animation it causes.** Slots are measured on the deck with the
   carried card taken out, so the pointer cannot chase a gap that is opening toward it, and a pixel of movement
   changes the answer by one slot or not at all.

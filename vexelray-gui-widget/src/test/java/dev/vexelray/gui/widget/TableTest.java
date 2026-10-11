@@ -390,6 +390,40 @@ class TableTest {
         return out;
     }
 
+    /**
+     * A name its column cuts off is shown whole while its cell is hovered, over the column beside it — the table
+     * attaches every cell's content, so an application gets it by declaring nothing.
+     */
+    @Test
+    void hoveringACutOffCellShowsItsContentWhole() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            java.util.Map<Person, Node> names = new java.util.concurrent.ConcurrentHashMap<>();
+            Table<Person> table = new Table<>(h.gui, 2f, List.of(
+                    Table.Column.of("Name", Length.rem(5), (g, p) -> {
+                        Node name = g.text(p.name());
+                        names.put(p, name);   // the last one built is the one in the tree
+                        return name;
+                    }),
+                    Table.Column.of("Age", Length.FILL, (g, p) -> g.text(String.valueOf(p.age())))));
+            Person longName = new Person("a-name-far-wider-than-five-rem", 40);
+            Person shortName = new Person("ab", 41);
+            mountNode(h, table, List.of(longName, shortName));
+            assertTrue(names.get(longName).layout().clipped(), "the premise: the column cuts the long name off");
+
+            Rect at = table.cell(longName, 0).layout().rect();
+            h.hover(at.x() + at.w() / 2f, at.y() + at.h() / 2f);
+            h.frame();
+            assertEquals(1f, h.retained(names.get(longName)).unclip(), 0.001f,
+                    "the cut-off name is drawn out from under its column");
+
+            Rect fits = table.cell(shortName, 0).layout().rect();
+            h.hover(fits.x() + fits.w() / 2f, fits.y() + fits.h() / 2f);
+            h.frame();
+            assertEquals(0f, h.retained(names.get(longName)).unclip(), 0.001f, "and put back on leaving");
+            assertEquals(0f, h.retained(names.get(shortName)).unclip(), 0.001f, "a name that fits is not");
+        }
+    }
+
     private static Table<Person> mount(HeadlessGui h, int count) {
         Table<Person> table = new Table<>(h.gui, 2f, columns());
         mountNode(h, table, people(count));

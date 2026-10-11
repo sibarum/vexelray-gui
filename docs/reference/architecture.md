@@ -460,14 +460,14 @@ sheet are also one run and one draw — which is the second reason to pack a she
 
 ## 7. Animation — a visual-transform layer, GUI-side
 
-> **Partly built.** `OPACITY`, `TRANSLATE_X/Y` and `OVERLAY` are in, motion runs on Kronometer through
-> `vexelray-gui-krono`, and there are two consumers: the tab transition (`Tabs.slide` + `KronoGui.ramp`)
-> and one-shot cues (`Cue` + `Cues`). `SCALE`, `ROTATION` and `TINT`, the visibility FSM,
+> **Partly built.** `OPACITY`, `TRANSLATE_X/Y`, `OVERLAY` and `UNCLIP` are in, motion runs on Kronometer
+> through `vexelray-gui-krono`, and there are three consumers: the tab transition (`Tabs.slide` +
+> `KronoGui.ramp`), one-shot cues (`Cue` + `Cues`), and a cut-off node shown whole on hover (`Unclip`). `SCALE`, `ROTATION` and `TINT`, the visibility FSM,
 > `gui.motion(DISABLED)` and the deadline-driven wait loop are not. See docs/reactive-timing.md for the
 > Kronometer seam and what it still owes.
 
 Opt-in per node; nothing fires unless an animation is attached. Animatable properties are a
-**post-layout visual transform** — `OPACITY, TRANSLATE_X/Y, OVERLAY, SCALE, ROTATION, TINT` — **not**
+**post-layout visual transform** — `OPACITY, TRANSLATE_X/Y, OVERLAY, UNCLIP, SCALE, ROTATION, TINT` — **not**
 layout inputs. Animating them never re-runs layout; it only changes how the tree is emitted to the
 `Canvas`.
 
@@ -516,6 +516,25 @@ Cueing a node mid-cue supersedes rather than overlaps, because two cues writing 
 a race whose loser then wipes the winner's paint a duration later — a flash that clears itself halfway
 through, but only when the user was quick. Not queued, either: a cue means "this just happened", and
 three backed up behind each other are all saying it about a moment that has passed.
+
+**`UNCLIP`, as built — showing what a clip hides, where it already is.** A float in (0, 1]. Above zero,
+`TreeRenderer` queues the node as the walk meets it, with the opacity and displacement it inherited, and
+after the whole tree paints it **again**: under no mask but the window's, on a plate of the surface it sat
+on (its ancestors' backgrounds, laid down layer by layer so the canvas composites them as it did the first
+time), at the inherited opacity times the amount. Its own clips still hold for its own children; only the
+ancestors' are lifted. A name cut off by its column is shown whole, in place, over whatever was covering
+the rest of it.
+
+It is admissible on hover, which a tooltip-shaped thing would not be, for two reasons. It adds nothing: these
+are the node's own pixels where they already were, and what it covers was already covering the node, so
+hovering only chooses which of the two is hidden. And it **changes no pointer target**: hit-testing still
+descends through every ancestor's box, so the overhang belongs to whatever is beneath it, leaving the node's
+own box is leaving it, and a click on the overhang lands where it would have without it. `Unclip`
+(`-widget`) drives it from hover for a node that `NodeLayout.clipped()` says is cut off, on whatever `Ramp`
+the application gives it. `TreeView` and `Table` attach it to every row label and cell content they build.
+Not yet: a field, which clips *itself* (an editable node scrolls its own text), so lifting its ancestors'
+clips reveals nothing. That one needs the box laid out wider while focused with its slot held, and a
+focus-held, hit-testable overhang — a layout change, not a paint one.
 
 The box's corner radii ride on `NodeLayout` for this. They are the one part of a node's shape that is not
 a rectangle, and without them anything authoring marks in a node's own box can only draw square corners

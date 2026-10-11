@@ -86,13 +86,25 @@ public final class TreeChapter implements Chapter {
         // decelerating into the place it stops is what reads as weight.
         files.motion((progress, done) -> stage.krono().ramp(Dur.ms(200), Ease.OUT_CUBIC, progress, done));
 
+        // A name the tree is too narrow for is shown whole while its row is hovered — in place, over the pane
+        // beside the tree, and never the thing under the pointer there. Quick, because it is the name itself and
+        // not help arriving: anything slower reads as a popup.
+        files.unclip().motion((progress, done) -> stage.krono().ramp(Dur.ms(90), Ease.OUT_CUBIC, progress, done));
+
         // Ctrl+F with the tree focused opens its find bar; typing walks the real directory tree, fetching as it
         // goes, stopping at the first match and opening only the path to it. Nothing here wires that up. The one
         // thing an application supplies is what "matches" means for its own items — a whole path, say, rather
         // than the name the row happens to show.
         files.matcher((path, query) -> String.valueOf(path).toLowerCase().contains(query.toLowerCase()));
 
-        files.onSelect(path -> console.note("selected " + path));
+        // The pane beside the tree: what a tree on the left of an application usually sits next to, and what a
+        // long name on hover is drawn over.
+        Node selected = Ui.prose(gui, "Select a row. The tree is narrow on purpose: rest on a name it cuts "
+                + "off and the whole of it is drawn over this pane, where it was, until the pointer leaves the row.");
+        files.onSelect(path -> {
+            console.note("selected " + path);
+            selected.text(String.valueOf(path));
+        });
         files.onActivate(path -> console.good("activated " + path));
 
         // A command that belongs to the row rather than to the menu: same mark as the tree's own Expand and
@@ -179,7 +191,9 @@ public final class TreeChapter implements Chapter {
                         + "repeatedly and the tree opens only the paths it had to open to find each match."));
 
         return gui.column().width(Length.FILL).height(Length.FILL).gap(Ui.GAP)
-                .children(Ui.card(gui, Ui.heading(gui, "This repository"), files.node()), tools);
+                .children(gui.row().width(Length.FILL).height(Length.FILL).gap(Ui.GAP).children(
+                        Ui.card(gui, Ui.heading(gui, "This repository"), files.node()).width(Length.rem(15)),
+                        Ui.card(gui, Ui.heading(gui, "Selected"), selected).width(Length.grow(1))), tools);
     }
 
     /** What is staged — the model behind the ticks, and the only place any of it lives. */

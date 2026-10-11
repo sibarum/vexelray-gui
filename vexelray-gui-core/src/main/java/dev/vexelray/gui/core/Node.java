@@ -261,6 +261,21 @@ public final class Node {
         return prop(PropKey.CLIP, clip ? Boolean.TRUE : null);
     }
 
+    /**
+     * Draw this node out from under its ancestors' clips: at {@code amount} above zero it is painted again over
+     * the whole window, whole, where it already is, on a plate of the surface it sits on, faded by {@code amount}.
+     * 0 (the default) does nothing. A name cut off by its column is shown in full without anything moving.
+     *
+     * <p>A visual transform like {@link #opacity}: nothing reflows, and — the property that makes it usable on
+     * hover — <b>nothing is hit there</b>. The pointer still reaches this node only inside its clipped box, so what
+     * it is on never changes, and the drawn-out part belongs to whatever lies beneath it. {@code Unclip} in
+     * {@code -widget} drives it from hover, for nodes that are actually cut off.
+     */
+    public Node unclip(float amount) {
+        float a = Math.max(0f, Math.min(1f, amount));
+        return prop(PropKey.UNCLIP, a == 0f ? null : a);
+    }
+
     // --- text ---
 
     public Node text(String s) {

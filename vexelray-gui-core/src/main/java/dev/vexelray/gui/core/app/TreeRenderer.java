@@ -43,6 +43,20 @@ public final class TreeRenderer {
     private final Color marks;
     private final Color selection;
     private final Color ink;
+    /** The plate under an unclipped node: its edge, and the surface when nothing under the node has one. */
+    private final Color plateEdge;
+    private final Color plateSurface;
+
+    /**
+     * The nodes met on the walk that asked to be drawn out from under their clips ({@code PropKey.UNCLIP}), with
+     * the opacity and displacement they inherited there — the two things a second walk starting at the node itself
+     * could not know. Painted after the whole tree, in the order they were met, which is paint order.
+     */
+    private final java.util.List<Lift> lifts = new java.util.ArrayList<>();
+    /** The node whose unclipped pass is running, or null during the ordinary walk. Its plate goes under it. */
+    private RetainedNode plating;
+
+    private record Lift(RetainedNode node, float alpha, float transX, float transY) { }
 
     /**
      * The opacity inherited at the node currently being drawn — the product of every {@code OPACITY} prop on the
@@ -84,6 +98,8 @@ public final class TreeRenderer {
         // The fallback for a text node that never declared a colour. The model answers white when asked with no
         // opinion (RetainedNode.textColor), which is only right on a dark page -- so the renderer supplies one.
         this.ink = theme.color(Role.INK);
+        this.plateEdge = theme.color(Role.EDGE);
+        this.plateSurface = theme.color(Role.RAISED);
     }
 
     /** As {@link #emit(RetainedNode, Canvas, TextFaces, Theme)}, in the framework's default theme. */
@@ -100,7 +116,83 @@ public final class TreeRenderer {
      * node carries was resolved when the prop was written.
      */
     public static void emit(RetainedNode node, Canvas canvas, TextFaces faces, Theme theme) {
-        new TreeRenderer(theme == null ? Theme.DARK : theme, faces).walk(node, canvas);
+        TreeRenderer renderer = new TreeRenderer(theme == null ? Theme.DARK : theme, faces);
+        renderer.walk(node, canvas);
+        renderer.unclipped(canvas);
+    }
+
+    /**
+     * Paint every node that asked to be drawn out from under its clips, again, over everything — see
+     * {@code PropKey.UNCLIP}. The ordinary walk has popped every clip it pushed by now, so the only mask left is
+     * the window's, and each node is walked exactly as before from the opacity and displacement it inherited:
+     * its own clips still hold for its own children. One level only: a node met inside one of these passes is
+     * already out from under everything above the node being lifted, and is not queued again.
+     */
+    private void unclipped(Canvas canvas) {
+        for (Lift lift : lifts) {
+            alpha = lift.alpha() * lift.node().unclip();
+            transX = lift.transX();
+            transY = lift.transY();
+            clipL = Float.NEGATIVE_INFINITY;
+            clipT = Float.NEGATIVE_INFINITY;
+            clipR = Float.POSITIVE_INFINITY;
+            clipB = Float.POSITIVE_INFINITY;
+            boolean moved = transX != 0f || transY != 0f;
+            if (moved) {
+                canvas.pushTranslate(transX, transY);
+            }
+            plating = lift.node();
+            walk(lift.node(), canvas);
+            plating = null;
+            if (moved) {
+                canvas.popTranslate();
+            }
+        }
+        lifts.clear();
+    }
+
+    /**
+     * The surface drawn under an unclipped node: a rounded plate a little larger than its box, in whatever it was
+     * sitting on, so the part that escapes reads as the same thing carried on rather than as a second thing laid
+     * over the page. Edged and shadowed because it <em>is</em> over the page, and covers what it overhangs.
+     */
+    private void drawPlate(RetainedNode n, Canvas canvas) {
+        float em = n.textSizePx > 0f ? n.textSizePx : n.emPx;
+        float padX = em * 0.4f;
+        float padY = em * 0.1f;
+        float x = n.x - padX;
+        float y = n.y - padY;
+        float w = n.w + padX * 2f;
+        float h = n.h + padY * 2f;
+        float r = em * 0.25f;
+        float lift = em * 0.4f;
+        canvas.shadowRoundRect(x, y + lift * 0.5f, w, h, r, r, lift, fade(shadow));
+        for (Color layer : surfaceUnder(n)) {
+            canvas.fillRoundRect(x, y, w, h, r, r, fade(layer));
+        }
+        canvas.strokeRoundRect(x, y, w, h, r, r, 1f, fade(plateEdge));
+    }
+
+    /**
+     * What {@code n} is drawn on, as the layers that make it, bottom first: its ancestors' backgrounds from the
+     * first opaque one inward, so a row with a translucent hover wash over a panel is the panel and then the wash.
+     * Filled one over another rather than mixed here, so the canvas composites them exactly as it did the first
+     * time. The theme's raised surface stands under them all for a tree that never paints one.
+     */
+    private java.util.List<Color> surfaceUnder(RetainedNode n) {
+        java.util.ArrayDeque<Color> layers = new java.util.ArrayDeque<>();
+        for (RetainedNode p = n.parent; p != null; p = p.parent) {
+            Color bg = p.background();
+            if (bg == null || bg.a() <= 0f) {
+                continue;
+            }
+            layers.push(bg);   // nearest first in, so it comes out last and lands on top
+            if (bg.a() >= 0.999f) {
+                return java.util.List.copyOf(layers);
+            }
+        }
+        layers.push(plateSurface);
+        return java.util.List.copyOf(layers);
     }
 
     private void walk(RetainedNode node, Canvas canvas) {
@@ -112,6 +204,9 @@ public final class TreeRenderer {
         // Fully transparent: skip the subtree exactly as a hidden node does. Not the same as hiding it, though —
         // it was laid out, so its box is real and it is still hit-testable unless it also said hitInert.
         if (alpha > 0f) {
+            if (plating == null && node.unclip() > 0f) {
+                lifts.add(new Lift(node, inherited, transX, transY));   // drawn here as usual, and again later
+            }
             // Displacement, in multiples of this node's own baked em, so it tracks zoom and density with no
             // layout context to consult. Pushed around the node and its whole subtree, and cumulative.
             float dx = node.translateX() * node.emPx;
@@ -123,6 +218,9 @@ public final class TreeRenderer {
                 canvas.pushTranslate(dx, dy);
                 transX += dx;
                 transY += dy;
+            }
+            if (node == plating) {
+                drawPlate(node, canvas);
             }
             drawSelf(node, canvas, faceFor(node));
             boolean scrollClip = node.overflowX || node.overflowY;

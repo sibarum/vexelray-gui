@@ -146,6 +146,12 @@ public final class Table<T> implements AutoCloseable {
     private final List<Node> headerLabels = new ArrayList<>();
     private final List<Subscription> subs = new ArrayList<>();
 
+    /**
+     * Shows a cell's content whole, in place, while the pointer is on the cell and the column cuts it off — over
+     * the columns beside it, and never hit there.
+     */
+    private final Unclip unclip;
+
     /** The cells of every realized row, so a solved width can be written to them. Pruned against the body. */
     private final Map<T, List<Node>> cells = new HashMap<>();
 
@@ -167,6 +173,7 @@ public final class Table<T> implements AutoCloseable {
 
     public Table(Gui gui, float rowRem, List<Column<T>> columns) {
         this.gui = Objects.requireNonNull(gui, "gui");
+        this.unclip = new Unclip(gui);   // before the body: every row attaches its cells to it as it is built
         this.columns = List.copyOf(Objects.requireNonNull(columns, "columns"));
         if (this.columns.isEmpty()) {
             throw new IllegalArgumentException("a table needs at least one column");
@@ -252,6 +259,15 @@ public final class Table<T> implements AutoCloseable {
     /** The width a column came out at, in pixels — for tests and tools; an application states widths, not reads. */
     public synchronized float columnWidth(int column) {
         return solved[column];
+    }
+
+    /**
+     * How a cut-off cell is shown whole while it is hovered — for the application to give it a fade, or to attach
+     * a node <em>inside</em> a cell's content that is the one cut off (a name in a row with an icon, say). A cell's
+     * content node itself is attached already.
+     */
+    public Unclip unclip() {
+        return unclip;
     }
 
     /** The body, for the things a list already answers: reveal, activation, how many rows exist. */
@@ -421,7 +437,9 @@ public final class Table<T> implements AutoCloseable {
                     .alignItems(AlignItems.CENTER)
                     .padding(Length.ZERO, CELL_PAD)
                     .clip(true);
-            cell.append(columns.get(i).cell().build(g, item));
+            Node content = columns.get(i).cell().build(g, item);
+            cell.append(content);
+            unclip.attach(cell, content);
             built.add(cell);
             row.append(cell);
         }

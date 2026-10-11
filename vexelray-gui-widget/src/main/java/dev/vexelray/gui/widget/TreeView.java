@@ -389,7 +389,7 @@ public final class TreeView<T> implements AutoCloseable {
             // is for editable fields only), so the label is left at AUTO width — its one-line width, which the
             // flex never shrinks — and a grow(1) box takes the row's remaining width and clips it there. clip()
             // masks a node's children, not its own glyphs, which is the other reason the box is a box. The same
-            // shape as a Table cell. There is no ellipsis anywhere in the text stack; the tooltip below is how a
+            // shape as a Table cell. There is no ellipsis anywhere in the text stack; the unclip below is how a
             // cut name is read in full.
             this.label = gui.text(source.label(item))
                     .textSize(Length.rem(1))
@@ -461,17 +461,10 @@ public final class TreeView<T> implements AutoCloseable {
                 restyle(this, state);
                 hovered(this, state != InteractionState.NORMAL);
             });
-            // The full name, for a row that cuts it off — and nothing for one that does not. Asked at hover time
-            // rather than kept up to date, so a row costs one state observer until someone rests on it: whether a
-            // name is cut depends on the depth, the tree's width and the zoom, all of which move under it.
-            tips.attach(rowNode, () -> truncated() ? source.label(item) : null);
-        }
-
-        /** Whether the label is wider than the box that clips it — read from the published layout. */
-        boolean truncated() {
-            Rect name = label.layout().rect();
-            Rect room = labelBox.layout().rect();
-            return name != null && room != null && room.w() > 0f && name.w() > room.w() + 0.5f;
+            // The full name, in place, for a row that cuts it off — and nothing for one that does not. Unclip asks
+            // at hover time rather than being kept up to date, so a row costs one state observer until someone
+            // rests on it: whether a name is cut depends on the depth, the tree's width and the zoom.
+            unclip.attach(rowNode, label);
         }
 
         /**
@@ -597,10 +590,10 @@ public final class TreeView<T> implements AutoCloseable {
     private final FindBar find;
 
     /**
-     * One bubble for the whole tree, showing the full name of a row whose label is cut off. Floating and hit-inert,
-     * so it is the framework's one sanctioned thing that appears on hover and changes nothing under the pointer.
+     * Shows the label of a hovered row whole, where it already is, when the row cuts it off — drawn over whatever
+     * is beside the tree and never hit there, so it changes nothing under the pointer.
      */
-    private final Tooltip tips;
+    private final Unclip unclip;
 
     /** How a row answers a query. Replaceable: only the application knows what its items are searchable by. */
     private volatile BiPredicate<T, String> matcher;
@@ -645,7 +638,7 @@ public final class TreeView<T> implements AutoCloseable {
                 .scroll(false, false);
         this.rows = gui.column().width(Length.FILL).height(Length.FILL);
         this.dropIndicator = DropIndicator.of(gui.theme().color(Role.ACCENT));
-        this.tips = new Tooltip(gui);   // before any row: every row attaches to it as it is built
+        this.unclip = new Unclip(gui);   // before any row: every row attaches to it as it is built
 
         // Navigation is an ordered stage: moving a cursor is order-dependent under key repeat, and it is pure
         // lookups on the visible list — exactly what the GUI-thread lane is for. Registering it also makes the
@@ -1067,9 +1060,12 @@ public final class TreeView<T> implements AutoCloseable {
         return r == null ? null : r.label;
     }
 
-    /** The tree's tooltip — package-private, so a test can zero its delay and read whether it is up. */
-    Tooltip tooltip() {
-        return tips;
+    /**
+     * How a cut-off name is shown whole while its row is hovered — for the application to give it a fade:
+     * {@code tree.unclip().motion((p, done) -> krono.ramp(Dur.ms(90), Ease.OUT_CUBIC, p, done))}. It snaps without.
+     */
+    public Unclip unclip() {
+        return unclip;
     }
 
     /** The find bar's strip — package-private, so a test can read whether the user can see it. */
@@ -1294,7 +1290,6 @@ public final class TreeView<T> implements AutoCloseable {
             dragSub.close();
         }
         find.close();   // takes the bar's own claims with it; the root's Ctrl+F goes with the root below
-        tips.close();
         synchronized (this) {
             for (Row r : rowsByItem.values()) {
                 gui.releaseNode(r.rowNode);

@@ -458,23 +458,24 @@ class TreeViewTest {
         }
     }
 
-    /** The full name of a cut-off row is one hover away; a row whose name fits says nothing. */
+    /** The full name of a cut-off row is one hover away, in place; a row whose name fits is left alone. */
     @Test
     void hoveringACutOffRowShowsTheFullNameAndAFittingOneShowsNothing() {
         try (HeadlessGui h = new HeadlessGui()) {
             TreeView<String> tree = narrowTree(h);
-            tree.tooltip().delayMillis(0);
 
             var cut = tree.rowNode(LONG).layout().rect();
             h.hover(cut.x() + cut.w() / 2f, cut.y() + cut.h() / 2f);
             h.frame();
-            assertTrue(tree.tooltip().isOpen(), "resting on a cut-off name shows it");
-            assertEquals(LONG, h.retained(tree.tooltip().node()).textString(), "in full");
+            assertEquals(1f, h.retained(tree.labelNode(LONG)).unclip(), 0.001f,
+                    "resting on a cut-off name draws it out from under the row's clip");
 
             var fits = tree.rowNode("z.java").layout().rect();
             h.hover(fits.x() + fits.w() / 2f, fits.y() + fits.h() / 2f);
             h.frame();
-            assertTrue(!tree.tooltip().isOpen(), "a name that fits has nothing more to show");
+            assertEquals(0f, h.retained(tree.labelNode(LONG)).unclip(), 0.001f, "leaving it puts it back");
+            assertEquals(0f, h.retained(tree.labelNode("z.java")).unclip(), 0.001f,
+                    "and a name that fits has nothing more to show");
             tree.close();
         }
     }

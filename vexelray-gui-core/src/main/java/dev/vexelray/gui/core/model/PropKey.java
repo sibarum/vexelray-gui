@@ -128,6 +128,21 @@ public enum PropKey {
      * can never trigger the scrolling kind. A container that pages slide through needs to say where it ends.
      */
     CLIP(false),
+    /**
+     * How far this node is drawn out from under its ancestors' clips (Float in (0, 1], absent for not at all): the
+     * fourth visual transform of architecture.md §7. At any value above zero the renderer paints the node a second
+     * time after the whole tree, in the window's clip rather than its ancestors', on a plate of the surface it was
+     * sitting on, at this value's opacity — so a name cut off by its column is shown whole, in the place it already
+     * was, over whatever had been covering the rest of it.
+     *
+     * <p><b>Pixels only, never a pointer target.</b> Hit-testing still descends through every ancestor's box, so
+     * the part drawn past the clip belongs to whatever is beneath it, exactly as before. That is what makes it
+     * admissible on hover: what the pointer is on does not change, and leaving the node's own box is leaving it.
+     *
+     * <p>Not layout-affecting, and its identity value is null, as for {@link #OVERLAY}: whatever put it on can take
+     * it off without knowing what was there before.
+     */
+    UNCLIP(false),
     // Text (size affects layout via intrinsic measure)
     TEXT(true),
     TEXT_SIZE(true),

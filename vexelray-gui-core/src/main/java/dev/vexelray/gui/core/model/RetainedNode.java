@@ -235,6 +235,12 @@ public final class RetainedNode {
         return Boolean.TRUE.equals(props.get(PropKey.CLIP));
     }
 
+    /** How far this node is drawn out from under its ancestors' clips, in [0,1] (see {@link PropKey#UNCLIP}). */
+    public float unclip() {
+        Object o = props.get(PropKey.UNCLIP);
+        return o instanceof Float f ? f : 0f;
+    }
+
     /** Whether this node's text is drawn sunken: soft under-shadow + sharp black outline (letterpress). */
     public boolean textSunken() {
         return Boolean.TRUE.equals(props.get(PropKey.TEXT_SUNKEN));

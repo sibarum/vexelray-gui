@@ -106,7 +106,7 @@ inside Otter is the thing to avoid when the time comes.
 
 ### 3.2 Selectors: one grammar, in every place a target goes
 
-A selector is accepted wherever a verb takes a target today: `move`, `click`, `rightclick`, `drag`,
+A selector is accepted wherever a verb takes a target today: `move`, `click`, `rightclick`, `drag`, `down`, `up`,
 `scroll` and `go`, and `find`, `get`, `expect` and `look` as well.
 
 ```

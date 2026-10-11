@@ -39,6 +39,14 @@
               mvn -pl vexelray-gui-demo exec:exec -Ddemo.jvmArgs="-Dsome.knob=48 -Xmx2g"
         -->
         <demo.jvmArgs></demo.jvmArgs>
+        <!--
+          The automation socket: off, on (port 7654), 0 (a free port, announced on stdout as
+          "automation: localhost:<port>", the line ottermate's launch option reads), or a port. Its own
+          property rather than one more demo.jvmArgs, so the run the ottermate guide gives works here as
+          written: mvn exec:exec -Dautomation=0. (No command line is quoted here in full, because one of its
+          flags would end this comment.)
+        -->
+        <automation>off</automation>
     </properties>
 
     <dependencies>
@@ -49,6 +57,12 @@
         <dependency>
             <groupId>dev.vexelray.gui</groupId>
             <artifactId>vexelray-gui-nfd</artifactId>
+        </dependency>
+        <!-- The driving socket, off unless -Dautomation asks for it: what lets ottermate photograph a chapter
+             mid-gesture (a card half-carried, a menu open) rather than only at rest, which is all capture can. -->
+        <dependency>
+            <groupId>dev.vexelray.gui</groupId>
+            <artifactId>vexelray-gui-automation</artifactId>
         </dependency>
         <!-- Two optional modules the gallery gives a chapter each. Neither is reachable through -widget, and
              that is deliberate: typeset is a second composition world a flex layout embeds as an atom, and
@@ -117,7 +131,7 @@
                       %classpath is exec:exec's own token for the runtime classpath. It is substituted after
                       the split, so it stays a single argument even where a path contains a space.
                     -->
-                    <commandlineArgs>--enable-native-access=ALL-UNNAMED ${demo.jvmArgs} -classpath %classpath ${demo.mainClass} ${demo.args}</commandlineArgs>
+                    <commandlineArgs>--enable-native-access=ALL-UNNAMED -Dautomation=${automation} ${demo.jvmArgs} -classpath %classpath ${demo.mainClass} ${demo.args}</commandlineArgs>
                 </configuration>
             </plugin>
         </plugins>

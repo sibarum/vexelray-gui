@@ -1,6 +1,7 @@
 package dev.vexelray.gui.demo;
 
 import dev.vexelray.gui.demo.chapter.ChooserChapter;
+import dev.vexelray.gui.demo.chapter.CardsChapter;
 import dev.vexelray.gui.demo.chapter.ColorChapter;
 import dev.vexelray.gui.demo.chapter.DragChapter;
 import dev.vexelray.gui.demo.chapter.DrawChapter;
@@ -38,6 +39,7 @@ public final class Gallery {
                 new TextChapter(),
                 new TreeChapter(),
                 new DragChapter(),
+                new CardsChapter(),
                 new TableChapter(),
                 new ChooserChapter(),
                 new FocusChapter(),

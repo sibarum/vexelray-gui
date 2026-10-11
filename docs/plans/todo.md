@@ -1147,3 +1147,30 @@ No pointer gesture reaches the clipped tabs either, and nothing tells you they e
 header row made a horizontal scroller. That's step 1 of [tab-overflow.md](tab-overflow.md), and it stands alone:
 it doesn't need the `Overflow` seam, wrap or the menu. A test walks Right past the edge and checks the selected
 header's rect lies inside the bar. Reaching the clipped tabs by pointer is the rest of that plan, which is paused.
+
+## 9. Found building `Board` / `Deck`
+
+### 9.1 `padding(Length)` does not undo `padding(vertical, horizontal)`
+
+They write different props — `PADDING`, and `PADDING_Y`/`PADDING_X` — and the per-axis pair wins. So a node padded
+by the two-argument form and later "reset" with `padding(Length.ZERO)` keeps its padding, silently, and everything
+inside it stands off by the amount nobody can see being set. `Board` hit it the first time a gap's pad (inset by
+the axis form) became a card's resting slot: the landed card sat 5px low, and every card below it with it. Fixed
+there by resetting with the same form. The trap is general: either the one-argument form clears the axis pair, or
+it is the axis pair, written twice.
+
+### 9.2 The gallery never goes quiet, so `settle` always times out there
+
+Driving the demo over its new automation socket, every `settle` answers `err the timeline did not go quiet within
+10000ms`, on every chapter, before and after any input. Something registers repeating work on the clock for the
+whole run; which one was not established (a caret blink on a page not on show is the first suspect). It is §0.2's
+other half — there, `settle` says `ok` too early; here it can never say it — and it makes a script against the
+gallery wait ten seconds per `settle` and then proceed anyway. A chapter that is not on show should have nothing
+on the timeline.
+
+### 9.3 A deck's cards cast shadows its scroll box clips
+
+A deck scrolls, and a scroller clips to its own box, so a card's elevation is cut off at the deck's edges unless the
+deck is padded wider than the shadow. `CardsChapter` pads its decks by `dp(8)` horizontally and says why. The deck
+could pad itself by the carried rung's depth, but that is a layout decision made on the application's behalf;
+recorded until a second application has to remember it too.

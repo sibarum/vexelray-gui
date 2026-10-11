@@ -7,6 +7,8 @@ pointer route with the position supplied by the selection instead of by the mous
 
 This is the record of the decisions. The classes are in `core.drop`, the widget half is `TreeView` +
 `Placement`/`Reorder`/`DropIndicator`, and the motion it depends on is `LayoutMotion` (layout-read-model.md §2.1).
+Cards — things that leave their place and travel with the hand, rather than rows an indicator points between —
+are `Board`/`Deck`, and §12.
 
 ---
 
@@ -211,6 +213,8 @@ is when the answer matters.
 | **OS file drop** | Cannot come through Tactroller at all: the source process owns the mouse, so there is no `ButtonPressed` in this process and `DragGesture` is blind to it by construction. `RegisterDragDrop` needs the real HWND on an STA thread with a message pump — Tactroller attaches to an HWND it does not own and pumps a message-only window on its own thread. The real window proc is in `vexelray-os-windows`, alongside the client-decoration work, and that is where it belongs. |
 | **Auto-scroll near an edge** | Not an oversight. Scroll-while-dragging works today because the wheel is routed positionally and never consults the drag. An edge-triggered auto-scroll changes layout in response to hovering, which conflicts with the rule that hovering must never move the pointer's target. If it is built it needs its own visual cue and a deliberate decision, not an inherited convention. |
 | **Multi-select payloads** | `Payload` can already carry a list; nothing else is designed for it, and it should be driven by a real requirement rather than guessed at. |
+| **Decks other than a column** | A row, a grid and free placement are each a deck that measures its slots differently (§12.4). The flights, the gaps, the lift and the drag do not change. A row is the column with the axes swapped; a grid needs gaps that reflow across a line break, which a height alone cannot express; free placement has no slots at all and is a flight that lands where it was let go. Built when an application needs one. |
+| **Cards between a board and something else** | A deck takes only its own board's `itemType`, and the board's cards can be dropped on any target that asks for that type (one that moves it makes the card fade where it was let go). The other direction — a tree row dropped into a deck — needs the deck to build a card for an item it did not hand out, which is a conversion only the application can supply. |
 
 The first two share a shape worth stating: **drag sources are plural and platform-shaped; drop resolution is
 singular and lives in the GUI.** Adding a source should touch nothing in `DropTarget`, `Drop` or `DragSession`.
@@ -230,3 +234,91 @@ singular and lives in the GUI.** Adding a source should touch nothing in `DropTa
 | No dead pixels over the rows | `TreeReorderTest.thereAreNoDeadPixels` |
 | Displacement never accumulates | `DisplacementTest.displacingTwiceWithoutARelayoutIsTheSameAsDisplacingOnce` |
 | An interrupted transition does not snap | `TransitionsTest.interruptionIsContinuous` |
+| A source hears its drag in the frame it moves | `DragWatchTest.heardOnTheFirstFrame` |
+| A drop and a cancel end differently | `DragWatchTest.aDropAndACancelAreDistinguishable` |
+| Carrying is grabbing | `DragWatchTest.theHandIsClosedWhileCarrying` |
+| Lifting a card moves nothing on screen | `BoardTest.liftingIsInvisible` |
+| A carried card catches up, then follows exactly | `BoardTest.theCardFollowsTheHand` |
+| A landing never overshoots its slot | `BoardTest.aLandingIsContinuous` |
+| A deck answers everywhere, one slot per pixel at most | `BoardTest.resolutionIsTotalAndContinuous` |
+| Home is not an edit | `BoardTest.homeIsNotAnEdit` |
+| A gap wandered back to reopens rather than doubling | `BoardTest.wanderingReopensTheSameGap` |
+| Undo flies the same card back | `BoardTest.aDropLands`, `BoardTest.betweenDecks` |
+
+---
+
+## 12. Cards: carrying the thing itself
+
+A tree reorders rows by drawing a line between two of them: the row stays where it is until the drop, and the
+indicator says where it will go. That is right for a tree, whose rows are dense, uniform and mostly read as
+text. It is wrong for cards — anything a user thinks of as an object with a place — where the object is expected
+to come away in the hand and the others to make room for it. `Board<T>` and `Deck<T>` are that, on the same
+`DragSession`, `Drop`, `Reorder` and `Placement` as everything above; nothing in the resolution layer changed.
+
+### 12.1 Nothing jumps, and the reason it holds everywhere
+
+The requirement is the stack's standing rule — no flash, no flicker, no sudden change in anything the eye is
+already tracking — and the design is what makes it a property rather than a list of cases somebody remembered. **Every card is in a slot or in flight.** A slot is a
+box in a deck whose height can be animated; a flight is the card floating over the window. Every change there is
+— a drop, a cancel, undo, redo, a card arriving, one leaving, a shuffle, a keyboard move — is one of four things
+done to those: a slot opens, a slot closes, a card flies from where it is drawn to a slot, a card fades.
+
+Two rules then cover every case at once. **A card changes parent only when its two places are drawn identically**:
+lifting leaves a gap exactly as tall as the card in exactly its place and floats the card at exactly where it was,
+and landing waits until the travel has finished *and* the gap is fully open at the card's own height. And **every
+animation starts from where things are drawn**, so one that is interrupted — a pointer that wanders off a slot and
+back, an undo pressed while the drop is still settling — turns rather than restarts.
+
+Undo animating is not a feature. A deck is handed lists by the application, and moves the difference into place
+whatever caused it: the cards that are already in the list's order stay (the longest such run), everything else
+flies from where it is drawn to a gap opened for it. An undone drop is just the old list.
+
+### 12.2 The card the user grabbed, where they grabbed it
+
+The card the hand carries is the application's own node, not a ghost of it: the board builds one per item and
+moves that node everywhere it goes, so whatever state the application keeps on it survives the trip. Two things
+on it are the board's — its elevation, which is how a card shows it has been picked up, and the spacing around
+it, which belongs to the card rather than the deck so that a gap opened for it is exactly its height.
+
+It is held at the point where it was grabbed. The drag is recognised only after the pointer has travelled the
+threshold, so at that moment the card is already a few pixels behind; it catches that up over the first moment of
+the drag rather than jumping it, then follows exactly. A drag that lagged permanently would be the slippery feel
+`Transitions` warns about; a drag that jumped would be the discontinuity this section exists to prevent.
+
+### 12.3 Drawn the frame it moves: `DragWatch`
+
+`Gui.drag()` publishes the drag after layout, so a node written from it lands a frame late — invisible for an
+indicator, visible for the thing in the user's hand, and a card's width behind on a fast flick. `gui.watchDrag`
+tells a watcher about the drag during input dispatch, ahead of the drain, so what it writes is laid out in the frame
+whose pointer position it was computed from.
+
+It also says how the drag **ended**. A published `DragState` goes to `NONE` for a drop and for a cancel alike, and
+those are opposite animations: a drop settles the card where it was put, a cancel flies it home. §5 always said
+the return was the caller's to animate; until this, the caller could not tell it was owed one. A watch is told
+after the drop has moved focus, so the board — whose card flies pointer-transparent, so that the hit at the release
+point is the lane beneath it — can put focus on the card that was just put down, which is what §6 asks for.
+
+### 12.4 Where a drop lands
+
+Wherever the carried card is nearest to, measured on the deck **as it would stand with the carried card taken
+out**. That is what keeps the answer still while the gap it causes opens: a boundary measured on the deck as drawn
+travels with the animation, so a pointer resting near one flips the answer, which opens a different gap, which
+moves the boundary back. Measured without the card, the boundary between two slots is fixed — half-way between
+where the card would sit in each — and a pixel of movement changes the answer to a neighbour or not at all, which
+is §4's continuity requirement.
+
+Nearest *by the card*, not by the pointer: a card is held wherever it was grabbed, and it is the card the user is
+aiming. The slot it came from answers `Drop.NONE`, because putting a card back is not an edit — and is drawn as
+exactly that, the card's own gap held open, which is also what is drawn over nothing at all. Over a target that
+is not this board's, every gap closes, because the card would go there.
+
+This is the one part a different layout replaces. A column sums heights; a row would sum widths; a grid needs
+gaps that reflow across a line break. The flights, the gaps, the lift and the drag are the board's and are the
+same for all of them.
+
+### 12.5 One outline
+
+A carried card is ringed in the accent, inside its own corners. A focused card already has the focus ring, and
+two accent outlines a few pixels apart is one too many — so while a card is up its focus ring is off, and if the
+ring was showing when the card was picked up the outline starts at full strength rather than fading in, so the
+ring is replaced rather than blinking out. The ring comes back when the card has set down.

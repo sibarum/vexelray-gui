@@ -227,6 +227,7 @@ whether the run succeeded.
 | `move <ref\|landmark\|x,y>` | Travel there. Hover happens on the way, and is recorded. |
 | `click` / `rightclick <target>` | Travel there, then press and release. |
 | `drag <target> <target>` | Press, travel, release. |
+| `down <target>` / `up [target]` | A drag held open: travel there and press; then `move` and `shot` as often as wanted; then let go, where the pointer is or after travelling. `drag` is over before anything could photograph it, and the middle of a gesture — a card half-carried, a gap half-open — is often what needs looking at. |
 | `scroll <target> <dx> <dy>` | Wheel notches there. |
 | `type <text>` | One code point at a time, through the ordinary character channel. |
 | `key <NAME>` | Press and release a named `Key`. |

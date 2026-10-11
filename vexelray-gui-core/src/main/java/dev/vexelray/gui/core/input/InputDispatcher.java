@@ -6,6 +6,9 @@ import dev.vexelray.gui.core.drop.Payload;
 import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.drop.DragSession;
 import dev.vexelray.gui.core.drop.DropTarget;
+import dev.vexelray.gui.core.drop.DragState;
+import dev.vexelray.gui.core.drop.DragWatch;
+import dev.vexelray.gui.core.drop.DropEffect;
 import dev.vexelray.gui.core.layout.LayoutEnums.ScrollLock;
 import dev.vexelray.gui.core.model.RetainedNode;
 import sibarum.atchung.Atchung;
@@ -154,6 +157,13 @@ public final class InputDispatcher {
             new sibarum.tactroller.api.DragGesture(DRAG_DISTANCE_PX, DRAG_HOLD_MS, Set.of(MouseButton.LEFT));
     /** The drag in flight, or null. GUI thread only. */
     private DragSession session;
+    /**
+     * What hears about every drag in the frame it moves, with the node that bounds each registration. Copy-on-write:
+     * walked every frame of a drag, changed only when a widget is built or torn down — and possibly from a worker,
+     * which a walk on the GUI thread must not see half-made.
+     */
+    private final java.util.concurrent.CopyOnWriteArrayList<Watch> dragWatches =
+            new java.util.concurrent.CopyOnWriteArrayList<>();
     private volatile History dropHistory;
     private final Map<Long, Consumer<KeyEvent>> keyHandlers = new ConcurrentHashMap<>();
     // Typed-text handlers (CharTyped → codepoint) and caret-placement handlers (click → offset), both for
@@ -384,6 +394,48 @@ public final class InputDispatcher {
         dragSources.put(nodeId, source);
     }
 
+    /** One {@link DragWatch}, and the node whose removal ends it. */
+    private record Watch(long nodeId, DragWatch watch) {
+    }
+
+    /** Tell {@code watch} about every drag in this tree, in the frame it happens — see {@link DragWatch}. Several
+     * watches may share a node; each is dropped when its node is. */
+    public void watchDrag(long nodeId, DragWatch watch) {
+        dragWatches.add(new Watch(nodeId, java.util.Objects.requireNonNull(watch, "watch")));
+    }
+
+    /**
+     * Show every watch the live drag as it stands now. One {@link DragState} per frame, shared by all of them, so
+     * an owner with several registrations can tell by identity that it has handled this frame already.
+     */
+    private void showWatches() {
+        if (dragWatches.isEmpty()) {
+            return;
+        }
+        DragState now = stateOf(session);
+        for (Watch w : dragWatches) {
+            w.watch().moved(now);
+        }
+    }
+
+    /**
+     * Tell every watch the drag is over, and what it did.
+     *
+     * <p>{@code last} is read from the session as it ended rather than from the last frame shown — a release
+     * re-resolves at the release point, and may land somewhere the previous frame never drew — and is read
+     * <em>before</em> a cancel, which clears the resolution the user was looking at when they gave up.
+     */
+    private void endWatches(DragState last, DropEffect performed) {
+        updateCursor();   // the hand opens again, over whatever it let go above
+        for (Watch w : dragWatches) {
+            w.watch().ended(last, performed);
+        }
+    }
+
+    private static DragState stateOf(DragSession s) {
+        return new DragState(true, s.x(), s.y(), s.drop().effect(), s.drop().indicator());
+    }
+
     /** Where a completed drop records its change. Until one is set, drops resolve and draw but commit nothing —
      * which is the right default for a tree that has not said who owns its undo. */
     public void dropHistory(History history) {
@@ -449,6 +501,7 @@ public final class InputDispatcher {
             if (payload != null) {
                 session = DragSession.open(payload, started.x(), started.y());
                 session.moveTo(started.x(), started.y(), this::dropTargetsAt);
+                updateCursor();   // the hand closes on what it picked up
                 return;
             }
             // A source that declines does not stop an ancestor answering: the empty space below a tree's rows
@@ -462,11 +515,14 @@ public final class InputDispatcher {
             return;
         }
         if (ended.cancelled()) {
+            DragState last = stateOf(session);
             session.cancel();
             session = null;
+            endWatches(last, DropEffect.NONE);
             return;
         }
         session.moveTo(ended.x(), ended.y(), this::dropTargetsAt);
+        DragState last = stateOf(session);
         History history = dropHistory;
         Drop performed = history == null ? Drop.NONE : session.commit(history);
         session = null;
@@ -479,6 +535,10 @@ public final class InputDispatcher {
             RetainedNode landed = ancestorFocusable(HitTest.at(currentRoot, ended.x(), ended.y()));
             setFocus(landed == null ? -1 : landed.id, FocusCause.POINTER);
         }
+        // After focus has moved, not before: what is under the release point is often not the thing that was
+        // moved — a carried card is pointer-transparent while it flies, so the hit finds the lane beneath it —
+        // and a watch that knows better is the last word on where focus lands.
+        endWatches(last, performed.effect());
     }
 
     /**
@@ -497,9 +557,11 @@ public final class InputDispatcher {
         if (key != Key.ESCAPE || session == null || session.ended()) {
             return false;
         }
+        DragState last = stateOf(session);
         session.cancel();
         session = null;
         drags.reset();   // the button is still down; without this its release would complete a cancelled gesture
+        endWatches(last, DropEffect.NONE);
         return true;
     }
 
@@ -697,6 +759,7 @@ public final class InputDispatcher {
         dragHandlers.remove(nodeId);
         dropTargets.remove(nodeId);
         dragSources.remove(nodeId);
+        dragWatches.removeIf(w -> w.nodeId() == nodeId);
         keyHandlers.remove(nodeId);
         charHandlers.remove(nodeId);
         charStages.remove(nodeId);
@@ -778,6 +841,9 @@ public final class InputDispatcher {
         }
         session.moveTo(session.x(), session.y(), this::dropTargetsAt);
         session.seen();
+        // Last, so a watch sees the resolution this frame is drawn with — and ahead of the drain that follows
+        // dispatch, so what it writes is laid out in this frame rather than the next.
+        showWatches();
     }
 
     /** Release the bus subscription, and the presenter installed on this tree (it holds nodes of its own). */
@@ -1341,7 +1407,9 @@ public final class InputDispatcher {
 
     private CursorShape desiredCursor() {
         // Something is being grabbed: the pointer is captured and still driving it, wherever it has wandered to.
-        if (scrollDrag != null) {
+        // A drag in flight is the same fact said by the transfer layer — the hand is holding what it picked up,
+        // whatever it is passing over, and an I-beam above a text field on the way would promise the wrong gesture.
+        if (scrollDrag != null || (session != null && !session.ended())) {
             return CursorShape.GRABBING;
         }
         if (leftDown && dragCapture != null) {

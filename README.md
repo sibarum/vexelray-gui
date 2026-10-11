@@ -239,6 +239,39 @@ gui.dropHistory(history);                            // until this is set, drops
   and it can tell the two apart from the rectangle it is handed rather than from a flag beside it that
   could disagree. Replaceable per widget, `DropIndicator.NONE` to draw nothing.
 
+#### Cards: a board of decks
+
+The same mechanism for things that are not rows — cards in a kanban, steps in a pipeline, layers in a stack —
+where the thing itself should leave its place and travel with the hand:
+
+```java
+Board<Task> board = new Board<Task>(gui, task -> card(task))       // any node; the board moves that node
+        .motion((p, done) -> krono.ramp(Dur.ms(200), Ease.OUT_CUBIC, p, done));
+Deck<Task> todo = board.column().items(model.todo())
+        .reorderable((moved, where, effect) -> model.move(moved, TODO, where));   // a Change, or null
+model.onChange(() -> todo.items(model.todo()));    // every edit ends here, undo included
+```
+
+- **The card lifts off and follows the hand from where it was grabbed.** It catches up with the pointer over
+  the first moment rather than jumping the drag threshold, rises a rung of elevation, and is ringed in the
+  accent. The deck opens a gap where it would land and closes the one it left; over nothing, the gap it came
+  from reopens, because that is where letting go would put it.
+- **A slot boundary does not move with the animation it causes.** Slots are measured on the deck with the
+  carried card taken out, so the pointer cannot chase a gap that is opening toward it, and a pixel of movement
+  changes the answer by one slot or not at all.
+- **Nothing jumps, by construction rather than by care.** A card is in a slot whose height animates, or in
+  flight over the window; every change — drop, cancel, undo, a card arriving or leaving, a shuffle — is slots
+  opening and closing and cards flying between them from where they are *drawn*, and a card changes parent only
+  when the two places are pixel-identical.
+- **Undo is not a feature.** A deck is handed lists and moves the difference into place, whatever caused it, so
+  undoing a drop flies the same card back the same way. Alt+arrows move a focused card through the same question
+  and the same history.
+- **It is drawn the frame it moves.** `gui.watchDrag` tells a source about its drag during input dispatch, so the
+  carried card is laid out with the pointer position it was computed from; and its ending says whether the drag
+  dropped or was cancelled, which `Gui.drag()`'s published state cannot.
+
+A column is the first layout; a row, a grid and free placement are a deck that measures its slots differently.
+
 [docs/reference/transfer.md](docs/reference/transfer.md) is the full record.
 
 ### Navigation and landmarks
@@ -410,6 +443,10 @@ The controls themselves:
   four-method `Source<T>`. Children fetch lazily off the frame loop, exactly once per item;
   collapse hides the subtree rather than discarding it; one tab stop drives the whole tree
   (Up/Down/Left/Right/Home/End/PageUp/PageDown/Enter).
+- **`Board<T>` / `Deck<T>`** — cards the user picks up, carries and puts down: within a column, and between the
+  columns (`Deck`s) of one board. The application says what a card looks like (any node — the board moves that
+  same node everywhere it goes) and what a placement means (a `Reorder<T>`, as for the tree); the board does the
+  rest, and **nothing on screen ever jumps** doing it. See *Cards* under Transfer above.
 - **`ListView<T>`** — a list whose retained tree holds **viewport-many rows however long the list is**.
   Three children, always: a top spacer, the realized rows, a bottom spacer. The spacers stand in for
   the rows above and below the window, so the scroller's content height is the full list's from the

@@ -148,6 +148,10 @@ public final class Automation implements Commands {
             case "click" -> act(rest, (x, y) -> cursor.click(x, y));
             case "rightclick" -> act(rest, (x, y) -> cursor.click(x, y, MouseButton.RIGHT));
             case "drag" -> drag(rest);
+            case "down" -> act(rest, (x, y) -> cursor.moveTo(x, y).press(MouseButton.LEFT));
+            case "up" -> rest.isBlank()
+                    ? release()
+                    : act(rest, (x, y) -> cursor.moveTo(x, y).release(MouseButton.LEFT));
             case "scroll" -> scroll(rest);
             case "type" -> type(rest);
             case "key" -> key(rest);
@@ -441,6 +445,16 @@ public final class Automation implements Commands {
         int[] to = target(args[1]);
         cursor.moveTo(from[0], from[1]);
         cursor.drag(to[0], to[1], MouseButton.LEFT);
+        return "ok " + cursor.x() + "," + cursor.y();
+    }
+
+    /**
+     * Let go where the pointer is: the end of a {@code down}. Apart from {@code drag} because a gesture held open
+     * is one that can be looked at — a card half-carried, a gap half-open — and {@code drag} is over by the time
+     * anything could photograph it.
+     */
+    private String release() {
+        cursor.release(MouseButton.LEFT);
         return "ok " + cursor.x() + "," + cursor.y();
     }
 
@@ -928,6 +942,8 @@ public final class Automation implements Commands {
             "click <ref|x,y>          travel there, then press and release",
             "rightclick <ref|x,y>     the same, with the right button",
             "drag <ref|x,y> <ref|x,y> press, travel, release",
+            "down <ref|x,y>           travel there and press, and hold: move and shot keep it held",
+            "up [ref|x,y]             let go, where the pointer is or after travelling there",
             "scroll <ref|x,y> dx dy   wheel notches there",
             "type <text>              one code point at a time, as typing",
             "key <NAME>               press and release a named key",

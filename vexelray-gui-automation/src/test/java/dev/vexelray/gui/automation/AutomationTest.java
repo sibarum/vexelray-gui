@@ -170,6 +170,35 @@ class AutomationTest {
         }
     }
 
+    /** The middle of a gesture is what most often needs a photograph, and {@code drag} is over before one. */
+    @Test
+    void aDragHeldDownStaysOpenUntilLetGo() {
+        try (Gui gui = deterministic()) {
+            dev.vexelray.gui.core.drop.PayloadType<String> row = dev.vexelray.gui.core.drop.PayloadType.of("row");
+            Node body = gui.box().size(Length.dp(200), Length.dp(200));
+            gui.onDragSource(body, (x, y) -> dev.vexelray.gui.core.drop.Payload.of(row, "r"));
+            gui.root().children(body);
+            gui.frame(W, H, NO_TEXT);
+            Automation driver = new Automation(gui);
+
+            assertTrue(driver.command("down 20,20").startsWith("ok"));
+            driver.command("move 20,90");
+            // The press is stamped with the real clock, so the recogniser's hold is wall-clock time: frames are
+            // stepped until it has passed, as a loop would step them while a hand held still.
+            for (int i = 0; i < 100 && gui.dragSession() == null; i++) {
+                gui.frame(W, H, NO_TEXT);
+                java.util.concurrent.locks.LockSupport.parkNanos(5_000_000L);
+            }
+            assertTrue(gui.dragSession() != null, "pressed and travelled: a drag, still in the hand");
+            gui.frame(W, H, NO_TEXT);
+            assertTrue(gui.dragSession() != null, "and still, a frame later — nothing let go of it");
+
+            assertTrue(driver.command("up").startsWith("ok 20,90"));
+            gui.frame(W, H, NO_TEXT);
+            assertTrue(gui.dragSession() == null, "let go where the pointer was");
+        }
+    }
+
     @Test
     void typingGoesThroughTheOrdinaryCharacterChannel() {
         try (Gui gui = deterministic()) {

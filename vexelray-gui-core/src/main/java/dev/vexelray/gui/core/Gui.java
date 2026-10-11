@@ -861,6 +861,20 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
+     * Hear about every drag in this tree on the GUI thread, in the frame it moves, and hear how it ended — see
+     * {@link dev.vexelray.gui.core.drop.DragWatch}.
+     *
+     * <p>For whatever draws the thing being carried. {@link #drag()} is the published view and is right for
+     * drawing <em>about</em> a drag, but a handle written from it lands a frame late, and its ending does not say
+     * whether the drag dropped or was cancelled. {@code node} only bounds the registration: the watch is dropped
+     * with it, and is told about drags anywhere in the tree, not only over it.
+     */
+    public Gui watchDrag(Node node, dev.vexelray.gui.core.drop.DragWatch watch) {
+        input.watchDrag(node.id(), watch);
+        return this;
+    }
+
+    /**
      * Where a completed drop records its change, so it can be undone.
      *
      * <p>Until one is set, drops resolve and draw but commit nothing — deliberately, because a drop that mutated

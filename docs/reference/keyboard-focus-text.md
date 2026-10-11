@@ -75,6 +75,13 @@ keyboard has.
   sets it programmatically.
 - **Tab order:** `Tab` / `Shift+Tab` move focus to the next/previous focusable node in tree (DFS) order.
   A node opts into focusability (text fields, buttons, inputs); plain boxes/text don't.
+- **Tab reveals what it lands on.** A node that Tab or Shift+Tab focuses is scrolled into view by the least
+  scrolling, exactly as `Node.scrollIntoView()` would, in the same frame — so the focus ring is never clipped
+  away inside a scroller. The dispatcher hands the node id to a reveal sink (`InputDispatcher.revealSink`) and
+  `Gui` answers with a `Mutation.Reveal`; neither the dispatcher nor the renderer knows about the other. Focus
+  taken by a **click does not scroll**: the pointer is already on the node, and moving it would pull the target
+  out from under the pointer. `Gui.focus(node)` does not scroll either — a program that wants both calls
+  `scrollIntoView()` as well. Tested in `TabRevealTest`.
 - **Focus events** publish on the bus (`FocusEvent(nodeId, gained, cause)` per node) so workers can react.
   `cause` is `POINTER`, `KEYBOARD` (Tab, Shift+Tab) or `PROGRAM` (`Gui.focus`), stamped where the dispatcher
   moves focus. Honors the pointer-target rule: focus changes appearance, never geometry or hit-targets.

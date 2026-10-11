@@ -31,6 +31,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
+import java.util.function.LongConsumer;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 
@@ -216,6 +217,12 @@ public final class InputDispatcher {
     private boolean windowActive = true;
     private Runnable focusStateSink = () -> { };
     private Topic<FocusEvent> focusTopic;
+    /**
+     * Asked to bring a node into view when the <em>keyboard</em> moved focus to it (see {@link #revealSink}). Only
+     * Tab and Shift+Tab call it: a click lands focus on something the pointer is already over, and scrolling it
+     * would move the thing out from under the pointer that chose it.
+     */
+    private LongConsumer revealSink = id -> { };
     private Topic<KeyRouted> keyRoutedTopic;
 
     // Held-key auto-repeat (§8.4): the last non-modifier key routed to a focused node, and when it next
@@ -799,6 +806,15 @@ public final class InputDispatcher {
     }
 
     /**
+     * Install the sink asked to bring a node into view, by the least scrolling, when the keyboard moves focus to
+     * it (set by Gui, which answers with a {@code Mutation.Reveal}). This class has no mutation sink and does not
+     * grow one: the request leaves as a node id, and what revealing means is Gui's to decide.
+     */
+    public void revealSink(LongConsumer sink) {
+        this.revealSink = sink == null ? id -> { } : sink;
+    }
+
+    /**
      * Declare the cursor shape for {@code nodeId} and its descendants, overriding the inferred rules.
      *
      * <p>Needed where the affordance cannot be read off the registrations. A slider and a text field both use the
@@ -1369,7 +1385,12 @@ public final class InputDispatcher {
         int next = idx < 0
                 ? (dir > 0 ? 0 : order.size() - 1)
                 : ((idx + dir) % order.size() + order.size()) % order.size();
-        setFocus(order.get(next), FocusCause.KEYBOARD);
+        long target = order.get(next);
+        setFocus(target, FocusCause.KEYBOARD);
+        // Focus the user cannot see is focus they cannot use: the ring is clipped away with the node, and the
+        // next keystroke goes somewhere off-screen. Asked even when focus did not move (a lone focusable that was
+        // scrolled away), since Tab is the user asking where focus is.
+        revealSink.accept(target);
     }
 
     /**

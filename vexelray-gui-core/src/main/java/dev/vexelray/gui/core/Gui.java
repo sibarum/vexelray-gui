@@ -403,6 +403,9 @@ public final class Gui implements AutoCloseable {
         });
         this.input.focusTopic(FOCUS);
         this.input.keyRoutedTopic(KEY_ROUTES);
+        // Tab reveals what it lands on, exactly as Node.scrollIntoView would: posted during dispatch, drained this
+        // frame and answered after this frame's layout, so no frame shows focus out of view.
+        this.input.revealSink(id -> sink.post(new Mutation.Reveal(id)));
 
         // The window size, zoom and density States are Metrics' own — built there, so that component can be
         // constructed and exercised without any of this.

@@ -243,7 +243,11 @@ public final class Tabs {
         this.gui = gui;
         ContextMenu.presentOn(gui);   // every header gets a Close menu; something has to be able to show it
         this.bar = gui.row().width(Length.FILL).height(Length.rem(2.25f)).background(gui.theme().color(Role.CHROME))
-                .gap(Length.dp(2)).alignItems(AlignItems.STRETCH).scroll(false, false);
+                .gap(Length.dp(2)).alignItems(AlignItems.STRETCH)
+                // A horizontal scroller, so a bar with more headers than width still has every header somewhere
+                // it can be brought to: select() reveals the one it lands on, and the scrollbar that overflow
+                // shows is the pointer's way to the rest. Never vertical -- the bar is one row tall by design.
+                .scroll(true, false);
         // The content area is a surface, not a hole. Two reasons, and they arrived independently.
         //
         // It looks right: the bar and the area under it are one piece of chrome framing the content, so a page
@@ -328,8 +332,12 @@ public final class Tabs {
         gui.focusable(header, true);
         // Arrow keys walk the bar while a header holds focus. A claim rather than a key handler, so it preempts
         // anything else bound to those chords for exactly as long as this header is focused.
-        gui.claim(header, Shortcut.of(Key.LEFT), ClaimScope.FOCUSED, () -> select(headers.indexOf(header) - 1));
-        gui.claim(header, Shortcut.of(Key.RIGHT), ClaimScope.FOCUSED, () -> select(headers.indexOf(header) + 1));
+        // Focus goes with the selection: the claims are scoped to the focused header, so a walk that left focus
+        // behind would answer every further press from where it started and never get past the next tab.
+        gui.claim(header, Shortcut.of(Key.LEFT), ClaimScope.FOCUSED,
+                () -> select(headers.indexOf(header) - 1).focus());
+        gui.claim(header, Shortcut.of(Key.RIGHT), ClaimScope.FOCUSED,
+                () -> select(headers.indexOf(header) + 1).focus());
         // Hover shading. Recorded as well as painted, so that a selection landing on this header later knows
         // whether the pointer is still on it -- see the states list.
         gui.onState(header, state -> {
@@ -416,6 +424,9 @@ public final class Tabs {
             paint(previous);
         }
         paint(next);
+        // The header that says which tab this is has to be on screen, or a bar narrower than its headers can be
+        // walked onto a selection nobody can see. Least scrolling, resolved this frame (Node.scrollIntoView).
+        headers.get(next).scrollIntoView();
 
         if (previous >= 0) {
             Node outgoing = bodies.get(previous);

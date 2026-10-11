@@ -1,9 +1,7 @@
 # vexelray-gui — TODO
 
-Deferred work, each with enough context to pick up cold. Nothing here is a bug in shipped behaviour; it is work
-that was identified while doing something else and correctly left alone at the time. There was one exception,
-§6.2 — not a bug when it was written, and one from the moment the framework began installing the dialogs —
-and it is fixed. There is now another, §0.1, and it is not.
+Deferred work, each with enough context to pick up cold — mostly work that was identified while doing something
+else and correctly left alone at the time.
 
 Ordered within each section by "would I regret not doing this", not by size.
 
@@ -1130,3 +1128,22 @@ found the following. §7.1's first item is the one that matters: it is the featu
 - **A drop leaves no trace.** A task that reaches a stopped lane because of a real lifecycle bug — a timer still
   calling `async` after `close` — used to surface as a `RejectedExecutionException` pointing at the leak, and
   now vanishes. A debug-level record (or a `Diagnostics` counter, cf. §6.5) keeps the race quiet without hiding it.
+
+## 8. Bugs in shipped widgets
+
+### 8.1 Left/Right walks onto tab headers nobody can see
+
+**Fixed (2026-10-10)**, as step 1 of [tab-overflow.md](tab-overflow.md) describes. Two defects, not one: besides the
+missing reveal, Left/Right left focus on the header they were pressed on, so a walk never got past the next tab.
+The arrow claims now move focus with the selection. The original entry follows.
+
+The tab bar is a fixed-height row with scrolling off (`Tabs.java:245`), and `FlexLayout` has no wrap. When there
+are more headers than width, the extras lay out past the bar's right edge and are clipped. They are still
+focusable and still claim Left/Right, so walking the bar with the arrow keys moves focus onto a tab that is off
+screen. The selection changes and the page switches, but the header that says which tab you are on can't be seen.
+No pointer gesture reaches the clipped tabs either, and nothing tells you they exist.
+
+**The fix for the walk-off is one line:** `select` calls `scrollIntoView()` on the newly selected header, with the
+header row made a horizontal scroller. That's step 1 of [tab-overflow.md](tab-overflow.md), and it stands alone:
+it doesn't need the `Overflow` seam, wrap or the menu. A test walks Right past the edge and checks the selected
+header's rect lies inside the bar. Reaching the clipped tabs by pointer is the rest of that plan, which is paused.

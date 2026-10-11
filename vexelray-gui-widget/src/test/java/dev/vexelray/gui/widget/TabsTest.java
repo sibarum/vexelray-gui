@@ -197,6 +197,34 @@ class TabsTest {
         }
     }
 
+    /**
+     * More headers than bar: walking Right past the edge keeps the selected header inside the bar, and focus goes
+     * with it, so each press walks one further rather than answering from where the walk began.
+     */
+    @Test
+    void walkingPastTheEdgeKeepsTheSelectedHeaderInView() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Tabs tabs = new Tabs(h.gui);
+            for (int i = 0; i < 12; i++) {
+                tabs.add("Document " + i, page(h, "page " + i));
+            }
+            h.gui.root().children(h.gui.column().width(Length.rem(16f)).height(Length.rem(10f))
+                    .children(tabs.node()));
+            h.frame();
+            tabs.focus();
+
+            for (int i = 1; i < 12; i++) {
+                h.tap(Key.RIGHT);
+                h.frame();
+                assertEquals(i, tabs.selected(), "one press, one tab along");
+                var bar = tabs.node().layout().rect();
+                var header = tabs.header(i).layout().rect();
+                assertTrue(header.x() >= bar.x() - 0.5f && header.x() + header.w() <= bar.x() + bar.w() + 0.5f,
+                        "tab " + i + " at " + header + " lies inside the bar " + bar);
+            }
+        }
+    }
+
     /** Selection clamps, so an arrow at either end stays put rather than wrapping or throwing. */
     @Test
     void selectionClampsAtBothEnds() {

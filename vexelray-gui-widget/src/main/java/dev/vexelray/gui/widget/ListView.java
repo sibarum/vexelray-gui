@@ -301,7 +301,7 @@ public final class ListView<T> implements AutoCloseable {
         return Set.copyOf(shown.keySet());
     }
 
-    /** React to a row being activated (double-click equivalent: Enter on the selection). */
+    /** React to a row being activated: double-clicked, or Enter on a selection of one. */
     public ListView<T> onActivate(Consumer<T> handler) {
         this.onActivate = handler == null ? t -> { } : handler;
         return this;
@@ -481,6 +481,8 @@ public final class ListView<T> implements AutoCloseable {
         // declared here, every row in a table reads as `row "3 item-00023 binary"` instead of `row ""`.
         row.append(builder.build(gui, item).role(itemRole));
         gui.onClick(row, e -> onRowClick(item, e));
+        // The second click has already selected the row, so this activates what a click just chose.
+        gui.onDoubleClick(row, () -> onActivate.accept(item));
         gui.onContextClick(row, e -> onRowContextClick(item));
         gui.onContextMenu(row, menu -> contextMenu.accept(item, menu));
         gui.onState(row, state -> row.background(hovered(item, state)));

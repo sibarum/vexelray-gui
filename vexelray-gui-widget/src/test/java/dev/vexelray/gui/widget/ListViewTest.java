@@ -145,6 +145,20 @@ class ListViewTest {
         }
     }
 
+    @Test
+    void aDoubleClickSelectsTheRowAndActivatesIt() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            ListView<String> list = mount(h, 100);
+            List<String> activated = new ArrayList<>();
+            list.onActivate(activated::add);
+            Rect r = list.rowNode("item00002").layout().rect();
+            h.clicks(r.x() + r.w() / 2f, r.y() + r.h() / 2f, 2);
+            h.frame();
+            assertEquals(Set.of("item00002"), list.selection().selection());
+            assertEquals(List.of("item00002"), activated);
+        }
+    }
+
     /**
      * The whole reason a left click carries its modifiers: these three gestures are three different commands, and
      * the handler that decides which one it was has to be holding what decided it.

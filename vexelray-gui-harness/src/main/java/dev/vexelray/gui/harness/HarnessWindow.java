@@ -45,6 +45,15 @@ import java.util.List;
  * <p>{@link #budgets()} records what the loop decided each iteration, which is the other half: it is
  * how a test asserts that an idle application parked rather than merely that it looked idle.
  *
+ * <h2>A pump takes the wake, whichever window pumps</h2>
+ *
+ * <p>The wake is a message on the thread's queue ({@code WM_NULL} on Windows), and a window's pump removes every
+ * message on that queue, not only its own: {@code PeekMessage} is called with no window filter. So in an
+ * iteration where several windows pump, a wake posted after the main tree was drained is taken by a later window's
+ * pump, and the wait that follows is for a <em>new</em> message. This models that: the wake lives on the first
+ * window, which is the one the loop waits on, and every window's {@link #pumpEvents} takes it. A wake that stayed
+ * until the wait read it would hide exactly the lost wake two windows can produce.
+ *
  * <p>Not thread-safe by accident — the loop calls this from its own thread and a test drives it from
  * another, which is exactly the arrangement a real application has.
  */
@@ -53,6 +62,8 @@ public final class HarnessWindow implements NativeWindow {
     private final NativeWindow real;
     private final Object lock = new Object();
     private final List<Long> budgets = new ArrayList<>();
+    /** The window whose wait the loop parks on, and so where the wake is: this one, or the application's first. */
+    private final HarnessWindow queue;
 
     private boolean woken;
     private boolean focused = true;
@@ -69,7 +80,13 @@ public final class HarnessWindow implements NativeWindow {
      * because that is what the application would have done to a window of its own.
      */
     public HarnessWindow(NativeWindow real) {
+        this(real, null);
+    }
+
+    /** As {@link #HarnessWindow(NativeWindow)}, sharing {@code queue}'s wake: a later window of the same application. */
+    HarnessWindow(NativeWindow real, HarnessWindow queue) {
         this.real = java.util.Objects.requireNonNull(real, "real");
+        this.queue = queue == null ? this : queue;
     }
 
     // ---- the four the loop uses -------------------------------------------------------------------
@@ -77,6 +94,8 @@ public final class HarnessWindow implements NativeWindow {
     @Override
     public boolean pumpEvents() {
         real.pumpEvents();
+        // Emptying the thread's queue takes the wake with everything else: see the class note.
+        queue.takeWake();
         // The wrapped window's close state is the OS's business and a test's is not: a harness run ends
         // when the test says so, not when a window nobody can see decides it has been dismissed.
         synchronized (lock) {
@@ -111,8 +130,18 @@ public final class HarnessWindow implements NativeWindow {
         }
     }
 
+    private void takeWake() {
+        synchronized (lock) {
+            woken = false;
+        }
+    }
+
     @Override
     public void postWake() {
+        if (queue != this) {
+            queue.postWake();   // one queue per thread, so a wake for any window is a wake for the loop
+            return;
+        }
         synchronized (lock) {
             woken = true;
             lock.notifyAll();

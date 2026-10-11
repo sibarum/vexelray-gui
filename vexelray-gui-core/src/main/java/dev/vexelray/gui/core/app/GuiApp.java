@@ -1438,7 +1438,13 @@ public final class GuiApp implements AutoCloseable {
                 // after this iteration's drain is owed the next frame, and it is the only one here that
                 // can say so.
                 // A texture waiting out its iteration (see release) is the same: parked, it is never closed.
-                long budget = tasks.isEmpty() && !retireDue() ? pacing.getAsLong() : 0L;
+                // And so is a wake posted during this iteration. Its message is not to be trusted to still be
+                // there: every window's pump empties this thread's queue, so with two windows a wake posted
+                // after the main tree was drained is taken by the next window's pump, and the park would wait
+                // for a message already gone -- forever, when nobody is looking, with every later wake
+                // suppressed because a frame is already owed. Found by vexelray-framework's two-window
+                // witness; TwoWindowsWakeTest in vexelray-gui-harness.
+                long budget = tasks.isEmpty() && !retireDue() && !wakePosted.get() ? pacing.getAsLong() : 0L;
                 // Then the two bounds. The floor applies only while someone is looking: an unfocused
                 // window parks on whatever the application asked for, up to forever.
                 if (isFocused()) {

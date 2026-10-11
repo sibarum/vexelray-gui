@@ -245,7 +245,9 @@ public final class HarnessApp implements AutoCloseable {
      * inside window creation, so it does nothing but create and record.
      */
     private HarnessWindow create(WindowConfig config) {
-        HarnessWindow wrapped = new HarnessWindow(NativePlatform.current().createWindow(config.hidden(true)));
+        // One thread, one queue: every later window's pump takes the wake the first window's wait is for.
+        HarnessWindow wrapped = new HarnessWindow(NativePlatform.current().createWindow(config.hidden(true)),
+                opened.isEmpty() ? null : opened.get(0));
         opened.add(wrapped);
         return wrapped;
     }

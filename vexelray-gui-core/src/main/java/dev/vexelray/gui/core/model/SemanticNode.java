@@ -1,5 +1,7 @@
 package dev.vexelray.gui.core.model;
 
+import dev.vexelray.gui.core.input.FocusCause;
+
 import java.util.List;
 
 /**
@@ -38,6 +40,9 @@ import java.util.List;
  * @param caret        caret offset for an editable text node, else {@code -1}
  * @param selectStart  selection start offset, or {@code -1}
  * @param selectEnd    selection end offset, or {@code -1}
+ * @param focusCause   how this node got focus, or {@code null} when it does not hold it
+ * @param ringShown    whether the framework's focus ring is up around this node: it holds focus, and the ring
+ *                     in force for it (its own or the theme's) shows for this way of arriving
  */
 public record SemanticNode(
         long id,
@@ -56,12 +61,14 @@ public record SemanticNode(
         String text,
         int caret,
         int selectStart,
-        int selectEnd) {
+        int selectEnd,
+        FocusCause focusCause,
+        boolean ringShown) {
 
     /** The value returned for a node this snapshot does not describe. */
     public static final SemanticNode ABSENT = new SemanticNode(
             -1L, -1L, List.of(), NodeKind.BOX, "", "", "",
-            false, false, false, false, false, false, null, -1, -1, -1);
+            false, false, false, false, false, false, null, -1, -1, -1, null, false);
 
     public SemanticNode {
         children = List.copyOf(children);

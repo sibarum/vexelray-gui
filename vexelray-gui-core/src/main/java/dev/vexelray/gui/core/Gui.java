@@ -224,6 +224,9 @@ public final class Gui implements AutoCloseable {
     // on what that costs and where it is heading). Volatile because widgets read it from whichever thread built
     // them and from every state handler.
     private volatile Theme theme = Theme.DARK;
+    /** The focus state and theme the read-models were last published against; see the frame's publish step. */
+    private dev.vexelray.gui.core.input.FocusState publishedFocus = dev.vexelray.gui.core.input.FocusState.NONE;
+    private Theme publishedTheme;
     private final Executor handlers;
     /**
      * Where {@link #async} puts work — a different lane from {@link #handlers}, and the split is the point.
@@ -423,6 +426,16 @@ public final class Gui implements AutoCloseable {
             }
 
             @Override
+            public dev.vexelray.gui.core.input.FocusCause focusCause() {
+                return input.focusState().cause();
+            }
+
+            @Override
+            public dev.vexelray.gui.core.style.FocusRing focusRing() {
+                return theme.focusRing();
+            }
+
+            @Override
             public String landmarkName(long id) {
                 return navigator.landmarkName(id);
             }
@@ -435,6 +448,9 @@ public final class Gui implements AutoCloseable {
         this.setModifiers = mb.mutation("set", (held, next) -> next);
         this.modifierState = mb.build();
         input.onModifiers(held -> modifierState.commit(setModifiers, held));
+        // The focus ring is drawn from the dispatcher's focus state, not from a prop, so moving it edits nothing
+        // the frame loop can see.
+        input.onFocusState(this::requestFrame);
 
         // The root is created here rather than when Trees was built: its id was needed before the subscription
         // existed, and its Create must be published after it, or it goes onto the bus with nobody listening.
@@ -1193,6 +1209,14 @@ public final class Gui implements AutoCloseable {
     public Topic<FocusEvent> focusEvents() {
         return FOCUS;
     }
+
+    /**
+     * Where keyboard focus is right now, how it got there, and whether the window is in front — the value the
+     * renderer draws the focus ring from (see {@link dev.vexelray.gui.core.style.FocusRing}).
+     */
+    public dev.vexelray.gui.core.input.FocusState focusState() {
+        return input.focusState();
+    }
     /**
      * Declare the cursor shape over {@code node} and its descendants ({@code null} to clear).
      *
@@ -1754,12 +1778,19 @@ public final class Gui implements AutoCloseable {
                 }
                 moving = Displacement.displace(r, motion);
             }
-            if (geometryChanged || moving) {
+            // Focus is in the semantic snapshot but not in the tree, so a focus move that edits no node (a button
+            // has nothing to restyle) has to republish on its own, or the snapshot says focus is where it was.
+            // The theme likewise: its focus ring decides ringShown.
+            dev.vexelray.gui.core.input.FocusState focusNow = input.focusState();
+            boolean focusMoved = !focusNow.equals(publishedFocus) || theme != publishedTheme;
+            if (geometryChanged || moving || focusMoved) {
                 // Last of the compute phase, because it is a fact about the rects everything above just
                 // finished writing: displacement moves a node after layout placed it, and a clip resolved
                 // before that would describe a frame nobody sees.
                 Clip.resolve(r);
                 readModels.publish(r);
+                publishedFocus = focusNow;
+                publishedTheme = theme;
             }
             transfers.publish(input.dragSession());
             if (moving) {

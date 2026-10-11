@@ -356,7 +356,7 @@ final class GuiWindow implements AutoCloseable {
         RetainedNode root = update();
         canvas.begin();
         if (root != null) {
-            TreeRenderer.emit(root, canvas, fonts.faces(), gui.theme());
+            TreeRenderer.emit(root, canvas, fonts.faces(), gui);
         }
         int vertexCount = Math.min(canvas.vertexCount(),
                 (int) (vertexBuffer.capacityFloats() / CanvasVertex.FLOATS_PER_VERTEX));
@@ -415,7 +415,7 @@ final class GuiWindow implements AutoCloseable {
         try (Zone z = Probe.zone(Lane.DRAW, "emit canvas")) {
             canvas.begin();
             if (root != null) {
-                TreeRenderer.emit(root, canvas, fonts.faces(), gui.theme());
+                TreeRenderer.emit(root, canvas, fonts.faces(), gui);
             }
             // The number the truncation warning below is about, recorded every frame rather than only when it
             // overflows: a buffer that is nearly full is the frame before the one that draws wrong.

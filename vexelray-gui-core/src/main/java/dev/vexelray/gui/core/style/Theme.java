@@ -86,13 +86,93 @@ public interface Theme {
         return relief().at(rung, state);
     }
 
-    /** A palette-driven theme. */
+    /**
+     * How the node holding keyboard focus shows it. The renderer draws this one ring around whichever node has
+     * focus, so no widget draws its own; a node can override it with {@code Node.focusRing}.
+     *
+     * <p>A default rather than abstract, so a theme implemented outright before the ring existed still compiles
+     * and gets the framework's ring.
+     */
+    default FocusRing focusRing() {
+        return FocusRing.STANDARD;
+    }
+
+    /** This theme with {@code ring} as its focus ring and every other decision unchanged. */
+    default Theme focusRing(FocusRing ring) {
+        Theme base = this;
+        FocusRing chosen = ring == null ? FocusRing.STANDARD : ring;
+        return new Theme() {
+            @Override
+            public Palette palette() {
+                return base.palette();
+            }
+
+            @Override
+            public Shading shading() {
+                return base.shading();
+            }
+
+            @Override
+            public Relief relief() {
+                return base.relief();
+            }
+
+            @Override
+            public boolean lit() {
+                return base.lit();
+            }
+
+            @Override
+            public boolean letterpress() {
+                return base.letterpress();
+            }
+
+            @Override
+            public Color color(Role role) {
+                return base.color(role);
+            }
+
+            @Override
+            public Color color(Role role, InteractionState state) {
+                return base.color(role, state);
+            }
+
+            @Override
+            public Length elevation(int rung) {
+                return base.elevation(rung);
+            }
+
+            @Override
+            public Length elevation(int rung, InteractionState state) {
+                return base.elevation(rung, state);
+            }
+
+            @Override
+            public FocusRing focusRing() {
+                return chosen;
+            }
+        };
+    }
+
+    /** A palette-driven theme, with the framework's focus ring. */
     static Theme of(Palette palette, Shading shading, Relief relief, boolean lit, boolean letterpress) {
-        return new PaletteTheme(palette, shading, relief, lit, letterpress);
+        return of(palette, shading, relief, lit, letterpress, FocusRing.STANDARD);
+    }
+
+    /** A palette-driven theme with its own focus ring. */
+    static Theme of(Palette palette, Shading shading, Relief relief, boolean lit, boolean letterpress,
+                    FocusRing focusRing) {
+        return new PaletteTheme(palette, shading, relief, lit, letterpress,
+                focusRing == null ? FocusRing.STANDARD : focusRing);
     }
 }
 
-/** The default implementation: everything is already on the interface, so this holds the five decisions. */
-record PaletteTheme(Palette palette, Shading shading, Relief relief, boolean lit, boolean letterpress)
-        implements Theme {
+/** The default implementation: everything is already on the interface, so this holds the six decisions. */
+record PaletteTheme(Palette palette, Shading shading, Relief relief, boolean lit, boolean letterpress,
+                    FocusRing focusRing) implements Theme {
+
+    @Override
+    public Theme focusRing(FocusRing ring) {
+        return Theme.of(palette, shading, relief, lit, letterpress, ring);
+    }
 }

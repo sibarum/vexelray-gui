@@ -75,9 +75,19 @@ keyboard has.
   sets it programmatically.
 - **Tab order:** `Tab` / `Shift+Tab` move focus to the next/previous focusable node in tree (DFS) order.
   A node opts into focusability (text fields, buttons, inputs); plain boxes/text don't.
-- **Focus events** publish on the bus (`FocusGained`/`FocusLost` per node) so widgets restyle (focus
-  ring) and workers can react. Honors the pointer-target rule: focus changes appearance, never geometry
-  or hit-targets.
+- **Focus events** publish on the bus (`FocusEvent(nodeId, gained, cause)` per node) so workers can react.
+  `cause` is `POINTER`, `KEYBOARD` (Tab, Shift+Tab) or `PROGRAM` (`Gui.focus`), stamped where the dispatcher
+  moves focus. Honors the pointer-target rule: focus changes appearance, never geometry or hit-targets.
+- **The focus ring is the renderer's**, not a widget's. `TreeRenderer` draws one ring around whichever node
+  holds focus, from `Theme.focusRing()` (a `FocusRing`: a `Role` colour, a width, a signed offset and a
+  `Visibility` rule; `STANDARD` is accent, 0.125rem, 0.125rem clear, `ALWAYS`). A node overrides it with
+  `Node.focusRing(...)` — `FocusRing.NONE` for one that marks focus itself. The ring is drawn by the focused
+  node's nearest clipping ancestor (or the root) after its flow children and before its floats, so later
+  siblings don't cover it and popups do; if the outset ring doesn't fit inside that clip it is drawn just
+  inside the box. It dims to half while the window is in the background. No widget draws its own focus:
+  `TextField` and `TreeView`, which used to recolour their border, no longer do. The semantic read-model
+  publishes `focusCause` and `ringShown`, and `ottermate tree` prints `ring` after `focused` when it is up.
+  [plans/focus-ring.md](../plans/focus-ring.md) has the reasoning; the demo's Focus chapter shows each case.
 - A **disabled** node is never focusable and drops out of the Tab order.
 
 ---

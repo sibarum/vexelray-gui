@@ -133,6 +133,18 @@ public final class Node {
         return prop(PropKey.OVERLAY, picture);
     }
 
+    /**
+     * The ring this node shows while it holds keyboard focus, in place of the theme's. Pass
+     * {@code FocusRing.NONE} for a node that marks focus as part of something larger (a list painting its lead
+     * row), one axis changed from {@code gui.theme().focusRing()} for a control that needs a different ring, or
+     * null to go back to the theme's.
+     *
+     * <p>Not inherited: it applies to this node when it is the focused one, and says nothing about its children.
+     */
+    public Node focusRing(dev.vexelray.gui.core.style.FocusRing ring) {
+        return prop(PropKey.FOCUS_RING, ring);
+    }
+
     public Node corner(Length radius) {
         return prop(PropKey.CORNER, radius);
     }

@@ -2,8 +2,13 @@ package dev.vexelray.gui.core.app;
 
 import dev.vexelray.canvas.Canvas;
 import dev.vexelray.canvas.Color;
+import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.ImageRegion;
+import dev.vexelray.gui.core.Viewport;
+import dev.vexelray.gui.core.input.FocusState;
+import dev.vexelray.gui.core.layout.LayoutContext;
 import dev.vexelray.gui.core.model.RetainedNode;
+import dev.vexelray.gui.core.style.FocusRing;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.gui.core.text.Span;
@@ -84,8 +89,30 @@ public final class TreeRenderer {
     /** The application's fonts: which face each character is drawn in, the same answer the measurer gave. */
     private final TextFaces faces;
 
-    private TreeRenderer(Theme theme, TextFaces faces) {
+    // The focus ring (FocusRing). Focus is the dispatcher's, handed in as a value; the ring's lengths resolve
+    // against the frame's context like any other length, and its role against the theme.
+    private final Theme theme;
+    private final FocusState focus;
+    private final LayoutContext ctx;
+    /** The tree's top node, which hosts a ring that no clipping ancestor does. */
+    private RetainedNode top;
+    /** The nearest ancestor of the node being walked that pushes a clip: where a ring found here is drawn. */
+    private RetainedNode host;
+    /** The focused node's ring, recorded when the walk passes it and drawn when its host closes; null otherwise. */
+    private Ring ring;
+
+    /**
+     * A focused node's ring, waiting for its host. The box is in screen terms (box plus the displacement inherited
+     * at the node, its own included), because it is drawn under the host's displacement, not the node's.
+     */
+    private record Ring(RetainedNode host, float x, float y, float w, float h, float rTop, float rBottom,
+                        float width, float offset, Color color) { }
+
+    private TreeRenderer(Theme theme, TextFaces faces, FocusState focus, LayoutContext ctx) {
         this.faces = faces;
+        this.theme = theme;
+        this.focus = focus == null ? FocusState.NONE : focus;
+        this.ctx = ctx == null ? LayoutContext.of(0f, 0f) : ctx;
         this.scrollEdge = theme.color(Role.EDGE);
         this.scrollTrough = theme.color(Role.CHROME);
         this.scrollGrip = theme.color(Role.GRIP);
@@ -116,7 +143,31 @@ public final class TreeRenderer {
      * node carries was resolved when the prop was written.
      */
     public static void emit(RetainedNode node, Canvas canvas, TextFaces faces, Theme theme) {
-        TreeRenderer renderer = new TreeRenderer(theme == null ? Theme.DARK : theme, faces);
+        emit(node, canvas, faces, theme, FocusState.NONE, null);
+    }
+
+    /**
+     * As {@link #emit(RetainedNode, Canvas, TextFaces, Theme)}, with {@code gui}'s theme, and its focus ring around
+     * whichever node holds keyboard focus. Everything is read from {@code gui} here, once, and handed to the walk
+     * as values.
+     */
+    public static void emit(RetainedNode node, Canvas canvas, TextFaces faces, Gui gui) {
+        Viewport v = gui.viewport().value();
+        LayoutContext ctx = new LayoutContext(gui.rootEmPx(), gui.zoom().value(), gui.dpi().value(),
+                v == null ? 0f : v.width(), v == null ? 0f : v.height());
+        emit(node, canvas, faces, gui.theme(), gui.focusState(), ctx);
+    }
+
+    /**
+     * As {@link #emit(RetainedNode, Canvas, TextFaces, Theme)}, drawing the focus ring for {@code focus}: the
+     * focused node's own {@code FocusRing} if it has one, else {@code theme}'s, with its lengths resolved against
+     * {@code ctx}.
+     */
+    public static void emit(RetainedNode node, Canvas canvas, TextFaces faces, Theme theme, FocusState focus,
+                            LayoutContext ctx) {
+        TreeRenderer renderer = new TreeRenderer(theme == null ? Theme.DARK : theme, faces, focus, ctx);
+        renderer.top = node;
+        renderer.host = node;
         renderer.walk(node, canvas);
         renderer.unclipped(canvas);
     }
@@ -223,7 +274,16 @@ public final class TreeRenderer {
                 drawPlate(node, canvas);
             }
             drawSelf(node, canvas, faceFor(node));
+            if (plating == null && node.id == focus.nodeId()) {
+                recordRing(node);   // drawn by its host, not here: see drawRing
+            }
             boolean scrollClip = node.overflowX || node.overflowY;
+            // This node hosts the rings found under it if it clips them; the top of the tree hosts the rest.
+            boolean hosts = scrollClip || node.clip() || node == top;
+            RetainedNode keepHost = host;
+            if (hosts) {
+                host = node;
+            }
             // An overflowing container clips to its scroll viewport; a container that merely said so clips to its
             // whole border box. Both are the same mask, asked for two different ways, so only one is pushed.
             float keepL = clipL;
@@ -257,6 +317,11 @@ public final class TreeRenderer {
                     walk(child, canvas);
                 }
             }
+            // After every flow child, so no later sibling paints over the ring; before the floats, so every popup
+            // still covers it; and under the host's own clip, rounded corners and all.
+            if (hosts) {
+                drawRing(node, canvas);
+            }
             if (scrollClip) {
                 canvas.popClip();
                 drawScrollbars(node, canvas);   // the container's chrome, so still at the container's alpha
@@ -277,6 +342,12 @@ public final class TreeRenderer {
                     walk(child, canvas);
                 }
             }
+            if (hosts) {
+                // A focused node inside one of this host's floats (a popup's own field) was met after the flow
+                // pass, so its ring is drawn here, over the float it is in.
+                drawRing(node, canvas);
+                host = keepHost;
+            }
             if (!scrollClip && node.clip()) {
                 canvas.popClip();
             }
@@ -296,6 +367,63 @@ public final class TreeRenderer {
             transY = keepTransY;
         }
         alpha = inherited;   // one restore point, on every path out
+    }
+
+    /**
+     * Note the focused node's ring, if the ring in force for it shows for the way focus arrived. Its own
+     * {@code FocusRing} wins over the theme's, and is read from this node only.
+     */
+    private void recordRing(RetainedNode n) {
+        FocusRing spec = n.focusRing() != null ? n.focusRing() : theme.focusRing();
+        if (!spec.shows(focus.cause(), n.editable()) || n.w <= 0f || n.h <= 0f) {
+            return;
+        }
+        float width = spec.width().scalarPx(ctx, n.w);
+        if (width <= 0f) {
+            return;
+        }
+        float offset = spec.offset().scalarPx(ctx, n.w);
+        // At the node's inherited opacity, so a ring on a fading page fades with it; at half that while the
+        // window is in the background, the way the caret stops blinking there.
+        float a = alpha * (focus.windowActive() ? 1f : 0.5f);
+        Color c = theme.color(spec.color());
+        ring = new Ring(host, n.x + transX, n.y + transY, n.w, n.h, n.cornerPx, n.cornerBottomPx, width, offset,
+                Color.withAlpha(c, c.a() * a));
+    }
+
+    /**
+     * Draw the waiting ring if {@code at} is its host. The ring stands {@code offset} clear of the box and is
+     * {@code width} thick, its corners following the box's own. If that outset does not fit inside the host's
+     * clip it is drawn just inside the box instead: a control that fills its container would otherwise have its
+     * ring clipped away on every side, and the field that most needs to show focus would show none. One rule for
+     * all four sides, so the ring is never lopsided.
+     */
+    private void drawRing(RetainedNode at, Canvas canvas) {
+        Ring r = ring;
+        if (r == null || r.host() != at) {
+            return;
+        }
+        ring = null;
+        // Into the host's frame: the canvas is under the host's displacement now, not the node's.
+        float x = r.x() - transX;
+        float y = r.y() - transY;
+        float out = r.offset() + r.width();
+        if (out > 0f && !inside(x - out, y - out, r.w() + 2f * out, r.h() + 2f * out)) {
+            out = 0f;
+        }
+        canvas.strokeRoundRect(x - out, y - out, r.w() + 2f * out, r.h() + 2f * out,
+                Math.max(0f, r.rTop() + out), Math.max(0f, r.rBottom() + out), r.width(), r.color());
+    }
+
+    /** Whether the rect lies within the live clip — the window's box when nothing clips there. */
+    private boolean inside(float x, float y, float w, float h) {
+        boolean unbounded = clipL == Float.NEGATIVE_INFINITY;
+        float l = unbounded ? top.x : clipL;
+        float t = unbounded ? top.y : clipT;
+        float rr = unbounded ? top.x + top.w : clipR;
+        float b = unbounded ? top.y + top.h : clipB;
+        float slack = 0.5f;
+        return x >= l - slack && y >= t - slack && x + w <= rr + slack && y + h <= b + slack;
     }
 
     /**

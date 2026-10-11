@@ -221,6 +221,12 @@ public final class Automation implements Commands {
             }
             if (n.focused()) {
                 sb.append(" focused");
+                if (n.ringShown()) {
+                    // Said apart from focus, because the ring can be off for a node that holds it (a clicked
+                    // button under a keyboard-only ring, a node that opted out), and that is what a reader of a
+                    // screenshot would otherwise have to judge from pixels.
+                    sb.append(" ring");
+                }
             }
             sb.append('\n');
         }

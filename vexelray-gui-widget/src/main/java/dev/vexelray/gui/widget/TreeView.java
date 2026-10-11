@@ -10,7 +10,6 @@ import dev.vexelray.gui.core.drop.PayloadType;
 import dev.vexelray.gui.core.edit.Change;
 import dev.vexelray.gui.core.input.ClickEvent;
 import dev.vexelray.gui.core.input.CursorShape;
-import dev.vexelray.gui.core.input.FocusEvent;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.layout.LayoutEnums;
 import dev.vexelray.gui.core.edit.History;
@@ -533,7 +532,6 @@ public final class TreeView<T> implements AutoCloseable {
      * content: a bar inside the scroller is a bar that scrolls away, which is not a bar.
      */
     private final Node rows;
-    private final Subscription focusSub;
 
     /** All state below is guarded by {@code this}. The GUI-thread stages and the handler executor both mutate
      *  it; the monitor makes their transitions atomic, and every callback leaves the monitor before dispatch. */
@@ -557,7 +555,6 @@ public final class TreeView<T> implements AutoCloseable {
     /** The drag subscription, opened by reorderable() and closed with the tree. */
     private Subscription dragSub;
 
-    private volatile boolean focused;
     private volatile Consumer<T> onSelect = t -> { };
     private volatile Consumer<T> onActivate = t -> { };
     private volatile Consumer<T> onClick = t -> { };
@@ -649,7 +646,6 @@ public final class TreeView<T> implements AutoCloseable {
         gui.claim(this.root, CUT, ClaimScope.FOCUSED, () -> take(selectedItem(), DropEffect.MOVE));
         gui.claim(this.root, COPY, ClaimScope.FOCUSED, () -> take(selectedItem(), DropEffect.COPY));
         gui.claim(this.root, PASTE, ClaimScope.FOCUSED, () -> paste(selectedItem()));
-        this.focusSub = gui.bus().subscribe(gui.focusEvents(), this::onFocus);
 
         // The find bar, built shut, above the scroller rather than inside it: it takes its strip from the rows'
         // box, so opening it moves the rows down and scrolling them moves nothing of it. Ctrl+F opens it seeded
@@ -1285,7 +1281,6 @@ public final class TreeView<T> implements AutoCloseable {
     /** Release the tree's subscription and registrations. Call when removing it from the layout. */
     @Override
     public void close() {
-        focusSub.close();
         if (dragSub != null) {
             dragSub.close();
         }
@@ -2204,13 +2199,5 @@ public final class TreeView<T> implements AutoCloseable {
             }
             onHover.accept(null);
         });
-    }
-
-    private void onFocus(FocusEvent e) {
-        if (e.nodeId() != root.id()) {
-            return;
-        }
-        focused = e.gained();
-        root.border(Length.rem(0.1f), gui.theme().color(focused ? Role.ACCENT : Role.LINE));
     }
 }

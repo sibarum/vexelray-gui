@@ -1,8 +1,10 @@
 package dev.vexelray.gui.core.layout;
 
 import dev.vexelray.gui.core.LayoutReader;
+import dev.vexelray.gui.core.input.FocusCause;
 import dev.vexelray.gui.core.model.RetainedNode;
 import dev.vexelray.gui.core.model.SemanticNode;
+import dev.vexelray.gui.core.style.FocusRing;
 import dev.vexelray.gui.core.text.TextGeometry;
 import sibarum.atchung.Committer;
 import sibarum.probe.Lane;
@@ -55,6 +57,16 @@ public final class ReadModels {
 
         /** The landmark name this node was registered under, or {@code ""}. */
         String landmarkName(long id);
+
+        /** How the focused node got focus. */
+        default FocusCause focusCause() {
+            return FocusCause.PROGRAM;
+        }
+
+        /** The theme's focus ring, which a node without its own shows. */
+        default FocusRing focusRing() {
+            return FocusRing.STANDARD;
+        }
 
         /** Nothing is focusable, nothing is focused, nothing is named — enough to publish geometry against. */
         Meanings NONE = new Meanings() {
@@ -294,15 +306,20 @@ public final class ReadModels {
             childIds.add(c.id);
         }
         boolean text = n.hasText();
+        boolean focused = meanings.focusedId() == n.id;
+        FocusCause cause = focused ? meanings.focusCause() : null;
+        FocusRing ring = n.focusRing() != null ? n.focusRing() : meanings.focusRing();
         out.put(n.id, new SemanticNode(
                 n.id, parentId, childIds, n.kind(),
                 n.role(), accessibleName(n), meanings.landmarkName(n.id),
                 n.visible(), n.hitInert(), n.floating(),
-                meanings.focusable(n.id), meanings.focusedId() == n.id, n.editable(),
+                meanings.focusable(n.id), focused, n.editable(),
                 text ? n.textString() : null,
                 text && n.editable() ? n.caret() : -1,
                 text ? n.selectStart() : -1,
-                text ? n.selectEnd() : -1));
+                text ? n.selectEnd() : -1,
+                cause,
+                focused && ring.shows(cause, n.editable())));
         for (RetainedNode c : n.children) {
             collectSemantics(c, n.id, out);
         }

@@ -1564,7 +1564,7 @@ public final class GuiApp implements AutoCloseable {
         Canvas canvas = new Canvas(width, height);
         canvas.begin();
         if (root != null) {
-            TreeRenderer.emit(root, canvas, faces, gui.theme());
+            TreeRenderer.emit(root, canvas, faces, gui);
         }
         float[] vertices = canvas.toVertexArray();
         int vertexCount = canvas.vertexCount();

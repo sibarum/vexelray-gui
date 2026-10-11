@@ -286,6 +286,11 @@ public final class RetainedNode {
         return (Picture) props.get(PropKey.OVERLAY);
     }
 
+    /** This node's own focus ring, or null for the theme's (see {@link PropKey#FOCUS_RING}). */
+    public dev.vexelray.gui.core.style.FocusRing focusRing() {
+        return (dev.vexelray.gui.core.style.FocusRing) props.get(PropKey.FOCUS_RING);
+    }
+
     public Color borderColor() {
         return (Color) props.get(PropKey.BORDER_COLOR);
     }

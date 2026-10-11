@@ -4,6 +4,7 @@ import dev.vexelray.gui.demo.chapter.ChooserChapter;
 import dev.vexelray.gui.demo.chapter.ColorChapter;
 import dev.vexelray.gui.demo.chapter.DragChapter;
 import dev.vexelray.gui.demo.chapter.DrawChapter;
+import dev.vexelray.gui.demo.chapter.FocusChapter;
 import dev.vexelray.gui.demo.chapter.ImageChapter;
 import dev.vexelray.gui.demo.chapter.LayoutChapter;
 import dev.vexelray.gui.demo.chapter.MotionChapter;
@@ -39,6 +40,7 @@ public final class Gallery {
                 new DragChapter(),
                 new TableChapter(),
                 new ChooserChapter(),
+                new FocusChapter(),
                 new DrawChapter(),
                 new ColorChapter(),
                 new PlotChapter(),

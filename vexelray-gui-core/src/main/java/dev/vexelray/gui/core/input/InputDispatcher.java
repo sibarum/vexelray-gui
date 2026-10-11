@@ -199,6 +199,11 @@ public final class InputDispatcher {
      */
     private Consumer<Set<Modifier>> modifierSink = m -> { };
     private long focusedId = -1;
+    /** How {@link #focusedId} was last asked for: the focus ring's visibility rule reads it. */
+    private FocusCause focusCause = FocusCause.PROGRAM;
+    /** Whether the window holds OS focus, from tactroller's focus edges. The ring dims while it does not. */
+    private boolean windowActive = true;
+    private Runnable focusStateSink = () -> { };
     private Topic<FocusEvent> focusTopic;
     private Topic<KeyRouted> keyRoutedTopic;
 
@@ -472,7 +477,7 @@ public final class InputDispatcher {
             // typing history instead of to the drop they just made. Focusing what a click here would focus
             // realigns the two, and is what the user expects anyway: the thing just moved is the thing now acted on.
             RetainedNode landed = ancestorFocusable(HitTest.at(currentRoot, ended.x(), ended.y()));
-            setFocus(landed == null ? -1 : landed.id);
+            setFocus(landed == null ? -1 : landed.id, FocusCause.POINTER);
         }
     }
 
@@ -660,7 +665,7 @@ public final class InputDispatcher {
 
     /** Programmatically move focus to {@code nodeId} (or -1 to clear). */
     public void focus(long nodeId) {
-        setFocus(nodeId);
+        setFocus(nodeId, FocusCause.PROGRAM);
     }
 
     /** The node holding keyboard focus, or {@code -1} for none. */
@@ -702,7 +707,7 @@ public final class InputDispatcher {
         focusable.remove(nodeId);
         reportedState.remove(nodeId);
         if (focusedId == nodeId) {
-            setFocus(-1);
+            setFocus(-1, FocusCause.PROGRAM);
         }
         // Drop live pointer references to the node too, or a drag/scroll in progress keeps steering a node that
         // is no longer in the tree — and hit-test ancestry walks a parent chain the reconciler has already cut.
@@ -825,7 +830,7 @@ public final class InputDispatcher {
                 countPress(hit, b.x(), b.y(), b.timestampNanos());
                 // Click focuses the nearest focusable node (or clears focus on empty space).
                 RetainedNode focusTarget = ancestorFocusable(hit);
-                setFocus(focusTarget == null ? -1 : focusTarget.id);
+                setFocus(focusTarget == null ? -1 : focusTarget.id, FocusCause.POINTER);
                 pressTargetId = hit == null ? -1 : hit.id;
                 pressHit = hit;
                 hoverHit = hit;
@@ -939,6 +944,10 @@ public final class InputDispatcher {
                 // held for the rest of the session — and anything drawn from it (a document showing its links)
                 // stays stuck in that state with no way for the user to clear it. Losing focus clears the held
                 // set for the same reason it stops a repeat: what was held is no longer this window's business.
+                if (windowActive != f.focused()) {
+                    windowActive = f.focused();
+                    focusStateSink.run();
+                }
                 if (!f.focused() && !heldMods.isEmpty()) {
                     heldMods.clear();
                     repeatKey = null;
@@ -1062,6 +1071,14 @@ public final class InputDispatcher {
         repeatNextNanos = now + REPEAT_INTERVAL_NANOS; // frame-rate-bounded; no burst catch-up
     }
 
+    /**
+     * Install the sink told when anything in {@link #focusState()} changes. The focus ring is drawn from that state
+     * and from no prop, so a focus move that edits no node still has to ask for a frame or the ring stays behind.
+     */
+    public void onFocusState(Runnable sink) {
+        this.focusStateSink = sink == null ? () -> { } : sink;
+    }
+
     /** Install the sink told when the held-modifier set changes. */
     public void onModifiers(Consumer<Set<Modifier>> sink) {
         this.modifierSink = sink == null ? m -> { } : sink;
@@ -1096,7 +1113,7 @@ public final class InputDispatcher {
         int next = idx < 0
                 ? (dir > 0 ? 0 : order.size() - 1)
                 : ((idx + dir) % order.size() + order.size()) % order.size();
-        setFocus(order.get(next));
+        setFocus(order.get(next), FocusCause.KEYBOARD);
     }
 
     /**
@@ -1120,20 +1137,36 @@ public final class InputDispatcher {
         }
     }
 
-    private void setFocus(long id) {
+    private void setFocus(long id, FocusCause cause) {
         if (id == focusedId) {
+            // No move, so nothing to announce; but the latest way focus was asked for is the one a ring answers
+            // to. Tab onto a button and then click it, and it is now a button that was clicked.
+            if (focusCause != cause) {
+                focusCause = cause;
+                focusStateSink.run();
+            }
             return;
         }
         long old = focusedId;
         focusedId = id;
+        focusCause = cause;
+        focusStateSink.run();
         if (focusTopic != null) {
             if (old != -1) {
-                bus.publish(focusTopic, new FocusEvent(old, false));
+                bus.publish(focusTopic, new FocusEvent(old, false, cause));
             }
             if (id != -1) {
-                bus.publish(focusTopic, new FocusEvent(id, true));
+                bus.publish(focusTopic, new FocusEvent(id, true, cause));
             }
         }
+    }
+
+    /**
+     * Where focus is, how it got there, and whether the window is in front: everything the renderer needs to
+     * draw the focus ring, as one value it is handed rather than an object it reaches into.
+     */
+    public FocusState focusState() {
+        return new FocusState(focusedId, focusCause, windowActive);
     }
 
     /** Nearest focusable ancestor-or-self of {@code hit}, or {@code null}. */

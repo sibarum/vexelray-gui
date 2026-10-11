@@ -55,6 +55,33 @@ class KeyboardFocusTest {
         assertEquals(1, saves.get(), "plain S (no Control held) does not");
     }
 
+    /** The focus ring needs to know how focus arrived and whether the window is in front; the state says both. */
+    @Test
+    void focusStateSaysHowFocusArrivedAndWhetherTheWindowIsInFront() {
+        Atchung bus = Atchung.create();
+        InputDispatcher d = new InputDispatcher(bus, CLICKS, Runnable::run);
+        AtomicInteger told = new AtomicInteger();
+        d.onFocusState(told::incrementAndGet);
+        RetainedNode root = node(0, 0, 0, 100, 100);
+        RetainedNode a = node(1, 0, 0, 100, 20);
+        a.parent = root;
+        root.children.add(a);
+        d.setFocusable(1, true);
+
+        keyDown(bus, Key.TAB);
+        d.dispatch(root);
+        assertEquals(new FocusState(1, FocusCause.KEYBOARD, true), d.focusState(), "Tab is the keyboard");
+
+        d.focus(1);
+        assertEquals(FocusCause.PROGRAM, d.focusState().cause(), "asked for again, by a program this time");
+
+        bus.publish(InputTopics.INPUT, new InputEvent.FocusChanged(false, 0));
+        d.dispatch(root);
+        assertEquals(new FocusState(1, FocusCause.PROGRAM, false), d.focusState(),
+                "the node keeps focus while the window is in the background");
+        assertEquals(3, told.get(), "each change asks for a frame: nothing in the tree moved to say so");
+    }
+
     @Test
     void unclaimedKeyRoutesToFocusedNode() {
         Atchung bus = Atchung.create();
@@ -125,7 +152,8 @@ class KeyboardFocusTest {
         d.dispatch(root);
 
         assertEquals(2, d.focused());
-        assertEquals(List.of(new FocusEvent(1, true), new FocusEvent(1, false), new FocusEvent(2, true)), events);
+        assertEquals(List.of(new FocusEvent(1, true, FocusCause.POINTER), new FocusEvent(1, false, FocusCause.POINTER),
+                new FocusEvent(2, true, FocusCause.POINTER)), events, "a press says it was the pointer");
     }
 
     /**

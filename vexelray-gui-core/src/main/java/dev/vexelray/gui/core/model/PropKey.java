@@ -143,6 +143,13 @@ public enum PropKey {
      * it off without knowing what was there before.
      */
     UNCLIP(false),
+    /**
+     * This node's own focus ring ({@code FocusRing}), drawn instead of the theme's while it holds keyboard focus.
+     * Read from the focused node only and not inherited: a container's setting says nothing about its children.
+     *
+     * <p>Not layout-affecting, and its identity value is null, meaning "the theme's", as for {@link #OVERLAY}.
+     */
+    FOCUS_RING(false),
     // Text (size affects layout via intrinsic measure)
     TEXT(true),
     TEXT_SIZE(true),

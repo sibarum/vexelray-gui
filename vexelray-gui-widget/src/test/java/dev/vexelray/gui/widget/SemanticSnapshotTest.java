@@ -143,6 +143,30 @@ class SemanticSnapshotTest {
         }
     }
 
+    /** Whether the ring is up is published, so a reader can assert it without judging pixels. */
+    @Test
+    void theRingIsReportedWithHowFocusArrived() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            h.gui.theme(h.gui.theme().focusRing(dev.vexelray.gui.core.style.FocusRing.STANDARD
+                    .when(dev.vexelray.gui.core.style.FocusRing.Visibility.KEYBOARD)));
+            Button button = new Button(h.gui, "Go");
+            h.gui.root().children(button.node());
+            h.frame();
+            long id = button.node().id();
+
+            dev.vexelray.gui.core.layout.Rect box = button.node().layout().rect();
+            h.click(box.x() + box.w() * 0.5f, box.y() + box.h() * 0.5f);
+            SemanticNode clicked = h.gui.semanticSnapshot().node(id);
+            assertTrue(clicked.focused());
+            assertEquals(dev.vexelray.gui.core.input.FocusCause.POINTER, clicked.focusCause());
+            assertFalse(clicked.ringShown(), "a clicked button under a keyboard-only ring stays dark");
+
+            h.gui.focus(button.node());
+            h.frame();
+            assertTrue(h.gui.semanticSnapshot().node(id).ringShown(), "focused by program, it shows");
+        }
+    }
+
     @Test
     void aNameDoesNotReachIntoContent() {
         try (HeadlessGui h = new HeadlessGui()) {

@@ -1361,11 +1361,9 @@ public final class TextField implements AutoCloseable {
         if (focused) {
             node.caret(document.value().caret());
             node.caretOn(true);
-            node.border(Length.rem(0.1f), gui.theme().color(Role.ACCENT));
         } else {
             node.caret(-1);
             node.caretOn(false);
-            node.border(Length.rem(0.1f), gui.theme().color(Role.LINE));
         }
     }
 }

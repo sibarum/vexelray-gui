@@ -490,11 +490,12 @@ public final class Automation implements Commands {
     /**
      * Wait until the loop has caught up with everything published so far.
      *
-     * <p>Off the version counter the framework already publishes, not off a sleep — automation flakiness is
-     * overwhelmingly "did I wait long enough?", and that failure mode is absent when there is a number to wait
-     * for. It waits for a new layout to be published and then keeps waiting while a frame is still owed, since
-     * one publish is not enough: a handler running on a worker posts its mutation after the frame that
-     * dispatched the click has already drained.
+     * <p>Off what the loop owes, not off a sleep — automation flakiness is overwhelmingly "did I wait long
+     * enough?", and that failure mode is absent when there is a count to wait for. {@link Gui#frameOwed} counts
+     * the wake, the frame that took it until it has published, and every handler that frame dispatched until it
+     * has returned — so the click's own handler, which posts its mutation after the frame that dispatched it,
+     * is waited for too. It used to read the wake flag alone, which the frame clears at its top, and answered
+     * {@code ok} whenever it asked between there and the publish.
      *
      * <p><b>Then it waits for the {@link Timeline}</b>, when the host handed one over: a fade in flight with no
      * frame owed is not settled, and answering at once is how a panel was photographed part-way through its
@@ -502,10 +503,10 @@ public final class Automation implements Commands {
      * posted its last frame's worth of mutations. A timeline that never goes quiet — a repeating cue — is
      * reported by name rather than waited out.
      *
-     * <p><b>What it cannot see</b> is a handler that has not published yet — it is owed nothing, so nothing
-     * reports it ({@link Gui#frameOwed()} says so from the other side). This is therefore exact about the frame
-     * loop and the clock, and blind to application work still in flight. An agent that needs the second has to
-     * wait on something the application names.
+     * <p><b>What it cannot see</b> is work the application started for itself — on {@code Gui.async}, on a
+     * thread of its own — which is not the loop's debt ({@link Gui#frameOwed()} says so from the other side).
+     * This is therefore exact about the frame loop, its handlers and the clock, and blind to application work
+     * still in flight. An agent that needs the second has to wait on something the application names.
      */
     public String settle() {
         String loop = settleLoop();
@@ -549,26 +550,11 @@ public final class Automation implements Commands {
 
     /** The frame loop half of {@link #settle}: {@code null} once nothing is owed, the refusal if it stays owed. */
     private String settleLoop() {
-        if (!gui.frameOwed()) {
-            return null;   // nothing outstanding; do not wait for news
-        }
-        long deadline = System.nanoTime() + SETTLE_TIMEOUT_MS * 1_000_000L;
-        // Waited on a signal rather than on the version counter directly. State.await(version) blocks until the
-        // *next* publish, with no timeout — and layout does not republish when nothing moved, so a tree that has
-        // settled produces no further versions and that wait never returns. An unbounded wait inside a bounded
-        // loop is unbounded; the bound has to be on the wait itself.
-        java.util.concurrent.Semaphore published = new java.util.concurrent.Semaphore(0);
-        try (var sub = gui.layout().onCommit(v -> published.release())) {
-            while (gui.frameOwed()) {
-                long remaining = deadline - System.nanoTime();
-                if (remaining <= 0) {
-                    break;
-                }
-                if (!published.tryAcquire(remaining, java.util.concurrent.TimeUnit.NANOSECONDS)) {
-                    break;
-                }
-            }
-            if (!gui.frameOwed()) {
+        // Waited on the debt being paid, not on the next layout commit. A frame that changed nothing publishes
+        // nothing, so a wait for a commit ran to its timeout and then answered from whatever it found; and the
+        // debt counts what a commit cannot — the frame still dispatching, the handler still on its worker.
+        try {
+            if (gui.awaitNothingOwed(SETTLE_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)) {
                 return null;
             }
         } catch (InterruptedException e) {
@@ -577,7 +563,7 @@ public final class Automation implements Commands {
         }
         // Said rather than swallowed. A settle that times out silently and returns is how an agent comes to
         // report a confident wrong answer about a UI that never actually updated.
-        return "err did not settle within " + SETTLE_TIMEOUT_MS + "ms (frame still owed)";
+        return "err did not settle within " + SETTLE_TIMEOUT_MS + "ms (" + gui.whatIsOwed() + ")";
     }
 
     /**
@@ -722,6 +708,13 @@ public final class Automation implements Commands {
         }
         if (controls.width() <= 0) {
             return "err there is no window to resize";
+        }
+        if (controls.minimized()) {
+            // Said apart from "the window would not go there", which is what the wait below would have concluded:
+            // a minimized window ignores the request, and that reads as a size the application refused. Everything
+            // else — the tree, input, shot — goes on working at the size it will be restored to.
+            return "err the window is minimized, so it has no size to set (it is still laid out and photographed at "
+                    + controls.width() + "x" + controls.height() + ")";
         }
         java.util.regex.Matcher m = SIZE.matcher(rest.trim().toLowerCase(Locale.ROOT));
         if (!m.matches()) {

@@ -25,6 +25,15 @@ public interface WindowControls {
     boolean maximized();
 
     /**
+     * Whether the window is minimized right now — on the taskbar, with no size of its own to set. A question for
+     * an instrument that has to say why a {@link #resize} did nothing; the tree is still laid out, driven and
+     * photographed at the size it will be restored to. {@code false} where there is no window.
+     */
+    default boolean minimized() {
+        return false;
+    }
+
+    /**
      * Ask the window to close. The request travels the same route the system close button's does, so the host
      * tears the window down on its own terms — this does not destroy anything itself.
      */
@@ -181,6 +190,11 @@ public interface WindowControls {
             @Override
             public boolean maximized() {
                 return window.isMaximized();
+            }
+
+            @Override
+            public boolean minimized() {
+                return window.isMinimized();
             }
 
             @Override

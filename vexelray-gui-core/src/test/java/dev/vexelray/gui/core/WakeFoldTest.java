@@ -93,10 +93,12 @@ class WakeFoldTest {
 
             AtomicInteger wakes = new AtomicInteger();
             gui.onWork(wakes::incrementAndGet);
-            box.width(Length.rem(4));
-
             assertEquals(1, wakes.get(),
-                    "wiring a listener re-arms the wake: the loop that is listening now has not been told");
+                    "the wake nobody heard is delivered to the listener that is wired: it has not been told");
+            assertTrue(gui.frameOwed(), "and the frame it stands for is still owed, so nothing reads as settled");
+
+            box.width(Length.rem(4));
+            assertEquals(1, wakes.get(), "the frame is already owed, and saying so twice does not owe two");
         }
     }
 }

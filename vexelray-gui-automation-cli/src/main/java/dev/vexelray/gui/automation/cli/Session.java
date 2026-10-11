@@ -60,7 +60,9 @@ final class Session {
                 if (line == null) {
                     return status;
                 }
-                String command = line.trim();
+                // A byte-order mark is not part of the command. PowerShell puts one at the head of whatever it
+                // pipes to a native program, and the first command then came back as "no command '﻿settle'".
+                String command = line.replace("﻿", "").trim();
                 if (command.isEmpty() || command.startsWith("#")) {
                     // Blank lines and comments are the client's own convenience, not the protocol's: a scene
                     // ladder is a file somebody has to read six months later. The application never sees them.

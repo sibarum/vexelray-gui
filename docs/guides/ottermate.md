@@ -306,7 +306,7 @@ exits non-zero.
 
 ---
 
-## 5. Three things that will bite you
+## 5. Things that will bite you
 
 ### `settle` waits for animation only if the host handed it the clock
 
@@ -342,10 +342,21 @@ timeline that **never** goes quiet — a repeating cue, a clock face — makes `
 `err the timeline did not go quiet within 10000ms` rather than wait forever. Wait on a landmark with `await`
 in an application like that.
 
+### A window behind others, or minimized, is still driven
+
+Nothing needs the window in front. A window covered by others draws as usual, and `shot` reads back a
+real frame. A **minimized** window draws nothing, but the frame loop keeps laying it out at the size it will be
+restored to. So `settle`, `tree`, `click`, `type` and `key` work unchanged, and `shot` draws the tree offscreen at
+that size. Only `resize` refuses, because a minimized window has no size to set:
+`err the window is minimized, so it has no size to set (it is still laid out and photographed at 1400x900)`.
+Never restore or raise the window to get a picture: whoever put it out of the way meant it.
+
 ### `await` is for the application having finished thinking
 
-`settle` is exact about the frame loop and blind to work still in flight on a worker: nothing is owed, so
-nothing reports it. `await <landmark> <text>` waits until that landmark's accessible name contains the
+`settle` is exact about the frame loop, including the click's own handler on its worker: it waits for the
+frame that dispatched the click, for the handler to return, and for the frame that publishes what the handler
+did. It is blind to work the application starts for itself (`Gui.async`, a thread of its own): that is not
+the loop's debt, so nothing reports it. `await <landmark> <text>` waits until that landmark's accessible name contains the
 text — which means an application declares readiness by *writing it down where it is legible* rather than by
 a hook this tool would have to know about.
 
@@ -389,7 +400,7 @@ slashes (`C:/work/after.png`) work everywhere.
 | `err cannot navigate to x: gave up after 240 frames` | `go` could not reveal it. Either it does not exist, or nothing on the way opens |
 | `ottermate: the application did not finish answering 'settle' within 120s` | It stopped answering. `--timeout` raises the bound; a hang is usually the finding |
 | `ottermate: the application exited on its own, status 1` | Printed after a `--launch` run where the application died before being shut down |
-| `err did not settle within 2000ms (frame still owed)` | The loop never caught up — a genuine stall, and worth keeping |
+| `err did not settle within 2000ms (frame still owed)` | The loop never caught up — a genuine stall, and worth keeping. `(a handler still running)` instead means a click handler has not returned in 2s: blocking work belongs on `Gui.async`, with `await` on a landmark |
 | `err the timeline did not go quiet within 10000ms …` | Something on the clock never ends — a repeating cue. Use `await` on a landmark instead; `KronoGui.whyBusy()` names what is running |
 | Non-ASCII coming back as `?` | Fixed: replies print as UTF-8. If your console still shows boxes, that is its font, not the reply |
 

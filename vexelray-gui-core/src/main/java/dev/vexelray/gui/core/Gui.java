@@ -161,6 +161,15 @@ public final class Gui implements AutoCloseable {
      */
     private final java.util.concurrent.atomic.AtomicBoolean woken = new java.util.concurrent.atomic.AtomicBoolean();
     /**
+     * What the loop still owes this tree — a wake not yet taken, the frame that took it, the handlers that frame
+     * dispatched — as one count that never touches zero while work is handed between them. What
+     * {@link #frameOwed} answers from; {@link #woken} alone is cleared at the top of the frame, and a reader that
+     * asked it was told "settled" while the click it had just sent was still being dispatched.
+     */
+    private final Owed owed = new Owed();
+    /** Whether a frame has ever finished, so the first one can pay the unit a new tree starts owing. GUI thread. */
+    private boolean framed;
+    /**
      * Whether a frame is owed a <em>draw</em> — the half of render-on-change the wake is not (docs/plans/frame-loop.md).
      *
      * <p>A wake says "run a frame": drain, lay out, answer input. Whether that frame then has anything new to show
@@ -363,16 +372,21 @@ public final class Gui implements AutoCloseable {
         // costs one frame per input event that finds nothing left to do.
         Executor base = handlerExecutor != null ? handlerExecutor : own(handlerLane());
         this.offload = offloadExecutor != null ? offloadExecutor : own(offloadLane());
+        // Owed from submission to return, and the wake comes before the payment: a handler is still the frame's
+        // work while it runs, and a settle that cannot see it answers before the click has done anything (Owed).
         this.handlers = task -> {
+            owed.oweHandler();
             try {
                 base.execute(() -> {
                     try {
                         task.run();
                     } finally {
                         wake("handler returned");
+                        owed.payHandler();
                     }
                 });
             } catch (RejectedExecutionException e) {
+                owed.payHandler();
                 dropIfStopped(base, e);
             }
         };
@@ -1475,7 +1489,10 @@ public final class Gui implements AutoCloseable {
     }
 
     private void wake(String why) {
+        // Owed before the flag is set, so a frame that takes the flag the instant it is set has a unit to take.
+        owed.owe();
         if (!woken.compareAndSet(false, true)) {
+            owed.pay();
             return;   // a frame is already owed, and saying so twice does not owe two
         }
         if (Probe.ON) {
@@ -1531,20 +1548,38 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
-     * Whether a frame is currently owed — something has been published that no frame has drained yet.
+     * Whether the loop still owes this tree anything: a wake no frame has taken, a frame that has taken one and
+     * not yet published, a handler that frame dispatched and that has not returned — or the tree's first frame,
+     * which a new tree is owed from the start.
      *
      * <p>The read side of the wake, for anything that needs to know whether the tree has settled: chiefly the
      * automation driver's {@code settle}, which waits for a mutation to be reflected before it reads or clicks
-     * again (docs/reference/automation.md §5).
+     * again (docs/reference/automation.md §5). It is one count rather than the wake flag because the flag is
+     * cleared at the top of the frame, and a reader that asked it between there and the publish — or while the
+     * click's handler ran on its worker — was told nothing was owed; see {@link Owed}.
      *
-     * <p><b>What it does not say.</b> A handler still running on a worker has not published yet, so it is owed
-     * nothing and this reports false while that work is still in flight — the same limit
-     * {@link #onWork} describes from the other side. So this answers "has the loop caught up with what it has
-     * been told", exactly, and never "is the application finished thinking". A caller that needs the second
-     * has to wait on the application's own state, which only the application can name.
+     * <p><b>What it does not say.</b> Work the application starts for itself — on {@link #async}, on a thread of
+     * its own, on its clock — is not the loop's debt, and this reports false while it is in flight. So this
+     * answers "has the loop caught up with what it has been told, and with the handlers that told it more",
+     * exactly, and never "is the application finished thinking". A caller that needs the second has to wait on
+     * the application's own state, which only the application can name.
      */
     public boolean frameOwed() {
-        return woken.get();
+        return owed.any();
+    }
+
+    /**
+     * Block until {@link #frameOwed} is false, bounded — {@code true} once it is, {@code false} if it still is
+     * when {@code timeout} runs out. Woken by the payment that clears the debt rather than by a publish, since a
+     * frame that changed nothing publishes nothing and a wait on the next commit would run to its timeout.
+     */
+    public boolean awaitNothingOwed(long timeout, java.util.concurrent.TimeUnit unit) throws InterruptedException {
+        return owed.awaitPaid(timeout, unit);
+    }
+
+    /** What {@link #frameOwed} is owed, as a phrase a refusal can quote: {@code "frame still owed"}, {@code "a handler still running"}. */
+    public String whatIsOwed() {
+        return owed.describe();
     }
 
     /**
@@ -1575,12 +1610,24 @@ public final class Gui implements AutoCloseable {
      */
     public void onWork(Runnable listener) {
         this.workListener = java.util.Objects.requireNonNull(listener, "listener");
-        // Re-arm: a wake recorded while nothing was listening was delivered to NO_WAKE and reached no loop, so
-        // the newly wired listener must not inherit it as "already told". Without this, a tree that was edited
-        // before it was presented would suppress the first real wake it ever had.
-        woken.set(false);
         if (Probe.ON) {
             Probe.mark(Lane.FRAME, "wake.wired", "Gui@" + Integer.toHexString(System.identityHashCode(this)));
+        }
+        // A wake recorded while nothing was listening was delivered to NO_WAKE and reached no loop, so it is
+        // delivered again, to the listener that can act on it. It used to be cleared instead, so the next edit
+        // would wake afresh — and that made a tree edited before it was presented read as settled until its
+        // first frame: an automation driver connecting in that gap was told `ok v0` and then `(no tree yet)`
+        // (docs/plans/background-runs.md). The flag stays set, because the frame it stands for is still owed.
+        if (woken.get()) {
+            try {
+                listener.run();
+            } catch (Throwable t) {
+                if (!warnedWakeFailed) {
+                    warnedWakeFailed = true;
+                    LOG.warn("the onWork listener threw; frames may stop arriving "
+                            + "when nothing else wakes the loop", t);
+                }
+            }
         }
     }
 
@@ -1622,7 +1669,24 @@ public final class Gui implements AutoCloseable {
     public RetainedNode frame(float viewportW, float viewportH, TextMeasurer tm) {
         // The frame the last wake asked for is this one, so the next edit has to ask again. First thing, before
         // anything below can publish: see the field's note on why this is the top and not the bottom.
-        woken.set(false);
+        //
+        // The flag is cleared here but the debt is not: this frame holds the wake's unit until it has published,
+        // and only then pays it. A reader asking in between is still owed this frame (Owed).
+        boolean tookWake = woken.getAndSet(false);
+        try {
+            return frameBody(viewportW, viewportH, tm);
+        } finally {
+            if (tookWake) {
+                owed.pay();
+            }
+            if (!framed) {
+                framed = true;
+                owed.pay();   // the first frame, which a new tree is owed from the start
+            }
+        }
+    }
+
+    private RetainedNode frameBody(float viewportW, float viewportH, TextMeasurer tm) {
         // Dispatch this frame's input first, against the previous frame's laid-out tree (§8, §10): a click may
         // register a mutation, which the drain below then applies in the same frame.
         try (Zone probeZone = Probe.zone(Lane.LAYOUT, "dispatch input")) {

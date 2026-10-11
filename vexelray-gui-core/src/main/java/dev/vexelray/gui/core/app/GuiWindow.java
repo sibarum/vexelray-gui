@@ -282,21 +282,36 @@ final class GuiWindow implements AutoCloseable {
      * a second time, offscreen, through code the screen never runs: when the DXGI presenter bound the wrong font
      * atlas, every glyph on the screen was garbled and every screenshot was perfect. Only a presenter that cannot
      * read its frames back still gets the offscreen drawing ({@link #offscreen}), and that picture vouches for the
-     * tree and the canvas, not for how the window presents them.
+     * tree and the canvas, not for how the window presents them. So does a <b>minimized</b> window, which presents
+     * nothing at all: it is drawn offscreen at the size it is laid out at. A window that is merely covered needs
+     * neither — an occluded present still draws, and its frame reads back as usual.
      *
      * <p>Unlike the static {@link GuiApp#capture} there is no warm-up frame — this window has been running, so
      * whatever an observer wanted to settle has settled.
      */
     void capture(String path) throws java.io.IOException {
+        byte[] rgba;
+        int w;
+        int h;
         if (window.isMinimized()) {
-            return;                     // minimized: there is no picture, and asking for one is not an error
+            // Nothing is presented, so there is no frame to read back — but the tree is still laid out, at the size
+            // the window will be restored to (frame() keeps updating a minimized window), and that is the picture.
+            // Drawn offscreen at that size. It used to return nothing, so `shot` waited out its timeout on a window
+            // someone had only put out of the way, while every other verb went on working against it.
+            w = canvas.width();
+            h = canvas.height();
+            if (w <= 0 || h <= 0) {
+                return;
+            }
+            rgba = offscreen(w, h);
+        } else {
+            updated = update();
+            drawOwed = true;
+            presenter.render(0, this::draw);
+            rgba = presenter.readFrame();
+            w = presenter.width();
+            h = presenter.height();
         }
-        updated = update();
-        drawOwed = true;
-        presenter.render(0, this::draw);
-        byte[] rgba = presenter.readFrame();
-        int w = presenter.width();
-        int h = presenter.height();
         if (rgba == null) {
             if (w <= 0 || h <= 0) {
                 return;

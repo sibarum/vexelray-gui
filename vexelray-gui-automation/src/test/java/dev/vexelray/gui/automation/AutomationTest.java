@@ -308,6 +308,52 @@ class AutomationTest {
         }
     }
 
+    /**
+     * The flake as it was reported: {@code click} then {@code settle} answered {@code ok}, and the next read saw
+     * the tree from before the click. The wake flag was all settle asked, and the frame clears it at its top —
+     * so a settle landing while that frame dispatched the click, or while the click's handler ran on its worker,
+     * was told nothing was owed. The handler here takes long enough that the old settle lost every time.
+     */
+    @Test
+    void settleWaitsForTheClicksOwnHandlerAndTheFrameAfterIt() {
+        try (Gui gui = new Gui(sibarum.atchung.Atchung.create())) {
+            Node label = gui.text("before");
+            Node button = gui.box().role("button").size(Length.dp(100), Length.dp(40));
+            gui.landmark("status", label);
+            gui.landmark("go", button);
+            gui.onClick(button, () -> {
+                try {
+                    Thread.sleep(200);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                label.text("after");
+            });
+            gui.root().children(gui.column().children(button, label));
+            gui.frame(W, H, NO_TEXT);
+
+            String out = drivenWithFramesRunning(gui, driver -> {
+                String clicked = driver.command("click go");
+                String settled = driver.command("settle");
+                return clicked + " / " + settled + " / " + driver.command("find status");
+            });
+
+            assertTrue(out.contains("\"after\""), "settle answered before the click's handler had landed: " + out);
+        }
+    }
+
+    @Test
+    void aTreeThatHasNeverBeenFramedIsNotSettled() {
+        try (Gui gui = new Gui(sibarum.atchung.Atchung.create())) {
+            gui.root().children(gui.box().size(Length.dp(10), Length.dp(10)));
+            // Before frame #1 there is no tree to read, and `ok v0` followed by `(no tree yet)` is the answer an
+            // agent connecting at startup used to get (docs/plans/background-runs.md).
+            assertTrue(gui.frameOwed(), "a tree is owed its first frame");
+            gui.frame(W, H, NO_TEXT);
+            assertFalse(gui.frameOwed());
+        }
+    }
+
     @Test
     void aTimelineThatNeverGoesQuietIsReportedRatherThanWaitedOut() {
         try (Gui gui = deterministic()) {

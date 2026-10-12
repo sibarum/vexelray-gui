@@ -103,10 +103,35 @@
             <groupId>sibarum.imagelib</groupId>
             <artifactId>imagelib-wrapper</artifactId>
         </dependency>
+        <!-- The canvas's effects, which DemoShader composes into the one shader every window and capture draws
+             with. Reachable through -icons already; named here because the demo names Effects itself. -->
+        <dependency>
+            <groupId>dev.vexelray</groupId>
+            <artifactId>vexelray-shadelets</artifactId>
+        </dependency>
     </dependencies>
 
     <build>
         <plugins>
+            <!--
+              Pre-compile DemoShader, the demo's composed canvas shader, to SPIR-V at build time, as vexelray-canvas
+              does its own: META-INF/supirvast/shaders/canvas.frag.<hash>.spv in this jar. Without it the shader is
+              lowered on the main thread at startup, and said to be. The plugin scans this module's classes for
+              shaders, so the composition has to be a class here with a public no-arg constructor.
+            -->
+            <plugin>
+                <groupId>dev.supirvast</groupId>
+                <artifactId>supirvast-maven-plugin</artifactId>
+                <version>${supirvast.version}</version>
+                <executions>
+                    <execution>
+                        <id>precompile-shaders</id>
+                        <goals>
+                            <goal>compile-shaders</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
             <!--
               Run the demo in a fresh JVM: mvn -pl vexelray-gui-demo -am compile exec:exec
               exec:exec (not exec:java) runs a separate JVM so we can enable native access for Panama FFM.

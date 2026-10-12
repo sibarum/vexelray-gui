@@ -17,6 +17,7 @@ import dev.vexelray.gui.krono.KronoGui;
 import dev.vexelray.gui.widget.Modal;
 import dev.vexelray.gui.widget.Modals;
 import dev.vexelray.os.Decorations;
+import dev.vexelray.text.FontSet;
 import sibarum.tactroller.api.BackendException;
 import sibarum.tactroller.api.CoordinateSpace;
 import sibarum.tactroller.api.Key;
@@ -56,6 +57,9 @@ public final class Demo {
     /** Zoom levels the capture ladder walks; the interactive shortcuts move within {@link #look}'s range. */
     private static final float[] ZOOM_STEPS = {0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f, 3f};
 
+    /** vexelray-text's own faces, each falling back to the other: what {@code GuiApp} draws in when given none. */
+    private static final FontSet FONTS = FontSet.standard().withFallback("sans", "mono");
+
     public static void main(String[] args) throws Exception {
         args = java.util.Arrays.stream(args).filter(s -> !s.isBlank()).toArray(String[]::new);
 
@@ -88,7 +92,8 @@ public final class Demo {
             // any element that holds its pixel size while the rest grow is still pinned to device pixels.
             for (float z : ZOOM_STEPS) {
                 gui.zoom(z);
-                GuiApp.capture(gui, W, H, page.r(), page.g(), page.b(), "gui-zoom-" + z + "x.png");
+                GuiApp.capture(gui, FONTS, new DemoShader(), W, H, page.r(), page.g(), page.b(),
+                        "gui-zoom-" + z + "x.png");
             }
             System.out.println("captured " + ZOOM_STEPS.length + " zoom levels");
             return;
@@ -99,7 +104,8 @@ public final class Demo {
             if (args.length >= 3) {
                 shell.selectNow(Integer.parseInt(args[2]));
             }
-            GuiApp.capture(gui, W, H, page.r(), page.g(), page.b(),
+            // Drawn with the shader the window is, so a look's effects are in the picture as they are on screen.
+            GuiApp.capture(gui, FONTS, new DemoShader(), W, H, page.r(), page.g(), page.b(),
                     args.length >= 2 ? args[1] : "gui.png");
             System.out.println("captured");
             return;
@@ -117,7 +123,10 @@ public final class Demo {
                      // The GUI draws the frame. The window keeps every window-manager behaviour it had —
                      // dragging, snapping, Win+arrow, double-click-to-maximize, the system menu — and gains a
                      // title bar made of the same widgets as the rest of the UI.
-                     .decorations(Decorations.CLIENT));
+                     .decorations(Decorations.CLIENT),
+                     // The core set and every effect: what lets a look's weight and outline be drawn, here and
+                     // in every window and capture this application makes.
+                     FONTS, new DemoShader());
              Clipboard clipboard = openClipboard(gui)) {
 
             attachInput(input, gui, app);

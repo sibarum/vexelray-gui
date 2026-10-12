@@ -354,7 +354,7 @@ public final class Tabs {
         gui.onContextMenu(header, menu -> {
             int at = headers.indexOf(header);
             if (closable) {
-                menu.item("Close", () -> remove(at));
+                menu.item(dev.vexelray.gui.icons.Icon.CLOSE, "Close", () -> remove(at));
             }
             contextMenu.build(at, menu);
         });

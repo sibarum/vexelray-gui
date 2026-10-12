@@ -117,7 +117,7 @@ final class GuiWindow implements AutoCloseable {
     private final WindowPresenter presenter;
     private final Canvas canvas;
     /** Bound at the image set for every span that draws no image -- see {@link AtlasTexture#placeholder}. */
-    private final SampledImage noImage;
+    private final DeviceImages images;
     private final TextMeasurer measurer;
     private final boolean clientChrome;
     /** The host's per-frame hook, held so a platform-pulled frame runs the same step the host loop would. */
@@ -145,9 +145,9 @@ final class GuiWindow implements AutoCloseable {
      * actually measuring.
      */
     GuiWindow(NativePlatform platform, VulkanInstance instance, VulkanDevice device, FontAtlases fonts,
-              SampledImage noImage, Gui gui, WindowConfig config,
+              DeviceImages images, Gui gui, WindowConfig config,
               java.util.function.Function<WindowConfig, NativeWindow> windows, PresenterProvider.Backend backend) {
-        this(platform, instance, device, fonts, noImage, gui,
+        this(platform, instance, device, fonts, images, gui,
                 windows.apply(config), 0L, config.decorations(), backend);
     }
 
@@ -161,12 +161,12 @@ final class GuiWindow implements AutoCloseable {
      * surface is made, and {@code existingSurface} must be 0.
      */
     GuiWindow(NativePlatform platform, VulkanInstance instance, VulkanDevice device, FontAtlases fonts,
-              SampledImage noImage, Gui gui, NativeWindow window,
+              DeviceImages images, Gui gui, NativeWindow window,
               long existingSurface, Decorations decorations, PresenterProvider.Backend backend) {
         this.instance = instance;
         this.device = device;
         this.fonts = fonts;
-        this.noImage = noImage;
+        this.images = images;
         this.gui = gui;
         this.measurer = fonts.faces();
         this.window = window;
@@ -193,7 +193,7 @@ final class GuiWindow implements AutoCloseable {
         ComposedShader vs = CanvasShader.vertex();
         ComposedShader fs = CanvasShader.fragment();
         this.pipeline = new GraphicsPipeline(device, renderPass.handle(), initialWidth, initialHeight,
-                vs.spirv(), "main", fs.spirv(), "main", GuiApp.canvasConfig(fonts.first(), noImage, true));
+                vs.spirv(), "main", fs.spirv(), "main", GuiApp.canvasConfig(fonts.first(), images.placeholder(), true));
         this.presenter = backend != null
                 ? backend.create(window, renderPass.handle(), pipeline)
                 : new WindowedPresenter(device, swapchain, renderPass.handle(), pipeline, window);
@@ -349,7 +349,7 @@ final class GuiWindow implements AutoCloseable {
                     Vk.IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
             capturePipeline = new GraphicsPipeline(device, capturePass.handle(), w, h,
                     CanvasShader.vertex().spirv(), "main", CanvasShader.fragment().spirv(), "main",
-                    GuiApp.canvasConfig(fonts.first(), noImage, false)); // fixed viewport: offscreen never resizes mid-draw
+                    GuiApp.canvasConfig(fonts.first(), images.placeholder(), false)); // fixed viewport: offscreen never resizes mid-draw
             captureW = w;
             captureH = h;
         }
@@ -366,12 +366,12 @@ final class GuiWindow implements AutoCloseable {
         Color page = gui.theme().color(Role.PAGE);
         byte[] rgba = OffscreenDraw.toRgba(device, capturePass.handle(), capturePipeline, w, h,
                 vertexBuffer.handle(), fonts.first().descriptorSet(),
-                GuiApp.bind(canvas.runs(), vertexCount, noImage, fonts.textures()), page.r(), page.g(), page.b(), 1f);
+                GuiApp.bind(canvas.runs(), vertexCount, images, fonts.textures()), page.r(), page.g(), page.b(), 1f);
 
         // The vertex buffer now holds the capture's geometry and the presenter's run list still describes the
         // last presented frame. Nothing reads either until the next frame rewrites both, but leaving the two
         // disagreeing is the kind of state that is only ever fine until something else is added here.
-        presenter.setRuns(GuiApp.bind(canvas.runs(), vertexCount, noImage, fonts.textures()));
+        presenter.setRuns(GuiApp.bind(canvas.runs(), vertexCount, images, fonts.textures()));
         return rgba;
     }
 
@@ -447,7 +447,7 @@ final class GuiWindow implements AutoCloseable {
             vertexCount = room;
         }
         vertexBuffer.update(vertices, vertexCount * CanvasVertex.FLOATS_PER_VERTEX);
-        presenter.setRuns(GuiApp.bind(runs, vertexCount, noImage, fonts.textures()));
+        presenter.setRuns(GuiApp.bind(runs, vertexCount, images, fonts.textures()));
     }
 
     /**

@@ -89,6 +89,8 @@ public final class Modals implements AutoCloseable {
     private final Gui gui;
     private final TitleBar bar;
     private final Node message;
+    /** The severity's icon beside the message: out of the layout for a dialog that names none. */
+    private final dev.vexelray.gui.icons.IconView severity;
     private final Node buttonRow;
     /** The buttons of the dialog on screen, released when the next one takes their place. */
     private final List<Node> buttons = new ArrayList<>();
@@ -119,11 +121,21 @@ public final class Modals implements AutoCloseable {
                 .justify(Justify.END).alignItems(AlignItems.CENTER)
                 .gap(Length.dp(8))
                 .scroll(false, false);
+        this.severity = dev.vexelray.gui.icons.IconView.of(gui, null).size(Length.rem(2f));
+        severity.node().visible(false);
+        // The icon at the top of the message, beside it rather than above: the kind of thing is read first, and
+        // the message still has the dialog's whole height.
+        Node said = gui.row()
+                .width(Length.FILL).height(Length.grow(1))
+                .gap(Length.dp(14))
+                .alignItems(AlignItems.START)
+                .scroll(false, false)
+                .children(severity.node(), message);
         Node body = gui.column()
                 .width(Length.FILL).height(Length.grow(1))
                 .padding(Length.dp(18)).gap(Length.dp(16))
                 .scroll(false, false)
-                .children(message, buttonRow);
+                .children(said, buttonRow);
         gui.root().background(gui.theme().color(Role.PAGE)).children(bar.node(), body);
 
         // Registered once, not per dialog: a global claim has no node to release it with, so a dialog that
@@ -189,7 +201,12 @@ public final class Modals implements AutoCloseable {
 
     /** A message with one "OK" button — the "your export finished" dialog. */
     public static void info(String title, String message) {
-        show(Modal.of(title, message).defaultButton("OK", () -> { }));
+        show(Modal.of(title, message).severity(Modal.Severity.INFO).defaultButton("OK", () -> { }));
+    }
+
+    /** Something went wrong, with one "OK" button — the "could not save the file" dialog. */
+    public static void error(String title, String message) {
+        show(Modal.of(title, message).severity(Modal.Severity.ERROR).defaultButton("OK", () -> { }));
     }
 
     /**
@@ -200,6 +217,7 @@ public final class Modals implements AutoCloseable {
     public static void confirm(String title, String message, String confirmLabel,
                                Runnable onConfirm, Runnable onCancel) {
         show(Modal.of(title, message)
+                .severity(Modal.Severity.QUESTION)
                 .defaultButton(confirmLabel, onConfirm)
                 .cancelButton("Cancel", onCancel));
     }
@@ -251,6 +269,9 @@ public final class Modals implements AutoCloseable {
         message.textColor(gui.theme().color(Role.INK));
         bar.title(modal.title());
         message.text(modal.message());
+        Modal.Severity kind = modal.severity();
+        severity.icon(kind.icon()).tint(kind.tone());
+        severity.node().visible(kind.icon() != null);
         for (Node old : buttons) {
             gui.releaseNode(old);   // the previous dialog's handlers go with its buttons
             old.remove();

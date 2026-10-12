@@ -17,6 +17,9 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -288,22 +291,24 @@ class TreeCheckTest {
             h.frame();
 
             var off = markOf(h, tree, "docs");
-            assertFalse(off.visible(), "nothing is drawn inside an unticked box");
+            assertNull(off.field(), "nothing is drawn inside an unticked box");
 
             ticks.on.add("docs");
             tree.recheck();
             h.frame();
             var on = markOf(h, tree, "docs");
-            assertTrue(on.visible());
-            assertEquals(on.w, on.h, 0.5f, "ticked is a square");
+            assertNotNull(on.field(), "ticked draws the tick");
+            float onW = on.w;
+            var tick = on.field().region();
 
             mixed.set(true);
             tree.recheck();
             h.frame();
             var bar = markOf(h, tree, "docs");
-            assertTrue(bar.visible());
-            assertTrue(bar.w > bar.h * 2f, "mixed is a bar, told apart by shape rather than by size");
-            assertEquals(on.w, bar.w, 0.5f, "and it is the same width, so only the shape differs");
+            assertNotNull(bar.field(), "mixed draws a mark too");
+            assertNotEquals(tick, bar.field().region(),
+                    "mixed is a bar, told apart by shape rather than by size");
+            assertEquals(onW, bar.w, 0.5f, "in the same box, so only the shape differs");
             tree.close();
         }
     }

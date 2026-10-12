@@ -167,7 +167,7 @@ class TitleBarTest {
             h.frame();
             java.util.Map<String, Float> after = textSizes(h.retained(bar.node()), new java.util.HashMap<>());
 
-            assertEquals(java.util.Set.of("Test", "×"), before.keySet(), "the title and the close glyph");
+            assertEquals(java.util.Set.of("Test"), before.keySet(), "the title; the window controls are icons, sized in dp");
             assertEquals(before, after, "zoom is the content's; the window's chrome stays the size the OS's is");
         }
     }

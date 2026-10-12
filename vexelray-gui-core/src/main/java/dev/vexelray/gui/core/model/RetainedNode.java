@@ -281,6 +281,11 @@ public final class RetainedNode {
         return (ImageRegion) props.get(PropKey.IMAGE_REGION);
     }
 
+    /** The distance-field shape this node draws, or null (see {@link PropKey#FIELD}). */
+    public dev.vexelray.gui.core.ImageField field() {
+        return (dev.vexelray.gui.core.ImageField) props.get(PropKey.FIELD);
+    }
+
     /** How the image is scaled, or null for the sampler's own bilinear (see {@link PropKey#IMAGE_SCALING}). */
     public dev.vexelray.gui.core.ImageScaling imageScaling() {
         return (dev.vexelray.gui.core.ImageScaling) props.get(PropKey.IMAGE_SCALING);

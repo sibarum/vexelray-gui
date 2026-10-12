@@ -11,6 +11,7 @@ import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
+import dev.vexelray.gui.icons.IconView;
 import dev.vexelray.text.TextLayout;
 import sibarum.atchung.Subscription;
 import sibarum.tactroller.api.Key;
@@ -191,7 +192,7 @@ public final class ContextMenu implements MenuPresenter {
         // carries a mark, so every label starts at the same x whether or not its own item has one. A menu of plain
         // items has no column at all and is drawn exactly as it was before there were icons. Decided per opening,
         // which is the only time it can be decided without something moving under the pointer.
-        boolean iconColumn = menuItems.stream().anyMatch(i -> i.icon() != null);
+        boolean iconColumn = menuItems.stream().anyMatch(MenuItem::marked);
         for (MenuItem item : menuItems) {
             Node row = item.separator() ? own(rule()) : row(item, iconColumn);
             rows.add(row);
@@ -218,12 +219,24 @@ public final class ContextMenu implements MenuPresenter {
         if (iconColumn) {
             // A cell of fixed width whether or not this item fills it: the column is what aligns the labels, so an
             // item with no mark still takes its share of it instead of sliding its label into the gap. Dimmer than
-            // the label by a step — the mark is what the line is about, the label is what it says.
-            row.append(own(gui.text(item.icon() == null ? "" : item.icon())
+            // the label by a step — the mark is what the line is about, the label is what it says. An icon from the
+            // set wins over a glyph; either sits centred in the same cell.
+            Role tone = item.enabled() ? Role.DIM : Role.FAINT;
+            Node cell = own(gui.row()
                     .width(Length.em(1.2f))
-                    .textSize(Length.rem(1))
-                    .textColor(gui.theme().color(item.enabled() ? Role.DIM : Role.FAINT))
-                    .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE)));
+                    .height(Length.em(1.2f))
+                    .justify(dev.vexelray.gui.core.layout.LayoutEnums.Justify.CENTER)
+                    .alignItems(dev.vexelray.gui.core.layout.LayoutEnums.AlignItems.CENTER)
+                    .scroll(false, false));
+            if (item.mark() != null) {
+                cell.append(own(IconView.of(gui, item.mark()).size(Length.em(1f)).tint(tone).node()));
+            } else if (item.icon() != null) {
+                cell.append(own(gui.text(item.icon())
+                        .textSize(Length.rem(1))
+                        .textColor(gui.theme().color(tone))
+                        .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE)));
+            }
+            row.append(cell);
         }
         row.append(own(gui.text(item.label())
                 .width(Length.FILL)

@@ -29,8 +29,9 @@ final class MenuCollector implements MenuSink {
     }
 
     @Override
-    public MenuSink item(String icon, String label, boolean enabled, Runnable action) {
-        items.add(enabled ? MenuItem.of(icon, label, action) : MenuItem.disabled(icon, label));
+    public MenuSink item(MenuItem item) {
+        // A disabled line carries no action (see MenuItem), so one is never left holding a command it cannot run.
+        items.add(item.enabled() ? item : item.withAction(null));
         return this;
     }
 

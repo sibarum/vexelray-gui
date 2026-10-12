@@ -1,5 +1,7 @@
 package dev.vexelray.gui.core.input;
 
+import dev.vexelray.gui.core.IconSource;
+
 /**
  * What a context-menu contributor writes into. One is handed to every source registered on the node that won the
  * right click ({@code Gui.onContextMenu}), in registration order, and what they leave behind is the menu.
@@ -19,9 +21,12 @@ public interface MenuSink {
     /** The right click that opened this menu: the node hit, and where. */
     ClickEvent event();
 
+    /** Add {@code item} as it is: the form every other one delegates to. */
+    MenuSink item(MenuItem item);
+
     /** Add a choosable item. */
     default MenuSink item(String label, Runnable action) {
-        return item(null, label, true, action);
+        return item(MenuItem.of(label, action));
     }
 
     /**
@@ -29,20 +34,32 @@ public interface MenuSink {
      * does not apply yet (see {@link MenuItem}: shown and greyed beats absent).
      */
     default MenuSink item(String label, boolean enabled, Runnable action) {
-        return item(null, label, enabled, action);
+        return item(new MenuItem(null, label, action, enabled, null));
     }
 
-    /** Add a choosable item marked with {@code icon}: a glyph drawn beside the label (see {@link MenuItem}). */
-    default MenuSink item(String icon, String label, Runnable action) {
-        return item(icon, label, true, action);
+    /** Add a choosable item marked with {@code icon}, an icon from the set (see {@link MenuItem}). */
+    default MenuSink item(IconSource icon, String label, Runnable action) {
+        return item(new MenuItem(null, label, action, true, icon));
     }
 
     /**
-     * The general form the other three delegate to: a mark, a label, whether the command applies right now, and
-     * what choosing it does. {@code icon} may be null — an item with no mark — and a disabled item keeps the mark
-     * it would have had, because greyed out is still a line about the same command.
+     * A mark, a label, whether the command applies right now, and what choosing it does. {@code icon} may be null —
+     * an item with no mark — and a disabled item keeps the mark it would have had, because greyed out is still a line
+     * about the same command.
      */
-    MenuSink item(String icon, String label, boolean enabled, Runnable action);
+    default MenuSink item(IconSource icon, String label, boolean enabled, Runnable action) {
+        return item(new MenuItem(null, label, action, enabled, icon));
+    }
+
+    /** Add a choosable item marked with the glyph {@code icon}, a character from the text atlas. */
+    default MenuSink item(String icon, String label, Runnable action) {
+        return item(new MenuItem(icon, label, action, true, null));
+    }
+
+    /** As {@link #item(IconSource, String, boolean, Runnable)}, marked with a glyph from the text atlas. */
+    default MenuSink item(String icon, String label, boolean enabled, Runnable action) {
+        return item(new MenuItem(icon, label, action, enabled, null));
+    }
 
     /**
      * Open a group with a rule. Free to call unconditionally: a separator that would come out at either end of the

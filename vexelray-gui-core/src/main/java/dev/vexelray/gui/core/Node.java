@@ -108,6 +108,23 @@ public final class Node {
     }
 
     /**
+     * Draw a shape from a signed distance field across this node's box, with its style's colour, glow and shadow: an
+     * icon, sharp at any size and in any colour from one small texture. The field's margin round the shape's square is
+     * drawn out past the box, for its effects. Drawn over the node's own image, under its border. Null clears it.
+     */
+    public Node field(ImageField field) {
+        return prop(PropKey.FIELD, field);
+    }
+
+    /**
+     * {@link #field(ImageField)} from its parts: {@code side} is the texture's size in texels and {@code spread} the
+     * margin round the shape's square. A null texture clears it.
+     */
+    public Node field(SampledImage texture, int side, int spread, dev.vexelray.canvas.FieldStyle style) {
+        return field(texture == null ? null : new ImageField(texture, side, spread, style));
+    }
+
+    /**
      * Draw {@code picture} inside this node's box — a plot, a diagram, a sparkline. Marks are in pixels with
      * {@code (0, 0)} at the box's top-left corner, so a drawing is authored against the box's own size and knows
      * nothing about where on screen the box ended up. Pass null to clear it.

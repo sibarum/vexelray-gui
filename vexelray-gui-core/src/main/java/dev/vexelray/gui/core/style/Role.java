@@ -85,6 +85,15 @@ public interface Role {
     /** The label on a destructive fill. */
     Role ON_DANGER = p -> p.contrastTo(p.danger());
 
+    /**
+     * A choice with a cost, a warning: a caution icon, a dialog that asks before discarding. Danger's strength
+     * turned to amber, at the accent's lightness, so it reads on either page without a palette having to name it.
+     */
+    Role CAUTION = p -> Oklab.polar(p.accent().l(), p.danger().chroma() * 0.85, 75).toColor();
+
+    /** Something that went right that was in doubt: a success icon. The same derivation, turned to green. */
+    Role SUCCESS = p -> Oklab.polar(p.accent().l(), p.danger().chroma() * 0.75, 145).toColor();
+
     /** The wash over selected text — the accent, thin enough to read the glyphs through. */
     Role HIGHLIGHT = p -> p.accent().toColor(0.35f);
 

@@ -1134,11 +1134,11 @@ public final class TextField implements AutoCloseable {
      */
     private void defaultMenu(MenuSink menu) {
         boolean hasSelection = !document.value().selectedText().isEmpty();
-        menu.item("Copy", hasSelection, this::copy);
+        menu.item(dev.vexelray.gui.icons.Icon.COPY, "Copy", hasSelection, this::copy);
         if (!readOnly) {
             String clip = gui.clipboard().get();
-            menu.item("Cut", hasSelection, this::cut)
-                    .item("Paste", clip != null && !clip.isEmpty(), this::paste);
+            menu.item(dev.vexelray.gui.icons.Icon.CUT, "Cut", hasSelection, this::cut)
+                    .item(dev.vexelray.gui.icons.Icon.PASTE, "Paste", clip != null && !clip.isEmpty(), this::paste);
         }
         contextMenu.accept(menu);
     }

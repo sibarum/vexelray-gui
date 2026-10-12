@@ -1,6 +1,5 @@
 package dev.vexelray.gui.widget;
 
-import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.CursorShape;
@@ -10,8 +9,9 @@ import dev.vexelray.gui.core.layout.LayoutContext;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.NodeLayout;
 import dev.vexelray.gui.core.style.Role;
+import dev.vexelray.gui.icons.Icon;
+import dev.vexelray.gui.icons.IconView;
 import dev.vexelray.text.TextLayout;
-import dev.vexelray.gui.draw.Picture;
 import sibarum.atchung.Subscription;
 
 import java.util.ArrayList;
@@ -142,7 +142,7 @@ public final class Table<T> implements AutoCloseable {
     private final Node root;
     private final Node header;
     private final List<Node> headerCells = new ArrayList<>();
-    private final List<Node> sortMarks = new ArrayList<>();
+    private final List<IconView> sortMarks = new ArrayList<>();
     private final List<Node> headerLabels = new ArrayList<>();
     private final List<Subscription> subs = new ArrayList<>();
 
@@ -352,7 +352,9 @@ public final class Table<T> implements AutoCloseable {
                     .textColor(gui.theme().color(Role.DIM));
             // The indicator's slot exists whether or not this column is the sorted one: sorting must not move the
             // header's text, and a slot that appears when needed is exactly the movement the rule forbids.
-            Node mark = gui.box().width(MARK_W).height(Length.FILL);
+            IconView caret = IconView.of(gui, null).size(Length.rem(0.75f)).tint(Role.ACCENT);
+            Node mark = gui.row().width(MARK_W).height(Length.FILL).alignItems(AlignItems.CENTER)
+                    .scroll(false, false).children(caret.node());
             // Declared, because it is the only control here a pointer can use and text cannot name: an agent
             // that cannot address the grip has to compute where a boundary is and aim a few pixels off it.
             Node grip = gui.box().role("columngrip").width(GRIP_W).height(Length.FILL)
@@ -369,7 +371,7 @@ public final class Table<T> implements AutoCloseable {
 
             headerCells.add(cell);
             headerLabels.add(label);
-            sortMarks.add(mark);
+            sortMarks.add(caret);
             header.append(cell);
         }
     }
@@ -393,32 +395,17 @@ public final class Table<T> implements AutoCloseable {
         solve();
     }
 
-    /** Author the sort indicator: a caret, drawn rather than typed, because the atlas has no arrow glyphs. */
+    /** Show the sort indicator: the set's chevron, up for ascending and down for descending, on the sorted column. */
     private void markSorted() {
         for (int i = 0; i < sortMarks.size(); i++) {
-            Node mark = sortMarks.get(i);
-            NodeLayout l = mark.layout();
             boolean active;
             Sort direction;
             synchronized (this) {
                 active = i == sortColumn;
                 direction = sort;
             }
-            if (!active || direction == Sort.NONE || !l.present() || l.rect().w() <= 0f) {
-                mark.picture(null);
-                continue;
-            }
-            float w = l.rect().w();
-            float h = l.rect().h();
-            float arm = Math.min(w, h) * 0.28f;
-            float cx = w / 2f;
-            float cy = h / 2f;
-            float tip = direction == Sort.ASCENDING ? cy - arm * 0.6f : cy + arm * 0.6f;
-            float base = direction == Sort.ASCENDING ? cy + arm * 0.6f : cy - arm * 0.6f;
-            Color ink = gui.theme().color(Role.ACCENT);
-            mark.picture(Picture.of(
-                    new Picture.Line(cx - arm, base, cx, tip, 1.5, ink, null),
-                    new Picture.Line(cx + arm, base, cx, tip, 1.5, ink, null)));
+            sortMarks.get(i).icon(!active || direction == Sort.NONE ? null
+                    : direction == Sort.ASCENDING ? Icon.CHEVRON_UP : Icon.CHEVRON_DOWN);
         }
     }
 

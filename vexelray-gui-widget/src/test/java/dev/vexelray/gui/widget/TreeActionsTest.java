@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -132,8 +133,8 @@ class TreeActionsTest {
 
             rightClickRow(h, tree, "src");
             assertEquals(List.of("Expand", "Collapse"), labels(h), "the menu a tree answers with on its own");
-            assertEquals("+", item(h, "Expand").icon(), "marked with the glyph the row's own control uses");
-            assertEquals("−", item(h, "Collapse").icon());
+            assertSame(dev.vexelray.gui.icons.Icon.PLUS, item(h, "Expand").mark(), "marked open-all and shut-all");
+            assertSame(dev.vexelray.gui.icons.Icon.MINUS, item(h, "Collapse").mark());
             assertTrue(enabled(h, "Expand"), "a shut folder can be expanded");
             assertFalse(enabled(h, "Collapse"), "and is already collapsed");
 
@@ -252,8 +253,8 @@ class TreeActionsTest {
             TreeView.Job[] first = {null};
             TreeView.Job[] second = {null};
             TreeView<String> tree = new TreeView<>(h.gui, source)
-                    .action(TreeView.Action.<String>of(null, "First", (item, job) -> first[0] = job))
-                    .action(TreeView.Action.<String>of(null, "Second", (item, job) -> second[0] = job))
+                    .action(TreeView.Action.<String>of("First", (item, job) -> first[0] = job))
+                    .action(TreeView.Action.<String>of("Second", (item, job) -> second[0] = job))
                     // A free-form source contributes lines and runs them itself — and is still the tree's action.
                     .onContextMenu((item, menu) -> menu.item("Refresh", () -> { }));
             h.gui.root().children(tree.node());

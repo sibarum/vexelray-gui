@@ -72,23 +72,11 @@ public final class Inspector {
     private static final Length BADGE_SIZE = Length.rem(0.58f);
 
     /**
-     * The disclosure marks, and the reason they are {@code +} and {@code −} rather than carets.
-     *
-     * <p>A widget in this module may only name a character the <b>framework's own atlas</b> has, because that is
-     * the atlas an application gets unless it goes to the trouble of baking its own — and that atlas has no
-     * caret ({@code U+2304}), no triangle and no arrow: the charset asked for {@code U+2190–U+21FF} and Noto Sans
-     * answered with nothing at all. A glyph that is missing does not fail loudly; it draws a box, or nothing, in
-     * the one place a reader looks to find out whether a card opens. So the pair is {@code U+002B} and
-     * {@code U+2212}, which are present in the framework's atlas and in every application atlas that has Latin-1
-     * and General Punctuation — and which say open and shut without depending on a rotation this module cannot
-     * apply to text anyway.
-     *
-     * <p>An application with a richer atlas is not stuck with them: the card head is a node like any other, and
-     * {@code caret} is the only thing here that would need saying differently. That is a skin, not a fork — but
-     * the <em>default</em> has to be a glyph that is always there.
+     * The disclosure: the set's chevron, right while a card is folded and down while it is open, as a tree row and a
+     * panel's header say it. An icon, not a character, so it is there whatever atlas the application baked.
      */
-    private static final String FOLDED = "+";
-    private static final String OPEN = "−";
+    private static final dev.vexelray.gui.icons.Icon FOLDED = dev.vexelray.gui.icons.Icon.CHEVRON_RIGHT;
+    private static final dev.vexelray.gui.icons.Icon OPEN = dev.vexelray.gui.icons.Icon.CHEVRON_DOWN;
 
     private final Gui gui;
     private final Node body;
@@ -248,6 +236,7 @@ public final class Inspector {
         private final Node root;
         private final Node rows;
         private final Node caret;
+        private final dev.vexelray.gui.icons.IconView caretIcon;
         private final Node badgeNode;
         private final Toggle toggle;
         private final BooleanSupplier on;
@@ -266,11 +255,8 @@ public final class Inspector {
                     .textColor(theme.color(Role.INK));
             this.badgeNode = gui.text(badge).textSize(BADGE_SIZE).wordWrap(false)
                     .textColor(theme.color(Role.FAINT));
-            this.caret = gui.text(FOLDED).width(Length.rem(0.9f))
-                    .textSize(LABEL_SIZE)
-                    .textColor(theme.color(Role.FAINT))
-                    .align(dev.vexelray.text.TextLayout.HAlign.CENTER,
-                            dev.vexelray.text.TextLayout.VAlign.MIDDLE);
+            this.caretIcon = dev.vexelray.gui.icons.IconView.of(gui, FOLDED).size(Length.rem(0.75f)).tint(Role.FAINT);
+            this.caret = caretIcon.node();
             Node head = gui.row().role("inspector-card-head")
                     .width(Length.grow(1f)).gap(ROW_GAP)
                     .padding(Length.rem(0.3f), Length.rem(0.4f))
@@ -330,7 +316,7 @@ public final class Inspector {
         public Card open(boolean value) {
             this.open = value;
             rows.visible(value);
-            caret.text(value ? OPEN : FOLDED);
+            caretIcon.icon(value ? OPEN : FOLDED);
             return this;
         }
 

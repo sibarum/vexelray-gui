@@ -252,15 +252,11 @@ public final class Rail {
                 .textSize(Length.rem(0.62f)).wordWrap(false).textColor(theme.color(Role.DIM));
         this.panelHint = gui.text("")
                 .textSize(Length.rem(0.6f)).wordWrap(false).textColor(theme.color(Role.FAINT));
-        Node close = gui.text("×").size(Length.rem(1.2f), Length.rem(1.2f))
-                .corner(Length.rem(0.25f))
-                .textColor(theme.color(Role.FAINT))
-                .align(dev.vexelray.text.TextLayout.HAlign.CENTER, dev.vexelray.text.TextLayout.VAlign.MIDDLE);
-        gui.focusable(close, true);
-        gui.cursor(close, CursorShape.POINTER);
-        gui.onClick(close, this::close);
-        gui.onState(close, s -> close.background(
-                theme.color(s == InteractionState.NORMAL ? Role.NONE : Role.SELECTION)));
+        Node close = new IconButton(gui, dev.vexelray.gui.icons.Icon.CLOSE, "Close")
+                .size(Length.rem(1.2f), Length.rem(0.75f))
+                .ink(Role.FAINT)
+                .onPress(this::close)
+                .node();
         Node head = gui.row().role("rail-panel-head")
                 .width(Length.grow(1f)).gap(Length.rem(0.5f))
                 .padding(Length.rem(0.4f), Length.rem(0.55f))

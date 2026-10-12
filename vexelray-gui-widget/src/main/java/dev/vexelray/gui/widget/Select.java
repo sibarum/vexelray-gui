@@ -13,6 +13,8 @@ import dev.vexelray.gui.core.layout.NodeLayout;
 import dev.vexelray.gui.core.layout.Rect;
 import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
+import dev.vexelray.gui.icons.Icon;
+import dev.vexelray.gui.icons.IconView;
 import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.text.TextLayout;
 import sibarum.atchung.Subscription;
@@ -553,25 +555,14 @@ public final class Select<T> implements AutoCloseable {
     }
 
     /**
-     * The chevron, built from bars rather than written as a glyph: the bundled atlas carries no triangle and no
-     * arrow, and a missing glyph draws as nothing without failing, so a lookalike character is a bug waiting for
-     * a font change. Same answer {@link TitleBar} gives for maximize and restore.
+     * The chevron: the set's, as every widget that opens downward wears it.
      *
      * <p>Its width is fixed and it is always present, which is the reservation the no-hover rule asks for: the
      * strip is the same size holding "S" as holding "Extra large", so nothing beside it reflows when the value
      * changes.
      */
     private Node chevron() {
-        Node stack = gui.column()
-                .width(Length.dp(9))
-                .alignItems(AlignItems.CENTER)
-                .hitInert(true)
-                .scroll(false, false);
-        for (int w = 9; w >= 1; w -= 2) {
-            stack.append(gui.box().size(Length.dp(w), Length.dp(1))
-                    .background(gui.theme().color(Role.DIM)));
-        }
-        return stack;
+        return IconView.of(gui, Icon.CHEVRON_DOWN).size(Length.dp(12)).tint(Role.DIM).node().hitInert(true);
     }
 
     /** Release the popup, the list, the subscriptions and every claim either node holds. */

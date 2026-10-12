@@ -595,10 +595,14 @@ public final class TreeRenderer {
             // the subtree opacity this class applies to everything it draws.
             ImageRegion region = n.imageRegion();
             dev.vexelray.gui.core.ImageScaling scaling = n.imageScaling();
-            if (scaling != null) {
+            // A texture whose sampler decodes sRGB gives linear light, which the shader must encode again.
+            boolean linear = image instanceof dev.vexelray.vulkan.present.SampledImage s && s.linear();
+            if (scaling != null || linear) {
                 ImageRegion r = region == null ? ImageRegion.WHOLE : region;
                 canvas.image(n.x, n.y, n.w, n.h, rTop, rBottom, image, r.u0(), r.v0(), r.u1(), r.v1(), alpha,
-                        scaling.filter(), scaling.textureWidth(), scaling.textureHeight());
+                        scaling == null ? null : scaling.filter(),
+                        scaling == null ? 0 : scaling.textureWidth(), scaling == null ? 0 : scaling.textureHeight(),
+                        linear);
             } else if (region == null || region.whole()) {
                 canvas.image(n.x, n.y, n.w, n.h, rTop, rBottom, image, alpha);
             } else {
@@ -607,6 +611,13 @@ public final class TreeRenderer {
                 canvas.image(n.x, n.y, n.w, n.h, rTop, rBottom, image,
                         region.u0(), region.v0(), region.u1(), region.v1(), alpha);
             }
+        }
+        // A distance-field shape, over the image: across the box, and out over its margin for a glow or a shadow.
+        dev.vexelray.gui.core.ImageField field = n.field();
+        if (field != null && n.w > 0f && n.h > 0f) {
+            dev.vexelray.gui.core.ImageRegion cell = field.region();
+            canvas.field(n.x, n.y, n.w, n.h, field.texture(), cell.u0(), cell.v0(), cell.u1(), cell.v1(),
+                    field.side(), field.spread(), field.margin(), field.style(), alpha);
         }
         // A drawing goes over the image and under the border: an application's own marks belong inside the frame
         // the node draws around them.

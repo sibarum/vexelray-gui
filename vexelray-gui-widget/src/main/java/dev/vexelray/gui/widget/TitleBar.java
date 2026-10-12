@@ -13,6 +13,7 @@ import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
+import dev.vexelray.gui.icons.IconView;
 import dev.vexelray.os.Icon;
 import dev.vexelray.text.TextLayout;
 
@@ -51,7 +52,8 @@ public final class TitleBar {
      * the 16px root, so nothing moves at 100%.)
      */
     private static final Length TITLE_SIZE = Length.dp(13.6f);
-    private static final Length CLOSE_SIZE = Length.dp(22.4f);
+    /** The window controls' icons: the small drawings, at their own size. */
+    private static final Length GLYPH = Length.dp(16);
     /** The mark's side: the native caption's small icon, 16px at 100%. */
     private static final int ICON_DP = 16;
 
@@ -96,28 +98,21 @@ public final class TitleBar {
                 .scroll(false, false)
                 .children(titleText);
 
-        // The maximize glyph is two overlapping outlines, of which the back one is shown only when the window is
-        // maximized — the ordinary restore icon, built from boxes because the atlas font carries no square glyph.
-        Node maxBox = gui.box().size(Length.dp(10), Length.dp(10)).border(Length.dp(1), theme.color(Role.INK));
-        this.maximizeIcon = gui.box().size(Length.dp(14), Length.dp(14)).scroll(false, false)
-                .children(maxBox.floatAt(Length.dp(2), Length.dp(2)));
-        Node restoreBack = gui.box().size(Length.dp(9), Length.dp(9)).border(Length.dp(1), theme.color(Role.INK));
-        Node restoreFront = gui.box().size(Length.dp(9), Length.dp(9)).border(Length.dp(1), theme.color(Role.INK));
-        this.restoreIcon = gui.box().size(Length.dp(14), Length.dp(14)).scroll(false, false)
-                .children(restoreBack.floatAt(Length.dp(4), Length.dp(1)),
-                        restoreFront.floatAt(Length.dp(1), Length.dp(4)))
-                .visible(false);
+        // The set's window controls. Maximize and restore share a button and swap with the window's state, which
+        // syncMaximized() follows; both are built so the swap is a visibility change and never a rebuild.
+        this.maximizeIcon = IconView.of(gui, dev.vexelray.gui.icons.Icon.WINDOW_MAXIMIZE).size(GLYPH).node();
+        this.restoreIcon = IconView.of(gui, dev.vexelray.gui.icons.Icon.WINDOW_RESTORE).size(GLYPH).node().visible(false);
 
         // The handlers read the field, not the constructor argument, so they resolve the controls at click
         // time and rebinding later rewires every button. Closing over the argument would capture what the
         // window did not exist yet to be -- WindowControls.NONE, for every application, permanently.
-        Node minimize = button(gui.box().size(Length.dp(10), Length.dp(1)).background(theme.color(Role.INK)),
+        Node minimize = button(IconView.of(gui, dev.vexelray.gui.icons.Icon.WINDOW_MINIMIZE).size(GLYPH).node(),
                 WindowRegion.INTERACTIVE, Role.RAISED, () -> this.controls.minimize());
-        Node maximize = button(gui.box().size(Length.dp(14), Length.dp(14)).scroll(false, false)
-                        .children(maximizeIcon, restoreIcon),
+        Node maximize = button(gui.box().size(GLYPH, GLYPH).scroll(false, false)
+                        .children(maximizeIcon.floatAt(Length.ZERO, Length.ZERO),
+                                restoreIcon.floatAt(Length.ZERO, Length.ZERO)),
                 WindowRegion.MAXIMIZE_BUTTON, Role.RAISED, () -> this.controls.toggleMaximize());
-        Node close = button(gui.text("×").textSize(CLOSE_SIZE).textColor(theme.color(Role.INK))
-                        .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE),
+        Node close = button(IconView.of(gui, dev.vexelray.gui.icons.Icon.CLOSE).size(GLYPH).node(),
                 WindowRegion.INTERACTIVE, Role.DANGER, () -> this.controls.close());
 
         Node buttons = gui.row().height(Length.FILL).alignItems(AlignItems.STRETCH).scroll(false, false)

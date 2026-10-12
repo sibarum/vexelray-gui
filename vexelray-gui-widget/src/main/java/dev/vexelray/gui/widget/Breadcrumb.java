@@ -5,6 +5,8 @@ import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.style.Role;
+import dev.vexelray.gui.icons.Icon;
+import dev.vexelray.gui.icons.IconView;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -32,14 +34,13 @@ import java.util.function.Function;
  */
 public final class Breadcrumb<T> {
 
-    private static final String ELLIPSIS = "…";
-    private static final String SEPARATOR = "›";
 
     private final Gui gui;
     private final Function<T, String> label;
     private final Node bar;
     private final List<Node> built = new ArrayList<>();
     private final List<Button> buttons = new ArrayList<>();
+    private IconButton overflow;
     private volatile Consumer<T> onNavigate = t -> { };
     private volatile int maxSegments = 6;
     private volatile int face = 0;
@@ -96,12 +97,18 @@ public final class Breadcrumb<T> {
         return List.copyOf(buttons);
     }
 
+    /** The overflow button standing for the hidden ancestors, or null while the whole path fits. */
+    public synchronized IconButton overflow() {
+        return overflow;
+    }
+
     private void rebuild() {
         for (Node n : built) {
             n.remove();
         }
         built.clear();
         buttons.clear();
+        overflow = null;
         int n = chain.size();
         if (n == 0) {
             return;
@@ -110,7 +117,10 @@ public final class Breadcrumb<T> {
         if (hidden > 0) {
             // The ellipsis stands for the hidden ancestors and goes to the nearest of them: the one whose
             // children are the first segment still on show.
-            add(button(ELLIPSIS, chain.get(hidden - 1)));
+            T nearest = chain.get(hidden - 1);
+            overflow = new IconButton(gui, Icon.MORE, "Up to " + label.apply(nearest)).ink(Role.FAINT)
+                    .onPress(() -> onNavigate.accept(nearest));
+            add(overflow.node());
             add(separator());
         }
         for (int i = hidden; i < n; i++) {
@@ -136,10 +146,7 @@ public final class Breadcrumb<T> {
     }
 
     private Node separator() {
-        return gui.text(SEPARATOR).font(face)
-                .textSize(Length.rem(0.875f))
-                .textColor(gui.theme().color(Role.FAINT))
-                .role("separator");
+        return IconView.of(gui, Icon.CHEVRON_RIGHT).size(Length.rem(0.75f)).tint(Role.FAINT).node().role("separator");
     }
 
     private void add(Node node) {

@@ -300,9 +300,8 @@ class TableTest {
     }
 
     /**
-     * The indicator is drawn rather than typed, because the atlas carries no arrow glyphs — so it is a
-     * {@link dev.vexelray.gui.draw.Picture} on a slot that exists whether or not the column is sorted. Asserted
-     * because a mark authored into a box of no height is invisible while looking entirely correct in the code.
+     * The indicator is the set's chevron, a field on the caret inside a slot that exists whether or not the
+     * column is sorted. Asserted because a mark in a box of no height is invisible while looking entirely correct.
      */
     @Test
     void theSortedColumnIsMarkedAndTheOthersAreNot() {
@@ -488,8 +487,8 @@ class TableTest {
     }
 
     /** The sort indicator on a column, or null when it carries none. It is the header cell's reserved slot. */
-    private static dev.vexelray.gui.draw.Picture markOf(HeadlessGui h, Table<Person> table, int column) {
-        return h.retained(table.headerCell(column)).children.get(1).picture();
+    private static dev.vexelray.gui.core.ImageField markOf(HeadlessGui h, Table<Person> table, int column) {
+        return h.retained(table.headerCell(column)).children.get(1).children.get(0).field();
     }
 
     private static Rect boxOf(dev.vexelray.gui.core.model.RetainedNode n) {

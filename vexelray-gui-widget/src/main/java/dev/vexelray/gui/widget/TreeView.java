@@ -1,6 +1,7 @@
 package dev.vexelray.gui.widget;
 
 import dev.vexelray.gui.core.Gui;
+import dev.vexelray.gui.core.IconSource;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.drop.Drop;
 import dev.vexelray.gui.core.drop.DragState;
@@ -17,11 +18,14 @@ import dev.vexelray.gui.core.drop.Transfer;
 import dev.vexelray.gui.core.input.ClaimScope;
 import dev.vexelray.gui.core.input.KeyEvent;
 import dev.vexelray.gui.core.input.Shortcut;
+import dev.vexelray.gui.core.input.MenuItem;
 import dev.vexelray.gui.core.input.MenuSink;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.Rect;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
+import dev.vexelray.gui.icons.Icon;
+import dev.vexelray.gui.icons.IconView;
 import dev.vexelray.text.TextLayout;
 import sibarum.atchung.Subscription;
 import sibarum.tactroller.api.Key;
@@ -188,6 +192,15 @@ public final class TreeView<T> implements AutoCloseable {
         default boolean acceptsChildren(T item) {
             return hasChildren(item);
         }
+
+        /**
+         * The icon drawn before {@code item}'s label — a folder, a file's type, a class — or null for none. Asked
+         * when the row is built and again whenever it is resynced, so an item whose kind changes changes icon. A tree
+         * whose source names no icon for any row is laid out exactly as it was before icons existed.
+         */
+        default IconSource icon(T item) {
+            return null;
+        }
     }
 
     /**
@@ -233,20 +246,32 @@ public final class TreeView<T> implements AutoCloseable {
     public static final class Action<T> {
 
         private final String icon;
+        private final IconSource mark;
         private final String label;
         private final Command<T> body;
         private volatile Predicate<T> shown = item -> true;
         private volatile Predicate<T> enabled = item -> true;
 
-        private Action(String icon, String label, Command<T> body) {
+        private Action(String icon, IconSource mark, String label, Command<T> body) {
             this.icon = icon;
+            this.mark = mark;
             this.label = label;
             this.body = body == null ? (item, job) -> { } : body;
         }
 
+        /** A command with no mark, offered on every row by default. */
+        public static <T> Action<T> of(String label, Command<T> body) {
+            return new Action<>(null, null, label, body);
+        }
+
         /** A command marked with {@code icon} (a glyph, or null for none), offered on every row by default. */
         public static <T> Action<T> of(String icon, String label, Command<T> body) {
-            return new Action<>(icon, label, body);
+            return new Action<>(icon, null, label, body);
+        }
+
+        /** A command marked with {@code mark}, an icon from the set, offered on every row by default. */
+        public static <T> Action<T> of(IconSource mark, String label, Command<T> body) {
+            return new Action<>(null, mark, label, body);
         }
 
         /** Offer this action only for items {@code test} accepts; for the rest it is not on the menu at all. */
@@ -264,6 +289,11 @@ public final class TreeView<T> implements AutoCloseable {
         /** The glyph drawn beside the label, or null. */
         public String icon() {
             return icon;
+        }
+
+        /** The icon from the set drawn beside the label, or null. */
+        public IconSource mark() {
+            return mark;
         }
 
         /** The text shown. */
@@ -284,11 +314,10 @@ public final class TreeView<T> implements AutoCloseable {
     /** How thick the between-rows seam indicator is, px. */
     private static final float SEAM_PX = 2f;
 
-    // The atlas carries no triangle glyphs, so the disclosure affordance is the classic +/− pair. A leaf shows
-    // a space: the control column keeps its width, so labels at one depth align whether or not they can open.
-    private static final String GLYPH_COLLAPSED = "+";
-    private static final String GLYPH_EXPANDED = "−";   // MINUS SIGN, full-width unlike hyphen
-    private static final String GLYPH_LEAF = " ";
+    // The disclosure is a chevron that turns a quarter as its row opens, following the subtree's own openness so the
+    // two move together. A leaf shows nothing in the same space: the control column keeps its width, so labels at
+    // one depth align whether or not they can open.
+    private static final Icon DISCLOSURE = Icon.CHEVRON_RIGHT;
 
     private static final Shortcut CUT = Shortcut.of(Key.X, Modifier.CONTROL);
     private static final Shortcut COPY = Shortcut.of(Key.C, Modifier.CONTROL);
@@ -305,9 +334,11 @@ public final class TreeView<T> implements AutoCloseable {
         final Node spacer;       // the indent, which is depth and therefore changes when the row is reseated
         final Node entry;        // column: [rowNode, kidsBox]
         final Node rowNode;      // the pointer target and the styled strip
-        final Node disclosure;   // the +/− glyph
+        final Node disclosure;   // the chevron's column, the click target
+        final IconView chevron;  // the chevron, turned by the subtree's openness
         final Node checkBox;     // the tick box, out of the layout until the tree is checkable
-        final Node checkMark;    // what is drawn inside it: a square for ON, a bar for MIXED
+        final IconView checkMark; // what is drawn inside it: a tick for ON, a bar for MIXED
+        final IconView icon;     // the source's icon for the item, out of the layout while it names none
         final Node label;        // the name, one line at its own width
         final Node labelBox;     // the rest of the row, clipping the name at the row's edge
         final Node kidsBox;     // hidden until expanded; children entries append here, never anywhere else
@@ -333,25 +364,27 @@ public final class TreeView<T> implements AutoCloseable {
             this.canExpand = source.hasChildren(item);
 
             this.spacer = gui.box().width(Length.em(depth * INDENT_EM)).scroll(false, false);
-            this.disclosure = gui.text(canExpand ? GLYPH_COLLAPSED : GLYPH_LEAF)
+            // Turned, never moved: hit-inert, so a click on the column reaches the column whatever angle it is at.
+            this.chevron = IconView.of(gui, canExpand ? DISCLOSURE : null).size(Length.em(0.8f)).tint(Role.DIM);
+            chevron.node().hitInert(true);
+            this.disclosure = gui.row()
                     .width(Length.em(1.2f))
-                    .textSize(Length.rem(1))
-                    .textColor(gui.theme().color(Role.DIM))
-                    .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE);
-            // The checkbox, drawn rather than lettered. A tick is not in the atlas — and even where one is, a
-            // glyph is the wrong primitive for this: it cannot show MIXED, it changes weight with the font, and
-            // it is centred on a baseline rather than in a box. Two nested boxes and a fill are exact at every
-            // zoom and cost the same one draw as everything else.
+                    .height(Length.em(1.2f))
+                    .justify(LayoutEnums.Justify.CENTER)
+                    .alignItems(LayoutEnums.AlignItems.CENTER)
+                    .scroll(false, false)
+                    .children(chevron.node());
+            // The checkbox: a box, with the set's tick or bar drawn in it. The mark is a field, so it is exact at
+            // every zoom and greys or recolours by its tint; the box is still a box, centred in the row rather than
+            // on a baseline.
             //
             // Built on every row whether or not anything is checkable, and hidden until something is. A hidden
             // node is out of the layout entirely, so an unchecked tree pays a node per row and no width — and
             // the alternative, adding the box when checkable() arrives, means rebuilding every row that already
             // exists to get one.
-            this.checkMark = gui.box()
-                    .width(Length.em(0.45f)).height(Length.em(0.45f))
-                    .corner(Length.rem(0.15f))
-                    .background(gui.theme().color(Role.ACCENT))
-                    .visible(false);
+            this.checkMark = IconView.of(gui, null).size(Length.em(0.8f)).tint(Role.ACCENT);
+            this.icon = IconView.of(gui, source.icon(item)).size(Length.em(1f));
+            icon.node().visible(icon.icon() != null);
             this.checkBox = gui.row()
                     .width(Length.em(0.95f)).height(Length.em(0.95f))
                     .corner(Length.rem(0.2f))
@@ -363,7 +396,7 @@ public final class TreeView<T> implements AutoCloseable {
                     // not appear a box narrower than the rows above it and then jump. The *mark* inside is not
                     // read here: that is application code, and this constructor runs under the tree's monitor.
                     .visible(checkable != null)
-                    .children(checkMark);
+                    .children(checkMark.node());
             // Guarded when it runs rather than when it is built, for the same reason the disclosure is: a tree
             // becomes checkable after its first rows already exist.
             gui.onClick(checkBox, () -> {
@@ -412,7 +445,7 @@ public final class TreeView<T> implements AutoCloseable {
                     // stretched to the row height is not a checkbox.
                     .alignItems(LayoutEnums.AlignItems.CENTER)
                     .scroll(false, false)
-                    .children(spacer, disclosure, checkBox, labelBox);
+                    .children(spacer, disclosure, checkBox, icon.node(), labelBox);
             if (rowCursor != null) {
                 gui.cursor(rowNode, rowCursor);
             }
@@ -485,19 +518,27 @@ public final class TreeView<T> implements AutoCloseable {
         /**
          * Draw {@code state} in this row's box.
          *
-         * <p>MIXED is a bar rather than a smaller square, because the two must not be told apart by size: a
-         * checkbox is read at a glance and at a glance a small square is a square. A different <em>shape</em>
-         * survives being looked at quickly, and survives a user who has never seen the control before.
+         * <p>MIXED is a bar rather than a lighter tick, because the two must not be told apart by weight: a
+         * checkbox is read at a glance. A different <em>shape</em> survives being looked at quickly, and survives a
+         * user who has never seen the control before.
          */
         void paintCheck(Check state) {
             checkBox.visible(true);
             switch (state) {
-                case OFF -> checkMark.visible(false);
-                case ON -> checkMark.visible(true)
-                        .width(Length.em(0.45f)).height(Length.em(0.45f));
-                case MIXED -> checkMark.visible(true)
-                        .width(Length.em(0.45f)).height(Length.em(0.14f));
+                case OFF -> checkMark.icon(null);
+                case ON -> checkMark.icon(Icon.CHECK);
+                case MIXED -> checkMark.icon(Icon.CHECK_MIXED);
             }
+        }
+
+        /** The disclosure as the row now is: a chevron if it can open, nothing in the same space if not. */
+        void showDisclosure() {
+            chevron.icon(canExpand ? DISCLOSURE : null);
+        }
+
+        /** The chevron turned as far as the subtree is open: a quarter turn, pointing down, when it is all the way. */
+        void turnDisclosure() {
+            chevron.node().rotate(90f * openness);
         }
 
         /**
@@ -508,6 +549,9 @@ public final class TreeView<T> implements AutoCloseable {
          */
         void resync() {
             label.text(source.label(item));
+            IconSource kind = source.icon(item);
+            icon.icon(kind);
+            icon.node().visible(kind != null);
             boolean now = source.hasChildren(item);
             if (now == canExpand) {
                 return;
@@ -519,7 +563,7 @@ public final class TreeView<T> implements AutoCloseable {
                 children.clear();
                 open(this, 0f);
             }
-            disclosure.text(!now ? GLYPH_LEAF : expanded ? GLYPH_EXPANDED : GLYPH_COLLAPSED);
+            showDisclosure();
         }
     }
 
@@ -600,25 +644,25 @@ public final class TreeView<T> implements AutoCloseable {
         this.gui = gui;
         this.source = source;
         ContextMenu.presentOn(gui);   // rows carry whatever menu the application declares; this shows it
-        // The marks are the disclosure control's own +/−, and deliberately so: the menu item and the glyph on the
-        // row are two ways to reach the same state, and a user who has learnt one has learnt the other. Enabled by
+        // Marked plus and minus, the set's own for "open everything under it" and "shut it": the row's chevron
+        // opens one level, and these walk the whole subtree, so they are told apart from it on purpose. Enabled by
         // what the row is — a leaf has nothing to expand, a shut row has nothing to collapse — which is a default
         // the application can replace, and a reason it is stated as a predicate rather than baked into the walk.
-        this.expandAction = Action.<T>of(GLYPH_COLLAPSED, "Expand", this::expandDeep).enabledWhen(this::canOpen);
-        this.collapseAction = Action.<T>of(GLYPH_EXPANDED, "Collapse", this::collapseDeep).enabledWhen(this::isOpen);
+        this.expandAction = Action.<T>of(Icon.PLUS, "Expand", this::expandDeep).enabledWhen(this::canOpen);
+        this.collapseAction = Action.<T>of(Icon.MINUS, "Collapse", this::collapseDeep).enabledWhen(this::isOpen);
         // The transfer commands, on the menu as well as on the chords — a cut you can only reach by knowing the
         // chord is half a feature, and the menu is where a user finds out that a tree can do this at all.
         //
         // Shown only where the tree accepts transfers, because reorderable() is what makes any of them mean
         // anything; hidden rather than greyed, since a tree that will never take a paste is not a tree where
         // Paste "does not apply right now".
-        this.cutAction = Action.<T>of(null, "Cut", (item, job) -> take(item, DropEffect.MOVE))
+        this.cutAction = Action.<T>of(Icon.CUT, "Cut", (item, job) -> take(item, DropEffect.MOVE))
                 .shownWhen(item -> reorder != null);
-        this.copyAction = Action.<T>of(null, "Copy", (item, job) -> take(item, DropEffect.COPY))
+        this.copyAction = Action.<T>of(Icon.COPY, "Copy", (item, job) -> take(item, DropEffect.COPY))
                 .shownWhen(item -> reorder != null);
         // Greyed rather than hidden, because this one genuinely is "not right now": there is nothing in hand,
         // and the entry disappearing would leave the user wondering where the command went between two clicks.
-        this.pasteAction = Action.<T>of(null, "Paste", (item, job) -> paste(item))
+        this.pasteAction = Action.<T>of(Icon.PASTE, "Paste", (item, job) -> paste(item))
                 .shownWhen(item -> reorder != null)
                 .enabledWhen(item -> gui.transfer().offers(itemType));
         // The frame and the scroller are two boxes, not one. The frame carries the tree's own look and holds the
@@ -1622,7 +1666,8 @@ public final class TreeView<T> implements AutoCloseable {
         if (!action.shown.test(item)) {
             return;
         }
-        menu.item(action.icon(), action.label(), action.enabled.test(item), () -> action.body.run(item, begin()));
+        menu.item(new MenuItem(action.icon(), action.label(), () -> action.body.run(item, begin()),
+                action.enabled.test(item), action.mark()));
     }
 
     /**
@@ -1653,11 +1698,12 @@ public final class TreeView<T> implements AutoCloseable {
         }
 
         @Override
-        public MenuSink item(String icon, String label, boolean enabled, Runnable action) {
-            delegate.item(icon, label, enabled, action == null ? null : () -> {
+        public MenuSink item(MenuItem item) {
+            Runnable action = item.action();
+            delegate.item(action == null ? item : item.withAction(() -> {
                 begin();
                 action.run();
-            });
+            }));
             return this;
         }
 
@@ -1773,7 +1819,7 @@ public final class TreeView<T> implements AutoCloseable {
         boolean fetch = claimFetch(row);
         if (!row.expanded) {
             row.expanded = true;
-            row.disclosure.text(GLYPH_EXPANDED);
+            row.showDisclosure();
         }
         if (!fetch) {
             open(row, 1f);
@@ -1852,7 +1898,7 @@ public final class TreeView<T> implements AutoCloseable {
             return;
         }
         row.expanded = false;
-        row.disclosure.text(GLYPH_COLLAPSED);
+        row.showDisclosure();
         open(row, 0f);
     }
 
@@ -1915,7 +1961,7 @@ public final class TreeView<T> implements AutoCloseable {
         }
         begin();
         row.expanded = !row.expanded;
-        row.disclosure.text(row.expanded ? GLYPH_EXPANDED : GLYPH_COLLAPSED);
+        row.showDisclosure();
         if (row.expanded && !row.materialized) {
             row.materialized = true;
             gui.handlers().execute(() -> materialize(row));
@@ -1977,6 +2023,7 @@ public final class TreeView<T> implements AutoCloseable {
         float t = Math.max(0f, Math.min(1f, p));
         row.openness = row.animFrom + (row.animTo - row.animFrom) * t;
         row.kidsBox.height(Length.em(row.openness * contentEm(row)));
+        row.turnDisclosure();
     }
 
     /**
@@ -1993,6 +2040,7 @@ public final class TreeView<T> implements AutoCloseable {
         }
         row.openness = to;
         row.kidsBox.clip(false).height(Length.AUTO).visible(to > 0f);
+        row.turnDisclosure();
     }
 
     /**
@@ -2027,7 +2075,7 @@ public final class TreeView<T> implements AutoCloseable {
             if (row.children.isEmpty()) {
                 // The source promised children and delivered none (an emptied directory): demote to a leaf.
                 row.expanded = false;
-                row.disclosure.text(GLYPH_LEAF);
+                row.chevron.icon(null);
             }
             // The animation starts here rather than at the toggle: until the fetch lands there is nothing to
             // open, and a subtree animating to a height of zero content would be a flourish over an empty box.

@@ -53,6 +53,11 @@ public enum PropKey {
      */
     IMAGE_SCALING(false),
     /**
+     * A shape drawn from a signed distance field ({@code ImageField}): the texture, its margin, and its colour, glow
+     * and shadow. Not layout-affecting: drawn over the box, and out past it over the margin, without moving anything.
+     */
+    FIELD(false),
+    /**
      * A {@code Picture} drawn inside this node's box: an ordered list of marks in the box's own pixel frame, with
      * {@code (0, 0)} at its top-left corner. A plot, a diagram, a sparkline — anything an application wants to put
      * marks on the screen for, without one laid-out node per mark.

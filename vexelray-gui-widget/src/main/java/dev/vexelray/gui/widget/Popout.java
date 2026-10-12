@@ -16,6 +16,8 @@ import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.nav.NavTopics;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
+import dev.vexelray.gui.icons.Icon;
+import dev.vexelray.gui.icons.IconView;
 import dev.vexelray.os.Decorations;
 import dev.vexelray.os.WindowConfig;
 import dev.vexelray.text.TextLayout;
@@ -123,7 +125,7 @@ public final class Popout {
     private final Node header;
     private final Node headerTitle;
     private final Node body;
-    private final Node collapseIcon;
+    private final IconView collapseIcon;
     private final Node popButton;
 
     /**
@@ -172,15 +174,10 @@ public final class Popout {
                 .textSize(Length.rem(0.8f))
                 .textColor(theme.color(Role.DIM))
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
-        this.collapseIcon = host.text("−")   // − ; the atlas carries no chevron, and TreeView reads the same
-                .textSize(Length.rem(1.1f))
-                .textColor(theme.color(Role.INK))
-                .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE);
-        Node collapse = button(host, collapseIcon, Role.RAISED, null, this::toggleCollapsed);
-        this.popButton = button(host, host.text("»")   // »
-                        .textSize(Length.rem(1.0f))
-                        .textColor(theme.color(Role.INK))
-                        .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE),
+        // Down while the panel is open, right while it is folded: the same chevron a tree row turns, and read the same.
+        this.collapseIcon = IconView.of(host, Icon.CHEVRON_DOWN).size(Length.rem(0.875f));
+        Node collapse = button(host, collapseIcon.node(), Role.RAISED, null, this::toggleCollapsed);
+        this.popButton = button(host, IconView.of(host, Icon.POP_OUT).size(Length.rem(0.875f)).node(),
                 Role.RAISED, null, this::toggle)
                 // Nothing to pop into until an application says where. Shown by hostedBy, once.
                 .visible(false);
@@ -448,10 +445,7 @@ public final class Popout {
         away.theme(host.theme());
         Theme theme = away.theme();
         this.awayBar = new TitleBar(away, WindowControls.NONE, title);
-        awayBar.addLeading(button(away, away.text("«")   // «
-                        .textSize(Length.rem(1.0f))
-                        .textColor(theme.color(Role.INK))
-                        .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE),
+        awayBar.addLeading(button(away, IconView.of(away, Icon.DOCK).size(Length.rem(0.875f)).node(),
                 Role.RAISED, WindowRegion.INTERACTIVE, this::dock));
         this.awayBody = away.column()
                 .width(Length.FILL)
@@ -511,7 +505,7 @@ public final class Popout {
     private void applyState() {
         boolean railed = popped || collapsed;
         body.visible(!railed);
-        collapseIcon.text(collapsed ? "+" : "−");
+        collapseIcon.icon(collapsed ? Icon.CHEVRON_RIGHT : Icon.CHEVRON_DOWN);
         if (edge.vertical()) {
             // A side rail is as narrow as its controls, so the header turns to a column and the title goes: the
             // atlas has no rotated text, and a title laid on its side is not something this can draw honestly.

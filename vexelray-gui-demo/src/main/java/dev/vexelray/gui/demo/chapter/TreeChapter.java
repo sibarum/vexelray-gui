@@ -1,12 +1,14 @@
 package dev.vexelray.gui.demo.chapter;
 
 import dev.vexelray.gui.core.Gui;
+import dev.vexelray.gui.core.IconSource;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.demo.Chapter;
 import dev.vexelray.gui.demo.Console;
 import dev.vexelray.gui.demo.Stage;
 import dev.vexelray.gui.demo.Ui;
+import dev.vexelray.gui.icons.Icon;
 import dev.vexelray.gui.widget.TreeView;
 import sibarum.kronometer.Dur;
 import sibarum.kronometer.anim.Ease;
@@ -68,6 +70,11 @@ public final class TreeChapter implements Chapter {
             }
 
             @Override
+            public IconSource icon(Path p) {
+                return Files.isDirectory(p) ? Icon.FOLDER : Icon.FILE;
+            }
+
+            @Override
             public List<Path> children(Path p) {
                 try (var kids = Files.list(p)) {
                     return kids.sorted(Comparator
@@ -107,11 +114,11 @@ public final class TreeChapter implements Chapter {
         });
         files.onActivate(path -> console.good("activated " + path));
 
-        // A command that belongs to the row rather than to the menu: same mark as the tree's own Expand and
-        // Collapse, greyed on a row it does not apply to, and cancellable. It is a walk on purpose — counting a
+        // A command that belongs to the row rather than to the menu: marked from the set like the tree's own, and
+        // offered only on a row it applies to, and cancellable. It is a walk on purpose — counting a
         // deep directory takes long enough to be worth stopping, and choosing anything else on any row's menu
         // stops it, because the tree runs one action at a time.
-        files.action(TreeView.Action.<Path>of("»", "Count files", (path, job) -> {
+        files.action(TreeView.Action.<Path>of(Icon.SEARCH, "Count files", (path, job) -> {
             int found = countFiles(path, job);
             if (job.live()) {
                 console.good("count: " + found + " files under " + path.getFileName());
@@ -124,13 +131,13 @@ public final class TreeChapter implements Chapter {
         // tree's own, and choosing one still takes the tree over — which an application does not have to know in
         // order to get it.
         files.onContextMenu((path, menu) -> menu
-                .item("›", "Open", () -> console.say("open: " + path))
-                .item("•", "Copy path", () -> {
+                .item(Icon.OPEN, "Open", () -> console.say("open: " + path))
+                .item(Icon.COPY, "Copy path", () -> {
                     gui.clipboard().set(String.valueOf(path));
                     console.good("copied path to the clipboard");
                 })
                 .separator()
-                .item("…", "Properties", () -> console.note("properties: " + path)));
+                .item(Icon.INFO, "Properties", () -> console.note("properties: " + path)));
 
         // Checkboxes, with a staging area's policy: ticking a folder ticks everything under it, and a folder
         // whose contents are partly ticked reads MIXED. None of that is in the widget — it is all in the two

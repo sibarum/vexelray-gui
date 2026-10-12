@@ -183,6 +183,28 @@ class ImageNodeTest {
         }
     }
 
+    @Test
+    void aFieldIsDrawnAsAFieldOverItsMargin() {
+        RetainedNode n = box(100f, 50f);
+        n.set(PropKey.FIELD, new dev.vexelray.gui.core.ImageField(new FakeImage(3), 48, 8,
+                dev.vexelray.canvas.FieldStyle.plain(dev.vexelray.canvas.Color.WHITE)));
+        float[] data = vertices(draw(n));
+        int stride = CanvasVertex.FLOATS_PER_VERTEX;
+        int kind = CanvasVertex.OFF_KIND / Float.BYTES;
+        int screen = CanvasVertex.OFF_CLIPRS / Float.BYTES;
+        float minX = Float.MAX_VALUE;
+        int fields = 0;
+        for (int v = 0; v + stride <= data.length; v += stride) {
+            if (data[v + kind] == CanvasVertex.KIND_FIELD) {
+                fields++;
+                minX = Math.min(minX, data[v + screen]);
+            }
+        }
+        assertEquals(6, fields);
+        // A 100 px box with a quarter of its size of margin: the quad starts 25 px left of it, less the AA pad.
+        assertEquals(100f - 25f - (dev.vexelray.canvas.Canvas.AA + 1f), minX, 1e-3f);
+    }
+
     // --- the coordinates ----------------------------------------------------------------------------------
 
     @Test

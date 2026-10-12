@@ -3,12 +3,12 @@ package dev.vexelray.gui.widget;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.ClaimScope;
-import dev.vexelray.gui.core.input.CursorShape;
-import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.style.Role;
+import dev.vexelray.gui.icons.Icon;
+import dev.vexelray.gui.icons.IconView;
 import dev.vexelray.text.TextLayout;
 import sibarum.tactroller.api.Key;
 import sibarum.tactroller.api.Modifier;
@@ -93,14 +93,21 @@ final class FindBar implements AutoCloseable {
         // The way out that does not need the keyboard: Escape is the gesture, this is the same thing for a hand
         // already on the mouse. Not a Tab stop — Tab from the query would land on a button whose only job Escape
         // already does from where the caret is.
-        Node exit = gui.text("×").size(Length.rem(1.5f), Length.rem(1.5f))
-                .corner(Length.rem(0.25f))
-                .textColor(gui.theme().color(Role.FAINT))
-                .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE);
-        gui.cursor(exit, CursorShape.POINTER);
-        gui.onClick(exit, this::dismiss);
-        gui.onState(exit, s -> exit.background(
-                gui.theme().color(s == InteractionState.NORMAL ? Role.NONE : Role.SELECTION)));
+        Node exit = new IconButton(gui, Icon.CLOSE, "Close find")
+                .size(Length.rem(1.5f), Length.rem(0.875f))
+                .ink(Role.FAINT)
+                .onPress(this::dismiss)
+                .node();
+        gui.focusable(exit, false);
+        // Stepping for a hand on the mouse, as Enter and Shift+Enter are for one on the keys; not Tab stops either.
+        Node previous = new IconButton(gui, Icon.CHEVRON_UP, "Previous match")
+                .size(Length.rem(1.5f), Length.rem(0.875f)).onPress(() -> search.previous(query())).node();
+        Node next = new IconButton(gui, Icon.CHEVRON_DOWN, "Next match")
+                .size(Length.rem(1.5f), Length.rem(0.875f)).onPress(() -> search.next(query())).node();
+        gui.focusable(previous, false);
+        gui.focusable(next, false);
+        // A magnifier before the query says what the field is for, the way every find bar does.
+        Node lens = IconView.of(gui, Icon.SEARCH).size(Length.rem(0.875f)).tint(Role.DIM).node();
         this.bar = gui.row()
                 .width(Length.FILL)
                 .visible(false)
@@ -109,7 +116,7 @@ final class FindBar implements AutoCloseable {
                 .alignItems(AlignItems.CENTER)
                 .background(gui.theme().color(Role.CHROME))
                 .scroll(false, false)
-                .children(field.node(), statusLine, exit);
+                .children(lens, field.node(), statusLine, previous, next, exit);
         this.toggled = bar;
 
         // Every edit of the query is a search of its own, which is what makes it incremental: typing "src" is

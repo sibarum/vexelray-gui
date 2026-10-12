@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 /** A breadcrumb is a projection of the chain it is handed: it reaches every ancestor and never the current place. */
 class BreadcrumbTest {
@@ -36,8 +37,9 @@ class BreadcrumbTest {
             crumbs.path(List.of("a", "b", "c", "d", "e"));
             h.frame();
 
-            assertEquals(3, crumbs.ancestors().size(), "an ellipsis and two ancestors, then the current place");
-            h.focus(crumbs.ancestors().get(0).node());
+            assertEquals(2, crumbs.ancestors().size(), "an ellipsis and two ancestors, then the current place");
+            assertNotNull(crumbs.overflow(), "the ellipsis stands in for what is hidden");
+            h.focus(crumbs.overflow().node());
             h.tap(Key.ENTER);
             assertEquals(List.of("b"), went, "the ellipsis stands for a and b, and goes to the nearer");
         }

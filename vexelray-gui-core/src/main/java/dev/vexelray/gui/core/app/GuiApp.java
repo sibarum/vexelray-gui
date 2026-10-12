@@ -78,7 +78,7 @@ public final class GuiApp implements AutoCloseable {
     private final dev.vexelray.vulkan.present.PresenterProvider.Backend presentBackend;
     /** Every face's glyph atlas, uploaded at startup, and the faces that measure them. Shared by every window. */
     private final FontAtlases fonts;
-    private final AtlasTexture noImage;
+    private final DeviceImages images;
     /** Render targets minted by {@link #viewport}, closed with the application. */
     private final List<SampledColorTarget> viewports = new ArrayList<>();
     /** Uploaded images minted by {@link #texture}, closed with the application. */
@@ -342,9 +342,9 @@ public final class GuiApp implements AutoCloseable {
         this.fonts = FontAtlases.upload(device, faces);
         // One placeholder for the device, not one per window: every window's canvas pipeline is built against the
         // same layout, and every span that draws no image binds this same 1x1 white.
-        this.noImage = AtlasTexture.placeholder(device);
+        this.images = new DeviceImages(device);
 
-        this.main = new GuiWindow(platform, instance, device, fonts, noImage, null,
+        this.main = new GuiWindow(platform, instance, device, fonts, images, null,
                 probe, probeSurface, config.decorations(), presentBackend);
         this.controls = controlsFor(main);
     }
@@ -477,7 +477,30 @@ public final class GuiApp implements AutoCloseable {
             throw new IllegalArgumentException("a " + width + "x" + height + " RGBA8 texture is " + expected
                     + " bytes; was given " + (rgba == null ? "null" : rgba.length + " bytes"));
         }
-        AtlasTexture texture = new AtlasTexture(device, width, height, rgba);
+        return keep(new AtlasTexture(device, width, height, rgba));
+    }
+
+    /**
+     * Upload a picture: sRGB RGBA8 pixels, {@code width x height}, as a texture with its mip chain whose sampler decodes
+     * to linear light ({@code SampledImage.linear()}). Drawn smaller than it is, it reads the level nearest its size,
+     * so nothing is skipped and fine detail does not shimmer; every blend, across texels and between levels, is in
+     * light. For photographs and thumbnails; not for data, such as a distance field, whose values are not colours.
+     * Main thread, and given back with {@link #release}, like {@link #texture}.
+     */
+    public AtlasTexture picture(byte[] rgba, int width, int height) {
+        if (width <= 0 || height <= 0) {
+            throw new IllegalArgumentException("a texture needs a positive size: " + width + "x" + height);
+        }
+        long expected = (long) width * height * 4L;
+        if (rgba == null || rgba.length != expected) {
+            throw new IllegalArgumentException("a " + width + "x" + height + " RGBA8 texture is " + expected
+                    + " bytes; was given " + (rgba == null ? "null" : rgba.length + " bytes"));
+        }
+        return keep(new AtlasTexture(device, width, height,
+                dev.vexelray.vulkan.present.MipChain.of(rgba, width, height), true));
+    }
+
+    private AtlasTexture keep(AtlasTexture texture) {
         textures.removeIf(AtlasTexture::isClosed);   // see viewport: replaced ones are closed by the application
         textures.add(texture);
         return texture;
@@ -1110,7 +1133,7 @@ public final class GuiApp implements AutoCloseable {
         wireWake(spec.gui());
         // From the same factory the main window came from: this is the path every popup, named window and
         // dialog takes, and a window that skipped it is one the host was never given a say over.
-        GuiWindow w = new GuiWindow(platform, instance, device, fonts, noImage, spec.gui(),
+        GuiWindow w = new GuiWindow(platform, instance, device, fonts, images, spec.gui(),
                 spec.standing().place(spec.config(), anchorHandle(spec)), this::create, presentBackend);
         WindowInput input = inputs.attach(w.window, spec.gui());
         OpenWindow entry = new OpenWindow(w, input, spec, owner);
@@ -1531,7 +1554,7 @@ public final class GuiApp implements AutoCloseable {
         }
         buffers.clear();
         fonts.close();
-        noImage.close();
+        images.close();
         device.close();
         instance.close();
     }
@@ -1579,15 +1602,15 @@ public final class GuiApp implements AutoCloseable {
                  VulkanRenderPass rp = new VulkanRenderPass(device, Vk.FORMAT_R8G8B8A8_UNORM,
                          Vk.IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
                  FontAtlases fonts = FontAtlases.upload(device, faces);
-                 AtlasTexture noImage = AtlasTexture.placeholder(device);
+                 DeviceImages images = new DeviceImages(device);
                  VertexBuffer vb = new VertexBuffer(device, vertices);
                  GraphicsPipeline pipeline = new GraphicsPipeline(device, rp.handle(), width, height,
                          CanvasShader.vertex().spirv(), "main", CanvasShader.fragment().spirv(), "main",
-                         canvasConfig(fonts.first(), noImage, false))) { // fixed viewport: offscreen, no resize
+                         canvasConfig(fonts.first(), images.placeholder(), false))) { // fixed viewport: offscreen, no resize
                 // The same run list the windowed path walks, so a tree holding images captures to PNG exactly as
                 // it presents — which is what makes the image kind checkable without a window.
                 byte[] rgba = OffscreenDraw.toRgba(device, rp.handle(), pipeline, width, height, vb.handle(),
-                        fonts.first().descriptorSet(), bind(runs, vertexCount, noImage, fonts.textures()),
+                        fonts.first().descriptorSet(), bind(runs, vertexCount, images, fonts.textures()),
                         bgR, bgG, bgB, 1f);
                 PngWriter.write(rgba, width, height, Path.of(path));
             }
@@ -1626,16 +1649,21 @@ public final class GuiApp implements AutoCloseable {
      * the buffer is a draw of undefined memory, which is a worse answer to "this frame is too big" than a missing
      * tail. A handle that is not a {@link SampledImage} — or a null one, which is every shape and glyph — gets the
      * placeholder, so a tree carrying something unexpected shows a blank box rather than failing the frame.
+     *
+     * <p>A {@link dev.vexelray.gui.core.Pixels} is uploaded to this device here, the first frame it is drawn: this is
+     * the one place that has both the run and the device.
      */
-    static List<WindowedPresenter.Run> bind(List<Canvas.Run> runs, int vertexCount, SampledImage noImage,
+    static List<WindowedPresenter.Run> bind(List<Canvas.Run> runs, int vertexCount, DeviceImages images,
                                             List<? extends SampledImage> atlases) {
+        SampledImage noImage = images.placeholder();
         List<WindowedPresenter.Run> out = new ArrayList<>(runs.size());
         for (Canvas.Run r : runs) {
             if (r.firstVertex() >= vertexCount) {
                 break;   // runs are in submission order, so the first one past the end ends the frame
             }
             int count = Math.min(r.vertexCount(), vertexCount - r.firstVertex());
-            long set = r.image() instanceof SampledImage img && bindable(img.device(), noImage.device())
+            long set = images.resolve(r.image()) instanceof SampledImage img
+                    && bindable(img.device(), noImage.device())
                     ? img.descriptorSet()
                     : noImage.descriptorSet();
             // Set 0 is the atlas of the face the run's glyphs came from. Every face id a canvas can name is one this

@@ -12,6 +12,7 @@ import dev.vexelray.gui.demo.chapter.MotionChapter;
 import dev.vexelray.gui.demo.chapter.PlotChapter;
 import dev.vexelray.gui.demo.chapter.TableChapter;
 import dev.vexelray.gui.demo.chapter.TextChapter;
+import dev.vexelray.gui.demo.chapter.IconsChapter;
 import dev.vexelray.gui.demo.chapter.TreeChapter;
 import dev.vexelray.gui.demo.chapter.TypesetChapter;
 import dev.vexelray.gui.demo.chapter.WindowChapter;
@@ -47,6 +48,7 @@ public final class Gallery {
                 new ColorChapter(),
                 new PlotChapter(),
                 new ImageChapter(),
+                new IconsChapter(),
                 new TypesetChapter(),
                 new WindowChapter(),
                 new MotionChapter(),

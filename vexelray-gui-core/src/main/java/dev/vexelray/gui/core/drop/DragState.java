@@ -22,18 +22,25 @@ import dev.vexelray.gui.core.layout.Rect;
  * @param indicator where to show it, in the same client-space px — meaningful only when {@code effect} accepts
  * @param latched   whether the button has been let go and the thing stays with the pointer until a click puts it
  *                  down — see {@link DragSession#latch}. A different state for the user, so drawn differently
+ * @param payload   what is being carried; {@link Payload#empty()} when no drag is in flight. A drag is published
+ *                  to the whole window, so anything that draws one — a ghost that names what is in the hand —
+ *                  asks this whether the drag is one it can depict ({@code payload.as(type)}) before drawing it.
+ *                  Without it, a reader cannot tell its own drag from someone else's, and has to keep a copy of
+ *                  what it last saw being dragged, which is stale the moment a different source starts one
  */
-public record DragState(boolean active, float x, float y, DropEffect effect, Rect indicator, boolean latched) {
+public record DragState(boolean active, float x, float y, DropEffect effect, Rect indicator, boolean latched,
+                        Payload payload) {
 
     /** No drag. The resting value, and what is published the moment one ends. */
-    public static final DragState NONE = new DragState(false, 0f, 0f, DropEffect.NONE, Rect.ZERO, false);
+    public static final DragState NONE =
+            new DragState(false, 0f, 0f, DropEffect.NONE, Rect.ZERO, false, Payload.empty());
 
     /** The live session as it stands, or {@link #NONE} for no session. */
     public static DragState of(DragSession live) {
         return live == null
                 ? NONE
                 : new DragState(true, live.x(), live.y(), live.drop().effect(), live.drop().indicator(),
-                        live.latched());
+                        live.latched(), live.payload());
     }
 
     /** Whether a drag is in flight <em>and</em> would land somewhere. */

@@ -176,6 +176,12 @@ have drawn.
 It is published **after displacement**, so the indicator and the rows it sits between are never a frame out of
 step, and **on change only**, so a pointer held still over one seam costs nothing.
 
+It carries the **payload**, because it is published to the whole window and a reader has to be able to tell whose
+drag it is. A ghost that names what is in the hand asks `drag.payload().as(type)` and draws nothing for a drag it
+cannot read. Before the payload was published, the gallery's Drag chapter drew its task label over every drag in
+the window, cards from the Cards chapter included, naming the last task it had seen. A reader that has to keep its
+own copy of "what is being dragged" will show a stale one as soon as a different source starts a drag.
+
 `DropIndicator` is told the rectangle and decides only the appearance. Where it goes is not negotiable — it comes
 from the same resolution that produced the change. Which *kind* of drop it is comes from the geometry rather than
 a flag beside it: a seam between two things is thin, a thing is its whole box. A flag would be a second copy of

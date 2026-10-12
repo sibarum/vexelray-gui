@@ -23,7 +23,6 @@ import dev.vexelray.text.TextLayout;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Drag and drop, on something worth dragging: a project outline whose tasks are moved between columns, ordered
@@ -86,9 +85,6 @@ public final class DragChapter implements Chapter {
 
     private final History history = new History();
     private final List<Task> archived = new ArrayList<>();
-
-    /** What the pointer is currently carrying, for the ghost to show. */
-    private final AtomicReference<String> carrying = new AtomicReference<>("");
 
     private final List<Node> archiveRows = new ArrayList<>();
 
@@ -173,7 +169,6 @@ public final class DragChapter implements Chapter {
         // them, once per frame, while the pointer moves. It decides what to draw, not what to do: the change it
         // returns is not applied until the user releases.
         board.reorderable((moved, where, effect) -> {
-            carrying.set(moved.name);
             // A copy has nothing to refuse about where it came from: it is a new task, so it can land inside
             // the one it was copied from, and landing where the original already sits is not a no-op. So the
             // item being placed is decided first, and every question below is asked about *that* item.
@@ -216,10 +211,7 @@ public final class DragChapter implements Chapter {
                                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.TOP),
                         archiveList);
         gui.onDrop(archive, (payload, x, y) -> payload.as(taskType)
-                .map(task -> {
-                    carrying.set(task.name);
-                    return task.parent == null ? Drop.NONE : Drop.move(rectOf(archive), archiving(task));
-                })
+                .map(task -> task.parent == null ? Drop.NONE : Drop.move(rectOf(archive), archiving(task)))
                 .orElse(Drop.NONE));
 
         // The ghost: a floating, hit-inert last child of the root, which is the framework's whole overlay story —
@@ -244,9 +236,14 @@ public final class DragChapter implements Chapter {
         // mutated on the GUI thread inside the frame, and reading it from here would be reading a value that
         // changes underneath the paint. The State commits once per frame and only on change, so a pointer held
         // still costs nothing at all.
+        //
+        // The drag is the window's, not this chapter's: a card picked up in the Cards chapter is published here
+        // too. So the ghost draws only a drag whose payload is a task, and names the task from the payload itself
+        // rather than from a copy of whatever this chapter last saw being dragged.
         gui.drag().onCommit(v -> {
             DragState drag = v.value();
-            if (!drag.active()) {
+            Task held = drag.active() ? drag.payload().as(taskType).orElse(null) : null;
+            if (held == null) {
                 ghost.visible(false);
                 lightArchive(false, theme);
                 return;
@@ -254,7 +251,7 @@ public final class DragChapter implements Chapter {
             // Offset from the hotspot so the label never sits under the cursor itself. dp, not rem: the ghost
             // trails the pointer by a fixed distance on screen, which is not a quantity that should grow when
             // the user zooms the content.
-            ghost.text(carrying.get()).visible(true)
+            ghost.text(held.name).visible(true)
                     .floatAt(Length.dp(drag.x() + 14f), Length.dp(drag.y() + 12f))
                     // It says what would happen, not merely what is held: the framework has already asked every
                     // target under the pointer, and the answer is in the same value that carries the position.

@@ -89,6 +89,31 @@ class TransfersTest {
         assertSame(DragState.NONE, seen.get(1), "and it settles back to nothing rather than a stale position");
     }
 
+    /**
+     * A drag is published to the whole window, so a reader that draws one has to be able to tell whose it is.
+     * Before the payload was part of the published state, the gallery's Drag chapter drew its task label over
+     * every drag in the window — a card picked up in the Cards chapter included — naming whatever task it had
+     * last seen.
+     */
+    @Test
+    void aPublishedDragSaysWhatIsCarried() {
+        PayloadType<String> task = PayloadType.of("task");
+        PayloadType<String> card = PayloadType.of("card");
+        Transfers transfers = new Transfers();
+        List<DragState> seen = watch(transfers);
+
+        DragSession live = DragSession.open(Payload.of(card, "a card"), 10, 20);
+        transfers.publish(live);
+        transfers.publish(live);
+
+        assertEquals(1, seen.size(), "the payload does not defeat publish-on-change for a drag held still");
+        assertEquals("a card", seen.get(0).payload().as(card).orElseThrow());
+        assertTrue(seen.get(0).payload().as(task).isEmpty(), "a task ghost can see this drag is not its own");
+
+        transfers.publish(null);
+        assertTrue(seen.get(1).payload().forms().isEmpty(), "no drag carries nothing");
+    }
+
     @Test
     void noDragAtAllPublishesNothing() {
         Transfers transfers = new Transfers();

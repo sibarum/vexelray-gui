@@ -48,6 +48,11 @@ public enum PropKey {
      */
     IMAGE_REGION(false),
     /**
+     * How the image is scaled ({@code ImageScaling}: a filter and the texture's size), or absent for the sampler's
+     * own bilinear. Not layout-affecting: it changes which texels make a pixel and nothing about where the pixel is.
+     */
+    IMAGE_SCALING(false),
+    /**
      * A {@code Picture} drawn inside this node's box: an ordered list of marks in the box's own pixel frame, with
      * {@code (0, 0)} at its top-left corner. A plot, a diagram, a sparkline — anything an application wants to put
      * marks on the screen for, without one laid-out node per mark.
@@ -121,6 +126,25 @@ public enum PropKey {
      */
     TRANSLATE_X(false),
     TRANSLATE_Y(false),
+    /**
+     * Subtree turn, in degrees clockwise about the centre of the node's own box (Float, absent for upright): a
+     * visual transform with the same bargain as {@link #TRANSLATE_X}. The node and everything under it are drawn
+     * turned, after its own displacement, so a node both moved and turned turns about where it is drawn. Nothing
+     * reflows, and hit-testing does not follow: the tree is still hit at the upright box layout gave it.
+     *
+     * <p>Exact for every primitive (the canvas turns the corners of quads whose coverage is evaluated in their own
+     * frame), with one thing that does not turn: a clip. Clips are upright boxes on the screen, so a turned node is
+     * clipped where it lands by the clips around it, and a clip inside it — a scroll viewport, an explicit
+     * {@link #CLIP} — stays upright. Turn content that does not clip within itself: a picture, a shape, a label.
+     */
+    ROTATE(false),
+    /**
+     * Subtree scale, a factor about the centre of the node's own box (Float, absent for 1): the {@link #ROTATE}
+     * bargain again. Drawn larger or smaller, not magnified: each primitive's own frame scales with it, so edges
+     * stay one screen pixel soft and text stays sharp at any size. Nothing reflows, the node is hit at the box
+     * layout gave it, and clips do not scale.
+     */
+    SCALE(false),
     /**
      * Clip this node's children to its own border box. Overflow scrolling already clips its viewport; this is the
      * same masking asked for outright, by a container that does not scroll and has no overflow to detect —

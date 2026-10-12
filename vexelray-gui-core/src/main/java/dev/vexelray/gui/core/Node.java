@@ -1,6 +1,7 @@
 package dev.vexelray.gui.core;
 
 import dev.vexelray.canvas.Color;
+import dev.vexelray.canvas.ImageFilter;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.LayoutEnums;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
@@ -91,6 +92,19 @@ public final class Node {
     public Node image(SampledImage image, ImageRegion region) {
         prop(PropKey.IMAGE_REGION, image == null ? null : region);
         return prop(PropKey.IMAGE, image);
+    }
+
+    /**
+     * Scale this node's image with {@code filter} rather than the sampler's own bilinear: for a picture, where how
+     * it is scaled is a choice — square pixels to look at them, a smooth bell to hide them. The filter needs the
+     * texture's size in texels, which its handle does not give, so say it here: whoever sets the image knows it.
+     * Pass a null filter for bilinear again. Survives a change of image, so set it again with a texture of
+     * another size. See {@link ImageFilter} for the filters and what each costs.
+     */
+    public Node imageFilter(ImageFilter filter, int textureWidth, int textureHeight) {
+        return prop(PropKey.IMAGE_SCALING, filter == null || filter == ImageFilter.BILINEAR
+                || textureWidth <= 0 || textureHeight <= 0
+                ? null : new ImageScaling(filter, textureWidth, textureHeight));
     }
 
     /**
@@ -261,6 +275,37 @@ public final class Node {
     public Node translate(float emX, float emY) {
         prop(PropKey.TRANSLATE_X, emX == 0f ? null : emX);
         return prop(PropKey.TRANSLATE_Y, emY == 0f ? null : emY);
+    }
+
+    /**
+     * Draw this node and its subtree turned {@code degrees} clockwise about the centre of its box, without turning
+     * its box. The third member of the visual-transform layer (architecture.md §7), with {@link #opacity} and
+     * {@link #translate}, and the same bargain: nothing reflows and nothing is measured, so it is cheap enough to
+     * drive every frame. A node that is translated too turns about where it is drawn.
+     *
+     * <p><b>The node is still laid out, reported and hit upright</b>, where the layout put it: pair this with
+     * {@link #hitInert}(true) where the pointer could be over it. <b>Clips do not turn</b>: the clips around it
+     * cut it where it lands, which is what a parent's {@link #clip}(true) is for, and a clip inside it stays
+     * upright, so turn content that does not clip within itself — a picture, a shape, a label. See
+     * {@link PropKey#ROTATE}.
+     */
+    public Node rotate(float degrees) {
+        float d = degrees % 360f;
+        return prop(PropKey.ROTATE, d == 0f ? null : d);
+    }
+
+    /**
+     * Draw this node and its subtree {@code factor} times as large about the centre of its box, without growing its
+     * box: a visual transform with {@link #rotate}'s bargain. Not a magnified picture: edges stay one screen pixel
+     * soft and text stays sharp at any factor, since every primitive's own frame scales with it. Hit and laid out
+     * where layout put it; clips do not scale. Applied with a turn, both are about the same centre. See
+     * {@link PropKey#SCALE}.
+     */
+    public Node scale(float factor) {
+        if (!(factor > 0f)) {
+            throw new IllegalArgumentException("a node is drawn at some size: " + factor);
+        }
+        return prop(PropKey.SCALE, factor == 1f ? null : factor);
     }
 
     /**

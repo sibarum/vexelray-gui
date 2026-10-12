@@ -460,14 +460,14 @@ sheet are also one run and one draw — which is the second reason to pack a she
 
 ## 7. Animation — a visual-transform layer, GUI-side
 
-> **Partly built.** `OPACITY`, `TRANSLATE_X/Y`, `OVERLAY` and `UNCLIP` are in, motion runs on Kronometer
+> **Partly built.** `OPACITY`, `TRANSLATE_X/Y`, `ROTATE`, `OVERLAY` and `UNCLIP` are in, motion runs on Kronometer
 > through `vexelray-gui-krono`, and there are three consumers: the tab transition (`Tabs.slide` +
-> `KronoGui.ramp`), one-shot cues (`Cue` + `Cues`), and a cut-off node shown whole on hover (`Unclip`). `SCALE`, `ROTATION` and `TINT`, the visibility FSM,
+> `KronoGui.ramp`), one-shot cues (`Cue` + `Cues`), and a cut-off node shown whole on hover (`Unclip`). `SCALE` and `TINT`, the visibility FSM,
 > `gui.motion(DISABLED)` and the deadline-driven wait loop are not. See docs/reactive-timing.md for the
 > Kronometer seam and what it still owes.
 
 Opt-in per node; nothing fires unless an animation is attached. Animatable properties are a
-**post-layout visual transform** — `OPACITY, TRANSLATE_X/Y, OVERLAY, UNCLIP, SCALE, ROTATION, TINT` — **not**
+**post-layout visual transform** — `OPACITY, TRANSLATE_X/Y, ROTATE, OVERLAY, UNCLIP, SCALE, TINT` — **not**
 layout inputs. Animating them never re-runs layout; it only changes how the tree is emitted to the
 `Canvas`.
 
@@ -497,6 +497,15 @@ to run — never, in a UI that is otherwise still. The em is already on the node
 follow, which is the honest reading of a transform layer and the reason `Tabs` makes both pages `hitInert`
 while they move: better no pointer target than one that disagrees with the picture. `CLIP` is the companion —
 a translated child adds no overflow, so it can never trip the clipping that comes with scrolling.
+
+**`ROTATE`, as built.** Degrees clockwise about the centre of the node's box, where it is drawn: a
+`Canvas.pushRotate` inside the node's own translate, around it and its subtree. The canvas keeps one rigid
+transform where it kept a translation, and every primitive is a quad whose coverage is evaluated in its own
+frame, so turning the corners is exact — rounded corners, antialiasing, glyphs and images included. Hit-testing
+does not follow, as with translate. **Clips do not turn**: a clip is an upright box on the screen, so the clips
+around a turned node cut it where it lands, a clip inside it stays upright, and nothing under a turn is culled.
+Turn content that does not clip within itself — a picture, a shape, a label. A turned image is the consumer
+(Pix's free rotation).
 
 **`OVERLAY`, as built — and why it had to exist.** A `Picture` painted over the node, its border, its
 text and its whole subtree, in the box's own pixel frame and clipped to it. The same value `PICTURE`

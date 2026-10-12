@@ -230,6 +230,18 @@ public final class RetainedNode {
         return o instanceof Float f ? f : 0f;
     }
 
+    /** How far this node is turned, in degrees clockwise about its centre; 0 when it never declared one. */
+    public float rotation() {
+        Object o = props.get(PropKey.ROTATE);
+        return o instanceof Float f ? f : 0f;
+    }
+
+    /** How much larger this node is drawn, about its centre; 1 when it never declared a scale. */
+    public float scale() {
+        Object o = props.get(PropKey.SCALE);
+        return o instanceof Float f ? f : 1f;
+    }
+
     /** Whether this node masks its children to its border box (see {@link PropKey#CLIP}). */
     public boolean clip() {
         return Boolean.TRUE.equals(props.get(PropKey.CLIP));
@@ -267,6 +279,11 @@ public final class RetainedNode {
      */
     public ImageRegion imageRegion() {
         return (ImageRegion) props.get(PropKey.IMAGE_REGION);
+    }
+
+    /** How the image is scaled, or null for the sampler's own bilinear (see {@link PropKey#IMAGE_SCALING}). */
+    public dev.vexelray.gui.core.ImageScaling imageScaling() {
+        return (dev.vexelray.gui.core.ImageScaling) props.get(PropKey.IMAGE_SCALING);
     }
 
     /**

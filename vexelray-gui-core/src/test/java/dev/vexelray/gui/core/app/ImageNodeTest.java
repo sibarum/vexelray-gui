@@ -136,6 +136,53 @@ class ImageNodeTest {
         return (min + max) / 2f;
     }
 
+    /** Every image vertex's filter attribute (loc8), as one {@code {mode, width, height, rate}} each. */
+    private static java.util.List<float[]> filters(float[] data) {
+        int stride = CanvasVertex.FLOATS_PER_VERTEX;
+        int at = CanvasVertex.OFF_FILTER / Float.BYTES;
+        int kind = CanvasVertex.OFF_KIND / Float.BYTES;
+        java.util.List<float[]> out = new java.util.ArrayList<>();
+        for (int v = 0; v + stride <= data.length; v += stride) {
+            if (data[v + kind] == CanvasVertex.KIND_IMAGE) {
+                out.add(Arrays.copyOfRange(data, v + at, v + at + 4));
+            }
+        }
+        return out;
+    }
+
+    // --- the filter ---------------------------------------------------------------------------------------
+
+    @Test
+    void anImageWithNoFilterCarriesNone() {
+        RetainedNode n = box(0f, 0f);
+        n.set(PropKey.IMAGE, new FakeImage(1));
+        for (float[] f : filters(vertices(draw(n)))) {
+            assertEquals(0f, f[0], "mode 0: the sampler's own bilinear, as before");
+        }
+    }
+
+    @Test
+    void aFilterCarriesItsTextureAndHowManyTexelsFallAcrossAPixel() {
+        RetainedNode n = box(0f, 0f);
+        n.set(PropKey.IMAGE, new FakeImage(1));
+        n.set(PropKey.IMAGE_SCALING, new dev.vexelray.gui.core.ImageScaling(
+                dev.vexelray.canvas.ImageFilter.LANCZOS, 400, 200));
+        java.util.List<float[]> f = filters(vertices(draw(n)));
+        assertEquals(6, f.size());
+        for (float[] v : f) {
+            assertEquals(dev.vexelray.canvas.ImageFilter.LANCZOS.ordinal() + 1, v[0], 1e-6f);
+            assertEquals(400f, v[1], 1e-6f);
+            assertEquals(200f, v[2], 1e-6f);
+            assertEquals(4f, v[3], 1e-5f, "400 texels across a 100 px box: four a pixel");
+        }
+
+        // Scaled up four times, it is one a pixel: the rate follows the drawn size, not the laid-out one.
+        n.set(PropKey.SCALE, 4f);
+        for (float[] v : filters(vertices(draw(n)))) {
+            assertEquals(1f, v[3], 1e-5f);
+        }
+    }
+
     // --- the coordinates ----------------------------------------------------------------------------------
 
     @Test

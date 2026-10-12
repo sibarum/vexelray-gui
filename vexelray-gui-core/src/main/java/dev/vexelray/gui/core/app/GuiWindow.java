@@ -69,15 +69,16 @@ final class GuiWindow implements AutoCloseable {
      * The per-window vertex buffer, in floats. Host-visible and rewritten once a frame, so it is the ceiling on
      * how complicated one window's picture may be.
      *
-     * <p>Worth doing the arithmetic rather than picking a round number. At 23 floats a vertex and six vertices a
-     * quad, a quad is 138 floats: this is about thirty thousand of them. An ordinary dense UI is a few hundred;
+     * <p>Worth doing the arithmetic rather than picking a round number. At 27 floats a vertex and six vertices a
+     * quad, a quad is 162 floats: this is about thirty-two thousand of them. An ordinary dense UI is a few hundred;
      * a plot that draws a surface out of boxes is tens of thousands, which is how the previous figure of 512K —
-     * under four thousand quads — was found, by a window dying on it mid-frame.
+     * under four thousand quads — was found, by a window dying on it mid-frame. (It was 4M at 23 floats a vertex,
+     * and grew with the vertex when images gained their filter, so no window holds fewer quads than it did.)
      *
-     * <p>Sixteen megabytes of host-visible memory is not a meaningful cost on any device that can run this. The
+     * <p>Twenty megabytes of host-visible memory is not a meaningful cost on any device that can run this. The
      * real fix is a buffer that <b>grows</b>; until it does, {@link #draw} degrades rather than throws.
      */
-    private static final int CAPACITY_FLOATS = 4 * 1024 * 1024;
+    private static final int CAPACITY_FLOATS = 5 * 1024 * 1024;
 
     /** Said once, not once a frame: a window over budget is over budget for as long as it is on screen. */
     private boolean warnedOverCapacity;

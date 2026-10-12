@@ -270,6 +270,17 @@ public final class TreeRenderer {
                 transX += dx;
                 transY += dy;
             }
+            // A turn and a scale, both about the centre of the box where it is drawn: inside the displacement,
+            // around the node and its whole subtree. The two commute, about one centre.
+            float turn = node.rotation();
+            float grow = node.scale();
+            boolean turned = turn != 0f || grow != 1f;
+            if (turn != 0f) {
+                canvas.pushRotate((float) Math.toRadians(turn), node.x + node.w * 0.5f, node.y + node.h * 0.5f);
+            }
+            if (grow != 1f) {
+                canvas.pushScale(grow, node.x + node.w * 0.5f, node.y + node.h * 0.5f);
+            }
             if (node == plating) {
                 drawPlate(node, canvas);
             }
@@ -297,6 +308,14 @@ public final class TreeRenderer {
                 clipT -= dy;
                 clipR -= dx;
                 clipB -= dy;
+            }
+            if (turned) {
+                // The subtree's boxes cannot be judged against the mask once they are drawn turned or scaled, so
+                // nothing under either is culled: its clips still cut it on the screen, where it lands.
+                clipL = Float.NEGATIVE_INFINITY;
+                clipT = Float.NEGATIVE_INFINITY;
+                clipR = Float.POSITIVE_INFINITY;
+                clipB = Float.POSITIVE_INFINITY;
             }
             float flowL = clipL;
             float flowT = clipT;
@@ -356,6 +375,12 @@ public final class TreeRenderer {
             // cover has failed at the one thing it does. Inside the node's translate, like its own picture: an
             // overlay decorates where the node is drawn, not where it was laid out.
             drawOverlay(node, canvas, faceFor(node));
+            if (grow != 1f) {
+                canvas.popScale();
+            }
+            if (turn != 0f) {
+                canvas.popRotate();
+            }
             if (moved) {
                 canvas.popTranslate();
             }
@@ -459,10 +484,13 @@ public final class TreeRenderer {
         if (clipL == Float.NEGATIVE_INFINITY || child.w <= 0f || child.h <= 0f) {
             return false;   // nothing masks here, or nothing to judge it by
         }
-        return child.x + child.w + child.w < clipL
-                || child.x - child.w > clipR
-                || child.y + child.h + child.h < clipT
-                || child.y - child.h > clipB;
+        // A turned or scaled child reaches as far as its drawn corners, which may be well past its own box.
+        float reach = child.rotation() == 0f && child.scale() <= 1f
+                ? 0f : (float) Math.hypot(child.w, child.h) * Math.max(1f, child.scale());
+        return child.x + child.w + child.w + reach < clipL
+                || child.x - child.w - reach > clipR
+                || child.y + child.h + child.h + reach < clipT
+                || child.y - child.h - reach > clipB;
     }
 
     /**
@@ -566,7 +594,12 @@ public final class TreeRenderer {
             // An alpha, not a colour: the tint multiplies the texel, so there is no shade to choose here — only
             // the subtree opacity this class applies to everything it draws.
             ImageRegion region = n.imageRegion();
-            if (region == null || region.whole()) {
+            dev.vexelray.gui.core.ImageScaling scaling = n.imageScaling();
+            if (scaling != null) {
+                ImageRegion r = region == null ? ImageRegion.WHOLE : region;
+                canvas.image(n.x, n.y, n.w, n.h, rTop, rBottom, image, r.u0(), r.v0(), r.u1(), r.v1(), alpha,
+                        scaling.filter(), scaling.textureWidth(), scaling.textureHeight());
+            } else if (region == null || region.whole()) {
                 canvas.image(n.x, n.y, n.w, n.h, rTop, rBottom, image, alpha);
             } else {
                 // One cell of a sheet. Same primitive, same run — only the four texture coordinates differ, which

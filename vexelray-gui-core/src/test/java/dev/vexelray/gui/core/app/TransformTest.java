@@ -200,6 +200,76 @@ class TransformTest {
                 "while the parent it is nested in is unaffected by what its child said");
     }
 
+    /** The screen position of every vertex drawn in {@code colour}, x then y: the coordinate the clip SDF reads. */
+    private static java.util.List<float[]> pointsOf(float[] data, Color colour) {
+        java.util.List<float[]> out = new java.util.ArrayList<>();
+        int stride = CanvasVertex.FLOATS_PER_VERTEX;
+        int rgba = CanvasVertex.OFF_COLOR / Float.BYTES;
+        int screen = CanvasVertex.OFF_CLIPRS / Float.BYTES;
+        for (int v = 0; v + stride <= data.length; v += stride) {
+            if (data[v + rgba] == colour.r() && data[v + rgba + 1] == colour.g() && data[v + rgba + 2] == colour.b()) {
+                out.add(new float[]{data[v + screen], data[v + screen + 1]});
+            }
+        }
+        return out;
+    }
+
+    /**
+     * A turn carries the node and its subtree about the centre of the node's box, where it is drawn: a quarter turn
+     * of a box moved 2 em right sends a corner of its child round that moved centre, and leaves the laid-out box
+     * alone.
+     */
+    @Test
+    void rotateTurnsTheSubtreeAboutTheDrawnCentre() {
+        RetainedNode root = box(RED);
+        RetainedNode turned = child(root, box(GREEN));
+        turned.emPx = 20f;
+        turned.set(PropKey.TRANSLATE_X, 2f);
+        RetainedNode inner = child(turned, box(BLUE));
+        inner.w = 20f;
+        inner.h = 10f;
+
+        java.util.List<float[]> upright = pointsOf(emit(root), BLUE);
+        turned.set(PropKey.ROTATE, 90f);
+        java.util.List<float[]> quarter = pointsOf(emit(root), BLUE);
+
+        assertEquals(upright.size(), quarter.size());
+        float cx = 40f + 50f;   // the moved box's centre
+        float cy = 50f;
+        for (int i = 0; i < upright.size(); i++) {
+            float x = upright.get(i)[0] - cx;
+            float y = upright.get(i)[1] - cy;
+            // Clockwise on a Y-down screen: (x, y) -> (-y, x).
+            assertEquals(cx - y, quarter.get(i)[0], 0.01f);
+            assertEquals(cy + x, quarter.get(i)[1], 0.01f);
+        }
+        assertEquals(0f, turned.x, 0.01f, "the box layout computed is untouched");
+    }
+
+    /** A scale grows the subtree about the same drawn centre a turn uses, and leaves the laid-out box alone. */
+    @Test
+    void scaleGrowsTheSubtreeAboutTheDrawnCentre() {
+        RetainedNode root = box(RED);
+        RetainedNode grown = child(root, box(GREEN));
+        grown.emPx = 20f;
+        grown.set(PropKey.TRANSLATE_Y, 1f);
+        RetainedNode inner = child(grown, box(BLUE));
+        inner.w = 20f;
+        inner.h = 10f;
+
+        java.util.List<float[]> plain = pointsOf(emit(root), BLUE);
+        grown.set(PropKey.SCALE, 3f);
+        java.util.List<float[]> big = pointsOf(emit(root), BLUE);
+
+        float cx = 50f;
+        float cy = 20f + 50f;   // the moved box's centre
+        for (int i = 0; i < plain.size(); i++) {
+            assertEquals(cx + 3f * (plain.get(i)[0] - cx), big.get(i)[0], 0.01f);
+            assertEquals(cy + 3f * (plain.get(i)[1] - cy), big.get(i)[1], 0.01f);
+        }
+        assertEquals(100f, grown.w, 0.01f, "the box layout computed is untouched");
+    }
+
     /** A translated node is skipped by nothing and moves nothing: the transform never reaches the layout. */
     @Test
     void translateDoesNotTouchTheLaidOutBox() {

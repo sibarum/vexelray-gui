@@ -564,6 +564,81 @@ public final class TreeRenderer {
         canvas.popClip();
     }
 
+    private static final int NO_FILL = 0;
+    private static final int PLAIN_FILL = 1;
+    private static final int LIT_FILL = 2;
+
+    /**
+     * The looks a node's box is drawn with, by which of its parts it has: border or not, no fill or a plain or a lit
+     * one, shadow or not. Twelve at most, whatever the colours, since every value is the element's own.
+     */
+    private static final dev.vexelray.canvas.shadelet.Look[] BOX_LOOKS = new dev.vexelray.canvas.shadelet.Look[12];
+
+    private static dev.vexelray.canvas.shadelet.Look boxLook(boolean border, int fill, boolean shadow) {
+        int key = (border ? 1 : 0) + 2 * fill + 6 * (shadow ? 1 : 0);   // 2 x 3 x 2, densely
+        dev.vexelray.canvas.shadelet.Look look = BOX_LOOKS[key];
+        if (look == null) {
+            java.util.List<dev.vexelray.canvas.shadelet.Look.Use> painters = new java.util.ArrayList<>();
+            if (border) {
+                painters.add(use(dev.vexelray.canvas.shadelet.CoreShadelets.NODE_STROKE));
+            }
+            if (fill == PLAIN_FILL) {
+                painters.add(use(dev.vexelray.canvas.shadelet.CoreShadelets.NODE_FILL));
+            } else if (fill == LIT_FILL) {
+                painters.add(use(dev.vexelray.canvas.shadelet.CoreShadelets.NODE_LIT));
+            }
+            if (shadow) {
+                painters.add(use(dev.vexelray.canvas.shadelet.CoreShadelets.NODE_SHADOW));
+            }
+            look = new dev.vexelray.canvas.shadelet.Look(use(dev.vexelray.canvas.shadelet.CoreShadelets.BOX),
+                    java.util.List.of(), painters);
+            BOX_LOOKS[key] = look;
+        }
+        return look;
+    }
+
+    private static dev.vexelray.canvas.shadelet.Look.Use use(dev.vexelray.canvas.shadelet.Shadelet shadelet) {
+        return dev.vexelray.canvas.shadelet.Look.Use.of(shadelet.name());
+    }
+
+    /**
+     * A node's box as one element: its border ({@code border} null for none), its fill ({@code fill} with its colour,
+     * a lit fill bevelled {@code bevel} wide), its shadow ({@code shadow} null for none) at {@code lift}, front to
+     * back, every value in the element's record in that order.
+     */
+    private static void box(Canvas canvas, RetainedNode n, Color border, float width, int fill, Color fillColour,
+                            float bevel, Color shadow, float lift) {
+        float[] v = new float[16];
+        int k = 0;
+        if (border != null) {
+            k = colour(v, k, border);
+            v[k++] = width;
+        }
+        if (fill != NO_FILL) {
+            k = colour(v, k, fillColour);
+            if (fill == LIT_FILL) {
+                v[k++] = bevel;
+                v[k++] = 0.05f;   // the lit fill's vertical gradient, as litRoundRect drew it
+            }
+        }
+        if (shadow != null) {
+            k = colour(v, k, shadow);
+            v[k++] = lift;
+        }
+        // The node painters read their colours from the record, never the vertex's; it carries one of them anyway.
+        Color vertex = fillColour != null ? fillColour : border != null ? border : shadow;
+        canvas.box(n.x, n.y, n.w, n.h, n.cornerPx, n.cornerBottomPx, vertex,
+                boxLook(border != null, fill, shadow != null), java.util.Arrays.copyOf(v, k));
+    }
+
+    private static int colour(float[] v, int k, Color c) {
+        v[k] = c.r();
+        v[k + 1] = c.g();
+        v[k + 2] = c.b();
+        v[k + 3] = c.a();
+        return k + 4;
+    }
+
     private void drawSelf(RetainedNode n, Canvas canvas, TextLayout text) {
         // Border width, corner radius and text size were resolved to px by the layout pass (border-box), so the
         // renderer needs no units or layout context — it just paints the computed rect.
@@ -572,19 +647,33 @@ public final class TreeRenderer {
         float rBottom = n.cornerBottomPx;
         float bw = n.borderPx;
         Color border = n.borderColor();
+        boolean hasBorder = bw > 0f && border != null;
         // Elevation: an analytic soft shadow under the border-box, dropped slightly with the light overhead.
-        if (n.elevationPx > 0f && (bg != null || border != null)) {
-            float e = n.elevationPx;
-            canvas.shadowRoundRect(n.x, n.y + e * 0.5f, n.w, n.h, rTop, rBottom, e, fade(shadow));
-        }
-        if (bg != null) {
-            if (n.lit()) {
-                // Bevel scales with the root em (not this node's text size) so the edge light stays
-                // proportionate under zoom.
-                canvas.litRoundRect(n.x, n.y, n.w, n.h, rTop, rBottom,
-                        Math.max(2f, n.emPx * 0.22f), 0.05f, fade(bg));
-            } else {
-                canvas.fillRoundRect(n.x, n.y, n.w, n.h, rTop, rBottom, fade(bg));
+        boolean hasShadow = n.elevationPx > 0f && (bg != null || border != null);
+        // Bevel scales with the root em (not this node's text size) so the edge light stays proportionate under zoom.
+        float bevel = Math.max(2f, n.emPx * 0.22f);
+        // An image, a field and a picture sit between the background and the border, so a border over any of them is
+        // drawn after them, on its own; without them, the box is one element: border, fill and shadow in one quad.
+        Picture picture = n.picture();
+        boolean between = n.image() != null || n.field() != null || (picture != null && !picture.isEmpty());
+        boolean borderNow = hasBorder && !between;
+        if (canvas.drawsLooks()) {
+            int fill = bg == null ? NO_FILL : n.lit() ? LIT_FILL : PLAIN_FILL;
+            if (borderNow || fill != NO_FILL || hasShadow) {
+                box(canvas, n, borderNow ? fade(border) : null, bw, fill, fill == NO_FILL ? null : fade(bg), bevel,
+                        hasShadow ? fade(shadow) : null, n.elevationPx);
+            }
+        } else {
+            if (hasShadow) {
+                float e = n.elevationPx;
+                canvas.shadowRoundRect(n.x, n.y + e * 0.5f, n.w, n.h, rTop, rBottom, e, fade(shadow));
+            }
+            if (bg != null) {
+                if (n.lit()) {
+                    canvas.litRoundRect(n.x, n.y, n.w, n.h, rTop, rBottom, bevel, 0.05f, fade(bg));
+                } else {
+                    canvas.fillRoundRect(n.x, n.y, n.w, n.h, rTop, rBottom, fade(bg));
+                }
             }
         }
         // An image sits between the background and the border: a background shows through anything transparent in
@@ -628,9 +717,13 @@ public final class TreeRenderer {
         }
         // A drawing goes over the image and under the border: an application's own marks belong inside the frame
         // the node draws around them.
-        emitPicture(n, n.picture(), canvas, text);
-        if (bw > 0f && border != null) {
-            canvas.strokeRoundRect(n.x, n.y, n.w, n.h, rTop, rBottom, bw, fade(border));
+        emitPicture(n, picture, canvas, text);
+        if (hasBorder && !borderNow) {
+            if (canvas.drawsLooks()) {
+                box(canvas, n, fade(border), bw, NO_FILL, null, bevel, null, 0f);
+            } else {
+                canvas.strokeRoundRect(n.x, n.y, n.w, n.h, rTop, rBottom, bw, fade(border));
+            }
         }
 
         String s = n.textString();

@@ -9,6 +9,7 @@ import dev.vexelray.gui.core.drop.DropTarget;
 import dev.vexelray.gui.core.drop.DragState;
 import dev.vexelray.gui.core.drop.DragWatch;
 import dev.vexelray.gui.core.drop.DropEffect;
+import dev.vexelray.gui.core.drop.DragRelease;
 import dev.vexelray.gui.core.layout.LayoutEnums.ScrollLock;
 import dev.vexelray.gui.core.model.RetainedNode;
 import sibarum.atchung.Atchung;
@@ -279,6 +280,8 @@ public final class InputDispatcher {
     private final Consumer<RetainedNode> relock = n -> refreshScrollLock(n, glide.targetY(n));
     /** Where the host puts the pointer when the GUI asks; nothing moves until one is installed. */
     private volatile PointerWarp pointerWarp = PointerWarp.NONE;
+    /** What letting go of the button means during a drag: the user's preference. */
+    private volatile DragRelease dragRelease = DragRelease.KEEP;
     /** Cursor shapes declared per node (see {@link #setCursor}); consulted ancestor-or-self. */
     private final Map<Long, CursorShape> nodeCursors = new ConcurrentHashMap<>();
     // Cursor shape reporting (§8.3): the app-installed sink and the last shape reported (to fire only on change).
@@ -531,12 +534,12 @@ public final class InputDispatcher {
     }
 
     /**
-     * The button came up on a drag: keep it, latched, rather than dropping where the pointer happened to be. Or the
-     * gesture was cancelled, by Escape while the button was down.
+     * The button came up on a drag: keep it, latched, or put it down where the pointer is — whichever the user's
+     * {@link DragRelease} says. Or the gesture was cancelled, by Escape while the button was down.
      *
-     * <p>Picking something up is a gesture, not a posture — see {@link DragSession#latch}. Letting go of the button
-     * is the hand relaxing, not an instruction to put the thing down here: a long list is not a test of grip, and
-     * a slipped finger is not a drop. The drop is the next click, aimed.
+     * <p>Kept, picking something up is a gesture rather than a posture — see {@link DragSession#latch}: letting go
+     * is the hand relaxing, a long list is not a test of grip, and the drop is the next click, aimed. Dropped, it is
+     * the convention the user may have twenty years of in their hands. Their call, not this framework's.
      */
     private void endSession(sibarum.tactroller.api.DragEvent.DragEnded ended) {
         if (session == null) {
@@ -544,6 +547,10 @@ public final class InputDispatcher {
         }
         if (ended.cancelled()) {
             cancelSession();
+            return;
+        }
+        if (!dragRelease.keeps()) {
+            commitSession(ended.x(), ended.y());
             return;
         }
         session.moveTo(ended.x(), ended.y(), this::dropTargetsAt);
@@ -815,6 +822,19 @@ public final class InputDispatcher {
     /** Install where the pointer is put when the GUI asks — see {@link PointerRide}. */
     public void pointerWarp(PointerWarp warp) {
         this.pointerWarp = warp == null ? PointerWarp.NONE : warp;
+    }
+
+    /**
+     * What letting go of the button means during a drag, from now on — see {@link DragRelease}. A drag already
+     * latched stays latched until its click: the user is mid-gesture, and changing its ending under them would be
+     * the drop they did not ask for. Safe from any thread.
+     */
+    public void dragRelease(DragRelease release) {
+        this.dragRelease = java.util.Objects.requireNonNull(release, "release");
+    }
+
+    public DragRelease dragRelease() {
+        return dragRelease;
     }
 
     /** Begin carrying the pointer with an animation, from where it is now. Safe from any thread. */

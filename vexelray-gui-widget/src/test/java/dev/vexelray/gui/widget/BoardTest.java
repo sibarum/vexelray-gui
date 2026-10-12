@@ -608,6 +608,31 @@ class BoardTest {
     }
 
     @Test
+    @DisplayName("with the conventional release, letting go lands the card where it is aimed")
+    void theConventionLandsOnRelease() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Board<String> board = board(h, Map.of("todo", List.of("a", "b", "c")));
+            h.gui.dragRelease(dev.vexelray.gui.core.drop.DragRelease.DROP);
+
+            press(h, 100, 20);
+            move(h, 100, 30);
+            h.frame();
+            hand.finish();
+            move(h, 100, 70);
+            h.frame();
+            hand.finish();
+            h.frame();
+            release(h, 100, 70);
+            h.frame();
+            rest(h);
+
+            assertEquals(List.of("b", "a", "c"), model.columns.get("todo"));
+            assertEquals(55f, rectOf(board, "a").y(), 0.01f);
+            assertTrue(board.settled());
+        }
+    }
+
+    @Test
     @DisplayName("a card carried and held still owes no frames: a still hand is a still loop")
     void aStillCarryParks() {
         try (HeadlessGui h = new HeadlessGui()) {

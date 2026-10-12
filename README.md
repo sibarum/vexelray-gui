@@ -228,7 +228,9 @@ gui.dropHistory(history);                            // until this is set, drops
   with the pointer and the next click puts it down where it is aimed; Escape or a right click takes it
   home. With the hand free, the wheel scrolls underneath — there is no edge auto-scroll, by ruling: it
   maps where the pointer is to a *speed*, which is the "one magic spot" every implementation of it has.
-  The wheel glides (`gui.scrollGlide`) rather than jumping a notch per frame.
+  The wheel glides (`gui.scrollGlide`) rather than jumping a notch per frame. That is the default;
+  `gui.dragRelease(DragRelease.DROP)` gives the convention instead — hold the button for the carry, let go
+  to put it down — for users who want it. It is their preference, so wire it to a setting they can reach.
 - **A drop target answers for every point, not for the good ones.** That is the stronger obligation
   on purpose: it rules out the drop that works in some places and silently does nothing in others, so
   the user learns to hunt for the spot that "takes". `Drop.NONE` is a legitimate answer — the point is

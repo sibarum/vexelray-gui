@@ -215,6 +215,7 @@ is when the answer matters.
 | **Cross-window, same process** | The capture work already makes this tractable — only the window that saw the press gets the motion and the release, so there is exactly one session and no ambiguity about the source. What it needs is the session lifted from `Gui` to `GuiApp`, because each window has its own `Gui`, bus and dispatcher. The drop window must be resolved by asking each window's `isPointerTarget()` (which the OS answers, so occlusion and z-order come free) rather than by rectangle maths over window bounds. **A cross-window drag must not take the pointer lock** — `ClipCursor`/`SetCursorPos` are process-global, and the lock destroys the absolute position a drop needs. |
 | **OS file drop** | Cannot come through Tactroller at all: the source process owns the mouse, so there is no `ButtonPressed` in this process and `DragGesture` is blind to it by construction. `RegisterDragDrop` needs the real HWND on an STA thread with a message pump — Tactroller attaches to an HWND it does not own and pumps a message-only window on its own thread. The real window proc is in `vexelray-os-windows`, alongside the client-decoration work, and that is where it belongs. |
 | **Auto-scroll near an edge** | **Ruled out (2026-10-11), not deferred** — see §13.2. Every edge auto-scroll is rate control: the pointer's position sets a speed, so the hand steers an integrator through a curve somebody tuned, and however smooth the curve the result is a magic spot that races and a margin that crawls. With the drag latched (§13.1) the hand is free, and the wheel — already position control, already reversible, already learned — scrolls underneath the carried thing. |
+| **Scrolling a held drag (`DragRelease.DROP`)** | **Deferred, by ruling (2026-10-11): wanted eventually, not now.** With the button held, the wheel still reaches the scroller under the pointer, but a hand holding a button is a hand less free to wheel, so the convention mode needs a scroll of its own. Whatever it is must clear the bar §13.2 sets: position control, not a speed — the pointer's position decides where the content is, never how fast it moves — and every state it has shown without words (§13.3). |
 | **Multi-select payloads** | `Payload` can already carry a list; nothing else is designed for it, and it should be driven by a real requirement rather than guessed at. |
 | **Decks other than a column** | A row, a grid and free placement are each a deck that measures its slots differently (§12.4). The flights, the gaps, the lift and the drag do not change. A row is the column with the axes swapped; a grid needs gaps that reflow across a line break, which a height alone cannot express; free placement has no slots at all and is a flight that lands where it was let go. Built when an application needs one. |
 | **Cards between a board and something else** | A deck takes only its own board's `itemType`, and the board's cards can be dropped on any target that asks for that type (one that moves it makes the card fade where it was let go). The other direction — a tree row dropped into a deck — needs the deck to build a card for an item it did not hand out, which is a conversion only the application can supply. |
@@ -337,18 +338,30 @@ ring is replaced rather than blinking out. The ring comes back when the card has
 
 ## 13. Picking up is a gesture
 
-### 13.1 Letting go of the button does not drop
+### 13.1 Letting go of the button: the user's choice, keeping by default
 
-A drag is recognised as before — a press that travels and holds — but releasing the button **latches** it: the
-thing stays with the pointer, the button is free, and the next left click puts it down where it is aimed. Escape,
-or a right click, takes it home. `DragSession.latch` is the state; the dispatcher's `latchedPointer` is the
-protocol, and it consumes the click that drops and the click that cancels together with their releases, so neither
-is also a click on whatever was underneath.
+A drag is recognised as before — a press that travels and holds. What releasing the button then means is a
+preference, `Gui.dragRelease`, with two answers (`DragRelease`):
 
-**Why (ruled 2026-10-11, by the user):** holding a button for the length of a carry is what makes the far end of a
-long list a feat of grip, and what turns a slipped finger into a drop in the wrong place. Picking something up is a
-gesture; carrying it should not be a posture. Every drag in the framework latches — the tree's as well as the
-board's — because two drag protocols in one application would be the one inconsistency a user cannot learn around.
+- **`KEEP`, the default.** Releasing **latches** the drag: the thing stays with the pointer, the button is free, and
+  the next left click puts it down where it is aimed. Escape, or a right click, takes it home. `DragSession.latch`
+  is the state; the dispatcher's `latchedPointer` is the protocol, and it consumes the click that drops and the
+  click that cancels together with their releases, so neither is also a click on whatever was underneath.
+- **`DROP`, the convention.** The button is held for the carry and releasing puts the thing down where the pointer
+  is — what almost every other program does. Escape still cancels.
+
+Everything else is shared — the threshold, the armed state, the resolution, the history, the unseen-drop rule — so
+this is one fact about the ending rather than two drag protocols. Changing it mid-carry does not change a drag
+already latched: the user is mid-gesture, and it ends the way it began.
+
+**Why keep by default (ruled 2026-10-11, by the user):** holding a button for the length of a carry is what makes
+the far end of a long list a feat of grip, and what turns a slipped finger into a drop in the wrong place. Picking
+something up is a gesture; carrying it should not be a posture.
+
+**Why both (ruled 2026-10-11, by the user):** some users will want the familiar one, and should not have to unlearn
+twenty years of other software to use this. So it is a setting, and it is the user's: an application wires it to a
+preference they can reach. It is one setting for the whole tree, not per widget, because two endings in one
+application would be the one inconsistency a user cannot learn around.
 
 ### 13.2 The wheel, not the edge
 

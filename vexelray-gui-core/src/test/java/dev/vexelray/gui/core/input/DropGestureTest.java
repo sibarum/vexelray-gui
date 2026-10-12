@@ -283,4 +283,57 @@ class DropGestureTest {
         assertEquals(7L, dispatcher.focusedId(),
                 "a drag has no focus relationship of its own, so the drop has to establish one");
     }
+
+    @Test
+    @DisplayName("with DROP, the button is held for the carry and letting go puts it down")
+    void theConventionDropsOnRelease() {
+        tree();
+        dispatcher.dragRelease(dev.vexelray.gui.core.drop.DragRelease.DROP);
+
+        press(20, 20);
+        move(20, 60, 0, 40);
+        frame();
+        assertFalse(dispatcher.dragSession().latched());
+        release(20, 60);
+        frame();
+
+        assertEquals(List.of("row@20->60"), applied, "the release is the drop");
+        assertNull(dispatcher.dragSession(), "nothing stays with the pointer");
+        assertTrue(history.canUndo());
+    }
+
+    @Test
+    @DisplayName("with DROP, a drag let go before anyone saw it is still not a drop")
+    void theConventionStillRefusesAnUnseenDrop() {
+        tree();
+        dispatcher.dragRelease(dev.vexelray.gui.core.drop.DragRelease.DROP);
+
+        press(20, 20);
+        move(20, 60, 0, 40);
+        release(20, 60);
+        frame();
+
+        assertEquals(List.of(), applied);
+        assertNull(dispatcher.dragSession());
+    }
+
+    @Test
+    @DisplayName("changing the preference mid-carry does not drop what is already latched")
+    void aLatchedDragOutlivesTheSettingChanging() {
+        tree();
+        press(20, 20);
+        move(20, 60, 0, 40);
+        frame();
+        release(20, 60);
+        frame();
+        dispatcher.dragRelease(dev.vexelray.gui.core.drop.DragRelease.DROP);
+        frame();
+
+        assertTrue(dispatcher.dragSession() != null && dispatcher.dragSession().latched(),
+                "the user is mid-gesture; it ends the way it began");
+        press(20, 60);
+        release(20, 60);
+        frame();
+        assertEquals(List.of("row@20->60"), applied);
+    }
 }

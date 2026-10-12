@@ -1305,6 +1305,26 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
+     * What letting go of the button means during a drag: {@link dev.vexelray.gui.core.drop.DragRelease#KEEP} (the
+     * default) keeps it with the pointer until a click puts it down, with the wheel free meanwhile;
+     * {@link dev.vexelray.gui.core.drop.DragRelease#DROP} puts it down where the button comes up, the way most other
+     * software does.
+     *
+     * <p>A preference, and the user's rather than the application's: wire it to a setting they can reach. Every drag
+     * in this tree follows it, so an application has one protocol whichever it is. Safe from any thread, and takes
+     * effect from the next drag.
+     */
+    public Gui dragRelease(dev.vexelray.gui.core.drop.DragRelease release) {
+        input.dragRelease(release);
+        return this;
+    }
+
+    /** What letting go of the button means during a drag — see {@link #dragRelease(dev.vexelray.gui.core.drop.DragRelease)}. */
+    public dev.vexelray.gui.core.drop.DragRelease dragRelease() {
+        return input.dragRelease();
+    }
+
+    /**
      * Glide the wheel: each notch moves where the view is heading, and the view closes half the remaining distance
      * every {@code halfLife}. {@link java.time.Duration#ZERO} (the default) scrolls at once, which is the
      * reduced-motion setting, and what a test that steps frames by hand wants.

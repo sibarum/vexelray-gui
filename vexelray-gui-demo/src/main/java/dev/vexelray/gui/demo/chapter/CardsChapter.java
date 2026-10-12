@@ -3,6 +3,7 @@ package dev.vexelray.gui.demo.chapter;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
+import dev.vexelray.gui.core.drop.DragRelease;
 import dev.vexelray.gui.core.edit.Change;
 import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.layout.Length;
@@ -111,13 +112,21 @@ public final class CardsChapter implements Chapter {
                         Ui.button(gui, "Redo", () -> console.note(history.redo() ? "redo" : "nothing to redo")),
                         Ui.button(gui, "Add a card", this::addCard),
                         Ui.button(gui, "Shuffle the backlog", this::shuffleBacklog),
-                        Ui.button(gui, "Clear done", this::clearDone)),
+                        Ui.button(gui, "Clear done", this::clearDone),
+                        // The user's preference, not the board's: what letting go of the button means. Every drag in
+                        // the window follows it, the tree chapter's included.
+                        Ui.toggle(gui, "Release keeps", "Release drops", gui.dragRelease().keeps(), keeps -> {
+                            gui.dragRelease(keeps ? DragRelease.KEEP : DragRelease.DROP);
+                            console.note(keeps ? "letting go keeps the card; a click puts it down"
+                                    : "letting go puts the card down");
+                        })),
                 Ui.prose(gui, "Press a card: it sinks, held. Pull, and it comes loose and stays under your hand "
                         + "exactly where you took hold of it. Let go of the button and it stays with the pointer; "
                         + "the wheel scrolls a lane beneath it, and a click puts it down where you aim. Escape or a "
-                        + "right click sends it home, scrolling the lanes back with it. With a card focused, Alt+Up "
-                        + "and Alt+Down move it within its lane and Alt+Left and Alt+Right to the next one. Every "
-                        + "move is one undo, and undo moves the card back rather than redrawing the board."));
+                        + "right click sends it home, scrolling the lanes back with it. Switch to Release drops for "
+                        + "the convention instead: hold the button for the carry, let go to put it down. With a card "
+                        + "focused, Alt+Up and Alt+Down move it within its lane and Alt+Left and Alt+Right to the "
+                        + "next one. Every move is one undo, and undo moves the card back."));
 
         return gui.column().width(Length.FILL).height(Length.FILL).gap(Ui.GAP).children(row, tools);
     }

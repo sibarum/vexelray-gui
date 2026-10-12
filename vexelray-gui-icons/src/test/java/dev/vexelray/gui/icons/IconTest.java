@@ -1,7 +1,6 @@
 package dev.vexelray.gui.icons;
 
 import dev.vexelray.canvas.Color;
-import dev.vexelray.canvas.FieldStyle;
 import dev.vexelray.gui.core.ImageField;
 import dev.vexelray.gui.core.ImageRegion;
 import dev.vexelray.text.AtlasPixels;
@@ -18,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /** The baked atlas and the generated enum agree: every icon's cells are in the atlas, and hold its shape. */
 class IconTest {
 
-    private static final FieldStyle INK = FieldStyle.plain(new Color(1f, 1f, 1f, 1f));
+    private static final Color INK = new Color(1f, 1f, 1f, 1f);
 
     @Test
     void theAtlasIsTheSizeTheEnumWasGeneratedFor() {

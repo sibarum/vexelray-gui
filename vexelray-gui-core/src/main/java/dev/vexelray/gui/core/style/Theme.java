@@ -151,6 +151,81 @@ public interface Theme {
             public FocusRing focusRing() {
                 return chosen;
             }
+
+            @Override
+            public IconEffects icons() {
+                return base.icons();
+            }
+        };
+    }
+
+    /**
+     * What this theme does to an icon that is the whole of a control: thickening it under the pointer, a halo when the
+     * control is on. A default, like {@link #focusRing()}, so a theme written before it still compiles.
+     */
+    default IconEffects icons() {
+        return IconEffects.STANDARD;
+    }
+
+    /** This theme with {@code effects} for its icons and every other decision unchanged. */
+    default Theme icons(IconEffects effects) {
+        Theme base = this;
+        IconEffects chosen = effects == null ? IconEffects.STANDARD : effects;
+        return new Theme() {
+            @Override
+            public Palette palette() {
+                return base.palette();
+            }
+
+            @Override
+            public Shading shading() {
+                return base.shading();
+            }
+
+            @Override
+            public Relief relief() {
+                return base.relief();
+            }
+
+            @Override
+            public boolean lit() {
+                return base.lit();
+            }
+
+            @Override
+            public boolean letterpress() {
+                return base.letterpress();
+            }
+
+            @Override
+            public Color color(Role role) {
+                return base.color(role);
+            }
+
+            @Override
+            public Color color(Role role, InteractionState state) {
+                return base.color(role, state);
+            }
+
+            @Override
+            public Length elevation(int rung) {
+                return base.elevation(rung);
+            }
+
+            @Override
+            public Length elevation(int rung, InteractionState state) {
+                return base.elevation(rung, state);
+            }
+
+            @Override
+            public FocusRing focusRing() {
+                return base.focusRing();
+            }
+
+            @Override
+            public IconEffects icons() {
+                return chosen;
+            }
         };
     }
 

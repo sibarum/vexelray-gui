@@ -1,6 +1,6 @@
 package dev.vexelray.gui.core;
 
-import dev.vexelray.canvas.FieldStyle;
+import dev.vexelray.canvas.Color;
 
 /**
  * Something that draws as a distance field at a size: an icon, to whatever names one without knowing the set. The
@@ -9,6 +9,6 @@ import dev.vexelray.canvas.FieldStyle;
  */
 public interface IconSource {
 
-    /** This icon as a field to hand {@link Node#field}, drawn {@code px} pixels square with {@code style}. */
-    ImageField field(float px, FieldStyle style);
+    /** This icon as a field to hand {@link Node#field}, drawn {@code px} pixels square in {@code tint}. */
+    ImageField field(float px, Color tint);
 }

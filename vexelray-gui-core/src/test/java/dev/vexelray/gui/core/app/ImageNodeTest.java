@@ -187,7 +187,7 @@ class ImageNodeTest {
     void aFieldIsDrawnAsAFieldOverItsMargin() {
         RetainedNode n = box(100f, 50f);
         n.set(PropKey.FIELD, new dev.vexelray.gui.core.ImageField(new FakeImage(3), 48, 8,
-                dev.vexelray.canvas.FieldStyle.plain(dev.vexelray.canvas.Color.WHITE)));
+                dev.vexelray.canvas.Color.WHITE));
         float[] data = vertices(draw(n));
         int stride = CanvasVertex.FLOATS_PER_VERTEX;
         int kind = CanvasVertex.OFF_KIND / Float.BYTES;

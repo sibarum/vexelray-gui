@@ -1,7 +1,6 @@
 package dev.vexelray.gui.icons;
 
 import dev.vexelray.canvas.Color;
-import dev.vexelray.canvas.FieldStyle;
 import dev.vexelray.canvas.shadelet.CoreShadelets;
 import dev.vexelray.canvas.shadelet.Look;
 import dev.vexelray.gui.core.Gui;
@@ -171,20 +170,21 @@ public final class IconView {
             return;
         }
         Color c = color != null ? color : gui.theme().color(role);
-        FieldStyle style = new FieldStyle(c, side * glow, side * shadow);
-        ImageField field = forced != null && i instanceof Icon set ? set.field(forced, style) : i.field(side, style);
+        ImageField field = forced != null && i instanceof Icon set ? set.field(forced, c) : i.field(side, c);
         node.field(field.look(look(side)));
     }
 
     /**
-     * The look the icon's effects make, at {@code side} px: the field source, the weight if any, the outline if any in
-     * front of the field's own fill. Null with neither, so a plain icon draws exactly as it did before looks.
+     * The look the icon's effects make, at {@code side} px, front to back: the outline, the field's own fill, the
+     * glow, the shadow, over the field source and the weight. Null with none of them, so a plain icon is drawn as the
+     * shape alone. The glow and the shadow are the core set's, so every application draws them; the weight and the
+     * outline are effects an application composes in, or goes without.
      */
     private Look look(float side) {
         Color band = outlineColor != null ? outlineColor
                 : outlineRole != null ? gui.theme().color(outlineRole) : null;
         boolean outlined = band != null && outline > 0f;
-        if (weight == 0f && !outlined) {
+        if (weight == 0f && !outlined && glow == 0f && shadow == 0f) {
             return null;
         }
         List<Look.Use> modifiers = weight == 0f ? List.of()
@@ -194,6 +194,12 @@ public final class IconView {
             painters.add(OutlineStyleLayout.use(Effects.OUTLINE.name(), new OutlineStyle(band, side * outline)));
         }
         painters.add(Look.Use.of(CoreShadelets.FIELD_FILL.name()));
+        if (glow > 0f) {
+            painters.add(Look.Use.of(CoreShadelets.GLOW.name(), side * glow));
+        }
+        if (shadow > 0f) {
+            painters.add(Look.Use.of(CoreShadelets.DROP_SHADOW.name(), side * shadow));
+        }
         return new Look(Look.Use.of(CoreShadelets.FIELD.name()), modifiers, painters);
     }
 }

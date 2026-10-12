@@ -108,7 +108,7 @@ public final class Node {
     }
 
     /**
-     * Draw a shape from a signed distance field across this node's box, with its style's colour, glow and shadow: an
+     * Draw a shape from a signed distance field across this node's box, in its tint and with its look's effects: an
      * icon, sharp at any size and in any colour from one small texture. The field's margin round the shape's square is
      * drawn out past the box, for its effects. Drawn over the node's own image, under its border. Null clears it.
      */
@@ -120,8 +120,8 @@ public final class Node {
      * {@link #field(ImageField)} from its parts: {@code side} is the texture's size in texels and {@code spread} the
      * margin round the shape's square. A null texture clears it.
      */
-    public Node field(SampledImage texture, int side, int spread, dev.vexelray.canvas.FieldStyle style) {
-        return field(texture == null ? null : new ImageField(texture, side, spread, style));
+    public Node field(SampledImage texture, int side, int spread, dev.vexelray.canvas.Color tint) {
+        return field(texture == null ? null : new ImageField(texture, side, spread, tint));
     }
 
     /**

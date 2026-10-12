@@ -24,5 +24,11 @@
             <groupId>dev.vexelray.gui</groupId>
             <artifactId>vexelray-gui-core</artifactId>
         </dependency>
+        <!-- An icon's weight and outline are looks naming these shadelets, written with their style records. Naming
+             one does not compose it in: an application whose shader lacks it draws the icon without it. -->
+        <dependency>
+            <groupId>dev.vexelray</groupId>
+            <artifactId>vexelray-shadelets</artifactId>
+        </dependency>
     </dependencies>
 </project>

@@ -616,8 +616,13 @@ public final class TreeRenderer {
         dev.vexelray.gui.core.ImageField field = n.field();
         if (field != null && n.w > 0f && n.h > 0f) {
             dev.vexelray.gui.core.ImageRegion cell = field.region();
-            canvas.field(n.x, n.y, n.w, n.h, field.texture(), cell.u0(), cell.v0(), cell.u1(), cell.v1(),
-                    field.side(), field.spread(), field.margin(), field.style(), alpha);
+            if (field.look() == null) {
+                canvas.field(n.x, n.y, n.w, n.h, field.texture(), cell.u0(), cell.v0(), cell.u1(), cell.v1(),
+                        field.side(), field.spread(), field.margin(), field.style(), alpha);
+            } else {
+                canvas.field(n.x, n.y, n.w, n.h, field.texture(), cell.u0(), cell.v0(), cell.u1(), cell.v1(),
+                        field.side(), field.spread(), field.margin(), field.style(), alpha, field.look());
+            }
         }
         // A drawing goes over the image and under the border: an application's own marks belong inside the frame
         // the node draws around them.

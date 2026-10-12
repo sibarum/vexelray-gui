@@ -34,6 +34,12 @@ public final class IconButton {
 
     private static final Shortcut ENTER = Shortcut.of(Key.ENTER);
     private static final Shortcut SPACE = Shortcut.of(Key.SPACE);
+    /**
+     * How much bolder the icon is under the pointer, as a share of its size: the button answering the hand as its
+     * fill does. An effect, so it draws only where the application composed {@code Effects.WEIGHT} into its canvas
+     * shader, and where it did not the fill alone answers, and the dropped weight is said once.
+     */
+    private static final float HOVER_WEIGHT = 0.04f;
 
     private final Gui gui;
     private final Node node;
@@ -168,11 +174,12 @@ public final class IconButton {
         boolean lit = toggle && on;
         node.background(s == InteractionState.NORMAL ? null : gui.theme().color(hover));
         if (!enabled) {
-            glyph.tint(Role.FAINT).glow(0f);
+            glyph.tint(Role.FAINT).glow(0f).weight(0f);
         } else if (lit) {
-            glyph.tint(Role.ACCENT).glow(0.18f);
+            glyph.tint(Role.ACCENT).glow(0.18f).weight(s == InteractionState.NORMAL ? 0f : HOVER_WEIGHT);
         } else {
-            glyph.tint(s == InteractionState.NORMAL ? ink : Role.INK).glow(0f);
+            glyph.tint(s == InteractionState.NORMAL ? ink : Role.INK).glow(0f)
+                    .weight(s == InteractionState.NORMAL ? 0f : HOVER_WEIGHT);
         }
     }
 }

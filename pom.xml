@@ -150,6 +150,13 @@
                 <artifactId>vexelray-canvas</artifactId>
                 <version>${vexelray.version}</version>
             </dependency>
+            <!-- The canvas's effect shadelets: depended on for their style records and names, which a look uses;
+                 an application composes them into its shader, or its looks draw without them. -->
+            <dependency>
+                <groupId>dev.vexelray</groupId>
+                <artifactId>vexelray-shadelets</artifactId>
+                <version>${vexelray.version}</version>
+            </dependency>
             <!-- How a seam says it has silently dropped something the consumer asked for. Depends on nothing. -->
             <dependency>
                 <groupId>dev.vexelray</groupId>

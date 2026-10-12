@@ -3,6 +3,8 @@ package dev.vexelray.gui.core.app;
 import dev.vexelray.canvas.Canvas;
 import dev.vexelray.canvas.CanvasShader;
 import dev.vexelray.canvas.CanvasVertex;
+import dev.vexelray.canvas.shadelet.CoreLooks;
+import dev.vexelray.canvas.shadelet.LookTable;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.WindowControls;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
@@ -184,6 +186,20 @@ public final class GuiApp implements AutoCloseable {
     }
 
     /**
+     * As {@link #GuiApp(WindowConfig, FontSet)}, drawing every canvas with {@code canvasShader}: the shadelets the
+     * application composed, as {@code CoreShadelets.composition().with(...)} in a {@link CanvasShader.Composed} its
+     * own build pre-compiles. Chosen here, once, because it is the shader of every window's pipeline and of every
+     * capture, and those are built against it; the other constructors draw with the core set,
+     * {@link CanvasShader.Fragment}. The looks the application draws are written into {@link #looks()}.
+     *
+     * @throws IllegalArgumentException if the composition lacks some of the core set, which the canvas's own kinds
+     *         draw with
+     */
+    public GuiApp(WindowConfig config, FontSet fonts, CanvasShader.Composed canvasShader) {
+        this(config, null, null, new TextFaces(fonts), Compute.SHARED, canvasShader);
+    }
+
+    /**
      * As {@link #GuiApp(WindowConfig)}, but around a window somebody else made.
      *
      * <p><b>Covers the main window only</b>, which is why {@link #GuiApp(WindowConfig,
@@ -228,7 +244,7 @@ public final class GuiApp implements AutoCloseable {
      * what the other constructors pass, so a factory that adds nothing is an ordinary application.
      */
     public GuiApp(WindowConfig config, java.util.function.Function<WindowConfig, NativeWindow> windows) {
-        this(config, null, windows, TextFaces.standard(), Compute.SHARED);
+        this(config, null, windows, TextFaces.standard(), Compute.SHARED, new CanvasShader.Fragment());
     }
 
     /**
@@ -238,13 +254,13 @@ public final class GuiApp implements AutoCloseable {
      */
     public GuiApp(WindowConfig config, java.util.function.Function<WindowConfig, NativeWindow> windows,
                   Compute compute) {
-        this(config, null, windows, TextFaces.standard(), compute);
+        this(config, null, windows, TextFaces.standard(), compute, new CanvasShader.Fragment());
     }
 
     /** As the one that builds it, below, with compute sharing the queue that draws. */
     private GuiApp(WindowConfig config, NativeWindow adopted,
                    java.util.function.Function<WindowConfig, NativeWindow> windows, TextFaces faces) {
-        this(config, adopted, windows, faces, Compute.SHARED);
+        this(config, adopted, windows, faces, Compute.SHARED, new CanvasShader.Fragment());
     }
 
     /**
@@ -272,11 +288,15 @@ public final class GuiApp implements AutoCloseable {
     /**
      * The one that builds it: {@code adopted} is a main window the host already made (or null to make one), and
      * {@code windows} makes every window from here on (or null for the platform's own), {@code faces} is the
-     * application's fonts, and {@code compute} what its compute gets of the device's queues.
+     * application's fonts, {@code compute} what its compute gets of the device's queues, and {@code canvasShader}
+     * the canvas fragment stage every window and capture draws with.
      */
     private GuiApp(WindowConfig config, NativeWindow adopted,
                    java.util.function.Function<WindowConfig, NativeWindow> windows, TextFaces faces,
-                   Compute compute) {
+                   Compute compute, CanvasShader.Composed canvasShader) {
+        // A composition that cannot draw the canvas's own kinds is refused here, before a device or a window exists
+        // to be left behind by the refusal: the look table checks it, and costs nothing to build without a GPU.
+        CoreLooks.table(canvasShader.composition());
         this.platform = NativePlatform.current();
         this.windows = windows == null ? platform::createWindow : windows;
         this.instance = new VulkanInstance(config.title(), platform.requiredVulkanInstanceExtensions());
@@ -341,8 +361,9 @@ public final class GuiApp implements AutoCloseable {
         // not by what it goes on to show (docs/plans/font-families.md §1).
         this.fonts = FontAtlases.upload(device, faces);
         // One placeholder for the device, not one per window: every window's canvas pipeline is built against the
-        // same layout, and every span that draws no image binds this same 1x1 white.
-        this.images = new DeviceImages(device);
+        // same layout, and every span that draws no image binds this same 1x1 white. One canvas shader and one look
+        // table too, so every window draws a look alike.
+        this.images = new DeviceImages(device, canvasShader);
 
         this.main = new GuiWindow(platform, instance, device, fonts, images, null,
                 probe, probeSurface, config.decorations(), presentBackend);
@@ -667,6 +688,19 @@ public final class GuiApp implements AutoCloseable {
      */
     public Gpu gpu() {
         return new Gpu(instance, device, computeFamily);
+    }
+
+    /**
+     * The table every window's canvas names its looks in, written against the canvas shader this application was
+     * constructed with: what a theme installs its looks into, and what says how many per-instance floats an element
+     * of a look carries. Widgets need not hold it: each window's canvas is given it, and draws a look against it.
+     *
+     * <p>Here rather than on {@link Gui}, because it belongs to the shader, which is the application's and its
+     * device's: a tree may be shown in any window, or captured headless on a device of its own, and draws there with
+     * that shader. Main thread only, as the canvases that add to it are.
+     */
+    public LookTable looks() {
+        return images.looks();
     }
 
     /** Whether {@link #lendComputeQueue} has been called: it lends once. */
@@ -1567,17 +1601,27 @@ public final class GuiApp implements AutoCloseable {
      */
     public static void capture(Gui gui, int width, int height, float bgR, float bgG, float bgB, String path)
             throws IOException {
-        capture(gui, TextFaces.standard(), width, height, bgR, bgG, bgB, path);
+        capture(gui, TextFaces.standard(), new CanvasShader.Fragment(), width, height, bgR, bgG, bgB, path);
     }
 
     /** As {@link #capture(Gui, int, int, float, float, float, String)}, in an application's own fonts. */
     public static void capture(Gui gui, FontSet fonts, int width, int height, float bgR, float bgG, float bgB,
                                String path) throws IOException {
-        capture(gui, new TextFaces(fonts), width, height, bgR, bgG, bgB, path);
+        capture(gui, new TextFaces(fonts), new CanvasShader.Fragment(), width, height, bgR, bgG, bgB, path);
     }
 
-    private static void capture(Gui gui, TextFaces faces, int width, int height, float bgR, float bgG, float bgB,
-                                String path) throws IOException {
+    /**
+     * As {@link #capture(Gui, FontSet, int, int, float, float, float, String)}, drawn with {@code canvasShader}: the
+     * one the application is constructed with ({@link #GuiApp(WindowConfig, FontSet, CanvasShader.Composed)}), so the
+     * picture is drawn as the window draws it.
+     */
+    public static void capture(Gui gui, FontSet fonts, CanvasShader.Composed canvasShader, int width, int height,
+                               float bgR, float bgG, float bgB, String path) throws IOException {
+        capture(gui, new TextFaces(fonts), canvasShader, width, height, bgR, bgG, bgB, path);
+    }
+
+    private static void capture(Gui gui, TextFaces faces, CanvasShader.Composed canvasShader, int width, int height,
+                                float bgR, float bgG, float bgB, String path) throws IOException {
         // Two frames, not one. Anything an application derives from its own measured box — a picture authored in
         // pixels is the clearest case — cannot exist during the first layout that produces that box: the observer
         // fires inside it, and the mutation it posts is applied by the next drain. A still image wants the settled
@@ -1586,15 +1630,21 @@ public final class GuiApp implements AutoCloseable {
         gui.frame(width, height, faces);
         settle(gui, width, height, faces);
         RetainedNode root = gui.frame(width, height, faces);
-        Canvas canvas = new Canvas(width, height);
-        canvas.begin();
-        if (root != null) {
-            TreeRenderer.emit(root, canvas, faces, gui);
-        }
-        float[] vertices = canvas.toVertexArray();
-        int vertexCount = canvas.vertexCount();
-        List<Canvas.Run> runs = canvas.runs();
+        byte[] rgba = render(faces, canvasShader, width, height, bgR, bgG, bgB, canvas -> {
+            if (root != null) {
+                TreeRenderer.emit(root, canvas, faces, gui);
+            }
+        });
+        PngWriter.write(rgba, width, height, Path.of(path));
+    }
 
+    /**
+     * One frame of whatever {@code emit} draws into a fresh canvas, on a device of its own, as RGBA: the drawing half
+     * of {@link #capture}. The canvas is emitted once the device is up, because it names its looks in that device's
+     * table. Package-private so a test can draw a canvas no widget draws yet.
+     */
+    static byte[] render(TextFaces faces, CanvasShader.Composed canvasShader, int width, int height,
+                         float bgR, float bgG, float bgB, java.util.function.Consumer<Canvas> emit) {
         NativePlatform platform = NativePlatform.current();
         try (VulkanInstance instance = new VulkanInstance("vexelray-gui",
                 platform.requiredVulkanInstanceExtensions())) {
@@ -1604,18 +1654,26 @@ public final class GuiApp implements AutoCloseable {
                  VulkanRenderPass rp = new VulkanRenderPass(device, Vk.FORMAT_R8G8B8A8_UNORM,
                          Vk.IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
                  FontAtlases fonts = FontAtlases.upload(device, faces);
-                 DeviceImages images = new DeviceImages(device);
-                 VertexBuffer vb = new VertexBuffer(device, vertices);
-                 GraphicsPipeline pipeline = new GraphicsPipeline(device, rp.handle(), width, height,
-                         CanvasShader.vertex().spirv(), "main", CanvasShader.fragment().spirv(), "main",
-                         canvasConfig(fonts.first(), images.placeholder(), images.tables(), false))) { // fixed viewport: offscreen, no resize
-                // The same run list the windowed path walks, so a tree holding images captures to PNG exactly as
-                // it presents — which is what makes the image kind checkable without a window.
-                byte[] rgba = OffscreenDraw.toRgba(device, rp.handle(), pipeline, width, height, vb.handle(),
-                        fonts.first().descriptorSet(), images.tables().descriptorSet(),
-                        bind(runs, vertexCount, images, fonts.textures()),
-                        bgR, bgG, bgB, 1f);
-                PngWriter.write(rgba, width, height, Path.of(path));
+                 DeviceImages images = new DeviceImages(device, canvasShader);
+                 ShadeletTables tables = new ShadeletTables(device)) {
+                Canvas canvas = new Canvas(width, height);
+                canvas.looks(images.looks());
+                canvas.begin();
+                emit.accept(canvas);
+                int vertexCount = canvas.vertexCount();
+                List<Canvas.Run> runs = canvas.runs();
+                tables.upload(images.looks(), canvas);
+                try (VertexBuffer vb = new VertexBuffer(device, canvas.toVertexArray());
+                     GraphicsPipeline pipeline = new GraphicsPipeline(device, rp.handle(), width, height,
+                             CanvasShader.vertex().spirv(), "main", images.fragment().spirv(), "main",
+                             canvasConfig(fonts.first(), images.placeholder(), tables.buffer(), false))) { // fixed viewport: offscreen, no resize
+                    // The same run list the windowed path walks, so a tree holding images captures to PNG exactly as
+                    // it presents — which is what makes the image kind checkable without a window.
+                    return OffscreenDraw.toRgba(device, rp.handle(), pipeline, width, height, vb.handle(),
+                            fonts.first().descriptorSet(), tables.buffer().descriptorSet(),
+                            bind(runs, vertexCount, images, fonts.textures()),
+                            bgR, bgG, bgB, 1f);
+                }
             }
         }
     }

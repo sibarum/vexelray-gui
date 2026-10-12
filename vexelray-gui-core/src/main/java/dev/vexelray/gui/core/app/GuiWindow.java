@@ -114,6 +114,8 @@ final class GuiWindow implements AutoCloseable {
     private final VulkanSwapchain swapchain;
     private final VulkanRenderPass renderPass;
     private final VertexBuffer vertexBuffer;
+    /** Set 2: the device's look table and this window's element records, rewritten beside the vertices. */
+    private final ShadeletTables tables;
     private final GraphicsPipeline pipeline;
     private final WindowPresenter presenter;
     private final Canvas canvas;
@@ -191,16 +193,18 @@ final class GuiWindow implements AutoCloseable {
         }
         this.canvas = new Canvas(initialWidth, initialHeight);
         this.vertexBuffer = new VertexBuffer(device, CAPACITY_FLOATS);
+        this.tables = new ShadeletTables(device);
+        canvas.looks(images.looks());
         ComposedShader vs = CanvasShader.vertex();
-        ComposedShader fs = CanvasShader.fragment();
+        ComposedShader fs = images.fragment();
         this.pipeline = new GraphicsPipeline(device, renderPass.handle(), initialWidth, initialHeight,
                 vs.spirv(), "main", fs.spirv(), "main",
-                GuiApp.canvasConfig(fonts.first(), images.placeholder(), images.tables(), true));
+                GuiApp.canvasConfig(fonts.first(), images.placeholder(), tables.buffer(), true));
         this.presenter = backend != null
                 ? backend.create(window, renderPass.handle(), pipeline)
                 : new WindowedPresenter(device, swapchain, renderPass.handle(), pipeline, window);
         presenter.configureDraw(vertexBuffer.handle(), fonts.first().descriptorSet(), 0);
-        presenter.configureSet2(images.tables().descriptorSet());
+        presenter.configureSet2(tables.buffer().descriptorSet());
         // Windows drags and resizes a window inside a message loop of its own, which suspends the host's loop for
         // as long as the gesture lasts. Handing the window a sink lets it pull the frames that loop would have
         // drawn — the difference between a window that resizes live and one that freezes until the mouse is let
@@ -351,8 +355,8 @@ final class GuiWindow implements AutoCloseable {
             capturePass = new VulkanRenderPass(device, Vk.FORMAT_R8G8B8A8_UNORM,
                     Vk.IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
             capturePipeline = new GraphicsPipeline(device, capturePass.handle(), w, h,
-                    CanvasShader.vertex().spirv(), "main", CanvasShader.fragment().spirv(), "main",
-                    GuiApp.canvasConfig(fonts.first(), images.placeholder(), images.tables(), false)); // fixed viewport: offscreen never resizes mid-draw
+                    CanvasShader.vertex().spirv(), "main", images.fragment().spirv(), "main",
+                    GuiApp.canvasConfig(fonts.first(), images.placeholder(), tables.buffer(), false)); // fixed viewport: offscreen never resizes mid-draw
             captureW = w;
             captureH = h;
         }
@@ -365,10 +369,11 @@ final class GuiWindow implements AutoCloseable {
         int vertexCount = Math.min(canvas.vertexCount(),
                 (int) (vertexBuffer.capacityFloats() / CanvasVertex.FLOATS_PER_VERTEX));
         vertexBuffer.update(canvas.toVertexArray(), vertexCount * CanvasVertex.FLOATS_PER_VERTEX);
+        tables.upload(images.looks(), canvas);
 
         Color page = gui.theme().color(Role.PAGE);
         byte[] rgba = OffscreenDraw.toRgba(device, capturePass.handle(), capturePipeline, w, h,
-                vertexBuffer.handle(), fonts.first().descriptorSet(), images.tables().descriptorSet(),
+                vertexBuffer.handle(), fonts.first().descriptorSet(), tables.buffer().descriptorSet(),
                 GuiApp.bind(canvas.runs(), vertexCount, images, fonts.textures()), page.r(), page.g(), page.b(), 1f);
 
         // The vertex buffer now holds the capture's geometry and the presenter's run list still describes the
@@ -426,6 +431,7 @@ final class GuiWindow implements AutoCloseable {
             Probe.count(Lane.DRAW, "vertices", canvas.vertexCount());
             Probe.count(Lane.DRAW, "runs", canvas.runs().size());
             emit(canvas.toVertexArray(), canvas.vertexCount(), canvas.runs());
+            tables.upload(images.looks(), canvas);
         }
     }
 
@@ -510,6 +516,7 @@ final class GuiWindow implements AutoCloseable {
         closeCapture();
         pipeline.close();
         vertexBuffer.close();
+        tables.close();
         renderPass.close();
         if (swapchain != null) {
             swapchain.close();

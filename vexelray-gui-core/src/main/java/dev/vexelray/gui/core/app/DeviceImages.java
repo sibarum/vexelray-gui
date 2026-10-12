@@ -1,13 +1,14 @@
 package dev.vexelray.gui.core.app;
 
 import dev.vexelray.diag.Diagnostics;
-import dev.vexelray.canvas.shadelet.Composition;
+import dev.vexelray.canvas.CanvasShader;
 import dev.vexelray.canvas.shadelet.CoreLooks;
+import dev.vexelray.canvas.shadelet.LookTable;
 import dev.vexelray.gui.core.Pixels;
+import dev.vexelray.shader.ComposedShader;
 import dev.vexelray.target.ImageHandle;
 import dev.vexelray.vulkan.present.AtlasTexture;
 import dev.vexelray.vulkan.present.SampledImage;
-import dev.vexelray.vulkan.present.StorageBuffer;
 import dev.supirvast.vulkan.VulkanDevice;
 
 import java.util.HashMap;
@@ -16,23 +17,25 @@ import java.util.Map;
 /**
  * The images a device draws that no application uploaded: the placeholder a run with no image binds, and every
  * {@link Pixels} a tree names, uploaded the first frame it is drawn and kept until the device goes. And the canvas
- * shader's shadelet tables, which are not an image but are the same kind of thing: device-wide, drawn with by every
- * window, never uploaded by an application. One per device,
+ * shader the application composed, with its look table, which are not images but are the same kind of thing:
+ * device-wide, drawn with by every window, never uploaded by an application. One per device,
  * shared by every window on it, closed with it. GUI thread only, as everything that touches the device is.
  */
 final class DeviceImages implements AutoCloseable {
 
     private final VulkanDevice device;
     private final AtlasTexture placeholder;
-    private final StorageBuffer tables;
+    private final ComposedShader fragment;
+    private final LookTable looks;
     private final Map<Pixels, AtlasTexture> uploaded = new HashMap<>();
 
-    DeviceImages(VulkanDevice device) {
+    /** {@code shader} is the canvas fragment stage every pipeline on this device is built with. */
+    DeviceImages(VulkanDevice device, CanvasShader.Composed shader) {
         this.device = device;
+        // The table first: a composition without the whole core set is refused here, before anything is allocated.
+        this.looks = CoreLooks.table(shader.composition());
+        this.fragment = CanvasShader.fragment(shader);
         this.placeholder = AtlasTexture.placeholder(device);
-        float[] coreTables = CoreLooks.coreTables();
-        this.tables = new StorageBuffer(device, coreTables.length, Composition.TABLES_BINDING);
-        tables.update(coreTables, coreTables.length);
     }
 
     /** One transparent texel: what a run with no image binds, and what a pipeline layout is built against. */
@@ -41,11 +44,19 @@ final class DeviceImages implements AutoCloseable {
     }
 
     /**
-     * The shadelet tables the canvas fragment stage reads at set 2: static for the life of the device, so uploaded
-     * once here and bound once per frame by every window's presenter.
+     * The canvas fragment stage of the application's composition, loaded or lowered once: every window, its
+     * offscreen capture and the headless capture build their pipelines with this one, so they draw alike.
      */
-    StorageBuffer tables() {
-        return tables;
+    ComposedShader fragment() {
+        return fragment;
+    }
+
+    /**
+     * The looks every canvas on this device names, written against {@link #fragment()}'s composition: the kinds'
+     * own first, at the offsets every table has. Each window copies it into its {@link ShadeletTables} when it grows.
+     */
+    LookTable looks() {
+        return looks;
     }
 
     /**
@@ -80,6 +91,5 @@ final class DeviceImages implements AutoCloseable {
         }
         uploaded.clear();
         placeholder.close();
-        tables.close();
     }
 }

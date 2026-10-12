@@ -2,12 +2,16 @@ package dev.vexelray.gui.automation;
 
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
+import dev.vexelray.gui.core.input.ClaimScope;
+import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.NodeLayout;
 import dev.vexelray.gui.core.layout.TextMeasurer;
 import dev.vexelray.gui.core.model.RetainedNode;
 import org.junit.jupiter.api.Test;
+import sibarum.tactroller.api.Key;
+import sibarum.tactroller.api.Modifier;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -407,6 +411,45 @@ class AutomationTest {
             gui.frame(W, H, NO_TEXT);
 
             assertTrue(new Automation(gui).command("settle").startsWith("ok"));
+        }
+    }
+
+    /**
+     * A chord has to arrive as one: a shortcut claimed for Ctrl+Shift+W fires, and the bare W does not, which is
+     * what a driver that sent the key without its modifiers would have produced instead — the bug this verb had.
+     */
+    @Test
+    void aChordReachesTheShortcutClaimedForIt() {
+        try (Gui gui = deterministic()) {
+            Node field = gui.box().size(Length.dp(200), Length.dp(40));
+            gui.root().children(field);
+            gui.frame(W, H, NO_TEXT);
+            gui.focus(field);
+            AtomicInteger chord = new AtomicInteger();
+            AtomicInteger bare = new AtomicInteger();
+            AtomicInteger enter = new AtomicInteger();
+            gui.claim(field, Shortcut.of(Key.W, Modifier.CONTROL, Modifier.SHIFT), ClaimScope.FOCUSED,
+                    chord::incrementAndGet);
+            gui.claim(field, Shortcut.of(Key.W), ClaimScope.FOCUSED, bare::incrementAndGet);
+            gui.claim(field, Shortcut.of(Key.ENTER), ClaimScope.FOCUSED, enter::incrementAndGet);
+            Automation driver = new Automation(gui);
+
+            assertEquals("ok LEFT_CONTROL+LEFT_SHIFT+W", driver.command("key ctrl+Shift+w"));
+            gui.frame(W, H, NO_TEXT);
+            assertEquals(1, chord.get(), "the chord fires its claim");
+            assertEquals(0, bare.get(), "and not the bare key's");
+
+            assertEquals("ok W", driver.command("key W"));
+            assertEquals("ok ENTER", driver.command("key ENTER"));
+            gui.frame(W, H, NO_TEXT);
+            assertEquals(1, bare.get(), "the modifiers came back up: a plain key afterwards is plain");
+            assertEquals(1, enter.get());
+            assertTrue(gui.modifiers().value().isEmpty(), "nothing is left held");
+
+            assertEquals("ok LEFT_CONTROL+T", driver.command("key CONTROL+T"), "the Modifier enum's own name");
+            assertTrue(driver.command("key HYPER+T").startsWith("err no modifier named 'HYPER'"));
+            assertTrue(driver.command("key CTRL+").startsWith("err no key named ''"));
+            assertTrue(driver.command("key CTRL+NOPE").startsWith("err no key named 'NOPE'"));
         }
     }
 

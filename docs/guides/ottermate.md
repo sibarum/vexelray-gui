@@ -181,6 +181,27 @@ runs; a landmark is what the application called the thing.
 scrolled-away row is *revealed* rather than refused. `click` on the same target does the revealing too, then
 travels the pointer there and presses — `ok 44,434` is where it landed.
 
+### Press a key, or a shortcut
+
+`type` sends text one character at a time; `key` sends a command key, and a chord of one with modifiers held:
+
+```
+> key ENTER
+ok ENTER
+> key CTRL+T
+ok LEFT_CONTROL+T
+> key ctrl+shift+w
+ok LEFT_CONTROL+LEFT_SHIFT+W
+> key ALT+UP
+ok LEFT_ALT+UP
+```
+
+Key names are tactroller's `Key` names (`ENTER`, `TAB`, `F5`, `PAGE_DOWN`), in any case. A modifier is
+`CONTROL`, `SHIFT`, `ALT` or `SUPER` as tactroller's `Modifier` names them, or `CTRL`, `META`, `WIN`, `CMD`.
+The reply names the keys that went down: each modifier's left-hand key is pressed, then the key is pressed
+and released, then the modifiers are released in reverse, which is what a claim for that shortcut is waiting
+for. Nothing is left held afterwards.
+
 ### A scene ladder in a file
 
 Blank lines and `#` comments are the client's own, and never reach the application:

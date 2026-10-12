@@ -487,22 +487,76 @@ public final class Automation implements Commands {
         return "ok " + text.codePointCount(0, text.length());
     }
 
-    /** Press and release a named key — {@code key ENTER}, {@code key TAB}. */
-    private String key(String name) {
+    /**
+     * Press and release a named key — {@code key ENTER}, {@code key TAB} — or a chord, {@code key CTRL+SHIFT+W}.
+     *
+     * <p>A chord is sent the way a keyboard sends it: each modifier's left-hand key goes down, then the key goes
+     * down and up, then the modifiers come up in reverse. There is no modifier field on a key event to fill in
+     * instead — the dispatcher derives what is held from the modifier keys it has seen pressed, so a chord sent
+     * any other way would reach a claim as the bare key.
+     */
+    private String key(String rest) {
+        String spec = rest.trim();
+        String[] parts = spec.split("\\+", -1);
+        List<Key> held = new java.util.ArrayList<>();
+        for (int i = 0; i < parts.length - 1; i++) {
+            Key mod = modifierKey(parts[i]);
+            if (mod == null) {
+                return "err no modifier named '" + parts[i].trim() + "' in '" + spec
+                        + "'; try CONTROL (CTRL), SHIFT, ALT or SUPER (META, WIN, CMD)";
+            }
+            if (!held.contains(mod)) {
+                held.add(mod);
+            }
+        }
+        String last = parts[parts.length - 1].trim();
         Key k;
         try {
-            k = Key.valueOf(name.trim().toUpperCase(Locale.ROOT));
+            k = Key.valueOf(last.toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
-            return "err no key named '" + name.trim() + "'";
+            k = modifierKey(last);    // a modifier on its own, or last in its chord: key SHIFT, key CTRL+ALT
+            if (k == null) {
+                return "err no key named '" + last + "'";
+            }
         }
+        for (Key mod : held) {
+            press(mod);
+        }
+        press(k);
+        release(k);
+        for (int i = held.size() - 1; i >= 0; i--) {
+            release(held.get(i));
+        }
+        StringBuilder chord = new StringBuilder();
+        for (Key mod : held) {
+            chord.append(mod.name()).append('+');
+        }
+        chord.append(k.name());
+        if (Probe.ON) {
+            Probe.mark(Lane.INPUT, "key", chord.toString());
+        }
+        return "ok " + chord;
+    }
+
+    private void press(Key k) {
         gui.bus().publish(InputTopics.INPUT, new InputEvent.KeyPressed(k, 0));
         gui.wakeForInput();
+    }
+
+    private void release(Key k) {
         gui.bus().publish(InputTopics.INPUT, new InputEvent.KeyReleased(k, 0));
         gui.wakeForInput();
-        if (Probe.ON) {
-            Probe.mark(Lane.INPUT, "key", k.name());
-        }
-        return "ok " + k.name();
+    }
+
+    /** The key that holds a modifier named as {@code Modifier} names it, or by a common alias; else null. */
+    private static Key modifierKey(String name) {
+        return switch (name.trim().toUpperCase(Locale.ROOT)) {
+            case "CONTROL", "CTRL" -> Key.LEFT_CONTROL;
+            case "SHIFT" -> Key.LEFT_SHIFT;
+            case "ALT", "OPTION" -> Key.LEFT_ALT;
+            case "SUPER", "META", "WIN", "CMD", "COMMAND" -> Key.LEFT_SUPER;
+            default -> null;
+        };
     }
 
     // --- synchronising -----------------------------------------------------
@@ -946,7 +1000,9 @@ public final class Automation implements Commands {
             "up [ref|x,y]             let go, where the pointer is or after travelling there",
             "scroll <ref|x,y> dx dy   wheel notches there",
             "type <text>              one code point at a time, as typing",
-            "key <NAME>               press and release a named key",
+            "key <NAME>               press and release a named key (key ENTER)",
+            "key <MOD+...+NAME>       a chord: modifiers held around the key (key CTRL+SHIFT+W);",
+            "                         modifiers CONTROL|CTRL, SHIFT, ALT, SUPER|META|WIN|CMD",
             "settle                   wait for the loop to catch up, and any animation to finish",
             "await <landmark> <text>  wait until that landmark is named something containing text",
             "shot [path]              photograph this window, and wait for the file (err if none arrives)",

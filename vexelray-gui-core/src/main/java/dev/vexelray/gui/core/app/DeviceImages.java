@@ -1,10 +1,13 @@
 package dev.vexelray.gui.core.app;
 
 import dev.vexelray.diag.Diagnostics;
+import dev.vexelray.canvas.shadelet.Composition;
+import dev.vexelray.canvas.shadelet.CoreLooks;
 import dev.vexelray.gui.core.Pixels;
 import dev.vexelray.target.ImageHandle;
 import dev.vexelray.vulkan.present.AtlasTexture;
 import dev.vexelray.vulkan.present.SampledImage;
+import dev.vexelray.vulkan.present.StorageBuffer;
 import dev.supirvast.vulkan.VulkanDevice;
 
 import java.util.HashMap;
@@ -12,23 +15,37 @@ import java.util.Map;
 
 /**
  * The images a device draws that no application uploaded: the placeholder a run with no image binds, and every
- * {@link Pixels} a tree names, uploaded the first frame it is drawn and kept until the device goes. One per device,
+ * {@link Pixels} a tree names, uploaded the first frame it is drawn and kept until the device goes. And the canvas
+ * shader's shadelet tables, which are not an image but are the same kind of thing: device-wide, drawn with by every
+ * window, never uploaded by an application. One per device,
  * shared by every window on it, closed with it. GUI thread only, as everything that touches the device is.
  */
 final class DeviceImages implements AutoCloseable {
 
     private final VulkanDevice device;
     private final AtlasTexture placeholder;
+    private final StorageBuffer tables;
     private final Map<Pixels, AtlasTexture> uploaded = new HashMap<>();
 
     DeviceImages(VulkanDevice device) {
         this.device = device;
         this.placeholder = AtlasTexture.placeholder(device);
+        float[] coreTables = CoreLooks.coreTables();
+        this.tables = new StorageBuffer(device, coreTables.length, Composition.TABLES_BINDING);
+        tables.update(coreTables, coreTables.length);
     }
 
     /** One transparent texel: what a run with no image binds, and what a pipeline layout is built against. */
     SampledImage placeholder() {
         return placeholder;
+    }
+
+    /**
+     * The shadelet tables the canvas fragment stage reads at set 2: static for the life of the device, so uploaded
+     * once here and bound once per frame by every window's presenter.
+     */
+    StorageBuffer tables() {
+        return tables;
     }
 
     /**
@@ -63,5 +80,6 @@ final class DeviceImages implements AutoCloseable {
         }
         uploaded.clear();
         placeholder.close();
+        tables.close();
     }
 }

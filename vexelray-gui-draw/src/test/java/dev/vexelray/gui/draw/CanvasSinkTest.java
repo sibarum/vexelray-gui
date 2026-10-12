@@ -89,6 +89,6 @@ class CanvasSinkTest {
     void theVertexStrideIsTheCanvasItsOwn() {
         // A guard on the arithmetic the opacity test does by hand: if the vertex layout grows, that indexing is
         // what breaks, and it should break here rather than in a colour that looks slightly wrong.
-        assertEquals(23, CanvasVertex.FLOATS_PER_VERTEX);
+        assertEquals(28, CanvasVertex.FLOATS_PER_VERTEX);
     }
 }

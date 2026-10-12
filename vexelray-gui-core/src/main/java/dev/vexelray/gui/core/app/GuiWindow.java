@@ -69,11 +69,12 @@ final class GuiWindow implements AutoCloseable {
      * The per-window vertex buffer, in floats. Host-visible and rewritten once a frame, so it is the ceiling on
      * how complicated one window's picture may be.
      *
-     * <p>Worth doing the arithmetic rather than picking a round number. At 27 floats a vertex and six vertices a
-     * quad, a quad is 162 floats: this is about thirty-two thousand of them. An ordinary dense UI is a few hundred;
+     * <p>Worth doing the arithmetic rather than picking a round number. At 28 floats a vertex and six vertices a
+     * quad, a quad is 168 floats: this is about thirty-one thousand of them. An ordinary dense UI is a few hundred;
      * a plot that draws a surface out of boxes is tens of thousands, which is how the previous figure of 512K —
      * under four thousand quads — was found, by a window dying on it mid-frame. (It was 4M at 23 floats a vertex,
-     * and grew with the vertex when images gained their filter, so no window holds fewer quads than it did.)
+     * and grew with the vertex when images gained their filter and elements their record, so no window holds fewer
+     * quads than it did.)
      *
      * <p>Twenty megabytes of host-visible memory is not a meaningful cost on any device that can run this. The
      * real fix is a buffer that <b>grows</b>; until it does, {@link #draw} degrades rather than throws.
@@ -193,11 +194,13 @@ final class GuiWindow implements AutoCloseable {
         ComposedShader vs = CanvasShader.vertex();
         ComposedShader fs = CanvasShader.fragment();
         this.pipeline = new GraphicsPipeline(device, renderPass.handle(), initialWidth, initialHeight,
-                vs.spirv(), "main", fs.spirv(), "main", GuiApp.canvasConfig(fonts.first(), images.placeholder(), true));
+                vs.spirv(), "main", fs.spirv(), "main",
+                GuiApp.canvasConfig(fonts.first(), images.placeholder(), images.tables(), true));
         this.presenter = backend != null
                 ? backend.create(window, renderPass.handle(), pipeline)
                 : new WindowedPresenter(device, swapchain, renderPass.handle(), pipeline, window);
         presenter.configureDraw(vertexBuffer.handle(), fonts.first().descriptorSet(), 0);
+        presenter.configureSet2(images.tables().descriptorSet());
         // Windows drags and resizes a window inside a message loop of its own, which suspends the host's loop for
         // as long as the gesture lasts. Handing the window a sink lets it pull the frames that loop would have
         // drawn — the difference between a window that resizes live and one that freezes until the mouse is let
@@ -349,7 +352,7 @@ final class GuiWindow implements AutoCloseable {
                     Vk.IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
             capturePipeline = new GraphicsPipeline(device, capturePass.handle(), w, h,
                     CanvasShader.vertex().spirv(), "main", CanvasShader.fragment().spirv(), "main",
-                    GuiApp.canvasConfig(fonts.first(), images.placeholder(), false)); // fixed viewport: offscreen never resizes mid-draw
+                    GuiApp.canvasConfig(fonts.first(), images.placeholder(), images.tables(), false)); // fixed viewport: offscreen never resizes mid-draw
             captureW = w;
             captureH = h;
         }
@@ -365,7 +368,7 @@ final class GuiWindow implements AutoCloseable {
 
         Color page = gui.theme().color(Role.PAGE);
         byte[] rgba = OffscreenDraw.toRgba(device, capturePass.handle(), capturePipeline, w, h,
-                vertexBuffer.handle(), fonts.first().descriptorSet(),
+                vertexBuffer.handle(), fonts.first().descriptorSet(), images.tables().descriptorSet(),
                 GuiApp.bind(canvas.runs(), vertexCount, images, fonts.textures()), page.r(), page.g(), page.b(), 1f);
 
         // The vertex buffer now holds the capture's geometry and the presenter's run list still describes the

@@ -1606,11 +1606,12 @@ public final class GuiApp implements AutoCloseable {
                  VertexBuffer vb = new VertexBuffer(device, vertices);
                  GraphicsPipeline pipeline = new GraphicsPipeline(device, rp.handle(), width, height,
                          CanvasShader.vertex().spirv(), "main", CanvasShader.fragment().spirv(), "main",
-                         canvasConfig(fonts.first(), images.placeholder(), false))) { // fixed viewport: offscreen, no resize
+                         canvasConfig(fonts.first(), images.placeholder(), images.tables(), false))) { // fixed viewport: offscreen, no resize
                 // The same run list the windowed path walks, so a tree holding images captures to PNG exactly as
                 // it presents — which is what makes the image kind checkable without a window.
                 byte[] rgba = OffscreenDraw.toRgba(device, rp.handle(), pipeline, width, height, vb.handle(),
-                        fonts.first().descriptorSet(), bind(runs, vertexCount, images, fonts.textures()),
+                        fonts.first().descriptorSet(), images.tables().descriptorSet(),
+                        bind(runs, vertexCount, images, fonts.textures()),
                         bgR, bgG, bgB, 1f);
                 PngWriter.write(rgba, width, height, Path.of(path));
             }
@@ -1709,21 +1710,22 @@ public final class GuiApp implements AutoCloseable {
     }
 
     /**
-     * The canvas pipeline's layout: the glyph atlas at set 0 and an image at set 1.
+     * The canvas pipeline's layout: the glyph atlas at set 0, an image at set 1, and the shadelet tables at set 2.
      *
      * <p>Both sets are declared whether or not this frame draws an image, because a pipeline layout is fixed at
      * build time and a set the pipeline declares must have something bound. {@code image} is only read for its
      * <em>layout</em> here — every image binds against the same one-sampler shape, so the placeholder's layout
      * describes a marched viewport just as well as it describes itself.
      */
-    static GraphicsPipeline.Config canvasConfig(AtlasTexture atlas, SampledImage image, boolean dynamicViewport) {
+    static GraphicsPipeline.Config canvasConfig(AtlasTexture atlas, SampledImage image, StorageBuffer tables,
+                                              boolean dynamicViewport) {
         List<GraphicsPipeline.VertexAttribute> attrs = new ArrayList<>();
         for (CanvasVertex.Attr a : CanvasVertex.ATTRIBUTES) {
             attrs.add(GraphicsPipeline.VertexAttribute.floats(a.location(), a.components(), a.offset()));
         }
         return new GraphicsPipeline.Config(CanvasVertex.STRIDE_BYTES, attrs,
-                new long[]{atlas.descriptorSetLayout(), image.descriptorSetLayout()}, true,
-                Vk.SHADER_STAGE_FRAGMENT_BIT, 0, dynamicViewport);
+                new long[]{atlas.descriptorSetLayout(), image.descriptorSetLayout(), tables.descriptorSetLayout()},
+                true, Vk.SHADER_STAGE_FRAGMENT_BIT, 0, dynamicViewport);
     }
 
 }

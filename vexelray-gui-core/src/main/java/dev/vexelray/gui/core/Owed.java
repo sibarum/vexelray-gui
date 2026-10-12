@@ -56,7 +56,11 @@ final class Owed {
     }
 
     void payHandler() {
-        handlers.decrementAndGet();
+        if (handlers.decrementAndGet() <= 0) {
+            synchronized (paid) {
+                paid.notifyAll();
+            }
+        }
         pay();
     }
 
@@ -74,6 +78,28 @@ final class Owed {
             // Checked under the lock the payer notifies under, so a payment between the check and the wait is
             // not a notification nobody was waiting for.
             while (any()) {
+                long remaining = deadline - System.nanoTime();
+                if (remaining <= 0) {
+                    return false;
+                }
+                TimeUnit.NANOSECONDS.timedWait(paid, remaining);
+            }
+            return true;
+        }
+    }
+
+    /**
+     * Block until no handler is running, bounded — {@code true} once that holds, {@code false} if one still is
+     * when {@code timeout} runs out. Wakes and frames are not waited for: this is for a caller that runs the
+     * frames itself, and would otherwise be waiting on its own frame.
+     *
+     * <p>A handler that dispatches another takes the second's unit before it pays its own, so a chain of them
+     * reads as running until its last link has returned.
+     */
+    boolean awaitHandlers(long timeout, TimeUnit unit) throws InterruptedException {
+        long deadline = System.nanoTime() + unit.toNanos(timeout);
+        synchronized (paid) {
+            while (handlers.get() > 0) {
                 long remaining = deadline - System.nanoTime();
                 if (remaining <= 0) {
                     return false;

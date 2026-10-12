@@ -1581,8 +1581,10 @@ public final class GuiApp implements AutoCloseable {
         // Two frames, not one. Anything an application derives from its own measured box — a picture authored in
         // pixels is the clearest case — cannot exist during the first layout that produces that box: the observer
         // fires inside it, and the mutation it posts is applied by the next drain. A still image wants the settled
-        // state rather than the instant before it, so the first frame is a warm-up and the second is the picture.
+        // state rather than the instant before it, so the first frame is a warm-up and the last is the picture.
+        // Between them, settle: what handlers and animations still had in flight is carried to rest.
         gui.frame(width, height, faces);
+        settle(gui, width, height, faces);
         RetainedNode root = gui.frame(width, height, faces);
         Canvas canvas = new Canvas(width, height);
         canvas.begin();
@@ -1616,6 +1618,54 @@ public final class GuiApp implements AutoCloseable {
                 PngWriter.write(rgba, width, height, Path.of(path));
             }
         }
+    }
+
+    /** Rounds {@link #settle} runs before giving up on a tree that will not come to rest. */
+    private static final int SETTLE_ROUNDS = 64;
+    /** Logical time one settle round carries the animation clock: well short of Driven's one-second forgiveness. */
+    private static final java.time.Duration SETTLE_STEP = java.time.Duration.ofMillis(100);
+    /** How long one round waits for the handler lane before capturing whatever has landed. */
+    private static final long SETTLE_HANDLER_WAIT_MS = 5_000;
+
+    /**
+     * Run frames until the tree has nothing left in flight, so a capture photographs where it was going rather
+     * than wherever thread timing left it.
+     *
+     * <p>Two frames were enough for a mutation posted by layout, and not for one posted by a handler. A widget
+     * that fetches on the handler lane — a tree opening its rows, say — publishes whenever its worker gets there,
+     * which may be before the picture frame or after it; and if a transition was installed in between, the edit
+     * starts one that only a ticked clock would ever finish. Six captures of the same page made three pictures.
+     * So each round waits for the handler lane to return, applies what it published, and steps the registered
+     * {@link dev.vexelray.gui.core.AnimationClock} until nothing is scheduled. Nothing here presents a frame, so
+     * the clock is the capture's alone, and stepping it in fixed amounts is what makes where it ends up the same
+     * every time.
+     *
+     * <p>Bounded, because a repeating cue or a motion source that never decays is never quiet; the picture is then
+     * taken after the last round. Only capture runs this — the interactive loop ticks its own clock.
+     */
+    private static void settle(Gui gui, int width, int height, TextFaces faces) {
+        for (int round = 0; round < SETTLE_ROUNDS; round++) {
+            try {
+                if (!gui.awaitHandlers(SETTLE_HANDLER_WAIT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                    LOG.warn("capture: " + gui.whatIsOwed() + " after " + SETTLE_HANDLER_WAIT_MS
+                            + " ms; capturing without it");
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+            dev.vexelray.gui.core.AnimationClock clock = gui.animationClock();
+            boolean animating = clock != null && !clock.quiet();
+            if (!animating && !gui.frameOwed()) {
+                return;
+            }
+            if (animating) {
+                clock.advance(SETTLE_STEP);
+            }
+            gui.frame(width, height, faces);
+        }
+        LOG.warn("capture: not at rest after " + SETTLE_ROUNDS + " rounds (" + gui.whatIsOwed()
+                + "); capturing as it stands");
     }
 
     // --- native-API glue ---

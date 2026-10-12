@@ -203,6 +203,8 @@ public final class Gui implements AutoCloseable {
     private final Metrics metrics = new Metrics();
     /** Where nodes are drawn relative to where layout put them; NONE until a motion source is attached. */
     private volatile LayoutMotion motion = LayoutMotion.NONE;
+    /** What a run without a frame loop steps to bring animations to rest; null until a clock registers. */
+    private volatile AnimationClock animationClock;
     /**
      * What is held for a paste, and the live drag as a published read-model. A drag and a cut are the same
      * change made two ways, which is why one component holds both — see {@link Transfers}.
@@ -1670,6 +1672,18 @@ public final class Gui implements AutoCloseable {
         return owed.awaitPaid(timeout, unit);
     }
 
+    /**
+     * Block until every handler dispatched so far has returned, bounded — {@code true} once none is running,
+     * {@code false} if one still is when {@code timeout} runs out.
+     *
+     * <p>For a caller that runs the frames itself, such as a headless capture: {@link #awaitNothingOwed} would
+     * wait on a frame only that caller can run. What a returned handler published is waiting for the next frame.
+     * Work a handler handed to {@link #async} is not waited for, for the reason {@link #frameOwed} gives.
+     */
+    public boolean awaitHandlers(long timeout, java.util.concurrent.TimeUnit unit) throws InterruptedException {
+        return owed.awaitHandlers(timeout, unit);
+    }
+
     /** What {@link #frameOwed} is owed, as a phrase a refusal can quote: {@code "frame still owed"}, {@code "a handler still running"}. */
     public String whatIsOwed() {
         return owed.describe();
@@ -1741,6 +1755,20 @@ public final class Gui implements AutoCloseable {
     /** The attached motion source, or {@link LayoutMotion#NONE}. */
     public LayoutMotion motion() {
         return motion;
+    }
+
+    /**
+     * Register the clock this tree's animations run on, for a run with no frame loop to tick it — see
+     * {@link AnimationClock}. The clock's own module calls this when it is attached; last call wins.
+     */
+    public Gui animationClock(AnimationClock clock) {
+        this.animationClock = java.util.Objects.requireNonNull(clock, "clock");
+        return this;
+    }
+
+    /** The registered animation clock, or {@code null} when nothing animates on one. */
+    public AnimationClock animationClock() {
+        return animationClock;
     }
 
     /**

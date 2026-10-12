@@ -96,6 +96,27 @@ public final class KronoGui implements AutoCloseable {
         this.frames.each(step -> { });
         // On the thread that will tick, which is the one entitled to ask.
         sample(0L);
+        // So a headless capture, which has no beforeFrame to tick from, can carry what is animating to rest. Only
+        // a driven clock is stepped from outside; any other keeps its own time and has nothing to offer here.
+        if (kron.clock() instanceof sibarum.kronometer.Driven) {
+            registerClock();
+        }
+    }
+
+    private void registerClock() {
+        gui.animationClock(new dev.vexelray.gui.core.AnimationClock() {
+            @Override
+            public void advance(java.time.Duration step) {
+                // Elapsed is measured from the origin and logical time trails it by the slip, so the slip is
+                // added back: without it a clock that has ever been forgiven a gap would not move at all.
+                tick(new Dur(kron.now().nanos() + kron.slip().nanos() + step.toNanos()));
+            }
+
+            @Override
+            public boolean quiet() {
+                return quiescentAtLastTick();
+            }
+        });
     }
 
     /** Attach a driven Kronometer to {@code gui}. Tick it from {@code GuiApp.run}'s {@code beforeFrame}. */

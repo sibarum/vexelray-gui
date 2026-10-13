@@ -1,7 +1,6 @@
 package dev.vexelray.gui.icons;
 
 import dev.vexelray.canvas.Color;
-import dev.vexelray.canvas.shadelet.CoreShadelets;
 import dev.vexelray.canvas.shadelet.Look;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.IconSource;
@@ -15,7 +14,6 @@ import dev.vexelray.shadelets.OutlineStyleLayout;
 import dev.vexelray.shadelets.WeightStyle;
 import dev.vexelray.shadelets.WeightStyleLayout;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -175,31 +173,17 @@ public final class IconView {
     }
 
     /**
-     * The look the icon's effects make, at {@code side} px, front to back: the outline, the field's own fill, the
-     * glow, the shadow, over the field source and the weight. Null with none of them, so a plain icon is drawn as the
-     * shape alone. The glow and the shadow are the core set's, so every application draws them; the weight and the
-     * outline are effects an application composes in, or goes without.
+     * The look the icon's effects make, at {@code side} px ({@link ImageField#effects(List, List, float, float)}): the
+     * outline in front, over the field source and the weight. Null with none of them, so a plain icon is drawn as the
+     * shape alone. The weight and the outline are effects an application composes in, or goes without.
      */
     private Look look(float side) {
         Color band = outlineColor != null ? outlineColor
                 : outlineRole != null ? gui.theme().color(outlineRole) : null;
-        boolean outlined = band != null && outline > 0f;
-        if (weight == 0f && !outlined && glow == 0f && shadow == 0f) {
-            return null;
-        }
         List<Look.Use> modifiers = weight == 0f ? List.of()
                 : List.of(WeightStyleLayout.use(Effects.WEIGHT.name(), new WeightStyle(side * weight)));
-        List<Look.Use> painters = new ArrayList<>();
-        if (outlined) {
-            painters.add(OutlineStyleLayout.use(Effects.OUTLINE.name(), new OutlineStyle(band, side * outline)));
-        }
-        painters.add(Look.Use.of(CoreShadelets.FIELD_FILL.name()));
-        if (glow > 0f) {
-            painters.add(Look.Use.of(CoreShadelets.GLOW.name(), side * glow));
-        }
-        if (shadow > 0f) {
-            painters.add(Look.Use.of(CoreShadelets.DROP_SHADOW.name(), side * shadow));
-        }
-        return new Look(Look.Use.of(CoreShadelets.FIELD.name()), modifiers, painters);
+        List<Look.Use> front = band == null || outline <= 0f ? List.of()
+                : List.of(OutlineStyleLayout.use(Effects.OUTLINE.name(), new OutlineStyle(band, side * outline)));
+        return ImageField.effects(modifiers, front, side * glow, side * shadow);
     }
 }

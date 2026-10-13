@@ -3,6 +3,7 @@ package dev.vexelray.gui.core.app;
 import dev.vexelray.canvas.Canvas;
 import dev.vexelray.canvas.CanvasVertex;
 import dev.vexelray.canvas.Color;
+import dev.vexelray.canvas.shadelet.Composition;
 import dev.vexelray.gui.core.input.FocusCause;
 import dev.vexelray.gui.core.input.FocusState;
 import dev.vexelray.gui.core.layout.LayoutContext;
@@ -16,7 +17,6 @@ import dev.vexelray.gui.core.text.TextFaces;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -53,39 +53,43 @@ class FocusRingTest {
         return child;
     }
 
-    private static float[] emit(RetainedNode root, FocusState focus, Theme theme) {
-        Canvas canvas = new Canvas(400, 200).begin();
+    private static Canvas emit(RetainedNode root, FocusState focus, Theme theme) {
+        Canvas canvas = Canvases.core(400, 200);
         TreeRenderer.emit(root, canvas, TextFaces.standard(), theme, focus, LayoutContext.of(400f, 200f));
-        return Arrays.copyOf(canvas.toVertexArray(), canvas.vertexCount() * CanvasVertex.FLOATS_PER_VERTEX);
+        return canvas;
     }
 
-    private static float[] emit(RetainedNode root, long focused, FocusCause cause) {
+    private static Canvas emit(RetainedNode root, long focused, FocusCause cause) {
         return emit(root, new FocusState(focused, cause, true), Theme.DARK);
     }
 
-    /** One stroke quad's worth of what was drawn: (centreX, centreY, halfW, halfH, width, alpha). */
+    /** One ring's worth of what was drawn: (centreX, centreY, halfW, halfH, width, alpha). */
     private record Stroke(float cx, float cy, float halfW, float halfH, float width, float alpha) { }
 
+    /** Whether vertex {@code v} is the ring's: an element with values of its own (a border), in the accent. */
     private static boolean isRing(float[] d, int v) {
         int rgba = CanvasVertex.OFF_COLOR / Float.BYTES;
-        return d[v + CanvasVertex.OFF_KIND / Float.BYTES] == CanvasVertex.KIND_STROKE
-                && Math.abs(d[v + rgba] - ACCENT.r()) < 1e-4f
-                && Math.abs(d[v + rgba + 1] - ACCENT.g()) < 1e-4f
-                && Math.abs(d[v + rgba + 2] - ACCENT.b()) < 1e-4f;
+        int at = v * CanvasVertex.FLOATS_PER_VERTEX;
+        return Canvases.element(d, v) >= Composition.RECORDS_BASE
+                && Math.abs(d[at + rgba] - ACCENT.r()) < 1e-4f
+                && Math.abs(d[at + rgba + 1] - ACCENT.g()) < 1e-4f
+                && Math.abs(d[at + rgba + 2] - ACCENT.b()) < 1e-4f;
     }
 
-    private static List<Stroke> rings(float[] d) {
+    private static List<Stroke> rings(Canvas canvas) {
+        float[] d = canvas.toVertexArray();
         int stride = CanvasVertex.FLOATS_PER_VERTEX;
         int shape = CanvasVertex.OFF_SHAPE / Float.BYTES;
         int local = CanvasVertex.OFF_LOCAL / Float.BYTES;
         int screen = CanvasVertex.OFF_CLIPRS / Float.BYTES;
-        int uv = CanvasVertex.OFF_UV / Float.BYTES;
-        int alpha = CanvasVertex.OFF_COLOR / Float.BYTES + 3;
         List<Stroke> out = new ArrayList<>();
-        for (int v = 0; v + stride <= d.length; v += stride) {
-            if (isRing(d, v)) {
+        for (int i = 0; i < canvas.vertexCount(); i++) {
+            if (isRing(d, i)) {
+                int v = i * stride;
+                // The ring's colour and width are its record's: a border alone, (r, g, b, a, width).
+                float[] border = Canvases.instance(canvas, i, 5);
                 Stroke s = new Stroke(d[v + screen] - d[v + local], d[v + screen + 1] - d[v + local + 1],
-                        d[v + shape], d[v + shape + 1], d[v + uv], d[v + alpha]);
+                        d[v + shape], d[v + shape + 1], border[4], border[3]);
                 if (out.isEmpty() || !near(out.get(out.size() - 1), s)) {
                     out.add(s);
                 }
@@ -100,14 +104,16 @@ class FocusRingTest {
     }
 
     /** First vertex index drawn in {@code c}, or of the ring when {@code c} is null; -1 if never. */
-    private static int first(float[] d, Color c) {
+    private static int first(Canvas canvas, Color c) {
+        float[] d = canvas.toVertexArray();
         int stride = CanvasVertex.FLOATS_PER_VERTEX;
         int rgba = CanvasVertex.OFF_COLOR / Float.BYTES;
-        for (int v = 0; v + stride <= d.length; v += stride) {
-            boolean hit = c == null ? isRing(d, v)
+        for (int i = 0; i < canvas.vertexCount(); i++) {
+            int v = i * stride;
+            boolean hit = c == null ? isRing(d, i)
                     : d[v + rgba] == c.r() && d[v + rgba + 1] == c.g() && d[v + rgba + 2] == c.b();
             if (hit) {
-                return v / stride;
+                return i;
             }
         }
         return -1;
@@ -145,7 +151,7 @@ class FocusRingTest {
         RetainedNode next = adopt(root, box(100, 0, 100, 30));
         next.set(PropKey.BACKGROUND, SIBLING);
 
-        float[] d = emit(root, field.id, FocusCause.KEYBOARD);
+        Canvas d = emit(root, field.id, FocusCause.KEYBOARD);
         assertTrue(first(d, SIBLING) >= 0 && first(d, null) > first(d, SIBLING),
                 "the later sibling is painted first and the ring over it");
     }
@@ -160,7 +166,7 @@ class FocusRingTest {
         popup.set(PropKey.FLOAT_Y, Length.ZERO);
         popup.set(PropKey.BACKGROUND, POPUP);
 
-        float[] d = emit(root, field.id, FocusCause.KEYBOARD);
+        Canvas d = emit(root, field.id, FocusCause.KEYBOARD);
         assertTrue(first(d, null) >= 0 && first(d, null) < first(d, POPUP), "ring first, popup over it");
     }
 

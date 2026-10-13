@@ -1,8 +1,12 @@
 package dev.vexelray.gui.core;
 
 import dev.vexelray.canvas.Color;
+import dev.vexelray.canvas.shadelet.CoreShadelets;
 import dev.vexelray.canvas.shadelet.Look;
 import dev.vexelray.target.ImageHandle;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * A shape a node draws from a signed distance field ({@link Node#field}): the texture, the {@code region} of it the
@@ -53,5 +57,34 @@ public record ImageField(ImageHandle texture, ImageRegion region, int side, int 
     /** This field drawn by {@code look}; null for the shape alone. */
     public ImageField look(Look look) {
         return new ImageField(texture, region, side, spread, tint, look);
+    }
+
+    /**
+     * This field with a halo of its tint reaching {@code glow} px past its edge and a shadow {@code shadow} px soft
+     * under it, at the size it is drawn; 0 for none of either. See {@link #effects(List, List, float, float)}.
+     */
+    public ImageField effects(float glow, float shadow) {
+        return look(effects(List.of(), List.of(), glow, shadow));
+    }
+
+    /**
+     * The look a field's effects make, front to back: {@code front} (an outline, say), the field's own fill, a glow of
+     * the tint reaching {@code glow} px, a shadow {@code shadow} px soft; over the field source and {@code modifiers}
+     * (a weight). The glow and the shadow are the core set's, so every application draws them. Null with none of
+     * them, so the field is drawn as the shape alone.
+     */
+    public static Look effects(List<Look.Use> modifiers, List<Look.Use> front, float glow, float shadow) {
+        if (modifiers.isEmpty() && front.isEmpty() && glow <= 0f && shadow <= 0f) {
+            return null;
+        }
+        List<Look.Use> painters = new ArrayList<>(front);
+        painters.add(Look.Use.of(CoreShadelets.FIELD_FILL.name()));
+        if (glow > 0f) {
+            painters.add(Look.Use.of(CoreShadelets.GLOW.name(), glow));
+        }
+        if (shadow > 0f) {
+            painters.add(Look.Use.of(CoreShadelets.DROP_SHADOW.name(), shadow));
+        }
+        return new Look(Look.Use.of(CoreShadelets.FIELD.name()), modifiers, painters);
     }
 }

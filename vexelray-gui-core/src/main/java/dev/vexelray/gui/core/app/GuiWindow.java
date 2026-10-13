@@ -69,8 +69,8 @@ final class GuiWindow implements AutoCloseable {
      * The per-window vertex buffer, in floats. Host-visible and rewritten once a frame, so it is the ceiling on
      * how complicated one window's picture may be.
      *
-     * <p>Worth doing the arithmetic rather than picking a round number. At 28 floats a vertex and six vertices a
-     * quad, a quad is 168 floats: this is about thirty-one thousand of them. An ordinary dense UI is a few hundred;
+     * <p>Worth doing the arithmetic rather than picking a round number. At 27 floats a vertex and six vertices a
+     * quad, a quad is 162 floats: this is about thirty-two thousand of them. An ordinary dense UI is a few hundred;
      * a plot that draws a surface out of boxes is tens of thousands, which is how the previous figure of 512K —
      * under four thousand quads — was found, by a window dying on it mid-frame. (It was 4M at 23 floats a vertex,
      * and grew with the vertex when images gained their filter and elements their record, so no window holds fewer

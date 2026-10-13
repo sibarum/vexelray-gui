@@ -3,6 +3,8 @@ package dev.vexelray.gui.draw;
 import dev.vexelray.canvas.Canvas;
 import dev.vexelray.canvas.CanvasVertex;
 import dev.vexelray.canvas.Color;
+import dev.vexelray.canvas.shadelet.CoreLooks;
+import dev.vexelray.canvas.shadelet.CoreShadelets;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -23,7 +25,8 @@ class CanvasSinkTest {
     private static final int PER_MARK = 6;
 
     private static Canvas canvas() {
-        return new Canvas(200, 100).begin();
+        // With the core set's look table, as every window's canvas has: an outline is drawn by a look.
+        return new Canvas(200, 100).looks(CoreLooks.table(CoreShadelets.composition())).begin();
     }
 
     @Test
@@ -89,6 +92,6 @@ class CanvasSinkTest {
     void theVertexStrideIsTheCanvasItsOwn() {
         // A guard on the arithmetic the opacity test does by hand: if the vertex layout grows, that indexing is
         // what breaks, and it should break here rather than in a colour that looks slightly wrong.
-        assertEquals(28, CanvasVertex.FLOATS_PER_VERTEX);
+        assertEquals(27, CanvasVertex.FLOATS_PER_VERTEX);
     }
 }

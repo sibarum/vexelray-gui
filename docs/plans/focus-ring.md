@@ -155,8 +155,8 @@ and never reaches into the dispatcher.
 When the walk visits the focused node, it records its painted rect (after `translate`), its corner radii and the
 inherited `alpha`. It does **not** draw the ring there. The ring is drawn by the focused node's **ring host**:
 the nearest ancestor that pushes a clip (a scroll viewport, or an explicit `clip()`), or the root if none does.
-The host draws one `strokeRoundRect` at the outset rect, in the resolved colour, faded by the recorded alpha. It
-does this after its flow children and before it pops its clip, its scrollbars and its floating children. In
+The host draws one box at the outset rect whose look is a border alone, in the resolved colour, faded by the
+recorded alpha. It does this after its flow children and before it pops its clip, its scrollbars and its floating children. In
 `walk` that is the point between the flow loop and `canvas.popClip()`. For an explicit `clip()` host, the
 float loop moves to after the ring.
 

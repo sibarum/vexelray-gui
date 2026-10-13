@@ -27,10 +27,10 @@ import dev.vexelray.text.TextLayout;
  * its children on top, depth-first. There is no Vulkan, shader, or vertex code here (nor anywhere in the GUI);
  * this only translates model props into {@code Canvas} calls.
  *
- * <p>Depth and light are translated the same way: {@code elevation} becomes a {@code shadowRoundRect} under the
- * background, {@code lit} swaps the background fill for a {@code litRoundRect}, and borders are a real
- * {@code strokeRoundRect} ring — all of them transfer functions over the one rounded-box SDF the engine already
- * evaluates, so a whole lit, shadowed, outlined panel is still zero extra textures and one draw.
+ * <p>Depth and light are translated the same way: a node's box is one element whose look is the core node painters,
+ * front to back: its border a ring hugging the inside of the edge, its background a fill (lit, for {@code lit}), and
+ * its {@code elevation} a soft shadow under it. All of them are functions of the one rounded-box distance the engine
+ * already evaluates, so a whole lit, shadowed, outlined panel is still zero extra textures, one quad and one draw.
  */
 public final class TreeRenderer {
 
@@ -217,18 +217,33 @@ public final class TreeRenderer {
         float h = n.h + padY * 2f;
         float r = em * 0.25f;
         float lift = em * 0.4f;
-        canvas.shadowRoundRect(x, y + lift * 0.5f, w, h, r, r, lift, fade(shadow));
+        Color surface = null;
         for (Color layer : surfaceUnder(n)) {
-            canvas.fillRoundRect(x, y, w, h, r, r, fade(layer));
+            surface = over(fade(layer), surface);
         }
-        canvas.strokeRoundRect(x, y, w, h, r, r, 1f, fade(plateEdge));
+        box(canvas, x, y, w, h, r, r, fade(plateEdge), 1f, surface == null ? NO_FILL : PLAIN_FILL, surface, 0f, 0f,
+                fade(shadow), lift);
+    }
+
+    /** {@code top} laid over {@code under} (null for nothing), straight alpha: what blending one on the other gives. */
+    private static Color over(Color top, Color under) {
+        if (under == null) {
+            return top;
+        }
+        float a = top.a() + under.a() * (1f - top.a());
+        if (a <= 0f) {
+            return top;
+        }
+        float k = under.a() * (1f - top.a());
+        return new Color((top.r() * top.a() + under.r() * k) / a, (top.g() * top.a() + under.g() * k) / a,
+                (top.b() * top.a() + under.b() * k) / a, a);
     }
 
     /**
      * What {@code n} is drawn on, as the layers that make it, bottom first: its ancestors' backgrounds from the
      * first opaque one inward, so a row with a translucent hover wash over a panel is the panel and then the wash.
-     * Filled one over another rather than mixed here, so the canvas composites them exactly as it did the first
-     * time. The theme's raised surface stands under them all for a tree that never paints one.
+     * The plate mixes them into the one colour it is filled with. The theme's raised surface stands under them all
+     * for a tree that never paints one.
      */
     private java.util.List<Color> surfaceUnder(RetainedNode n) {
         java.util.ArrayDeque<Color> layers = new java.util.ArrayDeque<>();
@@ -436,8 +451,8 @@ public final class TreeRenderer {
         if (out > 0f && !inside(x - out, y - out, r.w() + 2f * out, r.h() + 2f * out)) {
             out = 0f;
         }
-        canvas.strokeRoundRect(x - out, y - out, r.w() + 2f * out, r.h() + 2f * out,
-                Math.max(0f, r.rTop() + out), Math.max(0f, r.rBottom() + out), r.width(), r.color());
+        box(canvas, x - out, y - out, r.w() + 2f * out, r.h() + 2f * out, Math.max(0f, r.rTop() + out),
+                Math.max(0f, r.rBottom() + out), r.color(), r.width(), NO_FILL, null, 0f, 0f, null, 0f);
     }
 
     /** Whether the rect lies within the live clip — the window's box when nothing clips there. */
@@ -522,8 +537,7 @@ public final class TreeRenderer {
     /** A lit pill floating just off its track: small shadow underneath, edge light on top — grabbable at a glance. */
     private void thumb(Canvas canvas, float[] t, float sb) {
         float r = sb * 0.3f;
-        canvas.shadowRoundRect(t[0], t[1] + 1f, t[2], t[3], r, 2.5f, fade(shadow));
-        canvas.litRoundRect(t[0], t[1], t[2], t[3], r, 2f, 0.08f, fade(scrollGrip));
+        box(canvas, t[0], t[1], t[2], t[3], r, r, null, 0f, LIT_FILL, fade(scrollGrip), 2f, 0.08f, fade(shadow), 2.5f);
     }
 
     /** An outlined track: a border-coloured rounded rect with a subtle inner fill, so it reads against any panel. */
@@ -601,13 +615,23 @@ public final class TreeRenderer {
         return dev.vexelray.canvas.shadelet.Look.Use.of(shadelet.name());
     }
 
-    /**
-     * A node's box as one element: its border ({@code border} null for none), its fill ({@code fill} with its colour,
-     * a lit fill bevelled {@code bevel} wide), its shadow ({@code shadow} null for none) at {@code lift}, front to
-     * back, every value in the element's record in that order.
-     */
+    /** A node's box: {@link #box(Canvas, float, float, float, float, float, float, Color, float, int, Color, float,
+     *  float, Color, float)} at its own rect and corners, a lit fill with the node's gentle gradient. */
     private static void box(Canvas canvas, RetainedNode n, Color border, float width, int fill, Color fillColour,
                             float bevel, Color shadow, float lift) {
+        box(canvas, n.x, n.y, n.w, n.h, n.cornerPx, n.cornerBottomPx, border, width, fill, fillColour, bevel, 0.05f,
+                shadow, lift);
+    }
+
+    /**
+     * A box as one element: its border ({@code border} null for none) {@code width} wide, its fill ({@code fill} with
+     * its colour; a lit fill bevelled {@code bevel} wide with a vertical {@code gradient}), its shadow ({@code shadow}
+     * null for none) at {@code lift}, front to back, every value in the element's record in that order. A node's box,
+     * and the renderer's own furniture: the plate, the focus ring, a scrollbar's grip.
+     */
+    private static void box(Canvas canvas, float x, float y, float w, float h, float rTop, float rBottom,
+                            Color border, float width, int fill, Color fillColour, float bevel, float gradient,
+                            Color shadow, float lift) {
         float[] v = new float[16];
         int k = 0;
         if (border != null) {
@@ -618,7 +642,7 @@ public final class TreeRenderer {
             k = colour(v, k, fillColour);
             if (fill == LIT_FILL) {
                 v[k++] = bevel;
-                v[k++] = 0.05f;   // the lit fill's vertical gradient, as litRoundRect drew it
+                v[k++] = gradient;
             }
         }
         if (shadow != null) {
@@ -627,8 +651,8 @@ public final class TreeRenderer {
         }
         // The node painters read their colours from the record, never the vertex's; it carries one of them anyway.
         Color vertex = fillColour != null ? fillColour : border != null ? border : shadow;
-        canvas.box(n.x, n.y, n.w, n.h, n.cornerPx, n.cornerBottomPx, vertex,
-                boxLook(border != null, fill, shadow != null), java.util.Arrays.copyOf(v, k));
+        canvas.box(x, y, w, h, rTop, rBottom, vertex, boxLook(border != null, fill, shadow != null),
+                java.util.Arrays.copyOf(v, k));
     }
 
     private static int colour(float[] v, int k, Color c) {
@@ -657,24 +681,10 @@ public final class TreeRenderer {
         Picture picture = n.picture();
         boolean between = n.image() != null || n.field() != null || (picture != null && !picture.isEmpty());
         boolean borderNow = hasBorder && !between;
-        if (canvas.drawsLooks()) {
-            int fill = bg == null ? NO_FILL : n.lit() ? LIT_FILL : PLAIN_FILL;
-            if (borderNow || fill != NO_FILL || hasShadow) {
-                box(canvas, n, borderNow ? fade(border) : null, bw, fill, fill == NO_FILL ? null : fade(bg), bevel,
-                        hasShadow ? fade(shadow) : null, n.elevationPx);
-            }
-        } else {
-            if (hasShadow) {
-                float e = n.elevationPx;
-                canvas.shadowRoundRect(n.x, n.y + e * 0.5f, n.w, n.h, rTop, rBottom, e, fade(shadow));
-            }
-            if (bg != null) {
-                if (n.lit()) {
-                    canvas.litRoundRect(n.x, n.y, n.w, n.h, rTop, rBottom, bevel, 0.05f, fade(bg));
-                } else {
-                    canvas.fillRoundRect(n.x, n.y, n.w, n.h, rTop, rBottom, fade(bg));
-                }
-            }
+        int fill = bg == null ? NO_FILL : n.lit() ? LIT_FILL : PLAIN_FILL;
+        if (borderNow || fill != NO_FILL || hasShadow) {
+            box(canvas, n, borderNow ? fade(border) : null, bw, fill, fill == NO_FILL ? null : fade(bg), bevel,
+                    hasShadow ? fade(shadow) : null, n.elevationPx);
         }
         // An image sits between the background and the border: a background shows through anything transparent in
         // it, and a border frames it. It takes the node's own radius, so a viewport rounds with the card it is in.
@@ -707,23 +717,17 @@ public final class TreeRenderer {
             dev.vexelray.gui.core.ImageRegion cell = field.region();
             if (field.look() == null) {
                 canvas.field(n.x, n.y, n.w, n.h, field.texture(), cell.u0(), cell.v0(), cell.u1(), cell.v1(),
-                        field.side(), field.spread(), field.margin(), dev.vexelray.canvas.FieldStyle.plain(field.tint()),
-                        alpha);
+                        field.side(), field.spread(), field.margin(), fade(field.tint()));
             } else {
                 canvas.field(n.x, n.y, n.w, n.h, field.texture(), cell.u0(), cell.v0(), cell.u1(), cell.v1(),
-                        field.side(), field.spread(), field.margin(), dev.vexelray.canvas.FieldStyle.plain(field.tint()),
-                        alpha, field.look());
+                        field.side(), field.spread(), field.margin(), fade(field.tint()), field.look());
             }
         }
         // A drawing goes over the image and under the border: an application's own marks belong inside the frame
         // the node draws around them.
         emitPicture(n, picture, canvas, text);
         if (hasBorder && !borderNow) {
-            if (canvas.drawsLooks()) {
-                box(canvas, n, fade(border), bw, NO_FILL, null, bevel, null, 0f);
-            } else {
-                canvas.strokeRoundRect(n.x, n.y, n.w, n.h, rTop, rBottom, bw, fade(border));
-            }
+            box(canvas, n, fade(border), bw, NO_FILL, null, bevel, null, 0f);
         }
 
         String s = n.textString();

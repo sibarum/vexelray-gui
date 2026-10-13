@@ -2,6 +2,8 @@ package dev.vexelray.gui.draw;
 
 import dev.vexelray.canvas.Canvas;
 import dev.vexelray.canvas.Color;
+import dev.vexelray.canvas.shadelet.CoreShadelets;
+import dev.vexelray.canvas.shadelet.Look;
 import dev.vexelray.text.TextLayout;
 
 /**
@@ -59,9 +61,14 @@ public final class CanvasSink implements Picture.Sink {
         if (color == null) {
             return;
         }
-        canvas.strokeRoundRect((float) x, (float) y, (float) w, (float) h, (float) radiusTop, (float) radiusBottom,
-                (float) width, fade(color));
+        Color c = fade(color);
+        canvas.box((float) x, (float) y, (float) w, (float) h, (float) radiusTop, (float) radiusBottom, c, OUTLINE,
+                c.r(), c.g(), c.b(), c.a(), (float) width);
     }
+
+    /** An outline: the box, and a ring hugging the inside of its edge, its colour and width the element's own. */
+    private static final Look OUTLINE = Look.of(Look.Use.of(CoreShadelets.BOX.name()),
+            Look.Use.of(CoreShadelets.NODE_STROKE.name()));
 
     @Override
     public void line(double x0, double y0, double x1, double y1, double thickness, Color color, String tag) {

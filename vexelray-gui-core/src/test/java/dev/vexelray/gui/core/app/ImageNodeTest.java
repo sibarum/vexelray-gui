@@ -2,6 +2,7 @@ package dev.vexelray.gui.core.app;
 
 import dev.vexelray.canvas.Canvas;
 import dev.vexelray.canvas.CanvasVertex;
+import dev.vexelray.canvas.shadelet.CoreLooks;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.ImageRegion;
 import dev.vexelray.gui.core.Node;
@@ -40,6 +41,9 @@ class ImageNodeTest {
     private static final int W = 400;
     private static final int H = 200;
 
+    /** The record an image drawn as itself names. */
+    private static final int IMAGE = CoreLooks.record(CoreLooks.Primitive.IMAGE);
+
     private static long nextId = 1;
 
     /** A handle the renderer only passes through — the model describes a tree, not a GPU. */
@@ -76,7 +80,7 @@ class ImageNodeTest {
     }
 
     private static Canvas draw(RetainedNode root) {
-        Canvas canvas = new Canvas(W, H).begin();
+        Canvas canvas = Canvases.core(W, H);
         TreeRenderer.emit(root, canvas, dev.vexelray.gui.core.text.TextFaces.standard());
         return canvas;
     }
@@ -89,13 +93,13 @@ class ImageNodeTest {
     private static float[] uvBounds(float[] data) {
         int stride = CanvasVertex.FLOATS_PER_VERTEX;
         int uv = CanvasVertex.OFF_UV / Float.BYTES;
-        int kind = CanvasVertex.OFF_KIND / Float.BYTES;
+        int element = CanvasVertex.OFF_ELEMENT / Float.BYTES;
         float uMin = Float.POSITIVE_INFINITY;
         float vMin = Float.POSITIVE_INFINITY;
         float uMax = Float.NEGATIVE_INFINITY;
         float vMax = Float.NEGATIVE_INFINITY;
         for (int v = 0; v + stride <= data.length; v += stride) {
-            if (data[v + kind] != CanvasVertex.KIND_IMAGE) {
+            if (data[v + element] != IMAGE) {
                 continue;
             }
             uMin = Math.min(uMin, data[v + uv]);
@@ -110,11 +114,11 @@ class ImageNodeTest {
     private static float[] positions(float[] data) {
         int stride = CanvasVertex.FLOATS_PER_VERTEX;
         int pos = CanvasVertex.OFF_POS / Float.BYTES;
-        int kind = CanvasVertex.OFF_KIND / Float.BYTES;
+        int element = CanvasVertex.OFF_ELEMENT / Float.BYTES;
         float[] out = new float[data.length / stride * 2];
         int at = 0;
         for (int v = 0; v + stride <= data.length; v += stride) {
-            if (data[v + kind] != CanvasVertex.KIND_IMAGE) {
+            if (data[v + element] != IMAGE) {
                 continue;
             }
             out[at++] = data[v + pos];
@@ -136,14 +140,14 @@ class ImageNodeTest {
         return (min + max) / 2f;
     }
 
-    /** Every image vertex's filter attribute (loc8), as one {@code {mode, width, height, rate}} each. */
+    /** Every image vertex's filter attribute, as one {@code {mode, width, height, rate}} each. */
     private static java.util.List<float[]> filters(float[] data) {
         int stride = CanvasVertex.FLOATS_PER_VERTEX;
         int at = CanvasVertex.OFF_FILTER / Float.BYTES;
-        int kind = CanvasVertex.OFF_KIND / Float.BYTES;
+        int element = CanvasVertex.OFF_ELEMENT / Float.BYTES;
         java.util.List<float[]> out = new java.util.ArrayList<>();
         for (int v = 0; v + stride <= data.length; v += stride) {
-            if (data[v + kind] == CanvasVertex.KIND_IMAGE) {
+            if (data[v + element] == IMAGE) {
                 out.add(Arrays.copyOfRange(data, v + at, v + at + 4));
             }
         }
@@ -190,12 +194,12 @@ class ImageNodeTest {
                 dev.vexelray.canvas.Color.WHITE));
         float[] data = vertices(draw(n));
         int stride = CanvasVertex.FLOATS_PER_VERTEX;
-        int kind = CanvasVertex.OFF_KIND / Float.BYTES;
+        int element = CanvasVertex.OFF_ELEMENT / Float.BYTES;
         int screen = CanvasVertex.OFF_CLIPRS / Float.BYTES;
         float minX = Float.MAX_VALUE;
         int fields = 0;
         for (int v = 0; v + stride <= data.length; v += stride) {
-            if (data[v + kind] == CanvasVertex.KIND_FIELD) {
+            if (data[v + element] == CoreLooks.record(CoreLooks.Primitive.FIELD)) {
                 fields++;
                 minX = Math.min(minX, data[v + screen]);
             }

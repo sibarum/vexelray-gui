@@ -81,7 +81,7 @@ class TextDisplacementTest {
     }
 
     private static float[] emit(RetainedNode root) {
-        Canvas canvas = new Canvas(400, 400).begin();
+        Canvas canvas = Canvases.core(400, 400);
         // A null face is safe: with empty text the glyph path never runs, and the caret is a plain quad.
         TreeRenderer.emit(root, canvas, dev.vexelray.gui.core.text.TextFaces.standard());
         return java.util.Arrays.copyOf(canvas.toVertexArray(),

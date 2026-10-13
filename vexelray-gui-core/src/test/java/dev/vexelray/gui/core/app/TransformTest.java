@@ -51,7 +51,7 @@ class TransformTest {
 
     /** Emit {@code root} and hand back the raw vertex data — no window, no device, no atlas. */
     private static float[] emit(RetainedNode root) {
-        Canvas canvas = new Canvas(200, 200).begin();
+        Canvas canvas = Canvases.core(200, 200);
         // A null face is safe for boxes: it is consulted only by the text path, and none of these nodes has any.
         TreeRenderer.emit(root, canvas, dev.vexelray.gui.core.text.TextFaces.standard());
         return java.util.Arrays.copyOf(canvas.toVertexArray(), canvas.vertexCount() * CanvasVertex.FLOATS_PER_VERTEX);
@@ -296,18 +296,23 @@ class TransformTest {
         card.elevationPx = 8f;
         card.set(PropKey.OPACITY, 0.5f);
 
-        float[] data = emit(root);
+        Canvas canvas = Canvases.core(200, 200);
+        TreeRenderer.emit(root, canvas, dev.vexelray.gui.core.text.TextFaces.standard());
+        float[] data = canvas.toVertexArray();
         int rgba = CanvasVertex.OFF_COLOR / Float.BYTES;
         int stride = CanvasVertex.FLOATS_PER_VERTEX;
-        boolean sawShadow = false;
-        for (int v = 0; v + stride <= data.length; v += stride) {
-            boolean isShadow = data[v + CanvasVertex.OFF_KIND / Float.BYTES] == CanvasVertex.KIND_SHADOW;
-            if (isShadow) {
-                sawShadow = true;
-                assertTrue(data[v + rgba + 3] <= 0.5f + 1e-6f,
-                        "the shadow under a half-faded card must be at most half as strong as it was");
+        int drawn = -1;
+        for (int v = 0; v < canvas.vertexCount() && drawn < 0; v++) {
+            if (data[v * stride + rgba] == GREEN.r() && data[v * stride + rgba + 1] == GREEN.g()) {
+                drawn = v;
             }
         }
-        assertTrue(sawShadow, "the card is elevated, so a shadow should have been emitted at all");
+        assertTrue(drawn >= 0, "the card should have been drawn at all");
+        // The card's box is one element: its fill, then its shadow, every colour its record's own.
+        float[] values = Canvases.instance(canvas, drawn, 9);
+        float shadowAlpha = values[7];
+        assertTrue(shadowAlpha > 0f, "the card is card, so a shadow should have been drawn at all");
+        assertTrue(shadowAlpha <= 0.5f + 1e-6f,
+                "the shadow under a half-faded card must be at most half as strong as it was");
     }
 }

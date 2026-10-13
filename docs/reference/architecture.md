@@ -50,10 +50,11 @@ Verified against the current libraries.
 **VexelRay — rendering, text, runtime, window.**
 - *2D drawing (`vexelray-canvas`).* `Canvas(w,h)` immediate-mode: `fillRect`, `fillRoundRect`,
   `fillCircle`, `strokeLine`, `text(...)` (via `TextLayout`), `Color`. Everything batches into one fat
-  vertex stream drawn by one uber-shader that branches per primitive kind — **one analytic rounded-box
-  SDF, several transfer functions over its distance**: flat fill, soft shadow/glow (`shadowRoundRect`),
-  inside-edge stroke (`strokeRoundRect`), and an edge-lit fill with a vertical luminance gradient
-  (`litRoundRect`, two-sample emboss toward a fixed top-left light); glyphs are MSDF median +
+  vertex stream drawn by one uber-shader composed of shadelets, each element naming its look — **one
+  analytic rounded-box SDF, several painters over its distance**: flat fill, and through `box(..., look)`
+  the node painters a box is drawn with, its border a ring inside the edge, its fill (or an edge-lit fill
+  with a vertical luminance gradient, a two-sample emboss toward a fixed top-left light) and its soft
+  shadow, front to back in one quad (see supirvast's `docs/shadelets.md`); glyphs are MSDF median +
   per-vertex `screenPxRange`, with `textSunken` composing three glyph passes into letterpress text
   (a reduced px range *is* a soft edge). Corner radii are per vertical half — a tab is `(r, 0)`.
   Clipping is the same SDF as coverage (`pushClip`/`popClip`), so it antialiases and honours rounded

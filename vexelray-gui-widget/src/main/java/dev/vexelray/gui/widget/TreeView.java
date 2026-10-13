@@ -4,7 +4,9 @@ import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.IconSource;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.drop.Drop;
+import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.drop.DragState;
+import dev.vexelray.gui.core.drop.DragWatch;
 import dev.vexelray.gui.core.drop.DropEffect;
 import dev.vexelray.gui.core.drop.Payload;
 import dev.vexelray.gui.core.drop.PayloadType;
@@ -22,6 +24,7 @@ import dev.vexelray.gui.core.input.MenuItem;
 import dev.vexelray.gui.core.input.MenuSink;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.Rect;
+import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.gui.icons.Icon;
@@ -599,6 +602,8 @@ public final class TreeView<T> implements AutoCloseable {
     private volatile boolean painting;
     /** The drag subscription, opened by reorderable() and closed with the tree. */
     private Subscription dragSub;
+    /** The label that rides with the pointer while a row is carried; built at the first carry. Guarded by this. */
+    private Node carried;
 
     private volatile Consumer<T> onSelect = t -> { };
     private volatile Consumer<T> onActivate = t -> { };
@@ -878,6 +883,9 @@ public final class TreeView<T> implements AutoCloseable {
      * too quick to see cannot reorganise the tree. Escape cancels. All of that is the framework's, not this
      * widget's — {@link Gui#onDragSource} and {@link Gui#onDrop} are the whole of what is registered here.
      *
+     * <p>The tree draws the rest: a line or a box where the drop would land, and the row's label riding beside the
+     * pointer, wherever it is carried. An application draws neither (transfer.md §0).
+     *
      * <p><b>Every point in the tree resolves to a placement.</b> There is no dead space between rows, none at the
      * edges, and none below the last row — that space is "into the root", which is how an item is moved back to
      * the top level. A row that can hold children divides into three bands, an outer quarter each side for
@@ -917,7 +925,61 @@ public final class TreeView<T> implements AutoCloseable {
         // that changes underneath its paint. The State commits once per frame and only on change, so a pointer
         // held still over one seam costs nothing.
         this.dragSub = gui.drag().onCommit(v -> showDrop(v.value()));
+        // What is in the hand is the tree's to draw, as the indicator is: the tree knows what a row is called, and
+        // an application that had to build this itself would be rebuilding it in every application. Watched
+        // rather than read from the published drag, because it follows the pointer, and the published drag is a
+        // frame behind it (transfer.md §12.3).
+        gui.watchDrag(rows, new DragWatch() {
+            @Override
+            public void moved(DragState now) {
+                carry(now);
+            }
+
+            @Override
+            public void ended(DragState last, DropEffect performed) {
+                carry(DragState.NONE);
+            }
+        });
         return this;
+    }
+
+    /**
+     * Show, move or put away the label that rides with the pointer while one of this tree's rows is carried —
+     * wherever it is carried, the tree's own rows or any other target. It says what would happen as well as what
+     * is held: the accent while releasing would place it, danger where it would not.
+     *
+     * <p>Beside the hotspot rather than under it, so the label never hides what the pointer is aiming at; and by
+     * a distance in dp, which is fixed on screen and does not grow when the content is zoomed. Floating last on
+     * the root, put there at the first carry so it is over everything built before it; and hit-inert, because a
+     * thing under the pointer that the pointer could see would be a drop target on top of every drop target.
+     */
+    private void carry(DragState drag) {
+        T held = drag.active() ? drag.payload().as(itemType).orElse(null) : null;
+        Node label;
+        synchronized (this) {
+            if (held == null && carried == null) {
+                return;
+            }
+            if (carried == null) {
+                carried = gui.text("").width(Length.AUTO).height(Length.rem(2))
+                        .padding(Length.ZERO, Length.em(0.625f)).corner(Length.rem(0.4f))
+                        .textSize(Length.rem(0.9375f)).align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE)
+                        .lit(gui.theme().lit()).elevation(gui.theme().elevation(Relief.FLOATING))
+                        .hitInert(true).visible(false);
+                gui.root().append(carried);
+            }
+            label = carried;
+        }
+        if (held == null) {
+            label.visible(false);
+            return;
+        }
+        Theme theme = gui.theme();
+        float dpi = Math.max(0.0001f, gui.dpi().value());
+        label.text(source.label(held)).visible(true)
+                .floatAt(Length.dp(drag.x() / dpi + 14f), Length.dp(drag.y() / dpi + 12f))
+                .background(Color.withAlpha(theme.color(drag.accepts() ? Role.ACTION : Role.DANGER), 0.92f))
+                .textColor(theme.color(drag.accepts() ? Role.ON_ACTION : Role.ON_DANGER));
     }
 
     /**
@@ -1366,6 +1428,12 @@ public final class TreeView<T> implements AutoCloseable {
     public void close() {
         if (dragSub != null) {
             dragSub.close();
+        }
+        synchronized (this) {
+            if (carried != null) {
+                carried.remove();
+                carried = null;
+            }
         }
         FindBar bar = find;
         if (bar != null) {

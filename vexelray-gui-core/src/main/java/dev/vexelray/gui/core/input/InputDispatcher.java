@@ -525,6 +525,9 @@ public final class InputDispatcher {
         for (RetainedNode n = from; n != null; n = n.parent) {
             DragSource source = dragSources.get(n.id);
             if (source == null) {
+                if (ownsPointerDrag(n)) {
+                    break;   // a text field's drag is a selection, not a pickup of what it sits in
+                }
                 continue;
             }
             Payload payload = source.payloadAt(started.startX(), started.startY());
@@ -671,8 +674,22 @@ public final class InputDispatcher {
             if (dragSources.containsKey(n.id)) {
                 return true;
             }
+            if (ownsPointerDrag(n)) {
+                return false;
+            }
         }
         return false;
+    }
+
+    /**
+     * Whether a press on {@code n} is {@code n}'s to drag: it handles the pointer's travel itself, as a text field
+     * selecting, a slider sliding or a divider resizing does. Such a node stands between the press and any drag
+     * source above it — a card on a board is picked up by its face, not by the text field on it, whose drag is a
+     * selection. The same rule {@link #ancestorWithDragHandler} applies the other way round, where a node that
+     * answers clicks keeps a drag handler above it from capturing its press.
+     */
+    private boolean ownsPointerDrag(RetainedNode n) {
+        return dragHandlers.containsKey(n.id) || dragStages.containsKey(n.id);
     }
 
     /**

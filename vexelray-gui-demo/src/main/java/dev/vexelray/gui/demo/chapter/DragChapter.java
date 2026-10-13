@@ -11,7 +11,6 @@ import dev.vexelray.gui.core.edit.Change;
 import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.Rect;
-import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.gui.demo.Chapter;
@@ -28,10 +27,17 @@ import java.util.List;
  * Drag and drop, on something worth dragging: a project outline whose tasks are moved between columns, ordered
  * within one, promoted out to the top level, or dropped on a target that is not a tree at all.
  *
- * <p>The registration is two calls — {@code onDragSource} and {@code onDrop} — and everything that makes a drag
- * a drag comes from the framework: the travel-and-hold threshold that keeps an ordinary click an ordinary click,
- * the flick too quick to have been drawn committing nothing, Escape cancelling, the undo record, and the focus
- * move that keeps Ctrl+Z pointed at the history the drop wrote into.
+ * <p><b>The container is the drag.</b> Dragging is not something added to the rows; it is what a
+ * {@link TreeView} does once it is told what a placement means, the way a {@code Board} is in the Cards chapter.
+ * The container knows how its layout answers a drag — a tree draws a line between two rows and leaves them where
+ * they are; a board opens a gap and carries the card itself — so it registers the source and the target, draws the
+ * indicator and draws what is in the hand. This chapter writes none of that. It says what the tree shows, what a
+ * placement means, and when the model changed; the archive is the one thing here that is not a container, and so
+ * the one place this chapter registers a drop target of its own.
+ *
+ * <p>Under the container, the framework supplies what makes a drag a drag: the travel-and-hold threshold that keeps
+ * an ordinary click an ordinary click, the flick too quick to have been drawn committing nothing, Escape
+ * cancelling, the undo record, and the focus move that keeps Ctrl+Z pointed at the history the drop wrote into.
  *
  * <p><b>The split is the whole design.</b> A tree reads its hierarchy through a {@code Source}, so it can say
  * where a drop would land <em>in the tree's own terms</em> — before this row, into that branch, out to the root —
@@ -91,7 +97,6 @@ public final class DragChapter implements Chapter {
     private Gui gui;
     private Node archive;
     private Node archiveList;
-    private Node ghost;
     private Console console;
     private TreeView<Task> board;
 
@@ -214,51 +219,18 @@ public final class DragChapter implements Chapter {
                 .map(task -> task.parent == null ? Drop.NONE : Drop.move(rectOf(archive), archiving(task)))
                 .orElse(Drop.NONE));
 
-        // The ghost: a floating, hit-inert last child of the root, which is the framework's whole overlay story —
-        // no layer machinery, no z-order, no second tree. Hit-inert because a thing under the cursor that the
-        // pointer can see would be a drop target sitting on top of every drop target.
+        // Nothing here draws the task in the hand: the tree carries its own rows, wherever they are carried, the
+        // archive included — what a row looks like in flight is the tree's business, as the indicator between two
+        // rows is. What is the chapter's is the archive answering, so it lights while a task over it would land.
         //
-        // It is the application's, and it has to be: only the application knows what a payload looks like. What
-        // the framework supplies is the pointer position, published once per frame, and a place to put a node
-        // that is not in the flow.
-        ghost = gui.text("").width(Length.AUTO).height(Length.rem(2))
-                .padding(Length.ZERO, Length.em(0.625f))
-                .background(Color.withAlpha(theme.color(Role.ACTION), 0.92f))
-                .corner(Length.rem(0.4f)).textColor(theme.color(Role.ON_ACTION))
-                .textSize(Length.rem(0.9375f))
-                .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE)
-                .lit(theme.lit()).elevation(theme.elevation(Relief.FLOATING))
-                .hitInert(true)
-                .visible(false);
-        gui.root().append(ghost);
-
-        // Read from the *published* drag rather than the live session: the session is the framework's own state,
-        // mutated on the GUI thread inside the frame, and reading it from here would be reading a value that
-        // changes underneath the paint. The State commits once per frame and only on change, so a pointer held
-        // still costs nothing at all.
-        //
-        // The drag is the window's, not this chapter's: a card picked up in the Cards chapter is published here
-        // too. So the ghost draws only a drag whose payload is a task, and names the task from the payload itself
-        // rather than from a copy of whatever this chapter last saw being dragged.
+        // That is drawing *about* a drag, so it reads the published drag: once per frame, only on change, a frame
+        // behind the pointer, which nobody can see on a box lighting up. The drag is the window's, not this
+        // chapter's — a card picked up in the Cards chapter is published here too — so the archive lights only for
+        // a drag whose payload is one of the tree's tasks.
         gui.drag().onCommit(v -> {
             DragState drag = v.value();
-            Task held = drag.active() ? drag.payload().as(taskType).orElse(null) : null;
-            if (held == null) {
-                ghost.visible(false);
-                lightArchive(false, theme);
-                return;
-            }
-            // Offset from the hotspot so the label never sits under the cursor itself. dp, not rem: the ghost
-            // trails the pointer by a fixed distance on screen, which is not a quantity that should grow when
-            // the user zooms the content.
-            ghost.text(held.name).visible(true)
-                    .floatAt(Length.dp(drag.x() + 14f), Length.dp(drag.y() + 12f))
-                    // It says what would happen, not merely what is held: the framework has already asked every
-                    // target under the pointer, and the answer is in the same value that carries the position.
-                    .background(Color.withAlpha(
-                            theme.color(drag.accepts() ? Role.ACTION : Role.DANGER), 0.92f))
-                    .textColor(theme.color(drag.accepts() ? Role.ON_ACTION : Role.ON_DANGER));
-            lightArchive(over(archive, drag) && drag.accepts(), theme);
+            boolean task = drag.active() && drag.payload().as(taskType).isPresent();
+            lightArchive(task && over(archive, drag) && drag.accepts(), theme);
         });
 
         Node tools = Ui.strip(gui,

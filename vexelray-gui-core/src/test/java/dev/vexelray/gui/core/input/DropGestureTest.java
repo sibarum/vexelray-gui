@@ -336,4 +336,29 @@ class DropGestureTest {
         frame();
         assertEquals(List.of("row@20->60"), applied);
     }
+
+    @Test
+    @DisplayName("a node that drags for itself keeps its press from picking up the source it sits in")
+    void aNodeThatDragsForItselfOwnsItsPress() {
+        tree();
+        // A text field on a card: its drag is a selection, and the card is picked up anywhere else on it.
+        RetainedNode field = node(8, 0, 0, 200, 40);
+        field.parent = body;
+        body.children.add(field);
+        List<DragEvent.Phase> selecting = new ArrayList<>();
+        dispatcher.onDrag(8, e -> selecting.add(e.phase()));
+
+        press(20, 20);
+        move(20, 60, 0, 40);
+        frame();
+        assertNull(dispatcher.dragSession(), "the field's press is the field's");
+        assertFalse(selecting.isEmpty(), "and the field had it");
+        release(20, 60);
+        frame();
+
+        press(20, 100);
+        move(20, 140, 0, 40);
+        frame();
+        assertNotNull(dispatcher.dragSession(), "off the field, the card still comes up");
+    }
 }

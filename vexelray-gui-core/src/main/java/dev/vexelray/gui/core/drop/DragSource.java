@@ -18,6 +18,14 @@ package dev.vexelray.gui.core.drop;
  * <p>The point is where the press landed, not where the pointer is now. By the time this is called the pointer
  * has already travelled past the distance threshold, and a source that read the current position would pick up
  * whatever the pointer had wandered onto rather than the thing the user actually grabbed.
+ *
+ * <p>A node between the press and the source that handles the pointer's travel itself — a text field selecting, a
+ * slider, a divider — keeps the press, and the source is not asked: a card is picked up anywhere but its field.
+ *
+ * <p><b>Applications rarely write one.</b> This is a part containers are built from. To let the user reorder
+ * things, put them in the container whose layout answers a drag the right way — {@code TreeView.reorderable} for
+ * rows, {@code Board} with {@code Deck.reorderable} for cards — and it registers the source, the target, the
+ * indicator and what rides with the pointer. {@code docs/reference/transfer.md} §0 is that choice.
  */
 @FunctionalInterface
 public interface DragSource {

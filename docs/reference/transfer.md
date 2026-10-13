@@ -12,6 +12,50 @@ are `Board`/`Deck`, and §12.
 
 ---
 
+## 0. Start here: the container is the drag
+
+An application does not make things draggable. It puts them in a **container** that knows how its layout
+answers a drag, and tells the container three things: what an item looks like, what putting one somewhere means,
+and what the items now are. Everything else — the press that becomes a drag, what rides with the pointer, where
+the drop would land and how that is shown, the drop, Escape, undo, the keyboard moves — is the container's.
+
+The split falls there because the same gesture means different things in different layouts. In a tree the row
+stays where it is and a line points between two others; in a stack the card comes away in the hand and the stack
+opens a gap for it; in a grid the gap reflows across a line break; on an open stage there is no slot at all. The
+items do not change between those, and the layout's response is all that does — so the layout owns it.
+
+| What the user moves | Container | The application writes | In the gallery |
+|---|---|---|---|
+| Rows of a hierarchy, between and into one another | `TreeView.reorderable(Reorder)` | a `Source`; a `Reorder` returning a `Change`; `refresh()` after each change | Drag & drop |
+| Cards in a stack, or between stacks | `Board` + `Deck.reorderable(Reorder)` | the card's node; a `Reorder`; `deck.items(list)` after each change | Cards |
+| An item onto something that is not a container | `gui.onDrop` on that thing, reading the container's `itemType()` | the `Drop`; lighting it from `gui.drag()` | Drag & drop's archive |
+
+**The reorder is a question, and the change is a value.** A `Reorder` is asked once a frame while the pointer
+moves, returns the `Change` a drop there would make or null to refuse, and nothing is applied until the release;
+the GUI's `dropHistory` performs it, so it undoes. The change ends by handing the container the new model — the
+same step undo takes, which is why a drop, an undo and any other edit all move alike. An item has to stay *equal
+to itself* across that: a `Board` matches items by `equals` to know which card is which, so an item whose
+equality changes when the user edits it (a record with a label in it, say) is a different card after the edit,
+and its node is rebuilt under the user's hands. Give items an identity.
+
+**What not to write**, each of which an application has done and each of which the container already does:
+
+- **Something that follows the pointer.** What is in the hand is the container's: `TreeView` carries the row's
+  label, `Board` carries the card itself, held where it was grabbed. An application that draws its own reads the
+  pointer from the published drag, which is a frame behind it (§12.3), converts client px to dp by hand, and has
+  to remember to be hit-inert and last on the root.
+- **Its own drop indicator, or seams between items.** Where a drop would land comes from the resolution that
+  produced the change (§3); the container draws it there.
+- **`onDragSource` on items inside a container.** The container is the source. A node that drags for itself —
+  a text field selecting, a slider, a divider — keeps its press from any source above it, so a card with a text
+  field on it is picked up anywhere but the field.
+
+`gui.onDragSource`, `gui.onDrop` and `gui.watchDrag` are the parts containers are built from. Reaching for them in
+application code means writing a container: a layout none of the above answers for — a grid, free placement. Do
+it as a widget, on the same parts, so the next application gets it by name.
+
+---
+
 ## 1. The invariant
 
 **What the user is shown is what will happen, and nothing happens that the user was not shown.**
@@ -177,10 +221,18 @@ It is published **after displacement**, so the indicator and the rows it sits be
 step, and **on change only**, so a pointer held still over one seam costs nothing.
 
 It carries the **payload**, because it is published to the whole window and a reader has to be able to tell whose
-drag it is. A ghost that names what is in the hand asks `drag.payload().as(type)` and draws nothing for a drag it
-cannot read. Before the payload was published, the gallery's Drag chapter drew its task label over every drag in
-the window, cards from the Cards chapter included, naming the last task it had seen. A reader that has to keep its
+drag it is. A target that lights for a task asks `drag.payload().as(type)` and stays dark for a drag it cannot
+read. Before the payload was published, the gallery's Drag chapter drew its task label over every drag in the
+window, cards from the Cards chapter included, naming the last task it had seen. A reader that has to keep its
 own copy of "what is being dragged" will show a stale one as soon as a different source starts a drag.
+
+The published drag is for drawing **about** a drag — an indicator, a target lighting up — where a frame of lag is
+invisible. It is the wrong source for drawing **what is in the hand**, which follows the pointer and shows the
+lag as a trail; that is drawn from `gui.watchDrag`, in the frame the pointer moved (§12.3), and it is the
+container's, not the application's (§0). `TreeView` carries a label naming the row, beside the hotspot and coloured
+by whether releasing would place it; `Board` carries the card. The Drag chapter used to draw that label itself,
+from the published drag, a frame late and in px where it wanted dp — which put it at one and a half times the
+pointer's position on a 150% display. Every application that copied it would have had both.
 
 `DropIndicator` is told the rectangle and decides only the appearance. Where it goes is not negotiable — it comes
 from the same resolution that produced the change. Which *kind* of drop it is comes from the geometry rather than
@@ -241,6 +293,7 @@ singular and lives in the GUI.** Adding a source should touch nothing in `DropTa
 | A cancel keeps the redo stack | `DragSessionTest.cancellingRecordsNothingAndKeepsRedo` |
 | Escape is not also a claim | `DropGestureTest.escapeDuringADragIsNotAlsoAClaim` |
 | Focus follows the drop | `DropGestureTest.dropMovesFocus` |
+| A node that drags for itself is not a handle | `DropGestureTest.aNodeThatDragsForItselfOwnsItsPress` |
 | No dead pixels over the rows | `TreeReorderTest.thereAreNoDeadPixels` |
 | Displacement never accumulates | `DisplacementTest.displacingTwiceWithoutARelayoutIsTheSameAsDisplacingOnce` |
 | An interrupted transition does not snap | `TransitionsTest.interruptionIsContinuous` |

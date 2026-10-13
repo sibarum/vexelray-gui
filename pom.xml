@@ -6,7 +6,7 @@
 
     <groupId>dev.vexelray.gui</groupId>
     <artifactId>vexelray-gui</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
     <packaging>pom</packaging>
 
     <name>vexelray-gui</name>
@@ -70,21 +70,21 @@
 
         <!-- VexelRay: the Vulkan engine we build on. Installed to the local .m2 by `mvn install` in the
              sibling vexelray repo (which in turn requires SupirVast installed first). -->
-        <vexelray.version>0.1.0-SNAPSHOT</vexelray.version>
+        <vexelray.version>0.1.0</vexelray.version>
         <!-- SupirVast: transitive via VexelRay; pinned for any incidental direct use. Must match vexelray's own
              supirvast.version: this pin is in dependencyManagement, so it wins over the transitive one here. -->
-        <supirvast.version>0.2.0-SNAPSHOT</supirvast.version>
+        <supirvast.version>0.2.0</supirvast.version>
         <!-- Atchung: the message bus the model + threading are built on (core to -core). -->
-        <atchung.version>1.0-SNAPSHOT</atchung.version>
+        <atchung.version>1.0</atchung.version>
         <!-- Tactroller: keyboard/mouse/pointer/clipboard input, delivered as Atchung traffic. Enters at
              the application edge (the demo), not in -core. -->
-        <tactroller.version>1.0-SNAPSHOT</tactroller.version>
+        <tactroller.version>1.0</tactroller.version>
         <!-- Kronometer: logical time, rate domains, the signal graph. Application edge only. -->
-        <kronometer.version>1.0-SNAPSHOT</kronometer.version>
+        <kronometer.version>1.0</kronometer.version>
         <!-- imagelib: Panama bindings over one C ABI for every image format (PNG/JPEG/GIF/WebP/... and SVG).
              Application edge only, and deliberately: decoding is not this framework's business, and no module
              here names a format. The demo depends on it to show what GuiApp.texture is for. -->
-        <imagelib.version>0.1.0-SNAPSHOT</imagelib.version>
+        <imagelib.version>0.1.0</imagelib.version>
         <joml.version>1.10.7</joml.version>
         <junit.version>5.11.4</junit.version>
         <!-- ASM: bytecode reading for the architecture guard only (test scope, one module). -->
@@ -97,7 +97,7 @@
             <dependency>
                 <groupId>sibarum.atchung</groupId>
                 <artifactId>atchung-probe</artifactId>
-                <version>1.0-SNAPSHOT</version>
+                <version>1.0</version>
             </dependency>
             <!-- Reactor-internal modules: children reference these without a version. -->
             <dependency>

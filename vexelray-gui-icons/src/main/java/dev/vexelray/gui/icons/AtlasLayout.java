@@ -9,7 +9,7 @@ import dev.vexelray.gui.core.ImageRegion;
 final class AtlasLayout {
 
     static final int WIDTH = 1152;
-    static final int HEIGHT = 1464;
+    static final int HEIGHT = 1536;
     static final int LARGE_INNER = 64;
     static final int LARGE_SPREAD = 16;
     static final int SMALL_INNER = 48;

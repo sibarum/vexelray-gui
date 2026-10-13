@@ -2,7 +2,12 @@
   Captures all 16 demo chapters into <OutDir>, then, given -Baseline, diffs them against it with CaptureDiff.
   Build first: mvn -q install (the demo's target\classes and the harness jar must exist).
 
-    .\capture-chapters.ps1 target\capture-check -Baseline baseline-shadelets [-Tolerance 0]
+  A change to how things are drawn is checked against a baseline taken from the code before it, not one kept in the
+  repository: capture settles, so the same commit captures the same pictures every time, and a kept baseline would go
+  stale with every change meant to move a pixel.
+
+    .\capture-chapters.ps1 target\before                       # on the commit before the change
+    .\capture-chapters.ps1 target\after -Baseline target\before [-Tolerance 0]
 #>
 param(
     [Parameter(Mandatory = $true)][string]$OutDir,

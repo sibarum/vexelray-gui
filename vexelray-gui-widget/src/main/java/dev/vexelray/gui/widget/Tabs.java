@@ -247,7 +247,13 @@ public final class Tabs {
                 // A horizontal scroller, so a bar with more headers than width still has every header somewhere
                 // it can be brought to: select() reveals the one it lands on, and the scrollbar that overflow
                 // shows is the pointer's way to the rest. Never vertical -- the bar is one row tall by design.
-                .scroll(true, false);
+                .scroll(true, false)
+                // And an edge whether or not it overflows. A scroller clips only while its content overflows, so a
+                // bar of a few short headers clipped nothing, and a focused header's ring was judged against the
+                // window instead: outset over the title bar and the page for a header in the middle, inside for one
+                // against the window's edge. Clipped, every header's ring is judged against the bar the headers
+                // fill, and comes inside the same way for all of them, overflowing or not.
+                .clip(true);
         // The content area is a surface, not a hole. Two reasons, and they arrived independently.
         //
         // It looks right: the bar and the area under it are one piece of chrome framing the content, so a page

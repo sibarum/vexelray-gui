@@ -18,7 +18,8 @@ is theirs — if the right fix is in tactroller, change tactroller. A cross-repo
 | **atchung** | The typed bus: topics and versioned `State<T>`. Input in, mutations through. |
 | **supirvast** | `vastir` — the expression IR the engine's shaders are authored in. |
 | **kronometer** | Timing and animation, wrapped here as `vexelray-gui-krono`. |
-| **mainframe**, **vexplore**, **vexelray-sim-fluid**, **calculator-vexel-demo** | Applications built on this framework, all through `vexelray-framework`. They are where a renderer or a technique lives when it is the consumer's rather than the framework's. `vexelray-designer` is still on disk but is not kept compiling. `text-editor-vexel-demo` is deliberately empty. |
+| **vexplore**, **text-editor-vexel-demo** (Vex), **Pix**, **calculator-vexel-demo**, **vexelray-sim-fluid**, **vexelray-sim-rigid** | Applications built on this framework, all through `vexelray-framework`. They are where a renderer or a technique lives when it is the consumer's rather than the framework's. `vexelray-designer` is still on disk but is not kept compiling. |
+| **mainframe** | A terminal, built on this repo's modules directly rather than through `vexelray-framework`. |
 
 ## Drawing something: pick the lane before writing code
 
@@ -65,10 +66,11 @@ the engine's `Surface`, and renders as enclosure boxes for the reasons in
 
 ## Building
 
-Siblings install in dependency order, then this repo:
+Siblings install in dependency order, then this repo (`imagelib-wrapper` needs `./native/build.sh` run once
+first, with a Rust toolchain; `vexelray-framework/docs/getting-started.md` §2 is the full walk-through):
 
 ```bash
-cd ../supirvast && mvn install && cd ../vexelray && mvn install && cd ../tactroller && mvn install && cd ../vexelray-gui && mvn install
+for r in intrabuf atchung supirvast dxgi-bridge kronometer tactroller vexelray imagelib-wrapper vexelray-gui; do (cd ../$r && mvn install) || break; done
 ```
 
 The interactive showcase, and the headless capture that works without an input backend:

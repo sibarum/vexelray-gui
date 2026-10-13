@@ -47,7 +47,7 @@ When the art changes (drawn on the canvas, extracted into `vexelray-icons`, as t
 `vexelray-icons`:
 
 ```
-java --enable-native-access=ALL-UNNAMED -cp "<imagelib-wrapper jar>;<vexelray-canvas jar>" tools/Bake.java . ../vexelray-gui/vexelray-gui-icons
+java --enable-native-access=ALL-UNNAMED -cp "<imagelib-wrapper jar>;<vexelray-canvas jar>" tools/Bake.java . ../vexelray-gui
 ```
 
 It rewrites `src/main/resources/dev/vexelray/gui/icons/icons.rgba`, `Icon.java` and `AtlasLayout.java` here, and

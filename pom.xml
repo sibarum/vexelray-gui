@@ -29,6 +29,9 @@
         <!-- The suite's icons: every drawing in vexelray-icons baked into one atlas of distance fields, and the Icon
              enum that names them. On core only, so widgets can wear them. See vexelray-gui-icons/README.md. -->
         <module>vexelray-gui-icons</module>
+        <!-- The file-type families: their sheets and emblems in an atlas of their own, for the one kind of
+             application that draws them (a file browser). On core only. See vexelray-gui-file-icons/README.md. -->
+        <module>vexelray-gui-file-icons</module>
         <!-- Widgets built on core: box, text, button, slider, list, scroll, text field, ... -->
         <module>vexelray-gui-widget</module>
         <!-- The GUI's one native binding: a Panama nativefiledialog-extended facade. -->
@@ -110,6 +113,11 @@
             <dependency>
                 <groupId>dev.vexelray.gui</groupId>
                 <artifactId>vexelray-gui-icons</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.vexelray.gui</groupId>
+                <artifactId>vexelray-gui-file-icons</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

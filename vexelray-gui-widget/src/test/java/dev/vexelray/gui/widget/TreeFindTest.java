@@ -50,6 +50,21 @@ class TreeFindTest {
         }
     }
 
+    /** Searching is a feature a tree is given: without {@code searchable(true)}, Ctrl+F builds and opens nothing. */
+    @Test
+    void aTreeThatIsNotSearchableHasNoBar() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TreeView<String> tree = new TreeView<>(h.gui, new MapSource());
+            h.gui.root().children(tree.node());
+            h.frame();
+            tree.focus();
+            h.chord(Key.F, Key.LEFT_CONTROL);
+            h.frame();
+            assertEquals(1, h.retained(tree.node()).children.size(), "only the rows: no bar was ever built");
+            tree.close();
+        }
+    }
+
     /** The whole gesture: the chord opens the bar, and what is typed into it moves the tree. */
     @Test
     void ctrlFOpensTheBarAndTypingRevealsTheFirstMatch() {
@@ -199,7 +214,7 @@ class TreeFindTest {
     }
 
     private static TreeView<String> tree(HeadlessGui h, MapSource source) {
-        TreeView<String> tree = new TreeView<>(h.gui, source);
+        TreeView<String> tree = new TreeView<>(h.gui, source).searchable(true);
         h.gui.root().children(tree.node());
         h.frame();
         return tree;

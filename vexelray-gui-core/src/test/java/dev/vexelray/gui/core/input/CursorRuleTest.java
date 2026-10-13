@@ -156,6 +156,31 @@ class CursorRuleTest {
         assertEquals(CursorShape.GRAB, h.at(root, 95, 50), "over its scrollbar");
     }
 
+    /**
+     * A float painted over its parent's scrollbar strip is what is under the pointer there: a button on it reads
+     * as a button, and a press clicks it rather than paging the scroller beneath.
+     */
+    @Test
+    void aFloatOverTheStripIsHitBeforeTheScrollbar() {
+        Harness h = harness();
+        RetainedNode root = scroller();
+        RetainedNode bar = box(1, 0, 0, 100, 20);
+        bar.set(PropKey.FLOAT_X, dev.vexelray.gui.core.layout.Length.ZERO);
+        bar.set(PropKey.FLOAT_Y, dev.vexelray.gui.core.layout.Length.ZERO);
+        RetainedNode exit = box(2, 85, 0, 15, 20);   // over the strip, which runs x 90..100
+        attach(root, bar);
+        attach(bar, exit);
+        int[] clicks = {0};
+        h.dispatcher().onClick(2, () -> clicks[0]++);
+
+        assertEquals(CursorShape.POINTER, h.at(root, 95, 10), "the button, not the strip it covers");
+        h.press(root, 95, 10);
+        h.release(root, 95, 10);
+        assertEquals(1, clicks[0], "and the press clicked it");
+        assertEquals(0f, root.scrollY, 0.01f, "rather than paging the scroller");
+        assertEquals(CursorShape.GRAB, h.at(root, 95, 50), "below the float, the strip is the strip again");
+    }
+
     /** Grabbing outranks grabbable, and holds while the pointer wanders — the capture is still driving it. */
     @Test
     void grabbingAScrollbarClosesTheHandUntilRelease() {

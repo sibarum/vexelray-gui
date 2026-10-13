@@ -11,6 +11,7 @@ import dev.vexelray.gui.icons.Icon;
 import dev.vexelray.gui.icons.IconView;
 import dev.vexelray.text.TextLayout;
 import sibarum.tactroller.api.Key;
+import sibarum.atchung.Subscription;
 import sibarum.tactroller.api.Modifier;
 
 import java.util.function.Supplier;
@@ -60,11 +61,16 @@ final class FindBar implements AutoCloseable {
         /** Step to the answer before the current one, wrapping past the first. */
         void previous(String query);
 
-        /** The bar is away: stop showing whatever the search was showing, and take the keyboard back. */
+        /**
+         * The bar is away: stop showing whatever the search was showing. The bar itself decides where the keyboard
+         * goes — back to the owner when it was put away, wherever it already went when it was left.
+         */
         void closed();
     }
 
     private final Gui gui;
+    private final Node owner;
+    private final Subscription focusSub;
     private final Node bar;
     private final TextField field;
     private final Node statusLine;
@@ -79,9 +85,13 @@ final class FindBar implements AutoCloseable {
     /** The status last written, for the same reason: so writing it again can be skipped. */
     private volatile String reported = "";
 
-    /** Build a bar, shut, over {@code search}. The owner places {@link #node()} and opens it with {@link #openOn}. */
-    FindBar(Gui gui, Search search) {
+    /**
+     * Build a bar, shut, searching {@code owner} through {@code search}. The owner places {@link #node()} and
+     * opens it with {@link #openOn} or {@link #open}.
+     */
+    FindBar(Gui gui, Node owner, Search search) {
         this.gui = gui;
+        this.owner = owner;
         this.search = search;
         this.field = new TextField(gui);
         this.field.node().width(Length.grow(1)).height(Length.rem(2f));
@@ -132,15 +142,18 @@ final class FindBar implements AutoCloseable {
         // Ctrl+F again, with the caret already in the bar, selects the query rather than opening a second bar:
         // the chord means "search for something", and the something you would type replaces what is there.
         gui.claim(field.node(), FIND, ClaimScope.FOCUSED, () -> field.select(0, field.text().length()));
+        // A bar belongs to the conversation between its owner and its query: focus anywhere else is the user
+        // having left both, and a bar left up over a field nobody is in is chrome covering text for no one.
+        this.focusSub = gui.bus().subscribe(gui.focusEvents(), e -> left());
     }
 
     /**
-     * Open this bar with Ctrl+F while {@code owner} holds focus, seeded with whatever {@code seed} supplies.
+     * Open this bar with Ctrl+F while the owner holds focus, seeded with whatever {@code seed} supplies.
      *
      * <p>{@link ClaimScope#FOCUSED}, so the chord belongs to the owner only while the owner is the thing being
      * keyboarded — an application's own Ctrl+F keeps working everywhere else, and this outranks nothing.
      */
-    FindBar openOn(Node owner, Supplier<String> seed) {
+    FindBar openOn(Supplier<String> seed) {
         gui.claim(owner, FIND, ClaimScope.FOCUSED, () -> open(seed == null ? "" : seed.get()));
         return this;
     }
@@ -207,18 +220,41 @@ final class FindBar implements AutoCloseable {
      */
     void open(String seed) {
         status("");
-        field.text(seed == null ? "" : seed);
-        shown = true;
+        shown = true;   // before the seed, whose search is the first an open bar answers
         toggled.visible(true);
+        field.text(seed == null ? "" : seed);
         gui.focus(field.node());
     }
 
-    /** Shut the bar and tell the owner, which is what gets the keyboard back to the thing being searched. */
+    /** Shut the bar, tell the owner, and give the keyboard back to the thing being searched. */
     void dismiss() {
+        if (hide()) {
+            gui.focus(owner);
+        }
+    }
+
+    /**
+     * Focus moved: shut the bar if it went somewhere that is neither the owner nor the query — leaving the
+     * keyboard where it went. Read from the focus as it stands rather than from the event, so the two halves of
+     * one move, and a move that has since been overtaken, all ask the same question and get the same answer.
+     */
+    private void left() {
+        long now = gui.focusState().nodeId();
+        if (shown && now != owner.id() && now != field.node().id()) {
+            hide();
+        }
+    }
+
+    /** Put the bar away and tell the owner, once: false when it was already away. */
+    private synchronized boolean hide() {
+        if (!shown) {
+            return false;
+        }
         shown = false;
         toggled.visible(false);
         status("");
         search.closed();
+        return true;
     }
 
     /**
@@ -239,6 +275,7 @@ final class FindBar implements AutoCloseable {
     /** Release the query field (and with it every claim registered on it). The strip goes with its owner's tree. */
     @Override
     public void close() {
+        focusSub.close();
         field.close();
     }
 }

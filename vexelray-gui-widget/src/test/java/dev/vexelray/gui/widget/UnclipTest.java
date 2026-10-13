@@ -171,4 +171,44 @@ class UnclipTest {
             assertFalse(amount(h, p.name()) > 0f, "and ends with the name back under its clip");
         }
     }
+
+    /**
+     * A window has one reveal, and the widgets that reveal use it: a fade given once reaches a tree's names and a
+     * table's cells alike, with nothing to remember per widget.
+     */
+    @Test
+    void theWidgetsThatRevealShareTheWindowsOne() {
+        try (HeadlessGui h = new HeadlessGui(); HeadlessGui other = new HeadlessGui()) {
+            Unclip window = Unclip.of(h.gui);
+            assertTrue(window == Unclip.of(h.gui), "asked twice, the same one");
+            assertFalse(window == Unclip.of(other.gui), "and every window its own");
+
+            TreeView<String> tree = new TreeView<>(h.gui, new TreeView.Source<String>() {
+                @Override
+                public List<String> roots() {
+                    return List.of("a");
+                }
+
+                @Override
+                public String label(String item) {
+                    return item;
+                }
+
+                @Override
+                public boolean hasChildren(String item) {
+                    return false;
+                }
+
+                @Override
+                public List<String> children(String item) {
+                    return List.of();
+                }
+            });
+            Table<String> table = new Table<>(h.gui, 2f, List.of(Table.Column.of("Name", Length.grow(1),
+                    (g, s) -> g.text(s))));
+            assertTrue(tree.unclip() == window, "the tree's is the window's");
+            assertTrue(table.unclip() == window, "and so is the table's");
+            tree.close();
+        }
+    }
 }

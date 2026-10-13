@@ -251,6 +251,13 @@ public enum PropKey {
     FLOAT_X(true),
     FLOAT_Y(true),
     /**
+     * Whether a floating node keeps its parent's content out from under it: the parent's viewport — where its
+     * content is placed and its scrollbars are drawn — starts below the docked node's bottom edge. Meaningless on
+     * an in-flow node, which already takes its own space. What a find bar over a field is: chrome that floats,
+     * so it reflows no wrapped text and needs no wrapper, but that does not cover the first line either.
+     */
+    DOCK(true),
+    /**
      * Pointer transparency: a hit-inert node (and its whole subtree) is never a pointer target — hit-testing
      * passes straight through it to whatever lies beneath. This is what lets an overlay be informational rather
      * than interactive: a tooltip floats over a button without ever becoming the thing under the pointer, so

@@ -94,9 +94,8 @@ public final class TreeChapter implements Chapter {
         files.motion((progress, done) -> stage.krono().ramp(Dur.ms(200), Ease.OUT_CUBIC, progress, done));
 
         // A name the tree is too narrow for is shown whole while its row is hovered — in place, over the pane
-        // beside the tree, and never the thing under the pointer there. Quick, because it is the name itself and
-        // not help arriving: anything slower reads as a popup.
-        files.unclip().motion((progress, done) -> stage.krono().ramp(Dur.ms(90), Ease.OUT_CUBIC, progress, done));
+        // beside the tree, and never the thing under the pointer there. It fades as every reveal in the window
+        // does: see Demo, where the window's reveal is given its motion.
 
         // Ctrl+F with the tree focused opens its find bar; typing walks the real directory tree, fetching as it
         // goes, stopping at the first match and opening only the path to it. Nothing here wires that up. The one
@@ -138,6 +137,8 @@ public final class TreeChapter implements Chapter {
                 })
                 .separator()
                 .item(Icon.INFO, "Properties", () -> console.note("properties: " + path)));
+
+        files.searchable(true);   // Ctrl+F: the find bar, which a tree has only when it asks for one
 
         // Checkboxes, with a staging area's policy: ticking a folder ticks everything under it, and a folder
         // whose contents are partly ticked reads MIXED. None of that is in the widget — it is all in the two

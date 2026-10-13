@@ -283,6 +283,8 @@ public final class InputDispatcher {
     private boolean swallowRightRelease;
     /** The wheel, as motion. */
     private final ScrollGlide glide = new ScrollGlide();
+    /** The focus ring, fading between the node focus left and the one it reached. */
+    private final FocusFade ringFade = new FocusFade();
     /** A glided container re-decides its scroll lock by where it is heading; one instance, not one per frame. */
     private final Consumer<RetainedNode> relock = n -> refreshScrollLock(n, glide.targetY(n));
     /** Where the host puts the pointer when the GUI asks; nothing moves until one is installed. */
@@ -876,6 +878,15 @@ public final class InputDispatcher {
     }
 
     /**
+     * Fade the focus ring in and out over {@code nanos}; zero (the default) shows and hides it at once. See
+     * {@link FocusFade}.
+     */
+    public void focusFade(long nanos) {
+        ringFade.duration(nanos);
+        focusStateSink.run();
+    }
+
+    /**
      * Declare that a drag captured by {@code nodeId} should hold the pointer for its duration — the pointer is
      * locked on {@code START} and released on {@code END}.
      *
@@ -989,6 +1000,10 @@ public final class InputDispatcher {
         // offset written here is the one this frame is drawn at. Each step owes the next frame until it arrives.
         if (glide.step(System.nanoTime(), relock)) {
             requestLayout.run();
+        }
+        // A fading ring edits no prop, so it asks for its frames the way a focus move does.
+        if (ringFade.step(System.nanoTime())) {
+            focusStateSink.run();
         }
         settleDragSession();
         showArmed();
@@ -1425,6 +1440,7 @@ public final class InputDispatcher {
             return;
         }
         long old = focusedId;
+        ringFade.moved(old, focusCause, id);
         focusedId = id;
         focusCause = cause;
         focusStateSink.run();
@@ -1443,7 +1459,7 @@ public final class InputDispatcher {
      * draw the focus ring, as one value it is handed rather than an object it reaches into.
      */
     public FocusState focusState() {
-        return new FocusState(focusedId, focusCause, windowActive);
+        return ringFade.applyTo(focusedId, focusCause, windowActive);
     }
 
     /** Nearest focusable ancestor-or-self of {@code hit}, or {@code null}. */
@@ -1464,9 +1480,14 @@ public final class InputDispatcher {
      * out of, so a press there addresses the bar and nothing else — previously only the thumb was claimed and a
      * press on the track fell through to whatever lay beneath, which in a text field meant the caret jumped to
      * the end of the document because the point mapped past the last line.
+     *
+     * <p>The walk stops at a floating node. A float paints over its parent, strips included, and is hit before
+     * it — so a press on a float is a press on the float, even where the parent's scrollbar lies beneath. Walking
+     * on past it gave the press to a bar the float was covering: the × at the end of a field's find bar, laid
+     * over the field's scrollbar, could not be clicked.
      */
     private boolean grabScrollbar(RetainedNode hit, float x, float y) {
-        for (RetainedNode n = hit; n != null; n = n.parent) {
+        for (RetainedNode n = hit; n != null; n = n.floating() ? null : n.parent) {
             if (n.overflowY && inStripV(n, x, y)) {
                 float[] thumb = n.vThumbRect();
                 if (inRect(thumb, x, y)) {
@@ -1640,8 +1661,8 @@ public final class InputDispatcher {
             }
         }
         // A scrollbar under the pointer is grabbable -- framework chrome, so the framework knows it without
-        // anyone declaring anything.
-        for (RetainedNode n = hoverHit; n != null; n = n.parent) {
+        // anyone declaring anything. Not an ancestor's past a float, which paints over that ancestor's strips.
+        for (RetainedNode n = hoverHit; n != null; n = n.floating() ? null : n.parent) {
             if ((n.overflowY && inStripV(n, pointerX, pointerY)) || (n.overflowX && inStripH(n, pointerX, pointerY))) {
                 return CursorShape.GRAB;
             }

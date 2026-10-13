@@ -68,8 +68,9 @@ import java.util.function.Predicate;
  * as ordered stages on the GUI thread against a widget-side flattened list of visible rows — pure model work,
  * recomputed only when the set of visible rows actually changes.
  *
- * <p><b>Ctrl+F searches the hierarchy, not the rows on screen.</b> The chord opens a {@link FindBar} at the top of
- * the tree (hidden until then, and no part of the layout or the Tab order while it is); typing searches from the
+ * <p><b>Ctrl+F searches the hierarchy, not the rows on screen</b> — in a tree that is {@link #searchable}. The
+ * chord opens a {@link FindBar} at the top of the tree (hidden until then, and no part of the layout or the Tab
+ * order while it is); typing searches from the
  * top, Enter steps to the next match and Shift+Enter to the previous one, wrapping either way. A tree is searched
  * by walking it, and walking a lazy one means fetching it — so a forward search stops at the first match, opens
  * only the path to it, and is an action like any other, which is what lets the next keystroke overtake the one
@@ -627,8 +628,11 @@ public final class TreeView<T> implements AutoCloseable {
     /** What the application added, in the order it added it. Read on every right click, written at build time. */
     private final List<Action<T>> extraActions = new CopyOnWriteArrayList<>();
 
-    /** The find bar: hidden until Ctrl+F, and no part of the layout or the Tab order until it is up. */
-    private final FindBar find;
+    /**
+     * The find bar: null until {@link #searchable} first asks for one, then hidden until Ctrl+F, and no part of
+     * the layout or the Tab order until it is up.
+     */
+    private volatile FindBar find;
 
     /**
      * Shows the label of a hovered row whole, where it already is, when the row cuts it off — drawn over whatever
@@ -679,7 +683,8 @@ public final class TreeView<T> implements AutoCloseable {
                 .scroll(false, false);
         this.rows = gui.column().width(Length.FILL).height(Length.FILL);
         this.dropIndicator = DropIndicator.of(gui.theme().color(Role.ACCENT));
-        this.unclip = new Unclip(gui);   // before any row: every row attaches to it as it is built
+        // The window's reveal, so it fades as every other one does. Before any row: each attaches as it is built.
+        this.unclip = Unclip.of(gui);
 
         // Navigation is an ordered stage: moving a cursor is order-dependent under key repeat, and it is pure
         // lookups on the visible list — exactly what the GUI-thread lane is for. Registering it also makes the
@@ -691,12 +696,9 @@ public final class TreeView<T> implements AutoCloseable {
         gui.claim(this.root, COPY, ClaimScope.FOCUSED, () -> take(selectedItem(), DropEffect.COPY));
         gui.claim(this.root, PASTE, ClaimScope.FOCUSED, () -> paste(selectedItem()));
 
-        // The find bar, built shut, above the scroller rather than inside it: it takes its strip from the rows'
-        // box, so opening it moves the rows down and scrolling them moves nothing of it. Ctrl+F opens it seeded
-        // with nothing — a tree has no text to have selected, so the chord can only mean "start".
+        // No find bar until searchable(true) asks for one: a tree nobody searches carries nothing for it.
         this.matcher = (item, query) -> source.label(item).toLowerCase().contains(query.toLowerCase());
-        this.find = new FindBar(gui, new Finder()).openOn(this.root, () -> "");
-        root.children(find.node(), rows);
+        root.children(rows);
 
         synchronized (this) {
             for (T item : source.roots()) {
@@ -1101,21 +1103,58 @@ public final class TreeView<T> implements AutoCloseable {
     }
 
     /**
-     * How a cut-off name is shown whole while its row is hovered — for the application to give it a fade:
-     * {@code tree.unclip().motion((p, done) -> krono.ramp(Dur.ms(90), Ease.OUT_CUBIC, p, done))}. It snaps without.
+     * How a cut-off name is shown whole while its row is hovered: the window's {@link Unclip#of reveal}, so a fade
+     * given to it — {@code Unclip.of(gui).motion(...)}, where the clock is attached — is given to every reveal in
+     * the window, this one included. It snaps without.
      */
     public Unclip unclip() {
         return unclip;
     }
 
+    /**
+     * Let Ctrl+F search the tree, or stop it. Off by default: the bar is a feature an application chooses, the
+     * way a field chooses it by being {@link TextField#multiline multiline}.
+     *
+     * <p>The bar is built on the first {@code true} and kept, shut, across a {@code false} — so turning it off
+     * and on again is a claim released and made again, and a bar that was up when the tree stopped being
+     * searchable is put away rather than left over the rows.
+     */
+    public TreeView<T> searchable(boolean on) {
+        if (on) {
+            FindBar bar = built();
+            // Seeded with nothing — a tree has no text to have selected, so the chord can only mean "start".
+            bar.openOn(() -> "");
+        } else {
+            gui.releaseClaim(root, FindBar.FIND);
+            FindBar bar = find;
+            if (bar != null && bar.isOpen()) {
+                bar.dismiss();
+            }
+        }
+        return this;
+    }
+
+    /**
+     * The bar, built on the first ask: shut, above the scroller rather than inside it — it takes its strip from
+     * the rows' box, so opening it moves the rows down and scrolling them moves nothing of it.
+     */
+    private synchronized FindBar built() {
+        if (find == null) {
+            FindBar bar = new FindBar(gui, root, new Finder());
+            root.insert(bar.node(), 0);
+            find = bar;
+        }
+        return find;
+    }
+
     /** The find bar's strip — package-private, so a test can read whether the user can see it. */
     Node findBar() {
-        return find.node();
+        return built().node();
     }
 
     /** The find bar's status line — package-private, so a test can read what it says about the last search. */
     Node findStatus() {
-        return find.statusNode();
+        return built().statusNode();
     }
 
     /** The selected item, or null when nothing is selected yet. */
@@ -1328,7 +1367,10 @@ public final class TreeView<T> implements AutoCloseable {
         if (dragSub != null) {
             dragSub.close();
         }
-        find.close();   // takes the bar's own claims with it; the root's Ctrl+F goes with the root below
+        FindBar bar = find;
+        if (bar != null) {
+            bar.close();   // takes the bar's own claims with it; the root's Ctrl+F goes with the root below
+        }
         synchronized (this) {
             for (Row r : rowsByItem.values()) {
                 gui.releaseNode(r.rowNode);
@@ -1489,11 +1531,10 @@ public final class TreeView<T> implements AutoCloseable {
             startFind(query, selected(), false);
         }
 
-        /** Shut: stop whatever the bar started, and give the keyboard back to the tree. */
+        /** Shut: stop whatever the bar started. */
         @Override
         public void closed() {
             begin();   // the search is an action, and closing the bar is the user done with it
-            gui.focus(root);
         }
     }
 
@@ -1513,18 +1554,18 @@ public final class TreeView<T> implements AutoCloseable {
     private void startFind(String query, T from, boolean forward) {
         Job job = begin();
         if (query == null || query.isEmpty()) {
-            find.status("");
+            built().status("");
             // Nothing to search for, but the bar asking has just taken a strip out of the rows' box — so the row
             // the user was on comes back into what is left of it, rather than being scrolled off by the chrome.
             revealSelected();
             return;
         }
-        find.status("Searching…");
+        built().status("Searching…");
         Row found = forward ? findFrom(query, from, job) : findBack(query, from, job);
         if (!job.live()) {
             return;   // superseded mid-walk: the search that replaced this one owns the status line now
         }
-        find.status(found == null ? "No match" : "");
+        built().status(found == null ? "No match" : "");
         if (found != null) {
             reveal(found);
             select(found, true);

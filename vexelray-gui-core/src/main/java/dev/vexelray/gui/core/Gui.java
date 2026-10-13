@@ -1344,6 +1344,16 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
+     * Fade the focus ring: in round the node focus reaches and out round the one it left, each over
+     * {@code duration}. {@link java.time.Duration#ZERO} (the default) shows and hides it at once — opt-in, like
+     * {@link #scrollGlide}, because the application decides how its time passes.
+     */
+    public Gui focusFade(java.time.Duration duration) {
+        input.focusFade(duration.toNanos());
+        return this;
+    }
+
+    /**
      * The look every widget and the renderer's own chrome resolve their colours through — {@link Theme#DARK}
      * unless replaced. There is no other source of colour in the framework.
      */

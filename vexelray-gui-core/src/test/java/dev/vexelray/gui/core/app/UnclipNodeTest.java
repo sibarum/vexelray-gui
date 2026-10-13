@@ -29,9 +29,6 @@ class UnclipNodeTest {
     private static final Color NAME = Color.rgba(1f, 0f, 0f, 1f);      // the name, wider than its column
     private static final Color NEXT = Color.rgba(0f, 1f, 0f, 1f);      // the column beside it
 
-    /** Half-extent the canvas stamps on a vertex drawn under no clip at all. */
-    private static final float NO_CLIP = 1e9f;
-
     private static long nextId = 1;
 
     private static RetainedNode box(Color bg, float x, float w) {
@@ -71,20 +68,45 @@ class UnclipNodeTest {
         return Arrays.copyOf(canvas.toVertexArray(), canvas.vertexCount() * CanvasVertex.FLOATS_PER_VERTEX);
     }
 
-    /** One draw of one colour: the run of consecutive vertices in it, with the clip half-width and alpha it carried. */
-    private record Draw(Color colour, float clipHalfWidth, float alpha) { }
+    /**
+     * One draw of one colour: the run of consecutive vertices in it, with the alpha it carried and the mask it was
+     * drawn through, as the canvas stamps it — a centre and half-extents.
+     */
+    private record Draw(Color colour, float alpha, float clipX, float clipY, float clipHalfWidth, float clipHalfHeight) {
+
+        /** Whether this draw's mask lets any of it land inside {@code (l, t)–(r, b)}. */
+        boolean reaches(float l, float t, float r, float b) {
+            return clipX - clipHalfWidth < r && clipX + clipHalfWidth > l
+                    && clipY - clipHalfHeight < b && clipY + clipHalfHeight > t;
+        }
+
+        float clipLeft() {
+            return clipX - clipHalfWidth;
+        }
+
+        float clipRight() {
+            return clipX + clipHalfWidth;
+        }
+    }
+
+    /** Whether a draw could reach into the column, where the name is already on the screen. */
+    private static boolean intoColumn(Draw d) {
+        return d.reaches(0f, 0f, 100f, 20f);
+    }
 
     private static List<Draw> draws(float[] data) {
         int stride = CanvasVertex.FLOATS_PER_VERTEX;
         int rgba = CanvasVertex.OFF_COLOR / Float.BYTES;
         int clip = CanvasVertex.OFF_CLIPBOX / Float.BYTES;
         List<Draw> out = new ArrayList<>();
-        Color last = null;
+        Draw last = null;
         for (int v = 0; v + stride <= data.length; v += stride) {
             Color c = Color.rgba(data[v + rgba], data[v + rgba + 1], data[v + rgba + 2], 1f);
-            if (!c.equals(last)) {
-                out.add(new Draw(c, data[v + clip + 2], data[v + rgba + 3]));
-                last = c;
+            Draw d = new Draw(c, data[v + rgba + 3], data[v + clip], data[v + clip + 1], data[v + clip + 2],
+                    data[v + clip + 3]);
+            if (!d.equals(last)) {   // a new colour, mask or opacity is a new draw, even of the same node
+                out.add(d);
+                last = d;
             }
         }
         return out;
@@ -104,20 +126,24 @@ class UnclipNodeTest {
         assertEquals(50f, name.get(0).clipHalfWidth(), 0.01f, "inside its column's 100px mask");
     }
 
-    /** The whole point: drawn a second time, under no mask but the window's, after the column that covered it. */
+    /**
+     * The whole point: the part the column cut off is drawn, after the column beside it that covered it — out from
+     * under the column's mask, the rest of the way to the name's end.
+     */
     @Test
-    void anUnclippedNameIsDrawnAgainWholeAndOverItsNeighbour() {
+    void anUnclippedNameIsDrawnAgainOverItsNeighbour() {
         Row row = row();
         row.name().set(PropKey.UNCLIP, 1f);
 
         List<Draw> all = draws(emit(row.root()));
         List<Draw> name = of(all, NAME);
 
-        assertEquals(2, name.size(), "once in its place, and once out from under the clip");
         assertEquals(50f, name.get(0).clipHalfWidth(), 0.01f, "the ordinary draw is still clipped as before");
-        assertEquals(NO_CLIP, name.get(1).clipHalfWidth(), 1f, "the second is under no column's mask");
-        assertTrue(all.lastIndexOf(name.get(1)) > all.indexOf(of(all, NEXT).get(0)),
-                "and it comes after the column beside it, so it is on top of what covered the rest of it");
+        Draw overhang = name.stream().skip(1).filter(d -> d.reaches(100f, 0f, 250f, 20f)).findFirst().orElseThrow();
+        assertTrue(overhang.clipLeft() <= 100f && overhang.clipRight() >= 250f,
+                "drawn again over the whole of what the column cut off");
+        assertTrue(all.lastIndexOf(overhang) > all.indexOf(of(all, NEXT).get(0)),
+                "and after the column beside it, so it is on top of what covered the rest of it");
     }
 
     /** The plate is the surface the name sat on, carried out with it — not a colour of the renderer's choosing. */
@@ -129,12 +155,12 @@ class UnclipNodeTest {
         List<Draw> all = draws(emit(row.root()));
         List<Draw> column = of(all, COLUMN);
 
-        int secondName = all.lastIndexOf(of(all, NAME).get(1));
+        int lastName = all.lastIndexOf(of(all, NAME).get(of(all, NAME).size() - 1));
         assertTrue(column.size() >= 2, "the column's surface is drawn again, as the plate");
         Draw plate = column.get(column.size() - 1);
-        assertTrue(all.lastIndexOf(plate) < secondName, "under the name");
+        assertTrue(all.lastIndexOf(plate) < lastName, "under the name");
         assertTrue(all.lastIndexOf(plate) > all.indexOf(of(all, NEXT).get(0)), "and over the neighbour");
-        assertEquals(NO_CLIP, plate.clipHalfWidth(), 1f, "and out from under the clip like the name");
+        assertTrue(plate.reaches(100f, 0f, 250f, 20f), "and out from under the clip like the name");
     }
 
     /** It fades in by its own amount, on top of whatever opacity the node inherited. */
@@ -162,12 +188,51 @@ class UnclipNodeTest {
         List<Draw> innerDraws = of(draws(emit(row.root())), NEXT);
         Draw last = innerDraws.get(innerDraws.size() - 1);
 
-        assertEquals(125f, last.clipHalfWidth(), 0.01f, "the lifted name still masks its own child to its box");
+        assertEquals(250f, last.clipRight(), 0.01f, "the lifted name still masks its own child to its box");
     }
 
     @Test
     void itIsNotALayoutInput() {
         assertFalse(PropKey.UNCLIP.layoutAffecting());
         assertFalse(PropKey.UNCLIP.geometryAffecting());
+    }
+
+    /**
+     * Where the name was already on the screen, the unclip draws neither the name nor the plate's fill — at any
+     * amount. The finished unclip is the same pixels there as the ordinary draw, so the exact fade there is no
+     * change; drawing the plate over the name and the name over that, each at the fade's opacity, dimmed it at
+     * the start of every fade, and drawing the name over itself thickened it.
+     */
+    @Test
+    void nothingIsDrawnOverTheNameWhereItWasAlreadySeen() {
+        for (float amount : new float[] {0.25f, 0.5f, 1f}) {
+            Row row = row();
+            row.name().set(PropKey.UNCLIP, amount);
+
+            List<Draw> all = draws(emit(row.root()));
+            List<Draw> name = of(all, NAME);
+            List<Draw> column = of(all, COLUMN);
+
+            assertTrue(name.stream().skip(1).noneMatch(UnclipNodeTest::intoColumn),
+                    "at " + amount + ", no lifted draw of the name reaches into its column");
+            assertTrue(column.stream().skip(1).noneMatch(UnclipNodeTest::intoColumn),
+                    "and no plate fill does either");
+            assertTrue(name.stream().skip(1).anyMatch(d -> d.reaches(100f, 0f, 250f, 20f)),
+                    "while the overhang is drawn");
+        }
+    }
+
+    /** The plate's edge is still drawn round its whole outline, the part over the column included. */
+    @Test
+    void thePlatesEdgeStillGoesRoundTheWholeName() {
+        Row row = row();
+        row.name().set(PropKey.UNCLIP, 0.5f);
+
+        List<Draw> all = draws(emit(row.root()));
+        int afterNeighbour = all.indexOf(of(all, NEXT).get(0));
+        boolean edgeInColumn = all.stream().skip(afterNeighbour + 1)
+                .filter(d -> !d.colour().equals(NAME) && !d.colour().equals(COLUMN) && !d.colour().equals(NEXT))
+                .anyMatch(d -> d.clipX() == 50f && d.clipHalfWidth() == 50f);
+        assertTrue(edgeInColumn, "something of the plate's own is drawn through the column's mask: its edge");
     }
 }

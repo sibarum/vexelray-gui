@@ -5,6 +5,7 @@ import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.ImageRegion;
 import dev.vexelray.gui.core.Viewport;
+import dev.vexelray.gui.core.input.FocusCause;
 import dev.vexelray.gui.core.input.FocusState;
 import dev.vexelray.gui.core.layout.LayoutContext;
 import dev.vexelray.gui.core.model.RetainedNode;
@@ -61,7 +62,15 @@ public final class TreeRenderer {
     /** The node whose unclipped pass is running, or null during the ordinary walk. Its plate goes under it. */
     private RetainedNode plating;
 
-    private record Lift(RetainedNode node, float alpha, float transX, float transY) { }
+    /** Far enough out to stand for "no edge" in a mask, and near enough that a float still resolves a pixel there. */
+    private static final float FAR = 1e6f;
+
+    /**
+     * A node to draw again out from under its clips: what it inherited at the walk, and the mask it was seen through
+     * there ({@code clipL..clipB}, infinite where nothing clipped), which is where it is already on the screen.
+     */
+    private record Lift(RetainedNode node, float alpha, float transX, float transY,
+                        float clipL, float clipT, float clipR, float clipB) { }
 
     /**
      * The opacity inherited at the node currently being drawn — the product of every {@code OPACITY} prop on the
@@ -98,8 +107,11 @@ public final class TreeRenderer {
     private RetainedNode top;
     /** The nearest ancestor of the node being walked that pushes a clip: where a ring found here is drawn. */
     private RetainedNode host;
-    /** The focused node's ring, recorded when the walk passes it and drawn when its host closes; null otherwise. */
-    private Ring ring;
+    /**
+     * The rings waiting for their hosts: recorded when the walk passes their node and drawn when its host closes.
+     * Two at most — the focused node's, and the one fading out round the node focus just left.
+     */
+    private final java.util.List<Ring> rings = new java.util.ArrayList<>(2);
 
     /**
      * A focused node's ring, waiting for its host. The box is in screen terms (box plus the displacement inherited
@@ -178,22 +190,59 @@ public final class TreeRenderer {
      * the window's, and each node is walked exactly as before from the opacity and displacement it inherited:
      * its own clips still hold for its own children. One level only: a node met inside one of these passes is
      * already out from under everything above the node being lifted, and is not queued again.
+     *
+     * <p><b>Where the node was already seen, nothing is drawn over it.</b> A fade drawn as its parts — a plate, then
+     * the node over it, each at the fade's opacity — is not a faded picture: half-way through, the plate (the
+     * surface's own colour) has dimmed the text already on the screen and the copy has only half brought it back,
+     * and the text flickers dark at the start of every fade. Drawing that part again on top swaps the dimming for
+     * text drawn over itself, whose anti-aliased edges thicken. But inside the mask the node was seen through, the
+     * finished unclip is the same pixels that are there already — the same text, on a plate the colour of what it
+     * stands on — so the exact fade there is no change at all. So the lift is drawn in parts by where they fall:
+     * <ul>
+     *   <li>outside that mask, the overhang: plate and node whole, fading in together over whatever covered them;</li>
+     *   <li>inside it, the plate's edge round its whole outline, and its shadow only where it falls outside the
+     *       plate — the shadow is a solid shape under the plate's fill, and without the fill it would dim the text
+     *       as the plate did;</li>
+     *   <li>and the node itself not at all: the ordinary walk's draw of it is already the right one.</li>
+     * </ul>
+     * The canvas clips to a rectangle and cannot exclude one, so "outside" is drawn as up to four strips round it.
      */
     private void unclipped(Canvas canvas) {
         for (Lift lift : lifts) {
-            alpha = lift.alpha() * lift.node().unclip();
+            RetainedNode n = lift.node();
+            alpha = lift.alpha() * n.unclip();
             transX = lift.transX();
             transY = lift.transY();
-            clipL = Float.NEGATIVE_INFINITY;
-            clipT = Float.NEGATIVE_INFINITY;
-            clipR = Float.POSITIVE_INFINITY;
-            clipB = Float.POSITIVE_INFINITY;
+            unbound();
             boolean moved = transX != 0f || transY != 0f;
             if (moved) {
                 canvas.pushTranslate(transX, transY);
             }
-            plating = lift.node();
-            walk(lift.node(), canvas);
+            plating = n;
+            if (!seen(lift) || n.rotation() != 0f || n.scale() != 1f) {
+                walk(n, canvas);   // no mask to keep out of, or none that holds under a turn: it fades as its parts
+            } else {
+                float[] hole = {lift.clipL(), lift.clipT(), lift.clipR(), lift.clipB()};
+                for (float[] band : around(new float[] {-FAR, -FAR, FAR, FAR}, hole)) {
+                    clipTo(canvas, band);
+                    walk(n, canvas);   // the overhang: the plate and the node, out of the mask they were cut by
+                    canvas.popClip();
+                }
+                unbound();
+                // The node's own displacement, which the walk applies inside itself and the plate is drawn under.
+                float dx = n.translateX() * n.emPx;
+                float dy = n.translateY() * n.emPx;
+                float[] plate = plateRect(n);
+                float[] seenPlate = {plate[0] + dx, plate[1] + dy, plate[0] + plate[2] + dx, plate[1] + plate[3] + dy};
+                clipTo(canvas, hole);
+                drawPlate(n, canvas, dx, dy, false, true, false);   // the edge, round the whole of it
+                canvas.popClip();
+                for (float[] band : around(hole, seenPlate)) {
+                    clipTo(canvas, band);
+                    drawPlate(n, canvas, dx, dy, false, false, true);   // the shadow, only where it is outside
+                    canvas.popClip();
+                }
+            }
             plating = null;
             if (moved) {
                 canvas.popTranslate();
@@ -202,27 +251,97 @@ public final class TreeRenderer {
         lifts.clear();
     }
 
+    /** No mask: what the unclipped pass starts every node from. */
+    private void unbound() {
+        clipL = Float.NEGATIVE_INFINITY;
+        clipT = Float.NEGATIVE_INFINITY;
+        clipR = Float.POSITIVE_INFINITY;
+        clipB = Float.POSITIVE_INFINITY;
+    }
+
+    /** Push {@code r} ({@code l, t, r, b}) as the canvas's mask and the walk's, so culling agrees with drawing. */
+    private void clipTo(Canvas canvas, float[] r) {
+        clipL = r[0];
+        clipT = r[1];
+        clipR = r[2];
+        clipB = r[3];
+        canvas.pushClip(r[0], r[1], r[2] - r[0], r[3] - r[1], 0f);
+    }
+
+    /**
+     * {@code outer} less {@code hole}, as up to four strips that do not overlap — the full-width bands above and
+     * below the hole, and the bands either side of it between them. Each rect is {@code l, t, r, b}; an empty strip
+     * is left out, and a hole that misses {@code outer} leaves {@code outer} whole.
+     */
+    private static java.util.List<float[]> around(float[] outer, float[] hole) {
+        float l = Math.max(outer[0], hole[0]);
+        float t = Math.max(outer[1], hole[1]);
+        float r = Math.min(outer[2], hole[2]);
+        float b = Math.min(outer[3], hole[3]);
+        java.util.List<float[]> out = new java.util.ArrayList<>(4);
+        if (l >= r || t >= b) {
+            out.add(outer);
+            return out;
+        }
+        strip(out, outer[0], outer[1], outer[2], t);   // above
+        strip(out, outer[0], b, outer[2], outer[3]);   // below
+        strip(out, outer[0], t, l, b);                 // left, between them
+        strip(out, r, t, outer[2], b);                 // right, between them
+        return out;
+    }
+
+    private static void strip(java.util.List<float[]> out, float l, float t, float r, float b) {
+        if (r > l && b > t) {
+            out.add(new float[] {l, t, r, b});
+        }
+    }
+
+    /**
+     * Whether a lifted node was seen through a mask that can be kept out of: a finite one with room in it. Under a
+     * turn or a scale the walk gives up its mask (nothing is culled there), so there is none, and the node fades as
+     * its parts.
+     */
+    private static boolean seen(Lift lift) {
+        return Float.isFinite(lift.clipL()) && Float.isFinite(lift.clipT()) && Float.isFinite(lift.clipR())
+                && Float.isFinite(lift.clipB()) && lift.clipR() > lift.clipL() && lift.clipB() > lift.clipT();
+    }
+
+    /** The plate's box round {@code n}, {@code x, y, w, h}: a little larger than the node, by its own em. */
+    private static float[] plateRect(RetainedNode n) {
+        float em = plateEm(n);
+        float padX = em * 0.4f;
+        float padY = em * 0.1f;
+        return new float[] {n.x - padX, n.y - padY, n.w + padX * 2f, n.h + padY * 2f};
+    }
+
+    private static float plateEm(RetainedNode n) {
+        return n.textSizePx > 0f ? n.textSizePx : n.emPx;
+    }
+
     /**
      * The surface drawn under an unclipped node: a rounded plate a little larger than its box, in whatever it was
      * sitting on, so the part that escapes reads as the same thing carried on rather than as a second thing laid
      * over the page. Edged and shadowed because it <em>is</em> over the page, and covers what it overhangs.
      */
     private void drawPlate(RetainedNode n, Canvas canvas) {
-        float em = n.textSizePx > 0f ? n.textSizePx : n.emPx;
-        float padX = em * 0.4f;
-        float padY = em * 0.1f;
-        float x = n.x - padX;
-        float y = n.y - padY;
-        float w = n.w + padX * 2f;
-        float h = n.h + padY * 2f;
+        drawPlate(n, canvas, 0f, 0f, true, true, true);
+    }
+
+    /** The plate, or only some of its parts, displaced by {@code (dx, dy)}. */
+    private void drawPlate(RetainedNode n, Canvas canvas, float dx, float dy, boolean fill, boolean edge,
+                           boolean shade) {
+        float[] p = plateRect(n);
+        float em = plateEm(n);
         float r = em * 0.25f;
         float lift = em * 0.4f;
         Color surface = null;
-        for (Color layer : surfaceUnder(n)) {
-            surface = over(fade(layer), surface);
+        if (fill) {
+            for (Color layer : surfaceUnder(n)) {
+                surface = over(fade(layer), surface);
+            }
         }
-        box(canvas, x, y, w, h, r, r, fade(plateEdge), 1f, surface == null ? NO_FILL : PLAIN_FILL, surface, 0f, 0f,
-                fade(shadow), lift);
+        box(canvas, p[0] + dx, p[1] + dy, p[2], p[3], r, r, edge ? fade(plateEdge) : null, 1f,
+                surface == null ? NO_FILL : PLAIN_FILL, surface, 0f, 0f, shade ? fade(shadow) : null, lift);
     }
 
     /** {@code top} laid over {@code under} (null for nothing), straight alpha: what blending one on the other gives. */
@@ -271,7 +390,8 @@ public final class TreeRenderer {
         // it was laid out, so its box is real and it is still hit-testable unless it also said hitInert.
         if (alpha > 0f) {
             if (plating == null && node.unclip() > 0f) {
-                lifts.add(new Lift(node, inherited, transX, transY));   // drawn here as usual, and again later
+                // Drawn here as usual, and again later
+                lifts.add(new Lift(node, inherited, transX, transY, clipL, clipT, clipR, clipB));
             }
             // Displacement, in multiples of this node's own baked em, so it tracks zoom and density with no
             // layout context to consult. Pushed around the node and its whole subtree, and cumulative.
@@ -301,7 +421,9 @@ public final class TreeRenderer {
             }
             drawSelf(node, canvas, faceFor(node));
             if (plating == null && node.id == focus.nodeId()) {
-                recordRing(node);   // drawn by its host, not here: see drawRing
+                recordRing(node, focus.cause(), focus.shown());   // drawn by its host, not here: see drawRings
+            } else if (plating == null && node.id == focus.leavingId()) {
+                recordRing(node, focus.leavingCause(), focus.leavingShown());   // the ring focus left, fading
             }
             boolean scrollClip = node.overflowX || node.overflowY;
             // This node hosts the rings found under it if it clips them; the top of the tree hosts the rest.
@@ -354,7 +476,7 @@ public final class TreeRenderer {
             // After every flow child, so no later sibling paints over the ring; before the floats, so every popup
             // still covers it; and under the host's own clip, rounded corners and all.
             if (hosts) {
-                drawRing(node, canvas);
+                drawRings(node, canvas);
             }
             if (scrollClip) {
                 canvas.popClip();
@@ -379,7 +501,7 @@ public final class TreeRenderer {
             if (hosts) {
                 // A focused node inside one of this host's floats (a popup's own field) was met after the flow
                 // pass, so its ring is drawn here, over the float it is in.
-                drawRing(node, canvas);
+                drawRings(node, canvas);
                 host = keepHost;
             }
             if (!scrollClip && node.clip()) {
@@ -410,12 +532,13 @@ public final class TreeRenderer {
     }
 
     /**
-     * Note the focused node's ring, if the ring in force for it shows for the way focus arrived. Its own
-     * {@code FocusRing} wins over the theme's, and is read from this node only.
+     * Note a ring round {@code n} at {@code shown} of its opacity, if the ring in force for it shows for the way
+     * focus arrived ({@code cause}). Its own {@code FocusRing} wins over the theme's, and is read from this node
+     * only.
      */
-    private void recordRing(RetainedNode n) {
+    private void recordRing(RetainedNode n, FocusCause cause, float shown) {
         FocusRing spec = n.focusRing() != null ? n.focusRing() : theme.focusRing();
-        if (!spec.shows(focus.cause(), n.editable()) || n.w <= 0f || n.h <= 0f) {
+        if (shown <= 0f || !spec.shows(cause, n.editable()) || n.w <= 0f || n.h <= 0f) {
             return;
         }
         float width = spec.width().scalarPx(ctx, n.w);
@@ -425,25 +548,33 @@ public final class TreeRenderer {
         float offset = spec.offset().scalarPx(ctx, n.w);
         // At the node's inherited opacity, so a ring on a fading page fades with it; at half that while the
         // window is in the background, the way the caret stops blinking there.
-        float a = alpha * (focus.windowActive() ? 1f : 0.5f);
+        float a = alpha * shown * (focus.windowActive() ? 1f : 0.5f);
         Color c = theme.color(spec.color());
-        ring = new Ring(host, n.x + transX, n.y + transY, n.w, n.h, n.cornerPx, n.cornerBottomPx, width, offset,
-                Color.withAlpha(c, c.a() * a));
+        rings.add(new Ring(host, n.x + transX, n.y + transY, n.w, n.h, n.cornerPx, n.cornerBottomPx, width, offset,
+                Color.withAlpha(c, c.a() * a)));
+    }
+
+    /** Draw the waiting rings whose host is {@code at}, and let go of them. */
+    private void drawRings(RetainedNode at, Canvas canvas) {
+        for (int i = 0; i < rings.size(); ) {
+            Ring r = rings.get(i);
+            if (r.host() == at) {
+                rings.remove(i);
+                drawRing(r, canvas);
+            } else {
+                i++;
+            }
+        }
     }
 
     /**
-     * Draw the waiting ring if {@code at} is its host. The ring stands {@code offset} clear of the box and is
+     * Draw one waiting ring under its host. The ring stands {@code offset} clear of the box and is
      * {@code width} thick, its corners following the box's own. If that outset does not fit inside the host's
      * clip it is drawn just inside the box instead: a control that fills its container would otherwise have its
      * ring clipped away on every side, and the field that most needs to show focus would show none. One rule for
      * all four sides, so the ring is never lopsided.
      */
-    private void drawRing(RetainedNode at, Canvas canvas) {
-        Ring r = ring;
-        if (r == null || r.host() != at) {
-            return;
-        }
-        ring = null;
+    private void drawRing(Ring r, Canvas canvas) {
         // Into the host's frame: the canvas is under the host's displacement now, not the node's.
         float x = r.x() - transX;
         float y = r.y() - transY;

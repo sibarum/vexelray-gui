@@ -939,16 +939,20 @@ public final class TextField implements AutoCloseable {
      * bar is a floating child of the field itself: it takes nothing from the layout, moves and hides with the box
      * it is anchored to, and opening it reflows nothing — which matters more here than in a tree, because
      * reflowing a wrapped editor re-wraps every line under the caret.
+     *
+     * <p><b>Docked, so it covers nothing.</b> A float alone lies over the first lines and over the top of the
+     * scrollbar, the × on it included. Docked, the field's text area and its scrollbar both start below the bar:
+     * the text moves down by the bar's height and is not re-wrapped, since the width is untouched.
      */
     private synchronized FindBar findBar() {
         if (find == null) {
-            FindBar bar = new FindBar(gui, new Finder());
+            FindBar bar = new FindBar(gui, node, new Finder());
             // Inset past the field's border (0.1rem) with a hair to spare, its corners the well's radius less
             // the inset so the two curves run parallel — a bar laid on the border box squared off the well.
             bar.strip()
                     .corner(Length.rem(0.25f))
                     .elevation(gui.theme().elevation(Relief.RAISED));  // lifted off the well, because it covers the first line
-            node.append(bar.inset(Length.rem(0.25f)).floatAt(Length.ZERO, Length.ZERO));
+            node.append(bar.inset(Length.rem(0.25f)).floatAt(Length.ZERO, Length.ZERO).dock(true));
             find = bar;
         }
         return find;
@@ -994,7 +998,6 @@ public final class TextField implements AutoCloseable {
             findQuery = "";
             findSpans = List.of();
             mirror();
-            gui.focus(node);
         }
     }
 
@@ -1332,7 +1335,7 @@ public final class TextField implements AutoCloseable {
         Document d = v.value();
         refreshFind(d);   // before the spans below are written, since it decides what is added to them
         node.text(d.text());
-        node.caret(focused ? d.caret() : -1);
+        node.caret(placedCaret(d));
         node.selection(d.anchor(), d.caret());
         List<Span> washes = findSpans;
         // The link underlines are derived here and nowhere else: they exist for exactly as long as the modifier
@@ -1362,8 +1365,18 @@ public final class TextField implements AutoCloseable {
             node.caret(document.value().caret());
             node.caretOn(true);
         } else {
-            node.caret(-1);
+            node.caret(placedCaret(document.value()));
             node.caretOn(false);
         }
+    }
+
+    /**
+     * Where the node is told the caret is: nowhere when the field is neither focused nor being searched. While its
+     * find bar is up the keyboard is in the bar, but the caret still places the view — it is what the layout
+     * follows, so a step to a match below the fold scrolls to it. Not drawn there: the blink runs only on focus.
+     */
+    private int placedCaret(Document d) {
+        FindBar bar = find;
+        return focused || (bar != null && bar.isOpen()) ? d.caret() : -1;
     }
 }

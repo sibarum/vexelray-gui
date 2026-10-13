@@ -151,7 +151,7 @@ class TreeScrollTest {
 
     /** The tree in a box a few rows tall, so anything past the first handful is off screen. */
     private static TreeView<String> shortTree(HeadlessGui h) {
-        TreeView<String> tree = new TreeView<>(h.gui, new FlatSource());
+        TreeView<String> tree = new TreeView<>(h.gui, new FlatSource()).searchable(true);
         tree.node().height(Length.rem(8));   // ~4 rows of the 1.75em the tree gives each one
         h.gui.root().children(tree.node());
         h.frame();

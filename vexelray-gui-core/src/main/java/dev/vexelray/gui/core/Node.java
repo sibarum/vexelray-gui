@@ -502,6 +502,16 @@ public final class Node {
         return prop(PropKey.FLOAT_Y, y);
     }
 
+    /**
+     * Keep the parent's content out from under this floating node: the parent's viewport — its content and its
+     * scrollbars — starts below this node's bottom edge while the node is visible. The node still floats, so
+     * showing it narrows nothing and re-wraps nothing; the parent's content moves down by the band it covers.
+     * A hidden docked node reserves nothing. Only meaningful together with {@link #floatAt}.
+     */
+    public Node dock(boolean dock) {
+        return prop(PropKey.DOCK, dock ? Boolean.TRUE : null);
+    }
+
     /** Return this node to normal flow. */
     public Node unfloat() {
         prop(PropKey.FLOAT_X, null);

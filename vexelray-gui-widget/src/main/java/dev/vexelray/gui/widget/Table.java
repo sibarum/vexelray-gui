@@ -173,7 +173,8 @@ public final class Table<T> implements AutoCloseable {
 
     public Table(Gui gui, float rowRem, List<Column<T>> columns) {
         this.gui = Objects.requireNonNull(gui, "gui");
-        this.unclip = new Unclip(gui);   // before the body: every row attaches its cells to it as it is built
+        // The window's reveal, so it fades as every other one does. Before the body: each row attaches its cells.
+        this.unclip = Unclip.of(gui);
         this.columns = List.copyOf(Objects.requireNonNull(columns, "columns"));
         if (this.columns.isEmpty()) {
             throw new IllegalArgumentException("a table needs at least one column");
@@ -262,9 +263,9 @@ public final class Table<T> implements AutoCloseable {
     }
 
     /**
-     * How a cut-off cell is shown whole while it is hovered — for the application to give it a fade, or to attach
-     * a node <em>inside</em> a cell's content that is the one cut off (a name in a row with an icon, say). A cell's
-     * content node itself is attached already.
+     * How a cut-off cell is shown whole while it is hovered — the window's {@link Unclip#of reveal}, whose fade
+     * is set once for the whole window — and where to attach a node <em>inside</em> a cell's content that is the
+     * one cut off (a name in a row with an icon, say). A cell's content node itself is attached already.
      */
     public Unclip unclip() {
         return unclip;

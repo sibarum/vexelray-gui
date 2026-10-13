@@ -517,6 +517,11 @@ public final class RetainedNode {
         return props.get(PropKey.FLOAT_X) instanceof Length && props.get(PropKey.FLOAT_Y) instanceof Length;
     }
 
+    /** Whether this node floats and keeps its parent's viewport out from under it (see {@link PropKey#DOCK}). */
+    public boolean docked() {
+        return floating() && Boolean.TRUE.equals(props.get(PropKey.DOCK));
+    }
+
     /** The floating x offset from the parent's border-box origin (only meaningful when {@link #floating()}). */
     public Length floatX() {
         return len(PropKey.FLOAT_X, Length.ZERO);

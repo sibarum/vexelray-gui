@@ -295,6 +295,103 @@ class TextFieldFindTest {
         }
     }
 
+    /**
+     * Focus that goes somewhere other than the field or its query puts the bar away, and leaves the keyboard where
+     * it went — the bar does not pull it back to the field the user just left.
+     */
+    @Test
+    void focusLeavingFieldAndBarShutsTheBarWhereItWent() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TextField other = new TextField(h.gui, "");
+            TextField f = new TextField(h.gui, TEXT).multiline(true);
+            f.node().width(Length.vw(50)).height(Length.rem(10));
+            h.gui.root().children(f.node(), other.node());
+            h.frame();
+            h.focus(f.node());
+            find(h, f, "beta");
+            assertTrue(h.retained(f.finder().node()).visible());
+
+            h.focus(other.node());
+            h.frame();
+            assertFalse(h.retained(f.finder().node()).visible(), "the bar went when the focus did");
+            assertTrue(h.retained(f.node()).spans().isEmpty(), "and its washes with it");
+
+            h.type("x");
+            h.frame();
+            assertEquals("x", other.text(), "the keyboard stayed where it was taken");
+            assertEquals(TEXT, f.text());
+            f.close();
+            other.close();
+        }
+    }
+
+    /** The bar is docked: the text area and the scrollbar both start below it, so it covers no line of the text. */
+    @Test
+    void anOpenBarPushesTheTextBelowItRatherThanCoveringIt() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TextField f = field(h, TEXT);
+            float before = h.retained(f.node()).viewY;
+            find(h, f, "beta");
+
+            RetainedNode field = h.retained(f.node());
+            RetainedNode bar = h.retained(f.finder().node());
+            assertTrue(field.viewY >= bar.y + bar.h - 0.01f, "the first line starts below the bar");
+
+            h.tap(Key.ESCAPE);
+            h.frame();
+            assertEquals(before, h.retained(f.node()).viewY, 0.01f, "and a shut bar gives the band back");
+            f.close();
+        }
+    }
+
+    /** Enter steps to a match below the fold and the field scrolls to it, though the keyboard is in the bar. */
+    @Test
+    void steppingToAMatchOutOfViewScrollsTheFieldToIt() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            String text = "beta\n" + "line\n".repeat(30) + "beta";
+            TextField f = new TextField(h.gui, text).multiline(true);
+            f.node().width(Length.vw(50)).height(Length.rem(8));
+            h.gui.root().children(f.node());
+            h.frame();
+            h.focus(f.node());
+            f.select(0, 0);
+            h.frame();
+            find(h, f, "beta");
+            assertEquals(0, f.document().value().selectionStart());
+            assertEquals(0f, h.retained(f.node()).scrollY, 0.01f);
+
+            h.tap(Key.ENTER);
+            h.frame();
+            assertEquals(text.length() - 4, f.document().value().selectionStart(), "Enter stepped to the last line");
+            assertTrue(h.retained(f.node()).scrollY > 0f, "and the field scrolled to show it");
+            f.close();
+        }
+    }
+
+    /**
+     * The × sits over the field's scrollbar strip when the field overflows. A press on it is a press on the ×,
+     * not on the bar beneath it.
+     */
+    @Test
+    void theExitButtonIsPressableOverAScrollingField() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TextField f = new TextField(h.gui, "beta\n" + "line\n".repeat(30)).multiline(true);
+            f.node().width(Length.vw(50)).height(Length.rem(8));
+            h.gui.root().children(f.node());
+            h.frame();
+            h.focus(f.node());
+            find(h, f, "beta");
+            assertTrue(h.retained(f.node()).overflowY, "the field scrolls, so it has a scrollbar strip");
+
+            RetainedNode strip = h.retained(f.finder().strip());
+            RetainedNode exit = strip.children.get(strip.children.size() - 1);
+            h.click(exit.x + exit.w / 2f, exit.y + exit.h / 2f);
+            h.frame();
+            assertFalse(h.retained(f.finder().node()).visible(), "the press reached the ×");
+            f.close();
+        }
+    }
+
     // --- helpers ---
 
     /** A focused multiline field, wide and tall enough for a bar to be a usable strip across the top of it. */

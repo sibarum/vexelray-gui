@@ -16,8 +16,11 @@ import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.gui.krono.KronoGui;
 import dev.vexelray.gui.widget.Modal;
 import dev.vexelray.gui.widget.Modals;
+import dev.vexelray.gui.widget.Unclip;
 import dev.vexelray.os.Decorations;
 import dev.vexelray.text.FontSet;
+import sibarum.kronometer.Dur;
+import sibarum.kronometer.anim.Ease;
 import sibarum.tactroller.api.BackendException;
 import sibarum.tactroller.api.CoordinateSpace;
 import sibarum.tactroller.api.Key;
@@ -79,6 +82,10 @@ public final class Demo {
         // The frame clock. Attached before the UI is built, because a widget that animates is handed its timing
         // at construction, and ticked from the run loop's beforeFrame hook below — one tick per presented frame.
         KronoGui krono = KronoGui.attach(gui);
+        // Every reveal in the window — a tree's cut-off name, a table's cut-off cell — fades the same way, said
+        // once. Quick, because it is the thing itself and not help arriving, and symmetric, so it leaves the way it
+        // came: an ease-out over the same time is mostly done in its first frames and reads as a snap.
+        Unclip.of(gui).motion((progress, done) -> krono.ramp(Dur.ms(150), Ease.IN_OUT_CUBIC, progress, done));
 
         Shell shell = new Shell(gui, krono, Gallery.chapters());
         zoomShortcuts(gui);
@@ -240,7 +247,8 @@ public final class Demo {
     private static Gui look(Gui gui, Theme theme) {
         // The wheel glides rather than jumping a notch at a time: each notch is still a fixed distance, delivered
         // over a few frames, closing half of what is left every 45 ms.
-        return gui.theme(theme).zoomRange(0.5f, 3f, 1.25f).scrollGlide(java.time.Duration.ofMillis(45));
+        return gui.theme(theme).zoomRange(0.5f, 3f, 1.25f).scrollGlide(java.time.Duration.ofMillis(45))
+                .focusFade(java.time.Duration.ofMillis(120));
     }
 
     /**

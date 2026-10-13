@@ -72,6 +72,9 @@ public final class FlexLayout {
             n.viewH = n.h;
             n.contentW = 0f;
             n.contentH = 0f;
+            float band = dockBand(n, ctx, tm);
+            n.viewY = n.y + band;
+            n.viewH = Math.max(0f, n.h - band);
             placeFloating(n, ctx, tm);   // a box whose only children float is empty *flow*, not empty
             return;
         }
@@ -82,9 +85,9 @@ public final class FlexLayout {
         boolean row = n.direction() == Direction.ROW;
 
         float baseX = n.x + insetX;
-        float baseY = n.y + insetY;
+        float baseY = n.y + Math.max(insetY, dockBand(n, ctx, tm));
         float baseW = Math.max(0f, n.w - 2f * insetX);
-        float baseH = Math.max(0f, n.h - 2f * insetY);
+        float baseH = Math.max(0f, n.y + n.h - insetY - baseY);
 
         // Pass 1: place in the full content box (no scroll) to measure how much space the children need.
         float[] need = place(n, baseX, baseY, row ? baseW : baseH, row ? baseH : baseW, row, gap, ctx, tm);
@@ -286,7 +289,8 @@ public final class FlexLayout {
         float gutter = gutterWidth(n, n.textSizePx, tm);
         n.gutterPx = gutter;
         float boxW = Math.max(1f, TextMetrics.contentWidth(n) - gutter);
-        float boxH = Math.max(0f, n.h - 2f * padY);
+        float top = Math.max(padY, dockBand(n, ctx, tm));   // a docked find bar moves the first line down
+        float boxH = Math.max(0f, n.h - padY - top);
 
         // Pass 1 at the full text width.
         float[] lines = measureLines(n, boxW, px, tm);
@@ -311,7 +315,7 @@ public final class FlexLayout {
         // Keeping it in that space is what lets scrollX/scrollY, the thumb geometry and the caret metrics all be
         // expressed against the same rectangle.
         n.viewX = n.x + pad + gutter;
-        n.viewY = n.y + padY;
+        n.viewY = n.y + top;
         n.viewW = Math.max(0f, viewW);
         n.viewH = Math.max(0f, boxH - (overX ? sb : 0f));
         n.contentW = lines[0];
@@ -410,25 +414,45 @@ public final class FlexLayout {
      */
     private static void placeFloating(RetainedNode n, LayoutContext ctx, TextMeasurer tm) {
         for (RetainedNode c : n.children) {
-            if (!c.visible() || !c.floating()) {
-                continue;
+            if (c.visible() && c.floating() && !c.docked()) {
+                placeFloat(n, c, ctx, tm);
             }
-            float w = c.width().resolve(ctx, n.w);
-            if (w < 0f) {
-                w = c.width() instanceof Length.FillT ? n.w : measure(c, Axis.HORIZONTAL, ctx, tm);
-            }
-            w = Math.min(Math.max(0f, w), n.w);
-            float h = c.height().resolve(ctx, n.h);
-            if (h < 0f) {
-                h = c.height() instanceof Length.FillT ? n.h : measure(c, Axis.VERTICAL, ctx, tm, w);
-            }
-            h = Math.min(Math.max(0f, h), n.h);
-            c.w = w;
-            c.h = h;
-            c.x = n.x + clamp(c.floatX().scalarPx(ctx, n.w), 0f, Math.max(0f, n.w - w));
-            c.y = n.y + clamp(c.floatY().scalarPx(ctx, n.h), 0f, Math.max(0f, n.h - h));
-            layoutBox(c, ctx, tm);
         }
+    }
+
+    /**
+     * Place {@code n}'s visible docked floats, and answer how far below {@code n}'s top edge the lowest of them
+     * reaches — the band its viewport starts below. Placed before the flow rather than after it, because the flow
+     * is what the band moves; a float's size and place depend only on the parent's box, so nothing is lost.
+     */
+    private static float dockBand(RetainedNode n, LayoutContext ctx, TextMeasurer tm) {
+        float band = 0f;
+        for (RetainedNode c : n.children) {
+            if (c.visible() && c.docked()) {
+                placeFloat(n, c, ctx, tm);
+                band = Math.max(band, c.y + c.h - n.y);
+            }
+        }
+        return Math.min(band, n.h);
+    }
+
+    /** Size and place one floating child {@code c} against {@code n}'s border box, then lay out its subtree. */
+    private static void placeFloat(RetainedNode n, RetainedNode c, LayoutContext ctx, TextMeasurer tm) {
+        float w = c.width().resolve(ctx, n.w);
+        if (w < 0f) {
+            w = c.width() instanceof Length.FillT ? n.w : measure(c, Axis.HORIZONTAL, ctx, tm);
+        }
+        w = Math.min(Math.max(0f, w), n.w);
+        float h = c.height().resolve(ctx, n.h);
+        if (h < 0f) {
+            h = c.height() instanceof Length.FillT ? n.h : measure(c, Axis.VERTICAL, ctx, tm, w);
+        }
+        h = Math.min(Math.max(0f, h), n.h);
+        c.w = w;
+        c.h = h;
+        c.x = n.x + clamp(c.floatX().scalarPx(ctx, n.w), 0f, Math.max(0f, n.w - w));
+        c.y = n.y + clamp(c.floatY().scalarPx(ctx, n.h), 0f, Math.max(0f, n.h - h));
+        layoutBox(c, ctx, tm);
     }
 
     /** Scrollbar thickness in px — scales with the root em so it tracks zoom/DPI like everything else. */

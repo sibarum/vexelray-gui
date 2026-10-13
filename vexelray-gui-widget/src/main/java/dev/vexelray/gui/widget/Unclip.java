@@ -4,7 +4,9 @@ import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.InteractionState;
 
+import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Show a node that is cut off by its container whole, where it already is, while the pointer is on it — a name
@@ -29,14 +31,32 @@ import java.util.Objects;
  *
  * <p>Without {@link #motion} it snaps. Safe from any thread: state changes arrive on input workers and a ramp's
  * samples on the clock's.
+ *
+ * <h2>One per window</h2>
+ *
+ * How a reveal fades is a fact about the window, not about the tree or the table it happens in: a tree label
+ * that fades and a table cell beside it that snaps is the same gesture answered two ways. So the widgets that
+ * reveal ({@link TreeView}, {@link Table}) all use {@link #of}, the window's own, and the application says how it
+ * moves once — where its clock is attached — rather than once per widget it remembered. An application that
+ * wants a reveal that moves differently constructs one of its own.
  */
 public final class Unclip {
+
+    private static final Map<Gui, Unclip> WINDOWS = new ConcurrentHashMap<>();
 
     private final Gui gui;
     private volatile Ramp motion;
 
     public Unclip(Gui gui) {
         this.gui = Objects.requireNonNull(gui, "gui");
+    }
+
+    /**
+     * The window's reveal: the one every widget here that reveals uses, so giving it a {@link #motion} gives every
+     * reveal in the window that motion.
+     */
+    public static Unclip of(Gui gui) {
+        return WINDOWS.computeIfAbsent(Objects.requireNonNull(gui, "gui"), Unclip::new);
     }
 
     /** How the drawn-out node fades in and out, or null to snap. One ramp for both directions. */

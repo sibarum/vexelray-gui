@@ -34,15 +34,40 @@ public final class FlexLayout {
 
     /** Lay the whole tree into a {@code w}×{@code h} viewport at origin (0,0). */
     public static void layout(RetainedNode root, float w, float h, LayoutContext ctx, TextMeasurer tm) {
+        layout(root, w, h, w, h, ctx, tm);
+    }
+
+    /**
+     * Lay the whole tree into a {@code w}×{@code h} window whose content needs at least a
+     * {@code canvasW}×{@code canvasH} canvas.
+     *
+     * <p><b>The root is the window; the canvas is its content.</b> The root's own box is always the window, so
+     * what is anchored to the root's frame — a docked title bar, an overlay — is anchored to the window. Its flow
+     * is laid out on the canvas, and where the canvas is the larger the root overflows and scrolls like any other
+     * container, rather than the window showing a crop of a tree laid out somewhere bigger than it.
+     */
+    public static void layout(RetainedNode root, float w, float h, float canvasW, float canvasH, LayoutContext ctx,
+                              TextMeasurer tm) {
         root.x = 0f;
         root.y = 0f;
         root.w = Math.max(0f, w);
         root.h = Math.max(0f, h);
-        layoutBox(root, ctx, tm);
+        // Only a canvas larger than the window is a floor. One the window's size would count the strip a scrollbar
+        // reserves on the other axis as overflow — content that fitted the window not fitting beside the bar.
+        layoutBox(root, ctx, tm, canvasW > root.w ? canvasW : 0f, canvasH > root.h ? canvasH : 0f);
     }
 
     /** Resolve {@code n}'s render scalars and place its children within its content box. Recurses. */
     private static void layoutBox(RetainedNode n, LayoutContext ctx, TextMeasurer tm) {
+        layoutBox(n, ctx, tm, 0f, 0f);
+    }
+
+    /**
+     * As {@link #layoutBox(RetainedNode, LayoutContext, TextMeasurer)}, with the flow laid out as if {@code n}'s
+     * border box were at least {@code floorW}×{@code floorH}. The box itself does not grow: the content does, and
+     * overflows it.
+     */
+    private static void layoutBox(RetainedNode n, LayoutContext ctx, TextMeasurer tm, float floorW, float floorH) {
         // Resolve the render inputs the tree renderer needs, now that this node's border-box is known. Percent
         // padding/border/corner use the node's own border-box width as the basis (CSS convention).
         n.borderPx = n.borderWidth().scalarPx(ctx, n.w);
@@ -88,11 +113,19 @@ public final class FlexLayout {
         float baseY = n.y + Math.max(insetY, dockBand(n, ctx, tm));
         float baseW = Math.max(0f, n.w - 2f * insetX);
         float baseH = Math.max(0f, n.y + n.h - insetY - baseY);
+        // The floor's content box, inset the same way. A docked band counts against it, so a floor is the whole
+        // box's minimum and not the minimum of what is left below the band.
+        float floorContentW = Math.max(0f, floorW - 2f * insetX);
+        float floorContentH = Math.max(0f, n.y + floorH - insetY - baseY);
+        float roomW = Math.max(baseW, floorContentW);
+        float roomH = Math.max(baseH, floorContentH);
 
         // Pass 1: place in the full content box (no scroll) to measure how much space the children need.
-        float[] need = place(n, baseX, baseY, row ? baseW : baseH, row ? baseH : baseW, row, gap, ctx, tm);
-        float neededW = row ? need[0] : need[1];
-        float neededH = row ? need[1] : need[0];
+        float[] need = place(n, baseX, baseY, row ? roomW : roomH, row ? roomH : roomW, row, gap, ctx, tm);
+        // Laid out on the floor, the content is at least the floor — even where a stretched child, which never
+        // counts toward the extent, is all that fills it.
+        float neededW = Math.max(floorContentW, row ? need[0] : need[1]);
+        float neededH = Math.max(floorContentH, row ? need[1] : need[0]);
 
         // Overflow + reserve: a scrollbar on one axis reserves a strip on the other. Recompute once so reserving
         // vertical space can reveal horizontal overflow and vice versa. Scrollbars appear purely from overflow.
@@ -110,10 +143,12 @@ public final class FlexLayout {
         // for a scrollbar makes the content *taller* — measuring it at the pre-scrollbar width leaves the scroll
         // range short by exactly the lines the narrowing added. This cannot oscillate: narrowing never shortens
         // wrapped content, so a box that overflowed at the full width still overflows at the reserved one.
+        roomW = Math.max(viewW, floorContentW);
+        roomH = Math.max(viewH, floorContentH);
         if (viewW < baseW - EPS || viewH < baseH - EPS) {
-            float[] reNeed = place(n, baseX, baseY, row ? viewW : viewH, row ? viewH : viewW, row, gap, ctx, tm);
-            neededW = row ? reNeed[0] : reNeed[1];
-            neededH = row ? reNeed[1] : reNeed[0];
+            float[] reNeed = place(n, baseX, baseY, row ? roomW : roomH, row ? roomH : roomW, row, gap, ctx, tm);
+            neededW = Math.max(floorContentW, row ? reNeed[0] : reNeed[1]);
+            neededH = Math.max(floorContentH, row ? reNeed[1] : reNeed[0]);
         }
 
         // Clamp the persisted scroll to the new content, then record the viewport/content/overflow for the renderer.
@@ -141,7 +176,7 @@ public final class FlexLayout {
 
         // Re-place in the (possibly reduced) viewport, offset by the scroll, when scrolling is in effect.
         if (overX || overY || n.scrollX != 0f || n.scrollY != 0f) {
-            place(n, baseX - n.scrollX, baseY - n.scrollY, row ? viewW : viewH, row ? viewH : viewW, row, gap, ctx, tm);
+            place(n, baseX - n.scrollX, baseY - n.scrollY, row ? roomW : roomH, row ? roomH : roomW, row, gap, ctx, tm);
         }
 
         // Floating children last, against the settled frame — out of the flow above, on top of it on screen.
@@ -223,9 +258,9 @@ public final class FlexLayout {
             float availC = Math.max(0f, availCross - 2f * mCross);
             float cs;
             float crossPos;
-            // On the cross axis grow/fill has no main-axis meaning; STRETCH fills it whenever the cross size is not
-            // a fixed length (AUTO or FILL/GROW all stretch to the content extent).
-            boolean stretched = n.alignItems() == AlignItems.STRETCH && crossFixed < 0f;
+            // STRETCH fills the cross axis whenever the cross size is not a fixed length (AUTO or FILL/GROW all
+            // stretch to the content extent), and FILL fills it under any alignment: see fillsCross.
+            boolean stretched = fillsCross(n, crossLen, crossFixed);
             if (stretched) {
                 cs = availC;
                 crossPos = mCross;
@@ -559,11 +594,25 @@ public final class FlexLayout {
         float availC = Math.max(0f, availCross - 2f * mCross);
         Length crossLen = column ? c.width() : c.height();
         float crossFixed = crossLen.resolve(ctx, availCross);
-        if (parent.alignItems() == AlignItems.STRETCH && crossFixed < 0f) {
+        if (fillsCross(parent, crossLen, crossFixed)) {
             return availC;
         }
         return Math.max(0f, crossFixed >= 0f ? crossFixed
                 : measure(c, column ? Axis.HORIZONTAL : Axis.VERTICAL, ctx, tm));
+    }
+
+    /**
+     * Whether a child takes its parent's whole cross extent: always under {@link AlignItems#STRETCH} when its cross
+     * size is not fixed, and under any alignment when it said {@link Length#FILL}.
+     *
+     * <p><b>{@code FILL} means "take all there is" on either axis</b>, the argument {@link #placeFloating} makes for
+     * floats. On the cross axis there is no leftover to share, so {@code grow} still has no meaning there; but all
+     * there is, is the parent's cross extent, and alignment has nothing to place in a child that fills it. Reading
+     * it as intrinsic under {@code CENTER} gave a title bar whose window buttons, declared {@code height(FILL)},
+     * hovered as a letterbox inside the bar, and a caption — the drag region — shorter than the bar it is.
+     */
+    private static boolean fillsCross(RetainedNode parent, Length crossLen, float crossFixed) {
+        return crossFixed < 0f && (parent.alignItems() == AlignItems.STRETCH || crossLen instanceof Length.FillT);
     }
 
     /** Basis-free fixed units resolve to a concrete size with no containing extent; percents and flex keywords don't. */

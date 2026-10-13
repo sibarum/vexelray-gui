@@ -217,6 +217,46 @@ class TitleBarTest {
         }
     }
 
+    /**
+     * Zoomed past the window's minimum, the controls are still at the window's edge and still close it. The bar
+     * used to be laid out on the minimum's canvas with the rest of the tree, which put all three buttons past the
+     * window's right edge on the third zoom step in the demo.
+     */
+    @Test
+    void theControlsStayOnTheWindowWhenTheContentOutgrowsIt() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Recorder window = new Recorder();
+            TitleBar bar = new TitleBar(h.gui, window, "Test");
+            h.gui.root().children(bar.node(), h.gui.box().size(
+                    dev.vexelray.gui.core.layout.Length.FILL, dev.vexelray.gui.core.layout.Length.FILL));
+            h.gui.minSize(dev.vexelray.gui.core.layout.Length.em(52), dev.vexelray.gui.core.layout.Length.em(30));
+            h.gui.zoom(2f);
+            h.frame();
+
+            assertEquals(VIEW_W, h.gui.layoutSnapshot().node(h.retained(bar.node()).id).rect().w(), 0.5f,
+                    "the bar spans the window, not the 1664px canvas");
+            h.click(buttonX(0), BAR_H / 2f);
+            assertEquals(List.of("close"), window.calls, "and close is where the window's edge is");
+        }
+    }
+
+    /**
+     * A window button is as tall as the bar, so a press at the bar's top edge is a press on the button. The buttons
+     * declared {@code height(FILL)} inside a bar that centres its children, and FILL used to read as intrinsic
+     * there: the button was its glyph's height, hovered as a letterbox, and its top edge belonged to the caption.
+     */
+    @Test
+    void theWindowButtonsAreAsTallAsTheBar() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Recorder window = new Recorder();
+            bar(h, window);
+
+            h.click(buttonX(0), 1f);
+            h.click(buttonX(0), BAR_H - 1f);
+            assertEquals(List.of("close", "close"), window.calls, "the bar's top and bottom edges are the button's");
+        }
+    }
+
     /** An {@link dev.vexelray.gui.core.IconSource} that notes the size it was last drawn at and draws the set's close. */
     private static final class Drawing implements dev.vexelray.gui.core.IconSource {
         private float px;

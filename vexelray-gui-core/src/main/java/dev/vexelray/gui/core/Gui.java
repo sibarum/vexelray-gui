@@ -563,9 +563,14 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
-     * The smallest canvas the UI is laid out on. When the window is smaller than this, the layout still runs at
-     * the minimum and the window shows part of it, rather than the UI being squeezed into a size it cannot
+     * The smallest canvas the UI is laid out on. When the window is smaller than this, the content is still laid
+     * out at the minimum and the root scrolls over it, rather than the UI being squeezed into a size it cannot
      * represent — where a flexible region absorbs the whole deficit and disappears.
+     *
+     * <p><b>The root stays the window.</b> Only its flow is laid out on the minimum, so what is anchored to the
+     * root's frame rather than its flow — a {@link Node#dock docked} title bar, an overlay — keeps to the window
+     * and never scrolls: a window's controls are reachable at any zoom. A root that disallows scrolling on an
+     * axis crops its content on that axis instead.
      *
      * <p><b>In {@code em}, the minimum scales with zoom</b>, which is the point: a zoomed UI genuinely needs more
      * room, so the smallest canvas it can be laid out on grows with it. That is what makes one setting cover both
@@ -578,8 +583,7 @@ public final class Gui implements AutoCloseable {
      * is laid out on when the window is smaller than the UI can represent, and shows part of it. Stopping the
      * <em>drag</em> is {@code WindowConfig.minSize}, which the window manager enforces — and a window can still
      * arrive under its minimum without any drag (a restore, a display-mode change, a programmatic resize), which
-     * is exactly when this one is what saves the layout. The overflow here is cropped rather than scrollable,
-     * which wants the root to become a scroll viewport.
+     * is exactly when this one is what saves the layout.
      */
     public Gui minSize(Length width, Length height) {
         metrics.minSize(width, height);
@@ -1845,7 +1849,7 @@ public final class Gui implements AutoCloseable {
                 // so a layout count that tracks the frame count is not a slow layout - it is a dirty flag that
                 // is always set, and no amount of making the pass faster will fix that.
                 try (Zone probeZone = Probe.zone(Lane.LAYOUT, "flex layout")) {
-                    FlexLayout.layout(r, layoutW, layoutH, m.layoutCtx(), tm);
+                    FlexLayout.layout(r, viewportW, viewportH, layoutW, layoutH, m.layoutCtx(), tm);
                 }
                 metrics.layoutRan(m);
             }
@@ -1858,7 +1862,7 @@ public final class Gui implements AutoCloseable {
                 if (dev.vexelray.gui.core.layout.Scrolling.reveal(asked)) {
                     // The second pass the comment above pays for. Named apart so its cost is attributable.
                     try (Zone probeZone = Probe.zone(Lane.LAYOUT, "flex layout (reveal)")) {
-                        FlexLayout.layout(r, layoutW, layoutH, m.layoutCtx(), tm);
+                        FlexLayout.layout(r, viewportW, viewportH, layoutW, layoutH, m.layoutCtx(), tm);
                     }
                     layoutRan = true;
                 }

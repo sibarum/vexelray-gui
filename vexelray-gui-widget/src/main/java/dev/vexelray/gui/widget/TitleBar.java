@@ -55,6 +55,14 @@ public final class TitleBar {
     private static final Length TITLE_SIZE = Length.dp(13.6f);
     /** The window controls' icons: the small drawings, at their own size. */
     private static final Length GLYPH = Length.dp(16);
+    /**
+     * The set's own drawings for the window controls, drawn for the title bar: what the bar shows until
+     * {@link #glyphs} says otherwise, and what a {@code null} there puts back.
+     */
+    private static final dev.vexelray.gui.icons.Icon MINIMIZE = dev.vexelray.gui.icons.Icon.TB_MINIMIZE;
+    private static final dev.vexelray.gui.icons.Icon MAXIMIZE = dev.vexelray.gui.icons.Icon.TB_MAXIMIZE;
+    private static final dev.vexelray.gui.icons.Icon RESTORE = dev.vexelray.gui.icons.Icon.TB_WINDOWED;
+    private static final dev.vexelray.gui.icons.Icon CLOSE = dev.vexelray.gui.icons.Icon.TB_EXIT;
     /** The mark's side: the native caption's small icon, 16px at 100%. */
     private static final int ICON_DP = 16;
 
@@ -106,10 +114,10 @@ public final class TitleBar {
 
         // The set's window controls. Maximize and restore share a button and swap with the window's state, which
         // syncMaximized() follows; both are built so the swap is a visibility change and never a rebuild.
-        this.minimizeGlyph = IconView.of(gui, dev.vexelray.gui.icons.Icon.WINDOW_MINIMIZE).size(GLYPH);
-        this.maximizeGlyph = IconView.of(gui, dev.vexelray.gui.icons.Icon.WINDOW_MAXIMIZE).size(GLYPH);
-        this.restoreGlyph = IconView.of(gui, dev.vexelray.gui.icons.Icon.WINDOW_RESTORE).size(GLYPH);
-        this.closeGlyph = IconView.of(gui, dev.vexelray.gui.icons.Icon.CLOSE).size(GLYPH);
+        this.minimizeGlyph = IconView.of(gui, MINIMIZE).size(GLYPH);
+        this.maximizeGlyph = IconView.of(gui, MAXIMIZE).size(GLYPH);
+        this.restoreGlyph = IconView.of(gui, RESTORE).size(GLYPH);
+        this.closeGlyph = IconView.of(gui, CLOSE).size(GLYPH);
         this.maximizeIcon = maximizeGlyph.node();
         this.restoreIcon = restoreGlyph.node().visible(false);
 
@@ -149,6 +157,11 @@ public final class TitleBar {
                 // Everything the buttons do not claim is caption: drag to move, double-click to maximize,
                 // right-click for the system menu — all of it the window manager's, none of it re-implemented.
                 .windowRegion(WindowRegion.DRAG)
+                // Docked at the top of its parent's frame, not placed in its flow: the root's frame is the
+                // window, while its flow may be a larger canvas (Gui.minSize) that scrolls. In the flow, a zoom
+                // past the minimum laid the bar out on that canvas and the window controls off the window.
+                .floatAt(Length.ZERO, Length.ZERO)
+                .dock(true)
                 .children(leading, caption, instruments, buttons);
 
         // The window can be maximized or restored without this widget being the cause, and every one of those
@@ -157,7 +170,10 @@ public final class TitleBar {
         syncMaximized();
     }
 
-    /** The node to place in a layout — put it at the top of the root column. */
+    /**
+     * The node to place in a layout — a child of the root. It docks at the top of the root's frame, so its place
+     * among the root's children decides only what draws over it, and the root's flow starts below it.
+     */
     public Node node() {
         return root;
     }
@@ -347,10 +363,10 @@ public final class TitleBar {
      * now. Redrawn in place, so it can be called at any time, before the window exists or after.
      */
     public TitleBar glyphs(IconSource minimize, IconSource maximize, IconSource restore, IconSource close) {
-        minimizeGlyph.icon(minimize != null ? minimize : dev.vexelray.gui.icons.Icon.WINDOW_MINIMIZE);
-        maximizeGlyph.icon(maximize != null ? maximize : dev.vexelray.gui.icons.Icon.WINDOW_MAXIMIZE);
-        restoreGlyph.icon(restore != null ? restore : dev.vexelray.gui.icons.Icon.WINDOW_RESTORE);
-        closeGlyph.icon(close != null ? close : dev.vexelray.gui.icons.Icon.CLOSE);
+        minimizeGlyph.icon(minimize != null ? minimize : MINIMIZE);
+        maximizeGlyph.icon(maximize != null ? maximize : MAXIMIZE);
+        restoreGlyph.icon(restore != null ? restore : RESTORE);
+        closeGlyph.icon(close != null ? close : CLOSE);
         return this;
     }
 

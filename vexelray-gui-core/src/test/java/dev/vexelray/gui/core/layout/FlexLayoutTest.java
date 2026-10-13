@@ -58,6 +58,32 @@ class FlexLayoutTest {
         assertEquals(52f, child.h, EPS, "AUTO cross stretches to the content height");
     }
 
+    /**
+     * FILL on the cross axis is the parent's cross extent under any alignment, as it is out of flow. Under CENTER
+     * it read as intrinsic, so a child asking for all the height got its content's instead, centred.
+     */
+    @Test
+    void fillOnTheCrossAxisFillsItUnderAnyAlignment() {
+        for (AlignItems align : new AlignItems[] {AlignItems.CENTER, AlignItems.START, AlignItems.END}) {
+            RetainedNode root = box(0);
+            root.set(PropKey.DIRECTION, Direction.ROW);
+            root.set(PropKey.ALIGN_ITEMS, align);
+            RetainedNode filled = box(1);
+            filled.set(PropKey.WIDTH, Length.rem(2));
+            filled.set(PropKey.HEIGHT, Length.FILL);
+            RetainedNode intrinsic = box(2);
+            intrinsic.set(PropKey.WIDTH, Length.rem(2));
+            add(root, filled);
+            add(root, intrinsic);
+
+            FlexLayout.layout(root, 200f, 100f, ctx(), TM);
+
+            assertEquals(0f, filled.y, EPS, align + ": FILL starts at the cross edge");
+            assertEquals(100f, filled.h, EPS, align + ": FILL takes the whole cross extent");
+            assertEquals(0f, intrinsic.h, EPS, align + ": AUTO is still its content, which here is nothing");
+        }
+    }
+
     @Test
     void perAxisPaddingInsetsIndependently() {
         RetainedNode root = box(0);

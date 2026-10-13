@@ -1,6 +1,7 @@
 package dev.vexelray.gui.widget;
 
 import dev.vexelray.gui.core.Gui;
+import dev.vexelray.gui.core.IconSource;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.WindowControls;
 import dev.vexelray.gui.core.WindowInstrument;
@@ -77,6 +78,11 @@ public final class TitleBar {
     /** The application's mark, first in {@link #leading}; null until given one. */
     private Node icon;
     private final Node titleText;
+    /** The window controls' drawings, kept as views so {@link #glyphs} can redraw them in place. */
+    private final IconView minimizeGlyph;
+    private final IconView maximizeGlyph;
+    private final IconView restoreGlyph;
+    private final IconView closeGlyph;
     private final Node maximizeIcon;
     private final Node restoreIcon;
 
@@ -100,19 +106,23 @@ public final class TitleBar {
 
         // The set's window controls. Maximize and restore share a button and swap with the window's state, which
         // syncMaximized() follows; both are built so the swap is a visibility change and never a rebuild.
-        this.maximizeIcon = IconView.of(gui, dev.vexelray.gui.icons.Icon.WINDOW_MAXIMIZE).size(GLYPH).node();
-        this.restoreIcon = IconView.of(gui, dev.vexelray.gui.icons.Icon.WINDOW_RESTORE).size(GLYPH).node().visible(false);
+        this.minimizeGlyph = IconView.of(gui, dev.vexelray.gui.icons.Icon.WINDOW_MINIMIZE).size(GLYPH);
+        this.maximizeGlyph = IconView.of(gui, dev.vexelray.gui.icons.Icon.WINDOW_MAXIMIZE).size(GLYPH);
+        this.restoreGlyph = IconView.of(gui, dev.vexelray.gui.icons.Icon.WINDOW_RESTORE).size(GLYPH);
+        this.closeGlyph = IconView.of(gui, dev.vexelray.gui.icons.Icon.CLOSE).size(GLYPH);
+        this.maximizeIcon = maximizeGlyph.node();
+        this.restoreIcon = restoreGlyph.node().visible(false);
 
         // The handlers read the field, not the constructor argument, so they resolve the controls at click
         // time and rebinding later rewires every button. Closing over the argument would capture what the
         // window did not exist yet to be -- WindowControls.NONE, for every application, permanently.
-        Node minimize = button(IconView.of(gui, dev.vexelray.gui.icons.Icon.WINDOW_MINIMIZE).size(GLYPH).node(),
+        Node minimize = button(minimizeGlyph.node(),
                 WindowRegion.INTERACTIVE, Role.RAISED, () -> this.controls.minimize());
         Node maximize = button(gui.box().size(GLYPH, GLYPH).scroll(false, false)
                         .children(maximizeIcon.floatAt(Length.ZERO, Length.ZERO),
                                 restoreIcon.floatAt(Length.ZERO, Length.ZERO)),
                 WindowRegion.MAXIMIZE_BUTTON, Role.RAISED, () -> this.controls.toggleMaximize());
-        Node close = button(IconView.of(gui, dev.vexelray.gui.icons.Icon.CLOSE).size(GLYPH).node(),
+        Node close = button(closeGlyph.node(),
                 WindowRegion.INTERACTIVE, Role.DANGER, () -> this.controls.close());
 
         Node buttons = gui.row().height(Length.FILL).alignItems(AlignItems.STRETCH).scroll(false, false)
@@ -320,6 +330,28 @@ public final class TitleBar {
             out[i * 4 + 3] = (byte) (p >>> 24);
         }
         return out;
+    }
+
+    /**
+     * Draw the window controls with {@code minimize}, {@code maximize}, {@code restore} and {@code close} instead of
+     * the set's own. A {@code null} is the set's own drawing for that button, so {@code glyphs(null, null, null,
+     * mine)} changes only close, and four nulls put the defaults back.
+     *
+     * <p><b>Only the drawing changes.</b> The buttons, their window regions (maximize still earns Snap Layouts),
+     * their hover roles and their size stay the bar's, and each glyph is still drawn {@code GLYPH} square in the
+     * theme's ink, so any {@link IconSource} will do: another {@link dev.vexelray.gui.icons.Icon}, or a field of the
+     * application's own. Maximize and restore are separate because they are two drawings the bar swaps between as
+     * the window changes, whoever changed it; giving one without the other would show the default half the time.
+     *
+     * <p>Replacing rather than accumulating, like {@link #instruments}: the call says what the controls look like
+     * now. Redrawn in place, so it can be called at any time, before the window exists or after.
+     */
+    public TitleBar glyphs(IconSource minimize, IconSource maximize, IconSource restore, IconSource close) {
+        minimizeGlyph.icon(minimize != null ? minimize : dev.vexelray.gui.icons.Icon.WINDOW_MINIMIZE);
+        maximizeGlyph.icon(maximize != null ? maximize : dev.vexelray.gui.icons.Icon.WINDOW_MAXIMIZE);
+        restoreGlyph.icon(restore != null ? restore : dev.vexelray.gui.icons.Icon.WINDOW_RESTORE);
+        closeGlyph.icon(close != null ? close : dev.vexelray.gui.icons.Icon.CLOSE);
+        return this;
     }
 
     /**

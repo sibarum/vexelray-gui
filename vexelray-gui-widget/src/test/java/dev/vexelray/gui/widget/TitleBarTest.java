@@ -198,6 +198,36 @@ class TitleBarTest {
         }
     }
 
+    /**
+     * An application's own drawing for a window control is what that button shows, and only the drawing changes:
+     * the button it sits in still does what it did.
+     */
+    @Test
+    void anApplicationsGlyphReplacesOnlyTheDrawing() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Recorder window = new Recorder();
+            TitleBar bar = bar(h, window);
+            Drawing close = new Drawing();
+            bar.glyphs(null, null, null, close);
+            h.frame();
+
+            assertTrue(close.px > 0f, "the close button draws the application's glyph");
+            h.click(buttonX(0), BAR_H / 2f);
+            assertEquals(List.of("close"), window.calls, "and still closes the window");
+        }
+    }
+
+    /** An {@link dev.vexelray.gui.core.IconSource} that notes the size it was last drawn at and draws the set's close. */
+    private static final class Drawing implements dev.vexelray.gui.core.IconSource {
+        private float px;
+
+        @Override
+        public dev.vexelray.gui.core.ImageField field(float px, dev.vexelray.canvas.Color tint) {
+            this.px = px;
+            return dev.vexelray.gui.icons.Icon.CLOSE.field(px, tint);
+        }
+    }
+
     /** An icon's straight ARGB, as the straight RGBA a texture takes: channels moved, nothing premultiplied. */
     @Test
     void anIconsPixelsReachTheTextureInRgbaOrder() {

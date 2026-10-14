@@ -294,13 +294,16 @@ public final class TextField implements AutoCloseable {
      * forgotten; everything else the user did in the window still undoes.
      */
     public TextField text(String s) {
+        // The history first, and outside this field's monitor: text() is also called from inside an undo — a
+        // number field putting back its number — which holds the history's monitor, while typing takes this
+        // field's and then the history's. Taking both here, in that order, would be the other half of a deadlock.
+        History h = history();
+        if (h == own || h == fallback) {
+            h.clear();
+        } else {
+            h.forget(c -> c instanceof TextChange t && t.owner() == this);
+        }
         synchronized (this) {
-            History h = history();
-            if (h == own || h == fallback) {
-                h.clear();
-            } else {
-                h.forget(c -> c instanceof TextChange t && t.owner() == this);
-            }
             document.commit(commit, new Edit.SetText(s));
         }
         published();

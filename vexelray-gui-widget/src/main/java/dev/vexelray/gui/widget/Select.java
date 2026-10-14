@@ -125,8 +125,10 @@ public final class Select<T> implements AutoCloseable {
     /** Where the popup was last put, so a re-anchor that would write the same numbers writes nothing. */
     private volatile Rect anchoredTo = Rect.ZERO;
 
-    /** What was selected when the popup opened — what Escape puts back. */
+    /** What was selected when the popup opened — what Escape puts back, and what undoing the choice returns to. */
     private volatile Set<T> opened = Set.of();
+    /** The way back from each choice made, into the tree's history. */
+    private final ValueUndo<Set<T>> undo;
 
     /** A single-choice select labelled by {@link String#valueOf}. */
     public Select(Gui gui) {
@@ -216,6 +218,18 @@ public final class Select<T> implements AutoCloseable {
 
         armClosed();
         readOut();
+        // A choice is a step; moving through the options is not, which is the onCommit/selection split again.
+        this.undo = new ValueUndo<>(gui, control, () -> Set.copyOf(selection.selection()), chosen -> {
+            selection.set(chosen);
+            readOut();
+            onCommit.accept(Set.copyOf(chosen));
+        }, false);
+    }
+
+    /** Whether choices made here are undoable: on by default. Off for a select that is not an edit. */
+    public Select<T> undoable(boolean undoable) {
+        undo.enabled(undoable);
+        return this;
     }
 
     // ------------------------------------------------------------------ what it is made of
@@ -333,7 +347,9 @@ public final class Select<T> implements AutoCloseable {
             return;
         }
         shut();
-        onCommit.accept(Set.copyOf(selection.selection()));
+        Set<T> chosen = Set.copyOf(selection.selection());
+        onCommit.accept(chosen);
+        undo.edited(opened, chosen);
     }
 
     /**

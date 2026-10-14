@@ -28,6 +28,11 @@ import java.util.function.Consumer;
  *
  * <p>Reads flow out through {@link #onChange}; the handler runs on a worker thread, so it must not touch the
  * retained tree except through {@link Node} handles.
+ *
+ * <p><b>A flip undoes.</b> Each flip the user makes — or {@link #on(boolean)}, acting as the user — is an entry in the
+ * history the tree binds above the switch; Ctrl+Z flips it back the same way, handler and all, so the application's
+ * model follows with nothing written for it. {@link #show} records nothing, because nobody flipped anything.
+ * {@link #undoable(boolean)} turns it off for a switch that is not an edit.
  */
 public final class Toggle {
 
@@ -43,6 +48,8 @@ public final class Toggle {
     private float at;
     /** Which flip the knob is currently obeying; see {@link #move}. Guarded by {@code this}. */
     private long generation;
+    /** The way back from each flip, into the tree's history. */
+    private final ValueUndo<Boolean> undo;
 
     /** Build a switch on {@code gui} in the given initial state. */
     public Toggle(Gui gui, boolean initial) {
@@ -69,6 +76,16 @@ public final class Toggle {
         gui.cursor(track, CursorShape.POINTER);
         gui.onClick(track, this::flip);
         gui.onState(track, s -> paint(s == dev.vexelray.gui.core.input.InteractionState.HOVER));
+        this.undo = new ValueUndo<>(gui, track, () -> on, this::set, false);
+    }
+
+    /**
+     * Whether flips are undoable: on by default. Off for a switch that is not an edit — a view's "show hidden
+     * files" — whose flips should not stand between the user and what they actually changed.
+     */
+    public Toggle undoable(boolean undoable) {
+        undo.enabled(undoable);
+        return this;
     }
 
     /** The node to place in a layout (the track). */
@@ -83,7 +100,9 @@ public final class Toggle {
 
     /** Set the state programmatically; also notifies {@link #onChange}. */
     public Toggle on(boolean value) {
+        boolean was = on;
         set(value);
+        undo.edited(was, value);
         return this;
     }
 
@@ -122,7 +141,9 @@ public final class Toggle {
     }
 
     private void flip() {
-        set(!on);
+        boolean was = on;
+        set(!was);
+        undo.edited(was, !was);
     }
 
     /** Change state, then tell the application — outside the lock, because the handler is not ours. */

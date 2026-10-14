@@ -1,6 +1,16 @@
 # The undo plan
 
-**Status: steps 1–5 built (2026-10-14); step 6 next.** Between 5 and 6, **Vexplore was ported** onto the window's
+**Status: steps 1–6 built (2026-10-14); step 7 next.** Step 6 as built: one package-private `ValueUndo<T>` in
+`-widget` is the whole mechanism. A control calls it on its user path — the one that tells the application — and
+it records into `Gui.historyFor(node)` an entry that targets the control, refuses as a conflict if the control no
+longer shows what the edit left, and replays through the control's own edit path, so the application's handler
+fires and its model follows. `show(...)` never records. `Toggle` (a flip, never folded), `Slider` (a whole drag is
+one step and gained `onCommit`; arrow keys fold into a run), `NumberField` (each agreed number; its `onChange`
+already was the commit, so no split was needed; arrow steps fold), `Segment`, `Select` (a choice made, not the
+browsing) and `ColorPicker` (each commit; its state is HSV plus alpha, so the hue survives undoing into a grey).
+Inspector rows build these widgets once and sync with `show`, so they undo with nothing of their own. Every one
+has `undoable(false)` for a control that is not an edit. Witnessed in the calculator's settings window: a choice,
+Tab away, Ctrl+Z goes back to the control, Ctrl+Z undoes, Ctrl+Y redoes. Between 5 and 6, **Vexplore was ported** onto the window's
 history (its own `07b13b2`): step 4 had silently disabled its Ctrl+Z, because its `gui.shortcut` and the window's
 `GLOBAL` claim tie and the first registered wins. Its file operations are entries whose `apply` only starts the
 disk work on the offload lane, since an entry applies under the history's lock, and that refuse while anything is

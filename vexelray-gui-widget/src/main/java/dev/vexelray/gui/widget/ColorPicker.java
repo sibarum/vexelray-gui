@@ -33,9 +33,13 @@ import java.util.function.Consumer;
  * drag rather than type. {@link #onCommit} fires when a choice has been <em>made</em>: the drag ended, the hex was
  * submitted, a recent swatch was clicked; that is what records into the {@link ColorHistory}. And
  * {@link #color(Color)} — the application telling the picker what the selection is now — fires neither, because
- * nobody chose anything. An application drives its preview from the first and its document edit and its undo
- * entry from the second. Collapsing them would make either every pixel of a drag an undo step or the picker
- * impossible to watch.
+ * nobody chose anything. An application drives its preview from the first and its document edit from the second.
+ * Collapsing them would make either every pixel of a drag an undo step or the picker impossible to watch.
+ *
+ * <p><b>The undo entry is the picker's own</b>: each commit is a step in the history the tree binds above it, and
+ * undoing replays the earlier colour as a commit, so an application's edit hung off {@link #onCommit} follows with
+ * nothing more written. An application that records its own entry instead turns this off with
+ * {@link #undoable(boolean)}, or every choice would be two steps.
  *
  * <h2>Why the ramps are pictures, and why they are exact</h2>
  * A ramp is hundreds of marks that participate in no layout and change wholesale when the box does, so it is a
@@ -112,6 +116,18 @@ public final class ColorPicker implements AutoCloseable {
     private volatile Consumer<Color> onChange = c -> { };
     private volatile Consumer<Color> onCommit = c -> { };
 
+    /**
+     * What the picker holds, as undo sees it: the coordinates and the alpha, not the {@link Color}, for the reason
+     * the class note gives — undoing into a grey must give the hue back.
+     */
+    private record Chosen(Hsv hsv, float alpha) {
+    }
+
+    /** The last colour chosen (or shown): what undoing the next choice returns to. */
+    private volatile Chosen committed;
+    /** The way back from each choice, into the tree's history: a released drag is one step, however long. */
+    private final ValueUndo<Chosen> undo;
+
     /** A picker starting at opaque white, with a private history. */
     public ColorPicker(Gui gui) {
         this(gui, Color.WHITE, new ColorHistory());
@@ -185,6 +201,26 @@ public final class ColorPicker implements AutoCloseable {
         this.historySub = this.history.colors().onCommit(committed -> showRecents(committed.value()));
         showRecents(this.history.current());
         repaint();
+
+        this.committed = new Chosen(hsv, alpha);
+        // Undo replays a choice as the user would: shown, and announced as a commit, so the application's edit
+        // follows. Not into the recents strip — taking a colour back is not choosing it again.
+        this.undo = new ValueUndo<>(gui, root, () -> new Chosen(hsv, alpha), back -> {
+            this.hsv = back.hsv();
+            this.alpha = back.alpha();
+            this.committed = back;
+            repaint();
+            onCommit.accept(color());
+        }, false);
+    }
+
+    /**
+     * Whether choices made here are undoable: on by default — a released drag, a submitted hex or a clicked recent
+     * is one step each. Off when the application records its own entry from {@link #onCommit} instead.
+     */
+    public ColorPicker undoable(boolean undoable) {
+        undo.enabled(undoable);
+        return this;
     }
 
     /** The node to place in a layout. */
@@ -218,6 +254,7 @@ public final class ColorPicker implements AutoCloseable {
         if (color != null) {
             this.hsv = Hsv.of(color);
             this.alpha = color.a();
+            this.committed = new Chosen(hsv, alpha);   // the model's colour is now the one a choice starts from
             repaint();
         }
         return this;
@@ -319,6 +356,10 @@ public final class ColorPicker implements AutoCloseable {
         if (committed) {
             history.use(c);
             onCommit.accept(c);
+            Chosen before = this.committed;
+            Chosen after = new Chosen(hsv, alpha);
+            this.committed = after;
+            undo.edited(before, after, true);   // a drag is one gesture, so one step, folded into nothing
         } else {
             onChange.accept(c);
         }

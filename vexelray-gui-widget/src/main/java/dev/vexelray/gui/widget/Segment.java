@@ -44,6 +44,8 @@ public final class Segment<T> {
     private final List<T> order = new ArrayList<>();
     private volatile T selected;
     private volatile Consumer<T> onChange = v -> { };
+    /** The way back from each choice, into the tree's history. */
+    private final ValueUndo<T> undo;
 
     /** Build an empty segment on {@code gui}; add options with {@link #option}. */
     public Segment(Gui gui) {
@@ -60,6 +62,20 @@ public final class Segment<T> {
                 .gap(Length.dp(1))
                 .alignItems(AlignItems.CENTER)
                 .scroll(false, false);
+        this.undo = new ValueUndo<>(gui, bar, () -> selected, v -> {
+            show(v);
+            onChange.accept(v);
+        }, false);
+    }
+
+    /**
+     * Whether choices are undoable: on by default, since a segment usually chooses a value. Off for one that
+     * switches a view rather than editing anything — which pane is showing is not something to undo, and those
+     * steps would stand between the user and what they changed (docs/plans/undo.md §5).
+     */
+    public Segment<T> undoable(boolean undoable) {
+        undo.enabled(undoable);
+        return this;
     }
 
     /** Add an option. The first one added is selected unless {@link #select} says otherwise. */
@@ -101,8 +117,10 @@ public final class Segment<T> {
         if (!cells.containsKey(value)) {
             return this;
         }
+        T was = selected;
         show(value);
         onChange.accept(value);
+        undo.edited(was, value);
         return this;
     }
 

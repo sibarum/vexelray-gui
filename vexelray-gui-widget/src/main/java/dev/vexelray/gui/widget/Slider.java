@@ -77,6 +77,11 @@ public final class Slider {
     private volatile Ramp ramp;
     private volatile float value;
     private volatile DoubleConsumer onChange = v -> { };
+    private volatile DoubleConsumer onCommit = v -> { };
+    /** The value when the drag in progress began: what undoing the whole drag returns to. Guarded by this. */
+    private float dragFrom;
+    /** The way back from each drag and each key step, into the tree's history. */
+    private final ValueUndo<Float> undo;
     /** Where the thumb is drawn, 0..1 — which is not {@link #value} mid-drag or mid-settle. Guarded by this. */
     private float at;
     /** Which movement the thumb is obeying; a settle that has been overtaken drops its writes. Guarded by this. */
@@ -108,11 +113,17 @@ public final class Slider {
             } else if (e.key() == Key.RIGHT || e.key() == Key.UP) {
                 step(1);
             } else if (e.key() == Key.HOME) {
-                set(0f);
+                edit(0f);
             } else if (e.key() == Key.END) {
-                set(1f);
+                edit(1f);
             }
         });
+        // Arrow-key steps fold into one run; a drag is recorded alone, when it ends (see pointer).
+        this.undo = new ValueUndo<>(gui, track, () -> value, v -> {
+            float rest = move(v, true);
+            onChange.accept(rest);
+            onCommit.accept(rest);
+        }, true);
         // A picture resolves no units of its own, so the ticks are re-authored against the box the layout
         // settled on — which is also what carries them through a zoom or a DPI change.
         gui.onResize(track, computed -> paintTicks(computed.rect()));
@@ -131,9 +142,32 @@ public final class Slider {
         return value;
     }
 
-    /** Set the value programmatically (0..1), rested on the lattice; also notifies {@link #onChange}. */
+    /**
+     * Set the value programmatically (0..1), rested on the lattice, as the user would: notifies {@link #onChange}
+     * and {@link #onCommit}, and is a step Ctrl+Z takes back. {@link #show} is the sync that is none of those.
+     */
     public Slider value(float v) {
-        set(v);
+        edit(v);
+        return this;
+    }
+
+    /**
+     * React to a value being <b>chosen</b>: the end of a drag, a key step, {@link #value(float)} — and an undo or
+     * redo. {@link #onChange} fires as the thumb moves, which is the live preview; this is the decision, the one an
+     * application saves or sends. A drag reports here once, however many points it crossed. Runs on a worker
+     * thread.
+     */
+    public Slider onCommit(DoubleConsumer handler) {
+        this.onCommit = handler == null ? v -> { } : handler;
+        return this;
+    }
+
+    /**
+     * Whether what the user does to this slider is undoable: on by default — a drag is one step, a run of arrow
+     * keys another. Off for a slider that is not an edit, a zoom or a scrubber.
+     */
+    public Slider undoable(boolean undoable) {
+        undo.enabled(undoable);
         return this;
     }
 
@@ -230,7 +264,12 @@ public final class Slider {
         Lattice l = lattice;
         float rest = l.nearest(f);
         boolean changed;
+        float from;
         synchronized (this) {
+            if (e.phase() == DragEvent.Phase.START) {
+                dragFrom = value;
+            }
+            from = dragFrom;
             changed = rest != value;
             value = rest;
             long mine = ++generation;
@@ -242,26 +281,37 @@ public final class Slider {
         if (changed) {
             onChange.accept(rest);
         }
+        if (e.phase() == DragEvent.Phase.END) {
+            // The decision, and the step: one for the whole drag, however many points it crossed on the way.
+            if (rest != from) {
+                onCommit.accept(rest);
+            }
+            undo.edited(from, rest, true);
+        }
+    }
+
+    /** An edit the user made from the keyboard, or a program acting as the user: a step, and a commit. */
+    private void edit(float raw) {
+        float from = value;
+        float rest = move(raw, true);
+        onChange.accept(rest);
+        onCommit.accept(rest);
+        undo.edited(from, rest);
     }
 
     private void step(int direction) {
         Lattice l = lattice;
         float v = value;
         if (l.size() == 0) {
-            set(v + direction * NUDGE);
+            edit(v + direction * NUDGE);
             return;
         }
         int i = l.below(v);
         int to = direction > 0 ? i + 1 : (i >= 0 && l.point(i) == v ? i - 1 : i);
-        set(l.point(Math.clamp(to, 0, l.size() - 1)));
+        edit(l.point(Math.clamp(to, 0, l.size() - 1)));
     }
 
     // --- movement -------------------------------------------------------------------------------------------
-
-    /** Move as an edit, then tell the application — outside the lock, because the handler is not ours. */
-    private void set(float raw) {
-        onChange.accept(move(raw, true));
-    }
 
     /**
      * Rest the value on the lattice and send the thumb there, telling nobody; answer where it rested. An edit

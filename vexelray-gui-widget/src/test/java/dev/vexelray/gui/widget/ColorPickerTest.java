@@ -146,6 +146,33 @@ class ColorPickerTest {
         }
     }
 
+    /** A choice is a step in the window's history, and undoing it replays the earlier colour as a commit. */
+    @Test
+    void aChoiceUndoesAndTheHueComesBackWithIt() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            dev.vexelray.gui.core.edit.History window = new dev.vexelray.gui.core.edit.History();
+            h.gui.history(window);
+            Recorder rec = new Recorder();
+            ColorPicker picker = mount(h, Color.rgb(0xCC3333), new ColorHistory(4), rec);
+            double hueBefore = picker.hsv().hue();
+
+            Rect hue = rectOf(h, "colorpicker.hue");
+            drag(h, hue.x() + hue.w() * 0.25f, hue.y() + hue.h() / 2f,
+                    hue.x() + hue.w() * 0.5f, hue.y() + hue.h() / 2f);
+            assertEquals(1, window.undoDepth(), "the drag is one step");
+
+            // The ramps take no focus, so the first press takes the user to the picker and the second undoes.
+            for (int press = 0; press < 2; press++) {
+                h.gui.undo(window);
+                h.frame().frame().frame();
+            }
+            assertEquals(hueBefore, picker.hsv().hue(), 1e-9, "back to the colour it was");
+            assertEquals("#cc3333", Hex.format(rec.committed.get(rec.committed.size() - 1)),
+                    "announced as a commit, so the application's edit follows");
+            assertEquals(1, picker.history().current().size(), "taking a colour back is not choosing it again");
+        }
+    }
+
     @Test
     void theSquareSetsSaturationAndValue() {
         try (HeadlessGui h = new HeadlessGui()) {

@@ -42,6 +42,8 @@ public final class NumberField {
     private final Subscription focusSub;
     private volatile BigDecimal value;
     private volatile DoubleConsumer onChange = v -> { };
+    /** The way back from each agreed number, into the tree's history; arrow steps fold into one run. */
+    private final ValueUndo<BigDecimal> undo;
 
     /** Build an unbounded field stepping by {@code step}. */
     public NumberField(Gui gui, double initial, double step) {
@@ -73,6 +75,18 @@ public final class NumberField {
                 commit();
             }
         });
+        // The number is the step, not the characters: an agreed number replaces the typing that led to it (the
+        // field's text(...) forgets that), so Ctrl+Z after Enter puts the last number back, not the last keystroke.
+        this.undo = new ValueUndo<>(gui, field.node(), () -> value, this::put, true);
+    }
+
+    /**
+     * Whether agreed numbers are undoable: on by default — each one a step, a run of arrow keys one step between
+     * them. Off for a field that is not an edit.
+     */
+    public NumberField undoable(boolean undoable) {
+        undo.enabled(undoable);
+        return this;
     }
 
     /** Release the focus subscription. The underlying {@link TextField} is the caller's to close. */
@@ -97,7 +111,7 @@ public final class NumberField {
 
     /** Set the number programmatically; also notifies {@link #onChange}. */
     public NumberField value(double v) {
-        put(clamp(BigDecimal.valueOf(v)));
+        edit(clamp(BigDecimal.valueOf(v)));
         return this;
     }
 
@@ -120,7 +134,7 @@ public final class NumberField {
     }
 
     private void nudge(int direction) {
-        put(clamp(value.add(step.multiply(BigDecimal.valueOf(direction), MC), MC)));
+        edit(clamp(value.add(step.multiply(BigDecimal.valueOf(direction), MC), MC)));
     }
 
     private void commit() {
@@ -132,9 +146,19 @@ public final class NumberField {
             field.text(plain(value));
             return;
         }
-        put(clamp(parsed));
+        edit(clamp(parsed));
     }
 
+    /** A number the user agreed — typed and committed, stepped, or set acting as the user: a step to undo. */
+    private void edit(BigDecimal v) {
+        BigDecimal from = value;
+        put(v);
+        if (from.compareTo(v) != 0) {   // 1 and 1.0 are one number, whatever their scales say
+            undo.edited(from, v);
+        }
+    }
+
+    /** Take the number, show it and tell the application — the user path without the record, which undo replays. */
     private void put(BigDecimal v) {
         write(v);
         onChange.accept(v.doubleValue());

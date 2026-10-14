@@ -115,7 +115,7 @@ class UndoingTest {
         UndoEvent second = press(false);
         assertEquals(Outcome.APPLIED, second.outcome());
         assertEquals("before", value.get(), "now it is undone, where the user can see it");
-        assertEquals(field.id(), second.node());
+        assertEquals(field.id(), second.target().id());
     }
 
     @Test
@@ -150,7 +150,7 @@ class UndoingTest {
 
         UndoEvent e = press(false);
         assertEquals(Outcome.REFUSED, e.outcome());
-        assertEquals(field.id(), e.node(), "the presenter is told which control is in the way");
+        assertEquals(field.id(), e.target().id(), "the presenter is told which control is in the way");
         assertTrue(gui.semanticSnapshot().node(page.id()).visible(), "it is revealed, so the user can see it");
         assertNotEquals(field.id(), focused(), "but not focused: it would refuse the keyboard too");
         assertEquals("after", value.get());

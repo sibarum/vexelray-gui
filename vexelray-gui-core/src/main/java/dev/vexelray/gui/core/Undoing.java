@@ -55,9 +55,12 @@ final class Undoing {
     private final LongConsumer scrollIntoView;
     private final Executor handlers;
     private final Consumer<String> wake;
+    /** A handle on a node by id, for the event: a presenter plays its cue on a {@link Node}, not on an id. */
+    private final LongFunction<Node> handles;
 
     Undoing(Navigator navigator, InputDispatcher input, LongFunction<RetainedNode> nodes,
-            Supplier<RetainedNode> root, LongConsumer scrollIntoView, Executor handlers, Consumer<String> wake) {
+            Supplier<RetainedNode> root, LongConsumer scrollIntoView, Executor handlers, Consumer<String> wake,
+            LongFunction<Node> handles) {
         this.navigator = navigator;
         this.input = input;
         this.nodes = nodes;
@@ -65,6 +68,11 @@ final class Undoing {
         this.scrollIntoView = scrollIntoView;
         this.handlers = handlers;
         this.wake = wake;
+        this.handles = handles;
+    }
+
+    private UndoEvent event(History history, boolean redo, Outcome outcome, long id) {
+        return new UndoEvent(history, redo, outcome, id == Target.NO_NODE ? null : handles.apply(id));
     }
 
     /** Ask for one undo or redo of {@code history}, from any thread. Judged in the next frame. */
@@ -148,11 +156,11 @@ final class Undoing {
     private void apply(History history, boolean redo, long id) {
         handlers.execute(() -> {
             Outcome outcome = redo ? history.attemptRedo() : history.attemptUndo();
-            sink.accept(new UndoEvent(history, redo, outcome, id));
+            sink.accept(event(history, redo, outcome, id));
         });
     }
 
     private void report(History history, boolean redo, Outcome outcome, long id) {
-        handlers.execute(() -> sink.accept(new UndoEvent(history, redo, outcome, id)));
+        handlers.execute(() -> sink.accept(event(history, redo, outcome, id)));
     }
 }

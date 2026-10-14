@@ -1,6 +1,8 @@
 # The undo plan
 
-**Status: steps 1–3 built (2026-10-14); step 4 next.** Step 2 as built: `Node.disabled(boolean)` /
+**Status: steps 1–4 built (2026-10-14); step 5 next.** Step 4 is in `vexelray-framework`: `Window.history()`,
+bound in the window's constructor, and `UndoFeedback` (ring on a refused control, `Dialogs` prompt otherwise);
+`UndoEvent` carries the target as a `Node` so a presenter can cue it. See that repo's architecture.md, *Then undo*. Step 2 as built: `Node.disabled(boolean)` /
 `PropKey.DISABLED` closes a node and its subtree (§3); its look stays each widget's, so a renderer-wide dim was
 not added, and `Button.enabled` now rides on it. Step 3 as built: `Gui.undo(History)` / `Gui.redo(History)` are
 the one door — `Gui.history(...)`'s chords call them, and an Undo button should too, since `History.undo()`

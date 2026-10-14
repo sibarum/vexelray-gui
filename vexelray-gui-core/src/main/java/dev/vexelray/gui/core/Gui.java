@@ -412,8 +412,6 @@ public final class Gui implements AutoCloseable {
         this.input.revealSink(id -> sink.post(new Mutation.Reveal(id)));
         // Disabled is judged on the tree (an ancestor's counts), so the dispatcher needs to find a node by id.
         this.input.nodeLookup(reconciler::node);
-        this.undoing = new Undoing(navigator, input, reconciler::node, reconciler::root,
-                id -> sink.post(new Mutation.Reveal(id)), handlers, this::wake);   // as Tab reveals, above
 
         // The window size, zoom and density States are Metrics' own — built there, so that component can be
         // constructed and exercised without any of this.
@@ -452,6 +450,11 @@ public final class Gui implements AutoCloseable {
             }
         }, handlers);
         this.layoutReader = readModels.reader();
+        // After the reader, because the events it sends carry node handles, and a handle reads its geometry there.
+        LayoutReader reads = this.layoutReader;
+        this.undoing = new Undoing(navigator, input, reconciler::node, reconciler::root,
+                id -> sink.post(new Mutation.Reveal(id)),   // as Tab reveals what it lands on
+                handlers, this::wake, id -> new Node(id, sink, reads));
 
         // The modifiers held right now, published the same way, and a State rather than a topic for the same
         // reason: this is a *condition*, not an event. Nobody wants the edges — they want to know what is held.

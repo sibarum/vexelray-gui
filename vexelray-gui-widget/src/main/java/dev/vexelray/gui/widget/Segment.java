@@ -69,9 +69,9 @@ public final class Segment<T> {
     }
 
     /**
-     * Whether choices are undoable: on by default, since a segment usually chooses a value. Off for one that
-     * switches a view rather than editing anything — which pane is showing is not something to undo, and those
-     * steps would stand between the user and what they changed (docs/plans/undo.md §5).
+     * Whether choices are undoable: on by default, since a segment usually chooses a value. An application may
+     * turn it off for one that switches a view, if it would rather those steps did not stand between the user and
+     * what they changed — a call made case by case (docs/plans/undo.md §5).
      */
     public Segment<T> undoable(boolean undoable) {
         undo.enabled(undoable);

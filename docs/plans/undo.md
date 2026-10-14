@@ -143,10 +143,13 @@ barrier on blur. That fixes today's bug where typing cannot be undone once focus
 `TextField.history()` is public and used (the template's `Buffer`, `WorkspacesPage`), so it keeps returning the
 history the field records into.
 
-**Navigation is not recorded by default.** Tab changes, selection, expand/collapse and split positions are not
-entries unless a widget opts in (`.undoable(true)`). *Ruled 2026-10-13*, as recommended. Reason: the reveal
-step already reaches an edit behind a tab, so recording navigation buys no reachability, and recorded browsing
-would bury the user's edits under it.
+**Whether a view change is undoable is decided case by case, not by a rule.** Tab changes, selection,
+expand/collapse and split positions *can* be undo steps; each widget picks a default and an application can
+override it either way. The defaults so far leave the stock navigation widgets out, on the reasoning that the
+reveal step already reaches an edit behind a tab, so recording navigation buys no reachability, and recorded
+browsing would sit between the user and their edits. That is a choice made per widget, open to being made the
+other way for any one of them; the switch to opt a navigation widget in (`.undoable(true)`) is not built yet,
+and is built for a widget when an application wants it.
 
 **A document may keep its own history.** One opt-in, and no other nesting: a subtree can declare a history of its
 own, in force while focus is inside it — a document tab in an editor. Its entries never enter the window's.

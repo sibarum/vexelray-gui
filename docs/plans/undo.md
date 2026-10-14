@@ -1,6 +1,11 @@
 # The undo plan
 
-**Status: steps 1–5 built (2026-10-14); step 6 next.** Step 5 as built: a `TextField` records into
+**Status: steps 1–5 built (2026-10-14); step 6 next.** Between 5 and 6, **Vexplore was ported** onto the window's
+history (its own `07b13b2`): step 4 had silently disabled its Ctrl+Z, because its `gui.shortcut` and the window's
+`GLOBAL` claim tie and the first registered wins. Its file operations are entries whose `apply` only starts the
+disk work on the offload lane, since an entry applies under the history's lock, and that refuse while anything is
+running; redo is new (`Operations.redo`). The rule for any application with its own undo: record into
+`Window.history()`, never bind Ctrl+Z beside it. Step 5 as built: a `TextField` records into
 `Gui.historyFor(node)` — the nearest history bound above it, read off the published semantic snapshot so it is
 safe from any thread — and claims its own undo chords at `FOCUSED`, routed through `Gui.undo`. It had to: since
 step 4 the window's `GLOBAL` claim took Ctrl+Z from every field, because a claim outranks key delivery. Its

@@ -285,6 +285,9 @@ public final class Automation implements Commands {
             if (!n.visible()) {
                 sb.append(" hidden");
             }
+            if (n.disabled()) {
+                sb.append(" disabled");   // as tree says it: a find that hides it answers the wrong question
+            }
             sb.append('\n');
         }
         return found == 0 ? "ok (nothing matches '" + query.trim() + "')"

@@ -18,8 +18,7 @@ is theirs — if the right fix is in tactroller, change tactroller. A cross-repo
 | **atchung** | The typed bus: topics and versioned `State<T>`. Input in, mutations through. |
 | **supirvast** | `vastir` — the expression IR the engine's shaders are authored in. |
 | **kronometer** | Timing and animation, wrapped here as `vexelray-gui-krono`. |
-| **vexplore**, **text-editor-vexel-demo** (Vex), **Pix**, **calculator-vexel-demo**, **vexelray-sim-fluid**, **vexelray-sim-rigid** | Applications built on this framework, all through `vexelray-framework`. They are where a renderer or a technique lives when it is the consumer's rather than the framework's. `vexelray-designer` is still on disk but is not kept compiling. |
-| **mainframe** | A terminal, built on this repo's modules directly rather than through `vexelray-framework`. |
+| **vexplore**, **text-editor-vexel-demo** (Vex), **Pix**, **mainframe** (a terminal over ConPTY), **calculator-vexel-demo**, **vexelray-sim-fluid**, **vexelray-sim-rigid** | Applications built on this framework, all through `vexelray-framework`. They are where a renderer or a technique lives when it is the consumer's rather than the framework's. `vexelray-designer` is still on disk but is not kept compiling. |
 
 ## Drawing something: pick the lane before writing code
 

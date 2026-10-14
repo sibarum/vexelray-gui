@@ -167,6 +167,8 @@ public final class InputDispatcher {
     private final java.util.concurrent.CopyOnWriteArrayList<Watch> dragWatches =
             new java.util.concurrent.CopyOnWriteArrayList<>();
     private volatile History dropHistory;
+    /** The reconciler's index, for judging a node by id (see {@link #nodeLookup}). GUI thread. */
+    private java.util.function.LongFunction<RetainedNode> nodes = id -> null;
     private final Map<Long, Consumer<KeyEvent>> keyHandlers = new ConcurrentHashMap<>();
     // Typed-text handlers (CharTyped → codepoint) and caret-placement handlers (click → offset), both for
     // editable text nodes; registering either makes the node focusable.
@@ -656,7 +658,7 @@ public final class InputDispatcher {
         if (e instanceof InputEvent.PointerMoved m) {
             pointerX = m.x();
             pointerY = m.y();
-            hoverHit = HitTest.at(currentRoot, m.x(), m.y());
+            hoverHit = RetainedNode.enabledPart(HitTest.at(currentRoot, m.x(), m.y()));
             s.moveTo(m.x(), m.y(), this::dropTargetsAt);
             return true;
         }
@@ -753,7 +755,8 @@ public final class InputDispatcher {
      * its way to becoming.
      */
     public List<DropTarget> dropTargetsAt(float x, float y) {
-        RetainedNode hit = HitTest.at(currentRoot, x, y);
+        // A disabled target accepts nothing; the enabled container around it still answers for the point.
+        RetainedNode hit = RetainedNode.enabledPart(HitTest.at(currentRoot, x, y));
         List<DropTarget> found = null;
         for (RetainedNode n = hit; n != null; n = n.parent) {
             DropTarget target = dropTargets.get(n.id);
@@ -1048,6 +1051,7 @@ public final class InputDispatcher {
      */
     public void dispatch(RetainedNode root) {
         this.currentRoot = root;
+        dropDisabledFocus();
         pump.drain();
         pumpKeyRepeat();
         pumpDragGesture();
@@ -1144,7 +1148,7 @@ public final class InputDispatcher {
                 }
                 pointerX = m.x();
                 pointerY = m.y();
-                hoverHit = HitTest.at(currentRoot, m.x(), m.y());
+                hoverHit = RetainedNode.enabledPart(HitTest.at(currentRoot, m.x(), m.y()));
                 refreshStates();
             }
             case InputEvent.ButtonPressed b when b.button() == MouseButton.LEFT -> {
@@ -1155,6 +1159,15 @@ public final class InputDispatcher {
                 if (grabScrollbar(hit, b.x(), b.y())) {
                     pressCount = 0;   // and a click after it starts a sequence of its own
                     updateCursor();   // the scrollbar took the press: the hand closes on it
+                    return;
+                }
+                RetainedNode open = RetainedNode.enabledPart(hit);
+                if (open != hit) {
+                    // On a disabled control: nothing at all. No focus move — not even away from whatever held it,
+                    // which a press on empty space would do — no press state, no drag, and so no click on release.
+                    pressCount = 0;
+                    hoverHit = open;
+                    refreshStates();
                     return;
                 }
                 countPress(hit, b.x(), b.y(), b.timestampNanos());
@@ -1184,7 +1197,7 @@ public final class InputDispatcher {
                     scrollDrag = null;
                     pointerX = b.x();
                     pointerY = b.y();
-                    hoverHit = HitTest.at(currentRoot, b.x(), b.y());
+                    hoverHit = RetainedNode.enabledPart(HitTest.at(currentRoot, b.x(), b.y()));
                     updateCursor();   // the hand opens again, over whatever the release landed on
                     return;
                 }
@@ -1196,12 +1209,15 @@ public final class InputDispatcher {
                 pointerX = b.x();
                 pointerY = b.y();
                 RetainedNode hit = HitTest.at(currentRoot, b.x(), b.y());
-                if (hit != null && hit.id == pressTargetId) {
+                RetainedNode open = RetainedNode.enabledPart(hit);
+                // Disabled between the press and the release (a handler that disables what was just pressed): the
+                // release lands on something closed, so it is not a click.
+                if (hit != null && hit.id == pressTargetId && open == hit) {
                     fireClick(hit, b.x(), b.y());
                 }
                 pressTargetId = -1;
                 pressHit = null;
-                hoverHit = hit;
+                hoverHit = open;
                 leftDown = false;
                 if (armed) {
                     armed = false;
@@ -1216,7 +1232,8 @@ public final class InputDispatcher {
                 pointerX = b.x();
                 pointerY = b.y();
                 RetainedNode hit = HitTest.at(currentRoot, b.x(), b.y());
-                contextPressTargetId = hit == null ? -1 : hit.id;
+                // A disabled control opens no menu of its own, and does not pass the press to its row's.
+                contextPressTargetId = hit == null || RetainedNode.enabledPart(hit) != hit ? -1 : hit.id;
             }
             case InputEvent.ButtonReleased b when b.button() == MouseButton.RIGHT -> {
                 pointerX = b.x();
@@ -1363,11 +1380,45 @@ public final class InputDispatcher {
     }
 
     private boolean applies(Claim c) {
+        // A claim is input to the node that holds it, so a disabled one hears none — at any scope. Without this a
+        // disabled editor's VISIBLE Ctrl+S, or a disabled panel's GLOBAL shortcut, would still run its command.
+        if (disabled(c.nodeId())) {
+            return false;
+        }
         return switch (c.scope()) {
             case FOCUSED -> c.nodeId() == focusedId;
             case VISIBLE -> present(currentRoot, c.nodeId());
             case GLOBAL -> true;
         };
+    }
+
+    /**
+     * Whether {@code nodeId} is closed to the user — disabled itself or under a disabled ancestor (see
+     * {@code PropKey.DISABLED}). False for a node the tree does not hold. GUI thread: it reads the model.
+     */
+    public boolean disabled(long nodeId) {
+        RetainedNode n = nodes.apply(nodeId);
+        return n != null && n.disabledInTree();
+    }
+
+    /**
+     * Install how this dispatcher looks a node up by id — the reconciler's index. Without it nothing is ever
+     * judged disabled by id, which is the behaviour before the lookup existed, so a dispatcher in a test that
+     * never sets it is unchanged.
+     */
+    public void nodeLookup(java.util.function.LongFunction<RetainedNode> lookup) {
+        this.nodes = lookup == null ? id -> null : lookup;
+    }
+
+    /**
+     * Take focus away from a node that has been disabled since it was given focus, before this frame's input is
+     * delivered — so a key typed in the same frame as the disable goes nowhere rather than into a closed field.
+     * Depth-bounded, and allocation-free: it runs every frame.
+     */
+    private void dropDisabledFocus() {
+        if (focusedId != -1 && disabled(focusedId)) {
+            setFocus(-1, FocusCause.PROGRAM);
+        }
     }
 
     private static boolean present(RetainedNode n, long id) {
@@ -1474,7 +1525,8 @@ public final class InputDispatcher {
      * container goes with it.
      */
     private void collectFocusable(RetainedNode n, List<Long> out) {
-        if (n == null || !n.visible()) {
+        // A disabled subtree goes with it, for the same reason: Tab stopping on what cannot be used.
+        if (n == null || !n.visible() || n.disabled()) {
             return;
         }
         if (focusable.contains(n.id)) {

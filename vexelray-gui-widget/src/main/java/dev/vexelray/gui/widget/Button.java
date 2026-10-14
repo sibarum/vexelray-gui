@@ -111,12 +111,12 @@ public final class Button {
     /**
      * Enable or disable. A disabled button ignores a click, ignores Enter and Space, and — the part a click
      * handler's early return does not give — leaves the focus order, so Tab does not stop on something that
-     * cannot be used.
+     * cannot be used. All of that is the node's {@code disabled}, which the dispatcher enforces for every
+     * control alike; what is the button's own is how it looks disabled.
      */
     public Button enabled(boolean enabled) {
         this.enabled = enabled;
-        gui.focusable(node, enabled);
-        gui.cursor(node, enabled ? CursorShape.POINTER : CursorShape.DEFAULT);
+        node.disabled(!enabled);
         paint();
         return this;
     }

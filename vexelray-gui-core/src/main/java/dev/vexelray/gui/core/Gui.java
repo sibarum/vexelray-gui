@@ -408,6 +408,8 @@ public final class Gui implements AutoCloseable {
         // Tab reveals what it lands on, exactly as Node.scrollIntoView would: posted during dispatch, drained this
         // frame and answered after this frame's layout, so no frame shows focus out of view.
         this.input.revealSink(id -> sink.post(new Mutation.Reveal(id)));
+        // Disabled is judged on the tree (an ancestor's counts), so the dispatcher needs to find a node by id.
+        this.input.nodeLookup(reconciler::node);
 
         // The window size, zoom and density States are Metrics' own — built there, so that component can be
         // constructed and exercised without any of this.

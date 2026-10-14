@@ -266,6 +266,22 @@ public enum PropKey {
      */
     HIT_INERT(false),
     /**
+     * Closed to the user: the node and its whole subtree take no focus, no press, no click, no drag and no drop,
+     * drop out of the Tab order, and lose focus if they held it. Claims held by a node in the subtree stop
+     * applying. Unlike {@link #HIT_INERT} it is <b>opaque</b>, not transparent: a press on a disabled button does
+     * nothing, rather than reaching whatever lies beneath it. The pointer still hovers the enabled ancestors
+     * around it, so a row does not lose its highlight as the pointer crosses a disabled control inside it, and
+     * the wheel and scrollbars still scroll — looking is not editing.
+     *
+     * <p><b>Nothing drawn changes.</b> How a disabled control looks is its widget's to say, in its theme's roles
+     * (a {@code Button}'s faint ink, no fill), because the right disabled look is a design decision and not an
+     * alpha — and a renderer-wide fade would dim every themed widget twice, in one frame, outside any ramp.
+     *
+     * <p>Distinct from read-only ({@link #EDITABLE} false), which still focuses, selects and copies. Undo reads
+     * it: an entry whose target is disabled is revealed and refused, never applied (docs/plans/undo.md §2).
+     */
+    DISABLED(false),
+    /**
      * Whether the node and its subtree take part at all. A hidden node is skipped by layout, by the renderer and
      * by hit-testing, but keeps its identity and everything attached to it -- handlers, claims, focusability,
      * widget state. That is the difference from removing it: removal releases those (they are keyed by node id

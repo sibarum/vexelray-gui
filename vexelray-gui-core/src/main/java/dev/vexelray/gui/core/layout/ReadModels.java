@@ -313,7 +313,7 @@ public final class ReadModels {
                 n.id, parentId, childIds, n.kind(),
                 n.role(), accessibleName(n), meanings.landmarkName(n.id),
                 n.visible(), n.hitInert(), n.floating(),
-                meanings.focusable(n.id), focused, n.editable(),
+                meanings.focusable(n.id), focused, n.editable(), n.disabledInTree(),
                 text ? n.textString() : null,
                 text && n.editable() ? n.caret() : -1,
                 text ? n.selectStart() : -1,

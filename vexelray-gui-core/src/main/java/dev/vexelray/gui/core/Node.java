@@ -528,6 +528,16 @@ public final class Node {
     }
 
     /**
+     * Close this node and its subtree to the user, or open it again: no focus, no press, no click, no drag or
+     * drop, out of the Tab order, and focus taken away if it was held inside — while it still lays out, draws
+     * and scrolls exactly as before. How it <em>looks</em> disabled is the widget's to draw; see
+     * {@link PropKey#DISABLED}. Not the same as read-only, which a text field still focuses and selects in.
+     */
+    public Node disabled(boolean disabled) {
+        return prop(PropKey.DISABLED, disabled ? Boolean.TRUE : null);
+    }
+
+    /**
      * Declare what this node <b>is</b> — {@code "button"}, {@code "textfield"}, {@code "tab"} — for readers that
      * address a node by meaning rather than by position: an automation agent, a thin client, a screen reader
      * (docs/reference/automation.md §3). Pass {@code null} to clear.

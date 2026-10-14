@@ -507,6 +507,36 @@ public final class RetainedNode {
         return v instanceof String s ? s : "";
     }
 
+    /** Whether this node itself is disabled (see {@link PropKey#DISABLED}); {@link #disabledInTree()} is the rule. */
+    public boolean disabled() {
+        return Boolean.TRUE.equals(props.get(PropKey.DISABLED));
+    }
+
+    /** Whether this node or any ancestor is disabled — which is what decides whether the user can act on it. */
+    public boolean disabledInTree() {
+        for (RetainedNode n = this; n != null; n = n.parent) {
+            if (n.disabled()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The part of the chain from {@code hit} up that is open to the user: {@code hit} itself when nothing on the
+     * way up is disabled, else the parent of the outermost disabled node — the nearest ancestor outside the
+     * disabled subtree. Null for null, or when the root itself is disabled.
+     */
+    public static RetainedNode enabledPart(RetainedNode hit) {
+        RetainedNode open = hit;
+        for (RetainedNode n = hit; n != null; n = n.parent) {
+            if (n.disabled()) {
+                open = n.parent;
+            }
+        }
+        return open;
+    }
+
     /** Whether this node (and its subtree) is pointer-transparent (see {@link PropKey#HIT_INERT}). */
     public boolean hitInert() {
         return Boolean.TRUE.equals(props.get(PropKey.HIT_INERT));

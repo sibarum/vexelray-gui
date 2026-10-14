@@ -223,6 +223,11 @@ public final class Automation implements Commands {
                 // nothing about whether it can be seen or clicked (docs/reference/semantic-read-model.md §6).
                 sb.append(" hidden");
             }
+            if (n.disabled()) {
+                // Said for the same reason: a disabled control draws, lays out and is hit by the pointer, and
+                // nothing in its rect says that a click on it does nothing.
+                sb.append(" disabled");
+            }
             if (n.focused()) {
                 sb.append(" focused");
                 if (n.ringShown()) {

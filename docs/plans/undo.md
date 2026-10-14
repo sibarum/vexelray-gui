@@ -1,6 +1,9 @@
 # The undo plan
 
-**Status: designed (2026-10-13), nothing built.** Written after the 0.1.0 release, when it became plain that undo
+**Status: steps 1 and 2 built (2026-10-14); step 3 next.** Step 2 as built: `Node.disabled(boolean)` /
+`PropKey.DISABLED` closes a node and its subtree (§3); its look stays each widget's, so a renderer-wide dim was
+not added, and `Button.enabled` now rides on it. `InputDispatcher.disabled(id)` is what the undo driver will ask.
+Written after the 0.1.0 release, when it became plain that undo
 works only where an application asked for it: typing in a `TextField`, drops in a `TreeView` or `Board`, and
 pages that wired a `History` by hand (MainFrame's `WorkspacesPage`, Vexplore). Every other control — a toggle, a
 slider, a number field, a select, a colour picker, an inspector row — changes the user's data with no way back.

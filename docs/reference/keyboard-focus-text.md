@@ -7,8 +7,8 @@ and the record of decisions; it builds on the input dispatch already in place (`
 
 Status: **largely shipped.** Keyboard routing, focus, claims (§3), and the text field through multiline —
 wrap, vertical navigation, line numbers, spans, undo/redo, clipboard — are all in. What remains is called
-out per-section below; the short list is hyperlink/tooltip spans (needs an overlay layer), the `Disabled`
-property, and hard tabs.
+out per-section below; the short list is hyperlink/tooltip spans (needs an overlay layer), the text field's
+disabled look, and hard tabs.
 
 Three sections were **superseded by implementation** rather than merely completed, and are rewritten in
 place: §3 (shortcuts became claims), §4.2 (the Tab question is resolved) and §5 (bold and italic are real
@@ -154,7 +154,10 @@ or on a remote client with no fonts of its own.
 - **Editable** — content can be modified. When false, the widget is read-only (still selectable if
   Selectable). *[shipped]*
 - **Disabled** — no focus, no interaction, dimmed. Distinct from read-only (a disabled field is inert).
-  *[not yet]*
+  *[behaviour shipped as `Node.disabled` (`PropKey.DISABLED`), for every node and its subtree: no press, click,
+  drag or drop, out of the Tab order, focus dropped before the next key, claims silenced, hover still reaching
+  the enabled ancestors. The dimming is each widget's to draw from its theme — `Button` does; the text field
+  does not yet.]*
 - **Multiline** — single-line (Enter submits / is ignored) vs. multi-line (Enter inserts a newline).
   *[shipped: `TextField.multiline`, with vertical caret-follow scroll and Up/Down over the read-model]*
 - **Font** — the family, weight and slope to render with. *[shipped]* The parts:
@@ -295,7 +298,7 @@ resolves to regular, the nearest face there is. Adding the files to that directo
    vertical scroll, soft tabs, line numbers. **[done — docs/layout-read-model.md §11]**
 7. **Hyperlink / tooltip spans** — hover/click emission with the editable/Control gating; tooltip needs
    the overlay layer (§6). **[not started — the overlay layer is the blocker]**
-8. **Remaining polish** — `Disabled`, non-editable selection, hard tabs, Shift+Tab outdent.
+8. **Remaining polish** — the text field's disabled look, non-editable selection, hard tabs, Shift+Tab outdent.
 
 ---
 

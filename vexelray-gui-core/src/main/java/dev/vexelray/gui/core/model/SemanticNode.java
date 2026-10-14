@@ -36,7 +36,9 @@ import java.util.List;
  * @param focusable    registered as able to take keyboard focus
  * @param focused      holds keyboard focus right now
  * @param editable     an editable text node
- * @param text         its own text, or {@code null} for a non-text node
+ * @param disabled     closed to the user, by its own {@code disabled} or an ancestor's — the effective answer,
+ *                     since a control inside a disabled panel is exactly as unusable as a disabled control
+ * @param text        its own text, or {@code null} for a non-text node
  * @param caret        caret offset for an editable text node, else {@code -1}
  * @param selectStart  selection start offset, or {@code -1}
  * @param selectEnd    selection end offset, or {@code -1}
@@ -58,6 +60,7 @@ public record SemanticNode(
         boolean focusable,
         boolean focused,
         boolean editable,
+        boolean disabled,
         String text,
         int caret,
         int selectStart,
@@ -68,7 +71,7 @@ public record SemanticNode(
     /** The value returned for a node this snapshot does not describe. */
     public static final SemanticNode ABSENT = new SemanticNode(
             -1L, -1L, List.of(), NodeKind.BOX, "", "", "",
-            false, false, false, false, false, false, null, -1, -1, -1, null, false);
+            false, false, false, false, false, false, false, null, -1, -1, -1, null, false);
 
     public SemanticNode {
         children = List.copyOf(children);

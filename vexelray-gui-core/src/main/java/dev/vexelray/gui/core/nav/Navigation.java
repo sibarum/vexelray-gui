@@ -23,16 +23,38 @@ import java.util.concurrent.CompletableFuture;
  */
 public final class Navigation {
 
+    /** {@link #node()} for a navigation that goes to a landmark rather than a node. Node ids are allocated from 1. */
+    public static final long NO_NODE = 0;
+
     private final Address address;
+    private final long node;
     private final CompletableFuture<Node> arrival = new CompletableFuture<>();
 
     public Navigation(Address address) {
         this.address = address;
+        this.node = NO_NODE;
     }
 
-    /** Where this navigation is going. */
+    /**
+     * A navigation to a node by id rather than by name — what undo uses to take the user to the control an entry
+     * edits, which has no landmark unless the application gave it one. Its {@link #address()} is null.
+     */
+    public Navigation(long node) {
+        if (node == NO_NODE) {
+            throw new IllegalArgumentException("not a node id: " + node);
+        }
+        this.address = null;
+        this.node = node;
+    }
+
+    /** Where this navigation is going, or null when it goes to a {@link #node()}. */
     public Address address() {
         return address;
+    }
+
+    /** The node this navigation goes to, or {@link #NO_NODE} when it goes to an {@link #address()}. */
+    public long node() {
+        return node;
     }
 
     /**
@@ -64,6 +86,11 @@ public final class Navigation {
 
     @Override
     public String toString() {
-        return "Navigation[" + address + (done() ? ", done]" : "]");
+        return "Navigation[" + destination() + (done() ? ", done]" : "]");
+    }
+
+    /** The address, or {@code node <id>} — for messages, which should say where the walk was going either way. */
+    String destination() {
+        return address != null ? address.toString() : "node " + node;
     }
 }

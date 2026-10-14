@@ -192,6 +192,8 @@ public final class Gui implements AutoCloseable {
      * the three things a walk needs of the tree.
      */
     private final Navigator navigator;
+    /** The two-press undo every {@link #history} binding and {@link #undo}/{@link #redo} call goes through. */
+    private final Undoing undoing;
     private final Reconciler reconciler;
     private final InputDispatcher input;
     private final Node root;
@@ -410,6 +412,8 @@ public final class Gui implements AutoCloseable {
         this.input.revealSink(id -> sink.post(new Mutation.Reveal(id)));
         // Disabled is judged on the tree (an ancestor's counts), so the dispatcher needs to find a node by id.
         this.input.nodeLookup(reconciler::node);
+        this.undoing = new Undoing(navigator, input, reconciler::node, reconciler::root,
+                id -> sink.post(new Mutation.Reveal(id)), handlers, this::wake);   // as Tab reveals, above
 
         // The window size, zoom and density States are Metrics' own — built there, so that component can be
         // constructed and exercised without any of this.
@@ -1226,14 +1230,42 @@ public final class Gui implements AutoCloseable {
      * already says the specific one wins while it applies. So Ctrl+Z undoes your typing while the cursor is in a
      * field and undoes the last document command when it is not, without either history knowing the other exists.
      *
-     * <p>The commands run on a worker thread, like any other claim. A history whose changes must apply in the
-     * frame's own order — one editing a model the GUI thread reconciles from — claims {@link #claimUi} instead
-     * and calls {@link History#undo()} there.
+     * <p>Each press goes through {@link #undo(History)} / {@link #redo(History)}, so an entry that names a
+     * {@link dev.vexelray.gui.core.edit.Change#target() target} is undone in two presses when its target is not
+     * focused — the first takes the user there — and an entry that names none applies at once, as before. The
+     * entry is applied on a handler thread, as a claimed command always was.
      */
     public Gui history(Node node, History history, ClaimScope scope) {
-        claim(node, Shortcut.of(Key.Z, Modifier.CONTROL), scope, history::undo);
-        claim(node, Shortcut.of(Key.Z, Modifier.CONTROL, Modifier.SHIFT), scope, history::redo);
-        claim(node, Shortcut.of(Key.Y, Modifier.CONTROL), scope, history::redo);
+        claim(node, Shortcut.of(Key.Z, Modifier.CONTROL), scope, () -> undo(history));
+        claim(node, Shortcut.of(Key.Z, Modifier.CONTROL, Modifier.SHIFT), scope, () -> redo(history));
+        claim(node, Shortcut.of(Key.Y, Modifier.CONTROL), scope, () -> redo(history));
+        return this;
+    }
+
+    /**
+     * Undo one step of {@code history} the way Ctrl+Z does: if the entry on top edits a control the user is not
+     * at, take them there and stop; if it is disabled, show it and refuse; if it has left the tree, refuse;
+     * otherwise apply it (docs/plans/undo.md §2). From any thread — an Undo button or menu item calls this rather
+     * than {@link History#undo()}, which would change something out of sight. Judged in the next frame; what it
+     * came to is told to {@link #onUndo}.
+     */
+    public Gui undo(History history) {
+        undoing.request(java.util.Objects.requireNonNull(history, "history"), false);
+        return this;
+    }
+
+    /** {@link #undo(History)}, in the other direction, revealing and refusing for exactly the same reasons. */
+    public Gui redo(History history) {
+        undoing.request(java.util.Objects.requireNonNull(history, "history"), true);
+        return this;
+    }
+
+    /**
+     * Hear what every {@link #undo}/{@link #redo} in this tree came to, on a handler thread — the seam a
+     * presenter hangs on to turn a failure into a prompt or a cue. One sink; installing another replaces it.
+     */
+    public Gui onUndo(java.util.function.Consumer<dev.vexelray.gui.core.edit.UndoEvent> sink) {
+        undoing.sink(sink);
         return this;
     }
 
@@ -1853,6 +1885,9 @@ public final class Gui implements AutoCloseable {
         // Drain the mutation pump on the GUI thread: the subscriber applies each Mutation to the reconciler in
         // FIFO order (single writer). The tree is up to date afterward.
         pump.drain();
+        // Undo is judged here, against the tree the drain just brought up to date, and before navigation steps,
+        // so a reveal it asks for takes its first step this frame.
+        undoing.step();
         // Navigation advances here: after the drain, so it reads the tree every edit so far has produced, and
         // before the layout, so a reveal it issues is applied by the very next drain and laid out by the frame
         // after. One step per frame is not a delay, it is the only honest cadence — see Navigation.

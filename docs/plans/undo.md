@@ -1,8 +1,15 @@
 # The undo plan
 
-**Status: steps 1 and 2 built (2026-10-14); step 3 next.** Step 2 as built: `Node.disabled(boolean)` /
+**Status: steps 1–3 built (2026-10-14); step 4 next.** Step 2 as built: `Node.disabled(boolean)` /
 `PropKey.DISABLED` closes a node and its subtree (§3); its look stays each widget's, so a renderer-wide dim was
-not added, and `Button.enabled` now rides on it. `InputDispatcher.disabled(id)` is what the undo driver will ask.
+not added, and `Button.enabled` now rides on it. Step 3 as built: `Gui.undo(History)` / `Gui.redo(History)` are
+the one door — `Gui.history(...)`'s chords call them, and an Undo button should too, since `History.undo()`
+alone changes things out of sight. Requests queue from any thread and are judged once a frame on the GUI thread
+(`Undoing`), but the entry is still **applied on a handler thread**, where a claimed Ctrl+Z always applied it:
+MainFrame's workspace changes write files in `apply`, and moving that into the frame would stall it.
+`Navigator.navigate(long id, boolean focus)` walks to a node by id; without focus is the disabled case.
+`REVEALING` is reported when the walk arrives, not when it starts, so a press is answered exactly once.
+Outcomes go to `Gui.onUndo`, on a handler thread; nothing presents them until step 4.
 Written after the 0.1.0 release, when it became plain that undo
 works only where an application asked for it: typing in a `TextField`, drops in a `TreeView` or `Board`, and
 pages that wired a `History` by hand (MainFrame's `WorkspacesPage`, Vexplore). Every other control — a toggle, a

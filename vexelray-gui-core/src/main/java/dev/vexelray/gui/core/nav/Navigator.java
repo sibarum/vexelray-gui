@@ -190,6 +190,28 @@ public final class Navigator {
         return nav;
     }
 
+    /**
+     * Navigate to the node {@code id} in this tree: reveal it through whatever conceals it and scroll it into
+     * view, and, when {@code focus}, give it the keyboard. The walk is the one {@link #navigate(Address)} takes,
+     * so "reachable" means the same thing to both; a node no longer in the tree fails at once rather than
+     * waiting out the frame budget the way an unbuilt landmark does.
+     *
+     * <p>Without focus is how undo shows the user a control it will not edit — a disabled one — without handing
+     * it a keyboard it would refuse.
+     */
+    public Navigation navigate(long id, boolean focus) {
+        Navigation nav = new Navigation(id);
+        walks.add(new Walk(nav, focus));
+        wake.accept("navigation requested");
+        return nav;
+    }
+
+    /** The node a landmark names in this tree, by id, or {@link Navigation#NO_NODE}. */
+    public long landmarkId(String name) {
+        Long id = landmarks.get(name);
+        return id == null ? Navigation.NO_NODE : id;
+    }
+
     /** A navigation request off the bus. Accepted only if it is for this window and this tree has the landmark. */
     public void accept(Address address) {
         if (address.windowNamed() && !address.window().equals(windowKey)) {
@@ -247,6 +269,8 @@ public final class Navigator {
     private final class Walk {
 
         private final Navigation nav;
+        /** Whether arriving gives the target the keyboard; false only for a walk that reveals and scrolls. */
+        private final boolean focus;
         /** Ancestors already asked, so a container that declined is not asked again every frame. */
         private final Set<Long> asked = new HashSet<>();
         private int frames;
@@ -254,7 +278,12 @@ public final class Navigator {
         private boolean settling;
 
         Walk(Navigation nav) {
+            this(nav, true);
+        }
+
+        Walk(Navigation nav, boolean focus) {
             this.nav = nav;
+            this.focus = focus;
         }
 
         /** @return whether this walk is finished and should be dropped. */
@@ -265,9 +294,20 @@ public final class Navigator {
             if (++frames > MAX_NAV_FRAMES) {
                 return fail("gave up after " + MAX_NAV_FRAMES + " frames");
             }
-            Long id = landmarks.get(nav.address().landmark());
-            if (id == null) {
-                return false;   // the tree may not have been built yet; the frame budget ends this if it never is
+            long id;
+            if (nav.node() != Navigation.NO_NODE) {
+                id = nav.node();
+                // Unlike a name, an id cannot come to mean something later: a node that is not in the tree has
+                // left it, and waiting out the frame budget would only delay saying so.
+                if (tree.node(id) == null) {
+                    return fail("the node is no longer in the tree");
+                }
+            } else {
+                Long named = landmarks.get(nav.address().landmark());
+                if (named == null) {
+                    return false;   // the tree may not have been built yet; the frame budget ends this if it never is
+                }
+                id = named;
             }
             RetainedNode target = tree.node(id);
             if (target == null) {
@@ -291,7 +331,9 @@ public final class Navigator {
                         + "concealing it declares no Reveal (see Reveal's class note)");
             }
             tree.scrollIntoView(id);
-            tree.focus(id);
+            if (focus) {
+                tree.focus(id);
+            }
             settling = true;
             wake.accept("navigation arriving");
             return false;
@@ -299,7 +341,7 @@ public final class Navigator {
 
         private boolean fail(String why) {
             nav.arrival().completeExceptionally(
-                    new Navigation.Unreachable("cannot navigate to " + nav.address() + ": " + why));
+                    new Navigation.Unreachable("cannot navigate to " + nav.destination() + ": " + why));
             return true;
         }
     }

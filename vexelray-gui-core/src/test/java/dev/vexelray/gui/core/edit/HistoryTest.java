@@ -1,12 +1,16 @@
 package dev.vexelray.gui.core.edit;
 
+import dev.vexelray.gui.core.nav.Address;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -163,5 +167,164 @@ final class HistoryTest {
         // Clean without a mark: a history nobody has saved calls its starting state the unmodified one.
         assertEquals(new History.Status(false, true, true, 0, 1), seen.get(seen.size() - 1),
                 "subscribers are told what is possible and whether the work is saved");
+    }
+
+    // ---- refusal: docs/plans/undo.md §2, rules 6 to 8 ----
+
+    /**
+     * {@link Set} that looks before it applies: slot {@code at} must still hold {@code expect}, the value the edit
+     * it reverts left there. {@code closed} stands in for a disabled widget.
+     */
+    private record Guarded(List<String> model, int at, String to, String expect, AtomicBoolean closed)
+            implements Change {
+
+        Guarded(List<String> model, int at, String to, AtomicBoolean closed) {
+            this(model, at, to, model.get(at), closed);
+        }
+
+        @Override
+        public Change apply() {
+            String was = model.get(at);
+            model.set(at, to);
+            return new Guarded(model, at, was, to, closed);
+        }
+
+        @Override
+        public Check check() {
+            if (closed.get()) {
+                return Check.REFUSED;
+            }
+            return model.get(at).equals(expect) ? Check.OK : Check.CONFLICT;
+        }
+
+        @Override
+        public Target target() {
+            return Target.node(100 + at);
+        }
+    }
+
+    @Test
+    void aConflictMovesNothing() {
+        List<String> m = model();
+        History h = new History();
+        h.perform(new Guarded(m, 0, "x", new AtomicBoolean()));
+        m.set(0, "z");   // written underneath the history, as a sync from the model would
+        assertEquals(Outcome.CONFLICT, h.attemptUndo());
+        assertEquals("z", m.get(0), "the entry was not applied over a value it was not computed against");
+        assertEquals(1, h.undoDepth(), "and it is still there");
+        assertFalse(h.undo(), "the boolean form answers false for a failure too");
+    }
+
+    @Test
+    void aFailedUndoKeepsTheRedo() {
+        List<String> m = model();
+        History h = new History();
+        AtomicBoolean closed = new AtomicBoolean();
+        h.perform(new Guarded(m, 0, "x", closed));
+        h.barrier();
+        h.perform(new Guarded(m, 1, "y", closed));
+        assertEquals(Outcome.APPLIED, h.attemptUndo());
+        m.set(0, "z");
+        assertEquals(Outcome.CONFLICT, h.attemptUndo());
+        assertEquals(1, h.redoDepth(), "the failure did not cost the redo");
+        assertEquals(Outcome.APPLIED, h.attemptRedo(), "and redo still works after an undo failed");
+        assertEquals(List.of("z", "y"), m);
+    }
+
+    @Test
+    void redoFailsForTheSameReasons() {
+        List<String> m = model();
+        History h = new History();
+        AtomicBoolean closed = new AtomicBoolean();
+        h.perform(new Guarded(m, 0, "x", closed));
+        h.undo();
+        closed.set(true);
+        assertEquals(Outcome.REFUSED, h.attemptRedo(), "a closed target refuses a redo as it would an undo");
+        closed.set(false);
+        m.set(0, "z");
+        assertEquals(Outcome.CONFLICT, h.attemptRedo());
+        assertEquals(1, h.redoDepth());
+        assertEquals("z", m.get(0));
+    }
+
+    @Test
+    void blockMeetsTheSameFailureAgain() {
+        List<String> m = model();
+        History h = new History();
+        AtomicBoolean closed = new AtomicBoolean();
+        h.perform(new Guarded(m, 0, "x", closed));
+        h.barrier();
+        h.perform(new Guarded(m, 1, "y", closed));
+        closed.set(true);
+        assertEquals(Outcome.REFUSED, h.attemptUndo());
+        assertEquals(Outcome.REFUSED, h.attemptUndo(), "the failed entry stays in the way by default");
+        assertEquals(List.of("x", "y"), m);
+    }
+
+    @Test
+    void dropReportsOnceAndGoesOn() {
+        List<String> m = model();
+        History h = new History().failure(History.Failure.DROP);
+        h.perform(new Guarded(m, 0, "x", new AtomicBoolean()));
+        h.barrier();
+        h.perform(new Guarded(m, 1, "y", new AtomicBoolean()));
+        m.set(1, "z");
+        assertEquals(Outcome.CONFLICT, h.attemptUndo(), "the failure is still reported");
+        assertEquals(1, h.undoDepth(), "and the entry is gone");
+        assertEquals(Outcome.APPLIED, h.attemptUndo(), "so the next press undoes the one below");
+        assertEquals(List.of("a", "z"), m);
+    }
+
+    @Test
+    void droppingKeepsTheSaveHonest() {
+        List<String> m = model();
+        History h = new History().failure(History.Failure.DROP);
+        h.perform(new Guarded(m, 0, "x", new AtomicBoolean()));
+        h.barrier();
+        h.perform(new Guarded(m, 1, "y", new AtomicBoolean()));
+        h.mark();
+        m.set(1, "z");
+        h.attemptUndo();
+        assertTrue(h.clean(), "dropping changed nothing on screen, so a save of it still stands");
+        h.undo();
+        assertFalse(h.clean());
+
+        History below = new History().failure(History.Failure.DROP);
+        List<String> n = model();
+        below.mark();
+        below.perform(new Guarded(n, 0, "x", new AtomicBoolean()));
+        n.set(0, "z");
+        below.attemptUndo();
+        assertFalse(below.clean(), "the way back to the save went through the dropped entry, so it is gone");
+    }
+
+    @Test
+    void theTargetIsReadFromTheTopAndRidesTheReverse() {
+        List<String> m = model();
+        History h = new History();
+        assertNull(h.undoTarget(), "an empty history has no target");
+        h.perform(new Set(m, 0, "x"));
+        assertNull(h.undoTarget(), "a change that names no target is applied where the user is");
+        h.perform(new Guarded(m, 1, "y", new AtomicBoolean()));
+        assertEquals(Target.node(101), h.undoTarget());
+        h.undo();
+        assertEquals(Target.node(101), h.redoTarget(), "a redo goes where the undo went");
+    }
+
+    @Test
+    void emptyIsAnAnswerNotAFailure() {
+        History h = new History();
+        assertEquals(Outcome.EMPTY, h.attemptUndo());
+        assertEquals(Outcome.EMPTY, h.attemptRedo());
+        assertFalse(Outcome.EMPTY.failed());
+        assertTrue(Outcome.CONFLICT.failed());
+    }
+
+    @Test
+    void aTargetIsANodeOrAnAddressNeverNeither() {
+        assertThrows(IllegalArgumentException.class, () -> Target.node(Target.NO_NODE));
+        assertThrows(IllegalArgumentException.class, () -> new Target(Target.NO_NODE, null));
+        assertTrue(Target.node(3).isNode());
+        assertFalse(Target.address(Address.of("theme.accent")).isNode());
     }
 }

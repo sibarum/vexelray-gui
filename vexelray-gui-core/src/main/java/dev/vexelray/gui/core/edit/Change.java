@@ -37,4 +37,38 @@ public interface Change {
     default Change coalesce(Change following) {
         return null;
     }
+
+    /**
+     * Where the user is taken before this entry applies, or {@code null} (the default) to apply it where they
+     * are. A change with a target is undone in two presses when its target is not focused: the first reveals
+     * and focuses it, the second applies — so nothing changes out of sight (docs/plans/undo.md §2).
+     *
+     * <p>The reverse that {@link #apply()} returns should name the same target; a redo goes to the same place.
+     */
+    default Target target() {
+        return null;
+    }
+
+    /**
+     * Whether this entry can still apply, asked under {@link History}'s monitor immediately before
+     * {@link #apply()}. The default is {@link Check#OK}: a change that does not look is applied as before.
+     *
+     * <p>Answer {@link Check#CONFLICT} when the model no longer holds what this entry left behind — a value
+     * someone else has since written over, a range of text that is not the text the diff was computed against.
+     * Applying anyway is the entry's choice to make, by answering OK: for a scalar it may be harmless, and for a
+     * diff it corrupts the document. A failed check moves nothing, in either stack.
+     */
+    default Check check() {
+        return Check.OK;
+    }
+
+    /** {@link #check()}'s answer. */
+    enum Check {
+        /** The entry can apply. */
+        OK,
+        /** The model has moved on from what this entry left behind. */
+        CONFLICT,
+        /** The entry declines for a reason of its own — the thing it edits is closed to edits. */
+        REFUSED
+    }
 }

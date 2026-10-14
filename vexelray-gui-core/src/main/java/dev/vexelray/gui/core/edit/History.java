@@ -29,6 +29,13 @@ import java.util.Objects;
  * another thread is indistinguishable from a local one. It is published with the monitor released, so a listener
  * cannot re-enter the history it is being told about.
  *
+ * <p><b>An entry may refuse, and a refusal moves nothing.</b> Each entry is asked {@link Change#check()} before it
+ * applies; a conflict or a refusal leaves both stacks as they were, so a failed undo never costs the redo, and
+ * {@link #attemptUndo()} says which failure it was. Whether the failed entry then stays in the way is
+ * {@link #failure(Failure)}. Taking the user to an entry's {@link Change#target()} first is not this class's
+ * job — it knows nothing about nodes — but {@link #undoTarget()} is what whoever does it reads
+ * (docs/plans/undo.md).
+ *
  * <p>Every method is safe from any thread. {@link Change#apply()} runs under the monitor, because interleaving
  * two undos would apply them in an order neither caller asked for; keep applications bounded, as {@link Change}
  * says.
@@ -47,6 +54,9 @@ public final class History {
     private final Deque<Change> redo = new ArrayDeque<>();
     private final State<Status> status;
     private final Committer<Status, Status> publish;
+
+    /** What a failed check does to its entry; read under the monitor, written from anywhere. */
+    private volatile Failure failure = Failure.BLOCK;
 
     /** Suppresses coalescing for the next entry — set by {@link #barrier()} and by anything that ends a run. */
     private boolean barrier;
@@ -150,27 +160,114 @@ public final class History {
         barrier = true;
     }
 
-    /** Undo one entry. Returns false if there was nothing to undo. */
+    /**
+     * Undo one entry. Returns true exactly when it was applied: false if there was nothing to undo, or if the
+     * entry's {@link Change#check()} failed — {@link #attemptUndo()} says which.
+     */
     public boolean undo() {
+        return attemptUndo() == Outcome.APPLIED;
+    }
+
+    /** Redo one undone entry. Returns true exactly when it was applied; {@link #attemptRedo()} says why not. */
+    public boolean redo() {
+        return attemptRedo() == Outcome.APPLIED;
+    }
+
+    /**
+     * Undo one entry and say what happened: {@link Outcome#APPLIED}, {@link Outcome#EMPTY}, or the failure its
+     * {@link Change#check()} reported. A failure leaves the redo stack as it was, so redo still works after an
+     * undo failed; whether the failed entry stays on top is the {@link #failure(Failure)} policy.
+     */
+    public Outcome attemptUndo() {
         return step(undo, redo);
     }
 
-    /** Redo one undone entry. Returns false if there was nothing to redo. */
-    public boolean redo() {
+    /** {@link #attemptUndo()}, in the other direction — failing for exactly the same reasons. */
+    public Outcome attemptRedo() {
         return step(redo, undo);
     }
 
-    private boolean step(Deque<Change> from, Deque<Change> to) {
+    private Outcome step(Deque<Change> from, Deque<Change> to) {
+        Outcome outcome;
         synchronized (this) {
-            Change entry = from.poll();
+            Change entry = from.peek();
             if (entry == null) {
-                return false;
+                return Outcome.EMPTY;
             }
-            to.push(entry.apply());
-            barrier = true;   // whatever comes next is a new run, not a continuation of the one just undone
+            Change.Check check = entry.check();
+            if (check == Change.Check.OK) {
+                from.pop();
+                to.push(entry.apply());
+                barrier = true;   // whatever comes next is a new run, not a continuation of the one just undone
+                outcome = Outcome.APPLIED;
+            } else {
+                outcome = check == Change.Check.CONFLICT ? Outcome.CONFLICT : Outcome.REFUSED;
+                if (failure == Failure.BLOCK) {
+                    return outcome;   // nothing moved, so there is nothing to publish
+                }
+                dropLocked(from == undo);
+            }
         }
         published();
-        return true;
+        return outcome;
+    }
+
+    /**
+     * Discard the entry on top of the undo stack ({@code fromUndo}) or the redo stack, and keep the save's
+     * position honest about it. Dropping changes nothing in the model, so the state the user is looking at stays
+     * where it is; what moves is which states the history can still reach.
+     */
+    private void dropLocked(boolean fromUndo) {
+        if (fromUndo) {
+            int depth = undo.size();
+            undo.pop();
+            if (markDepth == depth) {
+                markDepth = depth - 1;   // the saved state is the current one, which now stands an entry lower
+            } else if (markDepth < depth) {
+                markReachable = false;   // undoing below here now keeps the dropped change applied
+            } else {
+                markDepth--;             // the redo side is unchanged, one entry nearer
+            }
+        } else {
+            redo.pop();
+            if (markDepth > undo.size()) {
+                markReachable = false;   // the way up to the save went through the dropped entry
+            }
+        }
+    }
+
+    /** The target of the entry an undo would apply next, or null when there is none or it has no target. */
+    public synchronized Target undoTarget() {
+        Change top = undo.peek();
+        return top == null ? null : top.target();
+    }
+
+    /** The target of the entry a redo would apply next, or null when there is none or it has no target. */
+    public synchronized Target redoTarget() {
+        Change top = redo.peek();
+        return top == null ? null : top.target();
+    }
+
+    /** What a failed undo or redo does to the entry that failed. */
+    public enum Failure {
+        /**
+         * Leave it on top, so the next press meets the same failure. The default: skipping it would undo the
+         * entries below while this one stays applied, which is safe only for changes known to be independent.
+         */
+        BLOCK,
+        /** Discard it, so the next press goes on to the entry below. The failure is still reported, once. */
+        DROP
+    }
+
+    /** Set what a failed undo or redo does to its entry; {@link Failure#BLOCK} until set. */
+    public History failure(Failure policy) {
+        this.failure = Objects.requireNonNull(policy, "policy");
+        return this;
+    }
+
+    /** What a failed undo or redo does to its entry. */
+    public Failure failure() {
+        return failure;
     }
 
     /** Whether there is anything to undo. */

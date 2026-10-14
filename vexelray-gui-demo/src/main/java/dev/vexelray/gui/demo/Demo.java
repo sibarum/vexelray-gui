@@ -10,10 +10,14 @@ import dev.vexelray.gui.core.app.GuiApp;
 import dev.vexelray.gui.core.app.Settings;
 import dev.vexelray.gui.core.app.WindowInput;
 import dev.vexelray.gui.core.app.WindowMemory;
+import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
+import dev.vexelray.gui.keymap.Keymap;
+import dev.vexelray.gui.keymap.KeymapWindow;
 import dev.vexelray.gui.krono.KronoGui;
+import dev.vexelray.gui.nfd.SaveScreenshot;
 import dev.vexelray.gui.widget.Modal;
 import dev.vexelray.gui.widget.Modals;
 import dev.vexelray.gui.widget.Unclip;
@@ -88,7 +92,7 @@ public final class Demo {
         Unclip.of(gui).motion((progress, done) -> krono.ramp(Dur.ms(150), Ease.IN_OUT_CUBIC, progress, done));
 
         Shell shell = new Shell(gui, krono, Gallery.chapters());
-        zoomShortcuts(gui);
+        Keymap keys = zoomKeys(gui);
         // The Vulkan clear colour: the same role the root paints, so the frame behind the tree is never a second
         // opinion about what the page is.
         Color page = gui.theme().color(Role.PAGE);
@@ -138,6 +142,10 @@ public final class Demo {
 
             attachInput(input, gui, app);
             shell.titleBar().controls(app.controls());   // the window exists now; point the chrome at it
+            // The framework's tools in the caption: a screenshot that asks where to put it, and the key bindings
+            // beside it. Both opt-in — a bar has none until it is handed some.
+            shell.titleBar().instruments(java.util.List.of(
+                    SaveScreenshot.instrument(), KeymapWindow.instrument(app, gui, keys)));
             if (memory.maximized("main")) {
                 app.window().maximize();
             }
@@ -252,19 +260,25 @@ public final class Demo {
     }
 
     /**
-     * Ctrl+= / Ctrl+- / Ctrl+0 — zoom in, out, reset. Registered here rather than in core because which chord
-     * zooms (or whether zooming exists at all) is an application decision; {@code gui.shortcut} is an ordinary
-     * {@code GLOBAL} claim, so a focused element that wants these chords can outrank it. The range these move
-     * within is part of the look, and set in {@link #look}.
+     * Ctrl+= / Ctrl+- / Ctrl+0 — zoom in, out, reset — as actions the user can rebind from the title bar's key
+     * button. Registered here rather than in core because which chord zooms (or whether zooming exists at all) is
+     * an application decision; each is an ordinary {@code GLOBAL} claim, so a focused element that wants these
+     * chords can outrank it. The range these move within is part of the look, and set in {@link #look}.
+     *
+     * <p>Kept in a store of their own ({@code keys.properties}) rather than beside the window placement: two
+     * {@link Settings} over one file each write back everything they hold, so the second save would undo the
+     * first.
      */
-    private static void zoomShortcuts(Gui gui) {
-        gui.shortcut(Key.EQUAL, gui::zoomIn, Modifier.CONTROL);
-        gui.shortcut(Key.MINUS, gui::zoomOut, Modifier.CONTROL);
-        gui.shortcut(Key.DIGIT_0, gui::resetZoom, Modifier.CONTROL);
-        // Numpad equivalents, for keyboards where the main row needs a modifier to reach + at all.
-        gui.shortcut(Key.NUMPAD_ADD, gui::zoomIn, Modifier.CONTROL);
-        gui.shortcut(Key.NUMPAD_SUBTRACT, gui::zoomOut, Modifier.CONTROL);
-        gui.shortcut(Key.NUMPAD_0, gui::resetZoom, Modifier.CONTROL);
+    private static Keymap zoomKeys(Gui gui) {
+        Keymap keys = new Keymap(gui).persist(AppHome.of(APP).settings("keys"));
+        // Numpad equivalents too, for keyboards where the main row needs a modifier to reach + at all.
+        keys.action("view.zoom-in", "Zoom in", Shortcut.of(Key.EQUAL, Modifier.CONTROL),
+                Shortcut.of(Key.NUMPAD_ADD, Modifier.CONTROL)).on(gui::zoomIn);
+        keys.action("view.zoom-out", "Zoom out", Shortcut.of(Key.MINUS, Modifier.CONTROL),
+                Shortcut.of(Key.NUMPAD_SUBTRACT, Modifier.CONTROL)).on(gui::zoomOut);
+        keys.action("view.zoom-reset", "Actual size", Shortcut.of(Key.DIGIT_0, Modifier.CONTROL),
+                Shortcut.of(Key.NUMPAD_0, Modifier.CONTROL)).on(gui::resetZoom);
+        return keys;
     }
 
     /**

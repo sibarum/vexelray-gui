@@ -84,6 +84,44 @@ public record WindowInstrument(String role, String tooltip,
     }
 
     /**
+     * The key-bindings button: {@code open} shows whatever lets the user change the application's chords. Like
+     * the screenshot, the button — role and mark — is core's, so an agent finds it by one name in every
+     * application; what it opens is the caller's. {@code vexelray-gui-keymap}'s {@code KeymapWindow} is the one
+     * that opens the editor.
+     *
+     * <p>Never in {@link #standard()}: an application without rebindable commands has nothing for it to open.
+     */
+    public static WindowInstrument keymap(String tooltip, Consumer<WindowControls> open) {
+        return new WindowInstrument("instrument-keymap", tooltip, WindowInstrument::keyboardMark, open);
+    }
+
+    /**
+     * A keyboard, drawn for the reason the camera is: the mark is composed against the button's own box, so it
+     * is crisp at every zoom, and it carries the same visual weight as the camera beside it.
+     */
+    private static Picture keyboardMark(Rect box, Color ink) {
+        double s = Math.min(box.w(), box.h()) * 0.42;
+        double w = s * 1.6;
+        double h = s;
+        double x = box.w() * 0.5 - w * 0.5;
+        double y = box.h() * 0.5 - h * 0.5;
+        double key = s * 0.16;
+        double pitch = (w - s * 0.3) / 4;
+        java.util.List<Picture.Mark> marks = new java.util.ArrayList<>();
+        marks.add(new Picture.Outline(x, y, w, h, s * 0.14, s * 0.14, 1.5, ink, null));
+        // Two rows of keys and a space bar: few enough to read at caption size, enough to read as a keyboard.
+        for (int row = 0; row < 2; row++) {
+            for (int col = 0; col < 4; col++) {
+                double kx = x + s * 0.15 + col * pitch + (pitch - key) * 0.5;
+                double ky = y + h * (0.2 + row * 0.25);
+                marks.add(new Picture.Fill(kx, ky, key, key, key * 0.25, 0, ink, null));
+            }
+        }
+        marks.add(new Picture.Fill(x + w * 0.28, y + h * 0.7, w * 0.44, key, key * 0.25, 0, ink, null));
+        return Picture.of(marks.toArray(Picture.Mark[]::new));
+    }
+
+    /**
      * A camera, drawn rather than typed. The primary atlas carries no camera glyph — and a mark composed of
      * rectangles is resolution-independent in a way a glyph at this size is not, which matters for a control
      * that is 46dp wide at every zoom the window is opened at.

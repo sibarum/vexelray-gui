@@ -1195,6 +1195,27 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
+     * Claim <em>every</em> chord for {@code node} at {@code scope}, the command hearing which one was pressed —
+     * for a control whose subject is the chord itself, a key-binding recorder above all. While it is armed at
+     * {@link ClaimScope#FOCUSED}, Ctrl+S records Ctrl+S rather than saving, and Tab records Tab rather than
+     * moving focus: the framework's defaults are claims, and this one outranks them while it applies.
+     *
+     * <p>A claim naming its chord at the same scope still wins, so the wildcard is the floor of its scope and
+     * never shadows a key somebody asked for by name. A modifier pressed alone is not a chord and reaches nobody,
+     * here as everywhere; read {@link #modifiers()} to show the ones being held. The command runs on a worker.
+     */
+    public Gui claimAny(Node node, ClaimScope scope, java.util.function.Consumer<Shortcut> command) {
+        input.claimAny(node.id(), scope, command);
+        return this;
+    }
+
+    /** Drop {@code node}'s {@link #claimAny wildcard claim}; its claims on named chords stay. */
+    public Gui releaseClaimAny(Node node) {
+        input.releaseClaimAny(node.id());
+        return this;
+    }
+
+    /**
      * Bind the conventional undo chords — Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y — to {@code history}, claimed by
      * {@code node} at {@code scope}.
      *

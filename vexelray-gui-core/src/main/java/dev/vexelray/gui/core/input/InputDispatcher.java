@@ -192,8 +192,32 @@ public final class InputDispatcher {
      * Declared preemption (see {@link ClaimScope}). Ordered only by scope precedence, never by registration, so
      * a focused element always outranks a global default. {@code inline} marks the framework's own claims, whose
      * commands mutate GUI-thread state (focus) and so must not be handed to the worker executor.
+     *
+     * <p>A {@code null} chord is a claim on <em>every</em> chord ({@link #claimAny}), and its command hears which
+     * one it got. At the same scope a claim that named its chord outranks it: the wildcard is the floor of its
+     * scope, never a way of shadowing a key somebody asked for by name.
      */
-    private record Claim(Shortcut chord, ClaimScope scope, long nodeId, Runnable command, boolean inline) {
+    private record Claim(Shortcut chord, ClaimScope scope, long nodeId, Consumer<Shortcut> command, boolean inline) {
+
+        static Claim of(Shortcut chord, ClaimScope scope, long nodeId, Runnable command, boolean inline) {
+            return new Claim(chord, scope, nodeId, pressed -> command.run(), inline);
+        }
+
+        boolean any() {
+            return chord == null;
+        }
+
+        boolean matches(Shortcut pressed) {
+            return chord == null || chord.equals(pressed);
+        }
+
+        /** Whether this claim beats {@code other}: the narrower scope, and at one scope the named chord. */
+        boolean outranks(Claim other) {
+            if (scope != other.scope) {
+                return scope.ordinal() < other.scope.ordinal();
+            }
+            return !any() && other.any();
+        }
     }
 
     private final List<Claim> claims = new java.util.concurrent.CopyOnWriteArrayList<>();
@@ -789,8 +813,8 @@ public final class InputDispatcher {
      * variant a claim that performs an edit needs, so it sequences against typed text rather than racing it.
      */
     public void claimUi(long nodeId, Shortcut chord, ClaimScope scope, Runnable command) {
-        claims.removeIf(c -> c.nodeId() == nodeId && c.scope() == scope && c.chord().equals(chord));
-        claims.add(new Claim(chord, scope, nodeId, command, true));
+        claims.removeIf(c -> c.nodeId() == nodeId && c.scope() == scope && chord.equals(c.chord()));
+        claims.add(Claim.of(chord, scope, nodeId, command, true));
     }
 
     /** Register a global shortcut command — a {@link ClaimScope#GLOBAL} claim owned by no node. */
@@ -800,18 +824,32 @@ public final class InputDispatcher {
 
     /** Claim {@code chord} for {@code nodeId} at {@code scope}; replaces any identical claim by the same node. */
     public void claim(long nodeId, Shortcut chord, ClaimScope scope, Runnable command) {
-        claims.removeIf(c -> c.nodeId() == nodeId && c.scope() == scope && c.chord().equals(chord));
-        claims.add(new Claim(chord, scope, nodeId, command, false));
+        claims.removeIf(c -> c.nodeId() == nodeId && c.scope() == scope && chord.equals(c.chord()));
+        claims.add(Claim.of(chord, scope, nodeId, command, false));
+    }
+
+    /**
+     * Claim <em>every</em> chord for {@code nodeId} at {@code scope}, the command hearing which one was pressed.
+     * Replaces any wildcard claim the node already holds; a claim naming its chord at the same scope still wins.
+     */
+    public void claimAny(long nodeId, ClaimScope scope, Consumer<Shortcut> command) {
+        claims.removeIf(c -> c.nodeId() == nodeId && c.any());
+        claims.add(new Claim(null, scope, nodeId, command, false));
+    }
+
+    /** Drop the wildcard claim {@code nodeId} holds, if any; its claims on named chords stay. */
+    public void releaseClaimAny(long nodeId) {
+        claims.removeIf(c -> c.nodeId() == nodeId && c.any());
     }
 
     /** Drop every claim {@code nodeId} holds on {@code chord}. */
     public void releaseClaim(long nodeId, Shortcut chord) {
-        claims.removeIf(c -> c.nodeId() == nodeId && c.chord().equals(chord));
+        claims.removeIf(c -> c.nodeId() == nodeId && chord.equals(c.chord()));
     }
 
     /** A framework default, run on the GUI thread because it mutates dispatch state. */
     private void claimInternal(Shortcut chord, Runnable command) {
-        claims.add(new Claim(chord, ClaimScope.GLOBAL, -1L, command, true));
+        claims.add(Claim.of(chord, ClaimScope.GLOBAL, -1L, command, true));
     }
 
     /** The topic every routed key press is reported on (set by Gui). */
@@ -1280,12 +1318,13 @@ public final class InputDispatcher {
         // 1. A claim, if one applies — preemption that was declared in advance (ClaimScope). The framework's own
         //    Tab traversal is registered this way rather than intercepted here, so a focused element that claims
         //    Tab simply outranks it. Claims do not arm auto-repeat: a held Tab inserts one soft tab, not a stream.
-        Claim claimed = resolveClaim(new Shortcut(heldMods, key));
+        Shortcut pressed = new Shortcut(heldMods, key);
+        Claim claimed = resolveClaim(pressed);
         if (claimed != null) {
             if (claimed.inline()) {
-                claimed.command().run();
+                claimed.command().accept(pressed);
             } else {
-                handlerExecutor.execute(claimed.command());
+                handlerExecutor.execute(() -> claimed.command().accept(pressed));
             }
             report(e, true);
             return;
@@ -1313,10 +1352,10 @@ public final class InputDispatcher {
     private Claim resolveClaim(Shortcut chord) {
         Claim best = null;
         for (Claim c : claims) {
-            if (!c.chord().equals(chord) || !applies(c)) {
+            if (!c.matches(chord) || !applies(c)) {
                 continue;
             }
-            if (best == null || c.scope().ordinal() < best.scope().ordinal()) {
+            if (best == null || c.outranks(best)) {
                 best = c;
             }
         }

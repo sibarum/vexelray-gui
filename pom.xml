@@ -36,6 +36,9 @@
         <module>vexelray-gui-widget</module>
         <!-- The GUI's one native binding: a Panama nativefiledialog-extended facade. -->
         <module>vexelray-gui-nfd</module>
+        <!-- Rebindable key bindings, opt-in: named actions with default chords the user can change, persisted
+             through Settings, and the editor (and title-bar instrument) that changes them. On widget. -->
+        <module>vexelray-gui-keymap</module>
         <!-- Canonical showcase / reference app. -->
         <module>vexelray-gui-demo</module>
         <!-- Kronometer integration: the strongly-timed scheduling and animation substrate, plus
@@ -133,6 +136,11 @@
             <dependency>
                 <groupId>dev.vexelray.gui</groupId>
                 <artifactId>vexelray-gui-nfd</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.vexelray.gui</groupId>
+                <artifactId>vexelray-gui-keymap</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

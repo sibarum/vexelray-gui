@@ -44,6 +44,7 @@ halves of one mechanism and are best read together.
 | | |
 | --- | --- |
 | [keyboard-focus-text.md](reference/keyboard-focus-text.md) | **Landed.** Keys, focus, claims declared in advance, and the text-editing widget that depends on all of it — including real bold and italic, chosen per character (§5) |
+| [keymap.md](reference/keymap.md) | **Landed.** Rebindable key bindings: actions by name with chords the user owns, one chord per action per place, stored as deltas — and the claim on every chord that lets an editor record Ctrl+S instead of saving |
 | [navigation.md](reference/navigation.md) | **Landed.** Landmarks, addresses and reveals: naming a node rather than a route, and arriving by the widgets' own commands rather than synthesised input |
 | [transfer.md](reference/transfer.md) | **Landed.** Drag and drop and cut and paste as one mechanism with two ways in — one resolution, several sources, and why what is shown is always what will happen |
 

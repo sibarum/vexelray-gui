@@ -46,7 +46,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class DispatchGuardTest {
 
     /** The modules the <em>sealed-type</em> half is enforced on. Widening this list is what converting one means. */
-    private static final List<String> RULED = List.of(Bytecode.GUI_TYPESET, Bytecode.GUI_PLOT, Bytecode.GUI_DRAW);
+    private static final List<String> RULED = List.of(Bytecode.GUI_TYPESET, Bytecode.GUI_PLOT, Bytecode.GUI_DRAW,
+            Bytecode.GUI_KEYMAP);
 
     @Test
     void noSealedTypes() {

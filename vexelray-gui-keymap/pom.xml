@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>dev.vexelray.gui</groupId>
+        <artifactId>vexelray-gui</artifactId>
+        <version>0.1.1-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>vexelray-gui-keymap</artifactId>
+
+    <description>
+        Rebindable key bindings, opt-in: a Keymap of named actions an application declares with default chords
+        and handles by name, whose chords the user can change — claimed on the bus like any other shortcut,
+        serialised as text, and persisted through Settings. KeymapEditor is the control that changes them, to
+        embed anywhere; KeymapWindow puts it behind a title-bar instrument beside the screenshot.
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>dev.vexelray.gui</groupId>
+            <artifactId>vexelray-gui-core</artifactId>
+        </dependency>
+        <!-- The editor is built from the stock controls: a filter field, buttons, a title bar for its window. -->
+        <dependency>
+            <groupId>dev.vexelray.gui</groupId>
+            <artifactId>vexelray-gui-widget</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>dev.vexelray.gui</groupId>
+            <artifactId>vexelray-gui-icons</artifactId>
+        </dependency>
+    </dependencies>
+</project>

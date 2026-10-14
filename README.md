@@ -320,6 +320,21 @@ history knowing the other exists. A transfer records into `gui.dropHistory()` wh
 made, so a drop and a paste land in the same stack rather than in two that disagree about what "the
 last thing you did" was.
 
+### Key bindings
+
+```java
+Keymap keys = new Keymap(gui).persist(AppHome.of("editor").settings("keys"));
+keys.action("file.save", "Save", Shortcut.of(Key.S, Modifier.CONTROL)).on(this::save);
+titleBar.instruments(List.of(SaveScreenshot.instrument(), KeymapWindow.instrument(app, gui, keys)));
+```
+
+Opt-in, in `vexelray-gui-keymap`. Each action replaces a `gui.shortcut(...)` and is the same `GLOBAL`
+claim, but the chord is the user's: the key button beside the screenshot opens a `KeymapEditor` (also a
+plain node, to embed anywhere), where pressing a new chord rebinds it — recorded through `gui.claimAny`,
+so Ctrl+S is recorded rather than saving. Within one place a chord reaches one action, and a rebind takes
+it from whoever had it and says so. Only what changed is stored, as text (`keys.text()`), so later
+defaults still arrive. See [docs/reference/keymap.md](docs/reference/keymap.md).
+
 ### Reading the tree
 
 Two published read-models, both lock-free snapshots, one frame stale by design. Nothing reads GUI
@@ -644,6 +659,7 @@ down on arrival runs in the same batch as the final sample unless something sepa
 | **`-plot`** | Reliable graphing's substrate. **Point sampling cannot be made honest** — a curve drawn by joining N samples will run a confident line straight through an asymptote, and no sample count fixes it. So an expression is evaluated over a *column* of x by interval arithmetic and returns an `Enclosure` that provably contains every value it takes there: a pole is found by the arithmetic, not by a solver. `Expr` is open (twelve nodes built in; a node encloses *and differentiates* itself), the region is a value (`Cell`), and evaluation is split from classification so panning in y re-classifies and re-evaluates nothing. See [docs/reference/reliable-plotting.md](docs/reference/reliable-plotting.md) |
 | **`-krono`** | The timing framework slotted into the existing loop and bus; see **Motion** |
 | **`-nfd`** | Native open/save/pick-folder dialogs as `Optional<Path>` |
+| **`-keymap`** | Rebindable key bindings, opt-in: a `Keymap` of named actions, the `KeymapEditor` that changes their chords, and the title-bar key button that opens it; see **Key bindings** |
 | **`-automation`** | Driving the running application the way a person does; see below and [docs/reference/automation.md](docs/reference/automation.md) |
 | **`-automation-cli`** | The client for that socket: `ottermate`, a command line that attaches to a running application or launches one, and carries the verdict in its exit status. **An empty dependency block** — a socket, line I/O and `ProcessBuilder` — so it runs as a standalone jar with none of the stack on its classpath, which is what keeps automation from becoming a runtime dependency of anything shipped. It lives beside the server rather than beside its callers for the reason `CsvView` lives beside the log it reads: a reader in another repo drifts from the format. See [docs/reference/automation-cli.md](docs/reference/automation-cli.md) |
 | **`-harness`** | A whole application running its **real** frame loop, with the loop under a test's control. The gap it fills is narrow and it is the one that matters: every hand-driven frame test is structurally unable to ask *after this click, does a frame arrive on its own?* — which is how five missing wakes shipped past a green suite. Real windows are created and never shown — **every** window, not just the one the test started with: the application is built with a window factory, so the popup a menu opens is asked for off screen (`WindowConfig.hidden`) and wrapped exactly as the main window is. Surface, swapchain and presenter therefore behave as in production; only pump, wait, wake and focus are intercepted. That matters because a mapped window takes real focus and real keyboard input, so a focus or routing assertion made beside one is answering a question about the window manager. Needs a Vulkan device, and fails to start rather than silently proving nothing |

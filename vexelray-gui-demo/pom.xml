@@ -58,6 +58,11 @@
             <groupId>dev.vexelray.gui</groupId>
             <artifactId>vexelray-gui-nfd</artifactId>
         </dependency>
+        <!-- Rebindable zoom chords, and the title-bar key button that changes them. -->
+        <dependency>
+            <groupId>dev.vexelray.gui</groupId>
+            <artifactId>vexelray-gui-keymap</artifactId>
+        </dependency>
         <!-- The driving socket, off unless -Dautomation asks for it: what lets ottermate photograph a chapter
              mid-gesture (a card half-carried, a menu open) rather than only at rest, which is all capture can. -->
         <dependency>

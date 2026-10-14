@@ -236,6 +236,26 @@ public final class History {
         }
     }
 
+    /**
+     * Discard the entry on top of the undo stack (or the redo stack, when {@code redo}) if it still names
+     * {@code target}; return whether it did. For an entry that can never apply again — its node has left the tree,
+     * and node ids are not reused — which under {@link Failure#BLOCK} would otherwise stand in front of every
+     * other entry for the rest of the session. The caller has already reported the failure; this only clears the
+     * way. Checked against the target so that an entry recorded since the caller looked is never the one dropped.
+     */
+    public boolean discard(Target target, boolean redo) {
+        Objects.requireNonNull(target, "target");
+        synchronized (this) {
+            Change top = redo ? this.redo.peek() : undo.peek();
+            if (top == null || !target.equals(top.target())) {
+                return false;
+            }
+            dropLocked(!redo);
+        }
+        published();
+        return true;
+    }
+
     /** The target of the entry an undo would apply next, or null when there is none or it has no target. */
     public synchronized Target undoTarget() {
         Change top = undo.peek();
@@ -316,6 +336,34 @@ public final class History {
             markDepth = 0;
             markReachable = true;
             barrier = false;
+        }
+        published();
+    }
+
+    /**
+     * Forget every entry, on either stack, that {@code which} accepts — what {@link #clear()} is for one control in
+     * a history several share. A field handed new content with no past (a file loaded over the top) has no state
+     * its old entries could return to; left in, each would fail its check as a conflict, and under
+     * {@link Failure#BLOCK} the first would stand in front of every other control's undo in the window.
+     *
+     * <p>The other entries keep their order. The save stays reachable only if the history stands at it now, since
+     * the states between here and a save elsewhere included what was just forgotten.
+     */
+    public void forget(java.util.function.Predicate<Change> which) {
+        Objects.requireNonNull(which, "which");
+        synchronized (this) {
+            int depth = undo.size();
+            boolean removed = undo.removeIf(which);
+            removed |= redo.removeIf(which);
+            if (!removed) {
+                return;
+            }
+            if (markReachable && markDepth == depth) {
+                markDepth = undo.size();
+            } else {
+                markReachable = false;
+            }
+            barrier = true;
         }
         published();
     }

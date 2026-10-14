@@ -102,7 +102,13 @@ final class Undoing {
         long id = target.isNode() ? target.node() : resolve(target.address());
         RetainedNode node = id == Target.NO_NODE ? null : nodes.apply(id);
         if (node == null || !attached(node)) {
-            report(history, redo, Outcome.UNREACHABLE, id);
+            if (node == null && target.isNode()) {
+                // Gone for good: a node id is never reused, so this entry can never apply. It fails once, and is
+                // then cleared out of the way rather than blocking every other undo in the history behind it.
+                // A landmark, or a node merely detached, may come back, so those stay and keep failing.
+                history.discard(target, redo);
+            }
+            report(history, redo, Outcome.UNREACHABLE, Target.NO_NODE);
             return;
         }
         if (input.disabled(id)) {

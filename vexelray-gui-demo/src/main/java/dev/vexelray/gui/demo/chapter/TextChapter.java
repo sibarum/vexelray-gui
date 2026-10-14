@@ -65,7 +65,9 @@ public final class TextChapter implements Chapter {
         Theme theme = stage.theme();
         Console console = stage.console();
 
-        TextField notes = new TextField(gui, BODY).multiline(true).wordWrap(true).lineNumbers(true);
+        // A document, with a past of its own, so the counter below reads this field and nothing else in the window.
+        TextField notes = new TextField(gui, BODY).history(new History()).multiline(true).wordWrap(true)
+                .lineNumbers(true);
         notes.node().width(Length.FILL).height(Length.FILL);
         // Formatting spans, set once and never touched again. The point is what happens next: type before or
         // inside one and it follows its text, because every edit remaps every span through its own diff. Nothing

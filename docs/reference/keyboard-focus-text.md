@@ -198,9 +198,14 @@ or on a remote client with no fonts of its own.
   cannot drift apart. Coalescing (what continues a typing run) is asked of the change, not decided by the
   history; "saved" is a marked **position** in the stack, so undoing away from a save is dirty and redoing
   back to it is clean again. `TextField` keeps only the part that is about text — replaying one `TextEdit`
-  absolutely, and when two of them are the same run — and exposes its history so an application can mark a
-  save, watch `status()` or bind a menu item. An application-wide history binds through `Gui.history(...)`,
-  and nests under a focused editor's by ordinary claim precedence (`ClaimScope`).
+  absolutely, when two of them are the same run, and whether the text still reads what an entry expects
+  (a diff replayed over other text is a conflict, not an undo). **It does not own the history it records
+  into**: that is `Gui.historyFor(node)`, the one bound nearest above it — the window's, in a framework
+  application — so typing undoes with everything else the user did, and Ctrl+Z (claimed at `FOCUSED`, because
+  the window's claim would otherwise take it) goes through `Gui.undo`. A field that is a **document** — an
+  editor buffer, an inline editor whose commit is recorded elsewhere as one step — is given its own with
+  `history(new History())`, and its save mark is then its own. `history()` reads whichever is in force.
+  See [plans/undo.md](../plans/undo.md) §5.
 - **Two doors for setting the whole content, and the choice is about the past rather than the pixels.**
   `TextField.replace(String)` (`Edit.ReplaceAll`) is an **edit**: one undo entry, spans remapped through its
   diff, caret at the end. `TextField.text(String)` (`Edit.SetText`) is a **reset**: no diff, spans dropped,

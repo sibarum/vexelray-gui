@@ -4,6 +4,7 @@ import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.edit.Change;
 import dev.vexelray.gui.core.edit.History;
+import dev.vexelray.gui.core.edit.Target;
 import dev.vexelray.gui.core.input.ClaimScope;
 import dev.vexelray.gui.core.input.CursorShape;
 import dev.vexelray.gui.core.input.DragEvent;
@@ -97,8 +98,15 @@ public final class TextField implements AutoCloseable {
      * a {@link TextChange}, which knows how to replay one {@link TextEdit} absolutely and when two of them are the
      * same typing run. The monitor spans commit-and-record so the diff handed to the history is the one that
      * commit produced. The document itself needs no lock: it is a {@code State}.
+     *
+     * <p><b>Which history</b> is decided per edit by {@link #history()}: this field's own when it is a document
+     * ({@link #history(History)}), else the one its tree binds nearest above it — the window's, in a framework
+     * application — so typing undoes with everything else the user did (docs/plans/undo.md §5). This one is the
+     * last resort, for a tree that binds none.
      */
-    private final History history = new History(UNDO_LIMIT);
+    private final History fallback = new History(UNDO_LIMIT);
+    /** This field's own history when it is a document, or null to record where its tree says. */
+    private volatile History own;
 
     /**
      * Vertical navigation's sticky desired column (absolute px). NaN means "recompute from the caret": every
@@ -179,6 +187,12 @@ public final class TextField implements AutoCloseable {
         gui.onCharUi(node, this::onCodePoint);
         gui.onKeyUi(node, this::onKey);
         gui.onDragUi(node, this::onPointer);
+        // Undo is claimed, not heard as a key: the window's history holds Ctrl+Z as a claim, and a claim outranks
+        // delivery, so a field that only listened for the key would have its own Ctrl+Z taken by the window's.
+        // FOCUSED outranks it in turn, and routes to whichever history this field records into.
+        gui.claim(node, Shortcut.of(Key.Z, Modifier.CONTROL), ClaimScope.FOCUSED, this::undo);
+        gui.claim(node, Shortcut.of(Key.Z, Modifier.CONTROL, Modifier.SHIFT), ClaimScope.FOCUSED, this::redo);
+        gui.claim(node, Shortcut.of(Key.Y, Modifier.CONTROL), ClaimScope.FOCUSED, this::redo);
 
         // Clipboard actions on the right button, and a presenter to show them: a field with no menu is a field
         // that answers the keyboard and not the mouse, which is not a decision an application should have to make.
@@ -221,13 +235,35 @@ public final class TextField implements AutoCloseable {
     }
 
     /**
-     * This field's undo history. Exposed because the questions an application asks of it are not this widget's to
-     * answer: whether the work is saved ({@link History#mark()}, {@link History#status()}), whether a menu item
-     * should be live, whether some larger command should land as one entry. The field records into it as the user
-     * types either way; Ctrl+Z is already wired.
+     * The history this field's edits are recorded in, and the one Ctrl+Z in it undoes: its own if it was given one
+     * ({@link #history(History)}); otherwise the one bound nearest above it in the tree — in a framework
+     * application, the window's — so typing is undone with everything else the user did; otherwise, in a tree that
+     * binds none, a history private to the field.
+     *
+     * <p>Exposed because the questions an application asks of it are not this widget's to answer: whether the
+     * work is saved, whether a menu item should be live, whether some larger command should land as one entry.
+     * A field that is a document and tracks its own save should be given its own history first — the window's
+     * says whether the <em>window</em> is saved.
      */
     public History history() {
-        return history;
+        History mine = own;
+        if (mine != null) {
+            return mine;
+        }
+        History bound = gui.historyFor(node);
+        return bound != null ? bound : fallback;
+    }
+
+    /**
+     * Make this field a <b>document</b>: record into {@code history} and nothing else, and have Ctrl+Z while it
+     * has focus undo only that. For an editor's buffer, whose past is its own and whose save is its own — undoing
+     * in one file must not reach into another the user switched away from (docs/plans/undo.md §5). An ordinary
+     * field in a form never needs this. Set it before the user types: entries already recorded elsewhere stay
+     * there.
+     */
+    public TextField history(History history) {
+        this.own = java.util.Objects.requireNonNull(history, "history");
+        return this;
     }
 
     /**
@@ -254,11 +290,17 @@ public final class TextField implements AutoCloseable {
     /**
      * Replace the content programmatically; the caret moves to the end, selection clears, and <b>history
      * resets</b> — the field is being handed content it has no past with. See {@link #replace(String)} for the
-     * other case, which is most of them.
+     * other case, which is most of them. In a history the field shares, only <em>this field's</em> entries are
+     * forgotten; everything else the user did in the window still undoes.
      */
     public TextField text(String s) {
         synchronized (this) {
-            history.clear();
+            History h = history();
+            if (h == own || h == fallback) {
+                h.clear();
+            } else {
+                h.forget(c -> c instanceof TextChange t && t.owner() == this);
+            }
             document.commit(commit, new Edit.SetText(s));
         }
         published();
@@ -628,8 +670,6 @@ public final class TextField implements AutoCloseable {
                 case C -> { copy(); return; }
                 case X -> { cut(); return; }
                 case V -> { paste(); return; }
-                case Z -> { if (shift) { redo(); } else { undo(); } return; } // Ctrl+Z undo, Ctrl+Shift+Z redo
-                case Y -> { redo(); return; }                                  // Ctrl+Y redo
                 // Ctrl+Enter follows the link the caret is in. Without it links would be a mouse-only feature,
                 // which is not a feature — it is a part of the document only some users can reach.
                 case ENTER -> {
@@ -1193,6 +1233,7 @@ public final class TextField implements AutoCloseable {
      */
     private void apply(Edit edit, boolean barrierBefore) {
         synchronized (this) {
+            History history = history();
             if (barrierBefore) {
                 history.barrier();
             }
@@ -1221,7 +1262,7 @@ public final class TextField implements AutoCloseable {
 
     /** Force the next edit to start its own undo entry. */
     private void barrier() {
-        history.barrier();
+        history().barrier();
     }
 
     /**
@@ -1237,17 +1278,50 @@ public final class TextField implements AutoCloseable {
             this.edit = edit;
         }
 
+        /** The field this entry edits: entries from two fields in one shared history are never one run. */
+        TextField owner() {
+            return TextField.this;
+        }
+
         @Override
         public Change apply() {
             // Absolute, not re-resolved: an undo restores a specific prior state, so unlike an input edit it must
             // not be resolved against wherever the caret has since moved to.
             document.commit(commit, new Edit.Replace(edit.at(), edit.removed().length(), edit.inserted()));
+            // Published here rather than by whoever asked: in a shared history the asker is the window's undo, on
+            // a handler thread, and knows nothing about text.
+            published();
             return new TextChange(edit.inverse());
+        }
+
+        /** The field itself, so an undo in a shared history takes the user to the text it is about to change. */
+        @Override
+        public Target target() {
+            return Target.node(node.id());
+        }
+
+        /**
+         * A diff applies only to the text it was computed against: the span it replaces must still read what this
+         * edit left there. Anything else — the content was set over the top, or a program edited it — is a
+         * conflict, because replaying the diff would corrupt the document rather than restore it. A read-only
+         * field refuses, as it refuses the user's own typing.
+         */
+        @Override
+        public Check check() {
+            if (readOnly) {
+                return Check.REFUSED;
+            }
+            String text = document.value().text();
+            int end = edit.at() + edit.removed().length();
+            if (edit.at() < 0 || end > text.length() || !text.startsWith(edit.removed(), edit.at())) {
+                return Check.CONFLICT;
+            }
+            return Check.OK;
         }
 
         @Override
         public Change coalesce(Change following) {
-            if (!(following instanceof TextChange next)) {
+            if (!(following instanceof TextChange next) || next.owner() != TextField.this) {
                 return null;   // not this field's entry; nothing here can speak for it
             }
             // Both entries are inverses, so the run test — which is about what the user did — reads them forward.
@@ -1287,22 +1361,17 @@ public final class TextField implements AutoCloseable {
         return new TextEdit(top.at(), top.removed() + e.removed(), "");    // forward-delete: e at the caret
     }
 
+    /**
+     * Ctrl+Z in this field: the history it records into, through the window's two-press undo, so an entry for
+     * another control is revealed before it is undone and a refusal is shown rather than swallowed. A read-only
+     * field's own entries refuse in their check.
+     */
     private void undo() {
-        if (readOnly) {
-            return;   // nothing the user did can be undone, because nothing the user did was applied
-        }
-        if (history.undo()) {
-            published();
-        }
+        gui.undo(history());
     }
 
     private void redo() {
-        if (readOnly) {
-            return;
-        }
-        if (history.redo()) {
-            published();
-        }
+        gui.redo(history());
     }
 
     // --- publication: mirror to the retained node, then notify the application ---
@@ -1367,6 +1436,8 @@ public final class TextField implements AutoCloseable {
         } else {
             node.caret(placedCaret(document.value()));
             node.caretOn(false);
+            // Leaving ends the run: typing here, going elsewhere and coming back to type more is two steps.
+            barrier();
         }
     }
 

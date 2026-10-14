@@ -194,6 +194,9 @@ public final class Gui implements AutoCloseable {
     private final Navigator navigator;
     /** The two-press undo every {@link #history} binding and {@link #undo}/{@link #redo} call goes through. */
     private final Undoing undoing;
+    /** Which history each node bound, by node id — what {@link #historyFor} walks up through. */
+    private final java.util.concurrent.ConcurrentMap<Long, History> boundHistories =
+            new java.util.concurrent.ConcurrentHashMap<>();
     private final Reconciler reconciler;
     private final InputDispatcher input;
     private final Node root;
@@ -1060,6 +1063,7 @@ public final class Gui implements AutoCloseable {
 
     /** The reconciler's removal seam: everything keyed by a node id is dropped when the node leaves the tree. */
     private void releaseNodeId(long id) {
+        boundHistories.remove(id);
         input.clearHandlers(id);
         readModels.forget(id);
         navigator.forget(id);
@@ -1242,7 +1246,38 @@ public final class Gui implements AutoCloseable {
         claim(node, Shortcut.of(Key.Z, Modifier.CONTROL), scope, () -> undo(history));
         claim(node, Shortcut.of(Key.Z, Modifier.CONTROL, Modifier.SHIFT), scope, () -> redo(history));
         claim(node, Shortcut.of(Key.Y, Modifier.CONTROL), scope, () -> redo(history));
+        boundHistories.put(node.id(), history);
         return this;
+    }
+
+    /**
+     * The history {@code node}'s edits belong in: the one bound ({@link #history(Node, History, ClaimScope)}) on
+     * the nearest ancestor-or-self, else the window's ({@link #history(History)}), else null. A widget records here
+     * rather than keeping a stack of its own, so that what the user typed in a field is undone with everything
+     * else they did in the window, and by the same Ctrl+Z (docs/plans/undo.md §5).
+     *
+     * <p>Safe from any thread: the ancestry is read from the published semantic snapshot, never the live tree, so
+     * a node built since the last frame resolves to the window's history until it has been laid out once.
+     */
+    public History historyFor(Node node) {
+        dev.vexelray.gui.core.layout.SemanticSnapshot sem = semanticSnapshot();
+        for (long id = node.id(); id != -1; ) {
+            History bound = boundHistories.get(id);
+            if (bound != null) {
+                return bound;
+            }
+            SemanticNode n = sem.node(id);
+            if (!n.present()) {
+                break;
+            }
+            id = n.parentId();
+        }
+        return boundHistories.get(root.id());
+    }
+
+    /** The window's history — the one bound on the root by {@link #history(History)} — or null. */
+    public History history() {
+        return boundHistories.get(root.id());
     }
 
     /**

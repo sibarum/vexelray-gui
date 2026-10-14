@@ -133,13 +133,21 @@ class UndoingTest {
     }
 
     @Test
-    void aTargetThatLeftTheTreeIsUnreachable() {
+    void aTargetThatLeftTheTreeFailsOnceAndIsClearedAway() {
         edit(Target.node(field.id()));
         field.remove();
         frames(1);
+        assertEquals(Outcome.UNREACHABLE, press(false).outcome(), "it fails, and says so");
+        assertEquals("after", value.get(), "having changed nothing");
+        assertEquals(0, history.undoDepth(),
+                "and is then cleared away: a node id is never reused, so it could only ever block what is below it");
+    }
+
+    @Test
+    void aLandmarkNobodyHoldsKeepsItsPlace() {
+        edit(Target.address(Address.of("not.built.yet")));
         assertEquals(Outcome.UNREACHABLE, press(false).outcome());
-        assertEquals("after", value.get());
-        assertEquals(1, history.undoDepth(), "a failure moves nothing");
+        assertEquals(1, history.undoDepth(), "a name may be bound again by a rebuilt panel, so the entry waits");
     }
 
     @Test

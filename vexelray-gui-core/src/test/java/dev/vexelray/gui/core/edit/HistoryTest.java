@@ -327,4 +327,41 @@ final class HistoryTest {
         assertTrue(Target.node(3).isNode());
         assertFalse(Target.address(Address.of("theme.accent")).isNode());
     }
+
+    @Test
+    void forgettingOneControlsEntriesKeepsTheRest() {
+        List<String> m = model();
+        History h = new History();
+        h.perform(new Guarded(m, 0, "x", new AtomicBoolean()));
+        h.barrier();
+        h.perform(new Guarded(m, 1, "y", new AtomicBoolean()));
+        h.mark();
+        h.forget(c -> c instanceof Guarded g && g.at() == 0);
+        assertEquals(1, h.undoDepth());
+        assertTrue(h.clean(), "standing at the save, the history still is");
+        h.undo();
+        assertEquals(List.of("x", "b"), m, "the other slot's entry is the one left, and it still undoes");
+        assertFalse(h.clean());
+
+        History away = new History();
+        away.mark();
+        away.perform(new Guarded(m, 0, "z", new AtomicBoolean()));
+        away.barrier();
+        away.perform(new Guarded(m, 1, "w", new AtomicBoolean()));
+        away.forget(c -> c instanceof Guarded g && g.at() == 0);
+        away.undo();
+        assertFalse(away.clean(), "the states back to the save included what was forgotten, so it is not claimed");
+    }
+
+    @Test
+    void discardDropsOnlyTheEntryItWasAskedAbout() {
+        List<String> m = model();
+        History h = new History();
+        h.perform(new Guarded(m, 1, "y", new AtomicBoolean()));
+        assertFalse(h.discard(Target.node(100), false), "the top names slot 1's node, not slot 0's");
+        assertEquals(1, h.undoDepth());
+        assertTrue(h.discard(Target.node(101), false));
+        assertEquals(0, h.undoDepth());
+        assertEquals("y", m.get(1), "discarding applies nothing");
+    }
 }

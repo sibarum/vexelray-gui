@@ -261,6 +261,18 @@ public final class GuiApp implements AutoCloseable {
         this(config, null, windows, TextFaces.standard(), compute, new CanvasShader.Fragment());
     }
 
+    /**
+     * As {@link #GuiApp(WindowConfig, java.util.function.Function, Compute)}, drawing and measuring text in
+     * {@code fonts}, the application's own set, as {@link #GuiApp(WindowConfig, FontSet)} does. The overload a
+     * framework building the application's windows passes the application's fonts through; {@code null} is the
+     * standard set.
+     */
+    public GuiApp(WindowConfig config, java.util.function.Function<WindowConfig, NativeWindow> windows,
+                  Compute compute, FontSet fonts) {
+        this(config, null, windows, fonts == null ? TextFaces.standard() : new TextFaces(fonts), compute,
+                new CanvasShader.Fragment());
+    }
+
     /** As the one that builds it, below, with compute sharing the queue that draws. */
     private GuiApp(WindowConfig config, NativeWindow adopted,
                    java.util.function.Function<WindowConfig, NativeWindow> windows, TextFaces faces) {

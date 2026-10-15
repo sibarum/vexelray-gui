@@ -24,6 +24,7 @@ import dev.vexelray.vulkan.present.AtlasTexture;
 import dev.vexelray.vulkan.present.StreamTexture;
 import dev.vexelray.vulkan.present.GraphicsPipeline;
 import dev.vexelray.vulkan.present.OffscreenDraw;
+import dev.vexelray.vulkan.present.QueueMark;
 import dev.vexelray.vulkan.present.SampledColorTarget;
 import dev.vexelray.diag.Diagnostics;
 import dev.vexelray.vulkan.present.SampledImage;
@@ -541,10 +542,10 @@ public final class GuiApp implements AutoCloseable {
      *
      * <p><b>The half that stays the application's</b> is the tree: call this after the last node showing the
      * texture has been given another image (or none). The texture is held for one whole loop iteration after the
-     * call, so an edit posted just before it has been drained by every window, then closed after one device wait —
-     * which on a loop with one frame in flight costs what the next frame's own fence wait would have. A texture
-     * some window's tree still names is not closed: it is kept, said once in the log, and looked for again each
-     * frame, because a dangling descriptor is the one outcome worse than a leak.
+     * call, so an edit posted just before it has been drained by every window, then closed once the frames submitted
+     * before that point have finished ({@link QueueMark}) — nothing waits for them, and the frames after carry on. A
+     * texture some window's tree still names is not closed: it is kept, said once in the log, and looked for again
+     * each frame, because a dangling descriptor is the one outcome worse than a leak.
      *
      * <p>Releasing a texture twice, or one already closed, does nothing. One this application did not make is a
      * bug, and is refused here rather than at the frame that would have closed somebody else's.
@@ -618,6 +619,8 @@ public final class GuiApp implements AutoCloseable {
         final long releasedAt;
         /** Whether the log has already been told it is still shown, so a forgotten node is one line, not one a frame. */
         boolean warned;
+        /** Behind every frame that could sample it once it is due and shown nowhere; null until then. */
+        QueueMark mark;
 
         Retiring(AutoCloseable thing, SampledImage[] images, long releasedAt) {
             this.thing = thing;
@@ -625,7 +628,15 @@ public final class GuiApp implements AutoCloseable {
             this.releasedAt = releasedAt;
         }
 
+        void unmark() {
+            if (mark != null) {
+                mark.close();
+                mark = null;
+            }
+        }
+
         void close() {
+            unmark();
             try {
                 thing.close();
             } catch (Exception e) {
@@ -634,10 +645,14 @@ public final class GuiApp implements AutoCloseable {
         }
     }
 
-    /** Whether some released texture is still waiting out its iteration — the loop must not park on it. */
+    /**
+     * Whether some released texture is still waiting out its iteration, or for the frames before its mark — the loop
+     * must not park on it.
+     */
     private boolean retireDue() {
         for (int i = 0; i < retiring.size(); i++) {
-            if (!aged(retiring.get(i))) {
+            Retiring r = retiring.get(i);
+            if (!aged(r) || (r.mark != null && !r.mark.passed())) {
                 return true;
             }
         }
@@ -651,11 +666,10 @@ public final class GuiApp implements AutoCloseable {
 
     /**
      * Close every released texture that no frame can still sample. Top of a loop iteration, before any window
-     * records, so nothing is drawing while the device waits. {@code warn} false keeps one still shown without saying
+     * records, so a mark taken here is behind every frame that could have drawn it. {@code warn} false keeps one still shown without saying
      * so: see {@link #iterationTop}.
      */
     private void retire(boolean warn) {
-        boolean waited = false;
         for (int i = 0; i < retiring.size(); ) {
             Retiring r = retiring.get(i);
             if (!aged(r)) {
@@ -668,12 +682,19 @@ public final class GuiApp implements AutoCloseable {
                     LOG.warn("a released texture is still shown by a node, so it stays open until no tree names "
                             + "it; give the node another image before releasing: " + r.thing);
                 }
+                // A mark taken before a frame that shows it again does not cover that frame: take a new one.
+                r.unmark();
                 i++;
                 continue;
             }
-            if (!waited) {
-                device.waitIdle();
-                waited = true;
+            // Not the device: every frame that could sample it is submitted, so a mark behind them passes once they
+            // are done, while frames recorded after the mark carry on. Looked at again each iteration until it has.
+            if (r.mark == null) {
+                r.mark = QueueMark.now(device);
+            }
+            if (!r.mark.passed()) {
+                i++;
+                continue;
             }
             r.close();
             retiring.remove(i);
@@ -1493,8 +1514,8 @@ public final class GuiApp implements AutoCloseable {
      *
      * <p>A pulled frame counts as an iteration for {@link #release}, so a texture given back during a long drag is
      * closed during it rather than piling up behind it. The safety was never the count: a texture is closed only
-     * after a device wait, and only when no window's tree names it. What the count buys is not warning about an edit
-     * that has not been drained yet, and in a move loop only the window being moved updates. So there ({@code loop}
+     * once every frame submitted before its mark has finished, and only when no window's tree names it. What the
+     * count buys is not warning about an edit that has not been drained yet, and in a move loop only the window being moved updates. So there ({@code loop}
      * false) a texture another window still names is kept without a word, and the host loop says so if it still is.
      */
     private void iterationTop(boolean loop) {
@@ -1676,7 +1697,10 @@ public final class GuiApp implements AutoCloseable {
             s.close();
         }
         streams.clear();
-        retiring.clear();   // every one of them was in textures or streams, so closed just above
+        for (Retiring r : retiring) {
+            r.unmark();   // the thing itself was in textures or streams, so closed just above
+        }
+        retiring.clear();
         for (StorageBuffer b : buffers) {
             b.close();
         }

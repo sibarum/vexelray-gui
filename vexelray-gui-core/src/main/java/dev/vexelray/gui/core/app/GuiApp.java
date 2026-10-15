@@ -21,6 +21,7 @@ import dev.vexelray.shader.ComposedShader;
 import dev.vexelray.gui.core.text.TextFaces;
 import dev.vexelray.text.FontSet;
 import dev.vexelray.vulkan.present.AtlasTexture;
+import dev.vexelray.vulkan.present.StreamTexture;
 import dev.vexelray.vulkan.present.GraphicsPipeline;
 import dev.vexelray.vulkan.present.OffscreenDraw;
 import dev.vexelray.vulkan.present.SampledColorTarget;
@@ -85,6 +86,8 @@ public final class GuiApp implements AutoCloseable {
     private final List<SampledColorTarget> viewports = new ArrayList<>();
     /** Uploaded images minted by {@link #texture}, closed with the application. */
     private final List<AtlasTexture> textures = new ArrayList<>();
+    /** Streams minted by {@link #stream}, closed with the application. */
+    private final List<StreamTexture> streams = new ArrayList<>();
     /** Textures handed to {@link #release}, waiting for a frame that no longer names them. Main thread. */
     private final List<Retiring> retiring = new ArrayList<>();
     /** Loop iterations begun, so a released texture can be held for a whole one after it. Main thread. */
@@ -557,24 +560,77 @@ public final class GuiApp implements AutoCloseable {
             throw new IllegalArgumentException("only a texture made by this application's texture() can be "
                     + "released here; " + texture + " was not");
         }
+        retire(texture, new SampledImage[] {texture});
+    }
+
+    /**
+     * A texture whose pixels change: {@code slots} images of {@code width x height}, each frame written into one that
+     * nothing shows and the node then pointed at it ({@link StreamTexture}), so a picture that plays costs neither a
+     * texture per frame nor a device wait. With {@code picture}, sRGB with a mip chain per slot, as {@link #picture}
+     * uploads; the writer makes each frame's chain, off this thread.
+     *
+     * <p>This is the answer to {@link #texture}'s "uploaded once": the promise that a texture a frame samples is never
+     * rewritten under it is kept by the ring, not by never writing. Main thread, closed with the application, and
+     * given back with {@link #release(StreamTexture)} when its picture is no longer shown.
+     */
+    public StreamTexture stream(int width, int height, int slots, boolean picture) {
+        streams.removeIf(StreamTexture::isClosed);
+        StreamTexture s = new StreamTexture(device, width, height, slots, picture);
+        streams.add(s);
+        return s;
+    }
+
+    /**
+     * Give back a stream made by {@link #stream}, once no node shows any of its slots: closed when no frame can still
+     * sample one, as {@link #release(AtlasTexture)} closes a texture and with the same rules.
+     */
+    public void release(StreamTexture stream) {
+        if (stream == null) {
+            throw new IllegalArgumentException("release needs a stream; was given null");
+        }
+        if (stream.isClosed()) {
+            return;
+        }
+        if (!streams.contains(stream)) {
+            throw new IllegalArgumentException("only a stream made by this application's stream() can be released "
+                    + "here; " + stream + " was not");
+        }
+        SampledImage[] slots = new SampledImage[stream.slots()];
+        for (int i = 0; i < slots.length; i++) {
+            slots[i] = stream.slot(i);
+        }
+        retire(stream, slots);
+    }
+
+    private void retire(AutoCloseable thing, SampledImage[] images) {
         for (Retiring r : retiring) {
-            if (r.texture == texture) {
+            if (r.thing == thing) {
                 return;
             }
         }
-        retiring.add(new Retiring(texture, iteration));
+        retiring.add(new Retiring(thing, images, iteration));
     }
 
-    /** A texture handed to {@link #release}, and when. */
+    /** A texture or stream handed to {@link #release}, the images a tree could name it by, and when. */
     private static final class Retiring {
-        final AtlasTexture texture;
+        final AutoCloseable thing;
+        final SampledImage[] images;
         final long releasedAt;
         /** Whether the log has already been told it is still shown, so a forgotten node is one line, not one a frame. */
         boolean warned;
 
-        Retiring(AtlasTexture texture, long releasedAt) {
-            this.texture = texture;
+        Retiring(AutoCloseable thing, SampledImage[] images, long releasedAt) {
+            this.thing = thing;
+            this.images = images;
             this.releasedAt = releasedAt;
+        }
+
+        void close() {
+            try {
+                thing.close();
+            } catch (Exception e) {
+                LOG.warn("a released texture failed to close: " + thing + ": " + e);
+            }
         }
     }
 
@@ -605,11 +661,11 @@ public final class GuiApp implements AutoCloseable {
                 i++;
                 continue;
             }
-            if (shown(r.texture)) {
+            if (shownAny(r.images)) {
                 if (!r.warned) {
                     r.warned = true;
                     LOG.warn("a released texture is still shown by a node, so it stays open until no tree names "
-                            + "it; give the node another image before releasing: " + r.texture);
+                            + "it; give the node another image before releasing: " + r.thing);
                 }
                 i++;
                 continue;
@@ -618,9 +674,18 @@ public final class GuiApp implements AutoCloseable {
                 device.waitIdle();
                 waited = true;
             }
-            r.texture.close();
+            r.close();
             retiring.remove(i);
         }
+    }
+
+    private boolean shownAny(SampledImage[] images) {
+        for (SampledImage image : images) {
+            if (shown(image)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Whether any window's tree, as its last update left it, still names {@code image}. */
@@ -1582,7 +1647,11 @@ public final class GuiApp implements AutoCloseable {
             t.close();
         }
         textures.clear();
-        retiring.clear();   // every one of them was in textures, so closed just above
+        for (StreamTexture s : streams) {
+            s.close();
+        }
+        streams.clear();
+        retiring.clear();   // every one of them was in textures or streams, so closed just above
         for (StorageBuffer b : buffers) {
             b.close();
         }

@@ -132,6 +132,107 @@ class FlexLayoutTest {
         assertEquals(64f, b.x, EPS, "a consumes 16+32+16, so b starts at 64");
     }
 
+    /** An em is the node's own text size: a node at twice the root's text has an em of twice the root's. */
+    @Test
+    void emIsTheNodesOwnTextSize() {
+        RetainedNode root = box(0);
+        root.set(PropKey.DIRECTION, Direction.ROW);
+        RetainedNode big = box(1);
+        big.set(PropKey.TEXT_SIZE, Length.rem(2));    // 32px, so one em here is 32
+        big.set(PropKey.WIDTH, Length.em(2));         // 64
+        big.set(PropKey.PADDING, Length.em(0.5f));    // 16 each side
+        big.set(PropKey.MARGIN, Length.em(0.25f));    // 8 each side
+        RetainedNode inner = box(2);
+        inner.set(PropKey.WIDTH, Length.rem(1));
+        add(root, big);
+        add(big, inner);
+
+        FlexLayout.layout(root, 200f, 100f, ctx(), TM);
+
+        assertEquals(64f, big.w, EPS, "em(2) at a 32px text size");
+        assertEquals(8f, big.x, EPS, "the margin is in the node's em too");
+        assertEquals(big.x + 16f, inner.x, EPS, "and so is its padding");
+        assertEquals(32f, big.textSizePx, EPS);
+    }
+
+    /** At the default text size an em and a rem are the same number, which is why moving em to rem moved nothing. */
+    @Test
+    void anEmAtTheDefaultTextSizeIsARem() {
+        RetainedNode root = box(0);
+        root.set(PropKey.DIRECTION, Direction.ROW);
+        RetainedNode a = box(1);
+        a.set(PropKey.WIDTH, Length.em(3));
+        RetainedNode b = box(2);
+        b.set(PropKey.WIDTH, Length.rem(3));
+        add(root, a);
+        add(root, b);
+
+        FlexLayout.layout(root, 200f, 100f, ctx(), TM);
+
+        assertEquals(48f, a.w, EPS);
+        assertEquals(b.w, a.w, EPS);
+    }
+
+    /** Text size is not inherited, so neither is an em: a child's em is its own text size, never its parent's. */
+    @Test
+    void anEmIsNotTheParents() {
+        RetainedNode root = box(0);
+        root.set(PropKey.DIRECTION, Direction.ROW);
+        RetainedNode parent = box(1);
+        parent.set(PropKey.TEXT_SIZE, Length.rem(2));
+        RetainedNode child = box(2);
+        child.set(PropKey.WIDTH, Length.em(1));
+        add(root, parent);
+        add(parent, child);
+
+        FlexLayout.layout(root, 200f, 100f, ctx(), TM);
+
+        assertEquals(16f, child.w, EPS, "the child's own default text size, one rem");
+    }
+
+    /** A text size in em is what defines the node's em, so it resolves against the root and not against itself. */
+    @Test
+    void anEmTextSizeIsTheRootsEm() {
+        RetainedNode root = box(0);
+        root.set(PropKey.DIRECTION, Direction.ROW);
+        RetainedNode n = box(1);
+        n.set(PropKey.TEXT_SIZE, Length.em(1.5f));   // 24px: 1.5 root ems
+        n.set(PropKey.WIDTH, Length.em(2));          // 48: two of its own
+        add(root, n);
+
+        FlexLayout.layout(root, 200f, 100f, ctx(), TM);
+
+        assertEquals(24f, n.textSizePx, EPS);
+        assertEquals(48f, n.w, EPS);
+    }
+
+    /** An em scales with zoom and density as the text it follows does, and follows a text size changed later. */
+    @Test
+    void anEmFollowsZoomAndALaterTextSize() {
+        RetainedNode root = box(0);
+        root.set(PropKey.DIRECTION, Direction.ROW);
+        RetainedNode n = box(1);
+        n.set(PropKey.WIDTH, Length.em(1));
+        add(root, n);
+
+        FlexLayout.layout(root, 200f, 100f, new LayoutContext(16f, 2f, 1.5f, 1000f, 1000f), TM);
+        assertEquals(48f, n.w, EPS, "16 · zoom 2 · dpi 1.5");
+
+        n.set(PropKey.TEXT_SIZE, Length.rem(0.5f));
+        FlexLayout.layout(root, 200f, 100f, new LayoutContext(16f, 2f, 1.5f, 1000f, 1000f), TM);
+        assertEquals(24f, n.w, EPS, "half the text, half the em; the cached context did not hold the old one");
+    }
+
+    /** Measured as it is placed: an auto-sized box's em padding is the box's own em, not the root's. */
+    @Test
+    void measureResolvesAnEmInTheNodesOwnText() {
+        RetainedNode n = box(1);
+        n.set(PropKey.TEXT_SIZE, Length.rem(2));
+        n.set(PropKey.PADDING_X, Length.em(1));     // 32 each side
+
+        assertEquals(64f, FlexLayout.measure(n, Axis.HORIZONTAL, ctx(), TM), EPS);
+    }
+
     @Test
     void fillDistributesFreeMainSpace() {
         RetainedNode root = box(0);

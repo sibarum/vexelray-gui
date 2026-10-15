@@ -7,8 +7,11 @@ package dev.vexelray.gui.core.layout;
  *
  * <p>Fixed units resolve to a concrete pixel basis:
  * <ul>
- *   <li>{@link Em} / {@link Rem} — {@code v · rootEmPx · zoom · dpi} (flat root, no cascade: the two are the same
- *       number, and an em is never a node's own text size)</li>
+ *   <li>{@link Rem} — {@code v · rootEmPx · zoom · dpi}: the root, the same on every node</li>
+ *   <li>{@link Em} — {@code v ·} the node's own resolved text size, so a node that sets {@code textSize(rem(2))}
+ *       has an em twice the root's. No cascade: text size is not inherited, so an em is never a parent's. A text
+ *       size given in em resolves against the root, since it is what defines the node's em; and outside layout,
+ *       with no node in hand, an em is the root em</li>
  *   <li>{@link Dp} — {@code v · dpi}: density, but not zoom</li>
  *   <li>{@link Vw} / {@link Vh} — {@code v/100 · viewport width/height}</li>
  *   <li>{@link Percent} — {@code v/100 · basis}, where the basis is supplied by the caller (for width/height it is
@@ -23,17 +26,19 @@ package dev.vexelray.gui.core.layout;
  */
 public interface Length {
 
+    /** The node's own text size. For what follows a node's text: its padding, its gaps, an icon beside it. */
     record Em(float v) implements Length {
         @Override
         public float resolve(LayoutContext ctx, float basisPx) {
-            return v * ctx.rootEmPx() * ctx.zoom() * ctx.dpi();
+            return v * ctx.emPx();
         }
     }
 
+    /** The root em. For what is the same size whatever text sits in it. */
     record Rem(float v) implements Length {
         @Override
         public float resolve(LayoutContext ctx, float basisPx) {
-            return v * ctx.rootEmPx() * ctx.zoom() * ctx.dpi();
+            return v * ctx.remPx();
         }
     }
 
@@ -49,7 +54,7 @@ public interface Length {
      * <p><b>For chrome that is not proportional to text</b>: card padding, gaps between panels, margins,
      * separators. Zoom is a request to make <em>content</em> legible, and tripling the frame around the content to
      * match means the user sees less of what they zoomed in to read. Text is the other case entirely — anything
-     * sizing or containing glyphs stays in {@link Em}, or at 3× you get triple-height text inside an unchanged
+     * sizing or containing glyphs stays in {@link Rem} or {@link Em}, or at 3× you get triple-height text inside an unchanged
      * inset, nearly touching its border.
      */
     record Dp(float v) implements Length {

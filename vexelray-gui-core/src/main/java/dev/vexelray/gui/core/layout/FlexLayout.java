@@ -70,18 +70,19 @@ public final class FlexLayout {
     private static void layoutBox(RetainedNode n, LayoutContext ctx, TextMeasurer tm, float floorW, float floorH) {
         // Resolve the render inputs the tree renderer needs, now that this node's border-box is known. Percent
         // padding/border/corner use the node's own border-box width as the basis (CSS convention).
-        n.borderPx = n.borderWidth().scalarPx(ctx, n.w);
-        n.cornerPx = n.corner().scalarPx(ctx, n.w);
-        n.cornerBottomPx = n.cornerBottom().scalarPx(ctx, n.w);
-        n.elevationPx = n.elevation().scalarPx(ctx, n.w);
-        n.textSizePx = Math.max(1f, n.textSize().scalarPx(ctx, emBasis(ctx)));
+        LayoutContext own = own(n, ctx);
+        n.borderPx = n.borderWidth().scalarPx(own, n.w);
+        n.cornerPx = n.corner().scalarPx(own, n.w);
+        n.cornerBottomPx = n.cornerBottom().scalarPx(own, n.w);
+        n.elevationPx = n.elevation().scalarPx(own, n.w);
+        n.textSizePx = own.emPx();
         // The text insets and the em basis, resolved here so no later stage needs a LayoutContext to know them.
         // The inset is the full box-model one — border + declared padding + (editable-only) caret gutter — so a
         // text leaf insets its glyphs by the same accounting a container insets its children.
         n.emPx = emBasis(ctx);
-        n.textPadXPx = TextMetrics.resolveInsetX(ctx, n, n.w);
-        n.textPadYPx = TextMetrics.resolveInsetY(ctx, n, n.w);
-        n.gutterPadPx = TextMetrics.GUTTER_PAD.scalarPx(ctx, n.w);
+        n.textPadXPx = TextMetrics.resolveInsetX(own, n, n.w);
+        n.textPadYPx = TextMetrics.resolveInsetY(own, n, n.w);
+        n.gutterPadPx = TextMetrics.GUTTER_PAD.scalarPx(own, n.w);
 
         List<RetainedNode> kids = flowChildren(n);
         if (kids.isEmpty()) {
@@ -104,9 +105,9 @@ public final class FlexLayout {
             return;
         }
 
-        float insetX = n.borderPx + n.paddingX().scalarPx(ctx, n.w);
-        float insetY = n.borderPx + n.paddingY().scalarPx(ctx, n.w);
-        float gap = n.gap().scalarPx(ctx, n.w);
+        float insetX = n.borderPx + n.paddingX().scalarPx(own, n.w);
+        float insetY = n.borderPx + n.paddingY().scalarPx(own, n.w);
+        float gap = n.gap().scalarPx(own, n.w);
         boolean row = n.direction() == Direction.ROW;
 
         float baseX = n.x + insetX;
@@ -228,9 +229,10 @@ public final class FlexLayout {
             float mMain = marginMain[i];
 
             // Cross size + position, inset by the child's margin.
+            LayoutContext own = own(c, ctx);
             Length crossLen = row ? c.height() : c.width();
-            float crossFixed = crossLen.resolve(ctx, availCross);
-            float mCross = c.margin().scalarPx(ctx, availCross);
+            float crossFixed = crossLen.resolve(own, availCross);
+            float mCross = c.margin().scalarPx(own, availCross);
             float availC = Math.max(0f, availCross - 2f * mCross);
             float cs;
             float crossPos;
@@ -299,12 +301,13 @@ public final class FlexLayout {
         float sumGrow = 0f;
         for (int i = 0; i < count; i++) {
             RetainedNode c = kids.get(i);
+            LayoutContext own = own(c, ctx);
             Length mainLen = row ? c.width() : c.height();
-            float fixed = mainLen.resolve(ctx, availMain);
+            float fixed = mainLen.resolve(own, availMain);
             basis[i] = fixed >= 0f ? fixed
                     : (mainLen.growFactor() > 0f ? 0f : measure(c, main, ctx, tm, row ? -1f : crossPre[i]));
             growF[i] = mainLen.growFactor();
-            marginMain[i] = c.margin().scalarPx(ctx, availMain);
+            marginMain[i] = c.margin().scalarPx(own, availMain);
             sumBasis += basis[i] + 2f * marginMain[i];
             sumGrow += growF[i];
         }
@@ -489,20 +492,21 @@ public final class FlexLayout {
 
     /** Size and place one floating child {@code c} against {@code n}'s border box, then lay out its subtree. */
     private static void placeFloat(RetainedNode n, RetainedNode c, LayoutContext ctx, TextMeasurer tm) {
-        float w = c.width().resolve(ctx, n.w);
+        LayoutContext own = own(c, ctx);
+        float w = c.width().resolve(own, n.w);
         if (w < 0f) {
             w = c.width() instanceof Length.FillT ? n.w : measure(c, Axis.HORIZONTAL, ctx, tm);
         }
         w = Math.min(Math.max(0f, w), n.w);
-        float h = c.height().resolve(ctx, n.h);
+        float h = c.height().resolve(own, n.h);
         if (h < 0f) {
             h = c.height() instanceof Length.FillT ? n.h : measure(c, Axis.VERTICAL, ctx, tm, w);
         }
         h = Math.min(Math.max(0f, h), n.h);
         c.w = w;
         c.h = h;
-        c.x = n.x + clamp(c.floatX().scalarPx(ctx, n.w), 0f, Math.max(0f, n.w - w));
-        c.y = n.y + clamp(c.floatY().scalarPx(ctx, n.h), 0f, Math.max(0f, n.h - h));
+        c.x = n.x + clamp(c.floatX().scalarPx(own, n.w), 0f, Math.max(0f, n.w - w));
+        c.y = n.y + clamp(c.floatY().scalarPx(own, n.h), 0f, Math.max(0f, n.h - h));
         layoutBox(c, ctx, tm);
     }
 
@@ -531,22 +535,23 @@ public final class FlexLayout {
      * height without it can only assume one line; with it, wrapped text reports its true height.
      */
     public static float measure(RetainedNode n, Axis axis, LayoutContext ctx, TextMeasurer tm, float knownWidth) {
+        LayoutContext own = own(n, ctx);
         Length along = axis == Axis.HORIZONTAL ? n.width() : n.height();
         if (isBasisFree(along)) {
-            return Math.max(0f, along.resolve(ctx, 0f));
+            return Math.max(0f, along.resolve(own, 0f));
         }
         Length padAxis = axis == Axis.HORIZONTAL ? n.paddingX() : n.paddingY();
-        float inset = n.borderWidth().scalarPx(ctx, 0f) + padAxis.scalarPx(ctx, 0f);
+        float inset = n.borderWidth().scalarPx(own, 0f) + padAxis.scalarPx(own, 0f);
         if (n.hasText()) {
-            float textPx = Math.max(1f, n.textSize().scalarPx(ctx, emBasis(ctx)));
+            float textPx = own.emPx();
             // An editable node adds its caret gutter, so an auto-sized field measures to a width its text
             // actually fits in — the same invariant the label case gets from the inset being border+padding
             // alone. (Unclamped: the narrow-node clamp needs the final width, and over-reporting by the clamped
             // sliver is safe where under-reporting would re-open the wrap-inside-the-last-word bug.)
             float gutter = !n.editable() ? 0f
-                    : (axis == Axis.HORIZONTAL ? TextMetrics.PAD_X : TextMetrics.PAD_Y).scalarPx(ctx, 0f);
+                    : (axis == Axis.HORIZONTAL ? TextMetrics.PAD_X : TextMetrics.PAD_Y).scalarPx(own, 0f);
             float size = axis == Axis.VERTICAL && knownWidth >= 0f
-                    ? textBlockHeight(n, knownWidth, textPx, ctx, tm)
+                    ? textBlockHeight(n, knownWidth, textPx, own, tm)
                     : tm.intrinsic(n, axis, textPx) + 2f * gutter;
             return Math.max(0f, size) + 2f * inset;
         }
@@ -560,33 +565,33 @@ public final class FlexLayout {
         // shares it out first, exactly as place will, and measures each child's height at its share — so a
         // title wrapping beside an icon makes the row as tall as the title, not one line tall.
         float contentWidth = knownWidth >= 0f
-                ? Math.max(0f, knownWidth - 2f * n.borderWidth().scalarPx(ctx, 0f)
-                        - 2f * n.paddingX().scalarPx(ctx, 0f))
+                ? Math.max(0f, knownWidth - 2f * n.borderWidth().scalarPx(own, 0f)
+                        - 2f * n.paddingX().scalarPx(own, 0f))
                 : -1f;
         float childWidth = mainAxis == Axis.VERTICAL ? contentWidth : -1f;
         if (axis == Axis.VERTICAL && mainAxis == Axis.HORIZONTAL && contentWidth >= 0f) {
             float[] marginMain = new float[kids.size()];
-            float[] widths = mainSizes(kids, contentWidth, true, n.gap().scalarPx(ctx, knownWidth), null,
+            float[] widths = mainSizes(kids, contentWidth, true, n.gap().scalarPx(own, knownWidth), null,
                     marginMain, ctx, tm);
             float max = 0f;
             for (int i = 0; i < kids.size(); i++) {
                 RetainedNode c = kids.get(i);
                 max = Math.max(max, measure(c, axis, ctx, tm, Math.max(0f, widths[i]))
-                        + 2f * c.margin().scalarPx(ctx, 0f));
+                        + 2f * c.margin().scalarPx(own(c, ctx), 0f));
             }
             return max + 2f * inset;
         }
         if (axis == mainAxis) {
-            float gap = n.gap().scalarPx(ctx, 0f);
+            float gap = n.gap().scalarPx(own, 0f);
             float sum = gap * Math.max(0, kids.size() - 1);
             for (RetainedNode c : kids) {
-                sum += measure(c, axis, ctx, tm, childWidth) + 2f * c.margin().scalarPx(ctx, 0f);
+                sum += measure(c, axis, ctx, tm, childWidth) + 2f * c.margin().scalarPx(own(c, ctx), 0f);
             }
             return sum + 2f * inset;
         }
         float max = 0f;
         for (RetainedNode c : kids) {
-            max = Math.max(max, measure(c, axis, ctx, tm, childWidth) + 2f * c.margin().scalarPx(ctx, 0f));
+            max = Math.max(max, measure(c, axis, ctx, tm, childWidth) + 2f * c.margin().scalarPx(own(c, ctx), 0f));
         }
         return max + 2f * inset;
     }
@@ -596,21 +601,21 @@ public final class FlexLayout {
      * line height. Line breaking goes through {@code TextMeasurer.lineSpans} — the same seam the compute phase
      * and the renderer use — so the height a node is given always matches the lines that end up drawn in it.
      */
-    private static float textBlockHeight(RetainedNode n, float nodeW, float textPx, LayoutContext ctx,
+    private static float textBlockHeight(RetainedNode n, float nodeW, float textPx, LayoutContext own,
                                          TextMeasurer tm) {
         float lineH = tm.intrinsic(n, Axis.VERTICAL, textPx);
         String s = n.textString();
         if (s == null || s.isEmpty()) {
             return lineH;   // an empty field is still one line tall
         }
-        // Measure runs before this node's own layoutBox, so the insets are resolved here from ctx rather than read
-        // off the node — same Lengths, same numbers, just not yet stored.
-        float wrapWidth = n.wrapsText() ? TextMetrics.contentWidth(ctx, n, nodeW) : 0f;
+        // Measure runs before this node's own layoutBox, so the insets are resolved here from its context rather
+        // than read off the node — same Lengths, same numbers, just not yet stored.
+        float wrapWidth = n.wrapsText() ? TextMetrics.contentWidth(own, n, nodeW) : 0f;
         int lineCount = Math.max(1, tm.lineSpans(Styling.of(n), s, wrapWidth, textPx).size());
         // An editable field's text sits inside a vertical caret gutter, so an auto-sized one must be tall enough
         // for both; a label is the block itself. Border and declared padding are the caller's to add — this is
         // content height only.
-        float gutterY = n.editable() ? TextMetrics.PAD_Y.scalarPx(ctx, nodeW) : 0f;
+        float gutterY = n.editable() ? TextMetrics.PAD_Y.scalarPx(own, nodeW) : 0f;
         return lineCount * lineH + 2f * gutterY;
     }
 
@@ -620,10 +625,11 @@ public final class FlexLayout {
      */
     private static float crossSize(RetainedNode parent, RetainedNode c, float availCross, LayoutContext ctx,
                                    TextMeasurer tm, boolean column) {
-        float mCross = c.margin().scalarPx(ctx, availCross);
+        LayoutContext own = own(c, ctx);
+        float mCross = c.margin().scalarPx(own, availCross);
         float availC = Math.max(0f, availCross - 2f * mCross);
         Length crossLen = column ? c.width() : c.height();
-        float crossFixed = crossLen.resolve(ctx, availCross);
+        float crossFixed = crossLen.resolve(own, availCross);
         if (fillsCross(parent, crossLen, crossFixed)) {
             return availC;
         }
@@ -651,8 +657,28 @@ public final class FlexLayout {
                 || l instanceof Length.Vw || l instanceof Length.Vh;
     }
 
-    /** The pixel value of one em: {@code rootEmPx · zoom · dpi} — the basis for a percent text size. */
+    /** The pixel value of one root em: {@code rootEmPx · zoom · dpi} — the basis for a percent text size. */
     private static float emBasis(LayoutContext ctx) {
-        return ctx.rootEmPx() * ctx.zoom() * ctx.dpi();
+        return ctx.remPx();
+    }
+
+    /**
+     * The context {@code n}'s own lengths resolve in: {@code root}, with one em being {@code n}'s text size. Every
+     * length that belongs to a node (its size, margin, padding, border, gap, offsets) resolves in this one, which is
+     * what makes {@link Length#em} the node's own em; whatever only the layout itself sizes, the scrollbar, stays on
+     * the root. {@code root} is always the root context, never another node's: the text size itself resolves
+     * against it, so an em text size is the root's em and not a parent's.
+     *
+     * <p>Cached on the node and rebuilt only when the root or the text size changed, so a layout that changes
+     * neither allocates nothing here.
+     */
+    private static LayoutContext own(RetainedNode n, LayoutContext root) {
+        float em = Math.max(1f, n.textSize().scalarPx(root, emBasis(root)));
+        LayoutContext c = n.layoutCtx;
+        if (c == null || c.emPx() != em || !c.sameRoot(root)) {
+            c = root.withEm(em);
+            n.layoutCtx = c;
+        }
+        return c;
     }
 }

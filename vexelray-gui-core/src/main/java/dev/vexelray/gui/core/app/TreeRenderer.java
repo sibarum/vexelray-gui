@@ -552,11 +552,13 @@ public final class TreeRenderer {
         if (shown <= 0f || !spec.shows(cause, n.editable()) || n.w <= 0f || n.h <= 0f) {
             return;
         }
-        float width = spec.width().scalarPx(ctx, n.w);
+        // In the node's own context, as layout resolved its other lengths, so a ring in em follows its text.
+        LayoutContext own = n.layoutCtx != null ? n.layoutCtx : ctx;
+        float width = spec.width().scalarPx(own, n.w);
         if (width <= 0f) {
             return;
         }
-        float offset = spec.offset().scalarPx(ctx, n.w);
+        float offset = spec.offset().scalarPx(own, n.w);
         // At the node's inherited opacity, so a ring on a fading page fades with it; at half that while the
         // window is in the background, the way the caret stops blinking there.
         float a = alpha * shown * (focus.windowActive() ? 1f : 0.5f);

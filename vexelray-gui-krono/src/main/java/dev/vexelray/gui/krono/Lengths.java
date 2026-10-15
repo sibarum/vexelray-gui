@@ -17,10 +17,8 @@ import sibarum.kronometer.Interp;
  * lerp between {@code dp(8)} and {@code rem(1)} — any number you produced would resolve to something
  * that matched neither endpoint at either end.
  *
- * <p>The one pair this overstates is {@code em} and {@code rem}: under the flat root they resolve to the same
- * number, so a blend between them would be meaningful. It still steps today, because the match below is on the
- * class; whether em stays the root em for good is an open decision (vexelray-framework docs/units.md, U6), and
- * this is the place to change if it does.
+ * <p>That includes {@code em} and {@code rem}: an em is the node's own text size and a rem the root's, so the two
+ * are the same number only on a node whose text size is one rem.
  *
  * <p>Rather than invent one, a mixed-unit blend <b>holds the start value and switches at the end</b>. It
  * is the same choice {@link Interp#step()} makes, for the same reason: a discontinuity you can see beats

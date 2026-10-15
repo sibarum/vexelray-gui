@@ -2,6 +2,7 @@ package dev.vexelray.gui.core.model;
 
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.ImageRegion;
+import dev.vexelray.gui.core.layout.LayoutContext;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
@@ -73,10 +74,17 @@ public final class RetainedNode {
     public float textPadYPx;
     public float gutterPadPx;
     /**
-     * One em in px at this node's layout ({@code rootEmPx · zoom · dpi}) — lets a later stage size relatively. The
-     * flat root em, so the same on every node of a frame whatever its text size.
+     * One root em in px at this node's layout ({@code rootEmPx · zoom · dpi}) — lets a later stage size relatively.
+     * A {@code Length.rem}, so the same on every node of a frame whatever its text size. This node's own em, what a
+     * {@code Length.em} on it resolves to, is {@link #textSizePx}.
      */
     public float emPx = 16f;
+    /**
+     * The context this node's own lengths resolved in at the last layout: the root's, with one em being this node's
+     * text size. Kept so the layout reuses it while nothing changed, and so the renderer can resolve a length on this
+     * node (a focus ring's width) the way layout did. Null before the first layout.
+     */
+    public LayoutContext layoutCtx;
 
     // Scroll state: scrollX/Y persist across frames. A staged pipeline value (docs/reference/layout-read-model.md §2.2) —
     // the dispatch stage proposes an offset (wheel, scrollbar drag), the compute stage narrows it (caret-follow,

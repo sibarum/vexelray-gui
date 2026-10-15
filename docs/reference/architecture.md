@@ -370,13 +370,16 @@ border-box separating a node from its siblings and its parent's content edge.
 
 **Units — no device-pixel unit.** Every length is relative, so a UI scales with font size, zoom, DPI and
 window size rather than being pinned to the device grid. Resolved only at layout time against a
-`LayoutContext{ rootEmPx, zoom, dpi, viewportW/H }`:
+`LayoutContext{ rootEmPx, zoom, dpi, viewportW/H, emPx }`:
 
 ```java
 sealed interface Length permits Em, Rem, Dp, Percent, Vw, Vh, Grow /*flex*/, Auto, Fill { }
 ```
 
-`em = rem = v·rootEmPx·zoom·dpi` (flat root, no cascade); **`dp = v·dpi`**; `vw/vh = v/100·viewport`;
+`rem = v·rootEmPx·zoom·dpi` (the root); `em = v·` the node's own resolved text size, so a node that sets
+`textSize(rem(2))` has an em twice the root's (no cascade: text size is not inherited, so an em is never a
+parent's); a text size given in `em` resolves against the root, since it is what defines the node's em; outside
+layout, with no node in hand, an em is the root em; **`dp = v·dpi`**; `vw/vh = v/100·viewport`;
 `percent = v/100·basis`, where the basis is the parent content extent along the axis (width/height) or
 the node's own border-box width (padding/border/gap/corner). `Auto` sizes to content; `Fill`/`Grow`
 share leftover main-axis space (on the cross axis they stretch like `Auto`). Every visual scalar — width,
@@ -494,8 +497,8 @@ under the user pairs it with `hitInert`.
 
 **`TRANSLATE_X/Y`, as built.** A `Canvas.pushTranslate` around the node and its subtree — one addition where
 a vertex is written, moving both the position and the screen coordinate the clip SDF evaluates at, so a
-translated shape is clipped where it lands. Expressed in **multiples of the em** — the flat root em under zoom and density, the same on every node and not
-its text size — rather than a `Length`,
+translated shape is clipped where it lands. Expressed in **multiples of the root em** (a `rem`) — under zoom and density, the same on every node and not
+its text size, so not what a `Length.em` on the node means — rather than a `Length`,
 because of *when* it resolves: `Length`s are resolved to px by the layout pass, and layout deliberately does
 not re-run for a visual prop, so a `Length` here would animate against px baked whenever layout last happened
 to run — never, in a UI that is otherwise still. The em is already on the node. Hit-testing does **not**

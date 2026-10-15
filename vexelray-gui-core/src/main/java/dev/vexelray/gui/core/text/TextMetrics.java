@@ -17,9 +17,10 @@ public record TextMetrics(List<VisualLine> lines) {
     /**
      * The editable field's caret gutter, as {@link Length}s rather than pixels — §6 admits no pixel unit, and
      * these were the last scalars pinned to device pixels while everything around them (scrollbar thickness,
-     * border, corner, text size) already scaled. Flat root, no cascade (§6), so these track
+     * border, corner, text size) already scaled. In {@code rem}, so these track
      * {@code rootEmPx · zoom · dpi} and not the node's own text size. At the default context they resolve to the
-     * 10/6/4 px they replace.
+     * 10/6/4 px they replace. {@code ctx} below is the node's own context (FlexLayout's {@code own}), so the node's
+     * declared border and padding resolve an {@code em} against its own text size.
      *
      * <p><b>These apply to editable nodes only.</b> An editable field is a <em>box</em> with a document inside
      * it — the gutter keeps the caret off the border on both axes. A label is the text block itself and gets

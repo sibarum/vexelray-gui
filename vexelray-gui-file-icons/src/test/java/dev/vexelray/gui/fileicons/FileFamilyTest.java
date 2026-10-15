@@ -78,6 +78,31 @@ class FileFamilyTest {
         assertNull(FileFamily.named("no-such-family"));
     }
 
+    @Test
+    void aFamilyIsFoundByAnExtensionItCovers() {
+        assertSame(FileFamily.SOURCE_CODE, FileFamily.ofExtension("java"));
+        assertSame(FileFamily.DATA_AND_CONFIG, FileFamily.ofExtension("JSON"));
+        assertSame(FileFamily.UNKNOWN, FileFamily.ofExtension("no-such-extension"));
+        assertSame(FileFamily.UNKNOWN, FileFamily.ofExtension(""));
+        for (FileFamily family : FileFamily.values()) {
+            for (String e : family.extensions()) {
+                assertSame(family, FileFamily.ofExtension(e), "." + e);
+            }
+        }
+    }
+
+    @Test
+    void everyFamilyHasAHueOnBothThemesAndAnInkWhenItHasAnEmblem() {
+        for (FileFamily family : FileFamily.values()) {
+            for (boolean dark : new boolean[] {true, false}) {
+                assertTrue(family.hue(dark) != null, family + " has a hue");
+                assertEquals(family.emblem() != null, family.ink(dark) != null, family + " has an ink iff an emblem");
+            }
+        }
+        assertEquals(Color.rgb(0x3fd6ea), FileFamily.SOURCE_CODE.hue(true));
+        assertEquals(Color.rgb(0xffffff), FileFamily.SOURCE_CODE.ink(false));
+    }
+
     private static List<ImageField> fields() {
         List<ImageField> fields = new ArrayList<>();
         for (FileSheet sheet : FileSheet.values()) {

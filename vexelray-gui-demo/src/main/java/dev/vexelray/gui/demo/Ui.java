@@ -149,7 +149,7 @@ public final class Ui {
      */
     private static Node shell(Gui gui, String text, Role fg, Role fill, boolean bordered) {
         Node b = gui.text(text).role("button").width(Length.AUTO).height(Length.rem(2.5f))
-                .padding(Length.ZERO, Length.em(0.875f))
+                .padding(Length.ZERO, Length.rem(0.875f))
                 .background(gui.theme().color(fill))
                 .corner(Length.rem(0.5f)).textColor(gui.theme().color(fg))
                 .textSize(Length.rem(0.9375f))

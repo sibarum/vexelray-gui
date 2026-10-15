@@ -80,7 +80,7 @@ public final class Demo {
         // The smallest canvas this UI is still coherent on — a *floor*, not the design size. Setting it to the
         // design size leaves no headroom, so any window even slightly smaller starts cropping; this is the point
         // below which two rails and a page stop making sense, which is a good deal lower.
-        gui.minSize(Length.em(52), Length.em(30));
+        gui.minSize(Length.rem(52), Length.rem(30));
         // The look is a preference, so it lives where preferences live — and it is applied before the UI is
         // built, because a role resolves when a prop is written. One call, and every widget, every piece of the
         // renderer's own chrome and the clear colour below all follow it. Held as a value rather than applied

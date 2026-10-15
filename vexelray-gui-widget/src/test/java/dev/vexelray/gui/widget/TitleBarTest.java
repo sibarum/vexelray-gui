@@ -229,7 +229,7 @@ class TitleBarTest {
             TitleBar bar = new TitleBar(h.gui, window, "Test");
             h.gui.root().children(bar.node(), h.gui.box().size(
                     dev.vexelray.gui.core.layout.Length.FILL, dev.vexelray.gui.core.layout.Length.FILL));
-            h.gui.minSize(dev.vexelray.gui.core.layout.Length.em(52), dev.vexelray.gui.core.layout.Length.em(30));
+            h.gui.minSize(dev.vexelray.gui.core.layout.Length.rem(52), dev.vexelray.gui.core.layout.Length.rem(30));
             h.gui.zoom(2f);
             h.frame();
 

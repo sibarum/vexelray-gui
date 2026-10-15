@@ -386,7 +386,7 @@ public final class DragChapter implements Chapter {
         archiveRows.clear();
         for (Task task : archived) {
             Node row = gui.text(task.name).width(Length.FILL).height(Length.rem(1.75f))
-                    .padding(Length.ZERO, Length.em(0.5f))
+                    .padding(Length.ZERO, Length.rem(0.5f))
                     .background(gui.theme().color(Role.PANEL)).corner(Length.rem(0.3f))
                     .textSize(Length.rem(0.875f)).textColor(gui.theme().color(Role.DIM))
                     .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);

@@ -213,7 +213,7 @@ public final class MotionChapter implements Chapter {
         Theme theme = gui.theme();
         return gui.text(text).width(Length.FILL).height(Length.rem(2.25f))
                 .background(theme.color(Role.WELL)).corner(Length.rem(0.375f))
-                .padding(Length.ZERO, Length.em(0.75f))
+                .padding(Length.ZERO, Length.rem(0.75f))
                 .textSize(Length.rem(0.9375f)).textColor(theme.color(Role.DIM))
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
     }

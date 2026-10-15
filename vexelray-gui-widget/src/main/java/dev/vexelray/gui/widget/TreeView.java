@@ -367,13 +367,13 @@ public final class TreeView<T> implements AutoCloseable {
             this.depth = parent == null ? 0 : parent.depth + 1;
             this.canExpand = source.hasChildren(item);
 
-            this.spacer = gui.box().width(Length.em(depth * INDENT_EM)).scroll(false, false);
+            this.spacer = gui.box().width(Length.rem(depth * INDENT_EM)).scroll(false, false);
             // Turned, never moved: hit-inert, so a click on the column reaches the column whatever angle it is at.
-            this.chevron = IconView.of(gui, canExpand ? DISCLOSURE : null).size(Length.em(0.8f)).tint(Role.DIM);
+            this.chevron = IconView.of(gui, canExpand ? DISCLOSURE : null).size(Length.rem(0.8f)).tint(Role.DIM);
             chevron.node().hitInert(true);
             this.disclosure = gui.row()
-                    .width(Length.em(1.2f))
-                    .height(Length.em(1.2f))
+                    .width(Length.rem(1.2f))
+                    .height(Length.rem(1.2f))
                     .justify(LayoutEnums.Justify.CENTER)
                     .alignItems(LayoutEnums.AlignItems.CENTER)
                     .scroll(false, false)
@@ -386,11 +386,11 @@ public final class TreeView<T> implements AutoCloseable {
             // node is out of the layout entirely, so an unchecked tree pays a node per row and no width — and
             // the alternative, adding the box when checkable() arrives, means rebuilding every row that already
             // exists to get one.
-            this.checkMark = IconView.of(gui, null).size(Length.em(0.8f)).tint(Role.ACCENT);
-            this.icon = IconView.of(gui, source.icon(item)).size(Length.em(1f));
+            this.checkMark = IconView.of(gui, null).size(Length.rem(0.8f)).tint(Role.ACCENT);
+            this.icon = IconView.of(gui, source.icon(item)).size(Length.rem(1f));
             icon.node().visible(icon.icon() != null);
             this.checkBox = gui.row()
-                    .width(Length.em(0.95f)).height(Length.em(0.95f))
+                    .width(Length.rem(0.95f)).height(Length.rem(0.95f))
                     .corner(Length.rem(0.2f))
                     .border(Length.rem(0.1f), gui.theme().color(Role.EDGE))
                     .justify(LayoutEnums.Justify.CENTER)
@@ -440,10 +440,10 @@ public final class TreeView<T> implements AutoCloseable {
             this.rowNode = gui.row()
                     .role("treeitem")
                     .width(Length.FILL)
-                    .height(Length.em(ROW_EM))
+                    .height(Length.rem(ROW_EM))
                     .corner(Length.rem(0.4f))
                     .padding(Length.ZERO, Length.dp(4))
-                    .gap(Length.em(0.25f))
+                    .gap(Length.rem(0.25f))
                     // Centred rather than stretched: the disclosure and the label are text and centre
                     // themselves inside whatever height they are given, but a checkbox is a box, and a box
                     // stretched to the row height is not a checkbox.
@@ -515,7 +515,7 @@ public final class TreeView<T> implements AutoCloseable {
             int now = newParent == null ? 0 : newParent.depth + 1;
             if (now != depth) {
                 depth = now;
-                spacer.width(Length.em(depth * INDENT_EM));
+                spacer.width(Length.rem(depth * INDENT_EM));
             }
         }
 
@@ -964,7 +964,7 @@ public final class TreeView<T> implements AutoCloseable {
             }
             if (carried == null) {
                 carried = gui.text("").width(Length.AUTO).height(Length.rem(2))
-                        .padding(Length.ZERO, Length.em(0.625f)).corner(Length.rem(0.4f))
+                        .padding(Length.ZERO, Length.rem(0.625f)).corner(Length.rem(0.4f))
                         .textSize(Length.rem(0.9375f)).align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE)
                         .lit(gui.theme().lit()).elevation(gui.theme().elevation(Relief.FLOATING))
                         .hitInert(true).visible(false);
@@ -2148,7 +2148,7 @@ public final class TreeView<T> implements AutoCloseable {
         }
         float t = Math.max(0f, Math.min(1f, p));
         row.openness = row.animFrom + (row.animTo - row.animFrom) * t;
-        row.kidsBox.height(Length.em(row.openness * contentEm(row)));
+        row.kidsBox.height(Length.rem(row.openness * contentEm(row)));
         row.turnDisclosure();
     }
 

@@ -156,7 +156,7 @@ public final class CardsChapter implements Chapter {
     private static Node card(Gui gui, Theme theme, Task task) {
         Color tagInk = theme.color(task.urgent() ? Role.ACCENT : Role.DIM);
         Node tag = gui.text(task.tag()).width(Length.AUTO).height(Length.rem(1.25f))
-                .padding(Length.ZERO, Length.em(0.5f)).corner(Length.rem(0.625f))
+                .padding(Length.ZERO, Length.rem(0.5f)).corner(Length.rem(0.625f))
                 .background(Color.withAlpha(tagInk, 0.14f)).textColor(tagInk)
                 .textSize(Length.rem(0.75f))
                 .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE);

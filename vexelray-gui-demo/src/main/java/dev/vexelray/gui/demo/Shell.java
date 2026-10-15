@@ -174,7 +174,7 @@ public final class Shell {
 
         AtomicReference<InteractionState> state = new AtomicReference<>(InteractionState.NORMAL);
         Node item = gui.text(chapter.title()).width(Length.FILL).height(Length.rem(2.25f))
-                .corner(Length.rem(0.5f)).padding(Length.ZERO, Length.em(0.625f))
+                .corner(Length.rem(0.5f)).padding(Length.ZERO, Length.rem(0.625f))
                 .textSize(Length.rem(0.9375f))
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
         navStates.add(state);

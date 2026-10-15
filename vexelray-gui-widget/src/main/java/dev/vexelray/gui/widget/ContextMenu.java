@@ -214,7 +214,7 @@ public final class ContextMenu implements MenuPresenter {
                 .width(Length.FILL)
                 .corner(Length.rem(0.4f))
                 .padding(Length.dp(4), Length.dp(12))
-                .gap(Length.em(0.5f))
+                .gap(Length.rem(0.5f))
                 .scroll(false, false));
         if (iconColumn) {
             // A cell of fixed width whether or not this item fills it: the column is what aligns the labels, so an
@@ -223,13 +223,13 @@ public final class ContextMenu implements MenuPresenter {
             // set wins over a glyph; either sits centred in the same cell.
             Role tone = item.enabled() ? Role.DIM : Role.FAINT;
             Node cell = own(gui.row()
-                    .width(Length.em(1.2f))
-                    .height(Length.em(1.2f))
+                    .width(Length.rem(1.2f))
+                    .height(Length.rem(1.2f))
                     .justify(dev.vexelray.gui.core.layout.LayoutEnums.Justify.CENTER)
                     .alignItems(dev.vexelray.gui.core.layout.LayoutEnums.AlignItems.CENTER)
                     .scroll(false, false));
             if (item.mark() != null) {
-                cell.append(own(IconView.of(gui, item.mark()).size(Length.em(1f)).tint(tone).node()));
+                cell.append(own(IconView.of(gui, item.mark()).size(Length.rem(1f)).tint(tone).node()));
             } else if (item.icon() != null) {
                 cell.append(own(gui.text(item.icon())
                         .textSize(Length.rem(1))

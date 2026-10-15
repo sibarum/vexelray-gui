@@ -50,7 +50,7 @@ class NavigationTest {
             Tabs tabs = new Tabs(h.gui);
             Node first = h.gui.column().width(Length.FILL).height(Length.FILL);
             Node second = h.gui.column().width(Length.FILL).height(Length.FILL);
-            Node buried = h.gui.text("accent").width(Length.em(6)).height(Length.em(2));
+            Node buried = h.gui.text("accent").width(Length.rem(6)).height(Length.rem(2));
             second.append(buried);
             tabs.add("General", first);
             tabs.add("Theme", second);
@@ -74,7 +74,7 @@ class NavigationTest {
         try (HeadlessGui h = new HeadlessGui()) {
             // A container that hides a child and declares no Reveal — the case the invariant exists to catch.
             Node drawer = h.gui.column().width(Length.FILL).visible(false);
-            Node inside = h.gui.text("hidden").width(Length.em(4)).height(Length.em(2));
+            Node inside = h.gui.text("hidden").width(Length.rem(4)).height(Length.rem(2));
             drawer.append(inside);
             h.gui.root().append(drawer);
             h.gui.landmark("drawer.item", inside);
@@ -105,7 +105,7 @@ class NavigationTest {
     @Test
     void aLandmarkLeavesWithItsNode() {
         try (HeadlessGui h = new HeadlessGui()) {
-            Node box = h.gui.box().size(Length.em(4), Length.em(2));
+            Node box = h.gui.box().size(Length.rem(4), Length.rem(2));
             h.gui.root().append(box);
             h.gui.landmark("gone", box);
             h.frame();
@@ -137,7 +137,7 @@ class NavigationTest {
     void navigatingToAnotherWindowIsPublishedRatherThanWalkedHere() {
         try (HeadlessGui h = new HeadlessGui()) {
             h.gui.windowKey("main");
-            Node box = h.gui.box().size(Length.em(4), Length.em(2));
+            Node box = h.gui.box().size(Length.rem(4), Length.rem(2));
             h.gui.root().append(box);
             h.gui.landmark("theme.accent", box);
             h.frame();

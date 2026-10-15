@@ -96,7 +96,7 @@ final class FindBar implements AutoCloseable {
         this.field = new TextField(gui);
         this.field.node().width(Length.grow(1)).height(Length.rem(2f));
         this.statusLine = gui.text("")
-                .width(Length.em(7))
+                .width(Length.rem(7))
                 .textSize(Length.rem(0.85f))
                 .textColor(gui.theme().color(Role.DIM))
                 .align(TextLayout.HAlign.RIGHT, TextLayout.VAlign.MIDDLE);

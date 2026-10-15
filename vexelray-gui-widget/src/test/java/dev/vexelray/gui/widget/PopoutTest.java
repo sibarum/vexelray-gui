@@ -160,7 +160,7 @@ class PopoutTest {
             Node[] buried = new Node[1];
             Node content = h.gui.column();
             Popout panel = dockRight(h, content, (gui, into) -> {
-                buried[0] = gui.text("symbols").width(Length.em(6)).height(Length.em(2));
+                buried[0] = gui.text("symbols").width(Length.rem(6)).height(Length.rem(2));
                 into.append(buried[0]);
             });
             h.gui.landmark("outline.symbols", buried[0]);

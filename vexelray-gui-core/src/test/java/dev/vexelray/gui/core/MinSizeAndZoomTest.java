@@ -33,7 +33,7 @@ class MinSizeAndZoomTest {
         try (Gui gui = new Gui(Atchung.create())) {
             gui.root().scroll(false, false);   // the canvas alone, without scrollbars narrowing the window
             Node content = filler(gui);
-            gui.minSize(Length.em(50), Length.em(30));   // 800 x 480 at 1x
+            gui.minSize(Length.rem(50), Length.rem(30));   // 800 x 480 at 1x
             gui.frame(400f, 200f, MinSizeAndZoomTest::noText);
 
             assertEquals(800f, content.layout().rect().w(), 0.5f,
@@ -51,7 +51,7 @@ class MinSizeAndZoomTest {
     void theRootStaysTheWindowAndItsContentScrolls() {
         try (Gui gui = new Gui(Atchung.create())) {
             Node content = filler(gui);
-            gui.minSize(Length.em(50), Length.em(30));
+            gui.minSize(Length.rem(50), Length.rem(30));
             gui.frame(400f, 200f, MinSizeAndZoomTest::noText);
 
             assertEquals(400f, gui.root().layout().rect().w(), 0.5f, "the root is the window");
@@ -67,7 +67,7 @@ class MinSizeAndZoomTest {
             Node bar = gui.box().size(Length.FILL, Length.dp(32)).floatAt(Length.ZERO, Length.ZERO).dock(true);
             Node content = gui.box().size(Length.FILL, Length.FILL);
             gui.root().scroll(false, false).children(bar, content);
-            gui.minSize(Length.em(50), Length.em(30));
+            gui.minSize(Length.rem(50), Length.rem(30));
             gui.zoom(2f);
             gui.frame(900f, 560f, MinSizeAndZoomTest::noText);
 
@@ -81,7 +81,7 @@ class MinSizeAndZoomTest {
     void aWindowLargerThanTheMinimumIsUnaffected() {
         try (Gui gui = new Gui(Atchung.create())) {
             Node content = filler(gui);
-            gui.minSize(Length.em(50), Length.em(30));
+            gui.minSize(Length.rem(50), Length.rem(30));
             gui.frame(1200f, 900f, MinSizeAndZoomTest::noText);
 
             assertEquals(1200f, gui.root().layout().rect().w(), 0.5f, "the minimum is a floor, not a size");
@@ -97,7 +97,7 @@ class MinSizeAndZoomTest {
         try (Gui gui = new Gui(Atchung.create())) {
             gui.root().scroll(false, false);
             Node content = filler(gui);
-            gui.minSize(Length.em(50), Length.em(30));
+            gui.minSize(Length.rem(50), Length.rem(30));
             gui.zoom(2f);
             gui.frame(900f, 560f, MinSizeAndZoomTest::noText);
 

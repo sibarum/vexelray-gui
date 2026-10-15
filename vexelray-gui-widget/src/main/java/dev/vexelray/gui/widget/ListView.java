@@ -542,7 +542,7 @@ public final class ListView<T> implements AutoCloseable {
             }
             if (carried == null) {
                 carried = gui.text("").width(Length.AUTO).height(Length.rem(2))
-                        .padding(Length.ZERO, Length.em(0.625f)).corner(Length.rem(0.4f))
+                        .padding(Length.ZERO, Length.rem(0.625f)).corner(Length.rem(0.4f))
                         .textSize(Length.rem(0.9375f)).align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE)
                         .lit(gui.theme().lit()).elevation(gui.theme().elevation(Relief.FLOATING))
                         .hitInert(true).visible(false);

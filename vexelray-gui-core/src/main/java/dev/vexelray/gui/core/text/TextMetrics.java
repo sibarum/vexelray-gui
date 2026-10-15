@@ -29,13 +29,13 @@ public record TextMetrics(List<VisualLine> lines) {
      * auto-sized label. A label that wants breathing room says {@code padding(...)}, the prop that already means
      * that, rather than inheriting an inset it cannot remove.
      */
-    public static final Length PAD_X = Length.em(0.625f);
+    public static final Length PAD_X = Length.rem(0.625f);
 
     /** Vertical caret gutter for an editable node; see {@link #PAD_X} for why labels get none. */
-    public static final Length PAD_Y = Length.em(0.375f);
+    public static final Length PAD_Y = Length.rem(0.375f);
 
     /** Gap either side of the digits in a line-number gutter. */
-    public static final Length GUTTER_PAD = Length.em(0.25f);
+    public static final Length GUTTER_PAD = Length.rem(0.25f);
 
     /**
      * Resolve the full horizontal text inset for {@code n} at border-box width {@code nodeW}: its border, its

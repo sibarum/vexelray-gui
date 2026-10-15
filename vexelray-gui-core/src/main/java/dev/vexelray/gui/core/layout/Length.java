@@ -118,7 +118,7 @@ public interface Length {
     Length AUTO = new Auto();
     Length FILL = new FillT();
     /** Zero size — the default for padding, margin, border, gap and corner. */
-    Length ZERO = new Em(0f);
+    Length ZERO = new Rem(0f);
 
     static Length em(float v) {
         return new Em(v);

@@ -148,7 +148,7 @@ class MetricsTest {
     @Test
     void theClampCanMoveWithTheWindowStandingStill() {
         Metrics m = new Metrics();
-        m.minSize(Length.em(100), Length.ZERO);   // 100em = 1600px at zoom 1, well over the window
+        m.minSize(Length.rem(100), Length.ZERO);   // 100em = 1600px at zoom 1, well over the window
         m.layoutRan(m.measure(800f, 600f));
 
         m.zoomIn();
@@ -167,7 +167,7 @@ class MetricsTest {
     @Test
     void theResizeGripIsResolvedAtThisFrameZoom() {
         Metrics m = new Metrics();
-        m.resizeBorder(Length.em(1));
+        m.resizeBorder(Length.rem(1));
 
         m.measure(800f, 600f);
         assertEquals(16, m.resizeBorderPx(), "1em at the root 16px");

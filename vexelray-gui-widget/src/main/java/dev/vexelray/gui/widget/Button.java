@@ -1,14 +1,17 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.edit.Change;
 import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.input.ClaimScope;
+import dev.vexelray.gui.core.input.ClickEvent;
 import dev.vexelray.gui.core.input.CursorShape;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.layout.NodeLayout;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
 import sibarum.tactroller.api.Key;
@@ -70,6 +73,12 @@ public final class Button {
     private volatile InteractionState state = InteractionState.NORMAL;
     private volatile Runnable onPress = () -> { };
     private volatile Consumer<Boolean> onToggle = v -> { };
+    /** What plays a ripple on each press, or null for none. */
+    private volatile Cues ripples;
+    /** The label's colour as last painted: a ripple is drawn in it, so it reads on whatever the fill is. */
+    private volatile Role inkRole = Role.INK;
+    /** How much of the label's colour a ripple starts at: enough to see, little enough to read the label through. */
+    private static final float RIPPLE_STRENGTH = 0.22f;
     /** The way back from each press of a chip — a chip holds a value, so it undoes as a {@link Toggle} does. */
     private final ValueUndo<Boolean> undo;
 
@@ -85,13 +94,19 @@ public final class Button {
                 .corner(Length.rem(0.4f));
         gui.focusable(node, true);
         gui.cursor(node, CursorShape.POINTER);
-        gui.onClick(node, this::activate);
+        gui.onClick(node, (ClickEvent e) -> {
+            NodeLayout at = node.layout();
+            if (at.present()) {
+                inkFrom(e.x() - at.rect().x(), e.y() - at.rect().y());
+            }
+            activate();
+        });
         gui.onState(node, s -> {
             this.state = s;
             paint();
         });
-        gui.claim(node, ENTER, ClaimScope.FOCUSED, this::activate);
-        gui.claim(node, SPACE, ClaimScope.FOCUSED, this::activate);
+        gui.claim(node, ENTER, ClaimScope.FOCUSED, this::pressFromKeys);
+        gui.claim(node, SPACE, ClaimScope.FOCUSED, this::pressFromKeys);
         paint();
         this.undo = new ValueUndo<>(gui, node, () -> pressed, this::set, false);
     }
@@ -130,6 +145,17 @@ public final class Button {
     /** Whether the button can be used. */
     public boolean enabled() {
         return enabled;
+    }
+
+    /**
+     * Acknowledge each press with a {@link Cue#ripple} played through {@code cues}: from the point the pointer
+     * pressed, or from the middle for Enter or Space. The ink is the label's own colour, faint, so it reads on every
+     * kind of button the theme can make. {@code null}, or {@link Cues#none()} for reduced motion, presses with no
+     * ripple, which is the default; the button stays clock-free either way, since the timing is the cues'.
+     */
+    public Button ripple(Cues cues) {
+        this.ripples = cues;
+        return this;
     }
 
     /** Make this a chip: a button that stays pressed, and reports through {@link #onToggle}. */
@@ -209,6 +235,25 @@ public final class Button {
         return this;
     }
 
+    /** Enter or Space: a press with no point, so a ripple from the middle. */
+    private void pressFromKeys() {
+        NodeLayout at = node.layout();
+        if (at.present()) {
+            inkFrom(at.rect().w() * 0.5f, at.rect().h() * 0.5f);
+        }
+        activate();
+    }
+
+    /** A ripple from {@code (x, y)} in the button's own frame, if ripples are on and the button can be pressed. */
+    private void inkFrom(float x, float y) {
+        Cues cues = ripples;
+        if (cues == null || !enabled) {
+            return;
+        }
+        Color ink = gui.theme().color(inkRole);
+        cues.play(node, Cue.ripple(Color.withAlpha(ink, ink.a() * RIPPLE_STRENGTH), x, y));
+    }
+
     private void activate() {
         if (!enabled) {
             return;
@@ -271,6 +316,7 @@ public final class Button {
         }
         node.background(theme.color(fill, s));
         node.textColor(theme.color(ink));
+        this.inkRole = ink;
         node.border(Length.dp(1), theme.color(edge));
     }
 }

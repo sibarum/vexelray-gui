@@ -1,5 +1,7 @@
 package dev.vexelray.gui.core.model;
 
+import dev.vexelray.canvas.Color;
+
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -48,6 +50,18 @@ public final class Reconciler implements Mutation.Sink {
     public Reconciler(long rootId, java.util.function.LongConsumer onRemoved) {
         this.rootId = rootId;
         this.onRemoved = onRemoved == null ? id -> { } : onRemoved;
+    }
+
+    private volatile dev.vexelray.gui.core.style.PaintMotion repaints = dev.vexelray.gui.core.style.PaintMotion.NONE;
+
+    /**
+     * Report every colour change (background, border colour, text colour) to {@code sink}'s
+     * {@link dev.vexelray.gui.core.style.PaintMotion#repainted repainted}, on the thread applying the change. Only a
+     * change from one colour to another: a first appearance has nowhere to come from, and a colour cleared has
+     * nothing to go to.
+     */
+    public void repaints(dev.vexelray.gui.core.style.PaintMotion sink) {
+        this.repaints = sink == null ? dev.vexelray.gui.core.style.PaintMotion.NONE : sink;
     }
 
     /** Nodes asked to be brought into view since the frame last took them (see {@link Mutation.Reveal}). */
@@ -206,6 +220,15 @@ public final class Reconciler implements Mutation.Sink {
             }
             n.set(key, value);
             drawDirty = true;
+            if (before instanceof Color from && value instanceof Color to) {
+                if (key == PropKey.BACKGROUND) {
+                    repaints.repainted(id, dev.vexelray.gui.core.style.PaintMotion.Channel.BACKGROUND, from, to);
+                } else if (key == PropKey.BORDER_COLOR) {
+                    repaints.repainted(id, dev.vexelray.gui.core.style.PaintMotion.Channel.BORDER, from, to);
+                } else if (key == PropKey.TEXT_COLOR) {
+                    repaints.repainted(id, dev.vexelray.gui.core.style.PaintMotion.Channel.TEXT, from, to);
+                }
+            }
             if (key.affectsLayout(before, value)) {
                 layoutDirty = true;
             } else if (key.geometryAffecting()) {

@@ -12,8 +12,11 @@ import dev.vexelray.gui.demo.Stage;
 import dev.vexelray.gui.demo.Ui;
 import dev.vexelray.gui.krono.KronoGui;
 import dev.vexelray.gui.krono.Transitions;
+import dev.vexelray.gui.widget.Button;
 import dev.vexelray.gui.widget.Cue;
+import dev.vexelray.gui.widget.Cues;
 import dev.vexelray.gui.widget.Ramp;
+import dev.vexelray.gui.widget.Tabs;
 import dev.vexelray.text.TextLayout;
 import sibarum.kronometer.Dur;
 import sibarum.kronometer.anim.Ease;
@@ -157,8 +160,37 @@ public final class MotionChapter implements Chapter {
                 Ui.prose(gui, "Colour interpolates through Oklab rather than sRGB, so a blend between two "
                         + "saturated colours does not dip through grey on the way."));
 
+        // --- feedback -----------------------------------------------------------------------------------
+        // Ripples get their own player: longer than the house cue, so the spread is seen before it has finished.
+        Cues ripples = new Cues((progress, done) -> krono.ramp(Dur.ms(450), Ease.LINEAR, progress, done));
+        Button primary = new Button(gui, "Primary").kind(Button.Kind.PRIMARY).ripple(ripples)
+                .onPress(() -> console.note("primary: the ink spread from where it was pressed"));
+        Button secondary = new Button(gui, "Secondary").kind(Button.Kind.SECONDARY).ripple(ripples)
+                .onPress(() -> console.note("secondary: press Enter on it and the ink comes from the middle"));
+        Button ghost = new Button(gui, "Ghost").kind(Button.Kind.GHOST).ripple(ripples)
+                .onPress(() -> console.note("ghost: its fill fades up from nothing, not from black"));
+        Tabs strip = new Tabs(gui).closable(false)
+                .indicator((progress, done) -> krono.ramp(Dur.ms(220), Ease.OUT_CUBIC, progress, done));
+        strip.add("Overview", note(gui, "The underline is one mark, and it travels."));
+        strip.add("A much longer title", note(gui, "It stretches toward where it is going, then closes up."));
+        strip.add("Notes", note(gui, "Click back mid-glide: it turns round from where it is."));
+        // Addressable, so a script can drive the section: hover, press, select.
+        gui.landmark("motion.primary", primary.node());
+        gui.landmark("motion.ghost", ghost.node());
+        gui.landmark("motion.tabs", strip.bar());
+        gui.landmark("motion.tab.notes", strip.header(2));
+        Node feedback = Ui.strip(gui,
+                Ui.heading(gui, "Feedback — the state, and the way into it"),
+                Ui.controls(gui, primary.node(), secondary.node(), ghost.node()),
+                strip.node().height(Length.rem(7)),
+                Ui.prose(gui, "Hover anything in the window: every colour a widget writes now fades, because the "
+                        + "window has a paint motion attached and the widgets were not touched. Linear and about "
+                        + "a tenth of a second, since feedback that trails the pointer reads as a slow "
+                        + "application. The press ripple is eased out in its spread and linear in its fade; the "
+                        + "tab indicator is eased out, because it is arriving somewhere."));
+
         Node page = gui.column().width(Length.FILL).height(Length.FILL).gap(Ui.GAP).scroll(false, true)
-                .children(cues, transitions, animation);
+                .children(feedback, cues, transitions, animation);
         // The whole page, at any depth -- not just the stack whose rows move. A layout change does not stop at
         // the container it happened in: opening the panel moves the rows below it, and the card below them, and
         // the strip below that. Enrolling only the stack animated the first of those and snapped the rest, and
@@ -170,6 +202,11 @@ public final class MotionChapter implements Chapter {
         moves.followSubtree(page, Dur.ms(220), Ease.OUT_CUBIC);
         gui.motion(moves);
         return page;
+    }
+
+    private static Node note(Gui gui, String text) {
+        return gui.text(text).width(Length.FILL).height(Length.FILL).padding(Length.rem(0.75f), Length.rem(1))
+                .textSize(Length.rem(0.9375f)).textColor(gui.theme().color(Role.DIM));
     }
 
     private static Node bar(Gui gui, String text) {

@@ -16,6 +16,7 @@ import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.gui.keymap.Keymap;
 import dev.vexelray.gui.keymap.KeymapWindow;
+import dev.vexelray.gui.krono.Fades;
 import dev.vexelray.gui.krono.KronoGui;
 import dev.vexelray.gui.nfd.SaveScreenshot;
 import dev.vexelray.gui.widget.Modal;
@@ -91,6 +92,10 @@ public final class Demo {
         // The frame clock. Attached before the UI is built, because a widget that animates is handed its timing
         // at construction, and ticked from the run loop's beforeFrame hook below — one tick per presented frame.
         KronoGui krono = KronoGui.attach(gui);
+        // Every colour a widget writes fades instead of jumping: hover, press, selection, a theme switch. Said once
+        // for the window, and no widget knows. Linear, because a colour arrives nowhere, and short, because a hover
+        // that trails the pointer reads as a slow application rather than a smooth one.
+        gui.paintMotion(Fades.on(krono, Dur.ms(120), Ease.LINEAR));
         // Every reveal in the window — a tree's cut-off name, a table's cut-off cell — fades the same way, said
         // once. Quick, because it is the thing itself and not help arriving, and symmetric, so it leaves the way it
         // came: an ease-out over the same time is mostly done in its first frames and reads as a snap.

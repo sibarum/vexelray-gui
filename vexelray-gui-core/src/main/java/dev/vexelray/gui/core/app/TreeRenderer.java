@@ -10,6 +10,7 @@ import dev.vexelray.gui.core.input.FocusState;
 import dev.vexelray.gui.core.layout.LayoutContext;
 import dev.vexelray.gui.core.model.RetainedNode;
 import dev.vexelray.gui.core.style.FocusRing;
+import dev.vexelray.gui.core.style.PaintMotion;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.gui.core.text.Span;
@@ -101,6 +102,8 @@ public final class TreeRenderer {
     // The focus ring (FocusRing). Focus is the dispatcher's, handed in as a value; the ring's lengths resolve
     // against the frame's context like any other length, and its role against the theme.
     private final Theme theme;
+    /** The colour each node is drawn in on its way to the one it was given. */
+    private PaintMotion paint = PaintMotion.NONE;
     private final FocusState focus;
     private final LayoutContext ctx;
     /** The tree's top node, which hosts a ring that no clipping ancestor does. */
@@ -116,9 +119,10 @@ public final class TreeRenderer {
     /**
      * A focused node's ring, waiting for its host. The box is in screen terms (box plus the displacement inherited
      * at the node, its own included), because it is drawn under the host's displacement, not the node's.
+     * {@code travel} is how much further out than its resting place it stands while it is arriving or leaving.
      */
     private record Ring(RetainedNode host, float x, float y, float w, float h, float rTop, float rBottom,
-                        float width, float offset, Color color) { }
+                        float width, float offset, float travel, Color color) { }
 
     private TreeRenderer(Theme theme, TextFaces faces, FocusState focus, LayoutContext ctx) {
         this.faces = faces;
@@ -160,14 +164,14 @@ public final class TreeRenderer {
 
     /**
      * As {@link #emit(RetainedNode, Canvas, TextFaces, Theme)}, with {@code gui}'s theme, and its focus ring around
-     * whichever node holds keyboard focus. Everything is read from {@code gui} here, once, and handed to the walk
-     * as values.
+     * whichever node holds keyboard focus, each node's colours as its {@link PaintMotion} has them on their way.
+     * Everything is read from {@code gui} here, once, and handed to the walk as values.
      */
     public static void emit(RetainedNode node, Canvas canvas, TextFaces faces, Gui gui) {
         Viewport v = gui.viewport().value();
         LayoutContext ctx = new LayoutContext(gui.rootEmPx(), gui.zoom().value(), gui.dpi().value(),
                 v == null ? 0f : v.width(), v == null ? 0f : v.height());
-        emit(node, canvas, faces, gui.theme(), gui.focusState(), ctx);
+        emit(node, canvas, faces, gui.theme(), gui.focusState(), ctx, gui.paintMotion());
     }
 
     /**
@@ -177,7 +181,14 @@ public final class TreeRenderer {
      */
     public static void emit(RetainedNode node, Canvas canvas, TextFaces faces, Theme theme, FocusState focus,
                             LayoutContext ctx) {
+        emit(node, canvas, faces, theme, focus, ctx, PaintMotion.NONE);
+    }
+
+    /** As {@link #emit(RetainedNode, Canvas, TextFaces, Theme, FocusState, LayoutContext)}, colours via {@code paint}. */
+    public static void emit(RetainedNode node, Canvas canvas, TextFaces faces, Theme theme, FocusState focus,
+                            LayoutContext ctx, PaintMotion paint) {
         TreeRenderer renderer = new TreeRenderer(theme == null ? Theme.DARK : theme, faces, focus, ctx);
+        renderer.paint = paint == null ? PaintMotion.NONE : paint;
         renderer.top = node;
         renderer.host = node;
         renderer.walk(node, canvas);
@@ -550,8 +561,14 @@ public final class TreeRenderer {
         // window is in the background, the way the caret stops blinking there.
         float a = alpha * shown * (focus.windowActive() ? 1f : 0.5f);
         Color c = theme.color(spec.color());
+        // And it closes in as it comes up: from two widths further out, eased out so it settles rather than stops.
+        // Opacity stays linear and only the distance eases, the two curves a transition wants. A ring leaving runs
+        // the same way backwards, opening out as it fades. At rest the travel is zero, so a ring that is up is
+        // exactly where it always was.
+        float behind = 1f - shown;
+        float travel = 2f * width * behind * behind * behind;
         rings.add(new Ring(host, n.x + transX, n.y + transY, n.w, n.h, n.cornerPx, n.cornerBottomPx, width, offset,
-                Color.withAlpha(c, c.a() * a)));
+                travel, Color.withAlpha(c, c.a() * a)));
     }
 
     /** Draw the waiting rings whose host is {@code at}, and let go of them. */
@@ -579,8 +596,12 @@ public final class TreeRenderer {
         float x = r.x() - transX;
         float y = r.y() - transY;
         float out = r.offset() + r.width();
+        // Whether it fits is judged at rest, so a ring does not flip inside half-way through arriving. A ring that
+        // comes inside does not travel: there is no room for it to close in from.
         if (out > 0f && !inside(x - out, y - out, r.w() + 2f * out, r.h() + 2f * out)) {
             out = 0f;
+        } else {
+            out += r.travel();
         }
         box(canvas, x - out, y - out, r.w() + 2f * out, r.h() + 2f * out, Math.max(0f, r.rTop() + out),
                 Math.max(0f, r.rBottom() + out), r.color(), r.width(), NO_FILL, null, 0f, 0f, null, 0f);
@@ -794,14 +815,25 @@ public final class TreeRenderer {
         return k + 4;
     }
 
+    /** {@code settled}, the colour {@code n} was given, as the paint motion has it on its way there; null stays null. */
+    private Color drawn(RetainedNode n, PaintMotion.Channel channel, Color settled) {
+        return settled == null ? null : paint.drawn(n.id, channel, settled);
+    }
+
+    /** {@code n}'s text colour on its way, or the theme's ink when it never stated one (which does not fade). */
+    private Color inkOf(RetainedNode n) {
+        Color stated = n.textColor(null);
+        return stated == null ? ink : paint.drawn(n.id, PaintMotion.Channel.TEXT, stated);
+    }
+
     private void drawSelf(RetainedNode n, Canvas canvas, TextLayout text) {
         // Border width, corner radius and text size were resolved to px by the layout pass (border-box), so the
         // renderer needs no units or layout context — it just paints the computed rect.
-        Color bg = n.background();
+        Color bg = drawn(n, PaintMotion.Channel.BACKGROUND, n.background());
         float rTop = n.cornerPx;
         float rBottom = n.cornerBottomPx;
         float bw = n.borderPx;
-        Color border = n.borderColor();
+        Color border = drawn(n, PaintMotion.Channel.BORDER, n.borderColor());
         boolean hasBorder = bw > 0f && border != null;
         // Elevation: an analytic soft shadow under the border-box, dropped slightly with the light overhead.
         boolean hasShadow = n.elevationPx > 0f && (bg != null || border != null);
@@ -999,7 +1031,7 @@ public final class TreeRenderer {
             for (Span sp : lineSpans) {
                 if (sp.underline()) {
                     underlineLineRange(n, line, sp.start(), sp.end(),
-                            fade(sp.fg() != null ? sp.fg() : n.textColor(ink)), canvas, text);
+                            fade(sp.fg() != null ? sp.fg() : inkOf(n)), canvas, text);
                 }
             }
         }
@@ -1009,7 +1041,7 @@ public final class TreeRenderer {
             int caret = n.caret();
             float w = Math.max(1f, n.textSizePx * 0.07f);
             canvas.fillRoundRect(m.caretX(caret), m.caretTop(caret), w, m.caretHeight(caret), 0f,
-                    fade(n.textColor(ink)));
+                    fade(inkOf(n)));
         }
         if (clip) {
             canvas.popClip();
@@ -1077,11 +1109,12 @@ public final class TreeRenderer {
         int from = Math.max(0, line.start());
         int to = Math.min(s.length(), line.end());
         int i = from;
+        Color base = inkOf(n);
         while (i < to) {
-            Color fg = fgAt(spans, i, n.textColor(ink));
+            Color fg = fgAt(spans, i, base);
             int face = faceIds[i];
             int j = i + 1;
-            while (j < to && faceIds[j] == face && java.util.Objects.equals(fgAt(spans, j, n.textColor(ink)), fg)) {
+            while (j < to && faceIds[j] == face && java.util.Objects.equals(fgAt(spans, j, base), fg)) {
                 j++;
             }
             TextLayout text = faces.layout(face);

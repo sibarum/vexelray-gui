@@ -208,6 +208,9 @@ public final class Gui implements AutoCloseable {
     private final Metrics metrics = new Metrics();
     /** Where nodes are drawn relative to where layout put them; NONE until a motion source is attached. */
     private volatile LayoutMotion motion = LayoutMotion.NONE;
+    /** What colour nodes are drawn in relative to the colour they were given; NONE until a source is attached. */
+    private volatile dev.vexelray.gui.core.style.PaintMotion paintMotion =
+            dev.vexelray.gui.core.style.PaintMotion.NONE;
     /** What a run without a frame loop steps to bring animations to rest; null until a clock registers. */
     private volatile AnimationClock animationClock;
     /**
@@ -1872,6 +1875,24 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
+     * Attach the source that says what colour each node is drawn in on its way to the colour it was given — see
+     * {@link dev.vexelray.gui.core.style.PaintMotion}. {@code PaintMotion.NONE} (the default) draws every colour the
+     * moment it is written, which is also the reduced-motion setting. One source per tree, last call wins, as for
+     * {@link #motion(LayoutMotion)}.
+     */
+    public Gui paintMotion(dev.vexelray.gui.core.style.PaintMotion source) {
+        this.paintMotion = java.util.Objects.requireNonNull(source, "source");
+        // The reconciler is where a colour changes, so it is what tells the source: from the next change on.
+        reconciler.repaints(source);
+        return this;
+    }
+
+    /** The attached paint motion source, or {@code PaintMotion.NONE}. */
+    public dev.vexelray.gui.core.style.PaintMotion paintMotion() {
+        return paintMotion;
+    }
+
+    /**
      * Register the clock this tree's animations run on, for a run with no frame loop to tick it — see
      * {@link AnimationClock}. The clock's own module calls this when it is attached; last call wins.
      */
@@ -2014,12 +2035,18 @@ public final class Gui implements AutoCloseable {
                 // will not park rather than as a transition that silently freezes half-way.
                 wake("motion");
             }
+            // The same for colour: a fade in progress draws something different next frame, and stops asking when
+            // it arrives.
+            boolean fading = paintMotion.moving();
+            if (fading) {
+                wake("paint motion");
+            }
             reconciler.clearDirty();
             // Render-on-change: everything above that could alter a pixel. The reconciler's bit covers edits that
             // changed something (equal writes leave it clear); the layout covers a size or zoom change that no
             // edit made; geometry covers a caret that moved without reflowing; motion covers a transition between
             // frames. Taken with |=, because a frame that is run and not drawn keeps what it found for the next.
-            if (reconciler.takeDrawDirty() | layoutRan | geometryChanged | moving) {
+            if (reconciler.takeDrawDirty() | layoutRan | geometryChanged | moving | fading) {
                 drawNeeded = true;
             }
         }

@@ -127,6 +127,39 @@ class CueTest {
         assertTrue(headY(up.at(0.9d, box)) < headY(up.at(0.1d, box)));
     }
 
+    /**
+     * A ripple is a disc about the point pressed: nothing before it has spread, grown and fading half way, and gone
+     * at the end. Close to the end it is large enough to cover the farthest corner, so the box is inked all over
+     * before it fades out, not left with a dry corner.
+     */
+    @Test
+    void aRippleSpreadsFromItsPointUntilItCoversTheBoxAndFades() {
+        Cue.Box box = new Cue.Box(120f, 32f, 6f, 6f);
+        Cue ripple = Cue.ripple(ACCENT, 20f, 10f);
+
+        assertTrue(ripple.at(0d, box).isEmpty(), "nothing has spread yet");
+        assertTrue(ripple.at(1d, box).isEmpty(), "and at the end it is gone");
+
+        Picture.Fill half = (Picture.Fill) ripple.at(0.5d, box).marks().get(0);
+        assertEquals(20d, half.x() + half.w() / 2, 1e-3, "centred on the point across");
+        assertEquals(10d, half.y() + half.h() / 2, 1e-3, "and down");
+        assertEquals(half.w() / 2, half.radiusTop(), 1e-3, "a disc: as round as it is wide");
+        assertEquals(ACCENT.a() * 0.5f, half.color().a(), 1e-4f, "half way, half the ink: a linear fade");
+
+        double farthest = Math.hypot(120d - 20d, 32d - 10d);
+        Picture.Fill late = (Picture.Fill) ripple.at(0.95d, box).marks().get(0);
+        assertTrue(late.w() / 2 > 0.99 * farthest, "near the end it reaches the farthest corner: " + late.w() / 2);
+    }
+
+    /** From the keyboard there is no point, so it spreads from the middle. */
+    @Test
+    void aRippleWithNoPointStartsFromTheMiddle() {
+        Cue.Box box = new Cue.Box(120f, 32f, 0f, 0f);
+        Picture.Fill fill = (Picture.Fill) Cue.ripple(ACCENT).at(0.5d, box).marks().get(0);
+        assertEquals(60d, fill.x() + fill.w() / 2, 1e-3);
+        assertEquals(16d, fill.y() + fill.h() / 2, 1e-3);
+    }
+
     /** A wash rises and falls and is nothing at both ends, so the cue ends by being gone rather than by cutting. */
     @Test
     void aWashIsNothingAtBothEnds() {

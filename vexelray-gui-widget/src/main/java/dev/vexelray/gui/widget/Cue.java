@@ -243,6 +243,49 @@ public interface Cue {
         };
     }
 
+    /**
+     * A disc of ink spreading from where the box was pressed until it covers it, fading as it goes — the
+     * acknowledgement for a press, which says not only that it landed but where.
+     *
+     * <p>Two curves, as every transition here has: the spread is eased out, so the disc arrives at the far corner
+     * rather than stopping there, and the fade is linear, so it is gone exactly at the end. The disc is cut to the
+     * box by the overlay's own clip, so it follows a rounded button's corners without knowing them.
+     *
+     * <p>Give this a <b>linear</b> ramp; the ease is its own. A ripple wants longer than a wash, around 400ms, or the
+     * spread finishes before the eye has found it.
+     *
+     * @param color the ink at the moment of the press, at the alpha it starts from; a light touch (0.15 to 0.25 of
+     *              the ink colour) is what keeps the label legible under it
+     * @param x     where it was pressed, px right of the box's left edge
+     * @param y     px below its top edge
+     */
+    static Cue ripple(Color color, float x, float y) {
+        return (t, box) -> {
+            if (box.isEmpty() || t >= 1d) {
+                return Picture.EMPTY;
+            }
+            float px = Math.max(0f, Math.min(box.w(), x));
+            float py = Math.max(0f, Math.min(box.h(), y));
+            // To the farthest corner, which is where it has covered the box.
+            float dx = Math.max(px, box.w() - px);
+            float dy = Math.max(py, box.h() - py);
+            float covering = (float) Math.sqrt(dx * dx + dy * dy);
+            float behind = (float) (1d - t);
+            float r = covering * (1f - behind * behind * behind);
+            float a = color.a() * behind;
+            if (r <= 0f || a <= 0f) {
+                return Picture.EMPTY;
+            }
+            return Picture.of(new Picture.Fill(px - r, py - r, 2f * r, 2f * r, r, r,
+                    Color.withAlpha(color, a), "cue-ripple"));
+        };
+    }
+
+    /** A ripple from the middle of the box: a press from the keyboard, which has no point. */
+    static Cue ripple(Color color) {
+        return (t, box) -> ripple(color, box.w() * 0.5f, box.h() * 0.5f).at(t, box);
+    }
+
     /** Fast up over {@code attack}, slow down over the rest; 0 at both ends. */
     private static float envelope(float t, float attack) {
         float a = Math.min(0.99f, Math.max(0.01f, attack));

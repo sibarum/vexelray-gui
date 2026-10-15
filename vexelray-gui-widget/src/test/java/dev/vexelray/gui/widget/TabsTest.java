@@ -2,6 +2,7 @@ package dev.vexelray.gui.widget;
 
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.draw.Picture;
 import org.junit.jupiter.api.Test;
 import sibarum.tactroller.api.Key;
 
@@ -24,6 +25,112 @@ class TabsTest {
 
     private static Node page(HeadlessGui h, String label) {
         return h.gui.text(label).width(Length.FILL).height(Length.FILL);
+    }
+
+    /** A ramp the test drives by hand. */
+    private static final class Manual implements Ramp {
+        java.util.function.DoubleConsumer progress;
+        Runnable done;
+
+        @Override
+        public void run(java.util.function.DoubleConsumer progress, Runnable done) {
+            this.progress = progress;
+            this.done = done;
+        }
+    }
+
+    /** The indicator as the bar's overlay has it, after the frames that apply the write. */
+    private static Picture.Fill indicator(HeadlessGui h, Tabs tabs) {
+        h.frame();
+        Picture overlay = h.retained(tabs.bar()).overlay();
+        return overlay == null || overlay.isEmpty() ? null : (Picture.Fill) overlay.marks().get(0);
+    }
+
+    /** Header {@code i}'s left edge and width across the bar, in the bar's own pixels. */
+    private static float[] header(Tabs tabs, int i) {
+        float barX = tabs.bar().layout().rect().x();
+        var r = tabs.header(i).layout().rect();
+        return new float[] {r.x() - barX, r.w()};
+    }
+
+    @Test
+    void theIndicatorSitsUnderTheSelectedHeaderAndGlidesToTheNext() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Manual ramp = new Manual();
+            Tabs tabs = new Tabs(h.gui).indicator(ramp);
+            tabs.add("One", page(h, "one"));
+            tabs.add("A longer second", page(h, "two"));
+            tabs.add("Three", page(h, "three"));
+            h.gui.root().children(tabs.node());
+            h.frame();
+
+            Picture.Fill rest = indicator(h, tabs);
+            float[] first = header(tabs, 0);
+            assertTrue(rest != null, "laid out, the indicator is drawn");
+            assertEquals(first[0], rest.x(), 0.01, "under the first header");
+            assertEquals(first[1], rest.w(), 0.01, "and as wide");
+            assertEquals(tabs.bar().layout().rect().h(), rest.y() + rest.h(), 0.01, "along the bar's bottom");
+
+            tabs.select(2);
+            float[] third = header(tabs, 2);
+            ramp.progress.accept(0d);
+            assertEquals(first[0], indicator(h, tabs).x(), 0.01, "at the start it is where it was");
+
+            ramp.progress.accept(0.5d);
+            Picture.Fill mid = indicator(h, tabs);
+            double leftDone = (mid.x() - first[0]) / (third[0] - first[0]);
+            double rightDone = (mid.x() + mid.w() - first[0] - first[1]) / (third[0] + third[1] - first[0] - first[1]);
+            assertTrue(leftDone > 0 && rightDone < 1, "half way, between the two: " + leftDone + ", " + rightDone);
+            assertTrue(rightDone > leftDone, "moving right, the leading edge is ahead: the bar stretches");
+
+            ramp.progress.accept(1d);
+            ramp.done.run();
+            Picture.Fill landed = indicator(h, tabs);
+            assertEquals(third[0], landed.x(), 0.01, "and it lands under the third");
+            assertEquals(third[1], landed.w(), 0.01);
+        }
+    }
+
+    @Test
+    void aSelectionMidGlideTurnsRoundFromWhereTheIndicatorIs() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Manual ramp = new Manual();
+            Tabs tabs = new Tabs(h.gui).indicator(ramp);
+            tabs.add("One", page(h, "one"));
+            tabs.add("Two", page(h, "two"));
+            tabs.add("Three", page(h, "three"));
+            h.gui.root().children(tabs.node());
+            h.frame();
+            indicator(h, tabs);
+
+            tabs.select(2);
+            ramp.progress.accept(0.5d);
+            java.util.function.DoubleConsumer staleProgress = ramp.progress;
+            Runnable staleDone = ramp.done;
+            double midway = indicator(h, tabs).x();
+
+            tabs.select(0);   // the ramp now holds the new glide's callbacks
+            ramp.progress.accept(0d);
+            assertEquals(midway, indicator(h, tabs).x(), 0.01, "the way back starts where it had got to");
+
+            // The superseded glide finishing late, as a clock would deliver it: neither moves the indicator.
+            staleProgress.accept(0.9d);
+            staleDone.run();
+            assertEquals(midway, indicator(h, tabs).x(), 0.01);
+        }
+    }
+
+    @Test
+    void withNoIndicatorTheBarHasNoOverlay() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Tabs tabs = new Tabs(h.gui);
+            tabs.add("One", page(h, "one"));
+            tabs.add("Two", page(h, "two"));
+            h.gui.root().children(tabs.node());
+            h.frame();
+            tabs.select(1);
+            assertEquals(null, indicator(h, tabs), "the default is the panel as it always was");
+        }
     }
 
     /** Where {@code header} sits in {@code tabs}, or -1 — how a skin's argument is named in an assertion. */

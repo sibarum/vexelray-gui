@@ -8,8 +8,10 @@ import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.input.MenuSink;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.layout.NodeLayout;
 import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
+import dev.vexelray.gui.draw.Picture;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.text.TextLayout;
 import sibarum.tactroller.api.Key;
@@ -61,6 +63,19 @@ public final class Tabs {
     /** The two pages a transition currently has hold of, or null when the panel is at rest. Guarded by {@code this}. */
     private Node fadingOut;
     private Node fadingIn;
+
+    /**
+     * The indicator: what times its glide, or null for no indicator (the default). The rest is where it is drawn, in
+     * the bar's own pixels, NaN before it has been placed; and which glide, if any, has the right to move it, so a
+     * glide superseded by a later selection writes nothing. All guarded by {@code indicatorLock}, never by
+     * {@code this}: a glide's samples arrive on the clock's thread while a selection holds {@code this}.
+     */
+    private final Object indicatorLock = new Object();
+    private Ramp indicatorRamp;
+    private float indicatorLeft = Float.NaN;
+    private float indicatorRight = Float.NaN;
+    private int indicatorGlide;
+    private boolean indicatorGliding;
 
 
     /**
@@ -377,6 +392,8 @@ public final class Tabs {
             return true;
         });
 
+        // A header that moves or resizes (a rename, a neighbour removed, the bar scrolled) takes the indicator with it.
+        gui.onResize(header, layout -> restIndicator());
         bar.append(header);
         pages.append(body.width(Length.FILL).height(Length.FILL).visible(false));
         headers.add(header);
@@ -398,6 +415,148 @@ public final class Tabs {
     public Tabs transition(TabTransition transition) {
         this.transition = transition == null ? TabTransition.NONE : transition;
         return this;
+    }
+
+    /**
+     * Underline the selected header with a bar of the accent that <b>glides</b> to the next one when the selection
+     * moves, timed by {@code ramp}. One mark travelling from where the selection was to where it is says which way
+     * it went, which two headers changing colour at once does not. {@code null} removes it (the default is none).
+     *
+     * <p>The ramp's own curve is the glide's: give it an eased-out one ({@code OUT_CUBIC}, around 200ms), since the
+     * indicator is arriving somewhere. The leading edge goes first and the trailing one follows a little behind, so
+     * the bar stretches toward where it is going and closes up when it gets there. A selection mid-glide turns round
+     * from where the bar is drawn.
+     *
+     * <p>It is drawn over the bar, in the bar's overlay; the headers themselves are painted as before. For reduced
+     * motion, pass a ramp that arrives at once, and the indicator still marks the selection.
+     */
+    public Tabs indicator(Ramp ramp) {
+        synchronized (indicatorLock) {
+            indicatorRamp = ramp;
+            indicatorGlide++;   // whatever was gliding has lost
+            indicatorGliding = false;
+            indicatorLeft = Float.NaN;
+            indicatorRight = Float.NaN;
+        }
+        if (ramp == null) {
+            bar.overlay(null);
+            return this;
+        }
+        // The bar resizing moves no header relative to it, but it does move its bottom edge, where the bar sits.
+        gui.onResize(bar, layout -> restIndicator());
+        restIndicator();
+        return this;
+    }
+
+    /** Where header {@code index} is across the bar, as {@code {left, right}} in the bar's pixels; null if unplaced. */
+    private synchronized float[] span(int index) {
+        if (index < 0 || index >= headers.size()) {
+            return null;
+        }
+        NodeLayout h = headers.get(index).layout();
+        NodeLayout b = bar.layout();
+        if (!h.present() || !b.present() || h.rect().w() <= 0f) {
+            return null;
+        }
+        float left = h.rect().x() - b.rect().x();
+        return new float[] {left, left + h.rect().w()};
+    }
+
+    /** Put the indicator under the selected header, unless a glide is on its way there. */
+    private void restIndicator() {
+        float[] to = span(selected);
+        synchronized (indicatorLock) {
+            if (indicatorRamp == null || indicatorGliding) {
+                return;
+            }
+            if (to == null) {
+                return;   // nothing laid out yet; the header's first resize places it
+            }
+            indicatorLeft = to[0];
+            indicatorRight = to[1];
+        }
+        drawIndicator();
+    }
+
+    /** Glide the indicator from where it is drawn to header {@code index}. */
+    private void glideIndicator(int index) {
+        float[] to = span(index);
+        Ramp ramp;
+        float fromLeft;
+        float fromRight;
+        int glide;
+        synchronized (indicatorLock) {
+            ramp = indicatorRamp;
+            if (ramp == null) {
+                return;
+            }
+            glide = ++indicatorGlide;
+            if (to == null || Float.isNaN(indicatorLeft)) {
+                // Nowhere to come from, or nowhere yet to go: be there. The header's resize places it when it can.
+                indicatorGliding = false;
+                if (to != null) {
+                    indicatorLeft = to[0];
+                    indicatorRight = to[1];
+                }
+                fromLeft = Float.NaN;
+                fromRight = Float.NaN;
+            } else {
+                indicatorGliding = true;
+                fromLeft = indicatorLeft;
+                fromRight = indicatorRight;
+            }
+        }
+        if (Float.isNaN(fromLeft)) {
+            drawIndicator();
+            return;
+        }
+        boolean rightward = to[0] >= fromLeft;
+        ramp.run(progress -> {
+            float lead = (float) progress;
+            // The trailing edge runs a little behind the leading one: the bar stretches, then closes up.
+            float trail = lead * lead;
+            float l = fromLeft + (to[0] - fromLeft) * (rightward ? trail : lead);
+            float r = fromRight + (to[1] - fromRight) * (rightward ? lead : trail);
+            synchronized (indicatorLock) {
+                if (indicatorGlide != glide) {
+                    return;   // superseded: a later selection owns the indicator now
+                }
+                indicatorLeft = l;
+                indicatorRight = Math.max(l, r);
+            }
+            drawIndicator();
+        }, () -> {
+            synchronized (indicatorLock) {
+                if (indicatorGlide != glide) {
+                    return;
+                }
+                indicatorGliding = false;
+            }
+            // Landed: where the header is now, which a resize during the glide may have moved.
+            restIndicator();
+        });
+    }
+
+    /** Paint the indicator where it is, along the bottom of the bar. */
+    private void drawIndicator() {
+        float left;
+        float right;
+        synchronized (indicatorLock) {
+            if (indicatorRamp == null || Float.isNaN(indicatorLeft)) {
+                return;
+            }
+            left = indicatorLeft;
+            right = indicatorRight;
+        }
+        NodeLayout b = bar.layout();
+        if (!b.present()) {
+            return;
+        }
+        float barH = b.rect().h();
+        float thick = Math.max(2f, Math.round(barH * 0.07f));
+        Color accent = gui.theme().color(Role.ACCENT);
+        bar.overlay(Picture.of(new Picture.Fill(left, barH - thick, Math.max(0f, right - left), thick,
+                thick * 0.5f, 0f, accent, "tab-indicator")));
     }
 
     /**
@@ -430,6 +589,7 @@ public final class Tabs {
             paint(previous);
         }
         paint(next);
+        glideIndicator(next);
         // The header that says which tab this is has to be on screen, or a bar narrower than its headers can be
         // walked onto a selection nobody can see. Least scrolling, resolved this frame (Node.scrollIntoView).
         headers.get(next).scrollIntoView();

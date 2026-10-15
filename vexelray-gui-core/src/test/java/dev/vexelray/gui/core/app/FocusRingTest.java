@@ -135,6 +135,25 @@ class FocusRingTest {
         assertEquals(W, r.width(), 0.01f);
     }
 
+    /**
+     * Arriving, the ring closes in: half way up it stands further out than at rest, by two widths times the cube of
+     * what is left, and fully up it is exactly where it always was. Its opacity is the linear part.
+     */
+    @Test
+    void anArrivingRingClosesInFromFurtherOut() {
+        RetainedNode root = box(0, 0, 400, 200);
+        RetainedNode button = adopt(root, box(100, 50, 80, 30));
+        FocusState half = new FocusState(button.id, FocusCause.KEYBOARD, true, 0.5f, -1L, FocusCause.PROGRAM, 0f);
+
+        List<Stroke> rings = rings(emit(root, half, Theme.DARK));
+
+        assertEquals(1, rings.size(), "one ring: " + rings);
+        float travel = 2f * W * 0.125f;   // (1 - 0.5)^3
+        assertEquals(40f + 2f * W + travel, rings.get(0).halfW(), 0.01f, "further out by its travel");
+        assertEquals(15f + 2f * W + travel, rings.get(0).halfH(), 0.01f);
+        assertEquals(W, rings.get(0).width(), 0.01f, "no thinner for it");
+    }
+
     @Test
     void nothingFocusedNoRing() {
         RetainedNode root = box(0, 0, 400, 200);

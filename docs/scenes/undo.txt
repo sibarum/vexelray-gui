@@ -1,0 +1,142 @@
+# The undo witness (docs/plans/undo.md, step 8): every control on the gallery's Undo page is edited, walked all
+# the way back with Ctrl+Z and all the way forward with Ctrl+Y, and then refused three ways.
+#
+#   ./vexelray-gui-automation-cli/ottermate --script docs/scenes/undo.txt \
+#        --launch mvn.cmd -q -pl vexelray-gui-demo exec:exec -Dautomation=0
+#
+# A scene never sleeps and never settles (the gallery is never still): every step waits on a readout. The status
+# line says "undo N  ·  redo M  ·  last: <outcome>", so a press that only goes to a control is "last: revealing"
+# and the press after it is the depth moving. The values line says what each control holds.
+
+go undo.page
+await undo.status undo 0
+
+# ---- edit every control: eight steps ----------------------------------------------------------------------------
+click undo.toggle
+await undo.values toggle=on
+click undo.slider
+await undo.values slider=0.5
+go undo.number
+key UP
+await undo.values number=2
+key UP
+await undo.values number=3
+click undo.segment
+await undo.values segment=mid
+go undo.select
+key DOWN
+await undo.values (open)
+key DOWN
+await undo.values select=Green(open)
+key ENTER
+await undo.values select=Green text=
+go undo.text
+type hi
+await undo.values text=hi
+click undo.chip
+await undo.values chip=on
+click undo.add
+await undo.values items=2
+await undo.status undo 8
+
+# ---- Ctrl+Z all the way back: a command applies where the user is, each control is gone to first ---------------
+key CTRL+Z
+await undo.status undo 7
+key CTRL+Z
+await undo.status last: revealing
+key CTRL+Z
+await undo.status undo 6
+key CTRL+Z
+await undo.status last: revealing
+key CTRL+Z
+await undo.status undo 5
+key CTRL+Z
+await undo.status last: revealing
+key CTRL+Z
+await undo.status undo 4
+key CTRL+Z
+await undo.status last: revealing
+key CTRL+Z
+await undo.status undo 3
+key CTRL+Z
+await undo.status last: revealing
+key CTRL+Z
+await undo.status undo 2
+key CTRL+Z
+await undo.status last: revealing
+key CTRL+Z
+await undo.status undo 1
+key CTRL+Z
+await undo.status last: revealing
+key CTRL+Z
+await undo.status undo 0
+await undo.values toggle=off slider=0.0 number=1 segment=low select=Red text=- chip=off items=1
+
+# ---- Ctrl+Y all the way forward: the switch is where the user already is, so its redo applies at once ------------
+key CTRL+Y
+await undo.status redo 7
+key CTRL+Y
+await undo.status last: revealing
+key CTRL+Y
+await undo.status redo 6
+key CTRL+Y
+await undo.status last: revealing
+key CTRL+Y
+await undo.status redo 5
+key CTRL+Y
+await undo.status last: revealing
+key CTRL+Y
+await undo.status redo 4
+key CTRL+Y
+await undo.status last: revealing
+key CTRL+Y
+await undo.status redo 3
+key CTRL+Y
+await undo.status last: revealing
+key CTRL+Y
+await undo.status redo 2
+key CTRL+Y
+await undo.status last: revealing
+key CTRL+Y
+await undo.status redo 1
+key CTRL+Y
+await undo.status redo 0
+await undo.values toggle=on slider=0.5 number=3 segment=mid select=Green text=hi chip=on items=2
+
+# ---- refused: a locked control is shown and ringed, and not changed -----------------------------------------------
+click undo.toggle
+await undo.values toggle=off
+await undo.status undo 9
+click undo.lock
+key CTRL+Z
+await undo.status last: refused
+await undo.values toggle=off
+click undo.lock
+key CTRL+Z
+await undo.status last: revealing
+key CTRL+Z
+await undo.status undo 8
+await undo.values toggle=on
+
+# ---- unreachable: the field has gone, so its step fails once and is cleared away ----------------------------------
+go undo.scratch
+type x
+await undo.status undo 9
+click undo.remove
+key CTRL+Z
+await undo.status last: unreachable
+await undo.status undo 8
+
+# ---- conflict: the number was set underneath, so the older one is not written over it ----------------------------
+go undo.number
+key UP
+await undo.values number=4
+await undo.status undo 9
+click undo.underneath
+await undo.values number=99
+key CTRL+Z
+await undo.status last: revealing
+key CTRL+Z
+await undo.status last: conflict
+await undo.values number=99
+await undo.status undo 9

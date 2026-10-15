@@ -117,6 +117,32 @@ class NavigatorTest {
     // --- walking ------------------------------------------------------------------------------------------
 
     /**
+     * A tab panel registers its reveal on each page, the node it hides — so a landmark on the page itself is
+     * concealed by a reveal on itself, and the walk has to ask the target as well as its ancestors.
+     */
+    @Test
+    void aTargetThatRevealsItselfIsAsked() {
+        Fake tree = new Fake();
+        RetainedNode root = tree.add(null, box());
+        RetainedNode page = tree.add(root, box());
+        page.set(dev.vexelray.gui.core.model.PropKey.VISIBLE, false);
+        Navigator nav = navigator(tree);
+        nav.landmark("page", page.id);
+        nav.reveals(page.id, id -> {
+            page.set(dev.vexelray.gui.core.model.PropKey.VISIBLE, true);
+            return true;
+        });
+
+        Navigation walk = nav.navigate(Address.of("page"));
+        for (int frame = 0; frame < 4 && !walk.done(); frame++) {
+            nav.step();
+        }
+        assertTrue(walk.arrival().isDone() && !walk.arrival().isCompletedExceptionally(),
+                "the page's own reveal shows it, and the walk arrives");
+        assertEquals(List.of(page.id), tree.focused);
+    }
+
+    /**
      * A walk asks each concealing ancestor to reveal the target, outermost first and <b>one per frame</b> —
      * each reveal changes what the next one is looking at, so they cannot be run in a batch.
      */

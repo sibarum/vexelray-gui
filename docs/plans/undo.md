@@ -1,6 +1,15 @@
 # The undo plan
 
-**Status: steps 1–7 built (2026-10-14); step 8 next.** Step 7 as built: `Button.perform(Supplier<Change>)` and
+**Status: all eight steps built (2026-10-14).** Step 8 as built: the gallery binds a window history in
+`Demo.main`, as the framework does, and its **Undo** chapter puts every value control, a chip, a command button
+and the three refusals on one page with a landmark each. `docs/scenes/undo.txt` drives it: eight edits, Ctrl+Z all
+the way back (a command applies where the user is, every control is gone to first), Ctrl+Y all the way forward,
+then a locked control (`refused`, ringed), a removed field (`unreachable`, and the step cleared away) and a number
+set underneath (`conflict`); 120 replies, all ok. It found two defects, both fixed with a test: a **stepped
+`NumberField` refused its own undo** as a conflict (a step of 1.0 makes 3.0, focus leaving re-reads "3" as 3, and
+`BigDecimal.equals` calls them different), and **the navigator never asked a target to reveal itself**, so a
+landmark on a tab page — `Tabs` registers its reveal on each page — was unreachable. MainFrame's workspaces page
+dropped its hand-wired history and records into its window's; witnessed live: New, Ctrl+Z, Ctrl+Y. Step 7 as built: `Button.perform(Supplier<Change>)` and
 `MenuSink.edit(label, [enabled,] Supplier<Change>)`. Both take a supplier rather than a change, because a command's
 change depends on what is selected when it is chosen, and a null answer means "nothing to do this time". Both
 perform through the history nearest the button, or the right-clicked node (`MenuSink.history()`, which a wrapping
@@ -167,6 +176,10 @@ its own past.
 
 - **Conflict default for scalars.** §4 says fail for everything; a toggle overwritten by a sync could reasonably
   apply anyway. Accepted as recommended, to be re-checked once the gallery exercises it.
+- **An inline editor with a past of its own keeps Ctrl+Z even when that past is empty.** Seen in MainFrame: after
+  New, focus is in the name field, whose history is its own (its commit is the page's step), so Ctrl+Z there does
+  nothing until focus moves. A claim cannot fall through, so the field would have to route an empty own-history's
+  Ctrl+Z to the history above it. Not done: it changes what Ctrl+Z means inside every document field.
 
 ## 7. Build order
 

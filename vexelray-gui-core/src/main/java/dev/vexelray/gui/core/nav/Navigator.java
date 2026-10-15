@@ -346,10 +346,15 @@ public final class Navigator {
         }
     }
 
-    /** {@code target}'s ancestors, root first — the order reveals must run in. */
+    /**
+     * {@code target}'s ancestors, root first — the order reveals must run in — and then {@code target} itself. The
+     * target is asked too because a container may register its reveal on the very node it hides: a tab panel's
+     * reveal sits on each page, so a landmark on a page (the most natural place for one) is concealed by a reveal
+     * on itself, and a walk that asked only its ancestors would declare it unreachable.
+     */
     private static List<RetainedNode> ancestorsOutermostFirst(RetainedNode target) {
         List<RetainedNode> chain = new ArrayList<>();
-        for (RetainedNode a = target.parent; a != null; a = a.parent) {
+        for (RetainedNode a = target; a != null; a = a.parent) {
             chain.add(a);
         }
         Collections.reverse(chain);

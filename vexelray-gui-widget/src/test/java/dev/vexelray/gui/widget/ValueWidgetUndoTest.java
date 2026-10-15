@@ -205,6 +205,30 @@ class ValueWidgetUndoTest {
         }
     }
 
+    /**
+     * Found by the gallery's undo scene: a step of 1.0 makes 3.0, focus leaving re-reads the text "3" as 3, and
+     * BigDecimal calls those different — so a stepped number refused its own undo as a conflict.
+     */
+    @Test
+    void aSteppedNumberStillUndoesAfterFocusLeaves() {
+        try (Window w = new Window()) {
+            NumberField n = new NumberField(w.h.gui, 1, 1.0);
+            Toggle elsewhere = new Toggle(w.h.gui, false).undoable(false);
+            w.mount(n.node(), elsewhere.node());
+            w.h.focus(n.node());
+            w.h.tap(Key.UP).tap(Key.UP);
+            w.h.focus(elsewhere.node());   // the field commits what it shows on the way out
+            w.h.frame();
+            assertEquals(3.0, n.value());
+
+            w.h.gui.undo(w.history);
+            w.h.frame().frame().frame();
+            w.h.gui.undo(w.history);
+            w.h.frame().frame().frame();
+            assertEquals(1.0, n.value(), "3 and 3.0 are one number: " + w.events);
+        }
+    }
+
     @Test
     void aSegmentChoiceUndoes() {
         try (Window w = new Window()) {

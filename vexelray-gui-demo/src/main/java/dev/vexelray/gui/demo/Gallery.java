@@ -15,6 +15,7 @@ import dev.vexelray.gui.demo.chapter.TextChapter;
 import dev.vexelray.gui.demo.chapter.IconsChapter;
 import dev.vexelray.gui.demo.chapter.TreeChapter;
 import dev.vexelray.gui.demo.chapter.TypesetChapter;
+import dev.vexelray.gui.demo.chapter.UndoChapter;
 import dev.vexelray.gui.demo.chapter.WindowChapter;
 
 import java.util.List;
@@ -44,6 +45,7 @@ public final class Gallery {
                 new TableChapter(),
                 new ChooserChapter(),
                 new FocusChapter(),
+                new UndoChapter(),
                 new DrawChapter(),
                 new ColorChapter(),
                 new PlotChapter(),

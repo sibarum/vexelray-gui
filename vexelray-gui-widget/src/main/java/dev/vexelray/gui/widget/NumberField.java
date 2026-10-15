@@ -77,7 +77,9 @@ public final class NumberField {
         });
         // The number is the step, not the characters: an agreed number replaces the typing that led to it (the
         // field's text(...) forgets that), so Ctrl+Z after Enter puts the last number back, not the last keystroke.
-        this.undo = new ValueUndo<>(gui, field.node(), () -> value, this::put, true);
+        // Compared by value, not by scale: a step of 1.0 makes 3.0, focus leaving re-reads the text "3" as 3, and
+        // BigDecimal.equals calls those two different, which would make every stepped number a conflict to undo.
+        this.undo = new ValueUndo<>(gui, field.node(), () -> value.stripTrailingZeros(), this::put, true);
     }
 
     /**
@@ -154,7 +156,7 @@ public final class NumberField {
         BigDecimal from = value;
         put(v);
         if (from.compareTo(v) != 0) {   // 1 and 1.0 are one number, whatever their scales say
-            undo.edited(from, v);
+            undo.edited(from.stripTrailingZeros(), v.stripTrailingZeros());
         }
     }
 

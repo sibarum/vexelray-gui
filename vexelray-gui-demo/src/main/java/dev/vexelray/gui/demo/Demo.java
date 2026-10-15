@@ -96,6 +96,9 @@ public final class Demo {
         // came: an ease-out over the same time is mostly done in its first frames and reads as a snap.
         Unclip.of(gui).motion((progress, done) -> krono.ramp(Dur.ms(150), Ease.IN_OUT_CUBIC, progress, done));
 
+        // Undo for the whole window, bound before any chapter is built, as the framework binds one on every window:
+        // every control in every chapter records into it, and Ctrl+Z reaches all of them (docs/plans/undo.md).
+        gui.history(new dev.vexelray.gui.core.edit.History());
         Shell shell = new Shell(gui, krono, Gallery.chapters());
         Keymap keys = zoomKeys(gui);
         // The Vulkan clear colour: the same role the root paints, so the frame behind the tree is never a second

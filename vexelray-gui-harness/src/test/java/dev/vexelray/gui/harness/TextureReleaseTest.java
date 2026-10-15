@@ -107,7 +107,7 @@ class TextureReleaseTest {
         try (HarnessApp harness = HarnessApp.start(gui, WindowConfig.of("foreign", 200, 120))) {
             harness.settle();
             Exception refused = assertThrows(Exception.class, () -> onLoop(harness, () -> {
-                harness.app().release(null);
+                harness.app().release((AtlasTexture) null);
                 return null;
             }));
             assertInstanceOf(IllegalArgumentException.class, refused.getCause());

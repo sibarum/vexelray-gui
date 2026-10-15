@@ -651,9 +651,10 @@ public final class GuiApp implements AutoCloseable {
 
     /**
      * Close every released texture that no frame can still sample. Top of a loop iteration, before any window
-     * records, so nothing is drawing while the device waits.
+     * records, so nothing is drawing while the device waits. {@code warn} false keeps one still shown without saying
+     * so: see {@link #iterationTop}.
      */
-    private void retire() {
+    private void retire(boolean warn) {
         boolean waited = false;
         for (int i = 0; i < retiring.size(); ) {
             Retiring r = retiring.get(i);
@@ -662,7 +663,7 @@ public final class GuiApp implements AutoCloseable {
                 continue;
             }
             if (shownAny(r.images)) {
-                if (!r.warned) {
+                if (warn && !r.warned) {
                     r.warned = true;
                     LOG.warn("a released texture is still shown by a node, so it stays open until no tree names "
                             + "it; give the node another image before releasing: " + r.thing);
@@ -1078,6 +1079,10 @@ public final class GuiApp implements AutoCloseable {
      *
      * <p>So: structural work belongs here. A private queue is right only for work that must run at a
      * particular point in the host's own frame hook, and that is rarer than it looks.
+     *
+     * <p>An iteration's top is also every frame Windows pulls while a window is being moved or resized, which
+     * suspends the host loop for the whole gesture: the queue is drained there the same way, so a drag does not
+     * hold up what was posted ({@link #iterationTop}).
      */
     public void post(Runnable task) {
         tasks.add(task);
@@ -1234,6 +1239,7 @@ public final class GuiApp implements AutoCloseable {
         // dialog takes, and a window that skipped it is one the host was never given a say over.
         GuiWindow w = new GuiWindow(platform, instance, device, fonts, images, spec.gui(),
                 spec.standing().place(spec.config(), anchorHandle(spec)), this::create, presentBackend);
+        w.liveStep(() -> iterationTop(false));
         WindowInput input = inputs.attach(w.window, spec.gui());
         OpenWindow entry = new OpenWindow(w, input, spec, owner);
         LOG.info("window opened: \"{}\" {}x{}{}", spec.config().title(), spec.config().width(), spec.config().height(),
@@ -1477,6 +1483,42 @@ public final class GuiApp implements AutoCloseable {
         }
     }
 
+    /**
+     * What every loop iteration does before any window pumps: {@link #post}'s queue to exhaustion, then the wakes,
+     * then the released textures that are due. The host loop runs it, and so does every frame Windows pulls while it
+     * runs a move or resize ({@link GuiWindow#liveStep}), because that loop has suspended the host's for as long as
+     * the gesture lasts: a move that ran nothing posted froze a playing video on one picture for the whole drag.
+     * Everything {@link #post} promises holds there too: to exhaustion, so a task posted by a task runs in the same
+     * frame, and before that frame's update.
+     *
+     * <p>A pulled frame counts as an iteration for {@link #release}, so a texture given back during a long drag is
+     * closed during it rather than piling up behind it. The safety was never the count: a texture is closed only
+     * after a device wait, and only when no window's tree names it. What the count buys is not warning about an edit
+     * that has not been drained yet, and in a move loop only the window being moved updates. So there ({@code loop}
+     * false) a texture another window still names is kept without a word, and the host loop says so if it still is.
+     */
+    private void iterationTop(boolean loop) {
+        // Window creation, showing, hiding and closing all land here: posted from wherever they were asked
+        // for, performed on the thread that is allowed to perform them.
+        for (Runnable task; (task = tasks.poll()) != null; ) {
+            long taskStarted = stallNanos > 0 ? System.nanoTime() : 0L;
+            task.run();
+            if (stallNanos > 0) {
+                long took = System.nanoTime() - taskStarted;
+                if (took > stallNanos) {
+                    reportStall(task, took);
+                }
+            }
+        }
+        // After the tasks, because opening a window is one of them: a tree that arrived this
+        // iteration is presented this iteration, so it must be able to ask for the next one.
+        wireAllWakes();
+        iteration++;
+        if (!retiring.isEmpty()) {
+            retire(loop);
+        }
+    }
+
     /** Drive {@code gui} until the window closes (or {@code maxFrames} presented if positive). */
     public void run(Gui gui, int maxFrames) {
         run(gui, maxFrames, () -> { });
@@ -1503,26 +1545,9 @@ public final class GuiApp implements AutoCloseable {
         gui.onCursorChange(shape -> main.window.setCursor(osCursor(shape)));
         int frame = 0;
         boolean running = true;
+        main.liveStep(() -> iterationTop(false));
         while (running && (maxFrames <= 0 || frame < maxFrames)) {
-            // Window creation, showing, hiding and closing all land here: posted from wherever they were asked
-            // for, performed on the thread that is allowed to perform them.
-            for (Runnable task; (task = tasks.poll()) != null; ) {
-                long taskStarted = stallNanos > 0 ? System.nanoTime() : 0L;
-                task.run();
-                if (stallNanos > 0) {
-                    long took = System.nanoTime() - taskStarted;
-                    if (took > stallNanos) {
-                        reportStall(task, took);
-                    }
-                }
-            }
-            // After the tasks, because opening a window is one of them: a tree that arrived this
-            // iteration is presented this iteration, so it must be able to ask for the next one.
-            wireAllWakes();
-            iteration++;
-            if (!retiring.isEmpty()) {
-                retire();
-            }
+            iterationTop(true);
             // One span per loop iteration, and it is the root of the whole report: every other span in every
             // other lane nests inside this one, so its self time is the loop's own overhead and its children
             // are where a frame actually went. The wait below is deliberately outside it - a loop parked on an

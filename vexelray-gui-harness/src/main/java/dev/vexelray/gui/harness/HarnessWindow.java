@@ -70,6 +70,10 @@ public final class HarnessWindow implements NativeWindow {
     private boolean closing;
     private long waits;
     private long shows;
+    /** The frame the window would pull from inside a move or resize; see {@link #beginMove}. */
+    private volatile Runnable sink;
+    private boolean moving;
+    private long pulls;
 
     /**
      * Wrap {@code real}, which should be a freshly created window asked for off screen
@@ -94,6 +98,7 @@ public final class HarnessWindow implements NativeWindow {
     @Override
     public boolean pumpEvents() {
         real.pumpEvents();
+        moveLoop();
         // Emptying the thread's queue takes the wake with everything else: see the class note.
         queue.takeWake();
         // The wrapped window's close state is the OS's business and a test's is not: a harness run ends
@@ -336,7 +341,57 @@ public final class HarnessWindow implements NativeWindow {
 
     @Override
     public void setFrameSink(Runnable renderOneFrame) {
+        this.sink = renderOneFrame;
         real.setFrameSink(renderOneFrame);
+    }
+
+    /**
+     * Put the window in a move, as a title-bar drag does on Windows: the next pump does not return until
+     * {@link #endMove}, and while it is held the frame sink is pulled every 8 ms, which is what the platform's own
+     * modal loop does on its timer. The host loop is suspended meanwhile, exactly as it is under a real drag, so
+     * anything that only the host loop does is visibly not done.
+     */
+    public void beginMove() {
+        synchronized (lock) {
+            moving = true;
+        }
+        postWake();   // a parked loop must reach its pump to enter the move
+    }
+
+    /** Let go: the pump holding the move returns, and the host loop carries on. */
+    public void endMove() {
+        synchronized (lock) {
+            moving = false;
+            lock.notifyAll();
+        }
+    }
+
+    /** How many frames have been pulled through the sink in moves so far. */
+    public long pulls() {
+        synchronized (lock) {
+            return pulls;
+        }
+    }
+
+    private void moveLoop() {
+        while (true) {
+            Runnable pull = sink;
+            synchronized (lock) {
+                if (!moving || closing || pull == null) {
+                    return;
+                }
+                pulls++;
+            }
+            pull.run();
+            synchronized (lock) {
+                try {
+                    lock.wait(8L);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
+        }
     }
 
     @Override

@@ -125,6 +125,13 @@ final class GuiWindow implements AutoCloseable {
     private final boolean clientChrome;
     /** The host's per-frame hook, held so a platform-pulled frame runs the same step the host loop would. */
     private Runnable beforeFrame = () -> { };
+    /**
+     * The top of the host loop's iteration, for a frame the platform pulls instead: {@link GuiApp#post}'s queue and
+     * released textures. Without it a move or resize ran no posted work for its whole length, so a texture uploaded
+     * through {@code post} -- every frame of a playing video -- reached no frame, and the window showed one picture
+     * until the mouse was let go.
+     */
+    private Runnable liveStep = () -> { };
     /** The tree as the last update left it, for the draw that follows (or the one after, if this one is skipped). */
     private RetainedNode updated;
     /**
@@ -216,10 +223,19 @@ final class GuiWindow implements AutoCloseable {
         window.setFrameSink(this::pullLive);
     }
 
-    /** A frame pulled from inside the platform's live move/resize loop: {@link #pull}, with resizes throttled. */
+    /** What a pulled frame runs before its own: the host's iteration top, which the modal loop has suspended. */
+    void liveStep(Runnable step) {
+        this.liveStep = step == null ? () -> { } : step;
+    }
+
+    /**
+     * A frame pulled from inside the platform's live move/resize loop: the host's iteration top ({@link #liveStep}),
+     * then {@link #pull}, with resizes throttled.
+     */
     private void pullLive() {
         presenter.throttleResize(true);
         try {
+            liveStep.run();
             pull();
         } finally {
             presenter.throttleResize(false);

@@ -1,7 +1,14 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
+import dev.vexelray.gui.core.drop.DragState;
+import dev.vexelray.gui.core.drop.DragWatch;
+import dev.vexelray.gui.core.drop.Drop;
+import dev.vexelray.gui.core.drop.DropEffect;
+import dev.vexelray.gui.core.drop.Payload;
+import dev.vexelray.gui.core.drop.PayloadType;
 import dev.vexelray.gui.core.input.ClaimScope;
 import dev.vexelray.gui.core.input.ClickEvent;
 import dev.vexelray.gui.core.input.KeyEvent;
@@ -9,8 +16,11 @@ import dev.vexelray.gui.core.input.MenuSink;
 import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.NodeLayout;
+import dev.vexelray.gui.core.layout.Rect;
 import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
+import dev.vexelray.gui.core.style.Theme;
+import dev.vexelray.text.TextLayout;
 import sibarum.atchung.Subscription;
 import sibarum.tactroller.api.Key;
 import sibarum.tactroller.api.Modifier;
@@ -23,6 +33,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.Predicate;
 
 /**
@@ -117,6 +128,15 @@ public final class ListView<T> implements AutoCloseable {
     /** What this list and its rows call themselves in the semantic read-model. See {@link #roles}. */
     private String containerRole = "list";
     private String itemRole = "listitem";
+
+    /** The drag subscription, opened by droppable() and closed with the list. */
+    private Subscription dropSub;
+    /** Whether a drop indicator is painted on the list now. */
+    private volatile boolean painting;
+    /** The label that rides with the pointer while rows are carried; built at the first carry. Guarded by this. */
+    private Node carried;
+    /** What the carried label last showed, and where: written only when it changes. Guarded by this. */
+    private Object carriedAs;
 
     public ListView(Gui gui, float rowRem, RowBuilder<T> builder) {
         this(gui, rowRem, builder, SelectionModel.range());
@@ -340,6 +360,216 @@ public final class ListView<T> implements AutoCloseable {
             ContextMenu.presentOn(gui);
         }
         return this;
+    }
+
+    // ------------------------------------------------------------------ transfer
+
+    /**
+     * What dropping {@code held} on a row of this list would do, as a {@code DropTarget} answers it: the effect and
+     * the change, or {@link Drop#NONE} (or null) to refuse.
+     *
+     * <p>{@code onto} is the row under the pointer, or null for <b>the list itself</b> — the space below the last
+     * row, and any row whose own answer was a refusal. That second case is the one that matters: declines bubble
+     * (transfer.md §4), so a row that will not take a drop does not punch a row-shaped hole in a list that would. A
+     * file dropped on a file in an explorer pane lands in the folder the pane shows.
+     *
+     * <p>Where the drop is shown is the list's: the row's box, or the list's own for null. The indicator in the
+     * returned {@link Drop} is not read, so pass {@code Rect.ZERO}.
+     */
+    @FunctionalInterface
+    public interface Receiver<T, P> {
+        Drop land(P held, T onto);
+    }
+
+    /**
+     * Let rows be dragged out of this list, offered as {@code type}: the whole selection, in the order shown, when
+     * the row grabbed is part of it, and otherwise that row alone, which becomes the selection — the same thing a
+     * click would do, so the menu and the keyboard agree with what the pointer just picked up.
+     *
+     * <p>The type is the caller's rather than the list's own, unlike {@code TreeView.itemType}: two lists of the same
+     * things are the ordinary case here (two folders side by side), and a type both are told about is the one way
+     * they can accept one another's rows without either knowing the other exists.
+     *
+     * <p>A press becomes a drag only once it has travelled far enough and been held long enough, so an ordinary click
+     * still selects. What rides with the pointer is the list's: a label saying what is held, from {@code label},
+     * coloured by whether releasing would place it (transfer.md §0).
+     */
+    public ListView<T> draggable(PayloadType<List<T>> type, Function<List<T>, String> label) {
+        Objects.requireNonNull(type, "type");
+        Objects.requireNonNull(label, "label");
+        gui.onDragSource(root, (x, y) -> {
+            T from = itemAt(x, y);
+            if (from == null) {
+                return null;   // the space below the last row is somewhere to drop, not something to pick up
+            }
+            if (!selection.isSelected(from)) {
+                selection.at(from);
+                onRowClicked.accept(from);
+                return Payload.of(type, List.of(from));
+            }
+            List<T> held = new ArrayList<>();
+            synchronized (this) {
+                for (T item : items) {
+                    if (selection.isSelected(item)) {
+                        held.add(item);
+                    }
+                }
+            }
+            return Payload.of(type, List.copyOf(held));
+        });
+        // Watched rather than read from the published drag, because it follows the pointer and the published drag
+        // is a frame behind it (transfer.md §12.3).
+        gui.watchDrag(root, new DragWatch() {
+            @Override
+            public void moved(DragState now) {
+                carry(now, type, label);
+            }
+
+            @Override
+            public void ended(DragState last, DropEffect performed) {
+                carry(DragState.NONE, type, label);
+            }
+        });
+        return this;
+    }
+
+    /**
+     * Let something dragged as {@code type} be dropped on this list, with {@code receiver} saying what each landing
+     * means. Every point in the list resolves: a row, or failing that the list itself (see {@link Receiver}). Nothing
+     * happens until the release, and then through {@link Gui#dropHistory}, so the drop undoes like any other edit;
+     * without a history it resolves and draws but commits nothing.
+     */
+    public <P> ListView<T> droppable(PayloadType<P> type, Receiver<T, P> receiver) {
+        Objects.requireNonNull(type, "type");
+        Objects.requireNonNull(receiver, "receiver");
+        gui.onDrop(root, (payload, x, y) -> payload.as(type)
+                .map(held -> resolve(receiver, held, x, y))
+                .orElse(Drop.NONE));
+        synchronized (this) {
+            if (dropSub == null) {
+                dropSub = gui.drag().onCommit(v -> showDrop(v.value()));
+                subs.add(dropSub);
+            }
+        }
+        return this;
+    }
+
+    /** Which row the pointer is over, and what landing there means — or, refused there, landing on the list. */
+    private <P> Drop resolve(Receiver<T, P> receiver, P held, float x, float y) {
+        T onto = itemAt(x, y);
+        if (onto != null) {
+            Drop d = receiver.land(held, onto);
+            Node row = rowNode(onto);
+            Rect at = row == null ? null : row.layout().rect();
+            if (d != null && d.accepts() && at != null) {
+                return new Drop(d.effect(), at, d.change());
+            }
+        }
+        Rect box = root.layout().rect();
+        Drop d = receiver.land(held, null);
+        if (d == null || !d.accepts() || box == null) {
+            return Drop.NONE;
+        }
+        return new Drop(d.effect(), box, d.change());
+    }
+
+    /**
+     * The item whose row the pointer is over, or null below the last row or outside the list. The row is the last
+     * one whose top the pointer has reached, not the one whose rect contains it, so a sub-pixel gap between two
+     * rows is never a place a drop silently fails (transfer.md §4).
+     */
+    private T itemAt(float x, float y) {
+        Rect box = root.layout().rect();
+        if (box == null || x < box.x() || x >= box.x() + box.w() || y < box.y() || y >= box.y() + box.h()) {
+            return null;
+        }
+        synchronized (this) {
+            T found = null;
+            Rect foundAt = null;
+            for (int i = 0; i < rows.size(); i++) {
+                Rect r = rows.get(i).layout().rect();
+                if (r == null || r.h() <= 0f) {
+                    continue;
+                }
+                if (y < r.y()) {
+                    break;
+                }
+                found = items.get(windowStart + i);
+                foundAt = r;
+            }
+            return foundAt != null && y < foundAt.y() + foundAt.h() ? found : null;
+        }
+    }
+
+    /**
+     * Paint, move or clear the drop indicator. Guarded by whether anything is painted, because a drag over some other
+     * widget still commits a state on every move, and clearing an overlay that is not there is a mutation per frame.
+     */
+    private void showDrop(DragState drag) {
+        Rect box = root.layout().rect();
+        boolean mine = drag.accepts() && box != null
+                && drag.x() >= box.x() && drag.x() < box.x() + box.w()
+                && drag.y() >= box.y() && drag.y() < box.y() + box.h();
+        if (!mine) {
+            if (painting) {
+                painting = false;
+                root.overlay(null);
+            }
+            return;
+        }
+        Rect at = drag.indicator();
+        // In the node's own frame: a Picture is drawn in the box it is attached to. A ring around the whole list is
+        // pulled in by its stroke, or half of it would be clipped by the list's own edge.
+        Rect local = at.equals(box)
+                ? new Rect(1f, 1f, Math.max(0f, at.w() - 2f), Math.max(0f, at.h() - 2f))
+                : new Rect(at.x() - box.x(), at.y() - box.y(), at.w(), at.h());
+        painting = true;
+        root.overlay(DropIndicator.of(gui.theme().color(Role.ACCENT)).paint(local, drag.effect()));
+    }
+
+    /**
+     * Show, move or put away the label riding with the pointer while this list's rows are carried, wherever they are
+     * carried: beside the hotspot, so it never hides what the pointer aims at; floating last on the root and
+     * hit-inert, so it is over everything and a target for nothing. Accent while releasing would place it, danger
+     * where it would not. {@code TreeView}'s carry, for a list.
+     */
+    private void carry(DragState drag, PayloadType<List<T>> type, Function<List<T>, String> label) {
+        List<T> held = drag.active() ? drag.payload().as(type).orElse(null) : null;
+        Node shownLabel;
+        synchronized (this) {
+            if (held == null && carried == null) {
+                return;
+            }
+            if (carried == null) {
+                carried = gui.text("").width(Length.AUTO).height(Length.rem(2))
+                        .padding(Length.ZERO, Length.em(0.625f)).corner(Length.rem(0.4f))
+                        .textSize(Length.rem(0.9375f)).align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE)
+                        .lit(gui.theme().lit()).elevation(gui.theme().elevation(Relief.FLOATING))
+                        .hitInert(true).visible(false);
+                gui.root().append(carried);
+            }
+            shownLabel = carried;
+        }
+        // Told every frame of a drag, moved or not; a write that changes nothing would still owe a frame, and that
+        // frame another, so the window would never be idle while anything was carried.
+        String text = held == null ? null : label.apply(held);
+        Object now = held == null ? null : List.of(text, drag.x(), drag.y(), drag.accepts());
+        synchronized (this) {
+            if (Objects.equals(now, carriedAs)) {
+                return;
+            }
+            carriedAs = now;
+        }
+        if (held == null) {
+            shownLabel.visible(false);
+            return;
+        }
+        Theme theme = gui.theme();
+        float dpi = Math.max(0.0001f, gui.dpi().value());
+        shownLabel.text(text).visible(true)
+                .floatAt(Length.dp(drag.x() / dpi + 14f), Length.dp(drag.y() / dpi + 12f))
+                .background(Color.withAlpha(theme.color(drag.accepts() ? Role.ACTION : Role.DANGER), 0.92f))
+                .textColor(theme.color(drag.accepts() ? Role.ON_ACTION : Role.ON_DANGER));
     }
 
     /**

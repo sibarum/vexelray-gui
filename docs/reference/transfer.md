@@ -28,6 +28,7 @@ items do not change between those, and the layout's response is all that does â€
 |---|---|---|---|
 | Rows of a hierarchy, between and into one another | `TreeView.reorderable(Reorder)` | a `Source`; a `Reorder` returning a `Change`; `refresh()` after each change | Drag & drop |
 | Cards in a stack, or between stacks | `Board` + `Deck.reorderable(Reorder)` | the card's node; a `Reorder`; `deck.items(list)` after each change | Cards |
+| Rows of a flat list (or a `Table`'s `rows()`), out to other lists and onto rows | `ListView.draggable(type, label)` + `ListView.droppable(type, Receiver)` | a `PayloadType<List<T>>` both lists share; a `Receiver` returning a `Drop` for a row, or for the list when given null; `items(list)` after each change | â€” (Vexplore's two folders) |
 | An item onto something that is not a container | `gui.onDrop` on that thing, reading the container's `itemType()` | the `Drop`; lighting it from `gui.drag()` | Drag & drop's archive |
 
 **The reorder is a question, and the change is a value.** A `Reorder` is asked once a frame while the pointer

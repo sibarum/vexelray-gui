@@ -29,4 +29,16 @@ public interface Chapter {
      * {@link Stage#onApp} for the parts that cannot be done until it does.
      */
     Node build(Stage stage);
+
+    /**
+     * The page has come on screen, or gone off it. Called with {@code true} for the opening chapter, then for
+     * both ends of every change, on the handler executor.
+     *
+     * <p>For motion that has no end of its own — a looping animation, a ticking readout. Every page is built at
+     * startup and lives for the whole run, so a loop started in {@link #build} runs behind every other page too,
+     * and a timeline that never goes quiet is one {@code settle} cannot wait out and render-on-demand cannot
+     * park on. Started and stopped here, the gallery is quiet whenever what is on screen is.
+     */
+    default void shown(boolean showing) {
+    }
 }

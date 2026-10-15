@@ -53,6 +53,8 @@ public final class Shell {
     private final List<Chapter> chapters = new ArrayList<>();
     private final List<Node> navItems = new ArrayList<>();
     private final List<AtomicReference<InteractionState>> navStates = new ArrayList<>();
+    /** The chapter last told it is on screen; -1 before the first. See {@link Chapter#shown}. */
+    private int shown = -1;
 
     public Shell(Gui gui, KronoGui krono, List<Chapter> content) {
         this.gui = gui;
@@ -212,6 +214,19 @@ public final class Shell {
         pageBlurb.text(chapter.blurb());
         paintNav();
         restatus();
+        announce(index);
+    }
+
+    /** Off-screen first, so two loops are never running at once. */
+    private synchronized void announce(int index) {
+        if (index == shown) {
+            return;
+        }
+        if (shown >= 0) {
+            chapters.get(shown).shown(false);
+        }
+        shown = index;
+        chapters.get(index).shown(true);
     }
 
     private void restatus() {

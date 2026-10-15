@@ -12,6 +12,7 @@ import dev.vexelray.gui.demo.Chapter;
 import dev.vexelray.gui.demo.Console;
 import dev.vexelray.gui.demo.Stage;
 import dev.vexelray.gui.demo.Ui;
+import dev.vexelray.gui.krono.Scheduled;
 import dev.vexelray.vulkan.present.SampledImage;
 import sibarum.imagelib.Frames;
 import sibarum.imagelib.Imagelib;
@@ -66,6 +67,13 @@ public final class ImageChapter implements Chapter {
     private static final Dur FRAME = Dur.ms(500);
 
     private final AtomicInteger frame = new AtomicInteger();
+
+    /** Whether the page is on screen, and the loop that runs only while it is; see {@link #shown}. */
+    private boolean showing;
+    private Scheduled playing;
+    /** Set once the sheet is up, which is when there is anything to play; until then the loop has no work. */
+    private Runnable advance;
+    private Stage stage;
 
     @Override
     public String title() {
@@ -170,12 +178,12 @@ public final class ImageChapter implements Chapter {
             player.image(texture, ImageRegion.cell(0, COLUMNS, ROWS));
 
             // The animation: one prop write per tick, and the texture is never touched again.
-            stage.krono().every(FRAME, () -> {
+            caption.text("frame 0 — uploads: 1");
+            play(stage, () -> {
                 int next = frame.incrementAndGet();
                 player.image(texture, ImageRegion.cell(next % CELLS, COLUMNS, ROWS));
                 caption.text("frame " + next + " — uploads: 1");
             });
-            caption.text("frame 0 — uploads: 1");
 
             // The other verb: the box decides, so each size is its own rasterisation.
             byte[] document = read("/demo/mark.svg");
@@ -192,6 +200,33 @@ public final class ImageChapter implements Chapter {
             console.refused("images unavailable: " + e.getMessage());
             caption.text("images unavailable — see the activity rail");
             caption.textColor(gui.theme().color(Role.DIM));
+        }
+    }
+
+    /**
+     * Only while the page is showing. A loop has no end, so one left running behind the other pages would keep the
+     * gallery's timeline from ever going quiet: {@code ottermate settle} timed out on every chapter, and the window
+     * woke twice a second to flip a picture nobody could see.
+     */
+    @Override
+    public synchronized void shown(boolean showing) {
+        this.showing = showing;
+        if (!showing && playing != null) {
+            playing.cancel();
+            playing = null;
+        }
+        resume();
+    }
+
+    private synchronized void play(Stage stage, Runnable advance) {
+        this.stage = stage;
+        this.advance = advance;
+        resume();
+    }
+
+    private void resume() {
+        if (showing && advance != null && playing == null) {
+            playing = stage.krono().every(FRAME, advance);
         }
     }
 

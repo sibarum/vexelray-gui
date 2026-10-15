@@ -1,6 +1,8 @@
 package dev.vexelray.gui.core.input;
 
 import dev.vexelray.gui.core.IconSource;
+import dev.vexelray.gui.core.edit.Change;
+import dev.vexelray.gui.core.edit.History;
 
 /**
  * What a context-menu contributor writes into. One is handed to every source registered on the node that won the
@@ -21,8 +23,44 @@ public interface MenuSink {
     /** The right click that opened this menu: the node hit, and where. */
     ClickEvent event();
 
+    /**
+     * The history this menu's {@link #edit} items record into: the one bound nearest above the node that was
+     * right-clicked — the window's, in a framework application — or null where the tree binds none. A sink that
+     * wraps another must pass this through, or its edits stop being undoable.
+     */
+    default History history() {
+        return null;
+    }
+
     /** Add {@code item} as it is: the form every other one delegates to. */
     MenuSink item(MenuItem item);
+
+    /**
+     * Add an item whose command is an <b>edit</b>: choosing it asks {@code edit} for the {@link Change} it makes —
+     * built then, against what is selected at that moment — and performs it through {@link #history()}, so Ctrl+Z
+     * takes it back (docs/plans/undo.md, step 7). A null answer does nothing. The form for every item that changes
+     * the user's data; {@link #item(String, Runnable)} stays for what is not an edit, because a {@link Runnable}
+     * cannot be inverted and a command written as one cannot be undone.
+     */
+    default MenuSink edit(String label, java.util.function.Supplier<? extends Change> edit) {
+        return edit(label, true, edit);
+    }
+
+    /** As {@link #edit(String, java.util.function.Supplier)}, choosable only when {@code enabled}. */
+    default MenuSink edit(String label, boolean enabled, java.util.function.Supplier<? extends Change> edit) {
+        return item(label, enabled, () -> {
+            Change change = edit.get();
+            if (change == null) {
+                return;
+            }
+            History h = history();
+            if (h != null) {
+                h.perform(change);
+            } else {
+                change.apply();   // a tree that binds no history: still done, only not undoable
+            }
+        });
+    }
 
     /** Add a choosable item. */
     default MenuSink item(String label, Runnable action) {

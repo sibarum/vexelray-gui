@@ -17,15 +17,22 @@ import java.util.List;
 final class MenuCollector implements MenuSink {
 
     private final ClickEvent event;
+    private final dev.vexelray.gui.core.edit.History history;
     private final List<MenuItem> items = new ArrayList<>();
 
-    MenuCollector(ClickEvent event) {
+    MenuCollector(ClickEvent event, dev.vexelray.gui.core.edit.History history) {
         this.event = event;
+        this.history = history;
     }
 
     @Override
     public ClickEvent event() {
         return event;
+    }
+
+    @Override
+    public dev.vexelray.gui.core.edit.History history() {
+        return history;
     }
 
     @Override

@@ -169,6 +169,8 @@ public final class InputDispatcher {
     private volatile History dropHistory;
     /** The reconciler's index, for judging a node by id (see {@link #nodeLookup}). GUI thread. */
     private java.util.function.LongFunction<RetainedNode> nodes = id -> null;
+    /** The history a menu opened on a node records its edits into (see {@link #menuHistory}); any thread. */
+    private volatile java.util.function.LongFunction<History> menuHistory = id -> null;
     private final Map<Long, Consumer<KeyEvent>> keyHandlers = new ConcurrentHashMap<>();
     // Typed-text handlers (CharTyped → codepoint) and caret-placement handlers (click → offset), both for
     // editable text nodes; registering either makes the node focusable.
@@ -1411,6 +1413,14 @@ public final class InputDispatcher {
     }
 
     /**
+     * Install how a menu finds the history its edits belong in, from the node that was right-clicked — the one
+     * bound nearest above it. Without it a menu's {@link MenuSink#edit} items are still done, only not undoable.
+     */
+    public void menuHistory(java.util.function.LongFunction<History> lookup) {
+        this.menuHistory = lookup == null ? id -> null : lookup;
+    }
+
+    /**
      * Take focus away from a node that has been disabled since it was given focus, before this frame's input is
      * delivered — so a key typed in the same frame as the disable goes nowhere rather than into a closed field.
      * Depth-bounded, and allocation-free: it runs every frame.
@@ -1934,7 +1944,7 @@ public final class InputDispatcher {
                 continue;
             }
             handlerExecutor.execute(() -> {
-                MenuCollector collector = new MenuCollector(e);
+                MenuCollector collector = new MenuCollector(e, menuHistory.apply(e.nodeId()));
                 for (Consumer<MenuSink> source : sources) {
                     source.accept(collector);
                 }

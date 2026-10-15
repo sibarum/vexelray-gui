@@ -221,6 +221,67 @@ class ValueWidgetUndoTest {
         }
     }
 
+    /** A command as a change: the press does it, Ctrl+Z undoes it, and the change is built at press time. */
+    @Test
+    void aButtonThatPerformsAChangeIsUndone() {
+        try (Window w = new Window()) {
+            List<String> items = new CopyOnWriteArrayList<>(List.of("a"));
+            java.util.concurrent.atomic.AtomicInteger asked = new java.util.concurrent.atomic.AtomicInteger();
+            Button add = new Button(w.h.gui, "Add").perform(() -> {
+                asked.incrementAndGet();
+                String item = "n" + items.size();
+                return new dev.vexelray.gui.core.edit.Change() {
+                    @Override
+                    public dev.vexelray.gui.core.edit.Change apply() {
+                        items.add(item);
+                        dev.vexelray.gui.core.edit.Change self = this;
+                        return () -> {
+                            items.remove(item);
+                            return self;
+                        };
+                    }
+                };
+            });
+            w.mount(add.node());
+
+            w.click(add.node());
+            w.h.pause();
+            w.click(add.node());
+            assertEquals(List.of("a", "n1", "n2"), items);
+            assertEquals(2, asked.get(), "the change is asked for on each press, against what is there then");
+            assertEquals(2, w.history.undoDepth());
+
+            w.undo();
+            assertEquals(List.of("a", "n1"), items, "Ctrl+Z takes the last command back");
+            w.redo();
+            assertEquals(List.of("a", "n1", "n2"), items);
+        }
+    }
+
+    @Test
+    void aCommandWithNothingToDoRecordsNothing() {
+        try (Window w = new Window()) {
+            Button b = new Button(w.h.gui, "Nothing").perform(() -> null);
+            w.mount(b.node());
+            w.click(b.node());
+            assertEquals(0, w.history.undoDepth());
+        }
+    }
+
+    @Test
+    void aChipUndoesAsASwitchDoes() {
+        try (Window w = new Window()) {
+            List<Boolean> heard = new CopyOnWriteArrayList<>();
+            Button chip = new Button(w.h.gui, "Bold").toggle(true).onToggle(heard::add);
+            w.mount(chip.node());
+            w.click(chip.node());
+            assertTrue(chip.pressed());
+            w.undo();
+            assertFalse(chip.pressed());
+            assertEquals(List.of(true, false), heard);
+        }
+    }
+
     @Test
     void aSelectChoiceUndoesButBrowsingTheListDoesNot() {
         try (Window w = new Window()) {

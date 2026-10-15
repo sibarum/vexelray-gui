@@ -415,6 +415,8 @@ public final class Gui implements AutoCloseable {
         this.input.revealSink(id -> sink.post(new Mutation.Reveal(id)));
         // Disabled is judged on the tree (an ancestor's counts), so the dispatcher needs to find a node by id.
         this.input.nodeLookup(reconciler::node);
+        // A menu's edits go where the right-clicked node's other edits go: the history bound nearest above it.
+        this.input.menuHistory(this::historyFor);
 
         // The window size, zoom and density States are Metrics' own — built there, so that component can be
         // constructed and exercised without any of this.
@@ -1260,8 +1262,13 @@ public final class Gui implements AutoCloseable {
      * a node built since the last frame resolves to the window's history until it has been laid out once.
      */
     public History historyFor(Node node) {
+        return historyFor(node.id());
+    }
+
+    /** {@link #historyFor(Node)} by id — what a menu opened on a node asks. */
+    private History historyFor(long nodeId) {
         dev.vexelray.gui.core.layout.SemanticSnapshot sem = semanticSnapshot();
-        for (long id = node.id(); id != -1; ) {
+        for (long id = nodeId; id != -1; ) {
             History bound = boundHistories.get(id);
             if (bound != null) {
                 return bound;

@@ -1807,6 +1807,11 @@ public final class TreeView<T> implements AutoCloseable {
         }
 
         @Override
+        public dev.vexelray.gui.core.edit.History history() {
+            return delegate.history();   // or a source's edit items would stop being undoable inside a tree
+        }
+
+        @Override
         public MenuSink item(MenuItem item) {
             Runnable action = item.action();
             delegate.item(action == null ? item : item.withAction(() -> {

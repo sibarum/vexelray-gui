@@ -1,6 +1,12 @@
 # The undo plan
 
-**Status: steps 1–6 built (2026-10-14); step 7 next.** Step 6 as built: one package-private `ValueUndo<T>` in
+**Status: steps 1–7 built (2026-10-14); step 8 next.** Step 7 as built: `Button.perform(Supplier<Change>)` and
+`MenuSink.edit(label, [enabled,] Supplier<Change>)`. Both take a supplier rather than a change, because a command's
+change depends on what is selected when it is chosen, and a null answer means "nothing to do this time". Both
+perform through the history nearest the button, or the right-clicked node (`MenuSink.history()`, which a wrapping
+sink must pass through, as `TreeView`'s does), and still apply where none is bound. A chip (`Button.toggle`) holds
+a value, so it undoes as a `Toggle` does. `onPress` and `item(label, Runnable)` stay, for commands that are not
+edits. No witness command needed porting: the template's menus are save, close and reveal. Step 6 as built: one package-private `ValueUndo<T>` in
 `-widget` is the whole mechanism. A control calls it on its user path — the one that tells the application — and
 it records into `Gui.historyFor(node)` an entry that targets the control, refuses as a conflict if the control no
 longer shows what the edit left, and replays through the control's own edit path, so the application's handler

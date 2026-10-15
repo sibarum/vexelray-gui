@@ -347,6 +347,10 @@ wrapped line count times the line height, so text height is **height-for-width**
 - The axes resolve in opposite orders. In a **column** a child's width is settled by the container before
   its height matters, so `place` resolves the cross axis first and feeds each width into the height
   measure; in a **row** the dependency runs the other way and the existing cross pass already has it.
+  That covers the row's *children*, not the row itself: a row measured for its height inside a column
+  shares its known width out first, exactly as `place` will (`mainSizes`), and measures each child at its
+  share — otherwise a title wrapping beside an icon left the row one line tall and drew its second line
+  over whatever followed.
 - Reserving a scrollbar narrows the box, and narrower wrapped text is *taller*, so a scroll container
   re-measures its content at the reserved width. That cannot oscillate: narrowing never shortens wrapped
   content, so a box that overflowed at the full width still overflows at the reserved one.

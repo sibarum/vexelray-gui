@@ -343,4 +343,73 @@ class FlexLayoutTest {
         assertEquals(field.y, bar.y, EPS);
         assertTrue(field.contentH > 0f, "and the text was measured exactly as it was before it had a bar");
     }
+
+    // As TM, and breaking lines at those widths, so wrapped text has a real height-for-width.
+    private static final TextMeasurer WRAPPING_TM = new TextMeasurer() {
+        @Override
+        public float intrinsic(RetainedNode n, Axis axis, float sizePx) {
+            return TM.intrinsic(n, axis, sizePx);
+        }
+
+        @Override
+        public java.util.List<dev.vexelray.text.TextLayout.LineSpan> lineSpans(String text, float wrapWidth,
+                                                                               float sizePx) {
+            return dev.vexelray.text.TextLayout.breakLineSpans(text, (index, cp) -> sizePx * 0.5f, wrapWidth,
+                    dev.vexelray.text.TextLayout.WrapMode.WORD_CHAR);
+        }
+    };
+
+    /**
+     * column(20rem) > [row(icon, wrapped title), detail]: the row is as tall as its title wraps to at the width the
+     * row gives it, so the title's second line sits above the detail rather than drawn over it.
+     */
+    private static void assertWrappedTitleInRowPushesNextLineDown(Length titleWidth) {
+        RetainedNode col = box(0);
+        col.set(PropKey.DIRECTION, Direction.COLUMN);
+        col.set(PropKey.ALIGN_ITEMS, AlignItems.START);
+        RetainedNode panel = box(1);
+        panel.set(PropKey.DIRECTION, Direction.COLUMN);
+        panel.set(PropKey.WIDTH, Length.rem(20));             // 320px
+        add(col, panel);
+        RetainedNode head = box(2);
+        head.set(PropKey.DIRECTION, Direction.ROW);
+        head.set(PropKey.ALIGN_ITEMS, AlignItems.START);
+        add(panel, head);
+        RetainedNode icon = box(3);
+        icon.set(PropKey.WIDTH, Length.rem(1.25f));
+        icon.set(PropKey.HEIGHT, Length.rem(1.25f));
+        add(head, icon);
+        RetainedNode title = box(4);
+        title.set(PropKey.WIDTH, titleWidth);
+        title.set(PropKey.WORD_WRAP, true);
+        title.set(PropKey.TEXT, "Updates are ready for the whole suite, close first and open again");
+        add(head, title);
+        RetainedNode detail = box(5);
+        detail.set(PropKey.TEXT, "Detail");
+        add(panel, detail);
+
+        FlexLayout.layout(col, 1000f, 1000f, ctx(), WRAPPING_TM);
+
+        assertTrue(title.lineSpans != null && title.lineSpans.size() > 1, "the title wraps");
+        float titleH = title.lineSpans.size() * 16f;
+        assertEquals(titleH, title.h, EPS, "the title is as tall as its lines");
+        assertEquals(titleH, head.h, EPS, "the row is as tall as the title it wraps");
+        assertTrue(title.y + title.h <= detail.y + EPS,
+                () -> "the title's last line ends at " + (title.y + title.h) + ", over the detail at " + detail.y);
+    }
+
+    @Test
+    void aGrowingWrappedTitleInARowPushesTheNextLineDown() {
+        assertWrappedTitleInRowPushesNextLineDown(Length.grow(1f));
+    }
+
+    @Test
+    void aFixedWidthWrappedTitleInARowPushesTheNextLineDown() {
+        assertWrappedTitleInRowPushesNextLineDown(Length.rem(15));
+    }
+
+    @Test
+    void aPercentWidthWrappedTitleInARowPushesTheNextLineDown() {
+        assertWrappedTitleInRowPushesNextLineDown(Length.percent(80));
+    }
 }

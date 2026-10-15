@@ -191,14 +191,8 @@ public final class FlexLayout {
     private static float[] place(RetainedNode n, float originX, float originY, float availMain, float availCross,
                                  boolean row, float gap, LayoutContext ctx, TextMeasurer tm) {
         List<RetainedNode> kids = flowChildren(n);
-        Axis main = row ? Axis.HORIZONTAL : Axis.VERTICAL;
         Axis cross = row ? Axis.VERTICAL : Axis.HORIZONTAL;
         int count = kids.size();
-        float[] basis = new float[count];
-        float[] growF = new float[count];
-        float[] marginMain = new float[count];
-        float sumBasis = 0f;
-        float sumGrow = 0f;
         // Wrapped text is height-for-width, not an intrinsic: a label that wraps onto three lines is three lines
         // tall. The two axes therefore resolve in opposite orders. In a COLUMN the child's width is settled by the
         // container before its height matters, so resolve the cross axis first and feed each width into the height
@@ -210,27 +204,9 @@ public final class FlexLayout {
                 crossPre[i] = crossSize(n, kids.get(i), availCross, ctx, tm, true);
             }
         }
-        for (int i = 0; i < count; i++) {
-            RetainedNode c = kids.get(i);
-            Length mainLen = row ? c.width() : c.height();
-            float fixed = mainLen.resolve(ctx, availMain);
-            basis[i] = fixed >= 0f ? fixed
-                    : (mainLen.growFactor() > 0f ? 0f : measure(c, main, ctx, tm, row ? -1f : crossPre[i]));
-            growF[i] = mainLen.growFactor();
-            marginMain[i] = c.margin().scalarPx(ctx, availMain);
-            sumBasis += basis[i] + 2f * marginMain[i];
-            sumGrow += growF[i];
-        }
+        float[] marginMain = new float[count];
+        float[] mainSize = mainSizes(kids, availMain, row, gap, crossPre, marginMain, ctx, tm);
         float gaps = gap * Math.max(0, count - 1);
-        float free = availMain - sumBasis - gaps;
-
-        float[] mainSize = new float[count];
-        for (int i = 0; i < count; i++) {
-            mainSize[i] = basis[i];
-            if (sumGrow > 0f && free > 0f) {
-                mainSize[i] += free * (growF[i] / sumGrow);
-            }
-        }
 
         float used = gaps;
         for (int i = 0; i < count; i++) {
@@ -302,6 +278,46 @@ public final class FlexLayout {
             cursor += 2f * mMain + ms + gap + extraGap;
         }
         return new float[]{used, neededCross};
+    }
+
+    /**
+     * The main-axis size of each of {@code kids} in {@code availMain}: its fixed length, else its measured content
+     * (0 for a grow child), then the free space shared out by grow factor. {@code crossPre} holds a column's
+     * already-resolved child widths, which its children's heights are measured against; a row ignores it. Fills
+     * {@code marginMain} with each child's main-axis margin.
+     *
+     * <p>Shared by {@link #place} and by {@link #measure} for a row, so a row's height is measured against the
+     * very widths it will place its children at.
+     */
+    private static float[] mainSizes(List<RetainedNode> kids, float availMain, boolean row, float gap,
+                                     float[] crossPre, float[] marginMain, LayoutContext ctx, TextMeasurer tm) {
+        Axis main = row ? Axis.HORIZONTAL : Axis.VERTICAL;
+        int count = kids.size();
+        float[] basis = new float[count];
+        float[] growF = new float[count];
+        float sumBasis = 0f;
+        float sumGrow = 0f;
+        for (int i = 0; i < count; i++) {
+            RetainedNode c = kids.get(i);
+            Length mainLen = row ? c.width() : c.height();
+            float fixed = mainLen.resolve(ctx, availMain);
+            basis[i] = fixed >= 0f ? fixed
+                    : (mainLen.growFactor() > 0f ? 0f : measure(c, main, ctx, tm, row ? -1f : crossPre[i]));
+            growF[i] = mainLen.growFactor();
+            marginMain[i] = c.margin().scalarPx(ctx, availMain);
+            sumBasis += basis[i] + 2f * marginMain[i];
+            sumGrow += growF[i];
+        }
+        float free = availMain - sumBasis - gap * Math.max(0, count - 1);
+
+        float[] mainSize = new float[count];
+        for (int i = 0; i < count; i++) {
+            mainSize[i] = basis[i];
+            if (sumGrow > 0f && free > 0f) {
+                mainSize[i] += free * (growF[i] / sumGrow);
+            }
+        }
+        return mainSize;
     }
 
     /**
@@ -539,13 +555,27 @@ public final class FlexLayout {
             return 2f * inset;
         }
         Axis mainAxis = n.direction() == Direction.ROW ? Axis.HORIZONTAL : Axis.VERTICAL;
-        // A column stacked inside a known width hands that width (less its own inset) to its children, so text
-        // nested a level down still measures height-for-width. A row cannot: its children's widths come out of
-        // flex distribution, which has not happened at measure time.
-        float childWidth = knownWidth >= 0f && mainAxis == Axis.VERTICAL
+        // A box inside a known width knows its content width (that width less its own inset), so text nested a
+        // level down still measures height-for-width. A column hands the content width to every child; a row
+        // shares it out first, exactly as place will, and measures each child's height at its share — so a
+        // title wrapping beside an icon makes the row as tall as the title, not one line tall.
+        float contentWidth = knownWidth >= 0f
                 ? Math.max(0f, knownWidth - 2f * n.borderWidth().scalarPx(ctx, 0f)
                         - 2f * n.paddingX().scalarPx(ctx, 0f))
                 : -1f;
+        float childWidth = mainAxis == Axis.VERTICAL ? contentWidth : -1f;
+        if (axis == Axis.VERTICAL && mainAxis == Axis.HORIZONTAL && contentWidth >= 0f) {
+            float[] marginMain = new float[kids.size()];
+            float[] widths = mainSizes(kids, contentWidth, true, n.gap().scalarPx(ctx, knownWidth), null,
+                    marginMain, ctx, tm);
+            float max = 0f;
+            for (int i = 0; i < kids.size(); i++) {
+                RetainedNode c = kids.get(i);
+                max = Math.max(max, measure(c, axis, ctx, tm, Math.max(0f, widths[i]))
+                        + 2f * c.margin().scalarPx(ctx, 0f));
+            }
+            return max + 2f * inset;
+        }
         if (axis == mainAxis) {
             float gap = n.gap().scalarPx(ctx, 0f);
             float sum = gap * Math.max(0, kids.size() - 1);

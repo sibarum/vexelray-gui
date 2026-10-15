@@ -439,7 +439,9 @@ someday-feature — `LabelGeometryTest` pins it, and three of its five cases wer
   dependency-*order* problem, not a new dependency:
   - in a **column**, a child's width is settled by the container before its height matters, so `place` resolves
     the cross axis first and feeds each width into the height measure;
-  - in a **row**, the dependency runs the other way and the existing cross pass already has the resolved width.
+  - in a **row**, the dependency runs the other way and the existing cross pass already has the resolved width;
+    and a row's own height, measured by its parent column, shares the width out the way `place` will
+    (`FlexLayout.mainSizes`) and measures each child at its share.
 
   `TextMetrics.contentWidth(nodeW)` and `RetainedNode.wrapsText()` exist so the layout, the compute phase and the
   renderer share one formula and one wrap rule rather than three copies.

@@ -176,10 +176,13 @@ its own past.
 
 - **Conflict default for scalars.** §4 says fail for everything; a toggle overwritten by a sync could reasonably
   apply anyway. Accepted as recommended, to be re-checked once the gallery exercises it.
-- **An inline editor with a past of its own keeps Ctrl+Z even when that past is empty.** Seen in MainFrame: after
-  New, focus is in the name field, whose history is its own (its commit is the page's step), so Ctrl+Z there does
-  nothing until focus moves. A claim cannot fall through, so the field would have to route an empty own-history's
-  Ctrl+Z to the history above it. Not done: it changes what Ctrl+Z means inside every document field.
+- ~~**An inline editor with a past of its own keeps Ctrl+Z even when that past is empty.**~~ **Done (2026-10-14).**
+  Seen in MainFrame: after New, focus is in the name field, whose history is its own (its commit is the page's
+  step), so Ctrl+Z there did nothing until focus moved. A claim cannot fall through, so the field routes the press
+  itself: while its own history has something to undo (or redo) the press goes there, and once it has none it goes
+  to the history the tree binds above the field. So inside an editor buffer, Ctrl+Z past the buffer's first edit now
+  reaches the window's history rather than stopping. Witnessed live: New, then one Ctrl+Z in the name field takes
+  the workspace back.
 
 ## 7. Build order
 

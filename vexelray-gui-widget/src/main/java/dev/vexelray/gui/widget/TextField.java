@@ -256,10 +256,11 @@ public final class TextField implements AutoCloseable {
 
     /**
      * Make this field a <b>document</b>: record into {@code history} and nothing else, and have Ctrl+Z while it
-     * has focus undo only that. For an editor's buffer, whose past is its own and whose save is its own — undoing
-     * in one file must not reach into another the user switched away from (docs/plans/undo.md §5). An ordinary
-     * field in a form never needs this. Set it before the user types: entries already recorded elsewhere stay
-     * there.
+     * has focus undo that first. For an editor's buffer, whose past is its own and whose save is its own — undoing
+     * in one file must not reach into another the user switched away from (docs/plans/undo.md §5). Once the
+     * document's own past is used up, Ctrl+Z (and Ctrl+Y, once its redo is) goes to the history the tree binds
+     * above it, so a field with nothing left to undo never swallows the key. An ordinary field in a form never
+     * needs this. Set it before the user types: entries already recorded elsewhere stay there.
      */
     public TextField history(History history) {
         this.own = java.util.Objects.requireNonNull(history, "history");
@@ -1368,13 +1369,28 @@ public final class TextField implements AutoCloseable {
      * Ctrl+Z in this field: the history it records into, through the window's two-press undo, so an entry for
      * another control is revealed before it is undone and a refusal is shown rather than swallowed. A read-only
      * field's own entries refuse in their check.
+     *
+     * <p><b>A past of its own that is empty falls through.</b> A document or an inline editor claims Ctrl+Z while it
+     * has focus, and a claim cannot decline — so without this, a name field focused just after the command that made
+     * it would swallow Ctrl+Z with nothing to undo, and the user's last step stayed out of reach until they clicked
+     * away. With nothing of its own left, the press goes to the history its tree binds above it, as it would had this
+     * field no history of its own.
      */
     private void undo() {
-        gui.undo(history());
+        gui.undo(pressed(own, History::canUndo));
     }
 
     private void redo() {
-        gui.redo(history());
+        gui.redo(pressed(own, History::canRedo));
+    }
+
+    /** The history a press here goes to: this field's own while {@code has} something there, else the one above. */
+    private History pressed(History mine, java.util.function.Predicate<History> has) {
+        if (mine != null && has.test(mine)) {
+            return mine;
+        }
+        History above = gui.historyFor(node);
+        return above != null ? above : mine != null ? mine : fallback;
     }
 
     // --- publication: mirror to the retained node, then notify the application ---

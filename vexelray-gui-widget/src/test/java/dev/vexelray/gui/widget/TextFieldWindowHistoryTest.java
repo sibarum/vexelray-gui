@@ -112,7 +112,31 @@ class TextFieldWindowHistoryTest {
 
             t.undo();
             assertEquals("", t.a.text(), "Ctrl+Z in the document undoes the document");
-            assertEquals("xyz", t.b.text(), "and does not reach into the window");
+            assertEquals("xyz", t.b.text(), "and does not reach into the window while it has a past of its own");
+        }
+    }
+
+    /**
+     * Found in MainFrame: focus lands in a name field just after New, the field's history is its own and empty, and
+     * Ctrl+Z there did nothing. A document with nothing left to undo hands the press to the history above it.
+     */
+    @Test
+    void aDocumentWithNothingLeftToUndoPassesCtrlZUp() {
+        try (Two t = new Two()) {
+            History doc = new History();
+            t.a.history(doc);
+            t.typeIn(t.b, "xyz");
+            t.h.focus(t.a.node());   // nothing typed here: the document's own past is empty
+
+            t.undo();   // goes to the window's history, whose top is the other field: the press takes the user there
+            assertEquals(t.b.node().id(), t.focused(), "the window's step is reached from inside the empty document");
+            t.undo();
+            assertEquals("", t.b.text(), "and undone");
+
+            t.h.focus(t.a.node());
+            t.h.chord(Key.Y, Key.LEFT_CONTROL);
+            t.h.frame().frame().frame();
+            assertEquals(t.b.node().id(), t.focused(), "Ctrl+Y falls through the same way when there is nothing to redo");
         }
     }
 

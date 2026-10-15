@@ -604,6 +604,8 @@ public final class TreeView<T> implements AutoCloseable {
     private Subscription dragSub;
     /** The label that rides with the pointer while a row is carried; built at the first carry. Guarded by this. */
     private Node carried;
+    /** What the carried label last showed, and where: written only when it changes. Guarded by this. */
+    private Object carriedAs;
 
     private volatile Consumer<T> onSelect = t -> { };
     private volatile Consumer<T> onActivate = t -> { };
@@ -970,13 +972,23 @@ public final class TreeView<T> implements AutoCloseable {
             }
             label = carried;
         }
+        // Told every frame of a drag, moved or not; a write that changes nothing would still owe a frame, and that
+        // frame another, so the window would never be idle while a row was carried.
+        String text = held == null ? null : source.label(held);
+        Object now = held == null ? null : List.of(text, drag.x(), drag.y(), drag.accepts());
+        synchronized (this) {
+            if (java.util.Objects.equals(now, carriedAs)) {
+                return;
+            }
+            carriedAs = now;
+        }
         if (held == null) {
             label.visible(false);
             return;
         }
         Theme theme = gui.theme();
         float dpi = Math.max(0.0001f, gui.dpi().value());
-        label.text(source.label(held)).visible(true)
+        label.text(text).visible(true)
                 .floatAt(Length.dp(drag.x() / dpi + 14f), Length.dp(drag.y() / dpi + 12f))
                 .background(Color.withAlpha(theme.color(drag.accepts() ? Role.ACTION : Role.DANGER), 0.92f))
                 .textColor(theme.color(drag.accepts() ? Role.ON_ACTION : Role.ON_DANGER));

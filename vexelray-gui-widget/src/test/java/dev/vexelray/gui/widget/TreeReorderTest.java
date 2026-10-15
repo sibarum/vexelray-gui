@@ -332,6 +332,30 @@ class TreeReorderTest {
     }
 
     @Test
+    @DisplayName("a row carried and held still owes no frames: the label is written only when it changes")
+    void aStillCarryParks() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            h.gui.dropHistory(new History());
+            TreeView<String> tree = new TreeView<>(h.gui, new MapSource());
+            tree.reorderable(recording());
+            h.gui.root().children(tree.node());
+            h.frame();
+
+            press(h, 40f, midOf(tree, "notes.txt"));
+            move(h, 40f, midOf(tree, "src"));
+            h.frame();
+            release(h, 40f, midOf(tree, "src"));   // latched: still carried, the pointer now still
+            h.frame();
+            h.frame();
+            h.frame();
+
+            assertNotNull(h.gui.dragSession(), "still mid-drag");
+            assertFalse(h.gui.frameOwed(), "nothing changed, so nothing was written, so nothing is owed");
+            tree.close();
+        }
+    }
+
+    @Test
     @DisplayName("a tree with no reorder registered drags nothing")
     void withoutReorderNothingDrags() {
         try (HeadlessGui h = new HeadlessGui()) {

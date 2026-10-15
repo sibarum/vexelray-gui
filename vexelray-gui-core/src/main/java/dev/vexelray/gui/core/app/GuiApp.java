@@ -269,8 +269,20 @@ public final class GuiApp implements AutoCloseable {
      */
     public GuiApp(WindowConfig config, java.util.function.Function<WindowConfig, NativeWindow> windows,
                   Compute compute, FontSet fonts) {
+        this(config, windows, compute, fonts, new CanvasShader.Fragment());
+    }
+
+    /**
+     * As {@link #GuiApp(WindowConfig, java.util.function.Function, Compute, FontSet)}, drawing every canvas with
+     * {@code canvasShader}, as {@link #GuiApp(WindowConfig, FontSet, CanvasShader.Composed)} does. The overload a
+     * framework passes its own composition through, since it is the one that also hands over the windows.
+     *
+     * @throws IllegalArgumentException if the composition lacks some of the core set
+     */
+    public GuiApp(WindowConfig config, java.util.function.Function<WindowConfig, NativeWindow> windows,
+                  Compute compute, FontSet fonts, CanvasShader.Composed canvasShader) {
         this(config, null, windows, fonts == null ? TextFaces.standard() : new TextFaces(fonts), compute,
-                new CanvasShader.Fragment());
+                canvasShader);
     }
 
     /** As the one that builds it, below, with compute sharing the queue that draws. */

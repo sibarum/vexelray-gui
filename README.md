@@ -193,7 +193,8 @@ gui.onContextMenu(row, menu -> menu
 - **Defaults ship with the widgets**: a `TextField` offers Copy/Cut/Paste (Copy alone when
   `readOnly(true)`, each greyed when it does not apply), a tab offers Close.
 
-`ContextMenu` draws them; `gui.menus(presenter)` replaces it with something else entirely
+`ContextMenu` draws them, installed by the first `onContextMenu` on a tree whatever declared it (it is
+registered as core's `MenuPresenter.Default`); `gui.menus(presenter)` replaces it with something else entirely
 (`MenuPresenter`), the same way `gui.clipboard(...)` replaces the clipboard.
 
 **Threading**: `gui.async(work)` runs app logic off the GUI thread; `gui.batch(edits)` groups

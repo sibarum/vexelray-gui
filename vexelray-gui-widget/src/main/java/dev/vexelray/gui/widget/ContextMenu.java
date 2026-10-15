@@ -28,8 +28,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * decides what one looks like, where it sits, and how it goes away.
  *
  * <p><b>One per tree, installed by whoever needs it first.</b> Constructing one installs it
- * ({@code Gui.menus(this)}), and the widgets that ship default menus call {@link #presentOn} in their
- * constructors, so a right click on a text field opens something without the application wiring anything. An
+ * ({@code Gui.menus(this)}). It is registered as core's {@link MenuPresenter.Default} ({@link Default}), so the first
+ * {@code Gui.onContextMenu} on a tree without a presenter builds one, whether that menu is a widget's or only the
+ * application's; the widgets that ship default menus also call {@link #presentOn} in their constructors. An
  * application that wants a different-looking menu constructs its own implementation and installs it before
  * building the UI.
  *
@@ -107,6 +108,17 @@ public final class ContextMenu implements MenuPresenter {
     public static void presentOn(Gui gui) {
         if (gui != null && gui.menus() == null) {
             new ContextMenu(gui);   // installs itself
+        }
+    }
+
+    /**
+     * This menu as the presenter core installs on a tree's first {@code Gui.onContextMenu}, found through
+     * {@code META-INF/services}. Public with a public no-argument constructor because {@code ServiceLoader} makes it.
+     */
+    public static final class Default implements MenuPresenter.Default {
+        @Override
+        public MenuPresenter create(Gui gui) {
+            return new ContextMenu(gui);
         }
     }
 

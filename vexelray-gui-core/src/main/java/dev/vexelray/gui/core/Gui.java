@@ -229,6 +229,8 @@ public final class Gui implements AutoCloseable {
     private final ReadModels readModels;
     private final LayoutReader layoutReader;
     private volatile TextClipboard clipboard = new TextClipboard.InMemory();
+    /** Guards installing the default context-menu presenter: see {@link #onContextMenu}. */
+    private final Object menusLock = new Object();
     // The look. Not a State on the bus like zoom is: a Length resolves against zoom every frame, whereas a colour
     // is resolved once and written into a prop, so there is nothing per-frame to coalesce (see Theme's class note
     // on what that costs and where it is heading). Volatile because widgets read it from whichever thread built
@@ -803,16 +805,41 @@ public final class Gui implements AutoCloseable {
      * is nothing to offer here" needs no special case.
      *
      * <p>Sources run on a worker thread, so they may read application state freely.
+     *
+     * <p><b>The first menu brings its presenter.</b> A tree with no {@link #menus() presenter} gets the
+     * {@link MenuPresenter.Default} on the class path here ({@code vexelray-gui-widget}'s {@code ContextMenu}), so
+     * a tree whose only menus are the application's own draws them as a text field's would be.
      */
     public Gui onContextMenu(Node node, java.util.function.Consumer<MenuSink> source) {
         input.onContextMenu(node.id(), source);
+        if (input.menuPresenter() == null) {
+            presentMenus();
+        }
         return this;
     }
 
+    /** Install the default presenter if this tree still has none, once even when two threads race to ask. */
+    private void presentMenus() {
+        synchronized (menusLock) {
+            MenuPresenter.Default made = DefaultMenus.PRESENTER;
+            if (input.menuPresenter() == null && made != null) {
+                input.menuPresenter(made.create(this));
+            }
+        }
+    }
+
+    /** The {@link MenuPresenter.Default} on the class path, looked up once: the first registered, or none. */
+    private static final class DefaultMenus {
+        static final MenuPresenter.Default PRESENTER = java.util.ServiceLoader
+                .load(MenuPresenter.Default.class, Gui.class.getClassLoader())
+                .findFirst()
+                .orElse(null);
+    }
+
     /**
-     * Install what draws context menus. {@code vexelray-gui-widget}'s {@code ContextMenu} installs itself the
-     * first time a widget with a default menu is built, so this is only for replacing it with something else —
-     * before the UI is built, since the widgets check for a presenter rather than replacing one.
+     * Install what draws context menus. {@code vexelray-gui-widget}'s {@code ContextMenu} is installed the first
+     * time a node is given a menu, so this is only for replacing it with something else — before the UI is built,
+     * since a presenter already there is kept rather than replaced.
      */
     public Gui menus(MenuPresenter presenter) {
         input.menuPresenter(presenter);

@@ -1931,11 +1931,23 @@ public final class InputDispatcher {
      *
      * <p>The sources themselves run on the handler executor, not here: they read application state to decide what
      * is on the menu, and the GUI thread is mid-frame. A node whose sources contribute nothing has no menu — an
-     * empty panel is never flashed — and with no presenter installed the walk does not happen at all.
+     * empty panel is never flashed — and with no presenter installed nothing is collected, which is said once if a
+     * node on the way up has a menu that therefore goes undrawn.
      */
     private void openMenu(RetainedNode target, ClickEvent e) {
         MenuPresenter presenter = menuPresenter;
         if (presenter == null) {
+            for (RetainedNode n = target; n != null; n = n.parent) {
+                java.util.List<Consumer<MenuSink>> sources = menuSources.get(n.id);
+                if (sources != null && !sources.isEmpty()) {
+                    dev.vexelray.diag.Diagnostics.dropped("context-menu-presenter",
+                            "the context menu of node " + n.id,
+                            "no MenuPresenter is installed on this tree and none is registered as a "
+                                    + "MenuPresenter.Default (vexelray-gui-widget's ContextMenu is), so menus are "
+                                    + "collected and never drawn; install one with Gui.menus");
+                    break;
+                }
+            }
             return;
         }
         for (RetainedNode n = target; n != null; n = n.parent) {

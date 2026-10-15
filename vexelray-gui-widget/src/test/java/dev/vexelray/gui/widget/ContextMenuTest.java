@@ -10,7 +10,9 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -33,6 +35,37 @@ class ContextMenuTest {
 
     private static Node page(HeadlessGui h) {
         return h.gui.box().width(Length.FILL).height(Length.FILL);
+    }
+
+    /** A tree whose only menu is the application's, with no widget that ships one: the menu still draws. */
+    @Test
+    void theFirstMenuOnATreeBringsAPresenter() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Node target = page(h);
+            assertNull(h.gui.menus(), "nothing shows menus before anything has one");
+            h.gui.onContextMenu(target, m -> m.item("Only mine", () -> { }));
+            h.gui.root().children(target);
+            h.frame();
+
+            ContextMenu menu = assertInstanceOf(ContextMenu.class, h.gui.menus(),
+                    "the registered MenuPresenter.Default was installed by the first onContextMenu");
+            h.rightClick(200f, 150f);
+            h.frame();
+
+            assertTrue(menu.isOpen(), "and it draws the application's menu");
+            assertEquals(List.of("Only mine"), menu.items().stream().map(i -> i.label()).toList());
+        }
+    }
+
+    /** A presenter the application installed first is kept: the default only fills an empty place. */
+    @Test
+    void anInstalledPresenterIsNotReplacedByTheDefault() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            dev.vexelray.gui.core.input.MenuPresenter own = (where, items) -> { };
+            h.gui.menus(own);
+            h.gui.onContextMenu(page(h), m -> m.item("Mine", () -> { }));
+            assertSame(own, h.gui.menus());
+        }
     }
 
     @Test

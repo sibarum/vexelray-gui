@@ -1,0 +1,20 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<linearGradient id="t91" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#2e1a12"/>
+<stop offset="1" stop-color="#170b06"/>
+</linearGradient>
+<linearGradient id="e91" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#ffcfb8" stop-opacity=".55"/>
+<stop offset=".45" stop-color="#ffcfb8" stop-opacity="0"/>
+</linearGradient>
+</defs>
+<rect x="2" y="2" width="60" height="60" rx="15" fill="url(#t91)"/>
+<rect x="2" y="2" width="60" height="60" rx="15" fill="none" stroke="#43281c" stroke-width="1"/>
+<rect x="11" y="12" width="10" height="40" rx="4" fill="#ff8a5c"/>
+<circle cx="16" cy="20" r="2.6" fill="#170b06"/>
+<rect x="24" y="12" width="29" height="40" rx="5" fill="#ffe1d3"/>
+<rect x="28.5" y="17" width="20" height="13" rx="3" fill="#ff8a5c"/>
+<path d="M30.5 37 H46.5 M30.5 44.5 H40.5" stroke="#170b06" stroke-width="4" stroke-linecap="round"/>
+<rect x="2.6" y="2.6" width="58.8" height="58.8" rx="14.4" fill="none" stroke="url(#e91)" stroke-width="1.2"/>
+</svg>

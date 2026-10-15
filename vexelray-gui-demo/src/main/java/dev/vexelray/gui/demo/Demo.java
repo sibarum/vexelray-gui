@@ -22,6 +22,8 @@ import dev.vexelray.gui.widget.Modal;
 import dev.vexelray.gui.widget.Modals;
 import dev.vexelray.gui.widget.Unclip;
 import dev.vexelray.os.Decorations;
+import dev.vexelray.os.Icon;
+import dev.vexelray.os.NativePlatform;
 import dev.vexelray.text.FontSet;
 import sibarum.kronometer.Dur;
 import sibarum.kronometer.anim.Ease;
@@ -34,6 +36,9 @@ import sibarum.tactroller.api.Tactroller;
 import sibarum.tactroller.atchung.TactrollerInputBridge;
 import sibarum.tactroller.clipboard.Clipboard;
 import sibarum.tactroller.clipboard.ClipboardException;
+
+import java.io.IOException;
+import java.io.InputStream;
 
 /**
  * The vexelray-gui gallery: one chapter per part of the framework, in one window.
@@ -129,6 +134,9 @@ public final class Demo {
         // appearing and then moving — and clamped on the way, because the desk may have changed shape since.
         // Every window here goes through the same three lines: config it, restore it, watch it.
         WindowMemory memory = new WindowMemory(Settings.open(APP));
+        // The application's mark, set before the first window so none of them ever shows the OS default: every
+        // window this process opens wears it unless it names its own. The exe links the same .ico (src/main/rc).
+        NativePlatform.current().setApplicationIcon(mark());
         try (Tactroller input = openInput();
              GuiApp app = new GuiApp(memory.config("main", "VexelRay GUI", W, H)
                      // The GUI draws the frame. The window keeps every window-manager behaviour it had —
@@ -279,6 +287,19 @@ public final class Demo {
         keys.action("view.zoom-reset", "Actual size", Shortcut.of(Key.DIGIT_0, Modifier.CONTROL),
                 Shortcut.of(Key.NUMPAD_0, Modifier.CONTROL)).on(gui::resetZoom);
         return keys;
+    }
+
+    /**
+     * The demo's mark, every size of it, from the class path. {@code null} if it is missing, which leaves the OS
+     * default: a cosmetic resource never fails a launch.
+     */
+    private static Icon mark() {
+        try (InputStream in = Demo.class.getResourceAsStream("/demo/vexelray-demo.ico")) {
+            return in == null ? null : Icon.fromIco(in.readAllBytes());
+        } catch (IOException e) {
+            System.err.println("no application icon: " + e.getMessage());
+            return null;
+        }
     }
 
     /**

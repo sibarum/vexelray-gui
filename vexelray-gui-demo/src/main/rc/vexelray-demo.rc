@@ -1,0 +1,8 @@
+// The executable's icon, linked into vexelray-demo.exe by the native profile.
+//
+// Ordinal 1, and it is the only icon here, because Windows shows a program's *lowest-numbered* icon resource
+// wherever it shows the program itself -- Explorer, the taskbar's pinned button, a shortcut, the Apps entry.
+// vexelray-demo.ico is vexelray-demo.svg (the gallery's own shape: a rail beside a page) rendered at 16 to 256 px
+// by vex-suite-common's tools/Ico.java. The same file is on the class path as demo/vexelray-demo.ico, which is
+// what the running window wears, so the program on disk and the program on screen cannot drift apart.
+1 ICON "vexelray-demo.ico"

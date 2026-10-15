@@ -8,7 +8,7 @@ a ratio and the renderer tone-maps the whole block into a legible range.
 | Module | `vexelray-gui-typeset` |
 | Depends on | `vexelray-gui-core` (only) |
 | Entry | application edge, optional |
-| Status | **P0–P4 complete** — vocabulary, SPI, tone map, engine, recipes, style and projection. **P5's mechanism has landed** (faces are a family, weight and slope out of the GUI's own `TextFaces`), but its gate waits on an italic or math font being baked. **P6 (demo) remains** |
+| Status | **P0–P4 complete** — vocabulary, SPI, tone map, engine, recipes, style and projection. **P5's mechanism has landed** (faces are a family, weight and slope out of the GUI's own `TextFaces`), and the italic face its gate needed is now baked; the gate itself has not been checked yet. **P6 (demo) remains** |
 
 ---
 
@@ -781,8 +781,9 @@ and neither touches this module:
 - `Typeset` takes `TextFaces` and resolves glyphs through the GUI's own chain.
 - `TypesetBlock` projects family, weight and slope onto each text node.
 
-**Gate, still open:** italic-math renders, which needs an italic or math font baked; vexelray-text ships Regular
-only. The degradation path needs no probe any more. With no italic face, an italic request resolves to the
+**Gate, still open:** italic-math renders. The italic face it needed is now baked (vexelray-text ships Noto Sans
+Regular, Italic, Bold and Bold Italic since 2026-10-15), so what is left is to look at variables drawn through
+`FaceKeys.bind("mathItalic", "sans", 400, ITALIC)`. The degradation path needs no probe any more. With no italic face, an italic request resolves to the
 nearest face, regular, and variables pass through upright at regular's advances, measured and drawn alike.
 
 ### P6 — Demo panel

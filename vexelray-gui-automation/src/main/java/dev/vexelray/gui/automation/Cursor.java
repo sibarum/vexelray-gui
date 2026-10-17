@@ -7,6 +7,10 @@ import sibarum.probe.Probe;
 import sibarum.tactroller.api.InputEvent;
 import sibarum.tactroller.api.MouseButton;
 
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+
 /**
  * A pointer with a position, which moves.
  *
@@ -63,8 +67,12 @@ public final class Cursor {
     private final Atchung bus;
     /** Run after every publish. See {@link #Cursor(Atchung, Runnable)}. */
     private final Runnable wake;
-    private int x;
-    private int y;
+    // Volatile because every connection may read the pointer (`where`) while only the one holding the hand moves
+    // it: one writer, any number of readers, and a reader must see where it is now.
+    private volatile int x;
+    private volatile int y;
+    /** Buttons pressed and not yet released — what {@link #letGo} has to undo. */
+    private final Set<MouseButton> held = ConcurrentHashMap.newKeySet();
 
     /** A cursor resting at the origin, publishing to a loop that does not need waking. */
     public Cursor(Atchung bus) {
@@ -142,12 +150,14 @@ public final class Cursor {
      * dispatcher counts double-clicks off these times, so a cursor that stamped zero could never double-click.
      */
     public Cursor press(MouseButton button) {
+        held.add(button);
         publish(new InputEvent.ButtonPressed(button, x, y, System.nanoTime()), "pointer.press", button.name());
         return this;
     }
 
     /** Release {@code button} where the pointer is. */
     public Cursor release(MouseButton button) {
+        held.remove(button);
         publish(new InputEvent.ButtonReleased(button, x, y, System.nanoTime()), "pointer.release", button.name());
         return this;
     }
@@ -183,6 +193,18 @@ public final class Cursor {
         pause();
         moveTo(tx, ty);
         release(button);
+        return this;
+    }
+
+    /**
+     * Release every button still held, where the pointer is — what letting go of the hand means. A script that
+     * ended between {@code down} and {@code up} would otherwise leave the application inside a drag nobody is
+     * performing, and the next holder's first move would carry it on.
+     */
+    public Cursor letGo() {
+        for (MouseButton button : List.copyOf(held)) {
+            release(button);
+        }
         return this;
     }
 

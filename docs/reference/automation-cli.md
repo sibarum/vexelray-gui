@@ -31,7 +31,7 @@ with "right but unreachable", which is the same defect wearing different clothes
 ## 1. The gap, and the evidence for it
 
 [automation.md](automation.md) §8 marks **A4 — Protocol + CLI** as landed. What landed is the protocol and the
-server: `Automation` (the verbs), `AutomationServer` (loopback, one connection at a time), and
+server: `Automation` (the verbs), `AutomationServer` (loopback; then one connection at a time, now many observers and one hand — automation.md §5), and
 `vexelray-framework-automation`'s `Driver` (the wiring, off unless asked). There is **no client** anywhere on
 the stack — no module, no jar, no script. The section's own usage example is the client:
 

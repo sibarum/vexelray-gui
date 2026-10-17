@@ -300,6 +300,44 @@ commands each open their own connection, so use `--window` with them:
 ottermate --window settings shot settings.png --launch ...
 ```
 
+### Watching while something else drives
+
+The socket takes up to four connections at once (`-Dautomation.connections=<n>` on the application changes
+that). Any of them can read; only the one holding **the hand** can drive — `move`, `click`, `rightclick`, `drag`,
+`down`, `up`, `scroll`, `type`, `key`, `go`, and `zoom`, `dpi`, `resize` with a value. The first of those a
+connection sends takes the hand if it is free, and closing the connection lets go. A real run against the gui
+demo, A driving while B watches from a second `ottermate`:
+
+```
+A| > hand
+A| ok free (this is connection 3)
+A| > click 85
+A| ok 92,98
+B| > hand
+B| ok connection 3 since +23.3s (this is connection 4)
+B| > where
+B| ok 92,98
+B| > click 203
+B| err the hand is held by connection 3 (since +23.3s)
+B| ottermate: stopped at 'click 203'; --keep-going runs the rest
+A| > click 43
+A| ok 92,60
+```
+
+and once A's script had ended, a new connection took the hand at once:
+
+```
+B| > hand
+B| ok free (this is connection 5)
+B| > click 203
+B| ok 92,136
+```
+
+Every one-off `ottermate <verb>` is its own connection, so it takes the hand and gives it back by itself; it is
+refused only while some other connection is holding it. `hand take` and `hand release` do it explicitly — a
+watcher that must not drive by accident simply never sends a driving verb. Each connection also chooses its own
+`window`, so watching the settings window does not move the window the driver is in.
+
 ### In a build script
 
 The exit status is the verdict, so no output parsing:
@@ -415,6 +453,8 @@ slashes (`C:/work/after.png`) work everywhere.
 | `ottermate: Cannot run program "mvn": CreateProcess error=2` | Windows: `mvn` is `mvn.cmd`, and `--launch` hands the line to `ProcessBuilder`, which does not consult `PATHEXT`. Name the real program |
 | `ottermate: launched '...' and it did not announce a port within 60s` | The command started something, but nothing printed `automation: localhost:<port>`. Add `--automation=0` to the launched command line |
 | `ottermate: launched '...' and it exited without announcing one (status 1)` | It fell over on startup. Its own output is above, on stderr |
+| `err the hand is held by connection 2 (since +4.1s)` | Another connection is driving. Reads still work; wait for it to close or `hand release`. `hand` says who |
+| `err the automation socket is full: 4 connections are open …` | Four clients already attached — often a forgotten interactive `ottermate`. Close one, or start the application with `-Dautomation.connections=<n>` |
 | `err no command 'shto'; try help` | The application does not know that verb. `ottermate help` lists what it does know |
 | `err IllegalArgumentException: no landmark 'x'; try tree` | The commonest real failure. The landmark is not published — `tree` shows what is |
 | `err IllegalArgumentException: no node 9999` | A ref from an earlier run. Refs are per-run; address by landmark instead |

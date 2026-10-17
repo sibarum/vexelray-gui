@@ -195,10 +195,49 @@ AutomationServer server = AutomationServer.start(driver);  // loopback :7654, da
 ```
 
 `AutomationServer` binds **loopback only**, deliberately and not configurably: this hands anyone who can reach
-it full control of the application's input, so it is a debugging instrument and not a service. It takes **one
-connection at a time** — a pointer is one hand, and two agents interleaving paths would produce a gesture
-neither asked for and a log of a run nobody performed. Pass `0` as the port to be given a free one and ask
-`server.port()`.
+it full control of the application's input, so it is a debugging instrument and not a service. Pass `0` as the
+port to be given a free one and ask `server.port()`.
+
+### Many observers, one hand
+
+The socket takes **several connections at once — four by default**, each on its own `vexelray-automation-<n>`
+daemon thread. `-Dautomation.connections=<n>` raises or lowers the cap for any host, because
+`AutomationServer.start(commands, port)` reads it; `start(commands, port, n)` sets it in code. A connection over
+the cap is answered, line by line, with `err the automation socket is full: 4 connections are open
+(-Dautomation.connections=<n> raises the cap)` and closed when it goes quiet — answered rather than dropped,
+because a client that has already written its first command would otherwise see a reset and not a reason.
+
+Every connection is an **observer**: any verb that reads works on any of them, at any time, including while
+another connection's `click` or `await` is in flight. Only the connection holding **the hand** may run a verb
+that drives: `move`, `click`, `rightclick`, `drag`, `down`, `up`, `scroll`, `type`, `key`, `go`, and `zoom`,
+`dpi` and `resize` when given a value. `go` is on the list although it is not input: it moves focus and scrolls,
+which is where the holder's next `type` lands and what its next `click` aims through. Each verb surface answers
+for its own verbs (`Commands.drives`), so the server holds no list.
+
+- **Taking it.** The first driving verb from a connection takes the hand if it is free. `hand take` does so
+  explicitly; `hand` reports the holder, when it took the hand, and which connection is asking.
+- **Refusing.** A driving verb from anyone else is refused, and nothing of it runs:
+  `err the hand is held by connection 2 (since +4.1s)`. The time is on the server's clock, so every connection
+  reads the same `+s` for the same event.
+- **Releasing.** `hand release`, or the connection closing — `quit`, a clean close, or a script that died. A
+  crashed script cannot leave the pointer locked. Letting go also **releases any button a `down` left held**,
+  where the pointer is: otherwise the next holder's first `move` would carry on a drag nobody is performing.
+
+This keeps what the old single-connection rule protected — two agents cannot interleave pointer paths into a
+gesture neither asked for — and lifts what it cost: something can watch while something else drives.
+
+What each connection has of its own, and what is shared:
+
+| State | Decision | Why |
+|---|---|---|
+| The chosen `window` | **Per connection.** Each starts on the main window. | An Inspector looking at the settings window must not move the window an agent's next `click` lands in. `Windows.session()` gives each connection its own choice over shared drivers. |
+| The pointer (`Cursor`) | **Shared**, one per window. | It *is* the hand. `where` from any connection reads the one pointer; only the holder moves it. |
+| `log` levels | **Process-wide**, any connection may change them, last change wins. | Logging is the process's, not a connection's, and turning it up changes what is recorded, not what the application does — so it needs no hand. The change is a probe-marked command like any other, so the log says who. |
+| `zoom`, `dpi`, `resize` | Per window, and only the holder sets them. | They change what the holder's next target resolves to. Reading them is free. |
+
+Every command is a probe mark (`agent.command`) whose detail begins with the connection's number — `#2 click
+save` — so a recording of two clients reads apart. The hand's changes are marks too (`agent.hand`: `#2 take`,
+`#2 release (disconnect)`), as are connections opening and closing (`agent.connection`).
 
 The verbs are also callable directly — `driver.command("click 41")`, or `driver.cursor()` for the pointer — so
 a test can drive the same surface with no socket in the way.
@@ -240,6 +279,7 @@ whether the run succeeded.
 | `windows`, `window <name\|n>` | List the application's open windows; choose the one the other verbs act on (default: the main one). Each window has its own driver. |
 | `log [logger] [level]` | Read how much is logged and where the file is; or set a level for both sinks, or for one logger and everything beneath it. To the running process only. A driven run is already the loudest mode (`TRACE` file, probe on) — see `atchung/docs/logging.md`. |
 | `mark <note>` | Write a row into the correlation log saying *why*. Changes nothing else. |
+| `hand`, `hand take`, `hand release` | Who holds the hand and which connection this is; take it if free; let it go. See *Many observers, one hand* above. |
 | `help`, `quit` | The list; and end the session. |
 
 **Two ways to name a node, and the difference is durability.** A **ref** is a node id: minted per run, resolved

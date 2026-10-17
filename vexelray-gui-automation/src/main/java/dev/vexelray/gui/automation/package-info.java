@@ -10,7 +10,7 @@
  *
  * {@snippet :
  * Automation driver = new Automation(gui, app.controls());
- * AutomationServer server = AutomationServer.start(driver);   // loopback :7654
+ * AutomationServer server = AutomationServer.start(driver);   // loopback :7654, up to 4 connections, one hand
  * }
  *
  * <p>With {@code -Dprobe=all -Dprobe.format=csv -Dprobe.out=run.csv}, the run writes the correlation log that

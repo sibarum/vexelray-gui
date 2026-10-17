@@ -7,6 +7,9 @@ code in the application under test. `ottermate` relays verbs and knows none
 ([ottermate.md](../guides/ottermate.md) §7), so it gets all of this unchanged. The work is in `vexelray-gui-core`
 (the counters), `vexelray-gui-automation` (the verbs) and `vexelray-os` (CPU by thread).
 
+**Folded into [flight-recorder.md](flight-recorder.md) (2026-10-17).** This document is still the specification for
+the verbs, the counters and the CPU readings. The order of work in §5 is replaced by flight-recorder.md §9.
+
 ---
 
 ## 1. What went wrong, from the session that motivated this

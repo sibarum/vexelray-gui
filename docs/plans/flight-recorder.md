@@ -286,6 +286,7 @@ actions appear in the recorder, in the stream and in the Inspector, in order wit
 | kronometer | A read-only snapshot (shreds, scheduled entries, effects, animations), a bounded trace ring, and more than one work listener | `kron` |
 | vexelray-os | `ProcessCpu` (meter.md §4) | `threads`, `meter` |
 | vexelray / supirvast | A validation message listener, and GPU timestamp queries | `gpu` |
+| atchung (`elektroq`) | A send timeout, cleanup of stale socket files, and peer events on `Conduit` | §6, the Inspector link |
 
 ## 9. Order of work
 

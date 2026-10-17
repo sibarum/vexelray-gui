@@ -72,6 +72,27 @@ class DiscoveryTest {
     }
 
     @Test
+    void liveListsWhatIsRunningAndClearsWhatIsNot(@TempDir Path folder) throws Exception {
+        Files.writeString(folder.resolve("gone-1.auto"), "app=gone\npid=1\nport=9\n");
+        Files.writeString(folder.resolve("gone-1.lock"), "");
+        Files.writeString(folder.resolve("gone-1.sock"), "");
+        try (Discovery d = Discovery.publish(folder, "calc", "Calc", 50845)) {
+            d.advertise("stream", "uds:C:\\x\\calc.sock");
+            List<Discovery.Entry> live = Discovery.live(folder);
+            assertEquals(1, live.size());
+            Discovery.Entry e = live.getFirst();
+            assertEquals("calc", e.app());
+            assertEquals(50845, e.port());
+            assertEquals(ProcessHandle.current().pid(), e.pid());
+            assertEquals("uds:C:\\x\\calc.sock", e.stream(), "advertised after publishing, and read back");
+            assertEquals("calc-" + ProcessHandle.current().pid(), e.base());
+            assertFalse(Files.exists(folder.resolve("gone-1.auto")), "the stale one is cleared");
+            assertFalse(Files.exists(folder.resolve("gone-1.sock")), "with its link socket");
+        }
+        assertEquals(List.of(), Discovery.live(folder));
+    }
+
+    @Test
     void aNameIsMadeSafeForEveryFileSystem() {
         assertEquals("calculator", Discovery.fileName("Calculator"));
         assertEquals("my-app-2", Discovery.fileName("My App 2!"));

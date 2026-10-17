@@ -84,6 +84,40 @@ public final class LinkClient implements AutoCloseable {
         conduit.action(Wire.STREAM_CLOSE).emit(new StreamClose(reason), app);
     }
 
+    /**
+     * Run {@code onClose} once when the connection to the application ends, by its exit, its crash or
+     * {@link #close()}. On the transport's thread; it must not block. If the connection has already ended, it runs
+     * at once.
+     */
+    public void onClose(Runnable onClose) {
+        java.util.concurrent.atomic.AtomicBoolean ran = new java.util.concurrent.atomic.AtomicBoolean();
+        Runnable once = () -> {
+            if (ran.compareAndSet(false, true)) {
+                onClose.run();
+            }
+        };
+        conduit.addPeerListener(new sibarum.elektro.queue.transport.PeerListener() {
+            @Override
+            public void onConnected(PeerId peer) {
+            }
+
+            @Override
+            public void onDisconnected(PeerId peer) {
+                if (peer.equals(app)) {
+                    once.run();
+                }
+            }
+        });
+        closers.add(once);
+        if (!conduit.peers().contains(app)) {
+            once.run();
+        }
+    }
+
+    /** Each {@link #onClose} hook, already made run-once: {@link #close()} runs them, since closing from this side
+     *  tears the connection down without a disconnect event. */
+    private final java.util.List<Runnable> closers = new java.util.concurrent.CopyOnWriteArrayList<>();
+
     /** Ask any read verb, as its line; the reply is the automation socket's text. */
     public QueryReply query(String line) {
         return join(conduit.action(Wire.QUERY).request(new Query(line), app, Wire.QUERY_REPLY));
@@ -101,5 +135,6 @@ public final class LinkClient implements AutoCloseable {
     @Override
     public void close() {
         conduit.close();
+        closers.forEach(Runnable::run);
     }
 }

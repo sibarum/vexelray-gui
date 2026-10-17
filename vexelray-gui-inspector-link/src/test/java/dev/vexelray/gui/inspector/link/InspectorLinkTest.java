@@ -30,9 +30,13 @@ class InspectorLinkTest {
     private Path dir;
     private final List<AutoCloseable> open = new ArrayList<>();
 
+    private int sockets;
+
     private Path socket() throws Exception {
-        dir = Files.createTempDirectory("il");     // short: AF_UNIX paths are length-limited
-        return dir.resolve("a.sock");
+        if (dir == null) {
+            dir = Files.createTempDirectory("il");     // short: AF_UNIX paths are length-limited
+        }
+        return dir.resolve("a" + (sockets++) + ".sock");
     }
 
     private <T extends AutoCloseable> T keep(T c) {
@@ -191,6 +195,25 @@ class InspectorLinkTest {
         assertEquals(1, link.streaming());
         client.close();
         await(() -> link.streaming() == 0, "the sender to stop");
+    }
+
+    @Test
+    void theClientHearsWhenTheApplicationGoesAndWhenItClosesItself() throws Exception {
+        InspectorLink link = InspectorLink.start(socket(), new Recorder(8, () -> 1), null, READS);
+        LinkClient client = keep(LinkClient.connect(link.endpoint()));
+        java.util.concurrent.atomic.AtomicInteger heard = new java.util.concurrent.atomic.AtomicInteger();
+        client.onClose(heard::incrementAndGet);
+        link.close();      // the application going away
+        await(() -> heard.get() == 1, "the close");
+        client.close();
+        assertEquals(1, heard.get(), "once, however it ended");
+
+        InspectorLink again = keep(InspectorLink.start(socket(), new Recorder(8, () -> 1), null, READS));
+        LinkClient mine = LinkClient.connect(again.endpoint());
+        java.util.concurrent.atomic.AtomicInteger closed = new java.util.concurrent.atomic.AtomicInteger();
+        mine.onClose(closed::incrementAndGet);
+        mine.close();
+        assertEquals(1, closed.get(), "closing from this side runs it too");
     }
 
     @Test

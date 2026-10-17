@@ -200,6 +200,143 @@ public final class Discovery implements AutoCloseable {
         return info;
     }
 
+    // --- reading: which applications are running ------------------------------------------------------------------
+
+    /**
+     * One running application, as its file describes it. {@code facts} is every line, in order; the accessors read the
+     * common ones.
+     */
+    public record Entry(Path file, Map<String, String> facts) {
+
+        public Entry {
+            facts = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(facts));
+        }
+
+        /** A fact, or {@code -} when the file does not have it. */
+        public String get(String key) {
+            return facts.getOrDefault(key, "-");
+        }
+
+        public String app() {
+            return get("app");
+        }
+
+        public String title() {
+            return get("title");
+        }
+
+        public long pid() {
+            try {
+                return Long.parseLong(get("pid"));
+            } catch (NumberFormatException e) {
+                return -1;
+            }
+        }
+
+        public int port() {
+            try {
+                return Integer.parseInt(get("port"));
+            } catch (NumberFormatException e) {
+                return -1;
+            }
+        }
+
+        /** When the process started, ISO-8601, as written. */
+        public String started() {
+            return get("started");
+        }
+
+        /** The Inspector link's endpoint ({@code uds:<path>}, {@code tcp:<port>}), or {@code null} when there is none. */
+        public String stream() {
+            String s = facts.get("stream");
+            return s == null || s.isBlank() ? null : s;
+        }
+
+        /** The file's base name, {@code <app>-<pid>}: unique among running applications. */
+        public String base() {
+            String name = file.getFileName().toString();
+            return name.endsWith(INFO) ? name.substring(0, name.length() - INFO.length()) : name;
+        }
+    }
+
+    /** The applications running now, from {@link #folder()}: oldest first, stale files cleared on the way. */
+    public static java.util.List<Entry> live() {
+        return live(folder());
+    }
+
+    /**
+     * The applications running now, from {@code folder}. Live means some process holds the file's lock. A file whose
+     * lock can be taken, or that has no lock beside it, belongs to a process that has ended, however it ended: it is
+     * deleted with its lock and its link socket, and not listed. The same rule as {@code ottermate list}, which keeps
+     * its own copy because it has no dependencies.
+     */
+    public static java.util.List<Entry> live(Path folder) {
+        java.util.List<Entry> found = new java.util.ArrayList<>();
+        if (!Files.isDirectory(folder)) {
+            return found;
+        }
+        java.util.List<Path> infos = new java.util.ArrayList<>();
+        try (java.nio.file.DirectoryStream<Path> files = Files.newDirectoryStream(folder, "*" + INFO)) {
+            files.forEach(infos::add);
+        } catch (IOException e) {
+            return found;
+        }
+        for (Path file : infos) {
+            String name = file.getFileName().toString();
+            String base = name.substring(0, name.length() - INFO.length());
+            Path lock = file.resolveSibling(base + LOCK);
+            if (!held(lock)) {
+                deleteQuietly(file);
+                deleteQuietly(lock);
+                deleteQuietly(file.resolveSibling(base + ".sock"));
+                continue;
+            }
+            try {
+                Map<String, String> facts = new LinkedHashMap<>();
+                for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+                    int eq = line.indexOf('=');
+                    if (eq > 0) {
+                        facts.put(line.substring(0, eq).trim(), line.substring(eq + 1));
+                    }
+                }
+                found.add(new Entry(file, facts));
+            } catch (IOException e) {
+                // Gone between the listing and the read: it ended meanwhile.
+            }
+        }
+        found.sort(java.util.Comparator.comparing(Entry::started).thenComparingLong(Entry::pid));
+        return found;
+    }
+
+    /** Whether some process holds {@code lock}; this JVM holding it counts, and a file that cannot be judged is held. */
+    private static boolean held(Path lock) {
+        if (!Files.exists(lock)) {
+            return false;
+        }
+        try (FileChannel ch = FileChannel.open(lock, StandardOpenOption.WRITE)) {
+            FileLock taken = ch.tryLock();
+            if (taken == null) {
+                return true;
+            }
+            taken.release();
+            return false;
+        } catch (OverlappingFileLockException e) {
+            return true;
+        } catch (java.nio.file.NoSuchFileException e) {
+            return false;
+        } catch (IOException e) {
+            return true;
+        }
+    }
+
+    private static void deleteQuietly(Path p) {
+        try {
+            Files.deleteIfExists(p);
+        } catch (IOException e) {
+            // Somebody else's to clear, then; it is not listed either way.
+        }
+    }
+
     private synchronized void remove() {
         if (closed) {
             return;

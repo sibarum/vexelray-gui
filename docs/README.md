@@ -80,6 +80,7 @@ because the feature is in three pieces.
 | | |
 | --- | --- |
 | [ottermate.md](guides/ottermate.md) | **`ottermate`** — driving a running application from a shell. Worked examples captured against a real app, the exit statuses, and the three things that will bite you |
+| [no-native-vulkan.md](guides/no-native-vulkan.md) | **A machine with no native Vulkan driver**, reproduced on this one: taking Vulkan away with loader variables, running on dzn (Vulkan over D3D12) and WARP, capping the CPU to imitate older hardware, and reading the D3D12 debug layer. The scripts are beside it |
 
 ---
 

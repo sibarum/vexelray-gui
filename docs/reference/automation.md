@@ -466,6 +466,29 @@ seq,t_mono_ns,t_wall,thread,lane,kind,detail,frame
 # end rows=85 over=+10.997s..+11.279s lost=0 seq=31920..33271 why=for elapsed
 ```
 
+#### The Inspector link
+
+The Inspector does not read the text stream. It reads the same ring as typed intrabuf records over elektro-Q, from
+the module `vexelray-gui-inspector-link` ([flight-recorder.md](../plans/flight-recorder.md) §6). The automation
+socket and ottermate do not depend on that module.
+
+- **Where.** The host starts it next to the server (`InspectorLink.start(server, windows)`). The framework's driver
+  and the gui demo both do, whenever the socket is on. It listens on a Unix domain socket beside the discovery
+  file, `<app>-<pid>.sock`, and the discovery file says so in a `stream=uds:<path>` line. It uses a loopback TCP
+  port (`stream=tcp:<port>`) when the path is too long for `AF_UNIX`. `-Dautomation.link=off` leaves it out.
+- **What.**
+  - `StreamOpen(lanes, fromSeq, snapEveryMs)` opens the stream, and `StreamOpened` answers it with the same facts as
+    `ok stream`, or an `err`.
+  - `RowBatch` follows every 10 ms. It carries rows with `detail` raw, and the `seq` range lost before them.
+  - `Snap` follows on its schedule, with the loop's counters and the ring's.
+  - `StreamClose` ends the stream. Leaving ends it too.
+  - `Query(line)` asks any read verb in the socket's words. `QueryReply` carries the socket's text. A verb that
+    drives is refused, because the hand stays the socket's.
+- **How it behaves.** Each Inspector gets its own sender thread and cursor into the ring, so a slow one slows only
+  itself. A send blocked for 2 s drops that Inspector.
+- **The client.** The Inspector's end is `LinkClient`: `connect(discoveryFile)`, then `open`, `query` and
+  `closeStream`.
+
 ### The protocol
 
 One command per line in; one reply out, terminated by a line containing only `.`. Replies begin `ok` or `err`,

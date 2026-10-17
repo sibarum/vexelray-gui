@@ -125,6 +125,8 @@ final class Discovery {
             if (!held(lock)) {
                 delete(info);
                 delete(lock);
+                // And the Inspector link's socket, if it had one: a crash leaves that behind too.
+                delete(info.resolveSibling(name.substring(0, name.length() - INFO.length()) + ".sock"));
                 continue;
             }
             Map<String, String> facts = read(info);

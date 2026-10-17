@@ -66,6 +66,10 @@
              one. Empty dependency block, so it runs with none of the stack on its classpath — beside the
              server so the reader cannot drift from the format. See docs/automation-cli.md. -->
         <module>vexelray-gui-automation-cli</module>
+        <!-- The Inspector's link: the recorder's rows, snapshots and read-only queries as typed intrabuf records over
+             elektro-Q, on a Unix domain socket beside the discovery file. Its own module so the automation server
+             and ottermate stay free of elektro-Q. See docs/plans/flight-recorder.md section 6. -->
+        <module>vexelray-gui-inspector-link</module>
         <!-- Test-only: the automated separation-of-concerns guard (docs/architecture-proof-plan.md M0).
              Last, so it inspects the compiled output of everything above it. -->
         <module>vexelray-gui-architecture</module>
@@ -83,6 +87,10 @@
         <supirvast.version>0.2.1-SNAPSHOT</supirvast.version>
         <!-- Atchung: the message bus the model + threading are built on (core to -core). -->
         <atchung.version>1.1-SNAPSHOT</atchung.version>
+        <!-- elektro-Q and intrabuf: the Inspector link's wire (vexelray-gui-inspector-link only). elektro-Q lives in
+             the atchung checkout, under elektroq/. -->
+        <elektroq.version>1.1-SNAPSHOT</elektroq.version>
+        <intrabuf.version>0.1.1-SNAPSHOT</intrabuf.version>
         <!-- Tactroller: keyboard/mouse/pointer/clipboard input, delivered as Atchung traffic. Enters at
              the application edge (the demo), not in -core. -->
         <tactroller.version>1.1-SNAPSHOT</tactroller.version>

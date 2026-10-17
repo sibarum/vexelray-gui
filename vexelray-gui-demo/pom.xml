@@ -69,6 +69,13 @@
             <groupId>dev.vexelray.gui</groupId>
             <artifactId>vexelray-gui-automation</artifactId>
         </dependency>
+        <!-- And the Inspector's link beside it, on whenever the socket is: the recorder's rows as typed records over
+             elektro-Q (docs/plans/flight-recorder.md section 6). -Dautomation.link=off leaves it out. -->
+        <dependency>
+            <groupId>dev.vexelray.gui</groupId>
+            <artifactId>vexelray-gui-inspector-link</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <!-- Two optional modules the gallery gives a chapter each. Neither is reachable through -widget, and
              that is deliberate: typeset is a second composition world a flex layout embeds as an atom, and
              plot is arithmetic with no renderer at all, so the chapter draws its output itself, which is the

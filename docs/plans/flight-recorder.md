@@ -1,6 +1,6 @@
 # Flight recorder: the automation socket as an instrument panel
 
-Status: **In progress. §9 steps 2 (`LoopCounters` and the frame counter), 3 (the recorder and `recorder`, `rows`, `gaps`, `frames`, `why`), 4 (many observers, one hand) and 5a (`stream`, the text form) landed 2026-10-17; the rest not started.** This plan extends the automation socket
+Status: **In progress. §9 steps 1–5 landed 2026-10-17: the live sink (atchung), `LoopCounters`, the recorder and its verbs, many observers and one hand, and both forms of the stream (5a text, 5b the Inspector link over elektro-Q). Steps 6–9 remain.** This plan extends the automation socket
 ([automation.md](../reference/automation.md)) so a running application can report what its frame loop, bus, clock,
 GPU and threads are doing, both to a person and to an agent. It is the first step on the
 [Inspector](../../../vexelray-inspector/docs/roadmap.md) roadmap. It folds in [meter.md](meter.md): that plan's
@@ -312,9 +312,36 @@ actions appear in the recorder, in the stream and in the Inspector, in order wit
      thread is the sender, batching every 10 ms; loss is a `seq` gap, written as `# lost a..b` where it happened;
      `# idle` after 2 s quiet; `# end` last. [automation.md](../reference/automation.md) §5, *Streaming the ring*, is
      the specification.
-   - **5b. The link module** (`vexelray-gui-inspector-link`), with the three elektro-Q fixes from §6 landing first
-     or alongside it. The Inspector's first light (roadmap M1) depends on 5b. Until 5b lands, the Inspector can read
-     5a's text stream.
+   - **5b. Landed 2026-10-17.** **The link module** (`vexelray-gui-inspector-link`), with the three elektro-Q fixes
+     from §6 landing first or alongside it. The Inspector's first light (roadmap M1) depends on 5b.
+
+     The elektro-Q fixes are atchung `943b128`:
+     - a `sendTimeout` on both stream transports;
+     - a UDS listener that clears a stale socket file, after a dial gets no answer;
+     - `Conduit.addPeerListener`.
+
+     As landed, the link works like this:
+     - **The host starts it.** `InspectorLink.start(server, windows)` runs beside the automation server, in the
+       framework's `Driver` and in the gui demo. It is on whenever the socket is, and `-Dautomation.link=off` leaves
+       it out.
+     - **Discovery.** The link adds `stream=uds:<path>` to the discovery file through
+       `AutomationServer.advertise`. A path over 106 characters gets `stream=tcp:<port>` on loopback instead.
+     - **One sender per Inspector.** Each Inspector gets one `vexelray-automation-link-<peer>` daemon thread with
+       its own `Follower`. It sends a `RowBatch` every 10 ms, at most 4,096 rows, addressed to that peer. A 2 s send
+       timeout drops a stalled Inspector, and a peer that leaves stops its sender.
+     - **The Inspector's end** is `LinkClient`.
+
+     Three things are narrower than this plan describes:
+     - **A `Query` is answered with `QueryReply(ok, text)`, the socket's text.** Typed replies per verb (`why`'s
+       `FrameExplanation`, and so on) come later, as further message types.
+     - **`Snap` carries the loop counters and the ring's own counters only.** Mailboxes, kronometer and heap are
+       added as fields when their hooks land.
+     - **`hello` and `hand` are not answered over the link.** They are the automation server's own verbs, not the
+       host's. The Inspector reads `hello` on the socket, or the discovery file.
+
+     Checked live against the gui demo: a client found the link through the discovery file, streamed `frame` and
+     `gpu` for 2.5 s while ottermate clicked, and received 455 rows in 51 batches with 0 lost. It also received 13
+     snapshots, the `frames worst 2` table as a query reply, and the refusal of `click`.
 6. **The rest of meter.md:** the CPU spike, then `meter`, `focus loop` and `wake` (meter.md steps 1 and 3–5). Retire
    the pacing witness code (meter.md step 6).
 7. **The domain verbs**, each landing with its upstream hook: `bus`, `kron`, `gpu`, `ledger`, `threads`, then

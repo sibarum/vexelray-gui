@@ -60,13 +60,15 @@ public final class Discovery implements AutoCloseable {
     private final FileChannel channel;
     private final FileLock lock;
     private final Thread hook;
+    private final Map<String, String> facts;
     private volatile boolean closed;
 
-    private Discovery(Path info, Path lockFile, FileChannel channel, FileLock lock) {
+    private Discovery(Path info, Path lockFile, FileChannel channel, FileLock lock, Map<String, String> facts) {
         this.info = info;
         this.lockFile = lockFile;
         this.channel = channel;
         this.lock = lock;
+        this.facts = new LinkedHashMap<>(facts);
         // A process that exits without closing the server still tidies up after itself; one that crashes leaves
         // the files, and the lock says they are stale.
         this.hook = new Thread(this::remove, "vexelray-automation-discovery");
@@ -134,18 +136,9 @@ public final class Discovery implements AutoCloseable {
             if (lock == null) {
                 throw new IOException("another process holds " + lockFile);
             }
-            StringBuilder text = new StringBuilder();
-            for (Map.Entry<String, String> e : facts(app, title, port).entrySet()) {
-                text.append(e.getKey()).append('=').append(oneLine(e.getValue())).append('\n');
-            }
-            Path tmp = folder.resolve(base + INFO + ".tmp");
-            Files.writeString(tmp, text, StandardCharsets.UTF_8);
-            try {
-                Files.move(tmp, info, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            } catch (AtomicMoveNotSupportedException e) {
-                Files.move(tmp, info, StandardCopyOption.REPLACE_EXISTING);
-            }
-            return new Discovery(info, lockFile, channel, lock);
+            Map<String, String> facts = facts(app, title, port);
+            write(info, facts);
+            return new Discovery(info, lockFile, channel, lock, facts);
         } catch (IOException | OverlappingFileLockException | UnsupportedOperationException e) {
             LOG.warn("not discoverable: could not write " + info + " (" + e.getMessage()
                     + "); the socket still listens on port " + port);
@@ -158,6 +151,44 @@ public final class Discovery implements AutoCloseable {
             }
             return null;
         }
+    }
+
+    /** Write {@code facts} to {@code info} by way of a temporary file moved into place: never seen half-written. */
+    private static void write(Path info, Map<String, String> facts) throws IOException {
+        StringBuilder text = new StringBuilder();
+        for (Map.Entry<String, String> e : facts.entrySet()) {
+            text.append(e.getKey()).append('=').append(oneLine(e.getValue())).append('\n');
+        }
+        Path tmp = info.resolveSibling(info.getFileName() + ".tmp");
+        Files.writeString(tmp, text, StandardCharsets.UTF_8);
+        try {
+            Files.move(tmp, info, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException e) {
+            Files.move(tmp, info, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    /**
+     * Add one more fact for the rest of the run — a further endpoint, such as the Inspector link's
+     * {@code stream=uds:<path>} — and write the file again, moved into place so a reader sees the old file or the
+     * new one and never a part of either. Every fact is still one that holds from here to the end of the run.
+     */
+    public synchronized void advertise(String key, String value) {
+        if (closed) {
+            return;
+        }
+        facts.put(key, value);
+        try {
+            write(info, facts);
+        } catch (IOException e) {
+            LOG.warn("could not add " + key + " to " + info + ": " + e.getMessage());
+        }
+    }
+
+    /** The base name every file of this process shares: {@code <app>-<pid>}. */
+    public String base() {
+        String name = info.getFileName().toString();
+        return name.substring(0, name.length() - INFO.length());
     }
 
     private static String oneLine(String v) {

@@ -89,8 +89,11 @@ a file that could be caught half-written.
   there (`ProcessHandle.Info.commandLine()` is empty), so the file falls back to `command()`.
 - `build` carries the automation module's version when its jar has one in its manifest, and `-` otherwise, as in a
   checkout.
-- When the Inspector's link lands (flight-recorder.md §6, step 5b), its socket is a further line here
-  (`stream=uds:<path>` or `stream=tcp:<port>`).
+- `stream` is the Inspector link's endpoint (flight-recorder.md §6, step 5b): `stream=uds:<path>`, the
+  `<app>-<pid>.sock` beside this file, or `stream=tcp:<port>` when that path is too long for `AF_UNIX`. The link
+  adds it after it starts (`AutomationServer.advertise`), by writing the file again and moving it into place, so a
+  reader sees the file with the line or without it. It is absent when the link is off (`-Dautomation.link=off`) or
+  could not start. A reader that clears a stale file clears a stale `.sock` with it.
 
 ### Lifecycle
 

@@ -105,6 +105,11 @@ public final class Windows implements Commands {
         return counters;
     }
 
+    /** The flight recorder every session shares, or {@code null} when the probe is off. */
+    public Recorder recorder() {
+        return ring.recorder();
+    }
+
     /** The same windows and the same drivers, with a choice of its own that starts at the main window. */
     @Override
     public Commands session() {

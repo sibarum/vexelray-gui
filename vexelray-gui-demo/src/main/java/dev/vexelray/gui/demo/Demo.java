@@ -251,8 +251,10 @@ public final class Demo {
         }
         try {
             int port = want.equals("on") || want.equals("true") ? AutomationServer.DEFAULT_PORT : Integer.parseInt(want);
-            AutomationServer server = AutomationServer.start(new Windows(app::windows, krono::quiescentAtLastTick, app),
-                    port);
+            Windows windows = new Windows(app::windows, krono::quiescentAtLastTick, app);
+            AutomationServer server = AutomationServer.start(windows, port);
+            // The Inspector's link beside it, advertised in the discovery file before the line below is printed.
+            dev.vexelray.gui.inspector.link.InspectorLink.start(server, windows);
             // Protocol, not a notice: ottermate --launch reads the port from exactly this line.
             System.out.println("automation: localhost:" + server.port());
             return server;

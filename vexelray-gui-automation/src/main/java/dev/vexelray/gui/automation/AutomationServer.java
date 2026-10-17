@@ -156,6 +156,21 @@ public final class AutomationServer implements AutoCloseable {
         return discovery == null ? null : discovery.file();
     }
 
+    /**
+     * Add a fact to this process's discovery file, such as a further endpoint (the Inspector link's {@code stream});
+     * see {@link Discovery#advertise}. Nothing happens when there is no file.
+     */
+    public void advertise(String key, String value) {
+        if (discovery != null) {
+            discovery.advertise(key, value);
+        }
+    }
+
+    /** The application's name, as the discovery file and {@code hello} give it. */
+    public String app() {
+        return app;
+    }
+
     /** An application nobody named, named after its main class: {@code dev.vexelray.gui.demo.Demo} is "demo". */
     private static String mainClassName() {
         String command = System.getProperty("sun.java.command", "").trim();

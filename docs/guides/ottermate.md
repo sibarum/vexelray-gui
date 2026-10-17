@@ -388,6 +388,26 @@ refused only while some other connection is holding it. `hand take` and `hand re
 watcher that must not drive by accident simply never sends a driving verb. Each connection also chooses its own
 `window`, so watching the settings window does not move the window the driver is in.
 
+Watching can also mean following the flight recorder live. `stream` writes the probe's rows as they happen, for as
+long as `for` says. This real run against the gui demo streamed the frame and gpu lanes for 1.5 s, while a second
+`ottermate` clicked the panel button and settled. The middle is cut here; it printed 247 rows:
+
+```
+$ ottermate --port 7655 stream frame,gpu for 1500
+ok stream lanes=frame,gpu from_seq=- start_seq=- oldest_seq=24747 head_seq=31651
+seq,t_mono_ns,t_wall,thread,lane,kind,detail,frame
+31660,10913348400,2026-10-17T22:37:34.576867100Z,vexelray-automation-5,frame,wake,injected input on Gui@2133c8f8,6
+...
+33299,11290368100,2026-10-17T22:37:34.954206600Z,main,frame,loop.park,forever,29
+# end rows=247 over=+10.913s..+11.290s lost=0 seq=31660..33299 why=for elapsed
+```
+
+Save it to a file and `csvview` reads it like any correlation log, since `#` lines are not rows. Give `stream` a
+`from <seq>` to replay a stretch the ring still holds. Leave out `for` only from a client that will send a line to
+stop it: `ottermate` waits for the end of a reply, so a stream without `for` would never return to it. The
+details, including why a stream of some lanes makes `csvview` report missing rows, are in
+[automation.md](../reference/automation.md) §5, *Streaming the ring*.
+
 ### In a build script
 
 The exit status is the verdict, so no output parsing:

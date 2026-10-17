@@ -40,7 +40,8 @@ import java.util.function.Supplier;
  *   <li>{@code window <name|number>} — choose one, by its exact name, a unique beginning of it, or its number.</li>
  * </ul>
  *
- * <p>The flight recorder's verbs ({@code recorder}, {@code rows}, {@code gaps}, {@code frames}, {@code why}) are
+ * <p>The flight recorder's verbs ({@code recorder}, {@code rows}, {@code gaps}, {@code frames}, {@code why}, and
+ * {@code stream}, which the server runs through {@link #streaming}) are
  * answered here too, before any window is asked for: the ring is the process's, not a window's. See
  * {@link RecorderVerbs}.
  */
@@ -124,6 +125,16 @@ public final class Windows implements Commands {
             all = List.copyOf(drivers.values());
         }
         all.forEach(Automation::letGo);
+    }
+
+    /** {@code stream}, over the ring every session shares; see {@link RecorderVerbs#stream}. */
+    @Override
+    public Streaming streaming(String line) {
+        String[] parts = (line == null ? "" : line.trim()).split("\\s+", 2);
+        if (!parts[0].equalsIgnoreCase("stream")) {
+            return null;
+        }
+        return ring.stream(parts.length > 1 ? parts[1].trim() : "");
     }
 
     @Override

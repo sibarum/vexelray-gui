@@ -37,4 +37,27 @@ public interface Commands {
      */
     default void letGo() {
     }
+
+    /**
+     * If {@code line} is a command whose reply is written while it happens rather than returned whole — the
+     * flight recorder's {@code stream} — the thing that writes it; otherwise {@code null}, and the server asks
+     * {@link #command} as usual. A streaming command always reads: it never needs the hand.
+     */
+    default Streaming streaming(String line) {
+        return null;
+    }
+
+    /**
+     * A reply written as it happens, on the connection's own thread. It writes every line of its reply, starting
+     * with {@code ok} or {@code err}; the server writes the terminator after it returns.
+     */
+    interface Streaming {
+
+        /**
+         * Write the reply to {@code out}, flushing as it goes. {@code in} is the connection's input, for a stream
+         * that ends when the client sends a line: such a stream leaves that line unread, so the server answers it
+         * next as an ordinary command.
+         */
+        void run(java.io.BufferedReader in, java.io.PrintWriter out) throws java.io.IOException;
+    }
 }

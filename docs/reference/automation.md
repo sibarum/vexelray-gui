@@ -245,9 +245,10 @@ a test can drive the same surface with no socket in the way.
 ### The flight recorder
 
 With the probe on, the application keeps its most recent probe rows in a ring
-(`vexelray-gui-recorder`, [flight-recorder.md](../plans/flight-recorder.md) §3), and five verbs read it:
-`recorder`, `rows`, `gaps`, `frames` and `why`. They all read, so any connection may use them and none needs
-the hand. None needs a window either: the ring belongs to the process, like the probe that feeds it.
+(`vexelray-gui-recorder`, [flight-recorder.md](../plans/flight-recorder.md) §3), and six verbs read it:
+`recorder`, `rows`, `gaps`, `frames`, `why`, and `stream`, which follows it live (*Streaming the ring*, below).
+They all read, so any connection may use them and none needs the hand. None needs a window either: the ring
+belongs to the process, like the probe that feeds it.
 
 - **Switching it on.** `Windows` starts the recorder when the probe is on. A driven run already turns the probe
   on (`Logging.probeLanes()`), in CSV and so with tracing. Asking for lanes yourself switches that default off: use
@@ -338,6 +339,75 @@ How each verb reads the rows the probe already writes:
 `ottermate` hands options it does not know to the command once the command has begun, so
 `ottermate rows --frame 88 --lane gpu`, the line `why` prints, runs as written.
 
+#### Streaming the ring
+
+`stream [lanes|all] [from <seq>] [for <ms>]` writes the rows as the recorder takes them, on the connection that
+asked. It is the text form of the stream ([flight-recorder.md](../plans/flight-recorder.md) §6), for agents,
+scripts and files. The Inspector will use the typed elektro-Q link instead.
+
+The reply has this shape:
+
+- **The first line** is `ok stream`, followed by the lanes, the `seq` asked for (`from_seq`), the `seq` it really
+  started at (`start_seq`), and the oldest and newest `seq` the ring held when it began.
+- **The header row** comes next, then the rows: correlation-log lines with the frame stamp last, exactly as `rows`
+  prints them.
+- **`#` lines** sit between the rows. A reader of the correlation log, `csvview` and the Inspector's `--replay`
+  included, skips them as not-a-row.
+  - `# lost a..b rows=n` says those rows never reached this stream. It appears where the gap happened.
+  - `# idle quiet_ms=n` appears after 2 s with nothing to send.
+- **`# end`** is the last line before the terminator. It gives the rows delivered, their span and loss, the `seq`
+  range, and why the stream stopped.
+
+How it behaves:
+
+- **Where it starts.** With no `from`, it starts with the next row published. With `from <seq>`, it starts at that
+  row if the ring still holds it, and otherwise at the oldest row there is. Rows overwritten before the stream
+  began are the ring's span shrinking, not loss, so they show as `start_seq` later than `from_seq` rather than as a
+  `# lost` line.
+- **The connection is the sender.** The stream runs on the connection's own thread through one cursor into the
+  ring (`dev.vexelray.gui.recorder.Follower`), copying and writing what has arrived every 10 ms. A slow reader slows
+  only itself. One that falls a whole ring behind gets a `# lost` line for what it missed. Nothing runs on the
+  probe's thread. The other connections carry on meanwhile, and the stream needs no hand.
+- **Ending.** With `for <ms>` (at most 600000), it ends when that has passed and ignores input until then. Without
+  `for`, it ends when any line arrives, and that line is then answered as the next command, so `quit` ends both the
+  stream and the session. A reader that goes away is noticed at the next write, which the idle line guarantees
+  within 2 s even when the application is parked.
+- **Loss means only the `# lost` lines.** A stream of some lanes leaves the other lanes' rows out, so its `seq`
+  column skips numbers by design. `csvview` reads such a file but reports those skips as missing rows. The `# end`
+  line's `lost=`, and the `# lost` lines, are the stream's real loss. `stream all` writes a file whose `seq` is
+  gapless unless rows were really lost.
+
+A real run against the gui demo (started as for the transcripts above, with `-Dautomation=7655`). One connection
+streams for 1.5 s, while another clicks the panel button and settles. The middle of the stream is cut here; the
+run printed 247 rows:
+
+```
+$ ottermate --port 7655 stream frame,gpu for 1500
+ok stream lanes=frame,gpu from_seq=- start_seq=- oldest_seq=24747 head_seq=31651
+seq,t_mono_ns,t_wall,thread,lane,kind,detail,frame
+31660,10913348400,2026-10-17T22:37:34.576867100Z,vexelray-automation-5,frame,wake,injected input on Gui@2133c8f8,6
+31661,10913375500,2026-10-17T22:37:34.576867100Z,vexelray-automation-5,frame,wake.post,nudging the OS message queue,6
+31663,10913524800,2026-10-17T22:37:34.576867100Z,main,frame,wait for events,8.96s,6
+31677,10915037600,2026-10-17T22:37:34.577867100Z,main,frame,before frame,1.41ms,7
+...
+33298,11290365100,2026-10-17T22:37:34.954206600Z,main,frame,frame.present,#29,29
+33299,11290368100,2026-10-17T22:37:34.954206600Z,main,frame,loop.park,forever,29
+# end rows=247 over=+10.913s..+11.290s lost=0 seq=31660..33299 why=for elapsed
+```
+
+The first rows are the click arriving: the other connection's thread posts a wake for injected input, and the
+loop leaves a park of 8.96 s. Asking again with `from` replays the same stretch from the ring:
+
+```
+$ ottermate --port 7655 stream gpu from 31660 for 100
+ok stream lanes=gpu from_seq=31660 start_seq=31660 oldest_seq=24747 head_seq=33308
+seq,t_mono_ns,t_wall,thread,lane,kind,detail,frame
+31920,10997220900,2026-10-17T22:37:34.660288700Z,main,gpu,dxgi wait,16.6us,12
+31921,10997296900,2026-10-17T22:37:34.660288700Z,main,gpu,wait fence,63.0us,12
+...
+# end rows=85 over=+10.997s..+11.279s lost=0 seq=31920..33271 why=for elapsed
+```
+
 ### The protocol
 
 One command per line in; one reply out, terminated by a line containing only `.`. Replies begin `ok` or `err`,
@@ -381,6 +451,7 @@ whether the run succeeded.
 | `gaps [ms]` | Silences between frames of `ms` (100) or more, each judged against the park before it — `csvview --gaps` over the ring. |
 | `frames [last N \| worst N \| since <mark>]` | One line per frame: start, time taken, slowest stage, what woke it, drawn, presented, park. Default `last 20`. |
 | `why <frame>` | One frame explained: what woke it, time per stage, layout passes, bus traffic, the park after; ends with a `see` line. |
+| `stream [lanes\|all] [from <seq>] [for <ms>]` | The rows as the recorder takes them, written as they happen: correlation-log lines with the frame stamp, `# lost` and `# idle` lines between, `# end` last. Without `for`, until any line arrives. See *Streaming the ring* above. |
 | `help`, `quit` | The list; and end the session. |
 
 **Two ways to name a node, and the difference is durability.** A **ref** is a node id: minted per run, resolved

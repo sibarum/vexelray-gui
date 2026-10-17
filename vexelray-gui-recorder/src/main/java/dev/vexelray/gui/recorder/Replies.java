@@ -25,7 +25,46 @@ public final class Replies {
     /** The longest detail a one-line table cell shows before it is cut. */
     static final int CELL = 72;
 
+    /** The header row of every list of rows: the correlation log's columns, and the frame stamp last. */
+    public static final String ROW_HEADER = "seq,t_mono_ns,t_wall,thread,lane,kind,detail,frame";
+
     private Replies() {
+    }
+
+    /**
+     * A stream's first line. The rows follow under {@link #ROW_HEADER}; gaps and pauses are {@code #} lines,
+     * which a reader of the correlation log skips as not-a-row; {@link #text(StreamEnded)} is the last line.
+     */
+    public static String text(StreamOpened o) {
+        return "ok stream lanes=" + (o.lanes().isEmpty() ? "all" : String.join(",", o.lanes()))
+                + " from_seq=" + num(o.fromSeq())
+                + " start_seq=" + num(o.startSeq())
+                + " oldest_seq=" + num(o.oldestSeq())
+                + " head_seq=" + num(o.headSeq());
+    }
+
+    /** A stream's last line before the terminator: what it delivered, its span and loss, and why it stopped. */
+    public static String text(StreamEnded e) {
+        Span s = e.span();
+        return "# end rows=" + s.rows() + " " + over(s)
+                + " seq=" + (s.isEmpty() ? "-" : s.firstSeq() + ".." + s.lastSeq())
+                + " why=" + e.why();
+    }
+
+    /** A gap in a stream, in order with the rows around it: rows {@code fromSeq..toSeq} never reached it. */
+    public static String lost(long fromSeq, long toSeq) {
+        return "# lost " + fromSeq + ".." + toSeq + " rows=" + (toSeq - fromSeq + 1);
+    }
+
+    /** A stream with nothing to send for a while says so, which is also how it notices a reader that has gone. */
+    public static String idle(long quietMs) {
+        return "# idle quiet_ms=" + quietMs;
+    }
+
+    /** Row {@code i} of {@code rows} as a correlation-log line, appended to {@code sb}; see {@link #csv}. */
+    public static StringBuilder appendCsv(StringBuilder sb, Rows rows, int i) {
+        return csvLine(sb, rows.seq(i), rows.monoNanos(i), rows.wallNanos(i), rows.thread(i), rows.lane(i),
+                rows.kind(i), rows.detail(i), rows.frame(i));
     }
 
     public static String text(RecorderStatus s) {
@@ -46,7 +85,7 @@ public final class Replies {
         StringBuilder sb = new StringBuilder("ok rows=").append(r.rows().size())
                 .append(' ').append(over(r.span())).append(" more=").append(r.more());
         if (!r.rows().isEmpty()) {
-            sb.append("\nseq,t_mono_ns,t_wall,thread,lane,kind,detail,frame");
+            sb.append('\n').append(ROW_HEADER);
             for (RecordedRow row : r.rows()) {
                 sb.append('\n').append(csv(row));
             }
@@ -177,14 +216,19 @@ public final class Replies {
 
     /** One row as a correlation-log line: the probe's quoting, one physical line, and the frame last. */
     static String csv(RecordedRow r) {
-        StringBuilder sb = new StringBuilder(96);
-        sb.append(r.seq()).append(',').append(r.monoNs()).append(',')
-                .append(Instant.ofEpochSecond(0, r.wallNs())).append(',');
-        field(sb, r.thread()).append(',');
-        field(sb, r.lane()).append(',');
-        field(sb, r.kind()).append(',');
-        field(sb, r.detail()).append(',');
-        return sb.append(r.frame()).toString();
+        return csvLine(new StringBuilder(96), r.seq(), r.monoNs(), r.wallNs(), r.thread(), r.lane(), r.kind(),
+                r.detail(), r.frame()).toString();
+    }
+
+    private static StringBuilder csvLine(StringBuilder sb, long seq, long monoNs, long wallNs, String thread,
+                                         String lane, String kind, String detail, long frame) {
+        sb.append(seq).append(',').append(monoNs).append(',')
+                .append(Instant.ofEpochSecond(0, wallNs)).append(',');
+        field(sb, thread).append(',');
+        field(sb, lane).append(',');
+        field(sb, kind).append(',');
+        field(sb, detail).append(',');
+        return sb.append(frame);
     }
 
     private static StringBuilder field(StringBuilder sb, String v) {

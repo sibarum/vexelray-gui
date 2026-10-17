@@ -1,6 +1,6 @@
 # Flight recorder: the automation socket as an instrument panel
 
-Status: **In progress. §9 steps 2 (`LoopCounters` and the frame counter), 3 (the recorder and `recorder`, `rows`, `gaps`, `frames`, `why`) and 4 (many observers, one hand) landed 2026-10-17; the rest not started.** This plan extends the automation socket
+Status: **In progress. §9 steps 2 (`LoopCounters` and the frame counter), 3 (the recorder and `recorder`, `rows`, `gaps`, `frames`, `why`), 4 (many observers, one hand) and 5a (`stream`, the text form) landed 2026-10-17; the rest not started.** This plan extends the automation socket
 ([automation.md](../reference/automation.md)) so a running application can report what its frame loop, bus, clock,
 GPU and threads are doing, both to a person and to an agent. It is the first step on the
 [Inspector](../../../vexelray-inspector/docs/roadmap.md) roadmap. It folds in [meter.md](meter.md): that plan's
@@ -307,8 +307,11 @@ actions appear in the recorder, in the stream and in the Inspector, in order wit
 4. **Landed 2026-10-17.** **Many observers, one hand** (§4), with a test that two connections cannot interleave input and that the hand
    is released on disconnect.
 5. **The stream** (§6), in two parts:
-   - **5a. The per-connection sender and cursor, with the text form** (`stream ... [for <ms>]`). Agents and tests
-     can use it at once.
+   - **5a. Landed 2026-10-17.** **The per-connection sender and cursor, with the text form** (`stream ... [for <ms>]`). Agents and tests
+     can use it at once. As landed: the cursor is `dev.vexelray.gui.recorder.Follower`, which 5b reuses; the connection
+     thread is the sender, batching every 10 ms; loss is a `seq` gap, written as `# lost a..b` where it happened;
+     `# idle` after 2 s quiet; `# end` last. [automation.md](../reference/automation.md) §5, *Streaming the ring*, is
+     the specification.
    - **5b. The link module** (`vexelray-gui-inspector-link`), with the three elektro-Q fixes from §6 landing first
      or alongside it. The Inspector's first light (roadmap M1) depends on 5b. Until 5b lands, the Inspector can read
      5a's text stream.

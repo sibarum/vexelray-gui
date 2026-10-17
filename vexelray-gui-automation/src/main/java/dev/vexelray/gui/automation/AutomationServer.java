@@ -164,6 +164,18 @@ public final class AutomationServer implements AutoCloseable {
                 // lets a run be read back without the conversation that produced it. The number says whose.
                 mark("agent.command", c, line);
                 LOG.debug("command #{}: {}", c.number, line);
+                Commands.Streaming streaming = c.session.streaming(line);
+                if (streaming != null) {
+                    // Written as it happens, on this connection's thread: the connection is its sender. It reads,
+                    // so it needs no hand, and the others carry on meanwhile.
+                    streaming.run(in, out);
+                    out.println(".");
+                    out.flush();
+                    if (out.checkError()) {
+                        return;     // the reader went away mid-stream; nothing more to say to it
+                    }
+                    continue;
+                }
                 String reply = answer(c, line);
                 if (LOG.isDebug()) {
                     int end = reply.indexOf('\n');

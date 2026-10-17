@@ -1,5 +1,6 @@
 package dev.vexelray.gui.automation;
 
+import dev.vexelray.gui.recorder.Follower;
 import dev.vexelray.gui.recorder.FrameList;
 import dev.vexelray.gui.recorder.GapList;
 import dev.vexelray.gui.recorder.Queries;
@@ -31,7 +32,13 @@ final class RecorderVerbs {
             "gaps [ms]                silences between frames of ms (100) or more, each judged against its park",
             "frames [last N | worst N | since <mark>]",
             "                         one line per frame: time, slowest stage, what woke it (last 20)",
-            "why <frame>              one frame explained: wake, stages, layout passes, bus; and where to look");
+            "why <frame>              one frame explained: wake, stages, layout passes, bus; and where to look",
+            "stream [lanes|all] [from <seq>] [for <ms>]",
+            "                         the rows as they happen, as correlation-log lines plus frame; '# lost' and",
+            "                         '# idle' lines between, '# end' last. Without for, until any line arrives");
+
+    /** The longest a bounded stream may run: as long as {@code meter}'s longest window. */
+    static final long MAX_STREAM_MS = 600_000;
 
     private final Recorder recorder;
 
@@ -72,6 +79,54 @@ final class RecorderVerbs {
         } catch (IllegalArgumentException | IllegalStateException e) {
             return "err " + e.getMessage();
         }
+    }
+
+    /**
+     * {@code stream [lanes|all] [from <seq>] [for <ms>]}: the rows as the recorder takes them, written as they
+     * happen (flight-recorder.md §6, the text form). A mistake in the arguments is an {@code err} reply like any
+     * other verb's, written by the stream that would have run.
+     */
+    Commands.Streaming stream(String rest) {
+        if (recorder == null) {
+            return (in, out) -> out.println(OFF);
+        }
+        List<String> lanes = new ArrayList<>();
+        long from = -1;
+        long forMs = -1;
+        try {
+            String[] words = rest.isBlank() ? new String[0] : rest.trim().split("\\s+");
+            for (int i = 0; i < words.length; i++) {
+                String w = words[i].toLowerCase(Locale.ROOT);
+                if (w.equals("from") || w.equals("for")) {
+                    if (i + 1 >= words.length) {
+                        throw new IllegalArgumentException(w + " needs a number");
+                    }
+                    long v = number(words[++i], w.equals("from") ? "a seq" : "a duration in ms");
+                    if (w.equals("from")) {
+                        from = v;
+                    } else {
+                        if (v < 1 || v > MAX_STREAM_MS) {
+                            throw new IllegalArgumentException("for takes 1 to " + MAX_STREAM_MS + " ms, not " + v);
+                        }
+                        forMs = v;
+                    }
+                } else if (w.equals("all")) {
+                    lanes.clear();
+                } else if (lanes.isEmpty() && i == 0) {
+                    for (String key : w.split(",")) {
+                        Follower.lane(key);     // an unknown lane fails here, naming the ones there are
+                        lanes.add(key.trim().toLowerCase(Locale.ROOT));
+                    }
+                } else {
+                    throw new IllegalArgumentException("stream takes [lanes|all] [from <seq>] [for <ms>], not '"
+                            + words[i] + "'");
+                }
+            }
+        } catch (IllegalArgumentException e) {
+            String why = "err " + e.getMessage();
+            return (in, out) -> out.println(why);
+        }
+        return new TextStream(recorder, lanes, from, forMs);
     }
 
     private String frames(String rest) {

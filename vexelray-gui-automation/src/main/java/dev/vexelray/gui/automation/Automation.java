@@ -35,8 +35,9 @@ import java.util.Locale;
  * <p>Everything that acts goes through {@link Cursor}, so it goes out on the ordinary input topic and the
  * pointer travels. Nothing here has a shortcut for "just click it".
  *
- * <p>Thread-safe to call from one driver thread. It reads snapshots lock-free and publishes to the bus; it
- * never touches GUI-thread state.
+ * <p>Safe to call from several threads at once, as long as only one of them {@link #drives drives}: it reads
+ * snapshots lock-free and publishes to the bus, and never touches GUI-thread state. {@link AutomationServer}
+ * keeps that condition by giving the driving verbs only to the connection holding the hand.
  */
 public final class Automation implements Commands {
 
@@ -137,6 +138,36 @@ public final class Automation implements Commands {
         } catch (RuntimeException e) {
             return "err " + e.getClass().getSimpleName() + ": " + e.getMessage();
         }
+    }
+
+    @Override
+    public boolean drives(String line) {
+        String trimmed = line == null ? "" : line.trim();
+        String[] parts = trimmed.split("\\s+", 2);
+        return driving(parts[0].toLowerCase(Locale.ROOT), parts.length > 1 ? parts[1] : "");
+    }
+
+    @Override
+    public void letGo() {
+        cursor.letGo();
+    }
+
+    /**
+     * Whether {@code verb} acts on the application rather than reading it: the pointer and keyboard verbs, the view
+     * verbs when given a value, and {@code go}. {@code go} is not input, but it moves focus and scrolls, which is
+     * where the holder's next {@code type} lands and what its next {@code click} aims through — an observer that
+     * could do it would interleave with the holder exactly as a second pointer would.
+     *
+     * <p>Everything else reads, waits ({@code settle}, {@code await}), photographs ({@code shot}), annotates the
+     * log ({@code mark}), or turns logging up and down ({@code log}), none of which changes what the application
+     * does next. Static so {@link Windows} can answer without choosing a window first.
+     */
+    static boolean driving(String verb, String rest) {
+        return switch (verb) {
+            case "move", "click", "rightclick", "drag", "down", "up", "scroll", "type", "key", "go" -> true;
+            case "zoom", "dpi", "resize" -> !rest.isBlank();
+            default -> false;
+        };
     }
 
     private String run(String verb, String rest) {

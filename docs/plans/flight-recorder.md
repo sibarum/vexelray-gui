@@ -1,6 +1,6 @@
 # Flight recorder: the automation socket as an instrument panel
 
-Status: **In progress: §9 step 2 (`LoopCounters` and the frame counter) landed 2026-10-17.** This plan extends the automation socket
+Status: **In progress. §9 step 2 (`LoopCounters` and the frame counter) and step 4 (many observers, one hand) landed 2026-10-17; the rest not started.** This plan extends the automation socket
 ([automation.md](../reference/automation.md)) so a running application can report what its frame loop, bus, clock,
 GPU and threads are doing, both to a person and to an agent. It is the first step on the
 [Inspector](../../../vexelray-inspector/docs/roadmap.md) roadmap. It folds in [meter.md](meter.md): that plan's
@@ -24,7 +24,7 @@ of it while the application runs.
 - **The probe writes only to a file.** `sibarum.probe.Probe` records every span, mark and counter on eleven lanes,
   but its `Sink` is package-private and can only write to a file or stdout. To ask "why was frame 18,342 slow", you
   stop the run, find the CSV and run `csvview` over it. Nothing can ask the running application.
-- **The socket takes one connection.** [automation.md](../reference/automation.md) §5 limits it to one connection
+- **The socket takes one connection** (lifted by §4, landed). [automation.md](../reference/automation.md) §5 limited it to one connection
   because a pointer is one hand. That reason is about input. Because of it, an Inspector cannot watch while
   `ottermate` drives, which is exactly when watching matters most.
 - **Every reply is a reply to a request.** Nothing is pushed. Polling `tree` at frame rate would cost the frames it
@@ -103,6 +103,13 @@ gesture neither asked for. It lifts what that rule cost: being able to watch whi
 
 Each connection runs on its own `vexelray-automation-<n>` daemon thread. These belong with the existing automation
 thread, outside the closed lane list (`vexelray-framework/docs/threading.md` T1.1).
+
+**As landed** ([automation.md](../reference/automation.md) §5, *Many observers, one hand*, is now the
+specification): the cap is `-Dautomation.connections`, read by `AutomationServer.start(commands, port)`, so no host
+plumbs a setting. `go` joined the driving verbs, because it moves focus and scroll under the holder. Letting go of
+the hand releases any button a `down` left held. The chosen `window` is per connection, the pointer is shared (it
+is the hand), and `log` levels stay process-wide and need no hand. `agent.command` marks begin `#<connection>`, and
+the hand and connections have marks of their own (`agent.hand`, `agent.connection`).
 
 ## 5. Query verbs
 
@@ -245,7 +252,7 @@ actions appear in the recorder, in the stream and in the Inspector, in order wit
 2. **`LoopCounters` and the frame counter**, which is meter.md step 2. **Landed 2026-10-17**: the frame stamp is `LoopCounters.frame()`, the frame in progress, advanced before anything in the frame runs (a frame pulled during a move or resize counts as one).
 3. **The recorder and its first verbs:** `recorder`, `rows`, `gaps`, `frames`, `why`. After this step an agent can
    ask why a frame was slow.
-4. **Many observers, one hand** (§4), with a test that two connections cannot interleave input and that the hand
+4. **Landed 2026-10-17.** **Many observers, one hand** (§4), with a test that two connections cannot interleave input and that the hand
    is released on disconnect.
 5. **The stream** (§6). The Inspector's first light (roadmap M1) depends on this step.
 6. **The rest of meter.md:** the CPU spike, then `meter`, `focus loop` and `wake` (meter.md steps 1 and 3–5). Retire

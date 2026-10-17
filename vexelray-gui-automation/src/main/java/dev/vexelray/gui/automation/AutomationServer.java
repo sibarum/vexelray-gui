@@ -6,11 +6,16 @@ import sibarum.probe.Probe;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * A line protocol on a loopback socket, so an agent outside the process can drive the application inside it.
@@ -28,12 +33,17 @@ import java.nio.charset.StandardCharsets;
  * application's input — it is a debugging instrument, not a service. Binding it to a routable address would
  * make every window on the machine a remote-control target, so the address is not configurable.
  *
- * <p><b>One connection at a time.</b> A pointer is one hand: two agents interleaving paths would produce a
- * gesture neither of them asked for, and the log would show a run that nobody performed.
+ * <p><b>Many observers, one hand.</b> Several connections may be open at once ({@link #DEFAULT_CONNECTIONS}, or
+ * {@code -Dautomation.connections}), and every one of them may read. Only the connection holding <b>the hand</b>
+ * may run a line that {@link Commands#drives drives}: a pointer is one hand, and two agents interleaving paths
+ * would produce a gesture neither of them asked for, and a log of a run that nobody performed. The first driving
+ * line from a connection takes the hand if it is free; {@code hand take} and {@code hand release} do it
+ * explicitly; a driving line from anyone else is refused with the holder's name. Closing the connection lets go,
+ * so a script that crashes cannot leave the pointer locked — and letting go releases any button it held down.
  *
- * <p>Commands run on this server's own thread, never on the GUI thread. Everything they touch is either a
- * lock-free snapshot or the bus, and the one thing that is not — a screenshot — is posted to the frame loop by
- * {@code WindowControls} rather than performed here.
+ * <p>Each connection runs on its own {@code vexelray-automation-<n>} daemon thread, never on the GUI thread.
+ * Everything a command touches is either a lock-free snapshot or the bus, and the one thing that is not — a
+ * screenshot — is posted to the frame loop by {@code WindowControls} rather than performed here.
  */
 public final class AutomationServer implements AutoCloseable {
 
@@ -42,24 +52,64 @@ public final class AutomationServer implements AutoCloseable {
     /** The port, when nobody says otherwise. Arbitrary, high, and unregistered. */
     public static final int DEFAULT_PORT = 7654;
 
+    /**
+     * How many connections may be open at once, when nobody says otherwise: the Inspector, an agent driving, and
+     * room for a person to look in on both. A bound rather than a policy — each connection is a thread.
+     */
+    public static final int DEFAULT_CONNECTIONS = 4;
+
+    /**
+     * The system property that sets the cap for {@link #start(Commands, int)}, so every host — the framework's
+     * driver, the demos — honours it without plumbing a setting of its own.
+     */
+    public static final String CONNECTIONS_PROPERTY = "automation.connections";
+
+    /** How long a refused connection is answered before it is closed, if it does not close first. */
+    private static final int REFUSED_LINGER_MS = 5_000;
+
+    private static final String HAND_HELP = String.join("\n",
+            "hand                     who holds the hand (drives input), and which connection this is",
+            "hand take | release      take the hand if it is free, or let it go (closing the connection also lets go)");
+
     private final Commands automation;
+    private final int cap;
     private final ServerSocket socket;
     private final Thread thread;
+    private final long started = System.nanoTime();
+    private final Set<Connection> open = ConcurrentHashMap.newKeySet();
+    private int numbered;
     private volatile boolean running = true;
+
+    /** Guards {@link #holder} and {@link #heldSince}: who has the hand, and from when. */
+    private final Object hand = new Object();
+    private Connection holder;
+    private long heldSince;
 
     /** Start listening on {@link #DEFAULT_PORT}. */
     public static AutomationServer start(Commands automation) throws IOException {
         return start(automation, DEFAULT_PORT);
     }
 
-    /** Start listening on {@code port}; pass 0 to be given a free one, then ask {@link #port()}. */
+    /**
+     * Start listening on {@code port}; pass 0 to be given a free one, then ask {@link #port()}. The connection cap
+     * is {@code -Dautomation.connections}, or {@link #DEFAULT_CONNECTIONS}.
+     */
     public static AutomationServer start(Commands automation, int port) throws IOException {
-        return new AutomationServer(automation, port);
+        return start(automation, port, Integer.getInteger(CONNECTIONS_PROPERTY, DEFAULT_CONNECTIONS));
     }
 
-    private AutomationServer(Commands automation, int port) throws IOException {
+    /** Start listening on {@code port}, admitting at most {@code connections} at once. */
+    public static AutomationServer start(Commands automation, int port, int connections) throws IOException {
+        return new AutomationServer(automation, port, connections);
+    }
+
+    private AutomationServer(Commands automation, int port, int connections) throws IOException {
+        if (connections < 1) {
+            throw new IllegalArgumentException("connections must be at least 1, not " + connections);
+        }
         this.automation = java.util.Objects.requireNonNull(automation, "automation");
-        this.socket = new ServerSocket(port, 1, InetAddress.getLoopbackAddress());
+        this.cap = connections;
+        this.socket = new ServerSocket(port, connections, InetAddress.getLoopbackAddress());
         this.thread = new Thread(this::serve, "vexelray-automation");
         this.thread.setDaemon(true);      // an instrument must never be the reason a process will not exit
         this.thread.start();
@@ -70,43 +120,207 @@ public final class AutomationServer implements AutoCloseable {
         return socket.getLocalPort();
     }
 
+    /** How many connections may be open at once. */
+    public int connections() {
+        return cap;
+    }
+
     private void serve() {
         while (running) {
-            try (Socket client = socket.accept()) {
-                converse(client);
+            Socket client;
+            try {
+                client = socket.accept();
             } catch (IOException e) {
                 if (running) {
-                    // One client going away is not the end of the session; the next one is still welcome.
-                    LOG.warn("client connection ended: " + e.getMessage());
+                    LOG.warn("accept failed: " + e.getMessage());
                 }
+                continue;
+            }
+            // Only this thread adds, so the count it reads cannot grow under it; a connection closing meanwhile
+            // only makes the answer conservative for one accept.
+            Connection c = new Connection(++numbered, client, automation.session());
+            boolean admitted = open.size() < cap;
+            if (admitted) {
+                open.add(c);
+            }
+            Thread t = new Thread(admitted ? () -> converse(c) : () -> refuse(c), "vexelray-automation-" + c.number);
+            t.setDaemon(true);
+            t.start();
+        }
+    }
+
+    private void converse(Connection c) {
+        mark("agent.connection", c, "open");
+        LOG.debug("connection {} open", c.number);
+        try (Socket client = c.socket) {
+            BufferedReader in = reader(client);
+            PrintWriter out = writer(client);
+            String line;
+            while (running && (line = in.readLine()) != null) {
+                if (line.trim().equalsIgnoreCase("quit")) {
+                    return;
+                }
+                // The agent's own commands, in the same file and the same order as their effects — which is what
+                // lets a run be read back without the conversation that produced it. The number says whose.
+                mark("agent.command", c, line);
+                LOG.debug("command #{}: {}", c.number, line);
+                String reply = answer(c, line);
+                if (LOG.isDebug()) {
+                    int end = reply.indexOf('\n');
+                    LOG.debug("reply #{}: {}", c.number,
+                            end < 0 ? reply : reply.substring(0, end) + " ... (" + reply.lines().count() + " lines)");
+                }
+                out.println(reply);
+                out.println(".");
+                out.flush();     // per reply: the other end is waiting on this one before it sends the next
+            }
+        } catch (IOException e) {
+            if (running) {
+                // One client going away is not the end of the session; the others, and the next, are still welcome.
+                LOG.warn("connection " + c.number + " ended: " + e.getMessage());
+            }
+        } finally {
+            release(c, "disconnect");
+            open.remove(c);
+            mark("agent.connection", c, "closed");
+            LOG.debug("connection {} closed", c.number);
+        }
+    }
+
+    private String answer(Connection c, String line) {
+        String[] parts = line.trim().split("\\s+", 2);
+        String verb = parts[0].toLowerCase(Locale.ROOT);
+        if (verb.equals("hand")) {
+            return hand(c, parts.length > 1 ? parts[1].trim().toLowerCase(Locale.ROOT) : "");
+        }
+        if (c.session.drives(line)) {
+            String refused = take(c);
+            if (refused != null) {
+                return refused;
+            }
+        }
+        String reply = c.session.command(line);
+        return verb.equals("help") ? reply + "\n" + HAND_HELP : reply;
+    }
+
+    private String hand(Connection c, String what) {
+        switch (what) {
+            case "" -> {
+                synchronized (hand) {
+                    if (holder == null) {
+                        return "ok free (this is connection " + c.number + ")";
+                    }
+                    return "ok connection " + holder.number + " since " + since()
+                            + (holder == c ? " (this one)" : " (this is connection " + c.number + ")");
+                }
+            }
+            case "take" -> {
+                String refused = take(c);
+                return refused != null ? refused : "ok connection " + c.number + " holds the hand";
+            }
+            case "release" -> {
+                synchronized (hand) {
+                    if (holder != null && holder != c) {
+                        return refusal();
+                    }
+                }
+                return release(c, "release") ? "ok released" : "ok the hand was free";
+            }
+            default -> {
+                return "err hand takes take, release, or nothing";
             }
         }
     }
 
-    private void converse(Socket client) throws IOException {
-        BufferedReader in = new BufferedReader(
-                new InputStreamReader(client.getInputStream(), StandardCharsets.UTF_8));
-        PrintWriter out = new PrintWriter(new java.io.OutputStreamWriter(
-                client.getOutputStream(), StandardCharsets.UTF_8));
-        String line;
-        while (running && (line = in.readLine()) != null) {
-            if (line.trim().equalsIgnoreCase("quit")) {
-                return;
+    /** Take the hand for {@code c} if it is free or already {@code c}'s; otherwise the refusal to reply with. */
+    private String take(Connection c) {
+        synchronized (hand) {
+            if (holder == c) {
+                return null;
             }
-            if (Probe.ON) {
-                // The agent's own commands, in the same file and the same order as their effects — which is
-                // what lets a run be read back without the conversation that produced it.
-                Probe.mark(Lane.APP, "agent.command", line);
+            if (holder != null) {
+                return refusal();
             }
-            LOG.debug("command: {}", line);
-            String reply = automation.command(line);
-            if (LOG.isDebug()) {
-                int end = reply.indexOf('\n');
-                LOG.debug("reply: {}", end < 0 ? reply : reply.substring(0, end) + " ... (" + reply.lines().count() + " lines)");
+            holder = c;
+            heldSince = System.nanoTime();
+        }
+        mark("agent.hand", c, "take");
+        LOG.debug("connection {} took the hand", c.number);
+        return null;
+    }
+
+    /**
+     * Let go of the hand if {@code c} holds it, releasing any button left down first. Called only on {@code c}'s
+     * own thread, so nothing of {@code c}'s is driving meanwhile, and nobody else can take the hand until it is
+     * free — which is after the buttons are up.
+     */
+    private boolean release(Connection c, String why) {
+        synchronized (hand) {
+            if (holder != c) {
+                return false;
             }
-            out.println(reply);
-            out.println(".");
-            out.flush();     // per reply: the other end is waiting on this one before it sends the next
+        }
+        try {
+            c.session.letGo();
+        } catch (RuntimeException e) {
+            LOG.warn("letting go for connection " + c.number + " failed: " + e.getMessage());
+        }
+        synchronized (hand) {
+            holder = null;
+        }
+        mark("agent.hand", c, "release (" + why + ")");
+        LOG.debug("connection {} let go of the hand ({})", c.number, why);
+        return true;
+    }
+
+    /** Called holding {@link #hand}, with a holder. */
+    private String refusal() {
+        return "err the hand is held by connection " + holder.number + " (since " + since() + ")";
+    }
+
+    /** When the hand was taken, on this server's clock — the same {@code +s} for every connection that asks. */
+    private String since() {
+        return String.format(Locale.ROOT, "+%.1fs", (heldSince - started) / 1e9);
+    }
+
+    /**
+     * Answer every line from a connection over the cap with the refusal, until it closes or goes quiet. Answered
+     * rather than closed at once: a client that has already written its first command would have that write
+     * reset, and on Windows a reset discards a reply it had not read yet — so it would see a broken connection
+     * where it should see a reason.
+     */
+    private void refuse(Connection c) {
+        String why = "err the automation socket is full: " + cap + " connections are open"
+                + " (-D" + CONNECTIONS_PROPERTY + "=<n> raises the cap)";
+        LOG.warn("connection " + c.number + " refused: " + cap + " already open");
+        try (Socket client = c.socket) {
+            client.setSoTimeout(REFUSED_LINGER_MS);
+            BufferedReader in = reader(client);
+            PrintWriter out = writer(client);
+            String line;
+            while (running && (line = in.readLine()) != null && !line.trim().equalsIgnoreCase("quit")) {
+                out.println(why);
+                out.println(".");
+                out.flush();
+            }
+        } catch (SocketTimeoutException e) {
+            // Gone quiet: it has had its answer, or never asked.
+        } catch (IOException e) {
+            // A refused client going away is what was wanted.
+        }
+    }
+
+    private static BufferedReader reader(Socket s) throws IOException {
+        return new BufferedReader(new InputStreamReader(s.getInputStream(), StandardCharsets.UTF_8));
+    }
+
+    private static PrintWriter writer(Socket s) throws IOException {
+        return new PrintWriter(new OutputStreamWriter(s.getOutputStream(), StandardCharsets.UTF_8));
+    }
+
+    private static void mark(String name, Connection c, String detail) {
+        if (Probe.ON) {
+            Probe.mark(Lane.APP, name, "#" + c.number + " " + detail);
         }
     }
 
@@ -118,6 +332,17 @@ public final class AutomationServer implements AutoCloseable {
         } catch (IOException e) {
             // Closing a socket that is already gone is not a failure worth reporting from a close().
         }
+        for (Connection c : open) {
+            try {
+                c.socket.close();     // ends its read, and its thread lets go of the hand on the way out
+            } catch (IOException e) {
+                // As above.
+            }
+        }
         thread.interrupt();
+    }
+
+    /** One client: its number (what the hand and the log call it), its socket, and its own view of the commands. */
+    private record Connection(int number, Socket socket, Commands session) {
     }
 }

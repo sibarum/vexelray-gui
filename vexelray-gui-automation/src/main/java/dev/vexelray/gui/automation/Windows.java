@@ -26,6 +26,10 @@ import java.util.function.Supplier;
  * as gone rather than silently replaced by another. The choice is by tree identity and not by position, so it
  * follows its window as others come and go.
  *
+ * <p><b>The choice belongs to a connection; the drivers do not.</b> Each connection gets its own {@link #session},
+ * so an observer looking at the settings window does not move the window the hand is driving. The drivers are
+ * shared between sessions, because a window has one pointer and a second driver would be a second pointer.
+ *
  * <p>Until a window is chosen, commands go to the main window — which is what a one-window application is, and
  * why nothing here changes how it is driven.
  *
@@ -44,8 +48,12 @@ public final class Windows implements Commands {
 
     private final Supplier<List<WindowView>> source;
     private final Timeline timeline;
-    private final Map<Gui, Automation> drivers = new IdentityHashMap<>();
-    private Gui chosen;
+    /**
+     * Shared by every {@link #session}, and guarded by itself — for the lookup only, never across a command, so a
+     * thirty-second {@code await} on one connection does not stall another's {@code tree}.
+     */
+    private final Map<Gui, Automation> drivers;
+    private volatile Gui chosen;
 
     public Windows(Supplier<List<WindowView>> source) {
         this(source, Timeline.NONE);
@@ -55,10 +63,39 @@ public final class Windows implements Commands {
     public Windows(Supplier<List<WindowView>> source, Timeline timeline) {
         this.source = java.util.Objects.requireNonNull(source, "source");
         this.timeline = timeline == null ? Timeline.NONE : timeline;
+        this.drivers = new IdentityHashMap<>();
+    }
+
+    private Windows(Windows shared) {
+        this.source = shared.source;
+        this.timeline = shared.timeline;
+        this.drivers = shared.drivers;
+    }
+
+    /** The same windows and the same drivers, with a choice of its own that starts at the main window. */
+    @Override
+    public Commands session() {
+        return new Windows(this);
     }
 
     @Override
-    public synchronized String command(String line) {
+    public boolean drives(String line) {
+        String[] parts = (line == null ? "" : line.trim()).split("\\s+", 2);
+        return Automation.driving(parts[0].toLowerCase(Locale.ROOT), parts.length > 1 ? parts[1] : "");
+    }
+
+    /** Every window's pointer: there is one hand, whichever window it was last used in. */
+    @Override
+    public void letGo() {
+        List<Automation> all;
+        synchronized (drivers) {
+            all = List.copyOf(drivers.values());
+        }
+        all.forEach(Automation::letGo);
+    }
+
+    @Override
+    public String command(String line) {
         String trimmed = line == null ? "" : line.trim();
         if (trimmed.isEmpty()) {
             return "";
@@ -68,7 +105,9 @@ public final class Windows implements Commands {
         String rest = parts.length > 1 ? parts[1].trim() : "";
         try {
             List<WindowView> open = source.get();
-            drivers.keySet().removeIf(gui -> open.stream().noneMatch(v -> v.gui() == gui));
+            synchronized (drivers) {
+                drivers.keySet().removeIf(gui -> open.stream().noneMatch(v -> v.gui() == gui));
+            }
             if (open.isEmpty()) {
                 return "err no window is open yet";
             }
@@ -98,7 +137,9 @@ public final class Windows implements Commands {
     }
 
     private Automation driver(WindowView view) {
-        return drivers.computeIfAbsent(view.gui(), g -> new Automation(g, view.controls(), timeline));
+        synchronized (drivers) {
+            return drivers.computeIfAbsent(view.gui(), g -> new Automation(g, view.controls(), timeline));
+        }
     }
 
     private String list(List<WindowView> open) {

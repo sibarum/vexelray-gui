@@ -194,28 +194,66 @@ definitions from that, which is §7's MCP route.
 
 ## 6. The stream
 
-`stream <lanes|all> [from <seq>] [for <ms>]` switches the connection into push mode.
+The stream has two forms, and both read from one source: the ring. The choice between them was measured
+(atchung [`docs/spikes/elektroq-inspector-stream.md`](../../../atchung/docs/spikes/elektroq-inspector-stream.md)).
 
-- **What it sends.** First a header row naming the columns, then each row as the recorder takes it, in the same
-  CSV row format with the frame stamp.
-- **Backfill.** `from <seq>` first sends what the ring still holds from that row onward, so an Inspector that
-  reconnects loses nothing the ring kept.
-- **Snapshot rows.** Every 100 ms the stream also sends `snap` rows: loop counters, mailbox depths, kronometer
-  counts and heap figures. The Inspector can then draw its dials without polling.
-- **Ending.** Without `for`, the stream lasts until the client closes the connection. With `for <ms>`, it ends
-  after that long with the `.` terminator, which makes it an ordinary bounded reply that an agent can use through
-  `ottermate`.
-- **Backpressure.** Each connection has a bounded queue. A slow reader loses rows, never time on the loop. The
-  stream sends a `lost` row giving the `seq` range dropped, and the recorder counts the drop as well.
-- **Encoding.** Text, deliberately. The stream, a saved recording and `correlations.csv` are one format, so
-  `csvview` reads all three and the Inspector opens files and live streams the same way. A binary encoding
-  (intrabuf) waits until a measured run shows text cannot keep up (Q3).
+### For the Inspector: typed records over elektro-Q
+
+The Inspector's stream lives in a separate module, `vexelray-gui-inspector-link`.
+
+- **The socket.** The module serves a Unix domain socket at `~/.vexelray/automation/<app>-<pid>.sock`, beside the
+  discovery file ([discovery.md](discovery.md)). When that path would be longer than 106 characters, it serves a
+  loopback TCP port instead. Either way the discovery file advertises it as `stream=uds:<path>` or
+  `stream=tcp:<port>`.
+- **Opening.** The Inspector sends `StreamOpen(lanes, fromSeq, snapEveryMs)`. The application answers
+  `StreamOpened(headSeq, oldestSeq)`, then sends a `RowBatch` to that peer every 10 ms.
+- **Dependencies.** `vexelray-gui-automation`, `vexelray-gui-recorder` and `ottermate` do not depend on this module.
+
+What it carries:
+
+- **Rows.** Each batch holds `Row(seq, tMonoNs, tWallNs, frame, thread, lane, kind, detail)` records, with `detail`
+  sent raw (newlines kept). A batch also carries `lostFrom..lostTo` when rows were lost before it.
+- **Backfill.** `fromSeq` starts the connection's cursor at that row, if the ring still holds it.
+- **Snapshots.** A typed `Snap` (loop counters, mailboxes, kronometer, heap) arrives every `snapEveryMs`, 100 ms by
+  default. A domain whose upstream hook has not landed is absent from the snapshot, not reported as zero.
+- **Queries.** `Query(line)` carries any read verb. The reply is that verb's record from §5 (`FrameExplanation`
+  and so on), with an `err` field. Agents get the same verbs as text.
+
+How it behaves:
+
+- **Backpressure: the ring is the queue.** Each streaming connection has one sender thread and its own cursor into
+  the ring. A slow reader blocks only its own thread. When the writer laps a cursor, the gap goes out in the next
+  batch and the recorder counts it. Encoding never happens inside the probe's live sink.
+- **Never broadcast.** Each connection gets its own batches.
+- **Measured.** A full trace peaks at about 95k rows/s over 100 ms. The link sustains 6.8M rows/s over UDS and costs
+  the application about 0.65% of a core at 100k rows/s. Batching every 10 ms (or once per frame) keeps a row under
+  one Inspector frame old on arrival. Batching every 1 ms costs 12–15% of a core whatever the encoding.
+- **elektro-Q fixes come first or alongside.** The spike found three gaps in elektro-Q:
+  - a blocking send has no timeout;
+  - stale socket files are left behind;
+  - `Conduit` has no peer events.
+
+### For agents and files: text
+
+`stream <lanes|all> [from <seq>] [for <ms>]` on the automation socket sends a header row, then CSV rows with the
+frame stamp, so that ottermate and `csvview` can read it.
+
+- **Ending.** It ends after `for <ms>` with the `.` terminator, which makes it an ordinary bounded reply an agent can
+  use through `ottermate`. Without `for`, it lasts until the client closes the connection.
+- **Same machinery.** It runs on the same per-connection sender and cursor as the link, and reports loss the same
+  way, as a `lost` row giving the `seq` range dropped.
+- **Speed.** Text sustains about 2.5M rows/s, 27 times the real peak, so it is not a bottleneck for anyone who
+  wants the rows raw.
+
+The Inspector's `--replay` keeps reading CSV files. So "files and live streams the same way" holds at the level of
+rows, not bytes: the link source maps `Row` records straight to the Inspector's rows.
 
 ## 7. How an agent uses it
 
 **Through ottermate, with nothing new.** ottermate relays verbs it does not know
 ([ottermate.md](../guides/ottermate.md) §7), so every verb above works from a shell as soon as the server has it.
-An agent attaches to a running application, or launches one, exactly as it does today:
+The Inspector does not use this path: it uses the typed link of §6, and an agent never needs the link. An agent
+attaches to a running application, or launches one, exactly as it does today:
 
 ```
 ottermate recorder
@@ -267,7 +305,12 @@ actions appear in the recorder, in the stream and in the Inspector, in order wit
    know to the command once the command has begun, so `why`'s `see` line (`rows --frame N --lane L`) runs as written.
 4. **Landed 2026-10-17.** **Many observers, one hand** (§4), with a test that two connections cannot interleave input and that the hand
    is released on disconnect.
-5. **The stream** (§6). The Inspector's first light (roadmap M1) depends on this step.
+5. **The stream** (§6), in two parts:
+   - **5a. The per-connection sender and cursor, with the text form** (`stream ... [for <ms>]`). Agents and tests
+     can use it at once.
+   - **5b. The link module** (`vexelray-gui-inspector-link`), with the three elektro-Q fixes from §6 landing first
+     or alongside it. The Inspector's first light (roadmap M1) depends on 5b. Until 5b lands, the Inspector can read
+     5a's text stream.
 6. **The rest of meter.md:** the CPU spike, then `meter`, `focus loop` and `wake` (meter.md steps 1 and 3–5). Retire
    the pacing witness code (meter.md step 6).
 7. **The domain verbs**, each landing with its upstream hook: `bus`, `kron`, `gpu`, `ledger`, `threads`, then
@@ -303,9 +346,13 @@ same change. Those examples are real runs, which the transcripts in this plan ar
   32 MB at 2^18**, filled from the gui demo's own `-Dprobe=all` trace. The same trace ran at about 22,000
   rows/s during startup, 1,500 to 9,000 rows/s while animating and a few rows/s idle. So 2^18 holds roughly
   12 s of startup, half a minute to three minutes of activity, and hours of idle. The default stays 2^18.
-- **Q3. When the stream needs a binary encoding**, if ever. Measure full-trace text throughput over loopback
-  first.
+- **Q3. When the stream needs a binary encoding**, if ever. **Closed 2026-10-17, measured.** Text keeps up, at 27
+  times the real peak. The Inspector moves to elektro-Q for its shapes, typed queries, version checks and
+  socket-file access, not for speed (§6, and the spike report).
 - **Q4. How the hand interacts with otter.md sessions.** A session that outlives one command (otter.md §1) should
   probably hold the hand for its whole life.
 - **Q5. Heap and GC data under native-image.** Which management bean notifications and JFR events work in a
   GraalVM native binary? Spike this before `heap` is scoped.
+- **Q6. A lane, or an exemption, for the link's threads.** The link adds one sender thread per streaming
+  connection, and elektro-Q adds virtual reader threads. `vexelray-framework/docs/threading.md` T1.1 keeps the lane
+  list closed, so these need either a lane of their own or a stated exemption, like the automation threads have.

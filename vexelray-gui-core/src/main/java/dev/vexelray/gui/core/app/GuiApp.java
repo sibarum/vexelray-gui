@@ -51,7 +51,7 @@ import java.util.List;
  * walks the resulting {@link RetainedNode} tree into a {@link Canvas} ({@link TreeRenderer}) and presents. The GUI
  * writes no Vulkan or shader code — this only composes VexelRay's native API.
  */
-public final class GuiApp implements AutoCloseable {
+public final class GuiApp implements AutoCloseable, LoopCounters {
 
     private static final sibarum.probe.Log LOG = sibarum.probe.Log.of("gui.app");
 
@@ -144,6 +144,8 @@ public final class GuiApp implements AutoCloseable {
     private long displayReadAt;
     /** Set by {@link #postWake}, consumed by the park: how a wake is told apart from OS input. */
     private final java.util.concurrent.atomic.AtomicBoolean wakePosted = new java.util.concurrent.atomic.AtomicBoolean();
+    /** What the loop has done, as {@link LoopCounters} reports it; this application's methods of that name read it. */
+    private final LoopTally tally = new LoopTally();
 
     /** The window a modal dialog is showing in, or null when nothing is modal. Main thread. */
     private NativeWindow modal;
@@ -395,6 +397,7 @@ public final class GuiApp implements AutoCloseable {
 
         this.main = new GuiWindow(platform, instance, device, fonts, images, null,
                 probe, probeSurface, config.decorations(), presentBackend);
+        main.tally(tally);
         this.controls = controlsFor(main);
     }
 
@@ -1285,6 +1288,7 @@ public final class GuiApp implements AutoCloseable {
         GuiWindow w = new GuiWindow(platform, instance, device, fonts, images, spec.gui(),
                 spec.standing().place(spec.config(), anchorHandle(spec)), this::create, presentBackend);
         w.liveStep(() -> iterationTop(false));
+        w.tally(tally);
         WindowInput input = inputs.attach(w.window, spec.gui());
         OpenWindow entry = new OpenWindow(w, input, spec, owner);
         LOG.info("window opened: \"{}\" {}x{}{}", spec.config().title(), spec.config().width(), spec.config().height(),
@@ -1469,8 +1473,60 @@ public final class GuiApp implements AutoCloseable {
         if (Probe.ON) {
             Probe.mark(Lane.FRAME, "wake.post", "nudging the OS message queue");
         }
-        wakePosted.set(true);
+        tally.wake(wakePosted.getAndSet(true));
         main.window.postWake();
+    }
+
+    // --- loop counters: read from any thread (LoopCounters) ---
+
+    @Override
+    public long frame() {
+        return tally.frame();
+    }
+
+    @Override
+    public long drawn() {
+        return tally.drawn();
+    }
+
+    @Override
+    public long presented() {
+        return tally.presented();
+    }
+
+    @Override
+    public long presentedStart(long n) {
+        return tally.presentedStart(n);
+    }
+
+    @Override
+    public long parks(LoopCounters.Park kind) {
+        return tally.parks(kind);
+    }
+
+    @Override
+    public long wakes() {
+        return tally.wakes();
+    }
+
+    @Override
+    public long wakesCoalesced() {
+        return tally.wakesCoalesced();
+    }
+
+    @Override
+    public boolean focused() {
+        return tally.focused();
+    }
+
+    @Override
+    public LoopCounters.Focus focusOverride() {
+        return tally.focusOverride();
+    }
+
+    @Override
+    public void focusOverride(LoopCounters.Focus focus) {
+        tally.focusOverride(focus);
     }
 
     /**
@@ -1508,8 +1564,15 @@ public final class GuiApp implements AutoCloseable {
     /**
      * Whether any window of this application has focus — this loop serves all of them, so any one of
      * them being looked at means the loop is being looked at.
+     *
+     * <p>Unless {@link #focusOverride(LoopCounters.Focus)} holds an answer in the windows' place: a driver measuring
+     * the loop's policy sets the input that policy reads, since taking the real foreground would need injected input.
      */
     private boolean isFocused() {
+        LoopCounters.Focus override = tally.override();
+        if (override != LoopCounters.Focus.OS) {
+            return override == LoopCounters.Focus.ON;
+        }
         if (main.window.isFocused()) {
             return true;
         }
@@ -1543,6 +1606,8 @@ public final class GuiApp implements AutoCloseable {
      * false) a texture another window still names is kept without a word, and the host loop says so if it still is.
      */
     private void iterationTop(boolean loop) {
+        // First, so everything this frame runs (the posted tasks below included) reads it as the frame in progress.
+        tally.begin(System.nanoTime());
         // Window creation, showing, hiding and closing all land here: posted from wherever they were asked
         // for, performed on the thread that is allowed to perform them.
         for (Runnable task; (task = tasks.poll()) != null; ) {
@@ -1636,15 +1701,25 @@ public final class GuiApp implements AutoCloseable {
                 // for a message already gone -- forever, when nobody is looking, with every later wake
                 // suppressed because a frame is already owed. Found by vexelray-framework's two-window
                 // witness; TwoWindowsWakeTest in vexelray-gui-harness.
-                long budget = tasks.isEmpty() && !retireDue() && !wakePosted.get() ? pacing.getAsLong() : 0L;
+                long paced = tasks.isEmpty() && !retireDue() && !wakePosted.get() ? pacing.getAsLong() : 0L;
+                long budget = paced;
                 // Then the two bounds. The floor applies only while someone is looking: an unfocused
                 // window parks on whatever the application asked for, up to forever.
-                if (isFocused()) {
+                boolean focused = isFocused();
+                if (focused) {
                     budget = Math.min(budget, maxIdleNanos);
                 }
+                long floored = budget;
                 // The ceiling applies always. A zero budget means "immediately", which on a presenter
                 // that does not block is as fast as the machine goes; this is what stops that.
                 budget = Math.max(budget, minFrameNanos - (System.nanoTime() - frameStarted));
+                // Counted by whichever bound decided it, the last to move it first (LoopCounters.Park).
+                tally.close();
+                tally.park(budget <= 0L ? LoopCounters.Park.ZERO
+                        : budget > floored ? LoopCounters.Park.CEILING
+                        : floored < paced ? LoopCounters.Park.FLOOR
+                        : budget == Long.MAX_VALUE ? LoopCounters.Park.FOREVER
+                        : LoopCounters.Park.DEADLINE, focused);
                 // The heartbeat, and the thing that makes a gap in the log readable (docs/reference/automation.md §4).
                 //
                 // A run is read by sorting on time and looking for long stretches with no frame in them. That

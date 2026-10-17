@@ -1,6 +1,6 @@
 # Meter: measuring the frame loop from the socket
 
-Status: **Proposed 2026-10-17, not started.** Three new verbs on the automation server (`meter`, `wake` and
+Status: **In progress: step 2 (the counters, `LoopCounters`) landed 2026-10-17; no verb yet.** Three new verbs on the automation server (`meter`, `wake` and
 `focus loop`) and one new field in `size`'s reply. Together they let a script ask the questions
 render on demand is judged by (how many frames, why the loop parked, what a wake earns, what idling costs) with no
 code in the application under test. `ottermate` relays verbs and knows none
@@ -188,7 +188,11 @@ metadata (the stack's rule: native-image metadata covers every downcall).
 1. **Spike the CPU calls.** A throwaway that prints process and thread cycles for a running witness, and settles
    the thread-name question (§4). Everything in §4 depends on its answer.
 2. **The counters and `LoopCounters`** (§3), with a harness test that drives a fake window through each park kind
-   and checks the counts. No socket yet.
+   and checks the counts. No socket yet. **Landed 2026-10-17:** `dev.vexelray.gui.core.app.LoopCounters`, which
+   `GuiApp` implements, with `LoopCountersTest` in `vexelray-gui-harness`. `iterations` is `frame()`, the flight
+   recorder's frame stamp (one number, not two); `drawn` counts iterations that asked a presenter for a frame and
+   `presented` those whose frame was emitted for it. The `focus loop` override's effect is in (`focusOverride`); its
+   verb and the lapse on disconnect are still step 4.
 3. **`meter`** on the automation server, reading `LoopCounters` and `ProcessCpu`. Document it in
    [automation.md](../reference/automation.md) §5 and the guide's worked examples.
 4. **`focus loop` and `size`'s field.** Includes putting focus back when a driver disconnects (§2).

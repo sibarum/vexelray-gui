@@ -1,6 +1,6 @@
 # Flight recorder: the automation socket as an instrument panel
 
-Status: **Proposed 2026-10-17, not started.** This plan extends the automation socket
+Status: **In progress: §9 step 2 (`LoopCounters` and the frame counter) landed 2026-10-17.** This plan extends the automation socket
 ([automation.md](../reference/automation.md)) so a running application can report what its frame loop, bus, clock,
 GPU and threads are doing, both to a person and to an agent. It is the first step on the
 [Inspector](../../../vexelray-inspector/docs/roadmap.md) roadmap. It folds in [meter.md](meter.md): that plan's
@@ -242,7 +242,7 @@ actions appear in the recorder, in the stream and in the Inspector, in order wit
 
 1. **The live sink** in atchung-probe, with a test that a registered sink receives exactly the rows the file
    receives, in the same order.
-2. **`LoopCounters` and the frame counter**, which is meter.md step 2.
+2. **`LoopCounters` and the frame counter**, which is meter.md step 2. **Landed 2026-10-17**: the frame stamp is `LoopCounters.frame()`, the frame in progress, advanced before anything in the frame runs (a frame pulled during a move or resize counts as one).
 3. **The recorder and its first verbs:** `recorder`, `rows`, `gaps`, `frames`, `why`. After this step an agent can
    ask why a frame was slow.
 4. **Many observers, one hand** (§4), with a test that two connections cannot interleave input and that the hand

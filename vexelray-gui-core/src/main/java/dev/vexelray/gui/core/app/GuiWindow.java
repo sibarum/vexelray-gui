@@ -132,6 +132,8 @@ final class GuiWindow implements AutoCloseable {
      * until the mouse was let go.
      */
     private Runnable liveStep = () -> { };
+    /** Where this window's draws are counted ({@link LoopCounters}); null until the host gives it one. */
+    private LoopTally tally;
     /** The tree as the last update left it, for the draw that follows (or the one after, if this one is skipped). */
     private RetainedNode updated;
     /**
@@ -228,6 +230,11 @@ final class GuiWindow implements AutoCloseable {
         this.liveStep = step == null ? () -> { } : step;
     }
 
+    /** Count this window's draws into {@code tally}, the host loop's. */
+    void tally(LoopTally tally) {
+        this.tally = tally;
+    }
+
     /**
      * A frame pulled from inside the platform's live move/resize loop: the host's iteration top ({@link #liveStep}),
      * then {@link #pull}, with resizes throttled.
@@ -237,6 +244,9 @@ final class GuiWindow implements AutoCloseable {
         try {
             liveStep.run();
             pull();
+            if (tally != null) {
+                tally.close();   // a pulled frame is an iteration of its own, so it is tallied as one
+            }
         } finally {
             presenter.throttleResize(false);
         }
@@ -289,6 +299,9 @@ final class GuiWindow implements AutoCloseable {
         if (!drawOwed) {
             Probe.count(Lane.FRAME, "draw skipped", 1);
             return true;
+        }
+        if (tally != null) {
+            tally.rendering();
         }
         return presenter.render(0, this::draw);
     }
@@ -435,6 +448,9 @@ final class GuiWindow implements AutoCloseable {
             }
         }
         drawOwed = false;
+        if (tally != null) {
+            tally.drawing();
+        }
         drawnWidth = window.width();
         drawnHeight = window.height();
         try (Zone z = Probe.zone(Lane.DRAW, "emit canvas")) {

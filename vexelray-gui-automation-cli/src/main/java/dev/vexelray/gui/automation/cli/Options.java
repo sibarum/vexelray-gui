@@ -137,7 +137,7 @@ record Options(int port,
                 zoom = value(args, ++i, "--zoom");
             } else if (arg.equals("--size")) {
                 size = value(args, ++i, "--size");
-            } else if (arg.startsWith("--")) {
+            } else if (arg.startsWith("--") && trailing.isEmpty()) {
                 throw new UsageException("no option '" + arg + "'");
             } else {
                 trailing.add(arg);

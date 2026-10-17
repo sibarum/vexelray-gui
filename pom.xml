@@ -55,6 +55,10 @@
         <!-- Drives a real GuiApp loop under a test's control: synthetic input, an observable frame
              budget, and a wait that ends only when something asks for a frame. See docs/render-on-demand. -->
         <module>vexelray-gui-harness</module>
+        <!-- The flight recorder: a ring of the probe's recent rows inside the application, and the questions asked
+             of it, each answered as a plain record with its text reply a pure function of it. On atchung-probe
+             only: no GUI or bus type, so the answers can travel any transport. See docs/plans/flight-recorder.md. -->
+        <module>vexelray-gui-recorder</module>
         <!-- Drives a real application for troubleshooting: a pointer that never teleports, so the hover a
              bug depended on is actually provoked. Speaks only bus types. See docs/automation.md. -->
         <module>vexelray-gui-automation</module>
@@ -126,6 +130,11 @@
             <dependency>
                 <groupId>dev.vexelray.gui</groupId>
                 <artifactId>vexelray-gui-widget</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.vexelray.gui</groupId>
+                <artifactId>vexelray-gui-recorder</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

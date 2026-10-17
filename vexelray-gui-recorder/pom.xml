@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>dev.vexelray.gui</groupId>
+        <artifactId>vexelray-gui</artifactId>
+        <version>0.1.1-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>vexelray-gui-recorder</artifactId>
+
+    <name>VexelRay GUI :: Recorder</name>
+    <description>The flight recorder: a fixed ring of the probe's recent rows, held inside the application and fed
+        by a live sink, and the questions asked of it (recorder, rows, gaps, frames, why). Every answer is a plain
+        immutable record, and the text reply is a pure function of that record, so the same answer can travel any
+        transport. Depends on atchung-probe alone: no GUI type, no bus type, no serialization library. See
+        docs/plans/flight-recorder.md.</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>sibarum.atchung</groupId>
+            <artifactId>atchung-probe</artifactId>
+        </dependency>
+    </dependencies>
+</project>

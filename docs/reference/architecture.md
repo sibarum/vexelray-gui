@@ -774,7 +774,10 @@ vexelray-gui           parent (pom), groupId dev.vexelray.gui, Java 25
 │                      results delivered back through Atchung.                                        -> -core
 ├─ vexelray-gui-automation  an out-of-process agent driving the real application — real window, real Vulkan,
 │                      real frame loop — over a socket, emitting one correlation log that explains what
-│                      happened. See docs/automation.md.                                              -> -core
+│                      happened. See docs/automation.md.                                    -> -core, -recorder
+├─ vexelray-gui-recorder  the flight recorder: a ring of recent probe rows fed by a live sink, and the
+│                      queries over it (recorder, rows, gaps, frames, why), each answered as a plain record
+│                      that any transport can carry. See docs/plans/flight-recorder.md.             -> atchung-probe
 ├─ vexelray-gui-automation-cli  ottermate, the client for that socket. An empty dependency block — socket,
 │                      line I/O and ProcessBuilder — so it runs as a standalone jar with none of the stack on
 │                      its classpath, which is what keeps automation out of anything shipped.

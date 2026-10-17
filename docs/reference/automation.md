@@ -242,6 +242,100 @@ save` — so a recording of two clients reads apart. The hand's changes are mark
 The verbs are also callable directly — `driver.command("click 41")`, or `driver.cursor()` for the pointer — so
 a test can drive the same surface with no socket in the way.
 
+### The flight recorder
+
+With the probe on, the application keeps its most recent probe rows in a ring
+(`vexelray-gui-recorder`, [flight-recorder.md](../plans/flight-recorder.md) §3), and five verbs read it:
+`recorder`, `rows`, `gaps`, `frames` and `why`. They all read, so any connection may use them and none needs
+the hand. None needs a window either: the ring belongs to the process, like the probe that feeds it.
+
+- **Switching it on.** `Windows` starts the recorder when the probe is on. A driven run already turns the probe
+  on (`Logging.probeLanes()`); `-Dprobe=all` gets every lane. `-Drecorder=<rows>` sizes the ring (rounded up
+  to a power of two, default 2^18, about 32 MB of heap, measured in flight-recorder.md Q2). With the probe off,
+  every ring verb answers `err the recorder is off: start with -Dprobe=...`.
+- **The frame stamp.** Each row carries the loop's frame in progress (`LoopCounters.frame()`), which the host
+  hands over as the third argument of `new Windows(app::windows, timeline, app)`. A host that hands over no
+  counters still records rows, `gaps` and `rows` still work, and `frames` and `why` say what is missing.
+- **Every reply states its span and its loss.** `over=+a..+b` gives the ring span read, on the probe's clock
+  (seconds since the probe started, the same clock as `t_mono_ns`). `lost=` counts the `seq` numbers missing
+  inside that span. Overwriting the oldest row is not loss: the span shrinks instead. Every list ends its first
+  line with `more=N`.
+- **Answers are records.** Each verb computes a plain record (`RecorderStatus`, `RowList`, `GapList`,
+  `FrameList`, `FrameExplanation`), and `Replies` renders it. The text is a pure function of the record, so
+  another transport can carry the same record and mean the same thing.
+
+A real run against the gui demo (`-Dprobe=all`), with a `mark` and a click on the rail opening a panel:
+
+```
+$ ottermate recorder
+ok rows=10687 capacity_rows=262144 over=+1.412s..+8.966s lost=0 lost_total=0 rate_rows_per_s=4 frames=1..97 frame_stamp=yes ring_mb=12.0 sink_failures=0 lanes=bus,state,time,anim,input,frame,layout,draw,gpu,shader,app
+
+$ ottermate frames worst 5
+ok frames=5 order=worst held=1..97 over=+1.412s..+9.154s lost=0 more=92
+frame  at       took_us  stage     stage_us  woke  drawn  presented  park
+1      +1.413s  96760    present   15380     -     yes    yes        0ms
+2      +1.511s  31960    emit      21400     wake  yes    yes        0ms
+85     +6.552s  20930    gpu_wait  11773     wake  yes    yes        0ms
+88     +6.613s  20750    gpu_wait  16706     wake  yes    yes        0ms
+89     +6.634s  20640    gpu_wait  16637     wake  yes    yes        0ms
+
+$ ottermate why 88
+ok frame=88 at=+6.613s took_us=20750 drawn=yes presented=yes over=+6.594s..+6.634s lost=0
+woke    wake: paint motion on Gui@2133c8f8 (main; 1 wake mark)
+stage   before=780 update=294 draw=19580 other=97   (us; together they make up took_us)
+inside  input=174 clock=491 dispatch=22 drain=52 layout=0 resolve=0 emit=1570 gpu_wait=16706 submit=134 present=609   (us)
+layout  0 passes
+bus     drained=2 published=vexelray.gui.mutations x2 (shred-0)
+park    0ms waited_us=-
+also    slow_spans=0
+unknown budget_us (the loop marks no frame budget, so over_us cannot be given); gc (the probe has no gc rows); layout cause (flex layout rows do not say what made the tree dirty)
+see     rows --frame 88 --lane gpu
+
+$ ottermate rows --frame 88 --lane gpu
+ok rows=5 over=+1.412s..+15.571s lost=0 more=0
+seq,t_mono_ns,t_wall,thread,lane,kind,detail,frame
+34963,6630598300,2026-10-17T22:00:26.074572200Z,main,gpu,dxgi wait,16.61ms,88
+34964,6630740000,2026-10-17T22:00:26.074572200Z,main,gpu,wait fence,96.2us,88
+34968,6632871900,2026-10-17T22:00:26.076138Z,main,gpu,queue submit,133.9us,88
+34969,6633513700,2026-10-17T22:00:26.077466Z,main,gpu,dxgi copy+present,608.8us,88
+34970,6633535400,2026-10-17T22:00:26.077466Z,main,gpu,present frame,19.58ms,88
+
+$ ottermate gaps
+ok gaps=16 stalls=0 threshold_ms=100 over=+1.412s..+9.343s lost=0 more=0
+frame  at       gap_ms  verdict   park     last
+4      +1.561s  201.0   expected  200ms    main frame frame 1.67ms
+5      +1.762s  167.3   expected  200ms    main frame frame 11.36ms
+...
+74     +4.709s  215.8   expected  forever  main frame frame 2.02ms
+75     +4.924s  1483.2  expected  forever  main frame frame 3.34ms
+```
+
+Read in order: the slowest frames after startup are the panel's slide, and `why 88` puts 16.7 ms of its 20.8 ms
+in `gpu_wait`. Following the `see` line shows all of it is `dxgi wait`, the presenter blocking on the swap
+chain's frame-latency waitable. So those frames were held by presentation, not by layout or by drawing. (The
+`gaps` table is cut here; the run printed all 16 rows.)
+
+How each verb reads the rows the probe already writes:
+
+- **`frames`, `why`.** A frame is the set of rows stamped with its number. The stages are the loop thread's span
+  names: `before` (`before frame`, the input pump and clock), `update` (`tree update`), `draw` (`present frame` or
+  `offscreen frame`) and `other`, the rest of the `frame` span. These four add up to `took_us`. `inside` names
+  the pieces within those, which need not add up. A stage whose lane recorded nothing in the ring prints `-`,
+  never 0. The first frame stamp in the ring is never listed, because the ring may hold only its tail.
+- **What woke a frame** is read from the frame before. A `wake` mark posted during frame F-1 is owed to frame
+  F. Without one: key edges in F's own input pump give `input`. A park that ran its whole budget gives
+  `timeout`, and a park on 0 ms gives `unparked`. Anything else ended the park without a row, for example an OS
+  message such as pointer motion, so `woke` says `-` and gives that reason.
+- **`gaps`** is `sibarum.probe.CsvView.gapsOf`, the rule `csvview --gaps` prints, applied to the ring. A gap
+  is a stall when nothing said the loop would sleep, or when the part the park leaves uncovered is itself at
+  least the threshold. Frame to frame is the park plus the next frame's work, so a 200 ms idle park shows
+  200.6 ms gaps, and those are `expected`.
+- **The `unknown` line** names what `why` would need that no row records today: the loop's frame budget, GC,
+  and what made layout dirty.
+
+`ottermate` hands options it does not know to the command once the command has begun, so
+`ottermate rows --frame 88 --lane gpu`, the line `why` prints, runs as written.
+
 ### The protocol
 
 One command per line in; one reply out, terminated by a line containing only `.`. Replies begin `ok` or `err`,
@@ -280,6 +374,11 @@ whether the run succeeded.
 | `log [logger] [level]` | Read how much is logged and where the file is; or set a level for both sinks, or for one logger and everything beneath it. To the running process only. A driven run is already the loudest mode (`TRACE` file, probe on) — see `atchung/docs/logging.md`. |
 | `mark <note>` | Write a row into the correlation log saying *why*. Changes nothing else. |
 | `hand`, `hand take`, `hand release` | Who holds the hand and which connection this is; take it if free; let it go. See *Many observers, one hand* above. |
+| `recorder` | The flight recorder: rows held, the span they cover, loss, row rate, frame range, lanes on. See *The flight recorder* below. |
+| `rows [--lane L] [--kind K] [--thread T] [--grep S] [--frame N] [n]` | The last `n` (50) matching rows from the ring, as correlation-log lines with the frame stamp last. |
+| `gaps [ms]` | Silences between frames of `ms` (100) or more, each judged against the park before it — `csvview --gaps` over the ring. |
+| `frames [last N \| worst N \| since <mark>]` | One line per frame: start, time taken, slowest stage, what woke it, drawn, presented, park. Default `last 20`. |
+| `why <frame>` | One frame explained: what woke it, time per stage, layout passes, bus traffic, the park after; ends with a `see` line. |
 | `help`, `quit` | The list; and end the session. |
 
 **Two ways to name a node, and the difference is durability.** A **ref** is a node id: minted per run, resolved

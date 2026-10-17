@@ -94,6 +94,15 @@ class OptionsTest {
     }
 
     @Test
+    void anUnknownOptionAfterTheCommandBelongsToTheCommand() {
+        // The verbs have options of their own (rows --frame 73 --lane gpu, which why's see line prints); once the
+        // command has begun, a word this tool does not know is the command's. Its own options still work there.
+        Options o = Options.parse(new String[]{"rows", "--frame", "73", "--lane", "gpu", "--quiet"});
+        assertEquals("rows --frame 73 --lane gpu", o.command());
+        assertTrue(o.quiet());
+    }
+
+    @Test
     void helpBeatsEveryContradictionOnTheLine() {
         assertTrue(Options.parse(new String[]{"--help"}).help());
         assertTrue(Options.parse(new String[]{"--script", "a.txt", "shot", "--help"}).help(),

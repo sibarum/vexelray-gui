@@ -24,6 +24,11 @@
             <groupId>dev.vexelray.gui</groupId>
             <artifactId>vexelray-gui-core</artifactId>
         </dependency>
+        <!-- The flight recorder the ring verbs read (recorder, rows, gaps, frames, why). -->
+        <dependency>
+            <groupId>dev.vexelray.gui</groupId>
+            <artifactId>vexelray-gui-recorder</artifactId>
+        </dependency>
     </dependencies>
 
     <build>

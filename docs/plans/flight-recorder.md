@@ -1,6 +1,6 @@
 # Flight recorder: the automation socket as an instrument panel
 
-Status: **In progress. §9 step 2 (`LoopCounters` and the frame counter) and step 4 (many observers, one hand) landed 2026-10-17; the rest not started.** This plan extends the automation socket
+Status: **In progress. §9 steps 2 (`LoopCounters` and the frame counter), 3 (the recorder and `recorder`, `rows`, `gaps`, `frames`, `why`) and 4 (many observers, one hand) landed 2026-10-17; the rest not started.** This plan extends the automation socket
 ([automation.md](../reference/automation.md)) so a running application can report what its frame loop, bus, clock,
 GPU and threads are doing, both to a person and to an agent. It is the first step on the
 [Inspector](../../../vexelray-inspector/docs/roadmap.md) roadmap. It folds in [meter.md](meter.md): that plan's
@@ -118,6 +118,10 @@ what the loop believes about focus.
 
 The transcripts below are **illustrative**. They show the intended reply shapes, not runs captured from a real
 application.
+
+**Records first.** Every verb computes its answer as a plain immutable record, free of GUI, bus and serialization
+types, and its text reply is a pure function of that record, so another transport can carry the same answer
+unchanged (as landed: `vexelray-gui-recorder`'s records and `Replies`, guarded by `RecorderRecordsGuardTest`).
 
 ### Over the ring
 
@@ -250,8 +254,17 @@ actions appear in the recorder, in the stream and in the Inspector, in order wit
 1. **The live sink** in atchung-probe, with a test that a registered sink receives exactly the rows the file
    receives, in the same order.
 2. **`LoopCounters` and the frame counter**, which is meter.md step 2. **Landed 2026-10-17**: the frame stamp is `LoopCounters.frame()`, the frame in progress, advanced before anything in the frame runs (a frame pulled during a move or resize counts as one).
-3. **The recorder and its first verbs:** `recorder`, `rows`, `gaps`, `frames`, `why`. After this step an agent can
-   ask why a frame was slow.
+3. **Landed 2026-10-17.** **The recorder and its first verbs:** `recorder`, `rows`, `gaps`, `frames`, `why`. After this step an agent can
+   ask why a frame was slow. As landed ([automation.md](../reference/automation.md) §5, *The flight recorder*, is now
+   the specification): the module is `vexelray-gui-recorder`, on atchung-probe alone. A reader copies a chunk of
+   the ring and then drops any slot the writer may have reused meanwhile (a claim counter bumped before each
+   write and a publish counter after it), so it never blocks the writer, and a streaming reader follows from a
+   ring position. That is what step 5 reads. `gaps` is `CsvView.gapsOf`, factored out of csvview so both share
+   one rule. Its first live run called every 200 ms idle park a stall, because frame to frame includes the next
+   frame's work, so the rule now judges only what the park leaves uncovered, against the threshold (atchung
+   420f6b4). `why` cannot give a frame budget, GC or the cause of a layout, because no row records them; it says
+   so on an `unknown` line instead of printing `budget_us`/`over_us`. ottermate now passes options it does not
+   know to the command once the command has begun, so `why`'s `see` line (`rows --frame N --lane L`) runs as written.
 4. **Landed 2026-10-17.** **Many observers, one hand** (§4), with a test that two connections cannot interleave input and that the hand
    is released on disconnect.
 5. **The stream** (§6). The Inspector's first light (roadmap M1) depends on this step.
@@ -283,7 +296,13 @@ same change. Those examples are real runs, which the transcripts in this plan ar
   no frames ([automation.md](../reference/automation.md) §4). Proposed: a header row names the columns, and
   `csvview` accepts either schema.
 - **Q2. Ring size.** 2^18 rows covers somewhere between seconds and minutes, depending on which lanes are on. The
-  right default depends on how many bytes a row costs in practice, so measure it before choosing.
+  right default depends on how many bytes a row costs in practice, so measure it before choosing. **Measured
+  2026-10-17:** the ring's columns are 48 bytes a slot by layout (four `long`s and four compressed references), but
+  the heap grew by 79 bytes a row on G1, because each 2^18 column is a humongous allocation that rounds up to whole
+  regions. Detail strings, which are fresh per row, add about 48 more. That makes about **127 bytes a row, or
+  32 MB at 2^18**, filled from the gui demo's own `-Dprobe=all` trace. The same trace ran at about 22,000
+  rows/s during startup, 1,500 to 9,000 rows/s while animating and a few rows/s idle. So 2^18 holds roughly
+  12 s of startup, half a minute to three minutes of activity, and hours of idle. The default stays 2^18.
 - **Q3. When the stream needs a binary encoding**, if ever. Measure full-trace text throughput over loopback
   first.
 - **Q4. How the hand interacts with otter.md sessions.** A session that outlives one command (otter.md §1) should

@@ -251,7 +251,7 @@ public final class Demo {
         }
         try {
             int port = want.equals("on") || want.equals("true") ? AutomationServer.DEFAULT_PORT : Integer.parseInt(want);
-            AutomationServer server = AutomationServer.start(new Windows(app::windows, krono::quiescentAtLastTick),
+            AutomationServer server = AutomationServer.start(new Windows(app::windows, krono::quiescentAtLastTick, app),
                     port);
             // Protocol, not a notice: ottermate --launch reads the port from exactly this line.
             System.out.println("automation: localhost:" + server.port());

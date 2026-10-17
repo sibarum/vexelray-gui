@@ -279,6 +279,55 @@ $ ottermate log gui.frame trace     # one logger and everything beneath it, from
 The file is `<app>.log` and the trace is `<app>-probe.csv` beside it (`target/logs` in a checkout, `~/.<app>/logs`
 otherwise). Everything about levels, settings and locations is in `atchung/docs/logging.md`.
 
+### Asking why a frame was slow
+
+With the probe on, the application keeps its recent probe rows in memory, and five verbs read them while it runs:
+`recorder`, `rows`, `gaps`, `frames` and `why` ([automation.md](../reference/automation.md) §5, *The flight
+recorder*). Put a `mark` before the thing you want to look at, and then ask for the frames after it. Here is a
+real run against the gui demo, started with `-Ddemo.jvmArgs=-Dprobe=all`:
+
+```
+$ ottermate --quiet mark open-panel
+$ ottermate --quiet click 85
+$ ottermate --quiet settle
+$ ottermate frames since open-panel
+ok frames=20 order=since held=1..97 over=+1.412s..+9.526s lost=0 more=2
+frame  at       took_us  stage     stage_us  woke     drawn  presented  park
+76     +6.404s  3340     clock     443       wake     no     no         forever
+77     +6.420s  1400     clock     392       wake     no     no         forever
+78     +6.436s  1500     dispatch  374       wake     no     no         forever
+79     +6.452s  1450     clock     382       wake     no     no         forever
+80     +6.470s  7560     emit      3460      wake     yes    yes        9ms
+81     +6.486s  9820     gpu_wait  3964      wake     yes    yes        6ms
+...
+```
+
+The table is cut here; the reply had 20 rows, and `more=2` says two more frames came after the mark. Frame 76 is
+the click arriving. Ask about it:
+
+```
+$ ottermate why 76
+ok frame=76 at=+6.404s took_us=3340 drawn=no presented=no over=+4.923s..+6.420s lost=0
+woke    wake: injected input on Gui@2133c8f8 (vexelray-automation-3; 1 wake mark)
+stage   before=2700 update=476 draw=0 other=164   (us; together they make up took_us)
+inside  input=390 clock=443 dispatch=260 drain=252 layout=0 resolve=0 emit=0 gpu_wait=0 submit=0 present=0   (us)
+layout  0 passes
+bus     drained=1 published=tactroller.input x1 (vexelray-automation-3)
+park    forever waited_us=12250
+also    slow_spans=0
+unknown budget_us (the loop marks no frame budget, so over_us cannot be given); gc (the probe has no gc rows); layout cause (flex layout rows do not say what made the tree dirty)
+see     rows --frame 76 --lane time
+```
+
+It was woken by the injected input from ottermate's own connection, it drew nothing, and it parked forever
+afterwards. Every reply says which span of the ring it read (`over=`) and how many rows were missing from it
+(`lost=`). `why` always ends with a `see` line, the verb that shows the evidence, and you can run it as written:
+options that ottermate does not know are passed to the command once the command has begun.
+
+`frames worst 5` lists the slowest frames still in the ring. `gaps` lists silences between frames, each judged
+against the park before it. With the probe off, all five verbs answer
+`err the recorder is off: start with -Dprobe=...`.
+
 ### An application with more than one window
 
 ```bash

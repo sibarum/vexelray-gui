@@ -1,7 +1,9 @@
 package dev.vexelray.gui.automation;
 
 import dev.vexelray.gui.core.Gui;
+import dev.vexelray.gui.core.app.LoopCounters;
 import dev.vexelray.gui.core.app.WindowView;
+import dev.vexelray.gui.recorder.Recorder;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -37,6 +39,10 @@ import java.util.function.Supplier;
  *   <li>{@code windows} — what is open: a number, a name, the size and view factors, and {@code *} on the chosen one;</li>
  *   <li>{@code window <name|number>} — choose one, by its exact name, a unique beginning of it, or its number.</li>
  * </ul>
+ *
+ * <p>The flight recorder's verbs ({@code recorder}, {@code rows}, {@code gaps}, {@code frames}, {@code why}) are
+ * answered here too, before any window is asked for: the ring is the process's, not a window's. See
+ * {@link RecorderVerbs}.
  */
 public final class Windows implements Commands {
 
@@ -53,6 +59,10 @@ public final class Windows implements Commands {
      * thirty-second {@code await} on one connection does not stall another's {@code tree}.
      */
     private final Map<Gui, Automation> drivers;
+    /** The loop's counters, or {@code null} when the host handed none: the frame stamp on the recorder's rows. */
+    private final LoopCounters counters;
+    /** The ring verbs, over the one recorder every session shares. */
+    private final RecorderVerbs ring;
     private volatile Gui chosen;
 
     public Windows(Supplier<List<WindowView>> source) {
@@ -61,15 +71,37 @@ public final class Windows implements Commands {
 
     /** With the clock every window's {@code settle} waits out; see {@link Timeline}. */
     public Windows(Supplier<List<WindowView>> source, Timeline timeline) {
+        this(source, timeline, null);
+    }
+
+    /**
+     * With the loop's counters as well ({@code GuiApp} is one): what stamps each flight-recorder row with the frame
+     * it was written in, so {@code frames} and {@code why} can answer. Without them the ring still records, and
+     * those two verbs say why they cannot.
+     *
+     * <p>The recorder starts here when the probe is on, sized by {@code -Drecorder=<rows>} (default 2^18), and is
+     * shared by every {@link #session}: it is the process's, like the probe that feeds it.
+     */
+    public Windows(Supplier<List<WindowView>> source, Timeline timeline, LoopCounters counters) {
         this.source = java.util.Objects.requireNonNull(source, "source");
         this.timeline = timeline == null ? Timeline.NONE : timeline;
         this.drivers = new IdentityHashMap<>();
+        this.counters = counters;
+        this.ring = new RecorderVerbs(Recorder.start(Recorder.rowsFromProperty(),
+                counters == null ? Recorder.NO_FRAMES : counters::frame));
     }
 
     private Windows(Windows shared) {
         this.source = shared.source;
         this.timeline = shared.timeline;
         this.drivers = shared.drivers;
+        this.counters = shared.counters;
+        this.ring = shared.ring;
+    }
+
+    /** The loop's counters this registry was handed, or {@code null}. */
+    public LoopCounters counters() {
+        return counters;
     }
 
     /** The same windows and the same drivers, with a choice of its own that starts at the main window. */
@@ -104,6 +136,10 @@ public final class Windows implements Commands {
         String verb = parts[0].toLowerCase(Locale.ROOT);
         String rest = parts.length > 1 ? parts[1].trim() : "";
         try {
+            // The ring is the process's, not a window's: it answers before any window is asked for, or open.
+            if (RecorderVerbs.owns(verb)) {
+                return ring.answer(verb, rest);
+            }
             List<WindowView> open = source.get();
             synchronized (drivers) {
                 drivers.keySet().removeIf(gui -> open.stream().noneMatch(v -> v.gui() == gui));
@@ -122,7 +158,7 @@ public final class Windows implements Commands {
                 return GONE;
             }
             String reply = driver(target).command(trimmed);
-            return verb.equals("help") ? reply + "\n" + HELP : reply;
+            return verb.equals("help") ? reply + "\n" + HELP + "\n" + RecorderVerbs.HELP : reply;
         } catch (RuntimeException e) {
             return "err " + e.getClass().getSimpleName() + ": " + e.getMessage();
         }

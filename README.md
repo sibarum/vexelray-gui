@@ -737,8 +737,9 @@ What sits between the GUI and the OS, all driven from the one main-thread loop:
   application over a loopback socket: `AutomationServer.start(new Automation(gui, app.controls()))`. The
   pointer **travels** rather than teleporting, so hover fires because it was provoked; nodes are addressed by
   role, name or `Gui.landmark` rather than by coordinate; and with `-Dprobe.format=csv` the run writes one
-  correlation log that `sibarum.probe.CsvView --gaps` reads back. See
-  [docs/reference/automation.md](docs/reference/automation.md).
+  correlation log that `sibarum.probe.CsvView --gaps` reads back. With the probe on, the running application keeps its
+  recent rows in a flight recorder (`vexelray-gui-recorder`), so `frames worst 5` and `why <frame>` answer while it
+  runs. See [docs/reference/automation.md](docs/reference/automation.md).
 - **Driving it** (`vexelray-gui-automation-cli`) — `ottermate`, the client:
 
   ```bash

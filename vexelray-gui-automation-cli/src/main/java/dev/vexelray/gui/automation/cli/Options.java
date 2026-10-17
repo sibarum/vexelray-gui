@@ -30,6 +30,11 @@ import java.util.List;
  * @param view         commands that set what is being photographed, run before anything else: the window to
  *                     act on, then density, zoom and size, from {@code --window}, {@code --dpi}, {@code --zoom}
  *                     and {@code --size}
+ * @param app          the running application to attach to, by the name its discovery file gives, or {@code null}
+ * @param pid          the running application to attach to, by process id, or -1
+ * @param portGiven    whether {@code --port} was said; without it, and without {@code --app}, {@code --pid} or
+ *                     {@code --launch}, the port comes from the discovery folder when exactly one application is
+ *                     running there
  */
 record Options(int port,
                Path script,
@@ -40,7 +45,10 @@ record Options(int port,
                boolean keepGoing,
                boolean quiet,
                boolean help,
-               List<String> view) {
+               List<String> view,
+               String app,
+               long pid,
+               boolean portGiven) {
 
     /** How long an application may take to say it is listening. Vulkan, a window, and a first frame. */
     static final int DEFAULT_LAUNCH_TIMEOUT_SECONDS = 60;
@@ -55,6 +63,16 @@ record Options(int port,
 
     boolean launching() {
         return !launch.isEmpty();
+    }
+
+    /** Whether the command line is {@code list}: answered from the discovery folder, with no socket. */
+    boolean listing() {
+        return command != null && command.trim().equals("list");
+    }
+
+    /** Whether the application was named by {@code --app} or {@code --pid}, to be found in the discovery folder. */
+    boolean choosing() {
+        return app != null || pid >= 0;
     }
 
     /** Whether commands come from standard input — neither a file nor a trailing command line. */
@@ -100,6 +118,8 @@ record Options(int port,
         String dpi = null;
         String zoom = null;
         String size = null;
+        String app = null;
+        long pid = -1;
         List<String> trailing = new ArrayList<>();
 
         for (int i = 0; i < args.length; i++) {
@@ -108,6 +128,10 @@ record Options(int port,
                 help = true;
             } else if (arg.equals("--port")) {
                 port = number(value(args, ++i, "--port"), "--port");
+            } else if (arg.equals("--app")) {
+                app = value(args, ++i, "--app");
+            } else if (arg.equals("--pid")) {
+                pid = number(value(args, ++i, "--pid"), "--pid");
             } else if (arg.equals("--script")) {
                 String where = value(args, ++i, "--script");
                 // Explicit stdin is the same source as the default one, so it is recorded by leaving the
@@ -148,7 +172,7 @@ record Options(int port,
 
         if (help) {
             return new Options(AutomationClient.DEFAULT_PORT, null, null, List.of(),
-                    launchTimeout, replyTimeout, keepGoing, quiet, true, List.of());
+                    launchTimeout, replyTimeout, keepGoing, quiet, true, List.of(), null, -1, false);
         }
         // In the order that makes each one mean what it says: the window first, since the rest are about it;
         // then density and zoom, which an em-sized --size is measured against; then the size.
@@ -178,8 +202,13 @@ record Options(int port,
             throw new UsageException("--script " + script + " and the command '" + command
                     + "' are two sources of commands; give one");
         }
+        int ways = (port >= 0 ? 1 : 0) + (app != null || pid >= 0 ? 1 : 0) + (launch.isEmpty() ? 0 : 1);
+        if (ways > 1) {
+            // --port with --launch is refused above, with the reason particular to it.
+            throw new UsageException("--port, --app/--pid and --launch each say which application to drive; give one");
+        }
         return new Options(port < 0 ? AutomationClient.DEFAULT_PORT : port, script, command, launch,
-                launchTimeout, replyTimeout, keepGoing, quiet, false, view);
+                launchTimeout, replyTimeout, keepGoing, quiet, false, view, app, pid, port >= 0);
     }
 
     private static String value(String[] args, int at, String option) {

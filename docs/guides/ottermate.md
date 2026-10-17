@@ -58,6 +58,32 @@ automation: localhost:50845
 
 which is the line `--launch` reads, and the reason `--automation=0` is safe to use for two runs at once.
 
+### Finding what is running
+
+Every application with its socket on also writes a file into `~/.vexelray/automation/` saying which port it is on,
+and removes it when it exits. `ottermate list` shows them:
+
+```
+$ ottermate list
+ok apps=2 folder=C:\Users\User\.vexelray\automation
+app                    pid    port   protocol  started                   cwd
+demo                   26356  61184  1.0       2026-10-17T22:54:06.804Z  C:\Users\User\Documents\GitHub\vexelray-gui\vexelray-gui-demo
+calculator-vexel-demo  25984  61183  1.0       2026-10-17T22:54:07.181Z  C:\Users\User\Documents\GitHub\calculator-vexel-demo
+```
+
+So you rarely need a port:
+
+- **`--app <name>` or `--pid <n>`** picks one of the applications listed.
+- **With no `--port`, `--app`, `--pid` or `--launch`,** ottermate drives the one application running. It names that
+  application on stderr. With several running, it refuses and prints the `--pid` that picks each. With none, it
+  tries 7654.
+- **An application that crashed** leaves its file behind. The next `list` notices that nothing holds the file's lock
+  and deletes it.
+
+`ottermate --app demo hello` asks an application what it offers: its protocol version, its connections and the
+hand, its windows, whether the probe and the recorder are on, and which verbs are still `missing(...)`. The
+details are in [automation.md](../reference/automation.md) §5, *Finding a running application*.
+
 ---
 
 ## 3. The first five minutes

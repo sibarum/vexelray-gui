@@ -48,6 +48,15 @@ public interface Commands {
     }
 
     /**
+     * What this host offers right now, for {@code hello} (docs/plans/discovery.md §4): one line per subject, a
+     * word and then {@code key=value} pairs — the windows, the probe, the recorder, the domains. The server adds
+     * the first line (protocol, process, connections, hand) itself. Nothing by default.
+     */
+    default java.util.List<String> describe() {
+        return java.util.List.of();
+    }
+
+    /**
      * A reply written as it happens, on the connection's own thread. It writes every line of its reply, starting
      * with {@code ok} or {@code err}; the server writes the terminator after it returns.
      */

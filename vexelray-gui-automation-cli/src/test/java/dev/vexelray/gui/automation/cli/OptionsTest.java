@@ -128,4 +128,23 @@ class OptionsTest {
     void aViewOptionWithoutAValueIsAUsageError() {
         assertThrows(UsageException.class, () -> Options.parse(new String[]{"--zoom"}));
     }
+
+    @Test
+    void appAndPidChooseFromTheDiscoveryFolderAndListIsItsOwnCommand() {
+        Options byName = Options.parse(new String[]{"--app", "calculator", "tree"});
+        assertEquals("calculator", byName.app());
+        assertTrue(byName.choosing());
+        assertFalse(byName.portGiven());
+        assertEquals(18244, Options.parse(new String[]{"--pid", "18244", "tree"}).pid());
+        assertTrue(Options.parse(new String[]{"list"}).listing());
+        assertFalse(Options.parse(new String[]{"list", "more"}).listing());
+        assertTrue(Options.parse(new String[]{"--port", "7655", "tree"}).portGiven());
+    }
+
+    @Test
+    void onlyOneWayOfNamingTheApplication() {
+        assertThrows(UsageException.class, () -> Options.parse(new String[]{"--app", "x", "--port", "1", "tree"}));
+        assertThrows(UsageException.class, () -> Options.parse(new String[]{"--pid", "1", "--launch", "app.exe"}));
+        assertThrows(UsageException.class, () -> Options.parse(new String[]{"--pid", "x"}));
+    }
 }

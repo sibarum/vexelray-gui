@@ -64,16 +64,27 @@ public final class AutomationServer implements AutoCloseable {
      */
     public static final String CONNECTIONS_PROPERTY = "automation.connections";
 
+    /**
+     * The protocol this server speaks, {@code major.minor} (docs/plans/discovery.md §4). The minor rises with every
+     * addition — a verb, a field, a form — and the major with anything that could break a client that worked
+     * before, which refuses a major it does not know rather than guessing. {@code hello} and the discovery file
+     * both report it. {@code ottermate} restates the major it speaks, as it restates {@link #DEFAULT_PORT}.
+     */
+    public static final String PROTOCOL = "1.0";
+
     /** How long a refused connection is answered before it is closed, if it does not close first. */
     private static final int REFUSED_LINGER_MS = 5_000;
 
     private static final String HAND_HELP = String.join("\n",
             "hand                     who holds the hand (drives input), and which connection this is",
-            "hand take | release      take the hand if it is free, or let it go (closing the connection also lets go)");
+            "hand take | release      take the hand if it is free, or let it go (closing the connection also lets go)",
+            "hello                    the protocol version, this process, and what it offers now");
 
     private final Commands automation;
     private final int cap;
     private final ServerSocket socket;
+    private final String app;
+    private final Discovery discovery;
     private final Thread thread;
     private final long started = System.nanoTime();
     private final Set<Connection> open = ConcurrentHashMap.newKeySet();
@@ -100,16 +111,31 @@ public final class AutomationServer implements AutoCloseable {
 
     /** Start listening on {@code port}, admitting at most {@code connections} at once. */
     public static AutomationServer start(Commands automation, int port, int connections) throws IOException {
-        return new AutomationServer(automation, port, connections);
+        return new AutomationServer(automation, port, connections, null, null);
     }
 
-    private AutomationServer(Commands automation, int port, int connections) throws IOException {
+    /**
+     * Start listening on {@code port} as the application {@code app}, titled {@code title}: the names its discovery
+     * file and {@code hello} give it ({@code @VexelApp}'s name and title, for an application on the framework).
+     * The other starts name it after its main class.
+     */
+    public static AutomationServer start(Commands automation, int port, String app, String title) throws IOException {
+        return new AutomationServer(automation, port, Integer.getInteger(CONNECTIONS_PROPERTY, DEFAULT_CONNECTIONS),
+                app, title);
+    }
+
+    private AutomationServer(Commands automation, int port, int connections, String app, String title)
+            throws IOException {
         if (connections < 1) {
             throw new IllegalArgumentException("connections must be at least 1, not " + connections);
         }
         this.automation = java.util.Objects.requireNonNull(automation, "automation");
         this.cap = connections;
         this.socket = new ServerSocket(port, connections, InetAddress.getLoopbackAddress());
+        this.app = app == null || app.isBlank() ? mainClassName() : app;
+        // Before the caller prints its "automation: localhost:<port>" line, so anything that saw the line can rely on
+        // the file being there too.
+        this.discovery = Discovery.publish(this.app, title, socket.getLocalPort());
         this.thread = new Thread(this::serve, "vexelray-automation");
         this.thread.setDaemon(true);      // an instrument must never be the reason a process will not exit
         this.thread.start();
@@ -123,6 +149,23 @@ public final class AutomationServer implements AutoCloseable {
     /** How many connections may be open at once. */
     public int connections() {
         return cap;
+    }
+
+    /** The discovery file this server wrote, or {@code null} when it could not write one. */
+    public java.nio.file.Path discoveryFile() {
+        return discovery == null ? null : discovery.file();
+    }
+
+    /** An application nobody named, named after its main class: {@code dev.vexelray.gui.demo.Demo} is "demo". */
+    private static String mainClassName() {
+        String command = System.getProperty("sun.java.command", "").trim();
+        String main = command.isEmpty() ? "app" : command.split("\\s+", 2)[0];
+        if (main.endsWith(".jar")) {
+            main = main.substring(0, main.length() - 4);
+        }
+        int cut = Math.max(main.lastIndexOf('.'), Math.max(main.lastIndexOf('/'), main.lastIndexOf('\\')));
+        String name = main.substring(cut + 1);
+        return name.isEmpty() ? "app" : name.toLowerCase(Locale.ROOT);
     }
 
     private void serve() {
@@ -205,6 +248,9 @@ public final class AutomationServer implements AutoCloseable {
         if (verb.equals("hand")) {
             return hand(c, parts.length > 1 ? parts[1].trim().toLowerCase(Locale.ROOT) : "");
         }
+        if (verb.equals("hello")) {
+            return hello(c);
+        }
         if (c.session.drives(line)) {
             String refused = take(c);
             if (refused != null) {
@@ -242,6 +288,34 @@ public final class AutomationServer implements AutoCloseable {
                 return "err hand takes take, release, or nothing";
             }
         }
+    }
+
+    /**
+     * {@code hello}: the protocol, this process and its connections on the first line, then what the host offers
+     * now, one line per subject ({@link Commands#describe}). It reads, so any connection may ask, and it is what a
+     * client asks once to decide whether it can talk to this server at all (docs/plans/discovery.md §4).
+     */
+    private String hello(Connection c) {
+        String held;
+        synchronized (hand) {
+            held = holder == null ? "free" : holder.number + "(since " + since() + ")";
+        }
+        StringBuilder sb = new StringBuilder("ok protocol=").append(PROTOCOL)
+                .append(" app=").append(app)
+                .append(" pid=").append(ProcessHandle.current().pid())
+                .append(" port=").append(port())
+                .append(" connections=").append(open.size()).append('/').append(cap)
+                .append(" hand=").append(held)
+                .append(" this=").append(c.number)
+                .append(" file=").append(discovery == null ? "-" : discovery.file());
+        try {
+            for (String line : c.session.describe()) {
+                sb.append('\n').append(line);
+            }
+        } catch (RuntimeException e) {
+            sb.append("\nunknown ").append(e.getClass().getSimpleName()).append(": ").append(e.getMessage());
+        }
+        return sb.append("\nsee     help").toString();
     }
 
     /** Take the hand for {@code c} if it is free or already {@code c}'s; otherwise the refusal to reply with. */
@@ -339,6 +413,9 @@ public final class AutomationServer implements AutoCloseable {
     @Override
     public void close() {
         running = false;
+        if (discovery != null) {
+            discovery.close();
+        }
         try {
             socket.close();
         } catch (IOException e) {

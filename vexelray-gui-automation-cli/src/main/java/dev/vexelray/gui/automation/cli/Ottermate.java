@@ -40,9 +40,13 @@ public final class Ottermate {
             "  ottermate [options] [command...]     one command from the remaining arguments",
             "  ottermate [options] --script <file>  one command per line; - is stdin",
             "  ottermate [options]                  commands from stdin (a prompt, at a terminal)",
+            "  ottermate list                       the running applications, from their discovery files",
             "",
             "options:",
-            "  --port <n>            attach to this port (default " + AutomationClient.DEFAULT_PORT + ")",
+            "  --app <name>          attach to the running application of this name (see list)",
+            "  --pid <n>             attach to the running application with this process id",
+            "  --port <n>            attach to this port. Without --port, --app, --pid or --launch: the one",
+            "                        application running, or " + AutomationClient.DEFAULT_PORT + " if none is; several is an error",
             "  --script <file|->     read commands from a file, or - for stdin",
             "  --launch <command...> start the application, drive it, shut it down; takes the rest of the",
             "                        line, and reads the port from its 'automation: localhost:<port>' line,",
@@ -98,6 +102,15 @@ public final class Ottermate {
             out.println(USAGE);
             return Session.OK;
         }
+        if (options.listing()) {
+            // No socket: what is running is in the discovery folder, and reading it clears what is stale.
+            out.println(Discovery.table(Discovery.live(), Discovery.folder()));
+            return Session.OK;
+        }
+        Target target = options.launching() ? new Target(-1, Session.OK) : target(options, Discovery.live(), err);
+        if (target.status() != Session.OK) {
+            return target.status();
+        }
 
         BufferedReader commands;
         try {
@@ -109,7 +122,7 @@ public final class Ottermate {
 
         Launch launch = null;
         try {
-            int port = options.port();
+            int port = target.port();
             if (options.launching()) {
                 launch = Launch.start(options.launch(), options.launchTimeoutSeconds(), err);
                 port = launch.port();
@@ -148,6 +161,83 @@ public final class Ottermate {
                 launch.close();
             }
         }
+    }
+
+    /** The port to attach to, or the status to stop with instead. */
+    record Target(int port, int status) {
+    }
+
+    /**
+     * Which application to attach to (vexelray-gui {@code docs/plans/discovery.md} §5): the {@code --port} given; the
+     * one running application {@code --app} or {@code --pid} names; or, with none of those, the only application
+     * running, or {@link AutomationClient#DEFAULT_PORT} when none is. Two that match is a refusal listing them, never
+     * a guess — the same rule a target inside the application follows. An application speaking a protocol major
+     * this client does not know is refused before anything is sent to it.
+     */
+    static Target target(Options options, List<Discovery.Entry> live, PrintStream err) {
+        if (options.portGiven()) {
+            for (Discovery.Entry e : live) {
+                if (e.port() == options.port() && !speaks(e, err)) {
+                    return new Target(-1, Session.UNREACHABLE);
+                }
+            }
+            return new Target(options.port(), Session.OK);
+        }
+        List<Discovery.Entry> matches = new java.util.ArrayList<>();
+        for (Discovery.Entry e : live) {
+            if ((options.app() == null || e.app().equalsIgnoreCase(options.app()))
+                    && (options.pid() < 0 || e.pid() == options.pid())) {
+                matches.add(e);
+            }
+        }
+        if (options.choosing()) {
+            if (matches.isEmpty()) {
+                err.println("ottermate: no running application matches "
+                        + (options.app() != null ? "--app " + options.app() : "")
+                        + (options.app() != null && options.pid() >= 0 ? " " : "")
+                        + (options.pid() >= 0 ? "--pid " + options.pid() : "")
+                        + "; 'ottermate list' shows what is running (" + Discovery.folder() + ")");
+                return new Target(-1, Session.UNREACHABLE);
+            }
+            if (matches.size() > 1) {
+                err.println("ottermate: " + matches.size() + " running applications match --app " + options.app()
+                        + "; choose one:");
+                for (Discovery.Entry e : matches) {
+                    err.println("  ottermate --pid " + e.pid() + "    " + e.describe() + ", started " + e.get("started"));
+                }
+                return new Target(-1, Session.USAGE);
+            }
+            Discovery.Entry chosen = matches.getFirst();
+            return speaks(chosen, err) ? new Target(chosen.port(), Session.OK) : new Target(-1, Session.UNREACHABLE);
+        }
+        if (live.size() > 1) {
+            err.println("ottermate: " + live.size() + " applications are running; choose one with --app or --pid:");
+            for (Discovery.Entry e : live) {
+                err.println("  ottermate --pid " + e.pid() + "    " + e.describe() + ", started " + e.get("started"));
+            }
+            return new Target(-1, Session.USAGE);
+        }
+        if (live.size() == 1) {
+            Discovery.Entry only = live.getFirst();
+            if (!speaks(only, err)) {
+                return new Target(-1, Session.UNREACHABLE);
+            }
+            if (!options.quiet()) {
+                err.println("ottermate: driving " + only.describe());
+            }
+            return new Target(only.port(), Session.OK);
+        }
+        return new Target(AutomationClient.DEFAULT_PORT, Session.OK);
+    }
+
+    /** Whether this client can talk to {@code e}; says why not on {@code err} when it cannot. */
+    private static boolean speaks(Discovery.Entry e, PrintStream err) {
+        if (e.major().equals(Discovery.PROTOCOL_MAJOR)) {
+            return true;
+        }
+        err.println("ottermate: " + e.describe() + " speaks protocol " + e.get("protocol") + "; this ottermate speaks "
+                + Discovery.PROTOCOL_MAJOR + ".x, so it sends nothing rather than guess");
+        return false;
     }
 
     private static void close(BufferedReader commands, PrintStream err) {

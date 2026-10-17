@@ -127,6 +127,25 @@ public final class Windows implements Commands {
         all.forEach(Automation::letGo);
     }
 
+    /**
+     * {@code hello}'s lines for this host: the windows open now, whether the probe is on, the recorder's state, and
+     * each domain — present, or {@code missing(...)} with what it waits for, from the same table the unbuilt verbs
+     * answer from ({@link Domains}).
+     */
+    @Override
+    public List<String> describe() {
+        List<String> lines = new ArrayList<>();
+        List<WindowView> open = source.get();
+        lines.add("windows " + (open.isEmpty() ? "-" : String.join(",", names(open))));
+        lines.add("probe   " + (sibarum.probe.Probe.ON ? "on" : "off"));
+        Recorder r = ring.recorder();
+        lines.add("recorder " + (r == null ? "off" : "on rows=" + r.held() + " capacity_rows=" + r.capacity()
+                + " lost_total=" + r.lost() + " frame_stamp=" + (r.stamped() ? "yes" : "no")));
+        lines.add("domain  loop=" + (counters != null ? "yes" : "no") + " recorder=" + (r != null ? "yes" : "no")
+                + " stream=" + (r != null ? "text" : "no") + Domains.line());
+        return lines;
+    }
+
     /** {@code stream}, over the ring every session shares; see {@link RecorderVerbs#stream}. */
     @Override
     public Streaming streaming(String line) {
@@ -150,6 +169,9 @@ public final class Windows implements Commands {
             // The ring is the process's, not a window's: it answers before any window is asked for, or open.
             if (RecorderVerbs.owns(verb)) {
                 return ring.answer(verb, rest);
+            }
+            if (Domains.owns(verb)) {
+                return Domains.answer(verb);
             }
             List<WindowView> open = source.get();
             synchronized (drivers) {

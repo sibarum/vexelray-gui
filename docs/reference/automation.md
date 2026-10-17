@@ -198,6 +198,64 @@ AutomationServer server = AutomationServer.start(driver);  // loopback :7654, da
 it full control of the application's input, so it is a debugging instrument and not a service. Pass `0` as the
 port to be given a free one and ask `server.port()`.
 
+### Finding a running application
+
+Every server writes a file saying where it listens, and removes it when it stops
+([discovery.md](../plans/discovery.md)). So a client can find an application it did not launch, and tell two
+applications on free ports apart.
+
+- **Where.** One file per process, `<app>-<pid>.auto`, in `~/.vexelray/automation/`. `-Dvexelray.home=<dir>` on the
+  application moves the folder, as it moves any `AppHome`. The environment variable `VEXELRAY_HOME` moves it for
+  every process at once, and wins.
+- **What.** `key=value` lines: `protocol`, `app`, `title`, `pid`, `started`, `port`, `cwd`, `command` (only the
+  executable, on Windows), `build`. These are only facts that hold for the whole run. The file is written before
+  `start` returns, so it exists by the time the host prints its `automation: localhost:<port>` line.
+- **The name.** `AutomationServer.start(commands, port, app, title)` names the application. The framework's driver
+  passes `@VexelApp`'s name and title. The other `start` overloads name it after the main class (`demo`, for the gui
+  demo).
+- **Live or stale.** The process holds an OS lock on `<app>-<pid>.lock` for as long as it runs. A reader that can
+  take the lock knows the process has gone, by a crash or otherwise, and deletes both files.
+- **`hello`** gives the protocol version (`major.minor`, `AutomationServer.PROTOCOL`), this process and its
+  connections, then one line each for the windows, the probe, the recorder and the domains. A domain that is not built
+  yet shows as `missing(<what it waits for>)`. Its verb answers `err not available yet: <verb> needs <what>` from the
+  same table (`Domains`).
+
+`ottermate list` reads the folder, and `--app` or `--pid` choose from it. With none of `--port`, `--app`, `--pid` or
+`--launch`, ottermate drives the one application running. If several are running, it refuses and lists them. If none
+is, it uses 7654. These are real runs, with the gui demo and calculator-vexel-demo both started with a free port:
+
+```
+$ ottermate list
+ok apps=2 folder=C:\Users\User\.vexelray\automation
+app                    pid    port   protocol  started                   cwd
+demo                   26356  61184  1.0       2026-10-17T22:54:06.804Z  C:\Users\User\Documents\GitHub\vexelray-gui\vexelray-gui-demo
+calculator-vexel-demo  25984  61183  1.0       2026-10-17T22:54:07.181Z  C:\Users\User\Documents\GitHub\calculator-vexel-demo
+
+$ ottermate size
+ottermate: 2 applications are running; choose one with --app or --pid:
+  ottermate --pid 26356    demo (pid 26356, port 61184), started 2026-10-17T22:54:06.804Z
+  ottermate --pid 25984    calculator-vexel-demo (pid 25984, port 61183), started 2026-10-17T22:54:07.181Z
+
+$ ottermate --app demo hello
+ok protocol=1.0 app=demo pid=26356 port=61184 connections=1/4 hand=free this=1 file=C:\Users\User\.vexelray\automation\demo-26356.auto
+windows main
+probe   on
+recorder on rows=6772 capacity_rows=262144 lost_total=0 frame_stamp=yes
+domain  loop=yes recorder=yes stream=text bus=missing(the atchung topic registry and tap) kron=missing(the kronometer snapshot) gpu=missing(presenter statistics from GuiApp) ledger=missing(the public probe Ledger snapshot) threads=missing(ProcessCpu in vexelray-os) heap=missing(the native-image heap and GC spike (flight-recorder.md Q5)) meter=missing(the meter verbs (meter.md)) diagnose=missing(the domain verbs it reads)
+see     help
+```
+
+The demo was then killed with `Stop-Process -Force`, so it could not remove its file. The next `list` cleared the
+file and showed only the calculator, and with one application left, a bare command went to it:
+
+```
+$ ottermate size
+ottermate: driving calculator-vexel-demo (pid 25984, port 61183)
+ok 700x600 zoom=1.25 dpi=1 em=20px
+```
+
+ottermate reads the protocol version from the file before it sends anything, and refuses a major it does not speak.
+
 ### Many observers, one hand
 
 The socket takes **several connections at once — four by default**, each on its own `vexelray-automation-<n>`
@@ -446,6 +504,8 @@ whether the run succeeded.
 | `log [logger] [level]` | Read how much is logged and where the file is; or set a level for both sinks, or for one logger and everything beneath it. To the running process only. A driven run is already the loudest mode (`TRACE` file, probe on) — see `atchung/docs/logging.md`. |
 | `mark <note>` | Write a row into the correlation log saying *why*. Changes nothing else. |
 | `hand`, `hand take`, `hand release` | Who holds the hand and which connection this is; take it if free; let it go. See *Many observers, one hand* above. |
+| `hello` | The protocol version, this process, its connections and the hand; then the windows, the probe, the recorder and each domain, present or `missing(...)`. See *Finding a running application* above. |
+| `bus`, `kron`, `gpu`, `ledger`, `threads`, `heap`, `meter`, `diagnose` | Not built yet: each answers `err not available yet: <verb> needs <what>`, in the words `hello`'s `domain` line uses. |
 | `recorder` | The flight recorder: rows held, the span they cover, loss, row rate, frame range, lanes on. See *The flight recorder* below. |
 | `rows [--lane L] [--kind K] [--thread T] [--grep S] [--frame N] [n]` | The last `n` (50) matching rows from the ring, as correlation-log lines with the frame stamp last. |
 | `gaps [ms]` | Silences between frames of `ms` (100) or more, each judged against the park before it — `csvview --gaps` over the ring. |

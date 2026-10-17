@@ -30,6 +30,17 @@
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!-- The discovery folder (docs/plans/discovery.md) under target, so a test never lists, or
+                         clears, the files of applications really running on this machine. -->
+                    <systemPropertyVariables>
+                        <vexelray.home>${project.build.directory}/vexelray-home</vexelray.home>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
                 <!-- Pinned here rather than in the root pluginManagement: this is the only module that asks
                      anything of the jar plugin, and what it asks is a manifest. -->

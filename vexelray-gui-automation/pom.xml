@@ -37,6 +37,11 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
+                    <!-- A server writes a discovery file (docs/plans/discovery.md). A test run must not leave
+                         files in the real ~/.vexelray/automation, so the folder is moved under target. -->
+                    <systemPropertyVariables>
+                        <vexelray.home>${project.build.directory}/vexelray-home</vexelray.home>
+                    </systemPropertyVariables>
                     <excludes>
                         <exclude>**/HoverPathDiagnosisTest.java</exclude>
                     </excludes>

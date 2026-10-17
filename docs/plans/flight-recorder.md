@@ -344,7 +344,7 @@ same change. Those examples are real runs, which the transcripts in this plan ar
   2026-10-17:** the ring's columns are 48 bytes a slot by layout (four `long`s and four compressed references), but
   the heap grew by 79 bytes a row on G1, because each 2^18 column is a humongous allocation that rounds up to whole
   regions. Detail strings, which are fresh per row, add about 48 more. That makes about **127 bytes a row, or
-  32 MB at 2^18**, filled from the gui demo's own `-Dprobe=all` trace. The same trace ran at about 22,000
+  32 MB at 2^18**, filled from the gui demo's own `-Dprobe=all -Dprobe.format=csv` trace. The same trace ran at about 22,000
   rows/s during startup, 1,500 to 9,000 rows/s while animating and a few rows/s idle. So 2^18 holds roughly
   12 s of startup, half a minute to three minutes of activity, and hours of idle. The default stays 2^18.
 - **Q3. When the stream needs a binary encoding**, if ever. **Closed 2026-10-17, measured.** Text keeps up, at 27

@@ -250,7 +250,9 @@ With the probe on, the application keeps its most recent probe rows in a ring
 the hand. None needs a window either: the ring belongs to the process, like the probe that feeds it.
 
 - **Switching it on.** `Windows` starts the recorder when the probe is on. A driven run already turns the probe
-  on (`Logging.probeLanes()`); `-Dprobe=all` gets every lane. `-Drecorder=<rows>` sizes the ring (rounded up
+  on (`Logging.probeLanes()`), in CSV and so with tracing. Asking for lanes yourself switches that default off: use
+  `-Dprobe=all -Dprobe.format=csv` (or `-Dprobe.trace=true`), because an untraced probe hands the ring nothing but
+  its `SLOW` rows, and `recorder` then shows a ring that hardly grows. `-Drecorder=<rows>` sizes the ring (rounded up
   to a power of two, default 2^18, about 32 MB of heap, measured in flight-recorder.md Q2). With the probe off,
   every ring verb answers `err the recorder is off: start with -Dprobe=...`.
 - **The frame stamp.** Each row carries the loop's frame in progress (`LoopCounters.frame()`), which the host
@@ -264,7 +266,7 @@ the hand. None needs a window either: the ring belongs to the process, like the 
   `FrameList`, `FrameExplanation`), and `Replies` renders it. The text is a pure function of the record, so
   another transport can carry the same record and mean the same thing.
 
-A real run against the gui demo (`-Dprobe=all`), with a `mark` and a click on the rail opening a panel:
+A real run against the gui demo (`-Dprobe=all -Dprobe.format=csv`), with a `mark` and a click on the rail opening a panel:
 
 ```
 $ ottermate recorder

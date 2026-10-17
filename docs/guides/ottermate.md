@@ -284,7 +284,8 @@ otherwise). Everything about levels, settings and locations is in `atchung/docs/
 With the probe on, the application keeps its recent probe rows in memory, and five verbs read them while it runs:
 `recorder`, `rows`, `gaps`, `frames` and `why` ([automation.md](../reference/automation.md) §5, *The flight
 recorder*). Put a `mark` before the thing you want to look at, and then ask for the frames after it. Here is a
-real run against the gui demo, started with `-Ddemo.jvmArgs=-Dprobe=all`:
+real run against the gui demo, started with `-Ddemo.jvmArgs="-Dprobe=all -Dprobe.format=csv -Dprobe.out=run.csv"` (asking for lanes yourself needs
+the CSV format, or `-Dprobe.trace=true`, for rows to reach the recorder):
 
 ```
 $ ottermate --quiet mark open-panel

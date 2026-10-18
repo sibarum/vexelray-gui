@@ -13,6 +13,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
 /**
@@ -58,6 +59,12 @@ public final class Windows implements Commands {
 
     private static final String GONE = "err the window chosen earlier has closed; windows lists what is open";
 
+    /** How long a window verb waits for the application's first window before saying none is open. */
+    static final long FIRST_WINDOW_TIMEOUT_MS = 30_000;
+
+    /** How often that wait looks. A first window takes seconds, so this is far inside what anybody notices. */
+    private static final long FIRST_WINDOW_POLL_MS = 50;
+
     private static final String HELP = String.join("\n",
             "windows                  the open windows: number, name, size and view; * is the chosen one",
             "window <name|number>     choose the window the other commands act on (default: the main one)",
@@ -75,6 +82,8 @@ public final class Windows implements Commands {
     private final LoopCounters counters;
     /** The ring verbs, over the one recorder every session shares. */
     private final RecorderVerbs ring;
+    /** Whether any window has been open yet, shared by every session: until then a window verb waits for one. */
+    private final AtomicBoolean seenWindow;
     private volatile Gui chosen;
 
     public Windows(Supplier<List<WindowView>> source) {
@@ -101,6 +110,7 @@ public final class Windows implements Commands {
         this.counters = counters;
         this.ring = new RecorderVerbs(Recorder.start(Recorder.rowsFromProperty(),
                 counters == null ? Recorder.NO_FRAMES : counters::frame));
+        this.seenWindow = new AtomicBoolean();
     }
 
     private Windows(Windows shared) {
@@ -109,6 +119,7 @@ public final class Windows implements Commands {
         this.drivers = shared.drivers;
         this.counters = shared.counters;
         this.ring = shared.ring;
+        this.seenWindow = shared.seenWindow;
     }
 
     /** The loop's counters this registry was handed, or {@code null}. */
@@ -202,7 +213,7 @@ public final class Windows implements Commands {
             if (Domains.owns(verb)) {
                 return Domains.answer(verb);
             }
-            List<WindowView> open = source.get();
+            List<WindowView> open = firstWindows();
             synchronized (drivers) {
                 drivers.keySet().removeIf(gui -> open.stream().noneMatch(v -> v.gui() == gui));
             }
@@ -227,6 +238,35 @@ public final class Windows implements Commands {
         } catch (RuntimeException e) {
             return "err " + e.getClass().getSimpleName() + ": " + e.getMessage();
         }
+    }
+
+    /**
+     * What is open now — except before the first window has ever opened, when it waits for one, up to
+     * {@link #FIRST_WINDOW_TIMEOUT_MS}.
+     *
+     * <p><b>The socket opens before the window does.</b> {@code Driver.open} prints its port as it binds, and the
+     * first window comes up seconds later, so a client that starts driving on the port line — {@code ottermate
+     * --launch}, or a script attached to an application still starting — met {@code err no window is open yet} on
+     * every window verb, {@code settle} included. Waiting here serves both, where waiting in the client would serve
+     * only the launch. Once any window has been seen an empty list is answered at once: every window closing is a
+     * fact about the application, not a start that is still on its way.
+     */
+    private List<WindowView> firstWindows() {
+        List<WindowView> open = source.get();
+        long deadline = System.nanoTime() + FIRST_WINDOW_TIMEOUT_MS * 1_000_000L;
+        while (open.isEmpty() && !seenWindow.get() && System.nanoTime() < deadline) {
+            try {
+                Thread.sleep(FIRST_WINDOW_POLL_MS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return open;
+            }
+            open = source.get();
+        }
+        if (!open.isEmpty()) {
+            seenWindow.set(true);
+        }
+        return open;
     }
 
     /** The chosen window, the main one if none was chosen, or {@code null} if the chosen one has closed. */

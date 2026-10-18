@@ -114,6 +114,11 @@ ottermate: driving localhost:50845
 ok v2
 ```
 
+The port line comes seconds before the window does, so a window verb sent in that gap (`settle`, `tree`, `shot`,
+anything but the recorder's) waits for the first window to open, up to 30 seconds, rather than answering
+`err no window is open yet`. That covers a script attached to an application still starting, too. Once a window
+has been open, none open is answered at once.
+
 **"The entire rest of the line" is exact**, so every option `ottermate` itself takes — `--script`, `--quiet`,
 `--timeout` — has to come *before* `--launch`. Put one after and it is passed to the application, which will
 not know what to do with it.
@@ -132,10 +137,10 @@ With no command and no `--script`, commands come from stdin. At a terminal that 
 ```
 $ ottermate
 ottermate> settle
-ok v2
-ottermate> find rail.view
+ok v1
+ottermate> find entry
 ok 1
-61 button "" @rail.view [25,415 38x38]
+18 textfield "" @entry [22,482 659x80] clipped to [22,482 650x80]
 ottermate> quit
 ```
 
@@ -153,46 +158,42 @@ honest about knowing nothing:
 ok (no tree yet)
 ```
 
-After a `settle`, the same command answers:
+After a `settle`, the same command answers (the calculator demo, `calculator-vexel-demo`):
 
 ```
 > settle
-ok v2
+ok v1
 > tree
-ok v2
-18 titlebar "Calculator" [0,0 1180x32]
-  3 box "Calculator" [0,4 105x23]
-    2 text "Calculator" [12,4 81x23]
-  78 instrument-screenshot [996,0 46x32]
-19 viewport "complex output · space curve  x -> (Re, Im)" @viewport [0,32 1180x688]
-  38 rail [17,197 54x359]
-    47 rail-item [25,205 38x38]
-      46 button @rail.layers [25,205 38x38]
-    62 rail-item [25,415 38x38] focused
-      61 button @rail.view [25,415 38x38]
-  45 rail-panel @panel [0,0 0x0] offscreen hidden
-  20 textfield "e^(i*w*x/2)" @expr [56,49 238x50]
-  25 text "complex output · space curve  x -> (Re, Im)" @status [22,108 358x18]
+ok v1
+15 titlebar "Calculator" [0,0 700x32]
+  3 box "Calculator" [0,0 113x32]
+    2 text "Calculator" [36,7 65x19]
+  27 instrument-screenshot [470,0 46x32]
+  28 instrument-automation [516,0 46x32]
+16 box @tape [0,32 768x403] clipped to [0,32 673x403]
+17 text @error [22,446 723x30] clipped to [22,446 650x30]
+18 textfield @entry [22,482 659x80] clipped to [22,482 650x80] focused ring
+21 box @button.settings [690,494 56x56] offscreen
 ```
 
 Read the columns as: **ref**, role, accessible name, box, then the state suffixes — `@landmark` for a node
 the application named, and `clipped to [...]` / `offscreen` / `hidden` / `focused` for what is actually
 pointable. Those suffixes matter: a rect says where a node was put, and `clipped to` says how much of it a
-person could hit. A `45 rail-panel @panel [0,0 0x0] offscreen hidden` is a panel that is closed, not a
+person could hit. A node marked `offscreen hidden` with a `[0,0 0x0]` box is a panel that is closed, not a
 missing one.
 
 ### Find something, and go to it
 
 ```
-> find rail.view
+> find entry
 ok 1
-61 button "" @rail.view [25,415 38x38]
+18 textfield "" @entry [22,482 659x80] clipped to [22,482 650x80]
 > where
 ok 0,0
-> go rail.view
-ok rail.view
-> click rail.view
-ok 44,434
+> go entry
+ok entry
+> click entry
+ok 343,522
 ```
 
 `find` matches role, name or landmark, case-insensitively, and says so plainly when it matches nothing:
@@ -205,12 +206,12 @@ ok (nothing matches 'Save')
 That is an **`ok`** — a search that found nothing succeeded at searching. Only a command that could not be
 carried out answers `err`.
 
-Prefer a landmark (`@rail.view`) to a ref (`61`). Refs are stable within a run and meaningless between
+Prefer a landmark (`@entry`) to a ref (`18`). Refs are stable within a run and meaningless between
 runs; a landmark is what the application called the thing.
 
 `go` is worth knowing: it uses the framework's own navigation, so a target inside a collapsed tree or a
 scrolled-away row is *revealed* rather than refused. `click` on the same target does the revealing too, then
-travels the pointer there and presses — `ok 44,434` is where it landed.
+travels the pointer there and presses — `ok 343,522` is where it landed.
 
 ### Press a key, or a shortcut
 
@@ -253,7 +254,9 @@ and whatever reads the pans and pinches. The velocities the fingers lift with ar
 
 ### A scene ladder in a file
 
-Blank lines and `#` comments are the client's own, and never reach the application:
+Blank lines and `#` comments are the client's own, and never reach the application. (This one is from an older
+calculator with a side rail of panels, `@rail.layers` and `@rail.view`; the current one has none, so read the
+landmarks as placeholders.)
 
 ```bash
 # panels.txt — one shot per rail panel

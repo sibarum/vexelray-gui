@@ -171,6 +171,34 @@ class WindowsTest {
     }
 
     @Test
+    void aWindowVerbWaitsForTheFirstWindowButNotForOneThatClosed() throws Exception {
+        try (Gui main = window("main", "Main home", new AtomicInteger())) {
+            List<WindowView> open = new CopyOnWriteArrayList<>();
+            Windows windows = new Windows(() -> List.copyOf(open));
+            // The socket is up before the window, as it is in every application: the port line comes first.
+            Thread opener = new Thread(() -> {
+                try {
+                    Thread.sleep(300);
+                } catch (InterruptedException e) {
+                    return;
+                }
+                open.add(new WindowView("main", main, WindowControls.NONE, true));
+            });
+            opener.start();
+            String first = windows.session().command("windows");
+            opener.join();
+            assertTrue(first.startsWith("ok 1"), first);
+
+            // Once a window has been seen, none open is the application's answer, given at once.
+            open.clear();
+            long started = System.nanoTime();
+            String none = windows.session().command("windows");
+            assertTrue(none.startsWith("err"), none);
+            assertTrue(System.nanoTime() - started < Windows.FIRST_WINDOW_TIMEOUT_MS * 1_000_000L / 10, "waited");
+        }
+    }
+
+    @Test
     void aDriverRefusesAnAddressInAnotherWindowRatherThanLookingItUpHere() {
         AtomicInteger clicks = new AtomicInteger();
         try (Gui main = window("main", "Main home", clicks)) {

@@ -362,11 +362,12 @@ Not open questions; decisions taken in P0 that later phases must honour. Listed 
 
 Wanted eventually, deliberately not now.
 
-- **`ottermate` attaches to a session with no port.** Part of the stack's environment plan, mainframe
-  `docs/stack-env.md` §2: with no `--port`, read the session files the framework's `Driver` writes
-  (`~/.vexelray/automation/<app>-<pid>.port`), use the one live session, list several and take `--app <name>`,
-  and fall back to the default port when there are none. So an agent never needs a port number, or a client of its
-  own. The guide's §1 then says to source `~/.mainframe/env.sh` rather than edit the `PATH` by hand.
+- ~~**`ottermate` attaches to a session with no port.**~~ **Done** (`48b0260`), as *discovery*: every automation
+  server writes `~/.vexelray/automation/<app>-<pid>.auto` and holds a lock beside it, `ottermate list` shows them,
+  `--app`/`--pid` choose, no target drives the one live application, and none falls back to 7654. The file is
+  written by `AutomationServer` rather than the framework's `Driver`, so applications not on the framework are
+  found too. **Left:** the guide's §1 still has the `PATH` edited by hand; it says to source `~/.mainframe/env.sh`
+  once mainframe's `docs/stack-env.md` plan has shipped that file, which it has not.
 - **Headless running** (out of v1 of that plan): a frame loop that presents offscreen, input only from the socket.
 
 - **A diagonal draw.** `Placed.Sink` has `glyphs` and `bar`; `bar` is axis-aligned and a `Node` in the projection
@@ -1159,9 +1160,19 @@ the axis form) became a card's resting slot: the landed card sat 5px low, and ev
 there by resetting with the same form. The trap is general: either the one-argument form clears the axis pair, or
 it is the axis pair, written twice.
 
-### 9.2 The gallery never goes quiet, so `settle` always times out there
+### 9.2 ~~The gallery never goes quiet, so `settle` always times out there~~ — **Done**
 
-Driving the demo over its new automation socket, every `settle` answers `err the timeline did not go quiet within
+**Resolved, and the refusal now says what it is refusing for.** The cause was the Images chapter's sprite-sheet
+loop running behind every other page; `ImageChapter.shown` now runs it only while the page is on show. Walking all
+seventeen chapters with `click` + `settle` answers `ok` on sixteen, and on Images, where a loop is the point,
+refuses with `timeline: next entry at @15.506s (images: sprite sheet)`. Getting there needed the reasons to reach
+the socket: `Timeline.whyBusy()` (a default, empty), `KronoGui.whyBusyAtLastTick()` (taken at the end of a tick, and
+only when asked, since the walk costs one step per effect), and Kron's `whyBusy` naming the shreds due at the next
+deadline rather than giving the moment alone. `every(name, period, body)` is how a loop gets a name worth reading.
+One trap found on the way: a reason read at the end of the wait has to have been *asked for* on every poll. Asking
+once at the start read back the tab crossfade still in flight from the click, named as the reason ten seconds later.
+
+The original report, kept for the record: driving the demo over its new automation socket, every `settle` answers `err the timeline did not go quiet within
 10000ms`, on every chapter, before and after any input. Something registers repeating work on the clock for the
 whole run; which one was not established (a caret blink on a page not on show is the first suspect). It is §0.2's
 other half — there, `settle` says `ok` too early; here it can never say it — and it makes a script against the
@@ -1184,9 +1195,15 @@ on Windows nothing pins the hidden cursor under `RAW` — the OS cursor keeps mo
 changing and can leave the window, and only the restore on unlock hides it. Either the docs say what the code does,
 or `RAW` clips to the client rect while locked, which is what the docs promise and what a mouselook wants.
 
-### 9.5 A pointer ride moves the real cursor under an automated run
+### 9.5 ~~A pointer ride moves the real cursor under an automated run~~ — **Done**
 
-`ottermate`'s pointer is a virtual one on the bus; a cancelled card's `PointerRide` moves the OS cursor through
+As proposed. The first line that drives installs `Cursor::carry` as the `Gui`'s `PointerWarp`, keeping the host's,
+and `letGo` (the hand released, or the connection closed) puts it back. A ride step is one published move a frame
+apart, so the cursor still never teleports. `AutomationTest.aPointerRideCarriesTheDriversPointerAndLeavesTheRealOneAlone`
+pins all three: the host warp is never called, `where` reports the ride's position, and the host gets its warp back.
+Needed a `Gui.pointerWarp()` getter, for the giving back.
+
+The original note: `ottermate`'s pointer is a virtual one on the bus; a cancelled card's `PointerRide` moves the OS cursor through
 tactroller. In a scripted run that cancels a drag, the real cursor jumps into the window for the length of the
 flight, and the next poll reports it as motion. Harmless, and the ride still behaves — it is the hand that wins,
 and the automation's pointer agrees with the ride's steps — but a run on a desk somebody is using moves their

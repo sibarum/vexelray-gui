@@ -26,4 +26,34 @@ public interface Timeline {
 
     /** Whether nothing is scheduled and nothing is animating. */
     boolean quiet();
+
+    /**
+     * Why it is not quiet, one line per reason — empty when it is, or when the clock cannot say.
+     *
+     * <p>What turns {@code settle}'s refusal from "something is running" into the thing that is. Without it a
+     * never-quiet application is a mystery from the socket: the gallery timed out every settle for a whole run and
+     * nobody could tell which chapter was asking for the clock. Same threading rule as {@link #quiet()}: safe from
+     * any thread, and an answer a few frames old is fine.
+     */
+    default java.util.List<String> whyBusy() {
+        return java.util.List.of();
+    }
+
+    /** A timeline that can say why it is busy: {@code Timeline.of(krono::quiescentAtLastTick, krono::whyBusyAtLastTick)}. */
+    static Timeline of(java.util.function.BooleanSupplier quiet,
+                       java.util.function.Supplier<java.util.List<String>> whyBusy) {
+        java.util.Objects.requireNonNull(quiet, "quiet");
+        java.util.Objects.requireNonNull(whyBusy, "whyBusy");
+        return new Timeline() {
+            @Override
+            public boolean quiet() {
+                return quiet.getAsBoolean();
+            }
+
+            @Override
+            public java.util.List<String> whyBusy() {
+                return whyBusy.get();
+            }
+        };
+    }
 }

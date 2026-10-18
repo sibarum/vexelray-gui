@@ -87,6 +87,8 @@ public final class Automation implements Commands {
     private final Timeline timeline;
     private final long timelineTimeoutMs;
     private final Cursor cursor;
+    /** The host's pointer warp while this driver holds the pointer, {@code null} when it does not. See {@link #holdPointer}. */
+    private dev.vexelray.gui.core.input.PointerWarp hostWarp;
 
     public Automation(Gui gui) {
         this(gui, WindowControls.NONE);
@@ -135,6 +137,9 @@ public final class Automation implements Commands {
         String verb = parts[0].toLowerCase(Locale.ROOT);
         String rest = parts.length > 1 ? parts[1] : "";
         try {
+            if (driving(verb, rest)) {
+                holdPointer();
+            }
             return run(verb, rest);
         } catch (RuntimeException e) {
             return "err " + e.getClass().getSimpleName() + ": " + e.getMessage();
@@ -151,6 +156,27 @@ public final class Automation implements Commands {
     @Override
     public void letGo() {
         cursor.letGo();
+        synchronized (this) {
+            if (hostWarp != null) {
+                gui.onPointerWarp(hostWarp);
+                hostWarp = null;
+            }
+        }
+    }
+
+    /**
+     * From the first line that drives until {@link #letGo}, a {@code PointerRide} carries this driver's pointer
+     * and not the OS one (docs/plans/todo.md §9.5). The pointer the application sees is the one this cursor
+     * publishes, so a cancelled drag flying home has to move <em>it</em>: moving the real cursor instead jumped the
+     * mouse of whoever sits at the desk into the window for the length of the flight, and the next poll reported the
+     * jump as motion. The host's warp is kept and put back when the hand is let go, so a person who takes over
+     * afterwards gets their rides again.
+     */
+    private synchronized void holdPointer() {
+        if (hostWarp == null) {
+            hostWarp = gui.pointerWarp();
+            gui.onPointerWarp(cursor::carry);
+        }
     }
 
     /**
@@ -743,10 +769,16 @@ public final class Automation implements Commands {
      */
     private String settleTimeline() {
         long deadline = System.nanoTime() + timelineTimeoutMs * 1_000_000L;
+        // Asked on every poll and read at the deadline: a clock answers from a tick after the question, so asking
+        // once at the start read back the moment the wait began — a page's crossfade, still in flight from the
+        // click, named as the reason a page never went quiet ten seconds later.
         while (!timeline.quiet()) {
+            List<String> sinceLastPoll = timeline.whyBusy();
             if (System.nanoTime() >= deadline) {
-                return "err the timeline did not go quiet within " + timelineTimeoutMs + "ms — an animation or"
-                        + " a repeating cue is still running; wait on a landmark with await instead";
+                return "err the timeline did not go quiet within " + timelineTimeoutMs + "ms — "
+                        + (sinceLastPoll.isEmpty() ? "an animation or a repeating cue is still running"
+                                                   : String.join("; ", sinceLastPoll))
+                        + "; wait on a landmark with await instead";
             }
             try {
                 Thread.sleep(TIMELINE_POLL_MS);

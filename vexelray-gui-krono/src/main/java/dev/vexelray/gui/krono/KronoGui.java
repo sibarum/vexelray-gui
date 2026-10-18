@@ -85,6 +85,11 @@ public final class KronoGui implements AutoCloseable {
      */
     private volatile long quiescentAtLastTick;
 
+    /** Set by {@link #whyBusyAtLastTick()}, taken by the next tick: the reasons cost a walk, so only on request. */
+    private volatile boolean reasonsWanted;
+
+    /** {@link #whyBusy()} as the last tick that was asked for it left it. */
+    private volatile java.util.List<String> busyAtLastTick = java.util.List.of();
 
     private KronoGui(Gui gui, Kron kron) {
         this.gui = gui;
@@ -161,7 +166,12 @@ public final class KronoGui implements AutoCloseable {
     }
 
     private void sample(long seen) {
-        quiescentAtLastTick = seen << 1 | (kron.isQuiescent() ? 1L : 0L);
+        boolean quiet = kron.isQuiescent();
+        quiescentAtLastTick = seen << 1 | (quiet ? 1L : 0L);
+        if (reasonsWanted) {
+            reasonsWanted = false;
+            busyAtLastTick = quiet ? java.util.List.of() : kron.whyBusy();
+        }
     }
 
     /**
@@ -204,6 +214,20 @@ public final class KronoGui implements AutoCloseable {
     public boolean quiescentAtLastTick() {
         long sample = quiescentAtLastTick;
         return (sample & 1L) == 1L && posted.get() == sample >>> 1;
+    }
+
+    /**
+     * {@link #whyBusy()} as a recent tick left it — the form that is safe from any thread, for the reason
+     * {@link #quiescentAtLastTick()} is.
+     *
+     * <p>Asking is also the request: the walk is proportional to the effects, so a tick takes it only when somebody
+     * has asked since the last one. The first call therefore answers from an older tick, or empty if none was ever
+     * asked; a caller that waits (an automation {@code settle} does, for seconds) asks at the start and reads at
+     * the end.
+     */
+    public java.util.List<String> whyBusyAtLastTick() {
+        reasonsWanted = true;
+        return busyAtLastTick;
     }
 
     /** One line per reason the runtime is not quiescent. For "why is my loop never idle". */
@@ -279,8 +303,17 @@ public final class KronoGui implements AutoCloseable {
      * than accumulating a rounding error per tick. Cancel it with the returned handle.
      */
     public Scheduled every(Dur period, Runnable body) {
+        return every("every", period, body);
+    }
+
+    /**
+     * {@link #every(Dur, Runnable)} under a name — the one {@link #whyBusy()} gives when this is what keeps the
+     * timeline from going quiet, and so the one an automation {@code settle} reports. A loop runs forever, so it
+     * is the reason that most wants a name.
+     */
+    public Scheduled every(String name, Dur period, Runnable body) {
         Objects.requireNonNull(body, "body");
-        return spork("every", () -> {
+        return spork(Objects.requireNonNull(name, "name"), () -> {
             Metro metro = Metro.of(period);
             while (true) {
                 metro.tick();

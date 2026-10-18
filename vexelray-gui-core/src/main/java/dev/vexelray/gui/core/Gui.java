@@ -1458,6 +1458,14 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
+     * The warp installed now, {@link dev.vexelray.gui.core.input.PointerWarp#NONE} if none. For a second pointer
+     * that borrows the seam — an automation driver while it holds the hand — and has to give it back.
+     */
+    public dev.vexelray.gui.core.input.PointerWarp pointerWarp() {
+        return input.pointerWarp();
+    }
+
+    /**
      * Begin carrying the pointer along with an animation, until the hand takes it back — see
      * {@link dev.vexelray.gui.core.input.PointerRide}. Safe from any thread.
      */

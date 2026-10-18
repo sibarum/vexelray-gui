@@ -214,6 +214,23 @@ public final class Cursor {
         return this;
     }
 
+    /**
+     * Be carried to {@code (cx, cy)} by the application — one step of a {@code PointerRide}, as the host's
+     * {@code PointerWarp} would move the OS cursor.
+     *
+     * <p>One step and not a path, and that keeps the rule rather than bending it: the ride is the path, a step a
+     * frame alongside what it carries, so each call is a short move and the cursor never teleports. Called from
+     * whatever thread drives the animation, which is why this and {@link #step} are synchronized; a ride and a
+     * path of this cursor's own disagree at once, and the ride yields to it as it would to a hand.
+     */
+    public synchronized void carry(float cx, float cy) {
+        int nx = Math.round(cx);
+        int ny = Math.round(cy);
+        if (nx != x || ny != y) {
+            step(nx, ny);
+        }
+    }
+
     /** How many steps a path of {@code distance} pixels takes. See {@link #MAX_STEPS}. */
     private static int steps(double distance) {
         int wanted = (int) Math.ceil(distance / (SPEED_PX_PER_MS * STEP_MILLIS));
@@ -221,7 +238,7 @@ public final class Cursor {
     }
 
     /** One position on the path: move there, say so, and remember it. */
-    private void step(int nx, int ny) {
+    private synchronized void step(int nx, int ny) {
         int dx = nx - x;
         int dy = ny - y;
         x = nx;

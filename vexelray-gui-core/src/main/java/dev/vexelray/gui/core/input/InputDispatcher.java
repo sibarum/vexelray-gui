@@ -933,6 +933,11 @@ public final class InputDispatcher {
         this.pointerWarp = warp == null ? PointerWarp.NONE : warp;
     }
 
+    /** The warp installed now, {@link PointerWarp#NONE} if none — so a caller swapping its own in can put it back. */
+    public PointerWarp pointerWarp() {
+        return pointerWarp;
+    }
+
     /**
      * What letting go of the button means during a drag, from now on — see {@link DragRelease}. A drag already
      * latched stays latched until its click: the user is mid-gesture, and changing its ending under them would be

@@ -405,6 +405,25 @@ class AutomationTest {
     }
 
     @Test
+    void theRefusalNamesWhatTheClockSaysIsRunning() {
+        try (Gui gui = deterministic()) {
+            gui.root().children(gui.box().size(Length.dp(10), Length.dp(10)));
+            gui.frame(W, H, NO_TEXT);
+            // A clock answers from the tick after it was asked, so an answer read only at the start of the wait is
+            // the moment the wait began. This one changes its answer once asked; the refusal has to carry the later.
+            AtomicInteger asked = new AtomicInteger();
+            Timeline clock = Timeline.of(() -> false, () -> asked.getAndIncrement() < 1
+                    ? java.util.List.of("effect@frames: a crossfade still in flight")
+                    : java.util.List.of("timeline: next entry at @3s (sprite sheet)"));
+
+            String out = new Automation(gui, null, clock, 100L).command("settle");
+
+            assertTrue(out.contains("(sprite sheet)"), "the loop is named, not the moment: " + out);
+            assertFalse(out.contains("crossfade"), "a reason from the start of the wait is stale by its end: " + out);
+        }
+    }
+
+    @Test
     void withNoClockSettleIsAboutTheFrameLoopAlone() {
         try (Gui gui = deterministic()) {
             gui.root().children(gui.box().size(Length.dp(10), Length.dp(10)));
@@ -462,6 +481,34 @@ class AutomationTest {
             assertTrue(driver.command("").isEmpty());
             // A driver that dies on a bad command loses the session it was in the middle of investigating.
             assertTrue(driver.command("help").startsWith("ok"));
+        }
+    }
+
+    @Test
+    void aPointerRideCarriesTheDriversPointerAndLeavesTheRealOneAlone() {
+        try (Gui gui = deterministic()) {
+            java.util.List<String> osMoves = new java.util.ArrayList<>();
+            dev.vexelray.gui.core.input.PointerWarp host = (x, y) -> osMoves.add(x + "," + y);
+            gui.onPointerWarp(host);
+            gui.root().children(gui.box().size(Length.dp(W), Length.dp(H)));
+            gui.frame(W, H, NO_TEXT);
+
+            Automation driver = new Automation(gui);
+            assertTrue(driver.command("move 100,100").startsWith("ok"));
+            gui.frame(W, H, NO_TEXT);
+
+            // A cancelled drag flying home: the application carries the pointer it sees, which is the driver's.
+            dev.vexelray.gui.core.input.PointerRide ride = gui.ridePointer();
+            assertTrue(ride.to(104, 102), "the pointer is where the ride started it, so the step is accepted");
+            ride.end();
+            gui.frame(W, H, NO_TEXT);
+
+            assertEquals(java.util.List.of(), osMoves, "the desk's mouse must not move under a scripted run");
+            assertEquals("ok 104,102", driver.command("where"), "the driver's pointer is where the ride put it");
+
+            // Letting go of the hand gives the host its rides back, for whoever takes over.
+            driver.letGo();
+            assertTrue(gui.pointerWarp() == host, "the host's warp is restored");
         }
     }
 }

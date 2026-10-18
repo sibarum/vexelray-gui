@@ -251,7 +251,8 @@ public final class Demo {
         }
         try {
             int port = want.equals("on") || want.equals("true") ? AutomationServer.DEFAULT_PORT : Integer.parseInt(want);
-            Windows windows = new Windows(app::windows, krono::quiescentAtLastTick, app);
+            Windows windows = new Windows(app::windows,
+                    dev.vexelray.gui.automation.Timeline.of(krono::quiescentAtLastTick, krono::whyBusyAtLastTick), app);
             AutomationServer server = AutomationServer.start(windows, port);
             // The Inspector's link beside it, advertised in the discovery file before the line below is printed.
             dev.vexelray.gui.inspector.link.InspectorLink.start(server, windows);

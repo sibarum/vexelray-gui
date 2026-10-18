@@ -226,7 +226,7 @@ public final class ImageChapter implements Chapter {
 
     private void resume() {
         if (showing && advance != null && playing == null) {
-            playing = stage.krono().every(FRAME, advance);
+            playing = stage.krono().every("images: sprite sheet", FRAME, advance);
         }
     }
 

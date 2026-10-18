@@ -47,6 +47,8 @@ public final class Ottermate {
             "  --pid <n>             attach to the running application with this process id",
             "  --port <n>            attach to this port. Without --port, --app, --pid or --launch: the one",
             "                        application running, or " + AutomationClient.DEFAULT_PORT + " if none is; several is an error",
+            "  --diagnostics         attach to the application's diagnostics socket (recorder, rows, frames, log,",
+            "                        stream) rather than its control one, when the two are on different ports",
             "  --script <file|->     read commands from a file, or - for stdin",
             "  --launch <command...> start the application, drive it, shut it down; takes the rest of the",
             "                        line, and reads the port from its 'automation: localhost:<port>' line,",
@@ -208,7 +210,7 @@ public final class Ottermate {
                 return new Target(-1, Session.USAGE);
             }
             Discovery.Entry chosen = matches.getFirst();
-            return speaks(chosen, err) ? new Target(chosen.port(), Session.OK) : new Target(-1, Session.UNREACHABLE);
+            return speaks(chosen, err) ? socket(chosen, options, err) : new Target(-1, Session.UNREACHABLE);
         }
         if (live.size() > 1) {
             err.println("ottermate: " + live.size() + " applications are running; choose one with --app or --pid:");
@@ -222,12 +224,30 @@ public final class Ottermate {
             if (!speaks(only, err)) {
                 return new Target(-1, Session.UNREACHABLE);
             }
-            if (!options.quiet()) {
-                err.println("ottermate: driving " + only.describe());
+            Target t = socket(only, options, err);
+            if (t.status() == Session.OK && !options.quiet()) {
+                err.println("ottermate: " + (options.diagnostics() ? "reading " + only.app() + "'s diagnostics on port "
+                        + t.port() : "driving " + only.describe()));
             }
-            return new Target(only.port(), Session.OK);
+            return t;
+        }
+        if (options.diagnostics()) {
+            err.println("ottermate: --diagnostics reads the port from a running application's discovery file, and "
+                    + "none is running (" + Discovery.folder() + ")");
+            return new Target(-1, Session.UNREACHABLE);
         }
         return new Target(AutomationClient.DEFAULT_PORT, Session.OK);
+    }
+
+    /** {@code e}'s control socket, or its diagnostics one under {@code --diagnostics}; refused when that is off. */
+    private static Target socket(Discovery.Entry e, Options options, PrintStream err) {
+        int port = e.port(options.diagnostics());
+        if (port < 0) {
+            err.println("ottermate: " + e.describe() + " has diagnostics off; switch it on from the automation button "
+                    + "in its title bar, or launch it with --automation.diagnostics=0");
+            return new Target(-1, Session.UNREACHABLE);
+        }
+        return new Target(port, Session.OK);
     }
 
     /** Whether this client can talk to {@code e}; says why not on {@code err} when it cannot. */

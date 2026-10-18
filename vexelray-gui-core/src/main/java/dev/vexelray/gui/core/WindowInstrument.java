@@ -96,6 +96,40 @@ public record WindowInstrument(String role, String tooltip,
     }
 
     /**
+     * The automation button: {@code open} shows whatever switches the application's automation sockets — remote
+     * control and diagnostics — on and off while it runs. Core's button, so an agent and a person find it by one name
+     * in every application; what it opens is the caller's. {@code vexelray-gui-automation-window}'s
+     * {@code AutomationWindow} is the one that opens the switches.
+     *
+     * <p>Never in {@link #standard()}: a shipped binary has no socket to switch, and must not carry a button for one.
+     */
+    public static WindowInstrument automation(String tooltip, Consumer<WindowControls> open) {
+        return new WindowInstrument("instrument-automation", tooltip, WindowInstrument::plugMark, open);
+    }
+
+    /**
+     * A plug — two prongs, a body, a cord — for the thing that is plugged into from outside. Not a wall socket: a ring
+     * with two slots, at caption size, is a pause button. Drawn, like the camera and the keyboard beside it, and at
+     * their weight.
+     */
+    private static Picture plugMark(Rect box, Color ink) {
+        double s = Math.min(box.w(), box.h()) * 0.42;
+        double cx = box.w() * 0.5;
+        double top = box.h() * 0.5 - s * 0.75;
+        double prongW = s * 0.14;
+        double prongH = s * 0.4;
+        double bodyW = s * 0.95;
+        double bodyH = s * 0.7;
+        double bodyY = top + prongH;
+        double cordW = s * 0.16;
+        return Picture.of(
+                new Picture.Fill(cx - s * 0.24 - prongW * 0.5, top, prongW, prongH + 1, prongW * 0.3, 0, ink, null),
+                new Picture.Fill(cx + s * 0.24 - prongW * 0.5, top, prongW, prongH + 1, prongW * 0.3, 0, ink, null),
+                new Picture.Outline(cx - bodyW * 0.5, bodyY, bodyW, bodyH, s * 0.12, s * 0.3, 1.5, ink, null),
+                new Picture.Fill(cx - cordW * 0.5, bodyY + bodyH - 1, cordW, s * 0.4 + 1, 0, 0, ink, null));
+    }
+
+    /**
      * A keyboard, drawn for the reason the camera is: the mark is composed against the button's own box, so it
      * is crisp at every zoom, and it carries the same visual weight as the camera beside it.
      */

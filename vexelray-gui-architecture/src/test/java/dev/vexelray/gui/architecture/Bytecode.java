@@ -32,6 +32,7 @@ final class Bytecode {
     static final String GUI_AUTOMATION_CLI = "vexelray-gui-automation-cli";
     static final String GUI_KEYMAP = "vexelray-gui-keymap";
     static final String GUI_RECORDER = "vexelray-gui-recorder";
+    static final String GUI_AUTOMATION_WINDOW = "vexelray-gui-automation-window";
 
     /**
      * Every module the guards inspect. A new framework module belongs here the day it is created: a guard that
@@ -44,7 +45,7 @@ final class Bytecode {
      */
     static final List<String> INSPECTED = List.of(
             GUI_CORE, GUI_WIDGET, GUI_TYPESET, GUI_PLOT, GUI_DRAW, GUI_AUTOMATION, GUI_AUTOMATION_CLI, GUI_KEYMAP,
-            GUI_RECORDER);
+            GUI_RECORDER, GUI_AUTOMATION_WINDOW);
 
     private Bytecode() {
     }

@@ -70,6 +70,10 @@
              elektro-Q, on a Unix domain socket beside the discovery file. Its own module so the automation server
              and ottermate stay free of elektro-Q. See docs/plans/flight-recorder.md section 6. -->
         <module>vexelray-gui-inspector-link</module>
+        <!-- The automation sockets switched by hand while the application runs: remote control and diagnostics,
+             each on or off, on one port or two. A window behind a title-bar instrument beside the key bindings.
+             Its own module so the automation server stays free of widgets. See docs/reference/automation.md §5. -->
+        <module>vexelray-gui-automation-window</module>
         <!-- Test-only: the automated separation-of-concerns guard (docs/architecture-proof-plan.md M0).
              Last, so it inspects the compiled output of everything above it. -->
         <module>vexelray-gui-architecture</module>
@@ -158,6 +162,11 @@
             <dependency>
                 <groupId>dev.vexelray.gui</groupId>
                 <artifactId>vexelray-gui-keymap</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.vexelray.gui</groupId>
+                <artifactId>vexelray-gui-automation-window</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

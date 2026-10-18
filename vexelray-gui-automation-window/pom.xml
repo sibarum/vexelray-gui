@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>dev.vexelray.gui</groupId>
+        <artifactId>vexelray-gui</artifactId>
+        <version>0.1.1-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>vexelray-gui-automation-window</artifactId>
+
+    <description>
+        The automation sockets switched by hand while the application runs: remote control and diagnostics, each
+        on or off, sharing a port or on one each. AutomationPanel is the control, to embed anywhere;
+        AutomationWindow puts it behind a title-bar instrument beside the key bindings. Its own module so that
+        vexelray-gui-automation stays free of widgets, and a debug edition opts in by depending on it.
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>dev.vexelray.gui</groupId>
+            <artifactId>vexelray-gui-automation</artifactId>
+        </dependency>
+        <!-- Built from the stock controls: switches, port fields, a title bar for its window. -->
+        <dependency>
+            <groupId>dev.vexelray.gui</groupId>
+            <artifactId>vexelray-gui-widget</artifactId>
+        </dependency>
+    </dependencies>
+</project>

@@ -198,6 +198,42 @@ AutomationServer server = AutomationServer.start(driver);  // loopback :7654, da
 it full control of the application's input, so it is a debugging instrument and not a service. Pass `0` as the
 port to be given a free one and ask `server.port()`.
 
+### Two capabilities, switched while it runs
+
+A socket offers **remote control**, **diagnostics**, or both (`Capability`). Each verb surface answers which one a
+line needs (`Commands.needs`), so the server holds no list:
+
+| Capability | Verbs |
+|---|---|
+| `control` | the hand and what it is aimed through: `move`, `click`, `type`, `key`, `go`, `drag`, …, `zoom`/`dpi`/`resize`, and the view reads `tree`, `find`, `where`, `size`, `windows`, `window`, `shot`, `settle`, `await`, `hand` |
+| `diagnostics` | what the process recorded about itself: `recorder`, `rows`, `gaps`, `frames`, `why`, `stream`, `log`, `mark`, the planned domains (`bus`, `kron`, …), and the Inspector link |
+| both | `hello` and `help`, which say what this socket is |
+
+A line a socket does not serve is refused, and nothing of it runs. The refusal says where the other one is:
+`err recorder is diagnostics, and this socket serves control; diagnostics is on localhost:61185`, or `… is off`.
+
+`Sockets` owns the process's sockets and switches either capability **while the application runs**:
+
+- **A port names a socket.** `enable(c, port)` with the port the other capability already listens on joins that
+  socket, and it serves both. Any other port, or `0` for a free one, binds a socket of its own.
+- **Off narrows rather than cuts.** `disable(c)` takes a shared socket down to the other capability, and nobody
+  connected to it is dropped. A socket that served only `c` closes.
+- **A busy port changes nothing.** The new socket is bound before the old one is let go, so what was listening
+  still is.
+- **Attachments follow their capability.** `attach(DIAGNOSTICS, server -> InspectorLink.start(server, windows))`
+  starts the link whenever diagnostics comes on, beside whichever socket serves it, and closes it when it goes off.
+
+The launch settings are `--automation=<port>` (both on one socket, as before), `--automation.control=<port>` and
+`--automation.diagnostics=<port>` (each alone; the same port twice is one socket). `Sockets.enableRequested` reads
+all three, and the framework's `Driver` and the gui demo both use it. While the application runs, the **automation
+button** in the title bar, beside the key bindings (§7), opens `AutomationWindow`: a switch, a port and a status
+per capability. A blank port is a free one, and the other's port shares its socket.
+
+**The probe does not switch.** `Probe.ON` is fixed when the class loads, so that the JIT folds every guard out of a
+run that is not profiling. A launch that asks for either socket runs in automation mode, which arms the probe. One
+that asks for neither can still switch diagnostics on later, but the recorder verbs answer that the recorder is off.
+The window says so, and `-Dprobe=all` at launch is the way to have it both ways.
+
 ### Finding a running application
 
 Every server writes a file saying where it listens, and removes it when it stops
@@ -208,8 +244,11 @@ applications on free ports apart.
   application moves the folder, as it moves any `AppHome`. The environment variable `VEXELRAY_HOME` moves it for
   every process at once, and wins.
 - **What.** `key=value` lines: `protocol`, `app`, `title`, `pid`, `started`, `port`, `cwd`, `command` (only the
-  executable, on Windows), `build`. These are only facts that hold for the whole run. The file is written before
-  `start` returns, so it exists by the time the host prints its `automation: localhost:<port>` line.
+  executable, on Windows), `build`; from `Sockets`, `control` and `diagnostics` (a port, or `off`), with `port` the
+  control socket's, or the diagnostics one's while control is off. The process facts hold for the whole run. The
+  endpoints change only when one is switched, and each switch rewrites the file to a temporary name and moves it
+  into place. The file is written before `start` returns, so it exists by the time the host prints its
+  `automation: localhost:<port>` line. It goes when the last socket closes.
 - **The name.** `AutomationServer.start(commands, port, app, title)` names the application. The framework's driver
   passes `@VexelApp`'s name and title. The other `start` overloads name it after the main class (`demo`, for the gui
   demo).
@@ -527,7 +566,7 @@ whether the run succeeded.
 | `log [logger] [level]` | Read how much is logged and where the file is; or set a level for both sinks, or for one logger and everything beneath it. To the running process only. A driven run is already the loudest mode (`TRACE` file, probe on) — see `atchung/docs/logging.md`. |
 | `mark <note>` | Write a row into the correlation log saying *why*. Changes nothing else. |
 | `hand`, `hand take`, `hand release` | Who holds the hand and which connection this is; take it if free; let it go. See *Many observers, one hand* above. |
-| `hello` | The protocol version, this process, its connections and the hand; then the windows, the probe, the recorder and each domain, present or `missing(...)`. See *Finding a running application* above. |
+| `hello` | The protocol version, this process, what this socket `serves=`, its connections and the hand; then the windows, the probe, the recorder and each domain, present or `missing(...)`. See *Finding a running application* above. Answered on every socket. |
 | `bus`, `kron`, `gpu`, `ledger`, `threads`, `heap`, `meter`, `diagnose` | Not built yet: each answers `err not available yet: <verb> needs <what>`, in the words `hello`'s `domain` line uses. |
 | `recorder` | The flight recorder: rows held, the span they cover, loss, row rate, frame range, lanes on. See *The flight recorder* below. |
 | `rows [--lane L] [--kind K] [--thread T] [--grep S] [--frame N] [n]` | The last `n` (50) matching rows from the ring, as correlation-log lines with the frame stamp last. |
@@ -644,7 +683,10 @@ from one window to the next. "Screenshot this window" is only free if the framew
 
 An instrument is a value — mark, tooltip, role, action — contributed to a registry that `TitleBar` renders
 without inspecting. The framework registers screenshot and macro-record; `TitleBar` branches on nothing, so the
-automation module can add its own without `TitleBar` knowing it exists. The same shape `WindowControls` already
+automation module can add its own without `TitleBar` knowing it exists. It does: `WindowInstrument.automation`
+(role `instrument-automation`) opens `vexelray-gui-automation-window`'s switches, after the key bindings. A
+contributor that arrives after the framework's tools appends to `TitleBar.instruments()` and states the whole strip
+again, so nobody replaces anybody else's button. The same shape `WindowControls` already
 has: the bar commands an interface and knows no implementations.
 
 ### Three constraints

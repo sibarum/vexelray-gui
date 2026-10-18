@@ -75,9 +75,11 @@ build=vexelray-gui-automation -
 - **`verbs` moved to `help`.** The server cannot ask for the verb list before a window exists, and the file is
   written before that. `hello` points at `help`.
 
-The file holds **only facts that are fixed for the life of the process**. What changes while the application runs
-(windows, the hand, whether the recorder is on) comes from `hello` (§4). A file that had to be rewritten would be
-a file that could be caught half-written.
+The file holds **facts about the process and where it listens**. What changes from moment to moment (windows, the
+hand, whether the recorder is on) comes from `hello` (§4). The endpoints (`control=`, `diagnostics=`, `port=`, the
+link's `stream=`) change only when somebody switches a socket on or off while the application runs
+([automation.md §5](../reference/automation.md), *Two capabilities*). Each switch rewrites the file to a temporary
+name and moves it into place, so it is never caught half-written. It goes when the last socket closes.
 
 - `protocol` is the socket protocol version, explained in §4.
 - `cwd` is where relative paths in commands resolve. The Inspector's command menu opens its MainFrame terminal there

@@ -71,6 +71,26 @@ final class Discovery {
             }
         }
 
+        /**
+         * The port to attach to for diagnostics ({@code diagnostics=}) or control ({@code port=}); {@code -1} when
+         * diagnostics is {@code off}. A file from before the two were split has no {@code diagnostics=} line, and its
+         * one socket serves both.
+         */
+        int port(boolean diagnostics) {
+            if (!diagnostics) {
+                return port();
+            }
+            String d = facts.get("diagnostics");
+            if (d == null) {
+                return port();
+            }
+            try {
+                return Integer.parseInt(d);
+            } catch (NumberFormatException e) {
+                return -1;
+            }
+        }
+
         /** The protocol's major, the part before the dot. */
         String major() {
             String p = get("protocol");
@@ -192,12 +212,13 @@ final class Discovery {
         if (live.isEmpty()) {
             return sb.toString();
         }
-        String[] header = {"app", "pid", "port", "protocol", "started", "cwd"};
+        String[] header = {"app", "pid", "port", "diagnostics", "protocol", "started", "cwd"};
         List<String[]> rows = new ArrayList<>();
         rows.add(header);
         for (Entry e : live) {
-            rows.add(new String[]{e.app(), Long.toString(e.pid()), Integer.toString(e.port()), e.get("protocol"),
-                    e.get("started"), e.get("cwd")});
+            int d = e.port(true);
+            rows.add(new String[]{e.app(), Long.toString(e.pid()), Integer.toString(e.port()),
+                    d < 0 ? "off" : Integer.toString(d), e.get("protocol"), e.get("started"), e.get("cwd")});
         }
         int[] width = new int[header.length];
         for (String[] r : rows) {

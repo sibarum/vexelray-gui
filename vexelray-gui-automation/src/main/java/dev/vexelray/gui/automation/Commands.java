@@ -24,6 +24,15 @@ public interface Commands {
     }
 
     /**
+     * Which {@link Capability} a socket must serve to run {@code line}: {@link Capability#CONTROL} for the hand and
+     * the reads it aims through, {@link Capability#DIAGNOSTICS} for what the process recorded about itself. A
+     * socket that does not serve it refuses the line and runs nothing of it. Control unless a surface says otherwise.
+     */
+    default Capability needs(String line) {
+        return Capability.CONTROL;
+    }
+
+    /**
      * These commands as one connection sees them. What a connection chooses for itself (which window its verbs
      * act on) lives in the session; what the application has only one of (each window's pointer) is shared.
      */

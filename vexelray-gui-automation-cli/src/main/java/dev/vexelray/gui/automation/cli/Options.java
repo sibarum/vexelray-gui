@@ -35,6 +35,8 @@ import java.util.List;
  * @param portGiven    whether {@code --port} was said; without it, and without {@code --app}, {@code --pid} or
  *                     {@code --launch}, the port comes from the discovery folder when exactly one application is
  *                     running there
+ * @param diagnostics  attach to the application's diagnostics socket rather than its control one, from
+ *                     {@code --diagnostics}: the same socket when the two share a port
  */
 record Options(int port,
                Path script,
@@ -48,7 +50,8 @@ record Options(int port,
                List<String> view,
                String app,
                long pid,
-               boolean portGiven) {
+               boolean portGiven,
+               boolean diagnostics) {
 
     /** How long an application may take to say it is listening. Vulkan, a window, and a first frame. */
     static final int DEFAULT_LAUNCH_TIMEOUT_SECONDS = 60;
@@ -120,6 +123,7 @@ record Options(int port,
         String size = null;
         String app = null;
         long pid = -1;
+        boolean diagnostics = false;
         List<String> trailing = new ArrayList<>();
 
         for (int i = 0; i < args.length; i++) {
@@ -149,6 +153,8 @@ record Options(int port,
                 launchTimeout = number(value(args, ++i, "--launch-timeout"), "--launch-timeout");
             } else if (arg.equals("--timeout")) {
                 replyTimeout = number(value(args, ++i, "--timeout"), "--timeout");
+            } else if (arg.equals("--diagnostics")) {
+                diagnostics = true;
             } else if (arg.equals("--keep-going")) {
                 keepGoing = true;
             } else if (arg.equals("--quiet") || arg.equals("-q")) {
@@ -172,7 +178,7 @@ record Options(int port,
 
         if (help) {
             return new Options(AutomationClient.DEFAULT_PORT, null, null, List.of(),
-                    launchTimeout, replyTimeout, keepGoing, quiet, true, List.of(), null, -1, false);
+                    launchTimeout, replyTimeout, keepGoing, quiet, true, List.of(), null, -1, false, false);
         }
         // In the order that makes each one mean what it says: the window first, since the rest are about it;
         // then density and zoom, which an em-sized --size is measured against; then the size.
@@ -202,13 +208,20 @@ record Options(int port,
             throw new UsageException("--script " + script + " and the command '" + command
                     + "' are two sources of commands; give one");
         }
+        if (diagnostics && (port >= 0 || !launch.isEmpty())) {
+            // It chooses a port from the discovery file, which is the one thing a given port and a launch
+            // announcing its own both make moot.
+            throw new UsageException("--diagnostics chooses the diagnostics port from the discovery file; with "
+                    + (port >= 0 ? "--port, give the diagnostics port itself" : "--launch, launch it with "
+                    + "--automation=0, which serves both on one port"));
+        }
         int ways = (port >= 0 ? 1 : 0) + (app != null || pid >= 0 ? 1 : 0) + (launch.isEmpty() ? 0 : 1);
         if (ways > 1) {
             // --port with --launch is refused above, with the reason particular to it.
             throw new UsageException("--port, --app/--pid and --launch each say which application to drive; give one");
         }
         return new Options(port < 0 ? AutomationClient.DEFAULT_PORT : port, script, command, launch,
-                launchTimeout, replyTimeout, keepGoing, quiet, false, view, app, pid, port >= 0);
+                launchTimeout, replyTimeout, keepGoing, quiet, false, view, app, pid, port >= 0, diagnostics);
     }
 
     private static String value(String[] args, int at, String option) {

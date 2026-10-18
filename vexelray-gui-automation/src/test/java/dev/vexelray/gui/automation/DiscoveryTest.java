@@ -129,7 +129,8 @@ class DiscoveryTest {
                     reply.add(l);
                 }
                 assertTrue(reply.getFirst().startsWith("ok protocol=" + AutomationServer.PROTOCOL + " app=probe-test pid="
-                        + ProcessHandle.current().pid() + " port=" + server.port() + " connections=1/4 hand=free this=1"
+                        + ProcessHandle.current().pid() + " port=" + server.port()
+                        + " serves=control,diagnostics connections=1/4 hand=free this=1"
                         + " file=" + file), reply.getFirst());
                 assertEquals("see     help", reply.getLast());
             }

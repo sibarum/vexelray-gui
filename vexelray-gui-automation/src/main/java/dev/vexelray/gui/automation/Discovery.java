@@ -32,9 +32,11 @@ import java.util.Map;
  * lock knows the writer is gone and may delete both files. The lock is on a companion file rather than the one
  * being read because a Windows lock is mandatory: a locked range cannot be read by anyone else.
  *
- * <p><b>Only facts that hold for the whole run.</b> What changes while the application runs — windows, the hand,
- * the recorder — is {@code hello}'s to report, so this file is written once and never caught half-rewritten. It is
- * written to a temporary name and moved into place, so a reader never sees a part of it either.
+ * <p><b>Facts about the process and where it listens, nothing busier.</b> What changes from moment to moment —
+ * windows, the hand, the recorder — is {@code hello}'s to report. The endpoints do change, but only when somebody
+ * switches one ({@link Sockets}: {@code control=}, {@code diagnostics=}, the link's {@code stream=}), and each change
+ * rewrites the file to a temporary name and moves it into place, so a reader sees the old file or the new one and
+ * never a part of either. The file exists while anything listens, and goes when the last listener stops.
  *
  * <p><b>The folder</b> is {@code AppHome.of("vexelray").folder("automation")}: {@code ~/.vexelray/automation}, which
  * {@code -Dvexelray.home=<dir>} moves the way it moves any {@link AppHome}. A client is another process and cannot
@@ -182,6 +184,21 @@ public final class Discovery implements AutoCloseable {
             write(info, facts);
         } catch (IOException e) {
             LOG.warn("could not add " + key + " to " + info + ": " + e.getMessage());
+        }
+    }
+
+    /**
+     * Take a fact back — an endpoint that has stopped listening, such as the Inspector link's {@code stream} when
+     * diagnostics is switched off — and write the file again, moved into place as {@link #advertise} does.
+     */
+    public synchronized void withdraw(String key) {
+        if (closed || facts.remove(key) == null) {
+            return;
+        }
+        try {
+            write(info, facts);
+        } catch (IOException e) {
+            LOG.warn("could not remove " + key + " from " + info + ": " + e.getMessage());
         }
     }
 

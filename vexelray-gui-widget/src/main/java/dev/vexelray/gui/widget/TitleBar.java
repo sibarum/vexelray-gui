@@ -80,6 +80,8 @@ public final class TitleBar {
     private final Node instruments;
     /** The instrument buttons currently mounted, so a later call can take them down again. */
     private final java.util.List<Node> mounted = new java.util.ArrayList<>();
+    /** The tools those buttons are, in order: what {@link #instruments()} answers. */
+    private volatile java.util.List<WindowInstrument> tools = java.util.List.of();
     /** Built on first use: a bar with no instruments needs no tooltip machinery. */
     private Tooltip instrumentTips;
     private final Node leading;
@@ -197,6 +199,7 @@ public final class TitleBar {
             old.remove();
         }
         mounted.clear();
+        this.tools = tools == null ? java.util.List.of() : java.util.List.copyOf(tools);
         if (tools == null || tools.isEmpty()) {
             return this;
         }
@@ -209,6 +212,14 @@ public final class TitleBar {
             instruments.append(b);
         }
         return this;
+    }
+
+    /**
+     * The tools this bar shows now, in order — so a contributor that arrives later (the key bindings, the automation
+     * switches) states the whole strip again with itself in it, rather than replacing what the framework put there.
+     */
+    public java.util.List<WindowInstrument> instruments() {
+        return tools;
     }
 
     /** One instrument as a caption-sized button: its mark, its tooltip, and its command. */

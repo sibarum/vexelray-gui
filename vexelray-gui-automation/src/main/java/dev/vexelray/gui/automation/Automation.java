@@ -226,6 +226,20 @@ public final class Automation implements Commands {
         };
     }
 
+    /**
+     * {@code log} and {@code mark} are diagnostics: they read and annotate what the process records, and say
+     * nothing about where the hand goes. Everything else here is control — the hand, and the reads it is aimed
+     * through. Static for the reason {@link #driving} is.
+     */
+    static Capability verbNeeds(String verb) {
+        return verb.equals("log") || verb.equals("mark") ? Capability.DIAGNOSTICS : Capability.CONTROL;
+    }
+
+    @Override
+    public Capability needs(String line) {
+        return verbNeeds((line == null ? "" : line.trim()).split("\\s+", 2)[0].toLowerCase(Locale.ROOT));
+    }
+
     private String run(String verb, String rest) {
         return switch (verb) {
             case "tree" -> tree();

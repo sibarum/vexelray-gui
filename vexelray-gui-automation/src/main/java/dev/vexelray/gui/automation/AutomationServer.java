@@ -70,7 +70,7 @@ public final class AutomationServer implements AutoCloseable {
      * before, which refuses a major it does not know rather than guessing. {@code hello} and the discovery file
      * both report it. {@code ottermate} restates the major it speaks, as it restates {@link #DEFAULT_PORT}.
      */
-    public static final String PROTOCOL = "1.0";
+    public static final String PROTOCOL = "1.1";
 
     /** How long a refused connection is answered before it is closed, if it does not close first. */
     private static final int REFUSED_LINGER_MS = 5_000;
@@ -84,7 +84,14 @@ public final class AutomationServer implements AutoCloseable {
     private final int cap;
     private final ServerSocket socket;
     private final String app;
-    private final Discovery discovery;
+    /** The discovery file; a {@link Sockets} listener's is handed over by {@link #share} once it has a port to write. */
+    private volatile Discovery discovery;
+    /** Whether {@link #discovery} is this server's own to remove, or a {@link Sockets}' shared by its listeners. */
+    private final boolean ownsDiscovery;
+    /** What this socket serves; widened and narrowed in place by {@link Sockets}, so a shared port is one socket. */
+    private volatile Set<Capability> serves;
+    /** Where a capability this socket does not serve can be found instead, for the refusal; {@code null} for nowhere. */
+    private final java.util.function.Function<Capability, String> elsewhere;
     private final Thread thread;
     private final long started = System.nanoTime();
     private final Set<Connection> open = ConcurrentHashMap.newKeySet();
@@ -111,7 +118,7 @@ public final class AutomationServer implements AutoCloseable {
 
     /** Start listening on {@code port}, admitting at most {@code connections} at once. */
     public static AutomationServer start(Commands automation, int port, int connections) throws IOException {
-        return new AutomationServer(automation, port, connections, null, null);
+        return new AutomationServer(automation, port, connections, null, null, Capability.both(), true, null);
     }
 
     /**
@@ -121,11 +128,23 @@ public final class AutomationServer implements AutoCloseable {
      */
     public static AutomationServer start(Commands automation, int port, String app, String title) throws IOException {
         return new AutomationServer(automation, port, Integer.getInteger(CONNECTIONS_PROPERTY, DEFAULT_CONNECTIONS),
-                app, title);
+                app, title, Capability.both(), true, null);
     }
 
-    private AutomationServer(Commands automation, int port, int connections, String app, String title)
+    /**
+     * One of a {@link Sockets}' listeners: serving {@code serves}, writing into the discovery file the set shares
+     * ({@link #share}) rather than one of its own, and naming {@code elsewhere} in a refusal.
+     */
+    static AutomationServer listen(Commands automation, int port, Set<Capability> serves, String app,
+                                   java.util.function.Function<Capability, String> elsewhere)
             throws IOException {
+        return new AutomationServer(automation, port, Integer.getInteger(CONNECTIONS_PROPERTY, DEFAULT_CONNECTIONS),
+                app, null, serves, false, elsewhere);
+    }
+
+    private AutomationServer(Commands automation, int port, int connections, String app, String title,
+                             Set<Capability> serves, boolean publish,
+                             java.util.function.Function<Capability, String> elsewhere) throws IOException {
         if (connections < 1) {
             throw new IllegalArgumentException("connections must be at least 1, not " + connections);
         }
@@ -135,7 +154,10 @@ public final class AutomationServer implements AutoCloseable {
         this.app = app == null || app.isBlank() ? mainClassName() : app;
         // Before the caller prints its "automation: localhost:<port>" line, so anything that saw the line can rely on
         // the file being there too.
-        this.discovery = Discovery.publish(this.app, title, socket.getLocalPort());
+        this.serves = java.util.Collections.unmodifiableSet(java.util.EnumSet.copyOf(serves));
+        this.elsewhere = elsewhere;
+        this.ownsDiscovery = publish;
+        this.discovery = publish ? Discovery.publish(this.app, title, socket.getLocalPort()) : null;
         this.thread = new Thread(this::serve, "vexelray-automation");
         this.thread.setDaemon(true);      // an instrument must never be the reason a process will not exit
         this.thread.start();
@@ -144,6 +166,21 @@ public final class AutomationServer implements AutoCloseable {
     /** The port actually bound — worth asking when 0 was requested. */
     public int port() {
         return socket.getLocalPort();
+    }
+
+    /** What this socket serves now. */
+    public Set<Capability> serves() {
+        return serves;
+    }
+
+    /** Write into {@code shared}, the discovery file of the {@link Sockets} this listener belongs to. */
+    void share(Discovery shared) {
+        discovery = shared;
+    }
+
+    /** Serve {@code now} from here on: a line already running finishes, the next is judged against this. */
+    void serve(Set<Capability> now) {
+        serves = java.util.Collections.unmodifiableSet(java.util.EnumSet.copyOf(now));
     }
 
     /** How many connections may be open at once. */
@@ -163,6 +200,13 @@ public final class AutomationServer implements AutoCloseable {
     public void advertise(String key, String value) {
         if (discovery != null) {
             discovery.advertise(key, value);
+        }
+    }
+
+    /** Take a fact {@link #advertise} added back out of the discovery file; see {@link Discovery#withdraw}. */
+    public void withdraw(String key) {
+        if (discovery != null) {
+            discovery.withdraw(key);
         }
     }
 
@@ -223,6 +267,13 @@ public final class AutomationServer implements AutoCloseable {
                 mark("agent.command", c, line);
                 LOG.debug("command #{}: {}", c.number, line);
                 Commands.Streaming streaming = c.session.streaming(line);
+                String unserved = streaming == null ? null : unserved(c, line);
+                if (unserved != null) {
+                    out.println(unserved);
+                    out.println(".");
+                    out.flush();
+                    continue;
+                }
                 if (streaming != null) {
                     // Written as it happens, on this connection's thread: the connection is its sender. It reads,
                     // so it needs no hand, and the others carry on meanwhile.
@@ -260,11 +311,21 @@ public final class AutomationServer implements AutoCloseable {
     private String answer(Connection c, String line) {
         String[] parts = line.trim().split("\\s+", 2);
         String verb = parts[0].toLowerCase(Locale.ROOT);
-        if (verb.equals("hand")) {
-            return hand(c, parts.length > 1 ? parts[1].trim().toLowerCase(Locale.ROOT) : "");
-        }
         if (verb.equals("hello")) {
             return hello(c);
+        }
+        if (verb.equals("help")) {
+            return c.session.command(line) + "\n" + HAND_HELP + "\nthis socket serves " + Capability.words(serves)
+                    + "; a verb it does not serve is refused";
+        }
+        if (verb.equals("hand")) {
+            return serves.contains(Capability.CONTROL)
+                    ? hand(c, parts.length > 1 ? parts[1].trim().toLowerCase(Locale.ROOT) : "")
+                    : refusal(verb, Capability.CONTROL);
+        }
+        String unserved = unserved(c, line);
+        if (unserved != null) {
+            return unserved;
         }
         if (c.session.drives(line)) {
             String refused = take(c);
@@ -272,8 +333,26 @@ public final class AutomationServer implements AutoCloseable {
                 return refused;
             }
         }
-        String reply = c.session.command(line);
-        return verb.equals("help") ? reply + "\n" + HAND_HELP : reply;
+        return c.session.command(line);
+    }
+
+    /** The refusal for a line needing a capability this socket does not serve, or {@code null} when it serves it. */
+    private String unserved(Connection c, String line) {
+        Capability needed = c.session.needs(line);
+        if (serves.contains(needed)) {
+            return null;
+        }
+        return refusal(line.trim().split("\\s+", 2)[0].toLowerCase(Locale.ROOT), needed);
+    }
+
+    /**
+     * {@code err recorder is diagnostics, and this socket serves control; diagnostics is on localhost:61185} — the
+     * verb, what it needs, and where that is, so a client that asked the wrong socket learns which to ask.
+     */
+    private String refusal(String verb, Capability needed) {
+        String where = elsewhere == null ? null : elsewhere.apply(needed);
+        return "err " + verb + " is " + needed.word() + ", and this socket serves " + Capability.words(serves)
+                + "; " + needed.word() + (where == null ? " is off" : " is on " + where);
     }
 
     private String hand(Connection c, String what) {
@@ -319,6 +398,7 @@ public final class AutomationServer implements AutoCloseable {
                 .append(" app=").append(app)
                 .append(" pid=").append(ProcessHandle.current().pid())
                 .append(" port=").append(port())
+                .append(" serves=").append(Capability.words(serves))
                 .append(" connections=").append(open.size()).append('/').append(cap)
                 .append(" hand=").append(held)
                 .append(" this=").append(c.number)
@@ -428,7 +508,7 @@ public final class AutomationServer implements AutoCloseable {
     @Override
     public void close() {
         running = false;
-        if (discovery != null) {
+        if (discovery != null && ownsDiscovery) {
             discovery.close();
         }
         try {

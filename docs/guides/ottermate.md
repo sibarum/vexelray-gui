@@ -74,6 +74,11 @@ calculator-vexel-demo  25984  61183  1.0       2026-10-17T22:54:07.181Z  C:\User
 So you rarely need a port:
 
 - **`--app <name>` or `--pid <n>`** picks one of the applications listed.
+- **`--diagnostics`** attaches to that application's diagnostics socket (`recorder`, `rows`, `frames`, `log`,
+  `stream`) rather than its control one. That only matters when the two are on different ports, and `list` has a
+  `diagnostics` column that shows it. A verb sent to the socket that does not serve it is refused, with the port of
+  the one that does. Either socket can be switched on while the application runs, from the automation button in its
+  title bar, beside the key bindings ([automation.md §5](../reference/automation.md)).
 - **With no `--port`, `--app`, `--pid` or `--launch`,** ottermate drives the one application running. It names that
   application on stderr. With several running, it refuses and prints the `--pid` that picks each. With none, it
   tries 7654.

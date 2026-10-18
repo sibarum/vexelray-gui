@@ -40,11 +40,13 @@
         -->
         <demo.jvmArgs></demo.jvmArgs>
         <!--
-          The automation socket: off, on (port 7654), 0 (a free port, announced on stdout as
-          "automation: localhost:<port>", the line ottermate's launch option reads), or a port. Its own
-          property rather than one more demo.jvmArgs, so the run the ottermate guide gives works here as
-          written: mvn exec:exec -Dautomation=0. (No command line is quoted here in full, because one of its
-          flags would end this comment.)
+          The automation socket, control and diagnostics on one port: off, on (port 7654), 0 (a free port,
+          announced on stdout as "automation: localhost:<port>", the line ottermate's launch option reads), or
+          a port. Its own property rather than one more demo.jvmArgs, so the run the ottermate guide gives works
+          here as written: mvn exec:exec -Dautomation=0. Each alone is -Dautomation.control or
+          -Dautomation.diagnostics, through demo.jvmArgs; and the title bar's automation button switches either
+          while the gallery runs. (No command line is quoted here in full, because one of its flags would end
+          this comment.)
         -->
         <automation>off</automation>
     </properties>
@@ -69,7 +71,13 @@
             <groupId>dev.vexelray.gui</groupId>
             <artifactId>vexelray-gui-automation</artifactId>
         </dependency>
-        <!-- And the Inspector's link beside it, on whenever the socket is: the recorder's rows as typed records over
+        <!-- The title-bar button beside the key bindings that switches remote control and diagnostics while the
+             gallery runs. -->
+        <dependency>
+            <groupId>dev.vexelray.gui</groupId>
+            <artifactId>vexelray-gui-automation-window</artifactId>
+        </dependency>
+        <!-- And the Inspector's link beside it, on whenever diagnostics is: the recorder's rows as typed records over
              elektro-Q (docs/plans/flight-recorder.md section 6). -Dautomation.link=off leaves it out. -->
         <dependency>
             <groupId>dev.vexelray.gui</groupId>

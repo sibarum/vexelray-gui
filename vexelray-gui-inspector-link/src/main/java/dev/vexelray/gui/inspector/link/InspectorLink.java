@@ -79,6 +79,9 @@ public final class InspectorLink implements AutoCloseable {
     private final Action<RowBatch> rows;
     private final Action<Snap> snaps;
     private volatile boolean closed;
+    /** What {@link #start(AutomationServer, Windows)} advertised in and hooked onto, so closing takes both back. */
+    private volatile AutomationServer advertisedIn;
+    private volatile Thread closeHook;
 
     private InspectorLink(Conduit conduit, String endpoint, Recorder recorder, LoopCounters counters,
                           Commands commands) {
@@ -110,9 +113,12 @@ public final class InspectorLink implements AutoCloseable {
             InspectorLink link = start(folder.resolve(base + ".sock"), windows.recorder(), windows.counters(),
                     windows);
             server.advertise("stream", link.endpoint());
+            link.advertisedIn = server;
             // A process that exits without closing the link still removes its socket file; a crash leaves it, and
-            // the next reader of the folder clears it with the discovery files.
-            Runtime.getRuntime().addShutdownHook(new Thread(link::close, "vexelray-automation-link-close"));
+            // the next reader of the folder clears it with the discovery files. Taken off again by close, because
+            // diagnostics switched on and off while the application runs would otherwise pile up one per switch.
+            link.closeHook = new Thread(link::close, "vexelray-automation-link-close");
+            Runtime.getRuntime().addShutdownHook(link.closeHook);
             LOG.info("inspector link listening on {}", link.endpoint());
             return link;
         } catch (RuntimeException e) {
@@ -273,6 +279,20 @@ public final class InspectorLink implements AutoCloseable {
             stop(peer, "the application is closing the link");
         }
         conduit.close();
+        AutomationServer server = advertisedIn;
+        if (server != null) {
+            advertisedIn = null;
+            server.withdraw("stream");
+        }
+        Thread hook = closeHook;
+        if (hook != null && Thread.currentThread() != hook) {
+            closeHook = null;
+            try {
+                Runtime.getRuntime().removeShutdownHook(hook);
+            } catch (IllegalStateException e) {
+                // Already shutting down: the hook is running, or has run.
+            }
+        }
     }
 
     /** One Inspector's stream: its cursor into the ring, and the thread that sends from it. */

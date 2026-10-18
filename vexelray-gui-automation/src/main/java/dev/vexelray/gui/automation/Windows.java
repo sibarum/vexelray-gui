@@ -133,6 +133,19 @@ public final class Windows implements Commands {
         return Automation.driving(parts[0].toLowerCase(Locale.ROOT), parts.length > 1 ? parts[1] : "");
     }
 
+    /**
+     * The ring's verbs, {@code stream}, and the domains are diagnostics, as they are answered before any window is;
+     * the rest is whatever the window's own driver says ({@link Automation#needs(String)}).
+     */
+    @Override
+    public Capability needs(String line) {
+        String verb = (line == null ? "" : line.trim()).split("\\s+", 2)[0].toLowerCase(Locale.ROOT);
+        if (RecorderVerbs.owns(verb) || verb.equals("stream") || Domains.owns(verb)) {
+            return Capability.DIAGNOSTICS;
+        }
+        return Automation.verbNeeds(verb);
+    }
+
     /** Every window's pointer: there is one hand, whichever window it was last used in. */
     @Override
     public void letGo() {

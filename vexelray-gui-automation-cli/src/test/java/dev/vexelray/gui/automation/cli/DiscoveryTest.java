@@ -16,6 +16,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -90,9 +91,10 @@ class DiscoveryTest {
             String table = Discovery.table(Discovery.live(folder), folder);
             List<String> lines = table.lines().toList();
             assertEquals("ok apps=1 folder=" + folder, lines.get(0));
-            assertTrue(lines.get(1).startsWith("app         pid    port   protocol  started"), lines.get(1));
-            assertTrue(lines.get(2).startsWith("calculator  18244  50845  1.0       2026-10-17T19:04:00Z  C:\\work\\"),
-                    lines.get(2));
+            assertTrue(lines.get(1).startsWith("app         pid    port   diagnostics  protocol  started"), lines.get(1));
+            // A file from before the split has no diagnostics= line: its one socket serves both.
+            assertTrue(lines.get(2).startsWith(
+                    "calculator  18244  50845  50845        1.0       2026-10-17T19:04:00Z  C:\\work\\"), lines.get(2));
         } finally {
             release(calc);
         }
@@ -123,6 +125,28 @@ class DiscoveryTest {
         assertEquals(new Ottermate.Target(50845, Session.OK), r.target());
         assertTrue(r.err().contains("driving calculator (pid 18244, port 50845)"), r.err());
         assertEquals("", target(List.of(CALC), "--quiet", "tree").err(), "--quiet keeps it to err replies");
+    }
+
+    @Test
+    void diagnosticsChoosesTheDiagnosticsSocketAndSaysWhenItIsOff() {
+        Discovery.Entry split = new Discovery.Entry(Path.of("calculator-18244.auto"), Map.of("app", "calculator",
+                "pid", "18244", "port", "50845", "control", "50845", "diagnostics", "50846", "protocol", "1.1",
+                "started", "t"));
+        Discovery.Entry off = new Discovery.Entry(Path.of("calculator-18244.auto"), Map.of("app", "calculator",
+                "pid", "18244", "port", "50845", "control", "50845", "diagnostics", "off", "protocol", "1.1",
+                "started", "t"));
+        assertEquals(new Ottermate.Target(50846, Session.OK), target(List.of(split), "--diagnostics", "recorder").target());
+        assertEquals(new Ottermate.Target(50845, Session.OK), target(List.of(split), "tree").target());
+        assertEquals(new Ottermate.Target(50846, Session.OK),
+                target(List.of(split, VEX), "--app", "calculator", "--diagnostics", "rows").target());
+        assertEquals(new Ottermate.Target(50845, Session.OK), target(List.of(CALC), "--diagnostics", "rows").target(),
+                "a server from before the split serves both on its one port");
+
+        Run r = target(List.of(off), "--diagnostics", "recorder");
+        assertEquals(Session.UNREACHABLE, r.target().status());
+        assertTrue(r.err().contains("has diagnostics off; switch it on from the automation button"), r.err());
+        assertEquals(Session.UNREACHABLE, target(List.of(), "--diagnostics", "recorder").target().status());
+        assertThrows(UsageException.class, () -> Options.parse(new String[] {"--diagnostics", "--port", "1", "rows"}));
     }
 
     @Test

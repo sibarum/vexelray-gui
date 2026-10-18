@@ -1,8 +1,10 @@
 package dev.vexelray.gui.demo;
 
 import dev.vexelray.canvas.Color;
-import dev.vexelray.gui.automation.AutomationServer;
+import dev.vexelray.gui.automation.Capability;
+import dev.vexelray.gui.automation.Sockets;
 import dev.vexelray.gui.automation.Windows;
+import dev.vexelray.gui.automation.window.AutomationWindow;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.TextClipboard;
 import dev.vexelray.gui.core.app.AppHome;
@@ -158,10 +160,14 @@ public final class Demo {
 
             attachInput(input, gui, app);
             shell.titleBar().controls(app.controls());   // the window exists now; point the chrome at it
-            // The framework's tools in the caption: a screenshot that asks where to put it, and the key bindings
-            // beside it. Both opt-in — a bar has none until it is handed some.
+            // The automation sockets, made now and switched on only if a setting asks; the button below switches
+            // them while the gallery runs.
+            Sockets driving = sockets(app, krono);
+            // The framework's tools in the caption: a screenshot that asks where to put it, the key bindings beside
+            // it, and the automation switches beside those. All opt-in — a bar has none until it is handed some.
             shell.titleBar().instruments(java.util.List.of(
-                    SaveScreenshot.instrument(), KeymapWindow.instrument(app, gui, keys)));
+                    SaveScreenshot.instrument(), KeymapWindow.instrument(app, gui, keys),
+                    AutomationWindow.instrument(app, gui, driving)));
             if (memory.maximized("main")) {
                 app.window().maximize();
             }
@@ -177,7 +183,7 @@ public final class Demo {
             Modals.install(app, dialog -> look(dialog, theme));
             // Everything a chapter registered against a window it could not yet have.
             shell.stage().started(app);
-            AutomationServer driving = drive(app, krono);
+            launchSwitches(driving);
 
             if (maxFrames > 0) {
                 // A frames-capped run exercises the window verticals it would otherwise never reach: a dialog,
@@ -226,9 +232,7 @@ public final class Demo {
                 // The debounce has no next frame to fire on once the loop is over, so the last move of the
                 // session is written here or not at all.
                 memory.save();
-                if (driving != null) {
-                    driving.close();
-                }
+                driving.close();
             }
         }
         krono.close();   // the clock outlives the window but not the process: closed with the GUI it drove
@@ -237,31 +241,30 @@ public final class Demo {
     }
 
     /**
-     * The driving socket, if {@code -Dautomation} asked for one: {@code on}, {@code 0} for any free port, or a
-     * port. Null when it did not, and when the port could not be had — a gallery that will not open because a
-     * debugging port was busy is worse than one nobody can drive.
+     * The automation sockets, nothing listening yet: remote control and diagnostics over every window, with the
+     * Inspector's link started beside whichever socket serves diagnostics.
      *
      * <p>The clock goes with the windows, so {@code settle} waits out a card still landing rather than
      * photographing it in flight and saying ok.
      */
-    private static AutomationServer drive(GuiApp app, KronoGui krono) {
-        String want = System.getProperty("automation", "off");
-        if (want.isBlank() || want.equals("off") || want.equals("false")) {
-            return null;
-        }
+    private static Sockets sockets(GuiApp app, KronoGui krono) {
+        Windows windows = new Windows(app::windows,
+                dev.vexelray.gui.automation.Timeline.of(krono::quiescentAtLastTick, krono::whyBusyAtLastTick), app);
+        return new Sockets(windows, "demo", "VexelRay GUI Demo")
+                .attach(Capability.DIAGNOSTICS, server -> dev.vexelray.gui.inspector.link.InspectorLink.start(server, windows));
+    }
+
+    /**
+     * What the launch asked for: {@code -Dautomation} for both on one port, {@code -Dautomation.control} and
+     * {@code -Dautomation.diagnostics} for each — {@code on}, {@code 0} for any free port, or a port. A port that
+     * cannot be had is said and skipped: a gallery that will not open because a debugging port was busy is worse
+     * than one nobody can drive.
+     */
+    private static void launchSwitches(Sockets sockets) {
         try {
-            int port = want.equals("on") || want.equals("true") ? AutomationServer.DEFAULT_PORT : Integer.parseInt(want);
-            Windows windows = new Windows(app::windows,
-                    dev.vexelray.gui.automation.Timeline.of(krono::quiescentAtLastTick, krono::whyBusyAtLastTick), app);
-            AutomationServer server = AutomationServer.start(windows, port);
-            // The Inspector's link beside it, advertised in the discovery file before the line below is printed.
-            dev.vexelray.gui.inspector.link.InspectorLink.start(server, windows);
-            // Protocol, not a notice: ottermate --launch reads the port from exactly this line.
-            System.out.println("automation: localhost:" + server.port());
-            return server;
+            sockets.enableRequested(System::getProperty);
         } catch (java.io.IOException | NumberFormatException e) {
-            System.out.println("driving socket unavailable (" + e.getMessage() + "); running undriven");
-            return null;
+            System.out.println("automation socket unavailable (" + e.getMessage() + "); " + sockets.describe());
         }
     }
 

@@ -445,6 +445,38 @@ class FlexLayoutTest {
         assertTrue(field.contentH > 0f, "and the text was measured exactly as it was before it had a bar");
     }
 
+    /**
+     * A label wraps unless it says not to, and {@code wordWrap(false)} is how it says so: one line, cut off at its
+     * edge, with no h-scrollbar for the overflow (a label has no caret to scroll after). Before, a non-editable node
+     * wrapped whatever its {@code WORD_WRAP} said (text-editor-vexel-demo FN-18).
+     */
+    @Test
+    void aLabelWrapsByDefaultAndWordWrapFalseKeepsItToOneLine() {
+        String text = "Updates are ready for the whole suite, close first and open again";
+        RetainedNode col = box(0);
+        col.set(PropKey.DIRECTION, Direction.COLUMN);
+        col.set(PropKey.ALIGN_ITEMS, AlignItems.START);
+        RetainedNode unset = box(1);
+        RetainedNode on = box(2);
+        on.set(PropKey.WORD_WRAP, true);
+        RetainedNode off = box(3);
+        off.set(PropKey.WORD_WRAP, false);
+        for (RetainedNode label : new RetainedNode[]{unset, on, off}) {
+            label.set(PropKey.WIDTH, Length.rem(10));      // 160px, a third of the text
+            label.set(PropKey.TEXT, text);
+            add(col, label);
+        }
+
+        FlexLayout.layout(col, 1000f, 1000f, ctx(), WRAPPING_TM);
+
+        assertTrue(unset.lineSpans.size() > 1, "a label that never set wordWrap still wraps");
+        assertEquals(unset.lineSpans.size(), on.lineSpans.size(), "and wordWrap(true) is the same thing");
+        assertEquals(1, off.lineSpans.size(), "wordWrap(false) keeps the label to one line");
+        assertEquals(160f, off.w, EPS, "at the width it was given, not widened to its text");
+        assertTrue(!off.overflowX && !off.overflowY, "cut off at its edge, with no scrollbar for the rest");
+        assertTrue(on.h > off.h + EPS, "the wrapped label is the taller");
+    }
+
     // As TM, and breaking lines at those widths, so wrapped text has a real height-for-width.
     private static final TextMeasurer WRAPPING_TM = new TextMeasurer() {
         @Override

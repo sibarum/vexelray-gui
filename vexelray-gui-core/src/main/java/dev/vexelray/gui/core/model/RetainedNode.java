@@ -413,15 +413,20 @@ public final class RetainedNode {
     }
 
     /**
-     * Whether this text node's lines wrap to its content width. A label always does — that is how a caption
-     * behaves — while an editable field wraps only when asked, because the alternative (scrolling horizontally)
-     * is what a single-line field is for.
+     * Whether this text node's lines wrap to its content width. A label does unless told otherwise — wrapping is
+     * how a caption behaves — and an explicit {@code wordWrap(false)} (a button face, a status cell, a fixed-height
+     * row) keeps it to one line, cut off at its edge. An editable field wraps only when asked, and only when
+     * multiline, because the alternative (scrolling horizontally) is what a single-line field is for. So the
+     * prop's <em>absence</em> reads oppositely on the two: a label takes "not set" as wrap, a field as don't.
      *
      * <p>Both the layout (which needs the wrapped line count to size the node) and the compute phase (which
      * breaks the lines) ask this, so the rule has one home.
      */
     public boolean wrapsText() {
-        return !editable() || (multiline() && wordWrap());
+        if (!editable()) {
+            return !Boolean.FALSE.equals(props.get(PropKey.WORD_WRAP));
+        }
+        return multiline() && wordWrap();
     }
 
     /** Caret offset into the text, or {@code -1} for no caret. */
@@ -586,8 +591,10 @@ public final class RetainedNode {
             return b;   // an explicit choice always wins
         }
         // A single-line input masks its overflow at the edge and scrolls with the caret; a scrollbar under a
-        // one-line box is chrome nobody asked for. Multi-line editors and containers still default to scrolling.
-        return !(hasText() && editable() && !multiline());
+        // one-line box is chrome nobody asked for. A label told not to wrap is cut off at its edge the same way: it
+        // has no caret to follow, and before wordWrap(false) reached labels none ever had an h-bar. Multi-line
+        // editors and containers still default to scrolling.
+        return !(hasText() && !(editable() && multiline()));
     }
 
     /** Whether vertical overflow may scroll (default true = auto scrollbar). */

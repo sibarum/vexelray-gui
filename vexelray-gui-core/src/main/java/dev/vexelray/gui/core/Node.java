@@ -393,8 +393,9 @@ public final class Node {
     }
 
     /**
-     * Wrap long lines at the content width instead of scrolling horizontally. Only meaningful with
-     * {@link #multiline}; a wrapped node never scrolls horizontally.
+     * Wrap long lines at the content width instead of scrolling horizontally. On an editable field it is only
+     * meaningful with {@link #multiline}, and the field does not wrap until asked. A label wraps by default, and
+     * {@code wordWrap(false)} keeps it to one line, cut off at its edge. A wrapped node never scrolls horizontally.
      */
     public Node wordWrap(boolean wrap) {
         return prop(PropKey.WORD_WRAP, wrap);
@@ -476,7 +477,14 @@ public final class Node {
         return height(h);
     }
 
+    /**
+     * Uniform padding on all four sides. It replaces any earlier {@link #padding(Length, Length) per-axis} padding
+     * rather than sitting under it: the per-axis pair would otherwise win, so a later {@code padding(Length.ZERO)}
+     * would leave the node padded where nobody can see it set. The last call wins, whichever form.
+     */
     public Node padding(Length p) {
+        prop(PropKey.PADDING_X, null);
+        prop(PropKey.PADDING_Y, null);
         return prop(PropKey.PADDING, p);
     }
 

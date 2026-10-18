@@ -421,8 +421,8 @@ public final class TreeView<T> implements AutoCloseable {
             // and a fixed-height row cannot hold a wrapped label: the second line spills out of the strip and
             // draws over the row below. So the name is never wrapped and never widens the row either.
             //
-            // Two nodes, because neither can do it alone. A label always wraps at its own width (wordWrap(false)
-            // is for editable fields only), so the label is left at AUTO width — its one-line width, which the
+            // Two nodes, because neither can do it alone. A label wraps at its own width unless told otherwise,
+            // so the label is left at AUTO width — its one-line width, which the
             // flex never shrinks — and a grow(1) box takes the row's remaining width and clips it there. clip()
             // masks a node's children, not its own glyphs, which is the other reason the box is a box. The same
             // shape as a Table cell. There is no ellipsis anywhere in the text stack; the unclip below is how a

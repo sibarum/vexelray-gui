@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core.app;
 
+import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
@@ -9,13 +10,18 @@ import dev.vexelray.gui.core.model.Reconciler;
 import dev.vexelray.gui.core.model.RetainedNode;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
+import dev.vexelray.gui.core.text.Span;
 import org.junit.jupiter.api.Test;
 import sibarum.atchung.Atchung;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -171,5 +177,75 @@ class DrawOnChangeTest {
         r.clearDirty();
         r.setProp(1L, PropKey.V_ALIGN, dev.vexelray.text.TextLayout.VAlign.BOTTOM);
         assertTrue(r.geometryDirty(), "nor are the line tops");
+    }
+
+    /**
+     * A change made off the frame thread is drawn by the frame its own wake earns, with nothing else waking the
+     * loop (text-editor-vexel-demo framework-notes FN-5). The loop is GuiApp's in miniature: a wake from any thread
+     * ends the park, the iteration clears the posted flag before it runs the frame, and it draws only when the
+     * frame says something changed. A worker publishes bursts of span lists, as a highlighter finishing on the
+     * offload lane does, and the last of each burst must reach a drawn frame with nothing else happening.
+     */
+    @Test
+    void spansPublishedFromAWorkerAreDrawnByTheFrameTheirWakeEarns() throws Exception {
+        try (Gui gui = new Gui(Atchung.create())) {
+            Node text = gui.text("abcdefgh");
+            gui.root().children(text);
+            Object lock = new Object();
+            boolean[] posted = {false};
+            gui.onWork(() -> {
+                synchronized (lock) {
+                    posted[0] = true;
+                    lock.notifyAll();
+                }
+            });
+            AtomicReference<Object> drawn = new AtomicReference<>();
+            AtomicBoolean running = new AtomicBoolean(true);
+            Thread loop = new Thread(() -> {
+                while (running.get()) {
+                    synchronized (lock) {
+                        while (!posted[0] && running.get()) {
+                            try {
+                                lock.wait();
+                            } catch (InterruptedException e) {
+                                return;
+                            }
+                        }
+                        posted[0] = false;
+                    }
+                    RetainedNode root = gui.frame(W, H, DrawOnChangeTest::noText);
+                    if (gui.takeDrawNeeded() && root != null && !root.children.isEmpty()) {
+                        drawn.set(root.children.get(0).spans());
+                    }
+                }
+            }, "parked-loop");
+            loop.setDaemon(true);
+            loop.start();
+            try {
+                Random random = new Random(5);
+                for (int round = 0; round < 500; round++) {
+                    List<Span> last = null;
+                    int burst = 1 + random.nextInt(4);
+                    for (int i = 0; i < burst; i++) {
+                        last = List.of(Span.foreground(0, 1 + random.nextInt(8), Color.rgb(round * 16 + i)));
+                        text.spans(last);
+                    }
+                    long deadline = System.nanoTime() + 2_000_000_000L;
+                    while (!last.equals(drawn.get()) && System.nanoTime() < deadline) {
+                        Thread.onSpinWait();
+                    }
+                    assertEquals(last, drawn.get(), "round " + round + ": the spans published last were not drawn");
+                    if (random.nextBoolean()) {
+                        Thread.sleep(0, random.nextInt(200_000));
+                    }
+                }
+            } finally {
+                running.set(false);
+                synchronized (lock) {
+                    lock.notifyAll();
+                }
+                loop.join(2_000L);
+            }
+        }
     }
 }

@@ -1,14 +1,17 @@
 package dev.vexelray.gui.core;
 
+import dev.vexelray.diag.Diagnostics;
 import org.junit.jupiter.api.Test;
 import sibarum.atchung.Atchung;
 
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -91,6 +94,48 @@ class LanesTest {
             org.junit.jupiter.api.Assertions.assertThrows(java.util.concurrent.RejectedExecutionException.class,
                     () -> running.async(() -> { }));
         }
+    }
+
+    @Test
+    void aClosedGuiCountsAsStoppedThroughALaneThatOnlyForwards() {
+        // An embedder's lane that forwards to a pool is not an ExecutorService, so the pool's shutdown cannot be
+        // asked about through it; it rejects exactly as a refusing lane does. The Gui's own closed state is the
+        // signal that tells the teardown race apart from a lane that chose to refuse.
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        java.util.concurrent.Executor forwarding = r -> pool.execute(r);
+        Gui gui = new Gui(Atchung.create(), forwarding, forwarding);
+        gui.close();
+        pool.shutdownNow();
+        Diagnostics.reset();
+
+        gui.handlers().execute(() -> { });
+        gui.async(() -> { });
+
+        List<String> recorded = Diagnostics.recorded();
+        assertEquals(2, recorded.size(), recorded.toString());
+        assertTrue(recorded.get(0).contains("Gui was closed"), recorded.get(0));
+        assertTrue(recorded.get(1).contains("offloaded work"), recorded.get(1));
+    }
+
+    @Test
+    void aLatePublicationIntoAClosedGuiDoesNotThrowAndIsRecordedOnce() {
+        // text-editor-vexel-demo FN-13: a highlighting result finishing after the window was torn down mutates a
+        // node, and its change notification goes to a handler lane that has terminated. That must neither reach
+        // the uncaught handler nor vanish without a line, and a teardown that drops many must say so once.
+        Diagnostics.reset();
+        Gui gui = new Gui(Atchung.create());
+        Node label = gui.text("before");
+        gui.handlers().execute(() -> { });
+        gui.close();
+
+        for (int i = 0; i < 3; i++) {
+            label.text("after " + i);
+            gui.handlers().execute(() -> { });
+            gui.async(() -> { });
+        }
+
+        List<String> recorded = Diagnostics.recorded();
+        assertEquals(2, recorded.size(), "one record per lane, however many drops: " + recorded);
     }
 
     @Test

@@ -48,6 +48,7 @@ import dev.vexelray.gui.core.nav.Navigator;
 import dev.vexelray.gui.core.nav.Reveal;
 import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.gui.core.text.TextMetrics;
+import dev.vexelray.diag.Diagnostics;
 import sibarum.probe.Lane;
 import sibarum.probe.Probe;
 import sibarum.probe.Zone;
@@ -255,6 +256,8 @@ public final class Gui implements AutoCloseable {
      * presented on it, so closing one window must not take the application's threads with it.
      */
     private final List<ExecutorService> ownedLanes = new ArrayList<>(2);
+    /** Set by {@link #close}; a lane rejecting after it is a stopped lane, whatever kind of executor it is. */
+    private volatile boolean closed;
 
     /** Create a GUI on its own private Atchung bus. */
     public Gui() {
@@ -404,7 +407,7 @@ public final class Gui implements AutoCloseable {
                 });
             } catch (RejectedExecutionException e) {
                 owed.payHandler();
-                dropIfStopped(base, e);
+                dropIfStopped(base, e, "Gui.handlers/stopped", "an input handler or change notification");
             }
         };
         // Dirtying layout is a change like any other, and it is the one that publishes no Mutation: a
@@ -1681,7 +1684,7 @@ public final class Gui implements AutoCloseable {
         try {
             offload.execute(work);
         } catch (RejectedExecutionException e) {
-            dropIfStopped(offload, e);
+            dropIfStopped(offload, e, "Gui.async/stopped", "offloaded work");
         }
     }
 
@@ -1696,11 +1699,25 @@ public final class Gui implements AutoCloseable {
      * task mid-flight. The work was for a tree that is going away, and dropping it is the trade {@link #close}
      * (or whoever owns the lane) already made by stopping the lane at all.
      *
+     * <p>A lane counts as stopped when it is an {@link ExecutorService} that has been shut down, or when this
+     * {@code Gui} has been {@linkplain #close closed}. The second is the signal this {@code Gui} controls itself,
+     * and the only one it can see through an embedder's lane that forwards to a pool ({@code r -> pool.execute(r)},
+     * a toolkit's executor): that lane rejects after its pool stops exactly as a refusing one does, and is not an
+     * {@code ExecutorService} to ask.
+     *
      * <p>Only a <em>stopped</em> lane is answered this way. A lane that rejects while running — a bounded queue an
      * embedder chose — has made a decision about loss that belongs to whoever chose it, and it still throws.
+     *
+     * <p>A drop is reported through {@link Diagnostics}, once per lane. The race is ordinary, but the same drop is
+     * also what a real lifecycle bug looks like — a timer still calling {@code async} after {@code close} — and
+     * that used to surface as an exception pointing at the leak. Once per key keeps a teardown from repeating in
+     * the log while still leaving a line, and a record a test can assert on.
      */
-    private static void dropIfStopped(Executor lane, RejectedExecutionException e) {
-        if (lane instanceof ExecutorService s && s.isShutdown()) {
+    private void dropIfStopped(Executor lane, RejectedExecutionException e, String key, String what) {
+        boolean shut = lane instanceof ExecutorService s && s.isShutdown();
+        if (closed || shut) {
+            Diagnostics.dropped(key, what + " reached a stopped lane and was dropped",
+                    closed ? "its Gui was closed" : "the lane was shut down before the work arrived");
             return;
         }
         throw e;
@@ -2116,6 +2133,9 @@ public final class Gui implements AutoCloseable {
 
     @Override
     public void close() {
+        // First, so a rejection from a lane stopped by what follows (or by its owner, concurrently) reads as the
+        // teardown it is. See dropIfStopped.
+        closed = true;
         input.close();
         mutationSub.close();
         navSub.close();

@@ -93,6 +93,11 @@ public final class Automation implements Commands {
     private final Cursor cursor;
     /** The host's pointer warp while this driver holds the pointer, {@code null} when it does not. See {@link #holdPointer}. */
     private dev.vexelray.gui.core.input.PointerWarp hostWarp;
+    /**
+     * The keys {@code keydown} pressed and nothing has released yet, in the order they went down. Its own lock: the
+     * holder's thread presses, and {@link #letGo} releases from whichever thread ends the session.
+     */
+    private final List<Key> heldKeys = new java.util.ArrayList<>();
 
     public Automation(Gui gui) {
         this(gui, WindowControls.NONE);
@@ -184,6 +189,7 @@ public final class Automation implements Commands {
     @Override
     public void letGo() {
         cursor.letGo();
+        releaseHeldKeys();
         synchronized (this) {
             if (hostWarp != null) {
                 gui.onPointerWarp(hostWarp);
@@ -219,8 +225,8 @@ public final class Automation implements Commands {
      */
     static boolean driving(String verb, String rest) {
         return switch (verb) {
-            case "move", "click", "rightclick", "drag", "down", "up", "scroll", "touch", "tap", "type", "key", "go" ->
-                    true;
+            case "move", "click", "rightclick", "drag", "down", "up", "scroll", "touch", "tap", "type", "key",
+                 "keydown", "keyup", "go" -> true;
             case "zoom", "dpi", "resize" -> !rest.isBlank();
             default -> false;
         };
@@ -258,6 +264,8 @@ public final class Automation implements Commands {
             case "tap" -> tap(rest);
             case "type" -> type(rest);
             case "key" -> key(rest);
+            case "keydown" -> keyDown(rest);
+            case "keyup" -> keyUp(rest);
             case "go" -> go(rest);
             case "settle" -> settle();
             case "await" -> await(rest);
@@ -719,14 +727,161 @@ public final class Automation implements Commands {
      * any other way would reach a claim as the bare key.
      */
     private String key(String rest) {
+        Chord chord = chord(rest);
+        if (chord.error() != null) {
+            return chord.error();
+        }
+        if (isHeld(chord.key())) {
+            return "err " + chord.key().name() + " is held by keydown, so it cannot be pressed again; keyup it first";
+        }
+        // A modifier already held by keydown stays held: pressing it again is not what a hand on a keyboard can do,
+        // and releasing it at the end of the chord would let go of something this command did not take hold of.
+        List<Key> mods = new java.util.ArrayList<>();
+        for (Key mod : chord.modifiers()) {
+            if (!isHeld(mod)) {
+                mods.add(mod);
+            }
+        }
+        for (Key mod : mods) {
+            press(mod);
+        }
+        press(chord.key());
+        release(chord.key());
+        for (int i = mods.size() - 1; i >= 0; i--) {
+            release(mods.get(i));
+        }
+        String named = chord.named();
+        if (Probe.ON) {
+            Probe.mark(Lane.INPUT, "key", named);
+        }
+        return "ok " + named;
+    }
+
+    /**
+     * Press keys and keep them down until {@link #keyUp}, or until the hand is let go: {@code keydown SHIFT},
+     * {@code keydown CTRL+ALT}. The same names and the same order as {@link #key}, and nothing is released.
+     *
+     * <p>For an application that reads a held modifier as intent — a shift-click that extends a selection, a
+     * preview of what a held Control would do — where the thing worth photographing is the state <em>while</em> the
+     * key is down. A non-modifier key held this way is held as a real one is, so the dispatcher's auto-repeat fires
+     * it on its own clock until it comes back up.
+     *
+     * <p>Refuses a key already held, before pressing anything: a key cannot go down twice, and a chord that went
+     * part-way down would leave the caller guessing which part.
+     */
+    private String keyDown(String rest) {
+        Chord chord = chord(rest);
+        if (chord.error() != null) {
+            return chord.error();
+        }
+        List<Key> keys = chord.keys();
+        synchronized (heldKeys) {
+            for (Key k : keys) {
+                if (heldKeys.contains(k)) {
+                    return "err " + k.name() + " is already held; held: " + heldNames();
+                }
+            }
+            for (Key k : keys) {
+                heldKeys.add(k);
+                press(k);
+            }
+        }
+        if (Probe.ON) {
+            Probe.mark(Lane.INPUT, "keydown", chord.named());
+        }
+        return "ok " + chord.named() + " held: " + heldNames();
+    }
+
+    /**
+     * Release keys {@link #keyDown} is holding, in the reverse of the order written ({@code keyup CTRL+ALT} lets go of
+     * ALT, then CONTROL); with nothing named, release everything held, last pressed first.
+     *
+     * <p>Refuses a key that is not held, before releasing anything: a release with no press is an event no keyboard
+     * produces, and a dispatcher that saw one would be reasoning about a key it was never told went down.
+     */
+    private String keyUp(String rest) {
+        if (rest.isBlank()) {
+            List<Key> released = releaseHeldKeys();
+            StringBuilder named = new StringBuilder();
+            for (Key k : released) {
+                named.append(named.isEmpty() ? "" : "+").append(k.name());
+            }
+            return released.isEmpty() ? "ok nothing was held" : "ok released " + named;
+        }
+        Chord chord = chord(rest);
+        if (chord.error() != null) {
+            return chord.error();
+        }
+        List<Key> keys = chord.keys();
+        synchronized (heldKeys) {
+            for (Key k : keys) {
+                if (!heldKeys.contains(k)) {
+                    return "err " + k.name() + " is not held; held: " + heldNames();
+                }
+            }
+            for (int i = keys.size() - 1; i >= 0; i--) {
+                heldKeys.remove(keys.get(i));
+                release(keys.get(i));
+            }
+        }
+        if (Probe.ON) {
+            Probe.mark(Lane.INPUT, "keyup", chord.named());
+        }
+        return "ok " + chord.named() + " held: " + heldNames();
+    }
+
+    /**
+     * Release everything {@link #keyDown} holds, last pressed first, and say what that was. What {@link #letGo} does,
+     * so a session that ends — {@code quit}, a dropped connection, {@code hand release} — never leaves a key down in
+     * the application for whoever sits at it next.
+     */
+    private List<Key> releaseHeldKeys() {
+        synchronized (heldKeys) {
+            List<Key> released = new java.util.ArrayList<>(heldKeys.size());
+            for (int i = heldKeys.size() - 1; i >= 0; i--) {
+                Key k = heldKeys.get(i);
+                release(k);
+                released.add(k);
+            }
+            heldKeys.clear();
+            if (!released.isEmpty() && Probe.ON) {
+                Probe.mark(Lane.INPUT, "keyup", "released on letting go");
+            }
+            return released;
+        }
+    }
+
+    private boolean isHeld(Key k) {
+        synchronized (heldKeys) {
+            return heldKeys.contains(k);
+        }
+    }
+
+    /** Called holding {@link #heldKeys}. */
+    private String heldNames() {
+        if (heldKeys.isEmpty()) {
+            return "(none)";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (Key k : heldKeys) {
+            sb.append(sb.isEmpty() ? "" : "+").append(k.name());
+        }
+        return sb.toString();
+    }
+
+    /**
+     * A key with any modifiers before it, {@code MOD+...+KEY}, case-insensitive; or the refusal to reply with, in
+     * {@code error}. A modifier named twice is held once.
+     */
+    private static Chord chord(String rest) {
         String spec = rest.trim();
         String[] parts = spec.split("\\+", -1);
         List<Key> held = new java.util.ArrayList<>();
         for (int i = 0; i < parts.length - 1; i++) {
             Key mod = modifierKey(parts[i]);
             if (mod == null) {
-                return "err no modifier named '" + parts[i].trim() + "' in '" + spec
-                        + "'; try CONTROL (CTRL), SHIFT, ALT or SUPER (META, WIN, CMD)";
+                return Chord.refused("err no modifier named '" + parts[i].trim() + "' in '" + spec
+                        + "'; try CONTROL (CTRL), SHIFT, ALT or SUPER (META, WIN, CMD)");
             }
             if (!held.contains(mod)) {
                 held.add(mod);
@@ -739,26 +894,34 @@ public final class Automation implements Commands {
         } catch (IllegalArgumentException e) {
             k = modifierKey(last);    // a modifier on its own, or last in its chord: key SHIFT, key CTRL+ALT
             if (k == null) {
-                return "err no key named '" + last + "'";
+                return Chord.refused("err no key named '" + last + "'");
             }
         }
-        for (Key mod : held) {
-            press(mod);
+        return new Chord(List.copyOf(held), k, null);
+    }
+
+    /** The modifiers in the order written, then the key; or, with neither, the refusal. */
+    private record Chord(List<Key> modifiers, Key key, String error) {
+
+        static Chord refused(String error) {
+            return new Chord(List.of(), null, error);
         }
-        press(k);
-        release(k);
-        for (int i = held.size() - 1; i >= 0; i--) {
-            release(held.get(i));
+
+        /** Every key, in the order it goes down, each once: {@code CTRL+CONTROL} is one key, not one pressed twice. */
+        List<Key> keys() {
+            java.util.LinkedHashSet<Key> all = new java.util.LinkedHashSet<>(modifiers);
+            all.add(key);
+            return List.copyOf(all);
         }
-        StringBuilder chord = new StringBuilder();
-        for (Key mod : held) {
-            chord.append(mod.name()).append('+');
+
+        /** {@code LEFT_CONTROL+LEFT_SHIFT+W}: what the reply and the probe say went down. */
+        String named() {
+            StringBuilder sb = new StringBuilder();
+            for (Key mod : modifiers) {
+                sb.append(mod.name()).append('+');
+            }
+            return sb.append(key.name()).toString();
         }
-        chord.append(k.name());
-        if (Probe.ON) {
-            Probe.mark(Lane.INPUT, "key", chord.toString());
-        }
-        return "ok " + chord;
     }
 
     private void press(Key k) {
@@ -890,14 +1053,18 @@ public final class Automation implements Commands {
      * confidently on a picture that was never drawn. Answers immediately when the condition already holds, so
      * it is not a sleep even in the case where nothing further will be published.
      *
-     * @param rest {@code <landmark> <text>} — the text is the whole remainder, spaces and all
+     * @param rest {@code <landmark> <text>} — the text is the whole remainder, spaces and all; or {@code <landmark>}
+     *             alone, to wait for it to exist ({@link #awaitExists})
      */
     public String await(String rest) {
         String[] parts = rest.trim().split("\\s+", 2);
-        if (parts.length < 2 || parts[0].isBlank() || parts[1].isBlank()) {
-            return "err await needs a landmark and the text to wait for";
+        if (parts[0].isBlank()) {
+            return "err await needs a landmark, and optionally the text to wait for";
         }
         String landmark = here(parts[0]);
+        if (parts.length < 2) {
+            return awaitExists(landmark);
+        }
         String needle = parts[1].toLowerCase(Locale.ROOT);
         long deadline = System.nanoTime() + AWAIT_TIMEOUT_MS * 1_000_000L;
         java.util.concurrent.Semaphore published = new java.util.concurrent.Semaphore(0);
@@ -932,11 +1099,50 @@ public final class Automation implements Commands {
         }
     }
 
+    /**
+     * {@code await <landmark>} with no text: wait until a node registered under {@code landmark} exists at all.
+     *
+     * <p>The first thing a scene waits for, before there is any state to read off a name: the tree is built on the
+     * first frame, so a {@code settle} straight after launch can answer before the landmark is in it, and a {@code
+     * find} or {@code click} then says it is not there. Witnesses used to poll {@code find} for this. Exists means
+     * published in the semantic snapshot, as {@code tree} would list it — hidden included, since being hidden is
+     * itself a state a scene may be waiting to see; a {@code click} on it reveals it or says why it cannot.
+     *
+     * <p>The same bound, the same wake (a layout commit, subscribed before the first look) and the same last look
+     * on a quiet loop as the form with text. Answers {@code ok <ref> "<name>" @<landmark>}, so the ref is in hand.
+     */
+    private String awaitExists(String landmark) {
+        long deadline = System.nanoTime() + AWAIT_TIMEOUT_MS * 1_000_000L;
+        java.util.concurrent.Semaphore published = new java.util.concurrent.Semaphore(0);
+        try (var sub = gui.layout().onCommit(v -> published.release())) {
+            while (true) {
+                SemanticNode n = landmarked(landmark);
+                if (n != null) {
+                    return "ok " + n.id() + " \"" + n.name() + "\" @" + landmark;
+                }
+                long remaining = deadline - System.nanoTime();
+                if (remaining <= 0) {
+                    return "err no landmark '" + landmark + "' within " + AWAIT_TIMEOUT_MS + "ms; try tree";
+                }
+                published.tryAcquire(remaining, java.util.concurrent.TimeUnit.NANOSECONDS);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "err interrupted";
+        }
+    }
+
     /** The accessible name of the node registered under {@code landmark}, or null if there is no such node. */
     private String named(String landmark) {
+        SemanticNode n = landmarked(landmark);
+        return n == null ? null : n.name();
+    }
+
+    /** The node registered under {@code landmark}, or null if there is no such node. */
+    private SemanticNode landmarked(String landmark) {
         for (SemanticNode n : gui.semanticSnapshot().nodes().values()) {
             if (n.landmark().equals(landmark)) {
-                return n.name();
+                return n;
             }
         }
         return null;
@@ -1238,8 +1444,11 @@ public final class Automation implements Commands {
             "key <NAME>               press and release a named key (key ENTER)",
             "key <MOD+...+NAME>       a chord: modifiers held around the key (key CTRL+SHIFT+W);",
             "                         modifiers CONTROL|CTRL, SHIFT, ALT, SUPER|META|WIN|CMD",
+            "keydown <[MOD+...+]NAME> press and hold, until keyup or the hand is let go (quit, disconnect)",
+            "keyup [MOD+...+NAME]     release held keys, in reverse; with nothing named, all of them",
             "settle                   wait for the loop to catch up, and any animation to finish",
             "await <landmark> <text>  wait until that landmark is named something containing text",
+            "await <landmark>         wait until a node with that landmark exists",
             "shot [path]              photograph this window, and wait for the file (err if none arrives)",
             "size                     this window's pixels, zoom, dpi and em, in one line",
             "zoom [factor]            read or set the zoom; clamped to the application's own range, and says so",

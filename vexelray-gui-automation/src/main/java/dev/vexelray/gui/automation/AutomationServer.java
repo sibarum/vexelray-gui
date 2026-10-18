@@ -70,7 +70,7 @@ public final class AutomationServer implements AutoCloseable {
      * before, which refuses a major it does not know rather than guessing. {@code hello} and the discovery file
      * both report it. {@code ottermate} restates the major it speaks, as it restates {@link #DEFAULT_PORT}.
      */
-    public static final String PROTOCOL = "1.1";
+    public static final String PROTOCOL = "1.2";
 
     /** How long a refused connection is answered before it is closed, if it does not close first. */
     private static final int REFUSED_LINGER_MS = 5_000;

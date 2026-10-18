@@ -234,6 +234,25 @@ The reply names the keys that went down: each modifier's left-hand key is presse
 and released, then the modifiers are released in reverse, which is what a claim for that shortcut is waiting
 for. Nothing is left held afterwards.
 
+To hold a key across commands — Shift held through a click, to photograph what the application proposes while
+it is down — use `keydown` and `keyup`, with the same names:
+
+```
+> keydown SHIFT
+ok LEFT_SHIFT held: LEFT_SHIFT
+> click list.row.7
+ok 212,340
+> shot shift-click.png
+ok ...
+> keyup SHIFT
+ok LEFT_SHIFT held: (none)
+```
+
+`keyup` with nothing named releases everything held, and so does the session ending: `quit`, a dropped
+connection or `hand release` lets go of every held key, last pressed first, so a script that crashes cannot leave
+Shift down in the application. A `key` chord leaves a modifier that `keydown` holds held. A held non-modifier
+key auto-repeats, as a real one does.
+
 ### Fingers on the touchpad
 
 `touch` puts fingers on a pretend touchpad with the pointer over a target, moves them and lifts them; `tap`
@@ -553,7 +572,18 @@ the loop's debt, so nothing reports it. `await <landmark> <text>` waits until th
 text — which means an application declares readiness by *writing it down where it is legible* rather than by
 a hook this tool would have to know about.
 
-It is bounded at 30s and says so rather than hanging:
+With no text, `await <landmark>` waits until a node with that landmark exists at all, and answers with its ref:
+
+```
+> await view.canvas
+ok 57 "" @view.canvas
+```
+
+That is the first wait of a scene: straight after launch the tree may not be built yet, so a `settle` can answer
+before the landmark is in it and a `click` on it then says there is no such landmark. Write `await <landmark>`
+rather than a loop over `find`.
+
+Both forms are bounded at 30s and say so rather than hanging:
 
 ```
 > await nosuchlandmark neverappears

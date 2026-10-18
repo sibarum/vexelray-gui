@@ -511,4 +511,109 @@ class AutomationTest {
             assertTrue(gui.pointerWarp() == host, "the host's warp is restored");
         }
     }
+
+    /**
+     * {@code await <landmark>} with no text answers once the landmark exists, and not before: the first-frame wait
+     * every witness used to write as a loop over {@code find}.
+     */
+    @Test
+    void awaitWithNoTextWaitsForTheLandmarkToExist() throws Exception {
+        try (Gui gui = deterministic()) {
+            gui.root().children(gui.box().size(Length.dp(10), Length.dp(10)));
+            gui.frame(W, H, NO_TEXT);
+            Automation driver = new Automation(gui);
+
+            java.util.concurrent.CompletableFuture<String> waiting =
+                    java.util.concurrent.CompletableFuture.supplyAsync(() -> driver.command("await later"));
+            Thread.sleep(100);
+            assertFalse(waiting.isDone(), "nothing is registered under 'later' yet: " + waiting.getNow(""));
+
+            Node later = gui.box().role("button").size(Length.dp(100), Length.dp(40)).children(gui.text("Go"));
+            gui.landmark("later", later);
+            gui.root().children(later);
+            gui.frame(W, H, NO_TEXT);
+
+            String out = waiting.get(5, java.util.concurrent.TimeUnit.SECONDS);
+            assertTrue(out.startsWith("ok "), out);
+            assertTrue(out.endsWith(" @later"), "the reply names the landmark: " + out);
+            String ref = out.substring(3, out.indexOf(' ', 3));
+            assertTrue(driver.command("find later").contains(ref + " "), "and the ref is the one find gives: " + out);
+
+            // Already there: answered at once, with no frame to wait for.
+            assertEquals(out, driver.command("await later"));
+            // The text form is unchanged beside it.
+            assertTrue(driver.command("await later Go").startsWith("ok Go"));
+            assertTrue(driver.command("await").startsWith("err await needs a landmark"));
+        }
+    }
+
+    /**
+     * A held modifier is held across commands: {@code keydown SHIFT}, then a plain {@code key A}, reaches the claim
+     * for Shift+A — the shift-click case, done with a key so it needs no layout — and {@code keyup} ends it.
+     */
+    @Test
+    void keydownHoldsAKeyAcrossCommandsUntilKeyup() {
+        try (Gui gui = deterministic()) {
+            Node field = gui.box().size(Length.dp(200), Length.dp(40));
+            gui.root().children(field);
+            gui.frame(W, H, NO_TEXT);
+            gui.focus(field);
+            AtomicInteger shifted = new AtomicInteger();
+            AtomicInteger bare = new AtomicInteger();
+            gui.claim(field, Shortcut.of(Key.A, Modifier.SHIFT), ClaimScope.FOCUSED, shifted::incrementAndGet);
+            gui.claim(field, Shortcut.of(Key.A), ClaimScope.FOCUSED, bare::incrementAndGet);
+            Automation driver = new Automation(gui);
+            assertTrue(driver.drives("keydown shift") && driver.drives("keyup"), "both are the hand's");
+
+            assertEquals("ok LEFT_SHIFT held: LEFT_SHIFT", driver.command("keydown shift"));
+            gui.frame(W, H, NO_TEXT);
+            assertEquals(java.util.Set.of(Modifier.SHIFT), gui.modifiers().value(), "the application sees it held");
+
+            assertEquals("ok A", driver.command("key A"));
+            gui.frame(W, H, NO_TEXT);
+            assertEquals(1, shifted.get(), "a key pressed while shift is held is Shift+A");
+            assertEquals(0, bare.get());
+            assertEquals(java.util.Set.of(Modifier.SHIFT), gui.modifiers().value(),
+                    "and key did not let go of what keydown holds");
+
+            assertTrue(driver.command("keydown SHIFT").startsWith("err LEFT_SHIFT is already held"));
+            assertTrue(driver.command("key SHIFT").startsWith("err LEFT_SHIFT is held by keydown"));
+            assertTrue(driver.command("keyup CTRL").startsWith("err LEFT_CONTROL is not held; held: LEFT_SHIFT"));
+
+            assertEquals("ok LEFT_SHIFT held: (none)", driver.command("keyup Shift"));
+            gui.frame(W, H, NO_TEXT);
+            assertTrue(gui.modifiers().value().isEmpty());
+            assertEquals("ok A", driver.command("key A"));
+            gui.frame(W, H, NO_TEXT);
+            assertEquals(1, bare.get(), "released: a plain key afterwards is plain");
+
+            assertEquals("ok nothing was held", driver.command("keyup"));
+            assertTrue(driver.command("keydown HYPER+A").startsWith("err no modifier named 'HYPER'"));
+        }
+    }
+
+    /**
+     * Whatever keydown holds comes up when the hand is let go — {@code quit}, a dropped connection, {@code hand
+     * release} — last pressed first, so a session that ends never leaves a key down for whoever sits at the desk.
+     */
+    @Test
+    void lettingGoReleasesHeldKeys() {
+        try (Gui gui = deterministic()) {
+            gui.root().children(gui.box().size(Length.dp(10), Length.dp(10)));
+            gui.frame(W, H, NO_TEXT);
+            Automation driver = new Automation(gui);
+
+            assertEquals("ok LEFT_CONTROL+LEFT_ALT held: LEFT_CONTROL+LEFT_ALT", driver.command("keydown ctrl+alt"));
+            gui.frame(W, H, NO_TEXT);
+            assertEquals(java.util.Set.of(Modifier.CONTROL, Modifier.ALT), gui.modifiers().value());
+
+            driver.letGo();
+            gui.frame(W, H, NO_TEXT);
+            assertTrue(gui.modifiers().value().isEmpty(), "letting go released them");
+            assertEquals("ok nothing was held", driver.command("keyup"));
+
+            assertEquals("ok LEFT_SHIFT held: LEFT_SHIFT", driver.command("keydown SHIFT"));
+            assertEquals("ok released LEFT_SHIFT", driver.command("keyup"), "keyup alone releases everything");
+        }
+    }
 }

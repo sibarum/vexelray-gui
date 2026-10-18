@@ -89,8 +89,17 @@ name and moves it into place, so it is never caught half-written. It goes when t
 - `command` is the process's command line, escaped onto one line, so a person can tell two runs of the same
   application apart. **On Windows it is only the executable.** The JDK does not read another process's arguments
   there (`ProcessHandle.Info.commandLine()` is empty), so the file falls back to `command()`.
-- `build` carries the automation module's version when its jar has one in its manifest, and `-` otherwise, as in a
-  checkout.
+- **What the application was built from** (added 2026-10-18, replacing a `build` line that named the automation
+  module rather than the application). The keys are:
+  - `app.group`, `app.artifact` and `app.version`: the application's coordinates.
+  - `app.source`: the exact source. That is the git commit, plus `+dirty.<digest>` of the uncommitted changes when
+    there were any.
+  - `stack.count`, and one `stack.<n>=group:artifact:version@source` line for every stamped part of the stack it was
+    built with.
+
+  These come from `vexelray-build-maven-plugin` (`vexelray-build/README.md`) through the framework's generated wiring
+  (`BuildInfo`), which hands them to `Discovery.build` before any socket opens. A host that gives nothing is written
+  as `app.source=unknown`. `hello` says the same in one line: `build group:artifact:version@source stack=N`.
 - `stream` is the Inspector link's endpoint (flight-recorder.md §6, step 5b): `stream=uds:<path>`, the
   `<app>-<pid>.sock` beside this file, or `stream=tcp:<port>` when that path is too long for `AF_UNIX`. The link
   adds it after it starts (`AutomationServer.advertise`), by writing the file again and moving it into place, so a

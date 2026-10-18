@@ -83,7 +83,11 @@ public final class Automation implements Commands {
             "(\\d+(?:\\.\\d+)?(?:px|em)?)\\s*(?:x|\\s)\\s*(\\d+(?:\\.\\d+)?(?:px|em)?)");
 
     private final Gui gui;
-    private final WindowControls controls;
+    /**
+     * Asked on every use, never held: a window's controls do not exist until its OS window does, and a named window
+     * closed and reopened is handed a fresh set for the same tree (docs/plans/todo.md §6.9).
+     */
+    private final java.util.function.Supplier<WindowControls> controls;
     private final Timeline timeline;
     private final long timelineTimeoutMs;
     private final Cursor cursor;
@@ -103,19 +107,43 @@ public final class Automation implements Commands {
      * over, so a transition in flight is not photographed as finished. See {@link Timeline}.
      */
     public Automation(Gui gui, WindowControls controls, Timeline timeline) {
-        this(gui, controls, timeline, TIMELINE_TIMEOUT_MS);
+        this(gui, constant(controls), timeline, TIMELINE_TIMEOUT_MS);
+    }
+
+    /**
+     * A driver that looks its window's controls up per command — what {@link Windows} hands every window, and what
+     * a host whose window opens after the driver, or reopens under the same tree, needs. A supplier answering
+     * {@code null} means the window is not open now, and {@code shot} and {@code resize} then say so.
+     */
+    public static Automation following(Gui gui, java.util.function.Supplier<WindowControls> controls,
+                                       Timeline timeline) {
+        return new Automation(gui, controls, timeline, TIMELINE_TIMEOUT_MS);
     }
 
     /** With a shorter timeline bound, so a test of the never-quiet case does not take ten seconds to fail. */
     Automation(Gui gui, WindowControls controls, Timeline timeline, long timelineTimeoutMs) {
+        this(gui, constant(controls), timeline, timelineTimeoutMs);
+    }
+
+    private Automation(Gui gui, java.util.function.Supplier<WindowControls> controls, Timeline timeline,
+                       long timelineTimeoutMs) {
         this.gui = java.util.Objects.requireNonNull(gui, "gui");
-        this.controls = controls == null ? WindowControls.NONE : controls;
+        java.util.Objects.requireNonNull(controls, "controls");
+        this.controls = () -> {
+            WindowControls now = controls.get();
+            return now == null ? WindowControls.NONE : now;
+        };
         this.timeline = timeline == null ? Timeline.NONE : timeline;
         this.timelineTimeoutMs = timelineTimeoutMs;
         // Waking, because this host loop is entitled to be parked: injected input is neither a mutation nor an
         // OS event, so it is the one reason a frame can be owed that nothing else reports. See
         // Gui.wakeForInput, and §6's promise that this module has no interesting failure modes of its own.
         this.cursor = new Cursor(gui.bus(), gui::wakeForInput);
+    }
+
+    private static java.util.function.Supplier<WindowControls> constant(WindowControls controls) {
+        WindowControls fixed = controls == null ? WindowControls.NONE : controls;
+        return () -> fixed;
     }
 
     /** The pointer this driver moves. One hand. */
@@ -367,7 +395,7 @@ public final class Automation implements Commands {
             String[] xy = s.split(",", 2);
             return new int[]{Integer.parseInt(xy[0].trim()), Integer.parseInt(xy[1].trim())};
         }
-        long id = s.chars().allMatch(Character::isDigit) ? Long.parseLong(s) : landmarkId(s);
+        long id = s.chars().allMatch(Character::isDigit) ? Long.parseLong(s) : landmarkId(here(s));
         SemanticNode what = gui.semanticSnapshot().node(id);
         if (!what.present()) {
             throw new IllegalArgumentException("no node " + s);
@@ -460,6 +488,25 @@ public final class Automation implements Commands {
             return "was interrupted while being waited for";
         }
         return why;
+    }
+
+    /**
+     * The landmark an address names, once it is known to be in this window: {@code view.canvas} and
+     * {@code viewport/view.canvas} are the same node to the viewport's driver. An address naming another window is
+     * refused rather than looked up here, where the same name may be a different landmark; {@link Windows} hands
+     * such a command to that window's driver before it gets this far.
+     */
+    private String here(String spec) {
+        if (spec.indexOf(dev.vexelray.gui.core.nav.Address.SEPARATOR) < 0) {
+            return spec;
+        }
+        var address = dev.vexelray.gui.core.nav.Address.parse(spec);
+        String mine = gui.windowKey();
+        if (address.windowNamed() && !mine.isEmpty() && !address.window().equals(mine)) {
+            throw new IllegalArgumentException("'" + spec + "' is in window '" + address.window()
+                    + "', and this driver is window '" + mine + "'");
+        }
+        return address.landmark();
     }
 
     /** The node registered under {@code landmark}, or a complaint naming what is available. */
@@ -836,7 +883,7 @@ public final class Automation implements Commands {
         if (parts.length < 2 || parts[0].isBlank() || parts[1].isBlank()) {
             return "err await needs a landmark and the text to wait for";
         }
-        String landmark = parts[0];
+        String landmark = here(parts[0]);
         String needle = parts[1].toLowerCase(Locale.ROOT);
         long deadline = System.nanoTime() + AWAIT_TIMEOUT_MS * 1_000_000L;
         java.util.concurrent.Semaphore published = new java.util.concurrent.Semaphore(0);
@@ -890,6 +937,7 @@ public final class Automation implements Commands {
     public String size() {
         float zoom = gui.zoom().value();
         float dpi = gui.dpi().value();
+        WindowControls controls = this.controls.get();
         return "ok " + controls.width() + "x" + controls.height() + " zoom=" + number(zoom) + " dpi=" + number(dpi)
                 + " em=" + number(gui.rootEmPx() * zoom * dpi) + "px";
     }
@@ -948,6 +996,7 @@ public final class Automation implements Commands {
         if (rest.isBlank()) {
             return "err resize needs a size, like 1024x768 or 46em 30em";
         }
+        WindowControls controls = this.controls.get();
         if (controls.width() <= 0) {
             return "err there is no window to resize";
         }
@@ -1069,7 +1118,7 @@ public final class Automation implements Commands {
             // whole method is about, so being unable to rule it out is a refusal.
             return "err could not clear the previous " + target.getAbsolutePath();
         }
-        controls.capture(file);
+        controls.get().capture(file);
         long deadline = System.nanoTime() + SHOT_TIMEOUT_MS * 1_000_000L;
         while (System.nanoTime() < deadline) {
             if (target.isFile() && target.length() > 0) {

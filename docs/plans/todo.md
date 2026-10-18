@@ -1005,7 +1005,45 @@ stays for the one case that needs it. Two further reasons to want it:
   supersede. Fewer callers is strictly better for that migration. Note the upstream half is **not** available
   yet: `OFFSCREEN` is authorable and throws.
 
-### 6.9 `Automation` is bound to one `Gui`, and the tree already knows how to name a window
+### 6.9 ~~`Automation` is bound to one `Gui`, and the tree already knows how to name a window~~ — **Done**
+
+**Most of it was already there, and the entry was written against the wrong class.** `Automation` is bound to one
+`Gui`, but nothing serves one any more: the framework's `Driver.open` puts a `Windows` on the socket, over
+`GuiApp.windows()`, and `Windows` already asks for the open windows on every command, makes one `Automation` per
+tree, and lets a connection choose among them with `window <name>`. So one socket already drove every window,
+the designer's viewport included — `window viewport`, then `tree` and `shot`. The designer's second socket predates
+that, or never noticed it.
+
+What was still missing, and is now done:
+
+- **A target could not name its window.** `click viewport/view.canvas` failed (`no landmark
+  'viewport/view.canvas'`), and `go viewport/x` from the main window came back
+  `forwarded to window 'viewport'` instead of arriving. Now a target written as an `Address` sends that one
+  command to the window it names — `move`, `click`, `rightclick`, `down`, `up`, `scroll`, `touch`, `tap`, `drag`
+  (both ends in one window, or refused), `go` and `await` — and leaves the session's choice where it was. A
+  driver handed an address for its own window strips the window part; one for another window is refused rather
+  than looked up locally, where the same landmark name may be a different node. The verbs with no target
+  (`tree`, `shot`, `size`) still take the chosen window: there is nothing in the line to route by.
+- **Late and replaced controls were half solved.** `Windows` dropped a driver whose tree had closed, so a window
+  closed *between* two commands got fresh controls; but one closed and reopened under the same tree between two
+  commands — the designer's viewport, the calculator's settings — kept the dead set, and `shot` photographed a
+  window that was gone. `Automation.following(gui, supplier, timeline)` now looks its controls up on each use, and
+  `Windows` hands every driver a lookup into the current `windows()` list. Nothing is captured at construction.
+
+Pinned by `WindowsTest` (an addressed click reaches the named window and not the chosen one's landmark of the same
+name; `tree` and `shot` reach the chosen one; a reopened window is photographed through its new controls; a drag
+across windows is refused). Verified with `ottermate` against `calculator-vexel-demo` on one socket: `click
+button.settings`, then `go settings/setting.number_type` arrived, `click settings/setting.form` opened that
+dropdown in the settings window while `window` still answered `main`, and `window settings` / `tree` / `shot`
+listed and photographed it.
+
+**For removal, not removed:** `vexelray-designer`'s `DesignerWiring.drivers` and `delegatingViewControls` — the
+second `AutomationServer` at `Driver.port() + 1` and the controls that read `viewControls` per command. Both are
+what `Windows` now does on the first socket (`window viewport`, or `click viewport/view`). Left in place because
+the designer is not kept compiling, so the removal cannot be checked; delete both with it when it next builds.
+The framework's sketched `Driver.open(shell, gui, controls, offset)` is not needed.
+
+The entry as it was:
 
 `Automation.java:71` takes one `Gui` and one `WindowControls` at construction. A multi-window application
 therefore needs one `Automation` and one socket per window: `vexelray-designer` binds its second itself at

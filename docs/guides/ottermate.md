@@ -394,6 +394,18 @@ commands each open their own connection, so use `--window` with them:
 ottermate --window settings shot settings.png --launch ...
 ```
 
+A target can name its window instead, as `window/landmark` — the same address a hyperlink uses. The command goes
+to that window, and the choice stays where it was, so a one-off needs no `--window`:
+
+```bash
+ottermate click settings/theme.accent        # in the settings window, whichever one is chosen
+ottermate await viewport/view.state ready
+```
+
+This works for the verbs that take a target (`click`, `move`, `drag`, `go`, `await`, ...). The verbs with no
+target — `tree`, `shot`, `size` — still act on the chosen window. One socket drives every window, including one
+that opens after the application starts or is closed and reopened: nothing is bound to a window at startup.
+
 ### Watching while something else drives
 
 The socket takes up to four connections at once (`-Dautomation.connections=<n>` on the application changes

@@ -1,8 +1,10 @@
 package dev.vexelray.gui.automation;
 
 import dev.vexelray.gui.core.Gui;
+import dev.vexelray.gui.core.WindowControls;
 import dev.vexelray.gui.core.app.LoopCounters;
 import dev.vexelray.gui.core.app.WindowView;
+import dev.vexelray.gui.core.nav.Address;
 import dev.vexelray.gui.recorder.Recorder;
 
 import java.util.ArrayList;
@@ -35,6 +37,13 @@ import java.util.function.Supplier;
  * <p>Until a window is chosen, commands go to the main window — which is what a one-window application is, and
  * why nothing here changes how it is driven.
  *
+ * <p><b>A target can name its window instead</b> ({@link #addressed}): {@code click viewport/view.canvas} goes to
+ * the viewport's driver for that command and leaves the choice where it was, because an
+ * {@link Address} is {@code window/landmark} — the same value a hyperlink and {@code GuiApp}'s routing use. Nothing
+ * is bound at construction: the windows, the drivers and each driver's controls are all looked up per command, so a
+ * window that opens after the socket does, or is closed and reopened under the same tree, needs nothing from its
+ * application (docs/plans/todo.md §6.9).
+ *
  * <ul>
  *   <li>{@code windows} — what is open: a number, a name, the size and view factors, and {@code *} on the chosen one;</li>
  *   <li>{@code window <name|number>} — choose one, by its exact name, a unique beginning of it, or its number.</li>
@@ -51,7 +60,9 @@ public final class Windows implements Commands {
 
     private static final String HELP = String.join("\n",
             "windows                  the open windows: number, name, size and view; * is the chosen one",
-            "window <name|number>     choose the window the other commands act on (default: the main one)");
+            "window <name|number>     choose the window the other commands act on (default: the main one)",
+            "<verb> <window>/<landmark> ...",
+            "                         a target naming its window acts there, this command only (click viewport/home)");
 
     private final Supplier<List<WindowView>> source;
     private final Timeline timeline;
@@ -191,7 +202,10 @@ public final class Windows implements Commands {
             if (verb.equals("window")) {
                 return choose(open, rest);
             }
-            WindowView target = current(open);
+            WindowView target = addressed(open, verb, rest);
+            if (target == null) {
+                target = current(open);
+            }
             if (target == null) {
                 return GONE;
             }
@@ -210,10 +224,63 @@ public final class Windows implements Commands {
         return open.stream().filter(v -> v.gui() == chosen).findFirst().orElse(null);
     }
 
-    private Automation driver(WindowView view) {
-        synchronized (drivers) {
-            return drivers.computeIfAbsent(view.gui(), g -> new Automation(g, view.controls(), timeline));
+    /**
+     * The window a command's own target names, for that command only — or {@code null} when it names none, and the
+     * session's choice applies.
+     *
+     * <p>A target written as an {@link Address} — {@code click viewport/view.canvas}, {@code go prefs/theme.accent},
+     * {@code await viewport/view.state ready} — carries its window with it, the same {@code window/landmark} a
+     * hyperlink and {@code GuiApp}'s routing already use. So it goes to the driver of the window it names, and
+     * {@code window} is needed only for the verbs with no target ({@code tree}, {@code shot}, {@code size}). The
+     * session's choice is not moved: a command that names its window says nothing about the next one.
+     *
+     * <p>Only the arguments that are targets are read as addresses: a {@code shot} path or a {@code type} text may
+     * contain a slash too. A window name that is not open is left to the chosen window's driver, whose
+     * {@code go} forwards it on the bus — which is how a closed named window gets opened — and whose other verbs
+     * say it is another window's.
+     */
+    private WindowView addressed(List<WindowView> open, String verb, String rest) {
+        int targets = switch (verb) {
+            case "move", "click", "rightclick", "down", "up", "scroll", "touch", "tap", "go", "await" -> 1;
+            case "drag" -> 2;
+            default -> 0;
+        };
+        String[] args = rest.isEmpty() ? new String[0] : rest.split("\\s+");
+        WindowView found = null;
+        for (int i = 0; i < Math.min(targets, args.length); i++) {
+            int slash = args[i].indexOf(Address.SEPARATOR);
+            if (slash <= 0) {
+                continue;
+            }
+            String window = args[i].substring(0, slash);
+            WindowView named = open.stream().filter(v -> window.equals(v.name())).findFirst().orElse(null);
+            if (named == null) {
+                continue;
+            }
+            if (found != null && found != named) {
+                throw new IllegalArgumentException("a " + verb + " cannot start in one window and end in another");
+            }
+            found = named;
         }
+        return found;
+    }
+
+    /**
+     * The driver for a window's tree, made once and kept while the tree is open. Its controls are looked up each
+     * time it is asked for them rather than taken from this view: a named window closed and reopened between two
+     * commands is the same tree with new controls, and a driver holding the old ones would photograph a window
+     * that is gone.
+     */
+    private Automation driver(WindowView view) {
+        Gui gui = view.gui();
+        synchronized (drivers) {
+            return drivers.computeIfAbsent(gui, g -> Automation.following(g, () -> controlsOf(g), timeline));
+        }
+    }
+
+    /** The controls of the window showing {@code gui} now, or {@code null} when none is. */
+    private WindowControls controlsOf(Gui gui) {
+        return source.get().stream().filter(v -> v.gui() == gui).map(WindowView::controls).findFirst().orElse(null);
     }
 
     private String list(List<WindowView> open) {

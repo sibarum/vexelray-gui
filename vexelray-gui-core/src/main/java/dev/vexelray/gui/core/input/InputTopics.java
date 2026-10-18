@@ -1,6 +1,7 @@
 package dev.vexelray.gui.core.input;
 
 import sibarum.atchung.Topic;
+import sibarum.tactroller.api.GestureEvent;
 import sibarum.tactroller.api.InputEvent;
 
 /**
@@ -17,6 +18,14 @@ public final class InputTopics {
 
     /** Discrete device-input edges (key/button/scroll/motion/focus). */
     public static final Topic<InputEvent> INPUT = Topic.of(INPUT_NAME, InputEvent.class);
+
+    /**
+     * The touchpad's gestures, as the dispatcher recognized them from the contacts on {@link #INPUT}: pans and
+     * pinches to manipulate something directly, and taps. One recognizer per window, the same one whose swipes and
+     * taps reach claims ({@link Gesture}), so a widget reading this and a command bound to a swipe agree on what the
+     * fingers did. Published while the dispatcher handles input, on the GUI thread.
+     */
+    public static final Topic<GestureEvent> GESTURE = Topic.of("vexelray.gesture", GestureEvent.class);
 
     private InputTopics() {
     }

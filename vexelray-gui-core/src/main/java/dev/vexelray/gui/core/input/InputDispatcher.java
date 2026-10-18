@@ -157,6 +157,13 @@ public final class InputDispatcher {
      */
     private final sibarum.tactroller.api.DragGesture drags =
             new sibarum.tactroller.api.DragGesture(DRAG_DISTANCE_PX, DRAG_HOLD_MS, Set.of(MouseButton.LEFT));
+    /**
+     * Recognises the touchpad's gestures in its contacts: one recogniser per window, fed the whole stream, so the
+     * pans and pinches published on {@link InputTopics#GESTURE} and the swipes and taps that reach claims are one
+     * reading of the same fingers. GUI thread only.
+     */
+    private final sibarum.tactroller.api.TouchpadGesture touchpad = new sibarum.tactroller.api.TouchpadGesture();
+    private final GestureTriggers gestureTriggers = new GestureTriggers();
     /** The drag in flight, or null. GUI thread only. */
     private DragSession session;
     /**
@@ -197,13 +204,14 @@ public final class InputDispatcher {
      * a focused element always outranks a global default. {@code inline} marks the framework's own claims, whose
      * commands mutate GUI-thread state (focus) and so must not be handed to the worker executor.
      *
-     * <p>A {@code null} chord is a claim on <em>every</em> chord ({@link #claimAny}), and its command hears which
-     * one it got. At the same scope a claim that named its chord outranks it: the wildcard is the floor of its
-     * scope, never a way of shadowing a key somebody asked for by name.
+     * <p>A claim is on a {@link Trigger}: a chord, or a touchpad {@link Gesture} (a swipe, a tap), which resolve
+     * the same way. A {@code null} chord is a claim on <em>every</em> trigger ({@link #claimAny}), and its command
+     * hears which one it got. At the same scope a claim that named its trigger outranks it: the wildcard is the
+     * floor of its scope, never a way of shadowing a key somebody asked for by name.
      */
-    private record Claim(Shortcut chord, ClaimScope scope, long nodeId, Consumer<Shortcut> command, boolean inline) {
+    private record Claim(Trigger chord, ClaimScope scope, long nodeId, Consumer<Trigger> command, boolean inline) {
 
-        static Claim of(Shortcut chord, ClaimScope scope, long nodeId, Runnable command, boolean inline) {
+        static Claim of(Trigger chord, ClaimScope scope, long nodeId, Runnable command, boolean inline) {
             return new Claim(chord, scope, nodeId, pressed -> command.run(), inline);
         }
 
@@ -211,7 +219,7 @@ public final class InputDispatcher {
             return chord == null;
         }
 
-        boolean matches(Shortcut pressed) {
+        boolean matches(Trigger pressed) {
             return chord == null || chord.equals(pressed);
         }
 
@@ -525,6 +533,28 @@ public final class InputDispatcher {
         }
     }
 
+    /**
+     * Feed one input event to the touchpad recogniser: publish what the fingers are doing for whatever manipulates
+     * things directly, and run the claim on any swipe or tap that is a command. A gesture's claim resolves exactly
+     * as a chord's does — scope, focus, disabled — because a command is a command whichever hand gave it.
+     */
+    private void feedTouchpad(InputEvent event) {
+        for (sibarum.tactroller.api.GestureEvent g : touchpad.feed(event)) {
+            bus.publish(InputTopics.GESTURE, g);
+            for (Gesture t : gestureTriggers.feed(g)) {
+                Claim claimed = resolveClaim(t);
+                if (claimed == null) {
+                    continue;
+                }
+                if (claimed.inline()) {
+                    claimed.command().accept(t);
+                } else {
+                    handlerExecutor.execute(() -> claimed.command().accept(t));
+                }
+            }
+        }
+    }
+
     /** Open, move or end the session, according to what the recogniser says the gesture just did. */
     private void onDragGesture(sibarum.tactroller.api.DragEvent event) {
         switch (event) {
@@ -817,7 +847,7 @@ public final class InputDispatcher {
      * Claim {@code chord} for {@code nodeId}, running the command on the GUI thread in arrival order — the
      * variant a claim that performs an edit needs, so it sequences against typed text rather than racing it.
      */
-    public void claimUi(long nodeId, Shortcut chord, ClaimScope scope, Runnable command) {
+    public void claimUi(long nodeId, Trigger chord, ClaimScope scope, Runnable command) {
         claims.removeIf(c -> c.nodeId() == nodeId && c.scope() == scope && chord.equals(c.chord()));
         claims.add(Claim.of(chord, scope, nodeId, command, true));
     }
@@ -828,16 +858,17 @@ public final class InputDispatcher {
     }
 
     /** Claim {@code chord} for {@code nodeId} at {@code scope}; replaces any identical claim by the same node. */
-    public void claim(long nodeId, Shortcut chord, ClaimScope scope, Runnable command) {
+    public void claim(long nodeId, Trigger chord, ClaimScope scope, Runnable command) {
         claims.removeIf(c -> c.nodeId() == nodeId && c.scope() == scope && chord.equals(c.chord()));
         claims.add(Claim.of(chord, scope, nodeId, command, false));
     }
 
     /**
-     * Claim <em>every</em> chord for {@code nodeId} at {@code scope}, the command hearing which one was pressed.
-     * Replaces any wildcard claim the node already holds; a claim naming its chord at the same scope still wins.
+     * Claim <em>every</em> trigger — chord or gesture — for {@code nodeId} at {@code scope}, the command hearing
+     * which one it was. Replaces any wildcard claim the node already holds; a claim naming its trigger at the same
+     * scope still wins.
      */
-    public void claimAny(long nodeId, ClaimScope scope, Consumer<Shortcut> command) {
+    public void claimAny(long nodeId, ClaimScope scope, Consumer<Trigger> command) {
         claims.removeIf(c -> c.nodeId() == nodeId && c.any());
         claims.add(new Claim(null, scope, nodeId, command, false));
     }
@@ -848,7 +879,7 @@ public final class InputDispatcher {
     }
 
     /** Drop every claim {@code nodeId} holds on {@code chord}. */
-    public void releaseClaim(long nodeId, Shortcut chord) {
+    public void releaseClaim(long nodeId, Trigger chord) {
         claims.removeIf(c -> c.nodeId() == nodeId && chord.equals(c.chord()));
     }
 
@@ -1126,6 +1157,9 @@ public final class InputDispatcher {
         // Sequence every edge, not just the ones that publish an observation: a consumer that only ever sees key
         // routes still needs the gaps between them to be countable.
         current = conduit.next();
+        // The touchpad recogniser reads pointer and button events too (where a gesture happens, and that a click
+        // is not a tap), so it sees every edge, ahead of anything below that returns early.
+        feedTouchpad(e);
         // A latched drag owns the pointer outright, ahead of everything, recogniser included: the click that puts
         // a carried thing down is not the start of a new gesture or a click on what is beneath it.
         if (latchedPointer(e)) {
@@ -1368,7 +1402,7 @@ public final class InputDispatcher {
     }
 
     /** The applicable claim on {@code chord} with the most specific scope, or null if none applies. */
-    private Claim resolveClaim(Shortcut chord) {
+    private Claim resolveClaim(Trigger chord) {
         Claim best = null;
         for (Claim c : claims) {
             if (!c.matches(chord) || !applies(c)) {

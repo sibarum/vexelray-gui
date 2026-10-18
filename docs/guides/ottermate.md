@@ -228,6 +228,24 @@ The reply names the keys that went down: each modifier's left-hand key is presse
 and released, then the modifiers are released in reverse, which is what a claim for that shortcut is waiting
 for. Nothing is left held afterwards.
 
+### Fingers on the touchpad
+
+`touch` puts fingers on a pretend touchpad with the pointer over a target, moves them and lifts them; `tap`
+touches and lifts. Distances are millimetres on the pad, as tactroller reports them:
+
+```
+> touch 500,350 3 -30 0          # three fingers swipe 30 mm left
+ok 500,350
+> touch 500,350 2 0 0 2.5 84 400 # two fingers spread 2.5x and turn 84 degrees over 400 ms
+ok 500,350
+> tap 500,350 2 2                # a two-finger double tap
+ok 500,350
+```
+
+The fingers are published as raw contacts (`TouchpadChanged`), a report every 8 ms in real time, never as a
+ready-made gesture. So what runs is the whole path: the recognizer, the dispatcher's claims on swipes and taps,
+and whatever reads the pans and pinches. The velocities the fingers lift with are real ones.
+
 ### A scene ladder in a file
 
 Blank lines and `#` comments are the client's own, and never reach the application:
@@ -380,7 +398,7 @@ ottermate --window settings shot settings.png --launch ...
 
 The socket takes up to four connections at once (`-Dautomation.connections=<n>` on the application changes
 that). Any of them can read; only the one holding **the hand** can drive — `move`, `click`, `rightclick`, `drag`,
-`down`, `up`, `scroll`, `type`, `key`, `go`, and `zoom`, `dpi`, `resize` with a value. The first of those a
+`down`, `up`, `scroll`, `touch`, `tap`, `type`, `key`, `go`, and `zoom`, `dpi`, `resize` with a value. The first of those a
 connection sends takes the hand if it is free, and closing the connection lets go. A real run against the gui
 demo, A driving while B watches from a second `ottermate`:
 

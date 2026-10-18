@@ -16,6 +16,7 @@ import sibarum.probe.Probe;
 import sibarum.tactroller.api.InputEvent;
 import sibarum.tactroller.api.Key;
 import sibarum.tactroller.api.MouseButton;
+import sibarum.tactroller.api.TouchpadContact;
 
 import java.util.List;
 import java.util.Locale;
@@ -164,7 +165,8 @@ public final class Automation implements Commands {
      */
     static boolean driving(String verb, String rest) {
         return switch (verb) {
-            case "move", "click", "rightclick", "drag", "down", "up", "scroll", "type", "key", "go" -> true;
+            case "move", "click", "rightclick", "drag", "down", "up", "scroll", "touch", "tap", "type", "key", "go" ->
+                    true;
             case "zoom", "dpi", "resize" -> !rest.isBlank();
             default -> false;
         };
@@ -184,6 +186,8 @@ public final class Automation implements Commands {
                     ? release()
                     : act(rest, (x, y) -> cursor.moveTo(x, y).release(MouseButton.LEFT));
             case "scroll" -> scroll(rest);
+            case "touch" -> touch(rest);
+            case "tap" -> tap(rest);
             case "type" -> type(rest);
             case "key" -> key(rest);
             case "go" -> go(rest);
@@ -506,6 +510,99 @@ public final class Automation implements Commands {
         cursor.moveTo(at[0], at[1]);
         cursor.scroll(Double.parseDouble(args[1]), Double.parseDouble(args[2]));
         return "ok";
+    }
+
+    /** Where synthesized fingers are put down on a pretend touchpad 100 x 70 mm, and how far apart, in mm. */
+    private static final double PAD_W = 100;
+    private static final double PAD_H = 70;
+    private static final double FINGER_RADIUS = 12;
+    /** How often a touchpad reports while fingers move: about what a precision touchpad does. */
+    private static final long TOUCH_FRAME_MS = 8;
+
+    /**
+     * Fingers on the touchpad, with the pointer over a target: {@code touch <ref|x,y> <fingers> <dx> <dy> [scale]
+     * [turn] [ms]}. They land in a ring about the pad's centre, then over {@code ms} (200 by default) their centre
+     * moves {@code (dx, dy)} millimetres, their spread grows by {@code scale} and they turn {@code turn} degrees
+     * clockwise, and they lift. A swipe is {@code touch @x 3 -30 0}; a pinch, {@code touch @x 2 0 0 2}.
+     *
+     * <p>Never a gesture event made up here: the contacts are published as the touchpad's driver path publishes
+     * them, so what is exercised is the recognizer, the dispatcher's claims and the widget, end to end. In real
+     * time, a report every few milliseconds, so the velocities they lift with are real ones.
+     */
+    private String touch(String rest) {
+        String[] a = rest.trim().split("\\s+");
+        if (a.length < 4) {
+            return "err touch needs a target, fingers, and dx dy in mm";
+        }
+        int[] at = target(a[0]);
+        int n = Integer.parseInt(a[1]);
+        double dx = Double.parseDouble(a[2]);
+        double dy = Double.parseDouble(a[3]);
+        double scale = a.length > 4 ? Double.parseDouble(a[4]) : 1;
+        double turn = a.length > 5 ? Math.toRadians(Double.parseDouble(a[5])) : 0;
+        long ms = a.length > 6 ? Long.parseLong(a[6]) : 200;
+        if (n < 1 || n > 10 || !(scale > 0) || ms < 0) {
+            return "err touch needs 1 to 10 fingers, a positive scale and a time";
+        }
+        cursor.moveTo(at[0], at[1]);
+        int steps = (int) Math.max(2, ms / TOUCH_FRAME_MS);
+        for (int i = 0; i <= steps; i++) {
+            double t = i / (double) steps;
+            touchpad(fingers(n, dx * t, dy * t, Math.pow(scale, t), turn * t));
+            pause(ms / steps);
+        }
+        touchpad(List.of());
+        return "ok " + cursor.x() + "," + cursor.y();
+    }
+
+    /**
+     * Fingers touch down together and lift without moving, {@code times} over (once by default), the pointer over
+     * a target: {@code tap <ref|x,y> <fingers> [times]}. Two times is a double tap.
+     */
+    private String tap(String rest) {
+        String[] a = rest.trim().split("\\s+");
+        if (a.length < 2) {
+            return "err tap needs a target and fingers";
+        }
+        int[] at = target(a[0]);
+        int n = Integer.parseInt(a[1]);
+        int times = a.length > 2 ? Integer.parseInt(a[2]) : 1;
+        if (n < 1 || n > 10 || times < 1) {
+            return "err tap needs 1 to 10 fingers, at least once";
+        }
+        cursor.moveTo(at[0], at[1]);
+        for (int i = 0; i < times; i++) {
+            touchpad(fingers(n, 0, 0, 1, 0));
+            pause(60);
+            touchpad(List.of());
+            pause(120);
+        }
+        return "ok " + cursor.x() + "," + cursor.y();
+    }
+
+    /** {@code n} fingers in a ring about the pad's centre moved {@code (dx, dy)}, spread {@code s}, turned {@code r}. */
+    private static List<TouchpadContact> fingers(int n, double dx, double dy, double s, double r) {
+        List<TouchpadContact> out = new java.util.ArrayList<>(n);
+        for (int k = 0; k < n; k++) {
+            double angle = r + Math.PI + 2 * Math.PI * k / n;   // two fingers side by side, left one first
+            double x = PAD_W / 2 + dx + (n == 1 ? 0 : FINGER_RADIUS * s * Math.cos(angle));
+            double y = PAD_H / 2 + dy + (n == 1 ? 0 : FINGER_RADIUS * s * Math.sin(angle));
+            out.add(new TouchpadContact(k + 1, x, y, x / PAD_W, y / PAD_H));
+        }
+        return out;
+    }
+
+    private void touchpad(List<TouchpadContact> contacts) {
+        gui.bus().publish(InputTopics.INPUT, new InputEvent.TouchpadChanged(contacts, System.nanoTime()));
+        gui.wakeForInput();
+    }
+
+    private static void pause(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     /**
@@ -1038,6 +1135,10 @@ public final class Automation implements Commands {
             "down <ref|x,y>           travel there and press, and hold: move and shot keep it held",
             "up [ref|x,y]             let go, where the pointer is or after travelling there",
             "scroll <ref|x,y> dx dy   wheel notches there",
+            "touch <ref|x,y> <n> dx dy [scale] [turn] [ms]",
+            "                         n fingers on the touchpad, the pointer there: their centre moves dx dy mm,",
+            "                         their spread grows by scale and they turn degrees, over ms (200), and lift",
+            "tap <ref|x,y> <n> [times]  n fingers touch and lift, times over (2: a double tap)",
             "type <text>              one code point at a time, as typing",
             "key <NAME>               press and release a named key (key ENTER)",
             "key <MOD+...+NAME>       a chord: modifiers held around the key (key CTRL+SHIFT+W);",

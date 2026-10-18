@@ -4,6 +4,7 @@ import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.app.Settings;
 import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.input.ClaimScope;
+import dev.vexelray.gui.core.input.Gesture;
 import dev.vexelray.gui.core.input.Shortcut;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -228,6 +229,29 @@ class KeymapTest {
             h.frame().chord(Key.K, Key.LEFT_CONTROL);
 
             assertEquals(List.of("save"), log);
+        }
+    }
+
+    @Test
+    void aGestureIsATriggerLikeAChordAndIsStoredByName() {
+        try (Headless h = new Headless()) {
+            Gesture left = Gesture.swipe(3, Gesture.Motion.SWIPE_LEFT);
+            Gesture tap = Gesture.doubleTap(2);
+            Keymap keys = new Keymap(h.gui);
+            Action back = keys.action("view.previous", "Previous", Shortcut.of(Key.LEFT), left).on(() -> { });
+            Action fit = keys.action("view.fit", "Fit").on(() -> { });
+
+            Keymap.Bound b = keys.bind(fit, List.of(tap, left));
+
+            assertEquals(List.of(back), b.displaced(), "a gesture is taken from its holder as a chord is");
+            assertEquals(List.of(Shortcut.of(Key.LEFT)), back.chords());
+            assertEquals("view.fit = TwoFingerDoubleTap ThreeFingerSwipeLeft\n"
+                    + "view.previous = Left\n", keys.text());
+
+            Keymap again = new Keymap(h.gui);
+            Action fit2 = again.action("view.fit", "Fit").on(() -> { });
+            again.load(keys.text());
+            assertEquals(List.of(tap, left), fit2.chords(), "read back by name");
         }
     }
 }

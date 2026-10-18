@@ -81,12 +81,46 @@ around `+`, the enum's own names (`CONTROL+PAGE_DOWN`) and the usual aliases (`C
 reads a chord they did not type. A modifier's own key is never a chord's key: pressed alone it is routed
 nowhere. Every key under every modifier set round-trips (`ShortcutTextTest`).
 
+### 2.1 Touchpad gestures are chords too
+
+What a claim and an action are made on is a `Trigger`: a `Shortcut`, or a `Gesture`, which is a touchpad
+gesture that is a command. A gesture has a number of fingers (two to five) and one motion: `SwipeLeft`,
+`SwipeRight`, `SwipeUp`, `SwipeDown`, `Tap` or `DoubleTap`. Its spelling is words run together, the way
+`PageDown` is, so it needs no separator: `ThreeFingerSwipeLeft`, `TwoFingerDoubleTap`. `Trigger.parse` reads
+either kind, and so a file holds both on one line:
+
+```
+view.next = Right PageDown ThreeFingerSwipeLeft
+```
+
+Everything above that says chord means either. Gestures are claimed, outranked, taken and stored exactly as
+keys are, so an application declares one as a default beside its keys:
+
+```java
+keys.action("view.next", "Next picture", Shortcut.of(Key.RIGHT), Gesture.swipe(3, Gesture.Motion.SWIPE_LEFT))
+        .on(() -> step(1));
+```
+
+**Where they come from.** The dispatcher feeds the window's touchpad contacts (`InputEvent.TouchpadChanged`) to
+one tactroller `TouchpadGesture` per window, and `GestureTriggers` decides which of its gestures are commands:
+
+- **A swipe fires while the fingers are still moving**, once they have gone 12 mm along one axis and at least
+  twice as far along it as across it. A short flick that lifts sooner is a swipe too (4 mm at 120 mm/s). One per
+  gesture, however far it goes, and a pinch is never one.
+- **A tap is reported at once**, and a second within 350 ms with the same fingers is also a double tap. The
+  single is not held back to wait for a double, so a place that binds both hears both.
+
+**Continuous gestures are not triggers.** A pan or a pinch is direct manipulation, with nothing to rebind. The
+dispatcher publishes the same recognizer's output on `InputTopics.GESTURE` for whatever manipulates something
+directly, so a widget reading pans and a claim on a swipe agree on what the fingers did.
+
 ## 3. Recording: a claim on every chord
 
 `gui.claimAny(node, scope, chord -> ...)` claims *every* chord for a node, and the command hears which one it
 got. It is an ordinary claim, which is the whole point: while it applies it outranks the framework's Tab and
 the application's Ctrl+S, so a recorder records them rather than performing them. Nothing new in the
-dispatcher but the match.
+dispatcher but the match. A touchpad gesture reaches it too, so the editor records a swipe by watching one
+being made on the pad.
 
 **At one scope a named claim outranks the wildcard.** The wildcard is the floor of its scope, never a way to
 shadow a key somebody claimed by name. The consequence for a recorder is a design rule: record on a node

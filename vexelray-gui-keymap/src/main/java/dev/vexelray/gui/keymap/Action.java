@@ -3,7 +3,7 @@ package dev.vexelray.gui.keymap;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.ClaimScope;
-import dev.vexelray.gui.core.input.Shortcut;
+import dev.vexelray.gui.core.input.Trigger;
 
 import java.util.List;
 
@@ -26,11 +26,11 @@ public final class Action {
     private final Keymap keymap;
     private final String id;
     private final String label;
-    private final List<Shortcut> defaults;
+    private final List<Trigger> defaults;
     private volatile Runnable handler;
     private volatile Keymap.Context context = Keymap.Context.APPLICATION;
 
-    Action(Keymap keymap, String id, String label, List<Shortcut> defaults) {
+    Action(Keymap keymap, String id, String label, List<Trigger> defaults) {
         this.keymap = keymap;
         this.id = id;
         this.label = label;
@@ -48,12 +48,12 @@ public final class Action {
     }
 
     /** The chords the application gave it. */
-    public List<Shortcut> defaults() {
+    public List<Trigger> defaults() {
         return defaults;
     }
 
     /** The chords that reach it now — the user's, where they changed them, otherwise the defaults. */
-    public List<Shortcut> chords() {
+    public List<Trigger> chords() {
         return keymap.chords(this);
     }
 

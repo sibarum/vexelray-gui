@@ -1,6 +1,6 @@
 package dev.vexelray.gui.keymap;
 
-import dev.vexelray.gui.core.input.Shortcut;
+import dev.vexelray.gui.core.input.Trigger;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -28,7 +28,7 @@ import java.util.TreeMap;
  * lenient line by line, as {@code Settings} is about a file: a line it cannot read is skipped, never a reason to
  * lose the rest.
  */
-public record Overrides(Map<String, List<Shortcut>> chords) {
+public record Overrides(Map<String, List<Trigger>> chords) {
 
     /** Nothing changed: every action has its defaults. */
     public static final Overrides NONE = new Overrides(Map.of());
@@ -36,7 +36,7 @@ public record Overrides(Map<String, List<Shortcut>> chords) {
     public Overrides {
         // Sorted by id so the text form is stable — a file that is diffed, or synced between machines, should
         // change by the line that changed and nothing else.
-        TreeMap<String, List<Shortcut>> copy = new TreeMap<>();
+        TreeMap<String, List<Trigger>> copy = new TreeMap<>();
         chords.forEach((id, list) -> copy.put(id, distinct(list)));
         chords = Collections.unmodifiableMap(copy);
     }
@@ -47,13 +47,13 @@ public record Overrides(Map<String, List<Shortcut>> chords) {
     }
 
     /** The chords {@code id} was given, or null if it keeps its defaults. */
-    public List<Shortcut> get(String id) {
+    public List<Trigger> get(String id) {
         return chords.get(id);
     }
 
     /** These overrides with {@code id} bound to exactly {@code list} (empty: unbound). */
-    public Overrides with(String id, List<Shortcut> list) {
-        TreeMap<String, List<Shortcut>> next = new TreeMap<>(chords);
+    public Overrides with(String id, List<Trigger> list) {
+        TreeMap<String, List<Trigger>> next = new TreeMap<>(chords);
         next.put(id, list);
         return new Overrides(next);
     }
@@ -63,7 +63,7 @@ public record Overrides(Map<String, List<Shortcut>> chords) {
         if (!chords.containsKey(id)) {
             return this;
         }
-        TreeMap<String, List<Shortcut>> next = new TreeMap<>(chords);
+        TreeMap<String, List<Trigger>> next = new TreeMap<>(chords);
         next.remove(id);
         return new Overrides(next);
     }
@@ -82,7 +82,7 @@ public record Overrides(Map<String, List<Shortcut>> chords) {
         List<String> out = new ArrayList<>(chords.size());
         chords.forEach((id, list) -> {
             StringBuilder line = new StringBuilder(id).append(" =");
-            for (Shortcut s : list) {
+            for (Trigger s : list) {
                 line.append(' ').append(s.text());
             }
             out.add(line.toString());
@@ -97,7 +97,7 @@ public record Overrides(Map<String, List<Shortcut>> chords) {
 
     /** Read what {@link #lines()} wrote. */
     public static Overrides parse(List<String> lines) {
-        TreeMap<String, List<Shortcut>> out = new TreeMap<>();
+        TreeMap<String, List<Trigger>> out = new TreeMap<>();
         for (String raw : lines) {
             String line = raw.strip();
             int eq = line.indexOf('=');
@@ -108,11 +108,11 @@ public record Overrides(Map<String, List<Shortcut>> chords) {
             if (!Keymap.validId(id)) {
                 continue;
             }
-            List<Shortcut> list = new ArrayList<>();
+            List<Trigger> list = new ArrayList<>();
             String rest = line.substring(eq + 1).strip();
             for (String word : rest.isEmpty() ? new String[0] : rest.split("\\s+")) {
                 try {
-                    list.add(Shortcut.parse(word));
+                    list.add(Trigger.parse(word));
                 } catch (IllegalArgumentException unreadable) {
                     // A chord this build cannot spell — a key from a newer tactroller, a hand edit gone wrong —
                     // costs that chord, not the action and not the file.
@@ -128,7 +128,7 @@ public record Overrides(Map<String, List<Shortcut>> chords) {
         return out.isEmpty() ? NONE : new Overrides(out);
     }
 
-    private static List<Shortcut> distinct(List<Shortcut> list) {
+    private static List<Trigger> distinct(List<Trigger> list) {
         return List.copyOf(new LinkedHashSet<>(list));
     }
 }

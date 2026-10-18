@@ -11,7 +11,7 @@ import java.util.Set;
  * dispatched from a key press before text input claims the key (architecture, keyboard-focus-text.md §3). Equality
  * is order-independent over the modifier set, so {@code Ctrl+Shift+K} matches regardless of registration order.
  */
-public record Shortcut(Set<Modifier> modifiers, Key key) {
+public record Shortcut(Set<Modifier> modifiers, Key key) implements Trigger {
 
     public Shortcut {
         modifiers = modifiers.isEmpty() ? Set.of() : Set.copyOf(modifiers);

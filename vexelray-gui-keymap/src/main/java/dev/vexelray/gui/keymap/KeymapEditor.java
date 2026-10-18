@@ -6,6 +6,7 @@ import dev.vexelray.gui.core.input.ClaimScope;
 import dev.vexelray.gui.core.input.CursorShape;
 import dev.vexelray.gui.core.input.FocusEvent;
 import dev.vexelray.gui.core.input.Shortcut;
+import dev.vexelray.gui.core.input.Trigger;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.style.Role;
@@ -202,7 +203,7 @@ public final class KeymapEditor implements AutoCloseable {
         if (a.label().toLowerCase(Locale.ROOT).contains(q) || a.id().toLowerCase(Locale.ROOT).contains(q)) {
             return true;
         }
-        for (Shortcut s : a.chords()) {
+        for (Trigger s : a.chords()) {
             if (s.text().toLowerCase(Locale.ROOT).contains(q)) {
                 return true;
             }
@@ -215,7 +216,7 @@ public final class KeymapEditor implements AutoCloseable {
         Node label = gui.text(a.label()).role("keymap-label").width(Length.rem(12)).wordWrap(false)
                 .textSize(TEXT).textColor(theme.color(Role.INK));
         Node chords = gui.row().width(Length.FILL).gap(Length.rem(0.3f)).alignItems(AlignItems.CENTER);
-        List<Shortcut> cs = a.chords();
+        List<Trigger> cs = a.chords();
         for (int i = 0; i < cs.size(); i++) {
             chords.append(slot(new Slot(a, i), cs.get(i)));
         }
@@ -236,7 +237,7 @@ public final class KeymapEditor implements AutoCloseable {
                 .children(label, chords, reset.node());
     }
 
-    private Node slot(Slot s, Shortcut chord) {
+    private Node slot(Slot s, Trigger chord) {
         Theme theme = gui.theme();
         if (s.equals(recording)) {
             // A node of its own rather than the chip in another state: the chip claims Enter and Delete by name,
@@ -282,12 +283,12 @@ public final class KeymapEditor implements AutoCloseable {
     private synchronized void record(Slot s) {
         disarm();
         recording = s;
-        say("Press the new chord for " + s.action().label() + ". Esc cancels.");
+        say("Press the new chord for " + s.action().label() + ", or make the gesture on the touchpad. Esc cancels.");
         render();
     }
 
     /** The wildcard claim's command: the chord pressed while the recorder held focus. */
-    private void recorded(Shortcut chord) {
+    private void recorded(Trigger chord) {
         Slot s;
         synchronized (this) {
             s = recording;
@@ -302,7 +303,7 @@ public final class KeymapEditor implements AutoCloseable {
             return;
         }
         Action a = s.action();
-        List<Shortcut> next = new ArrayList<>(a.chords());
+        List<Trigger> next = new ArrayList<>(a.chords());
         if (s.index() >= 0 && s.index() < next.size()) {
             next.set(s.index(), chord);
         } else {
@@ -317,11 +318,11 @@ public final class KeymapEditor implements AutoCloseable {
 
     private void remove(Slot s) {
         Action a = s.action();
-        List<Shortcut> next = new ArrayList<>(a.chords());
+        List<Trigger> next = new ArrayList<>(a.chords());
         if (s.index() < 0 || s.index() >= next.size()) {
             return;
         }
-        Shortcut gone = next.remove(s.index());
+        Trigger gone = next.remove(s.index());
         keymap.bind(a, next);
         say(gone.text() + " no longer reaches " + a.label() + ".");
         renderFocusing(s);
@@ -373,14 +374,17 @@ public final class KeymapEditor implements AutoCloseable {
      * any field sees it, so the person should hear that once, at the moment they make it — not discover it by
      * failing to type the letter.
      */
-    private static String typingWarning(Shortcut chord, Action a) {
+    private static String typingWarning(Trigger trigger, Action a) {
+        if (!(trigger instanceof Shortcut chord)) {
+            return "";   // a gesture types nothing
+        }
         Set<Modifier> m = chord.modifiers();
         boolean bare = m.isEmpty() || m.equals(Set.of(Modifier.SHIFT));
         return bare && TYPING.contains(chord.key()) && a.context().equals(Keymap.Context.APPLICATION)
                 ? " It has no Ctrl or Alt, so it will fire while typing too." : "";
     }
 
-    private static String texts(List<Shortcut> chords) {
-        return String.join(" or ", chords.stream().map(Shortcut::text).toList());
+    private static String texts(List<Trigger> chords) {
+        return String.join(" or ", chords.stream().map(Trigger::text).toList());
     }
 }

@@ -36,7 +36,9 @@ import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.input.KeyEvent;
 import dev.vexelray.gui.core.input.MenuPresenter;
 import dev.vexelray.gui.core.input.MenuSink;
+import dev.vexelray.gui.core.input.Gesture;
 import dev.vexelray.gui.core.input.Shortcut;
+import dev.vexelray.gui.core.input.Trigger;
 import dev.vexelray.gui.core.model.RetainedNode;
 import dev.vexelray.gui.core.model.SemanticNode;
 import dev.vexelray.gui.core.nav.Address;
@@ -1078,9 +1080,14 @@ public final class Gui implements AutoCloseable {
      * Claim {@code chord} for {@code node}, running the command on the GUI thread in arrival order — the ordered
      * counterpart of {@link #claim}, for a claim whose command edits state that typing also edits.
      */
-    public Gui claimUi(Node node, Shortcut chord, ClaimScope scope, Runnable command) {
+    public Gui claimUi(Node node, Trigger chord, ClaimScope scope, Runnable command) {
         input.claimUi(node.id(), chord, scope, command);
         return this;
+    }
+
+    /** {@link #claimUi(Node, Trigger, ClaimScope, Runnable)}, kept so code compiled against it before still links. */
+    public Gui claimUi(Node node, Shortcut chord, ClaimScope scope, Runnable command) {
+        return claimUi(node, (Trigger) chord, scope, command);
     }
 
     /**
@@ -1227,16 +1234,29 @@ public final class Gui implements AutoCloseable {
      * <p>This is what the framework offers in place of {@code preventDefault}, which it cannot: cancelling
      * requires a handler to answer synchronously, and handlers here run on worker threads. Declaring the
      * preemption up front lets the dispatcher decide on the GUI thread while the command runs wherever.
+     *
+     * <p>The chord may as well be a touchpad {@link Gesture} — a three-finger swipe, a two-finger double tap —
+     * which is claimed, outranked and released exactly as a key is.
      */
-    public Gui claim(Node node, Shortcut chord, ClaimScope scope, Runnable command) {
+    public Gui claim(Node node, Trigger chord, ClaimScope scope, Runnable command) {
         input.claim(node.id(), chord, scope, command);
         return this;
     }
 
     /** Drop every claim {@code node} holds on {@code chord}. */
-    public Gui releaseClaim(Node node, Shortcut chord) {
+    public Gui releaseClaim(Node node, Trigger chord) {
         input.releaseClaim(node.id(), chord);
         return this;
+    }
+
+    /** {@link #claim(Node, Trigger, ClaimScope, Runnable)}, kept so code compiled against it before still links. */
+    public Gui claim(Node node, Shortcut chord, ClaimScope scope, Runnable command) {
+        return claim(node, (Trigger) chord, scope, command);
+    }
+
+    /** {@link #releaseClaim(Node, Trigger)}, kept so code compiled against it before still links. */
+    public Gui releaseClaim(Node node, Shortcut chord) {
+        return releaseClaim(node, (Trigger) chord);
     }
 
     /**
@@ -1247,9 +1267,11 @@ public final class Gui implements AutoCloseable {
      *
      * <p>A claim naming its chord at the same scope still wins, so the wildcard is the floor of its scope and
      * never shadows a key somebody asked for by name. A modifier pressed alone is not a chord and reaches nobody,
-     * here as everywhere; read {@link #modifiers()} to show the ones being held. The command runs on a worker.
+     * here as everywhere; read {@link #modifiers()} to show the ones being held. A touchpad {@link Gesture} that
+     * is a command (a swipe, a tap) is heard too, so a recorder records the gesture made on the pad. The command
+     * runs on a worker.
      */
-    public Gui claimAny(Node node, ClaimScope scope, java.util.function.Consumer<Shortcut> command) {
+    public Gui claimAny(Node node, ClaimScope scope, java.util.function.Consumer<Trigger> command) {
         input.claimAny(node.id(), scope, command);
         return this;
     }

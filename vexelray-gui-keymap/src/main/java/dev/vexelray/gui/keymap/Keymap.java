@@ -4,7 +4,9 @@ import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.app.Settings;
 import dev.vexelray.gui.core.input.ClaimScope;
+import dev.vexelray.gui.core.input.Gesture;
 import dev.vexelray.gui.core.input.Shortcut;
+import dev.vexelray.gui.core.input.Trigger;
 import sibarum.atchung.Committer;
 import sibarum.atchung.State;
 import sibarum.atchung.Subscription;
@@ -92,7 +94,7 @@ public final class Keymap {
     }
 
     /** One claim this keymap holds on the bus. */
-    private record Claimed(Gui gui, Node node, ClaimScope scope, Shortcut chord, Action action) {
+    private record Claimed(Gui gui, Node node, ClaimScope scope, Trigger chord, Action action) {
     }
 
     private final List<Action> actions = new CopyOnWriteArrayList<>();
@@ -125,7 +127,7 @@ public final class Keymap {
      * @throws IllegalArgumentException if the id is taken or is not dotted words ({@code [A-Za-z0-9._-]})
      * @throws IllegalStateException    if an application-wide action already defaults to one of these chords
      */
-    public synchronized Action action(String id, String label, Shortcut... defaults) {
+    public synchronized Action action(String id, String label, Trigger... defaults) {
         if (!validId(id)) {
             throw new IllegalArgumentException("an action id is dotted words ([A-Za-z0-9._-]+); got '" + id + "'");
         }
@@ -178,7 +180,7 @@ public final class Keymap {
             if (b == a || !b.context().equals(context)) {
                 continue;
             }
-            for (Shortcut s : a.defaults()) {
+            for (Trigger s : a.defaults()) {
                 if (b.defaults().contains(s)) {
                     throw new IllegalStateException(s.text() + " is the default of both '" + b.id() + "' and '"
                             + a.id() + "' in one place; a chord reaches one action there, so one of them needs "
@@ -196,14 +198,14 @@ public final class Keymap {
     }
 
     /** The chords that reach {@code action} now. */
-    public List<Shortcut> chords(Action action) {
-        List<Shortcut> chords = effective(overrides.value()).get(action);
+    public List<Trigger> chords(Action action) {
+        List<Trigger> chords = effective(overrides.value()).get(action);
         return chords == null ? List.of() : chords;
     }
 
     /** The action {@code chord} reaches in the place {@code near} applies, other than {@code near} itself. */
-    public Optional<Action> holder(Shortcut chord, Action near) {
-        Map<Action, List<Shortcut>> now = effective(overrides.value());
+    public Optional<Action> holder(Trigger chord, Action near) {
+        Map<Action, List<Trigger>> now = effective(overrides.value());
         for (Action b : actions) {
             if (b != near && b.context().equals(near.context()) && now.get(b).contains(chord)) {
                 return Optional.of(b);
@@ -220,18 +222,18 @@ public final class Keymap {
      * <p>The invariant holds here whatever {@code o} says. {@link #bind} never writes two set actions sharing a
      * chord in one place, but a loaded file is anybody's, so where it does, the action declared first keeps it.
      */
-    private Map<Action, List<Shortcut>> effective(Overrides o) {
-        Map<Context, Set<Shortcut>> taken = new HashMap<>();
-        Map<Action, List<Shortcut>> out = new IdentityHashMap<>();
+    private Map<Action, List<Trigger>> effective(Overrides o) {
+        Map<Context, Set<Trigger>> taken = new HashMap<>();
+        Map<Action, List<Trigger>> out = new IdentityHashMap<>();
         for (Action a : actions) {
             if (o.has(a.id())) {
-                Set<Shortcut> place = taken.computeIfAbsent(a.context(), c -> new HashSet<>());
+                Set<Trigger> place = taken.computeIfAbsent(a.context(), c -> new HashSet<>());
                 out.put(a, o.get(a.id()).stream().filter(place::add).toList());
             }
         }
         for (Action a : actions) {
             if (!o.has(a.id())) {
-                Set<Shortcut> gone = taken.getOrDefault(a.context(), Set.of());
+                Set<Trigger> gone = taken.getOrDefault(a.context(), Set.of());
                 out.put(a, a.defaults().stream().filter(s -> !gone.contains(s)).toList());
             }
         }
@@ -244,18 +246,18 @@ public final class Keymap {
      * Give {@code action} exactly {@code chords} (empty: unbound), taking each from whichever action in the same
      * place held it. Binding an action back to precisely its defaults forgets that it was ever changed.
      */
-    public synchronized Bound bind(Action action, List<Shortcut> chords) {
+    public synchronized Bound bind(Action action, List<Trigger> chords) {
         Overrides o = overrides.value();
-        Map<Action, List<Shortcut>> now = effective(o);
-        List<Shortcut> list = List.copyOf(new LinkedHashSet<>(chords));
+        Map<Action, List<Trigger>> now = effective(o);
+        List<Trigger> list = List.copyOf(new LinkedHashSet<>(chords));
         Overrides next = settle(o.with(action.id(), list), action, list);
         List<Action> displaced = new ArrayList<>();
         for (Action b : actions) {
             if (b == action || !b.context().equals(action.context())) {
                 continue;
             }
-            List<Shortcut> had = now.get(b);
-            List<Shortcut> kept = had.stream().filter(s -> !list.contains(s)).toList();
+            List<Trigger> had = now.get(b);
+            List<Trigger> kept = had.stream().filter(s -> !list.contains(s)).toList();
             if (kept.size() != had.size()) {
                 next = settle(next.with(b.id(), kept), b, kept);
                 displaced.add(b);
@@ -266,7 +268,7 @@ public final class Keymap {
     }
 
     /** A chord list equal to the defaults is no change at all, and is stored as none. */
-    private static Overrides settle(Overrides o, Action a, List<Shortcut> chords) {
+    private static Overrides settle(Overrides o, Action a, List<Trigger> chords) {
         return chords.equals(a.defaults()) ? o.without(a.id()) : o;
     }
 
@@ -364,14 +366,14 @@ public final class Keymap {
      * the difference so an unchanged binding is never released and re-claimed under a key the user is holding.
      */
     synchronized void sync() {
-        Map<Action, List<Shortcut>> now = effective(overrides.value());
+        Map<Action, List<Trigger>> now = effective(overrides.value());
         Set<Claimed> want = new LinkedHashSet<>();
         for (Action a : actions) {
             if (!a.handled()) {
                 continue;
             }
             Context c = a.context();
-            for (Shortcut chord : now.get(a)) {
+            for (Trigger chord : now.get(a)) {
                 if (c.equals(Context.APPLICATION)) {
                     anchors.forEach((gui, anchor) -> want.add(
                             new Claimed(gui, anchor, ClaimScope.GLOBAL, chord, a)));

@@ -112,9 +112,45 @@ public final class Discovery implements AutoCloseable {
         f.put("port", Integer.toString(port));
         f.put("cwd", Path.of("").toAbsolutePath().toString());
         f.put("command", p.commandLine().orElse(p.command().orElse("-")));
-        String version = AutomationServer.class.getPackage().getImplementationVersion();
-        f.put("build", "vexelray-gui-automation " + (version == null ? "-" : version));
+        Map<String, String> b = build;
+        if (b.isEmpty()) {
+            f.put("app.source", UNKNOWN_SOURCE);
+        } else {
+            f.putAll(b);
+        }
         return f;
+    }
+
+    /** {@code app.source} when the host gave no build identity. */
+    public static final String UNKNOWN_SOURCE = "unknown";
+
+    /** What this process was built from, as the host gave it; empty until it does. */
+    private static volatile Map<String, String> build = Map.of();
+
+    /**
+     * What this process was built from, for every discovery file it writes and every {@code hello}: {@code app.group},
+     * {@code app.artifact}, {@code app.version}, {@code app.source} (the commit, plus {@code +dirty.<digest>} of any
+     * uncommitted change), {@code stack.count} and {@code stack.<n>} ({@code group:artifact:version@source} for each
+     * stamped part). The framework's driver passes its {@code BuildInfo.facts()} here before any socket opens; a host
+     * that passes nothing is advertised as {@code app.source=unknown}. Process-wide, because a build is.
+     */
+    public static void build(Map<String, String> facts) {
+        build = facts == null ? Map.of() : java.util.Collections.unmodifiableMap(new LinkedHashMap<>(facts));
+    }
+
+    /** What {@link #build(Map)} was given, or an empty map. */
+    public static Map<String, String> build() {
+        return build;
+    }
+
+    /** {@code group:artifact:version@source} from {@link #build()}, or {@code unknown}. */
+    public static String buildLine() {
+        Map<String, String> b = build;
+        if (b.isEmpty()) {
+            return UNKNOWN_SOURCE;
+        }
+        return b.getOrDefault("app.group", "-") + ":" + b.getOrDefault("app.artifact", "-") + ":"
+                + b.getOrDefault("app.version", "-") + "@" + b.getOrDefault("app.source", UNKNOWN_SOURCE);
     }
 
     /**
@@ -261,6 +297,20 @@ public final class Discovery implements AutoCloseable {
         /** When the process started, ISO-8601, as written. */
         public String started() {
             return get("started");
+        }
+
+        /**
+         * The exact source of the build: the commit, plus {@code +dirty.<digest>} of any uncommitted change; or
+         * {@code unknown} when the host gave no build identity, or wrote its file before build identity existed.
+         */
+        public String source() {
+            String s = facts.get("app.source");
+            return s == null || s.isBlank() ? UNKNOWN_SOURCE : s;
+        }
+
+        /** {@code group:artifact:version}, or {@code -:-:-} when unknown. */
+        public String coordinates() {
+            return get("app.group") + ":" + get("app.artifact") + ":" + get("app.version");
         }
 
         /** The Inspector link's endpoint ({@code uds:<path>}, {@code tcp:<port>}), or {@code null} when there is none. */

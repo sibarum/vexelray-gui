@@ -441,6 +441,10 @@ public final class AutomationServer implements AutoCloseable {
                 .append(" hand=").append(held)
                 .append(" this=").append(c.number)
                 .append(" file=").append(discovery == null ? "-" : discovery.file());
+        // What this process was built from, exactly: the commit plus any uncommitted change, and how many stamped parts
+        // of the stack it was built with. The discovery file lists the parts.
+        sb.append("\nbuild   ").append(Discovery.buildLine()).append(" stack=")
+                .append(Discovery.build().getOrDefault("stack.count", "0"));
         try {
             for (String line : c.session.describe()) {
                 sb.append('\n').append(line);

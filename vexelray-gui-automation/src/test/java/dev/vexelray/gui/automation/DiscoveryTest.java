@@ -49,8 +49,9 @@ class DiscoveryTest {
             Path info = folder.resolve("calculator-" + pid + ".auto");
             assertEquals(info, d.file());
             Map<String, String> facts = read(info);
-            assertEquals(List.of("protocol", "app", "title", "pid", "started", "port", "cwd", "command", "build"),
+            assertEquals(List.of("protocol", "app", "title", "pid", "started", "port", "cwd", "command", "app.source"),
                     new ArrayList<>(facts.keySet()), "the facts, in the order discovery.md gives them");
+            assertEquals("unknown", facts.get("app.source"), "no build identity was given: said, not guessed");
             assertEquals(AutomationServer.PROTOCOL, facts.get("protocol"));
             assertEquals("Calculator", facts.get("app"));
             assertEquals("The Calculator", facts.get("title"));
@@ -90,6 +91,30 @@ class DiscoveryTest {
             assertFalse(Files.exists(folder.resolve("gone-1.sock")), "with its link socket");
         }
         assertEquals(List.of(), Discovery.live(folder));
+    }
+
+    @Test
+    void theBuildIdentityTheHostGivesIsInTheFileAndReadBack(@TempDir Path folder) throws Exception {
+        Map<String, String> build = new java.util.LinkedHashMap<>();
+        build.put("app.group", "dev.example");
+        build.put("app.artifact", "demo");
+        build.put("app.version", "0.1.0-SNAPSHOT");
+        build.put("app.source", "ef816d9a+dirty.0a1b2c3d4e5f");
+        build.put("stack.count", "1");
+        build.put("stack.1", "sibarum.atchung:atchung-probe:1.1-SNAPSHOT@4612f44");
+        Discovery.build(build);
+        try (Discovery d = Discovery.publish(folder, "demo", "Demo", 50845)) {
+            Map<String, String> facts = read(d.file());
+            assertEquals("ef816d9a+dirty.0a1b2c3d4e5f", facts.get("app.source"));
+            assertEquals("sibarum.atchung:atchung-probe:1.1-SNAPSHOT@4612f44", facts.get("stack.1"));
+            assertEquals("dev.example:demo:0.1.0-SNAPSHOT@ef816d9a+dirty.0a1b2c3d4e5f", Discovery.buildLine());
+            Discovery.Entry e = Discovery.live(folder).getFirst();
+            assertEquals("ef816d9a+dirty.0a1b2c3d4e5f", e.source());
+            assertEquals("dev.example:demo:0.1.0-SNAPSHOT", e.coordinates());
+        } finally {
+            Discovery.build(Map.of());
+        }
+        assertEquals("unknown", Discovery.buildLine());
     }
 
     @Test

@@ -10,19 +10,47 @@ import java.util.function.IntConsumer;
  * trails a line, and runs of more than one blank are where whitespace means something or hides a mistake, and the
  * single space between two words is neither — dotting every one of those turns prose into braille.
  *
- * <p>Whitespace is everything {@link Character#isWhitespace} says it is but the newline, which is not a cell and so
- * has nowhere to put a dot.
+ * <p>Whitespace is everything {@link Character#isWhitespace} or {@link Character#isSpaceChar} says it is but the
+ * newline, which is not a cell and so has nowhere to put a dot. The second is for the no-break spaces (U+00A0,
+ * U+2007, U+202F), which the first excludes and which are the classic invisible character pasted into source.
  */
 public enum Whitespace {
 
     /** No marks. */
-    NONE,
+    NONE {
+        @Override
+        boolean shows(String s, int i, boolean leading, boolean trailing) {
+            return false;
+        }
+    },
     /** Leading and trailing whitespace, and any run of two or more; not the single blank between two words. */
-    BOUNDARY,
+    BOUNDARY {
+        @Override
+        boolean shows(String s, int i, boolean leading, boolean trailing) {
+            return leading || trailing
+                    || (i > 0 && blank(s.charAt(i - 1))) || (i + 1 < s.length() && blank(s.charAt(i + 1)));
+        }
+    },
     /** Only what trails the last visible character of a line. */
-    TRAILING,
+    TRAILING {
+        @Override
+        boolean shows(String s, int i, boolean leading, boolean trailing) {
+            return trailing;
+        }
+    },
     /** Every whitespace character. */
-    ALL;
+    ALL {
+        @Override
+        boolean shows(String s, int i, boolean leading, boolean trailing) {
+            return true;
+        }
+    };
+
+    /**
+     * Whether this mode marks the blank at {@code i} of {@code s}, which is {@code leading} when only blanks precede
+     * it on its hard line and {@code trailing} when only blanks follow it there.
+     */
+    abstract boolean shows(String s, int i, boolean leading, boolean trailing);
 
     /**
      * Hand {@code at} the offset of every character in {@code [from, to)} of {@code s} this mode marks, in order.
@@ -63,47 +91,49 @@ public enum Whitespace {
         } else {
             lastInk = to;
         }
+        // The last ink of the hard line the loop is on, found once as the loop enters that line rather than once
+        // per blank, and only within the range: past `to` is already decided by lastInk.
+        int lineInk = lastInkOfLine(s, from, to, lastInk);
         for (int i = from; i < to; i++) {
             char c = s.charAt(i);
             if (c == '\n') {
                 // A range can hold more than one hard line; each starts leading again, and the trailing judged
                 // above is only for the last of them, so an earlier one's is found by looking ahead from here.
                 leading = true;
+                lineInk = lastInkOfLine(s, i + 1, to, lastInk);
                 continue;
             }
             if (!blank(c)) {
                 leading = false;
                 continue;
             }
-            boolean shown = switch (this) {
-                case ALL -> true;
-                case TRAILING -> trails(s, i, to, lastInk);
-                default -> leading || trails(s, i, to, lastInk)
-                        || (i > 0 && blank(s.charAt(i - 1))) || (i + 1 < s.length() && blank(s.charAt(i + 1)));
-            };
-            if (shown) {
+            if (shows(s, i, leading, i > lineInk)) {
                 at.accept(i);
             }
         }
     }
 
-    /** Whether the blank at {@code i} has nothing but blanks after it on its hard line. */
-    private static boolean trails(String s, int i, int to, int lastInk) {
-        int nl = s.indexOf('\n', i);
-        if (nl >= 0 && nl < to) {
-            // Not on the range's last hard line: the newline ends it inside the range, so look up to it.
-            for (int j = i + 1; j < nl; j++) {
-                if (!blank(s.charAt(j))) {
-                    return false;
-                }
+    /**
+     * The last ink of the hard line starting at {@code start}, searching only {@code [start, to)}. A newline inside
+     * the range ends the line, and its last ink is the answer ({@code start - 1} when it has none); a line that
+     * runs to the range's end is the range's last, which {@code lastInk} already judged against what follows.
+     */
+    private static int lastInkOfLine(String s, int start, int to, int lastInk) {
+        int ink = start - 1;
+        for (int j = start; j < to; j++) {
+            char c = s.charAt(j);
+            if (c == '\n') {
+                return ink;
             }
-            return true;
+            if (!blank(c)) {
+                ink = j;
+            }
         }
-        return i > lastInk;
+        return lastInk;
     }
 
     /** Whitespace that occupies a cell: everything but the newline. */
     static boolean blank(char c) {
-        return c != '\n' && Character.isWhitespace(c);
+        return c != '\n' && (Character.isWhitespace(c) || Character.isSpaceChar(c));
     }
 }

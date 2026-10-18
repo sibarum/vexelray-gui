@@ -871,10 +871,8 @@ is the half a plausible-looking regression would get wrong. It also re-asserts t
 built, and that the dialog window was never mapped. Writing it is what found §6.11; it could not pass until
 that was fixed.
 
-**Still owed, and it is one line.** `Modals.install(app, shell.appearance()::applyTo)` at
-`vexelray-framework/.../VexelApplication.java:248`, which needs this repo installed first — the entry under
-**Upstream** in `vexelray-framework/docs/TODO.md` can be closed with it. Until then the framework's dialogs
-take the one-argument overload and still draw dark; the seam exists, and nobody is using it yet.
+**Taken.** `VexelApplication` calls `Modals.install(app, appearance::applyTo)`, so the framework's dialogs wear the
+application's look, and the matching entry in `vexelray-framework/docs/TODO.md` is closed.
 
 ### 6.3 ~~The zoom range default is the one range nobody chose~~ — **Done**, taken as 0.5–3
 
@@ -1144,29 +1142,21 @@ found the following. §7.1's first item is the one that matters: it is the featu
   .aWrappedRowIsJudgedAgainstItsHardLine` passes only because it hand-picks contiguous ranges the breaker never
   produces. Either the gap is drawn (attribute it to the preceding row, as the javadoc already says to treat
   it, and give the dots a place past that row's last caret) or the breaker stops dropping it; decide which owns it.
-- **`trails` is not bounded by the row.** It calls `s.indexOf('\n', i)` per blank, which searches past `to` to
-  the end of the hard line, or of the document on its last line. A long wrapped line costs O(blanks × line) per
-  frame, against `mark`'s documented bound. Search only `[i, to)`; past `to` is already decided by `lastInk`.
-  The same helper also rescans to the newline for every blank on an earlier hard line in the range, quadratic in
-  the run; find each hard line's last ink once as the loop crosses its `'\n'`.
-- **No-break spaces are not whitespace to it.** `blank` uses `Character.isWhitespace`, which is false for
-  U+00A0, U+2007 and U+202F, so a pasted NBSP — the classic invisible character in source — gets no dot even in
-  `ALL`. Add `Character.isSpaceChar`.
-- **`switch (this)` with a `default` that means `BOUNDARY`.** Not a throwing default, but the same shape the
-  rule forbids: a new constant compiles and silently behaves as `BOUNDARY`. Constant-specific bodies instead.
-- **Nothing renders it in a test, and nothing turns it on.** Only `Whitespace.mark` is tested, against synthetic
-  ranges — which is how the wrap gap went unnoticed. A `TextGeometry`-backed test with wrap on (as
-  `TextDisplacementTest` does for the caret) and a toggle in the demo would cover the integration.
+- ~~**`trails` is not bounded by the row.**~~ **Done (2026-10-18):** each hard line's last ink is found once, as the
+  loop starts the line or crosses its `'\n'`, searching only `[start, to)`.
+- ~~**No-break spaces are not whitespace to it.**~~ **Done (2026-10-18):** `blank` also takes `Character.isSpaceChar`.
+- ~~**`switch (this)` with a `default` that means `BOUNDARY`.**~~ **Done (2026-10-18):** each constant implements
+  `shows`.
+- **Nothing turns it on.** The `TextGeometry`-backed test with wrap on landed (2026-10-18,
+  `WhitespaceTest.wrappedRowsAreJudgedAgainstTheirHardLine`), with `blanksAtASoftWrapAreMarked` written and
+  `@Disabled` until the first item is decided. The demo toggle is still to do.
 
-### 7.2 Stopped lanes
+### 7.2 ~~Stopped lanes~~ — **Done** (2026-10-18)
 
-- **Only an `ExecutorService` is recognised as stopped.** An embedder lane that forwards to a pool —
-  `r -> pool.execute(r)`, a toolkit's executor — rejects after shutdown exactly as a refusing lane does, and
-  still throws on the offload thread in the teardown race this was meant to absorb. The `Gui`'s own closed state
-  is a shutdown signal it controls; consider it alongside `isShutdown`.
-- **A drop leaves no trace.** A task that reaches a stopped lane because of a real lifecycle bug — a timer still
-  calling `async` after `close` — used to surface as a `RejectedExecutionException` pointing at the leak, and
-  now vanishes. A debug-level record (or a `Diagnostics` counter, cf. §6.5) keeps the race quiet without hiding it.
+A closed `Gui` counts as stopped whatever the lane, so a lane that only forwards to a pool no longer throws in the
+teardown race, and each drop is reported through `Diagnostics.dropped`, once per lane (`Gui.handlers/stopped`,
+`Gui.async/stopped`), saying whether the `Gui` closed or the lane shut down. A lane that refuses while running
+still throws. `LanesTest` covers both, and the text editor's late publication into a closed `Gui` (its FN-13).
 
 ## 8. Bugs in shipped widgets
 
@@ -1189,7 +1179,7 @@ header's rect lies inside the bar. Reaching the clipped tabs by pointer is the r
 
 ## 9. Found building `Board` / `Deck`
 
-### 9.1 `padding(Length)` does not undo `padding(vertical, horizontal)`
+### 9.1 ~~`padding(Length)` does not undo `padding(vertical, horizontal)`~~ — **Done** (2026-10-18): the one-argument form clears the axis pair, so the last call wins
 
 They write different props — `PADDING`, and `PADDING_Y`/`PADDING_X` — and the per-axis pair wins. So a node padded
 by the two-argument form and later "reset" with `padding(Length.ZERO)` keeps its padding, silently, and everything

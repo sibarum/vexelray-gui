@@ -226,8 +226,44 @@ A line a socket does not serve is refused, and nothing of it runs. The refusal s
 The launch settings are `--automation=<port>` (both on one socket, as before), `--automation.control=<port>` and
 `--automation.diagnostics=<port>` (each alone; the same port twice is one socket). `Sockets.enableRequested` reads
 all three, and the framework's `Driver` and the gui demo both use it. While the application runs, the **automation
-button** in the title bar, beside the key bindings (§7), opens `AutomationWindow`: a switch, a port and a status
-per capability. A blank port is a free one, and the other's port shares its socket.
+button** in the title bar, beside the key bindings (§7), opens `AutomationWindow`: a lamp, a switch, a port and a
+status per capability. A blank port is a free one, and the other's port shares its socket.
+
+### In release builds too, and never out of sight
+
+Applications ship with the sockets, off. Macros and agents drive an application with the same hand a person has
+(Maistro's tools are the user's tools), so leaving the module out of a release would leave them out too. What keeps
+that honest is that **whatever turned a socket on, the title bar says so**.
+
+A run is started in one of three ways:
+
+- **Available and off**, the default: nothing listens until a person switches a socket on from the plug.
+- **Not available**: `--automation.available=none`, `control` or `diagnostics` (or `-D`, or
+  `VEXELRAY_AUTOMATION_AVAILABLE` in the environment), read flag, then property, then environment. A capability that
+  is not available cannot be switched on by anything: `Sockets.enable` throws, a launch asking for it opens nothing
+  and says so, its row in the window says *not available in this run*, and with neither available there is no plug.
+  A value that is not one of those words offers nothing, since whoever wrote it meant to shut something.
+- **On at launch**, for an agent that means to: `--automation=0` and the others above, or `VEXELRAY_AUTOMATION`.
+
+#### Lamps
+
+The plug button carries a lamp per capability, remote control's (red, `Role.DANGER`) left of the plug and
+diagnostics' (blue) right, and the window shows the same lamp on each row. `Sockets.state(c)` is what they read:
+
+| `Sockets.State` | Lamp | Means |
+|---|---|---|
+| `OFF` | none | closed, and nothing has connected this session (never opened, or opened and closed unused) |
+| `LISTENING` | ring | open, nothing connected yet |
+| `CONNECTED` | filled ring | open, something connected now |
+| `WAS_CONNECTED` | ring with a grey dot | open; something was connected, and none is now |
+| `CLOSED_AFTER_USE` | grey dot | closed, after something had connected this session |
+| `UNAVAILABLE` | none, and no switch | this run does not offer it |
+
+Shape carries the state as well as colour: the ring is *open*, the centre is *connected now, earlier, or never*. A
+connection counts for every capability its socket serves while it is open, so diagnostics joining a socket someone
+is on lights both. An Inspector on the link counts as a diagnostics connection (`AutomationServer.linked`). Every
+connection opening or closing tells `Sockets`' watchers, which is how the button redraws
+(`WindowInstrument.Live`). The tooltip says it in words, with the port and how many are connected.
 
 **The probe does not switch.** `Probe.ON` is fixed when the class loads, so that the JIT folds every guard out of a
 run that is not profiling. A launch that asks for either socket runs in automation mode, which arms the probe. One

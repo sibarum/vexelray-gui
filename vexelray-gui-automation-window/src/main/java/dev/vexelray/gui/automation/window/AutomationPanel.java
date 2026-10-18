@@ -4,8 +4,10 @@ import dev.vexelray.gui.automation.Capability;
 import dev.vexelray.gui.automation.Sockets;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
+import dev.vexelray.gui.core.WindowInstrument;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.layout.Rect;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.gui.widget.TextField;
@@ -16,13 +18,17 @@ import java.util.EnumMap;
 import java.util.Map;
 
 /**
- * The control that switches a {@link Sockets}: one row per {@link Capability}, each a switch, a port and what it is
- * doing now.
+ * The control that switches a {@link Sockets}: one row per {@link Capability}, each its lamp, a switch, a port and
+ * what it is doing now.
  *
  * <pre>
- * Remote control   (o-)  [      ]  off
- * Diagnostics      (-o)  [61184 ]  localhost:61184
+ * ·  Remote control   (o-)  [      ]  off; something was connected earlier
+ * ●  Diagnostics      (-o)  [61184 ]  connected now (1), localhost:61184
  * </pre>
+ *
+ * <p><b>The lamp is the title bar's.</b> The same ring, fill and dot the plug button shows for that socket
+ * ({@link AutomationWindow#lamp}), and the status says it in words, so the lamps are learnt here. A capability this
+ * run does not offer has no switch or port, only its label and why.
  *
  * <p><b>The port says which socket.</b> Blank is a free port; the port the other capability is on joins its socket,
  * so both are served on one; any other port is a socket of its own. A port that cannot be bound puts the switch
@@ -122,7 +128,10 @@ public final class AutomationPanel implements AutoCloseable {
         private final Toggle toggle;
         private final TextField port;
         private final Node status;
+        private final Node lamp;
         private final Node node;
+        /** The lamp's box, once laid out: a lamp is a picture, authored in pixels. */
+        private volatile Rect box;
         /** Why the last switch on failed, until the next switch; {@code null} when it did not. */
         private volatile String failed;
 
@@ -130,6 +139,11 @@ public final class AutomationPanel implements AutoCloseable {
             this.capability = capability;
             Theme theme = gui.theme();
             String word = capability.word();
+            this.lamp = gui.box().role("automation-" + word + "-lamp").width(Length.rem(1f)).height(Length.rem(1f));
+            gui.onResizeUi(lamp, computed -> {
+                box = computed.rect();
+                paintLamp();
+            });
             this.toggle = new Toggle(gui, false).undoable(false).onChange(this::flipped);
             toggle.node().role("automation-" + word + "-switch");
             this.port = new TextField(gui, "").onSubmit(text -> {
@@ -143,8 +157,24 @@ public final class AutomationPanel implements AutoCloseable {
             Node label = gui.text(capability == Capability.CONTROL ? "Remote control" : "Diagnostics")
                     .width(Length.rem(8f)).wordWrap(false).textSize(TEXT);
             this.node = gui.row().role("automation-" + word).width(Length.FILL).gap(Length.rem(0.6f))
-                    .alignItems(AlignItems.CENTER)
-                    .children(label, toggle.node(), port.node(), status);
+                    .alignItems(AlignItems.CENTER);
+            if (sockets.available().contains(capability)) {
+                node.children(lamp, label, toggle.node(), port.node(), status);
+            } else {
+                node.children(lamp, label, status);     // nothing to switch: only what it is, and why
+            }
+        }
+
+        private void paintLamp() {
+            Rect r = box;
+            if (r == null) {
+                return;
+            }
+            Theme theme = gui.theme();
+            lamp.picture(WindowInstrument.lamp(r, AutomationWindow.lamp(sockets.state(capability)),
+                    theme.color(capability == Capability.CONTROL ? AutomationWindow.CONTROL_LAMP
+                            : AutomationWindow.DIAGNOSTICS_LAMP),
+                    theme.color(AutomationWindow.USED_LAMP)));
         }
 
         /** On a worker thread, as every switch handler is. */
@@ -162,6 +192,8 @@ public final class AutomationPanel implements AutoCloseable {
                 failed = "'" + text + "' is not a port";
             } catch (IOException e) {
                 failed = "port " + text + " could not be bound: " + e.getMessage();
+            } catch (IllegalStateException e) {
+                failed = e.getMessage();     // not offered in this run
             }
             refresh();
         }
@@ -171,14 +203,9 @@ public final class AutomationPanel implements AutoCloseable {
             toggle.show(bound >= 0);
             if (bound >= 0) {
                 port.text(Integer.toString(bound));
-                status.text("localhost:" + bound + (sockets.port(other()) == bound ? " (one socket, both)" : ""));
-            } else {
-                status.text(failed != null ? failed : "off");
             }
-        }
-
-        private Capability other() {
-            return capability == Capability.CONTROL ? Capability.DIAGNOSTICS : Capability.CONTROL;
+            status.text(bound < 0 && failed != null ? failed : AutomationWindow.say(sockets, capability));
+            paintLamp();
         }
     }
 }

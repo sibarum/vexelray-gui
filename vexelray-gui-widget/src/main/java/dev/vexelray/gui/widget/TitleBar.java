@@ -80,6 +80,8 @@ public final class TitleBar {
     private final Node instruments;
     /** The instrument buttons currently mounted, so a later call can take them down again. */
     private final java.util.List<Node> mounted = new java.util.ArrayList<>();
+    /** What stops each live instrument's watch ({@link WindowInstrument#live()}), run when the strip is replaced. */
+    private final java.util.List<Runnable> unwatch = new java.util.ArrayList<>();
     /** The tools those buttons are, in order: what {@link #instruments()} answers. */
     private volatile java.util.List<WindowInstrument> tools = java.util.List.of();
     /** Built on first use: a bar with no instruments needs no tooltip machinery. */
@@ -199,6 +201,8 @@ public final class TitleBar {
             old.remove();
         }
         mounted.clear();
+        unwatch.forEach(Runnable::run);
+        unwatch.clear();
         this.tools = tools == null ? java.util.List.of() : java.util.List.copyOf(tools);
         if (tools == null || tools.isEmpty()) {
             return this;
@@ -233,14 +237,31 @@ public final class TitleBar {
                 .windowRegion(WindowRegion.INTERACTIVE);
         // Authored against the box the layout settled on, and re-authored when that box changes. A picture
         // resolves no units of its own, so this is the only way a mark survives a zoom.
-        gui.onResizeUi(b, computed -> b.picture(
-                tool.mark().apply(computed.rect(), gui.theme().color(Role.INK))));
+        // A live one is re-authored against the last box when what it shows changes, too.
+        java.util.concurrent.atomic.AtomicReference<dev.vexelray.gui.core.layout.Rect> box =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        gui.onResizeUi(b, computed -> {
+            box.set(computed.rect());
+            b.picture(tool.mark().apply(computed.rect(), gui.theme().color(Role.INK)));
+        });
         // The instrument asks the window, not the application: a bar in a popup photographs the popup. Resolved
         // at click time like every other button here, so a bar built before its window still works.
         gui.onClick(b, () -> tool.action().accept(this.controls));
         gui.onState(b, state -> b.background(
                 gui.theme().color(state == InteractionState.NORMAL ? Role.NONE : Role.RAISED)));
-        if (!tool.tooltip().isEmpty()) {
+        WindowInstrument.Live live = tool.live();
+        if (live != null) {
+            unwatch.add(live.watch(() -> {
+                dev.vexelray.gui.core.layout.Rect r = box.get();
+                if (r != null) {
+                    b.picture(tool.mark().apply(r, gui.theme().color(Role.INK)));
+                }
+            }));
+            instrumentTips.attach(b, () -> {
+                String now = live.tooltip();
+                return now != null ? now : tool.tooltip();
+            });
+        } else if (!tool.tooltip().isEmpty()) {
             instrumentTips.attach(b, tool.tooltip());
         }
         return b;

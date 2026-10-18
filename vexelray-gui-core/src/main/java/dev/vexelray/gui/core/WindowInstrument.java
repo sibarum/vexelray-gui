@@ -37,10 +37,12 @@ import java.util.function.Consumer;
  *                to pick a colour: the bar it sits in reads that from the theme like every other caption icon,
  *                so a second theme does not have to fork this file to exist.
  * @param action  what it asks of the window it is in
+ * @param live    what the mark and tooltip show changes while the window is open, and this says when; {@code null}
+ *                for a mark that only changes with its box
  */
 public record WindowInstrument(String role, String tooltip,
                                java.util.function.BiFunction<Rect, Color, Picture> mark,
-                               Consumer<WindowControls> action) {
+                               Consumer<WindowControls> action, Live live) {
 
     /** Where a screenshot goes when nobody said: a timestamped PNG in the working directory. */
     private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
@@ -48,6 +50,53 @@ public record WindowInstrument(String role, String tooltip,
     public WindowInstrument {
         role = role == null ? "" : role;
         tooltip = tooltip == null ? "" : tooltip;
+    }
+
+    /** An instrument whose mark changes only with its box. */
+    public WindowInstrument(String role, String tooltip, java.util.function.BiFunction<Rect, Color, Picture> mark,
+                            Consumer<WindowControls> action) {
+        this(role, tooltip, mark, action, null);
+    }
+
+    /**
+     * What an instrument that shows a state outside the bar (the automation sockets' lamps) says about it. The bar
+     * re-authors the mark, and reads the tooltip again, after every {@code changed}, which may come from any thread:
+     * a node's setters are thread-safe.
+     */
+    public interface Live {
+
+        /** Call {@code changed} after every change to what the mark or tooltip shows; return what stops it. */
+        Runnable watch(Runnable changed);
+
+        /** The tooltip now, or {@code null} for the instrument's own. */
+        default String tooltip() {
+            return null;
+        }
+    }
+
+    /**
+     * One automation socket's lamp beside the plug (docs/reference/automation.md §5, <i>Lamps</i>). It shows two facts:
+     * whether the port is open now (a ring), and whether anything has connected to it this session (the centre).
+     */
+    public enum Lamp {
+        /** Not open, and nothing connected to it this session (never opened, or opened and closed unused): no lamp. */
+        OFF,
+        /** Open, and nothing has connected yet: the ring. */
+        LISTENING,
+        /** Open, and something is connected now: the ring, filled. */
+        CONNECTED,
+        /** Open; something was connected, and has gone: the ring, with a grey dot. */
+        WAS_CONNECTED,
+        /** Closed, after something had connected this session: the grey dot alone. */
+        CLOSED_AFTER_USE
+    }
+
+    /**
+     * The two lamps and their colours: remote control left of the plug, diagnostics right. {@code used} is the grey
+     * of the dot that says something connected earlier. A {@code null} lamp (a socket this run cannot open) draws
+     * nothing.
+     */
+    public record Lamps(Lamp control, Lamp diagnostics, Color controlColor, Color diagnosticsColor, Color used) {
     }
 
     /**
@@ -101,10 +150,62 @@ public record WindowInstrument(String role, String tooltip,
      * in every application; what it opens is the caller's. {@code vexelray-gui-automation-window}'s
      * {@code AutomationWindow} is the one that opens the switches.
      *
-     * <p>Never in {@link #standard()}: a shipped binary has no socket to switch, and must not carry a button for one.
+     * <p>Never in {@link #standard()}: an application without the automation module has no socket to switch, and must
+     * not carry a button for one.
      */
     public static WindowInstrument automation(String tooltip, Consumer<WindowControls> open) {
         return new WindowInstrument("instrument-automation", tooltip, WindowInstrument::plugMark, open);
+    }
+
+    /**
+     * The automation button with each socket's lamp beside the plug, read from {@code lamps} whenever {@code live} says
+     * they changed, so whether a port is open, and whether anything is or was connected to it, shows in the title bar
+     * at a glance. {@code vexelray-gui-automation-window}'s {@code AutomationWindow} is the one that reads the sockets.
+     */
+    public static WindowInstrument automation(String tooltip, Consumer<WindowControls> open,
+                                              java.util.function.Supplier<Lamps> lamps, Live live) {
+        return new WindowInstrument("instrument-automation", tooltip, (box, ink) -> {
+            Picture plug = plugMark(box, ink);
+            Lamps l = lamps.get();
+            if (l == null) {
+                return plug;
+            }
+            double s = Math.min(box.w(), box.h()) * 0.42;
+            double r = s * 0.3;
+            double cy = box.h() * 0.5;
+            java.util.List<Picture.Mark> marks = new java.util.ArrayList<>(plug.marks());
+            marks.addAll(lampMarks(box.w() * 0.5 - s * 1.08, cy, r, l.control(), l.controlColor(), l.used()));
+            marks.addAll(lampMarks(box.w() * 0.5 + s * 1.08, cy, r, l.diagnostics(), l.diagnosticsColor(), l.used()));
+            return Picture.of(marks.toArray(Picture.Mark[]::new));
+        }, open, live);
+    }
+
+    /** One lamp centred in {@code box}, for a panel that shows the same lamp beside a row. */
+    public static Picture lamp(Rect box, Lamp lamp, Color color, Color used) {
+        double r = Math.min(box.w(), box.h()) * 0.3;
+        return Picture.of(lampMarks(box.w() * 0.5, box.h() * 0.5, r, lamp, color, used).toArray(Picture.Mark[]::new));
+    }
+
+    /**
+     * A lamp of radius {@code r} about ({@code cx}, {@code cy}): a ring while the port is open, filled while something
+     * is connected, a grey dot for a connection that has gone. Shapes as well as colours, so the states differ for a
+     * reader who cannot tell red from grey.
+     */
+    private static java.util.List<Picture.Mark> lampMarks(double cx, double cy, double r, Lamp lamp, Color color,
+                                                          Color used) {
+        if (lamp == null) {
+            return java.util.List.of();
+        }
+        double dot = r * 0.5;
+        Picture.Mark ring = new Picture.Outline(cx - r, cy - r, r * 2, r * 2, r, r, 1.5, color, null);
+        Picture.Mark grey = new Picture.Fill(cx - dot, cy - dot, dot * 2, dot * 2, dot, dot, used, null);
+        return switch (lamp) {
+            case OFF -> java.util.List.of();
+            case LISTENING -> java.util.List.of(ring);
+            case CONNECTED -> java.util.List.of(new Picture.Fill(cx - r, cy - r, r * 2, r * 2, r, r, color, null));
+            case WAS_CONNECTED -> java.util.List.of(ring, grey);
+            case CLOSED_AFTER_USE -> java.util.List.of(grey);
+        };
     }
 
     /**

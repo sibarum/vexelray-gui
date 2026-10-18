@@ -1,6 +1,7 @@
 package dev.vexelray.gui.inspector.link;
 
 import dev.vexelray.gui.automation.AutomationServer;
+import dev.vexelray.gui.automation.Capability;
 import dev.vexelray.gui.automation.Commands;
 import dev.vexelray.gui.automation.Discovery;
 import dev.vexelray.gui.automation.Windows;
@@ -82,6 +83,10 @@ public final class InspectorLink implements AutoCloseable {
     /** What {@link #start(AutomationServer, Windows)} advertised in and hooked onto, so closing takes both back. */
     private volatile AutomationServer advertisedIn;
     private volatile Thread closeHook;
+    /** Guarded by {@code this}. The Inspectors connected now, each counted as a diagnostics connection in {@link #countedIn}. */
+    private final java.util.Set<PeerId> peers = new java.util.HashSet<>();
+    /** Guarded by {@code this}. The socket whose lamps count this link's peers; {@code null} for none. */
+    private AutomationServer countedIn;
 
     private InspectorLink(Conduit conduit, String endpoint, Recorder recorder, LoopCounters counters,
                           Commands commands) {
@@ -114,6 +119,7 @@ public final class InspectorLink implements AutoCloseable {
                     windows);
             server.advertise("stream", link.endpoint());
             link.advertisedIn = server;
+            link.countIn(server);
             // A process that exits without closing the link still removes its socket file; a crash leaves it, and
             // the next reader of the folder clears it with the discovery files. Taken off again by close, because
             // diagnostics switched on and off while the application runs would otherwise pile up one per switch.
@@ -187,13 +193,37 @@ public final class InspectorLink implements AutoCloseable {
             @Override
             public void onConnected(PeerId peer) {
                 LOG.debug("inspector link: peer {} connected", peer.handle());
+                peer(peer, true);
             }
 
             @Override
             public void onDisconnected(PeerId peer) {
                 stop(peer, "the Inspector went away");
+                peer(peer, false);
             }
         });
+    }
+
+    /**
+     * Count this link's Inspectors as diagnostics connections of {@code server}, so its lamp shows an Inspector reading
+     * the application as it shows any other reader: those connected already, and each one after.
+     */
+    private synchronized void countIn(AutomationServer server) {
+        countedIn = server;
+        for (int i = 0; i < peers.size(); i++) {
+            server.linked(Capability.DIAGNOSTICS, true);
+        }
+    }
+
+    private void peer(PeerId peer, boolean connected) {
+        AutomationServer server;
+        synchronized (this) {
+            boolean changed = connected ? peers.add(peer) : peers.remove(peer);
+            server = changed ? countedIn : null;
+        }
+        if (server != null) {
+            server.linked(Capability.DIAGNOSTICS, connected);
+        }
     }
 
     /** Where Inspectors dial: {@code uds:<path>} or {@code tcp:<port>}, as the discovery file says. */
@@ -279,6 +309,17 @@ public final class InspectorLink implements AutoCloseable {
             stop(peer, "the application is closing the link");
         }
         conduit.close();
+        AutomationServer counted;
+        int left;
+        synchronized (this) {
+            counted = countedIn;
+            left = peers.size();
+            peers.clear();
+            countedIn = null;
+        }
+        for (int i = 0; counted != null && i < left; i++) {
+            counted.linked(Capability.DIAGNOSTICS, false);
+        }
         AutomationServer server = advertisedIn;
         if (server != null) {
             advertisedIn = null;

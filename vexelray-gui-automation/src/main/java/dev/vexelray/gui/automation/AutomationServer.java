@@ -95,6 +95,12 @@ public final class AutomationServer implements AutoCloseable {
     private final Thread thread;
     private final long started = System.nanoTime();
     private final Set<Connection> open = ConcurrentHashMap.newKeySet();
+    /** Connections for a capability made beside this socket rather than to it: the Inspector link's peers. */
+    private final java.util.Map<Capability, java.util.concurrent.atomic.AtomicInteger> linked =
+            java.util.Map.of(Capability.CONTROL, new java.util.concurrent.atomic.AtomicInteger(),
+                    Capability.DIAGNOSTICS, new java.util.concurrent.atomic.AtomicInteger());
+    /** Told after a connection opens or closes, here or beside ({@link #linked}); {@link Sockets} sets it. */
+    private volatile Runnable onConnections = () -> { };
     private int numbered;
     private volatile boolean running = true;
 
@@ -183,6 +189,36 @@ public final class AutomationServer implements AutoCloseable {
         serves = java.util.Collections.unmodifiableSet(java.util.EnumSet.copyOf(now));
     }
 
+    /**
+     * How many connections can use {@code capability} now: those open on this socket while it serves it, and those
+     * made beside it for it ({@link #linked}). What the title bar's lamps read.
+     */
+    public int connected(Capability capability) {
+        return (serves.contains(capability) ? open.size() : 0) + linked.get(capability).get();
+    }
+
+    /**
+     * Count a connection made beside this socket for {@code capability} — the Inspector link's peer — as one of its
+     * own, {@code opened} or closed, so the lamps show it as they show a connection to the socket.
+     */
+    public void linked(Capability capability, boolean opened) {
+        linked.get(capability).addAndGet(opened ? 1 : -1);
+        connectionsChanged();
+    }
+
+    /** Run {@code r} after every connection opens or closes; one at a time, the last set wins. */
+    void onConnections(Runnable r) {
+        onConnections = r == null ? () -> { } : r;
+    }
+
+    private void connectionsChanged() {
+        try {
+            onConnections.run();
+        } catch (RuntimeException e) {
+            LOG.warn("a connections watcher failed: " + e.getMessage());
+        }
+    }
+
     /** How many connections may be open at once. */
     public int connections() {
         return cap;
@@ -254,6 +290,7 @@ public final class AutomationServer implements AutoCloseable {
     private void converse(Connection c) {
         mark("agent.connection", c, "open");
         LOG.debug("connection {} open", c.number);
+        connectionsChanged();
         try (Socket client = c.socket) {
             BufferedReader in = reader(client);
             PrintWriter out = writer(client);
@@ -305,6 +342,7 @@ public final class AutomationServer implements AutoCloseable {
             open.remove(c);
             mark("agent.connection", c, "closed");
             LOG.debug("connection {} closed", c.number);
+            connectionsChanged();
         }
     }
 

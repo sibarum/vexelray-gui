@@ -228,6 +228,95 @@ class SocketsTest {
         }
     }
 
+    @Test
+    void eachPortSaysWhetherItIsOpenAndWhetherAnythingIsOrWasConnected() throws Exception {
+        try (Sockets sockets = sockets()) {
+            AtomicInteger told = new AtomicInteger();
+            sockets.watch(s -> told.incrementAndGet());
+            assertEquals(Sockets.State.OFF, sockets.state(Capability.CONTROL), "4a: never on");
+
+            int port = sockets.enable(Capability.CONTROL, 0);
+            assertEquals(Sockets.State.LISTENING, sockets.state(Capability.CONTROL), "4b: open, nothing yet");
+
+            int before = told.get();
+            try (Socket client = new Socket(InetAddress.getLoopbackAddress(), port)) {
+                awaitState(sockets, Capability.CONTROL, Sockets.State.CONNECTED);   // 4c
+                assertEquals(1, sockets.connected(Capability.CONTROL));
+                assertTrue(told.get() > before, "a connection tells the watchers, so the lamps follow it");
+            }
+            awaitState(sockets, Capability.CONTROL, Sockets.State.WAS_CONNECTED);   // 4d
+            assertEquals(0, sockets.connected(Capability.CONTROL));
+
+            sockets.disable(Capability.CONTROL);
+            assertEquals(Sockets.State.CLOSED_AFTER_USE, sockets.state(Capability.CONTROL), "4f");
+
+            sockets.enable(Capability.DIAGNOSTICS, 0);
+            sockets.disable(Capability.DIAGNOSTICS);
+            assertEquals(Sockets.State.OFF, sockets.state(Capability.DIAGNOSTICS), "4e: opened, never used, closed");
+        }
+    }
+
+    @Test
+    void aConnectionOnASharedSocketCountsForBoth() throws Exception {
+        try (Sockets sockets = sockets()) {
+            int port = sockets.enable(Capability.CONTROL, 0);
+            try (Socket client = new Socket(InetAddress.getLoopbackAddress(), port)) {
+                awaitState(sockets, Capability.CONTROL, Sockets.State.CONNECTED);
+                // Diagnostics joining a socket with someone on it: they can read it now, so it was used.
+                sockets.enable(Capability.DIAGNOSTICS, port);
+                assertEquals(Sockets.State.CONNECTED, sockets.state(Capability.DIAGNOSTICS));
+            }
+            awaitState(sockets, Capability.DIAGNOSTICS, Sockets.State.WAS_CONNECTED);
+        }
+    }
+
+    @Test
+    void aConnectionBesideTheSocketCountsAsOneOfItsOwn() throws Exception {
+        try (Sockets sockets = sockets()) {
+            sockets.enable(Capability.DIAGNOSTICS, 0);
+            AutomationServer s = sockets.server(Capability.DIAGNOSTICS);
+            s.linked(Capability.DIAGNOSTICS, true);         // the Inspector link's peer
+            assertEquals(Sockets.State.CONNECTED, sockets.state(Capability.DIAGNOSTICS));
+            s.linked(Capability.DIAGNOSTICS, false);
+            assertEquals(Sockets.State.WAS_CONNECTED, sockets.state(Capability.DIAGNOSTICS));
+        }
+    }
+
+    @Test
+    void aRunOffersBothOneOrNeither() throws Exception {
+        assertEquals(Capability.both(), Sockets.available(null));
+        assertEquals(Capability.both(), Sockets.available("all"));
+        assertEquals(Set.of(), Sockets.available("none"));
+        assertEquals(Set.of(Capability.DIAGNOSTICS), Sockets.available("diagnostics"));
+        assertEquals(Capability.both(), Sockets.available("control,diagnostics"));
+        assertThrows(IllegalArgumentException.class, () -> Sockets.available("contrl"));
+
+        try (Sockets sockets = new Sockets(VERBS, "sockets-test", "Sockets Test", null,
+                Set.of(Capability.DIAGNOSTICS))) {
+            assertEquals(Sockets.State.UNAVAILABLE, sockets.state(Capability.CONTROL));
+            IllegalStateException e = assertThrows(IllegalStateException.class,
+                    () -> sockets.enable(Capability.CONTROL, 0));
+            assertEquals("remote control is not available in this run (automation.available=diagnostics)",
+                    e.getMessage());
+            // A launch asking for both on one socket opens nothing, rather than half of it.
+            assertThrows(IllegalStateException.class,
+                    () -> sockets.enableRequested(k -> k.equals(Sockets.SETTING) ? "0" : null));
+            assertFalse(sockets.on(Capability.DIAGNOSTICS));
+            assertTrue(sockets.enable(Capability.DIAGNOSTICS, 0) > 0, "what it offers still switches on");
+        }
+        try (Sockets none = new Sockets(VERBS, "sockets-test", "Sockets Test", null, Set.of())) {
+            assertThrows(IllegalStateException.class, () -> none.enable(Capability.DIAGNOSTICS, 0));
+        }
+    }
+
+    private static void awaitState(Sockets sockets, Capability c, Sockets.State want) throws InterruptedException {
+        long until = System.nanoTime() + 5_000_000_000L;
+        while (sockets.state(c) != want && System.nanoTime() < until) {
+            Thread.sleep(5);
+        }
+        assertEquals(want, sockets.state(c));
+    }
+
     private static String ask(int port, String line) throws IOException {
         try (Socket s = new Socket(InetAddress.getLoopbackAddress(), port)) {
             s.setSoTimeout(5_000);

@@ -8,6 +8,7 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -39,7 +40,14 @@ import java.util.function.Function;
  * the JIT can fold every guard away in a run that is not profiling. Diagnostics switched on in such a run answers,
  * and its recorder verbs say the recorder is off; a run that may want them later is started with the probe armed.
  *
- * <p>Thread-safe. The watchers ({@link #watch}) run on the thread that made the change, after it is made.
+ * <p><b>What this run offers, and what each port has been through.</b> A run may offer both capabilities, one, or
+ * neither ({@link #AVAILABLE_SETTING}); switching on one it does not offer throws. Each offered one is in one of the
+ * {@link State}s, which say whether its port is open and whether anything is, or was this session, connected to it —
+ * what the title bar's lamps show, so a person can see at a glance whether anything can drive the application or read
+ * its diagnostics, and whether anything has.
+ *
+ * <p>Thread-safe. The watchers ({@link #watch}) run on the thread that made the change, after it is made — a
+ * connection opening or closing among them.
  */
 public final class Sockets implements AutoCloseable {
 
@@ -61,6 +69,30 @@ public final class Sockets implements AutoCloseable {
     private volatile Map<Capability, Integer> ports = Map.of();
     /** Guarded by {@code this}. Present while anything listens. */
     private Discovery discovery;
+    /** What this run may switch on; fixed at construction. */
+    private final Set<Capability> available;
+    /** Guarded by {@code this}. The capabilities anything has been connected to this session, open or closed since. */
+    private final Set<Capability> used = EnumSet.noneOf(Capability.class);
+
+    /**
+     * Where a capability stands: its port open or not, and anything connected to it now, earlier, or never
+     * (docs/reference/automation.md §5, <i>Lamps</i>). Opened and closed with nothing connected is {@link #OFF}, the
+     * same as never opened: nothing happened through it.
+     */
+    public enum State {
+        /** This run does not offer it ({@link #AVAILABLE_SETTING}): it cannot be switched on. */
+        UNAVAILABLE,
+        /** Closed, and nothing has connected to it this session. */
+        OFF,
+        /** Open, and nothing has connected to it yet. */
+        LISTENING,
+        /** Open, with something connected now. */
+        CONNECTED,
+        /** Open; something was connected, and none is now. */
+        WAS_CONNECTED,
+        /** Closed, after something had connected to it this session. */
+        CLOSED_AFTER_USE
+    }
 
     /**
      * The sockets of the application {@code app}, titled {@code title} (the names its discovery file gives it),
@@ -73,10 +105,83 @@ public final class Sockets implements AutoCloseable {
 
     /** As above, printing each socket's line to {@code announce}, or nowhere when it is {@code null}. */
     public Sockets(Commands commands, String app, String title, PrintStream announce) {
+        this(commands, app, title, announce, Capability.both());
+    }
+
+    /** As above, offering only {@code available}: switching on anything else throws ({@link #AVAILABLE_SETTING}). */
+    public Sockets(Commands commands, String app, String title, PrintStream announce, Set<Capability> available) {
         this.commands = java.util.Objects.requireNonNull(commands, "commands");
         this.app = app;
         this.title = title;
         this.announce = announce;
+        this.available = available.isEmpty() ? java.util.Collections.emptySet()
+                : java.util.Collections.unmodifiableSet(EnumSet.copyOf(available));
+    }
+
+    /**
+     * The setting for what a run may switch on at all: {@code all} (the default), {@code none}, {@code control} or
+     * {@code diagnostics} — {@code --automation.available=none}. A run that offers neither has no automation button,
+     * and switching either on throws.
+     */
+    public static final String AVAILABLE_SETTING = "automation.available";
+
+    /**
+     * What {@link #AVAILABLE_SETTING} offers: unset, blank, {@code all}, {@code both}, {@code on} or {@code true} is
+     * both; {@code none}, {@code off} or {@code false} is neither; otherwise a comma-separated list of
+     * {@link Capability#word()}s.
+     *
+     * @throws IllegalArgumentException for anything else; a caller that must not open what was meant to be shut treats
+     *                                  that as {@code none}
+     */
+    public static Set<Capability> available(String setting) {
+        String want = setting == null ? "" : setting.trim().toLowerCase(Locale.ROOT);
+        switch (want) {
+            case "", "all", "both", "on", "true" -> {
+                return Capability.both();
+            }
+            case "none", "off", "false" -> {
+                return EnumSet.noneOf(Capability.class);
+            }
+            default -> {
+                Set<Capability> set = EnumSet.noneOf(Capability.class);
+                for (String word : want.split("[,\\s]+")) {
+                    set.add(switch (word) {
+                        case "control" -> Capability.CONTROL;
+                        case "diagnostics" -> Capability.DIAGNOSTICS;
+                        default -> throw new IllegalArgumentException("'" + setting + "' is not all, none, control,"
+                                + " diagnostics, or a list of those");
+                    });
+                }
+                return set;
+            }
+        }
+    }
+
+    /** What this run may switch on. */
+    public Set<Capability> available() {
+        return available;
+    }
+
+    /** Where {@code capability} stands now. */
+    public synchronized State state(Capability capability) {
+        if (!available.contains(capability)) {
+            return State.UNAVAILABLE;
+        }
+        AutomationServer s = on.get(capability);
+        boolean was = used.contains(capability);
+        if (s == null) {
+            return was ? State.CLOSED_AFTER_USE : State.OFF;
+        }
+        if (s.connected(capability) > 0) {
+            return State.CONNECTED;
+        }
+        return was ? State.WAS_CONNECTED : State.LISTENING;
+    }
+
+    /** How many connections can use {@code capability} now; {@code 0} when it is off. */
+    public synchronized int connected(Capability capability) {
+        AutomationServer s = on.get(capability);
+        return s == null ? 0 : s.connected(capability);
     }
 
     /** The setting for both on one socket: {@code --automation=0}, {@code -Dautomation=7654}. */
@@ -96,11 +201,18 @@ public final class Sockets implements AutoCloseable {
      *
      * @throws IOException           when a port cannot be bound; what was switched on before it stays on
      * @throws NumberFormatException when a value is not {@code off}, {@code on} or a port; nothing has been switched
+     * @throws IllegalStateException when it asks for a capability this run does not offer; nothing has been switched
      */
     public void enableRequested(Function<String, String> settings) throws IOException {
         int both = requested(settings.apply(SETTING));
         int control = both >= 0 ? both : requested(settings.apply(CONTROL_SETTING));
         int diagnostics = both >= 0 ? -1 : requested(settings.apply(DIAGNOSTICS_SETTING));
+        if (control >= 0) {
+            offered(Capability.CONTROL);
+        }
+        if (both >= 0 || diagnostics >= 0) {
+            offered(Capability.DIAGNOSTICS);
+        }
         if (control >= 0) {
             control = enable(Capability.CONTROL, control);
         }
@@ -167,9 +279,11 @@ public final class Sockets implements AutoCloseable {
      * the one it already has; the port the other capability listens on joins that socket. Already on at that port,
      * this changes nothing.
      *
-     * @throws IOException when the port cannot be bound; nothing has changed then
+     * @throws IOException           when the port cannot be bound; nothing has changed then
+     * @throws IllegalStateException when this run does not offer {@code capability} ({@link #AVAILABLE_SETTING})
      */
     public int enable(Capability capability, int port) throws IOException {
+        offered(capability);
         int bound;
         synchronized (this) {
             bound = turnOn(capability, port);
@@ -256,6 +370,9 @@ public final class Sockets implements AutoCloseable {
         // Bound before anything is let go of, so a port that is taken leaves the old socket listening.
         AutomationServer fresh = join ? null
                 : AutomationServer.listen(commands, port, EnumSet.of(capability), app, this::where);
+        if (fresh != null) {
+            fresh.onConnections(this::connectionsChanged);
+        }
         if (current != null) {
             drop(capability);
         }
@@ -305,6 +422,7 @@ public final class Sockets implements AutoCloseable {
         Map<Capability, Integer> now = new EnumMap<>(Capability.class);
         on.forEach((c, s) -> now.put(c, s.port()));
         ports = Map.copyOf(now);
+        noteConnections();
         if (on.isEmpty()) {
             if (discovery != null) {
                 discovery.close();
@@ -340,7 +458,60 @@ public final class Sockets implements AutoCloseable {
         }
     }
 
+    /**
+     * Remember every capability something is connected to now. Asked on every switch as well as every connection,
+     * because a socket that comes to serve both lets the connections already on it use the other one too.
+     */
+    private void noteConnections() {
+        on.forEach((c, s) -> {
+            if (s.connected(c) > 0) {
+                used.add(c);
+            }
+        });
+    }
+
     // --- off the lock --------------------------------------------------------------------------------------------
+
+    /** A connection opened or closed on one of the sockets, or beside one: noted, then the watchers told. */
+    private void connectionsChanged() {
+        synchronized (this) {
+            noteConnections();
+        }
+        changed();
+    }
+
+    /** Throws unless this run offers {@code capability}. */
+    private void offered(Capability capability) {
+        if (!available.contains(capability)) {
+            throw new IllegalStateException(refusal(capability, available));
+        }
+    }
+
+    /** Why {@code capability} cannot be switched on in a run offering only {@code available}. */
+    public static String refusal(Capability capability, Set<Capability> available) {
+        return (capability == Capability.CONTROL ? "remote control" : "diagnostics") + " is not available in this run ("
+                + AVAILABLE_SETTING + "=" + (available.isEmpty() ? "none" : Capability.words(available)) + ")";
+    }
+
+    /**
+     * The capabilities {@code settings} asks for, as {@link #enableRequested} reads them, so a caller can refuse what
+     * the run does not offer before it builds anything.
+     *
+     * @throws NumberFormatException as {@link #requested} does
+     */
+    public static Set<Capability> asked(Function<String, String> settings) {
+        Set<Capability> set = EnumSet.noneOf(Capability.class);
+        if (requested(settings.apply(SETTING)) >= 0) {
+            return Capability.both();
+        }
+        if (requested(settings.apply(CONTROL_SETTING)) >= 0) {
+            set.add(Capability.CONTROL);
+        }
+        if (requested(settings.apply(DIAGNOSTICS_SETTING)) >= 0) {
+            set.add(Capability.DIAGNOSTICS);
+        }
+        return set;
+    }
 
     /** Where {@code capability} listens, for a socket that does not serve it to say so; {@code null} when it is off. */
     private String where(Capability capability) {

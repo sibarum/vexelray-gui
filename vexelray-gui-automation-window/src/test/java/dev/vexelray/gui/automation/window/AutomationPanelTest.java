@@ -67,19 +67,21 @@ class AutomationPanelTest {
             int port = sockets.port(Capability.CONTROL);
             assertTrue(port > 0, "a blank port is a free one");
             assertEquals(Integer.toString(port), panel.port(Capability.CONTROL).text(), "the field shows what was bound");
-            assertEquals("localhost:" + port, text(gui, panel.status(Capability.CONTROL)));
+            assertEquals("open, nothing connected yet, localhost:" + port, text(gui, panel.status(Capability.CONTROL)));
             assertTrue(text(gui, panel.footer()).startsWith("Drive it with: ottermate --port " + port));
 
             // The other's port in the field: one socket serving both.
             panel.port(Capability.DIAGNOSTICS).text(Integer.toString(port));
             panel.toggle(Capability.DIAGNOSTICS).on(true);
             assertEquals(port, sockets.port(Capability.DIAGNOSTICS));
-            assertEquals("localhost:" + port + " (one socket, both)", text(gui, panel.status(Capability.DIAGNOSTICS)));
+            assertEquals("open, nothing connected yet, localhost:" + port + " (one socket, both)",
+                    text(gui, panel.status(Capability.DIAGNOSTICS)));
 
             panel.toggle(Capability.CONTROL).on(false);
             assertFalse(sockets.on(Capability.CONTROL));
             assertEquals("off", text(gui, panel.status(Capability.CONTROL)));
-            assertEquals("localhost:" + port, text(gui, panel.status(Capability.DIAGNOSTICS)), "narrowed, not closed");
+            assertEquals("open, nothing connected yet, localhost:" + port, text(gui, panel.status(Capability.DIAGNOSTICS)),
+                    "narrowed, not closed");
         }
     }
 
@@ -112,8 +114,48 @@ class AutomationPanelTest {
             gui.root().children(panel.node());
             int port = sockets.enable(Capability.CONTROL, 0);      // a launch flag, or another panel
             assertTrue(panel.toggle(Capability.CONTROL).on());
-            assertEquals("localhost:" + port, text(gui, panel.status(Capability.CONTROL)));
+            assertEquals("open, nothing connected yet, localhost:" + port, text(gui, panel.status(Capability.CONTROL)));
         }
+    }
+
+    @Test
+    void aConnectionShowsOnTheRowAndStaysAsHistory() throws Exception {
+        try (Gui gui = new Gui(Atchung.create(), Runnable::run);
+             Sockets sockets = new Sockets(VERBS, "panel-test", "Panel Test", null);
+             AutomationPanel panel = new AutomationPanel(gui, sockets)) {
+            gui.root().children(panel.node());
+            int port = sockets.enable(Capability.CONTROL, 0);
+            try (java.net.Socket client = new java.net.Socket(InetAddress.getLoopbackAddress(), port)) {
+                awaitText(gui, panel.status(Capability.CONTROL), "connected now (1), localhost:" + port);
+                assertTrue(AutomationWindow.describe(sockets).startsWith("Remote control: connected now (1)"));
+            }
+            awaitText(gui, panel.status(Capability.CONTROL), "open; something was connected, none now, localhost:" + port);
+            panel.toggle(Capability.CONTROL).on(false);
+            assertEquals("off; something was connected earlier", text(gui, panel.status(Capability.CONTROL)));
+            assertEquals("off", text(gui, panel.status(Capability.DIAGNOSTICS)));
+        }
+    }
+
+    @Test
+    void aCapabilityTheRunDoesNotOfferSaysSoAndCannotBeSwitched() {
+        try (Gui gui = new Gui(Atchung.create(), Runnable::run);
+             Sockets sockets = new Sockets(VERBS, "panel-test", "Panel Test", null,
+                     java.util.Set.of(Capability.DIAGNOSTICS));
+             AutomationPanel panel = new AutomationPanel(gui, sockets)) {
+            gui.root().children(panel.node());
+            assertEquals("not available in this run", text(gui, panel.status(Capability.CONTROL)));
+            panel.toggle(Capability.CONTROL).on(true);       // not on screen; reached anyway, it still refuses
+            assertFalse(sockets.on(Capability.CONTROL));
+            assertFalse(panel.toggle(Capability.CONTROL).on());
+        }
+    }
+
+    private static void awaitText(Gui gui, Node node, String want) throws InterruptedException {
+        long until = System.nanoTime() + 5_000_000_000L;
+        while (!want.equals(text(gui, node)) && System.nanoTime() < until) {
+            Thread.sleep(5);
+        }
+        assertEquals(want, text(gui, node));
     }
 
     private static String text(Gui gui, Node node) {

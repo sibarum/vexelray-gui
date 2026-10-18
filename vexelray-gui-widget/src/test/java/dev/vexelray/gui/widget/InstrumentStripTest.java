@@ -174,4 +174,32 @@ class InstrumentStripTest {
             assertTrue(box.w() > 0f && box.h() > 0f, "and a laid-out one: " + box);
         }
     }
+
+    @Test
+    void aLiveMarkIsReauthoredWhenWhatItShowsChangesAndLetGoWhenReplaced() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            List<Rect> authored = new ArrayList<>();
+            List<Runnable> watchers = new ArrayList<>();
+            WindowInstrument tool = new WindowInstrument("instrument-live", "", (box, ink) -> {
+                authored.add(box);
+                return Picture.EMPTY;
+            }, controls -> { }, changed -> {
+                watchers.add(changed);
+                return () -> watchers.remove(changed);
+            });
+
+            TitleBar bar = new TitleBar(h.gui, new Recorder(), "app").instruments(List.of(tool));
+            h.gui.root().children(bar.node());
+            h.frame();
+            int laidOut = authored.size();
+            assertEquals(1, watchers.size(), "the bar watches a live instrument");
+
+            watchers.get(0).run();      // the sockets' lamps changed, say
+            assertEquals(laidOut + 1, authored.size(), "and re-authors its mark, against the same box");
+            assertEquals(authored.get(laidOut - 1), authored.get(laidOut));
+
+            bar.instruments(List.of());
+            assertTrue(watchers.isEmpty(), "a strip taken down stops watching");
+        }
+    }
 }

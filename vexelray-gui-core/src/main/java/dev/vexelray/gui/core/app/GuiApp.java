@@ -1138,32 +1138,6 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
     }
 
     /**
-     * Do {@code work} on the offload lane and hand what it produced back here, on the GUI thread.
-     *
-     * <h2>Public for the same reason {@link #post} is</h2>
-     *
-     * That method was made public because applications were each growing a queue of their own. They have
-     * since moved up a level and are growing the <em>round trip</em>: submit to a pool, catch what it throws,
-     * post the result back, post the failure back. It is four lines that are wrong in a quiet way when they
-     * are wrong — a result applied on the pool thread works until the day it does not — and there is no
-     * reason for an application to write it.
-     *
-     * <p><b>This is the shortest correct way to do slow work, and that is deliberate.</b> Reading a file
-     * straight from a command handler is shorter still and stops the frame loop for as long as the disk takes;
-     * {@link Gui#async} is shorter and gives back no result, so a caller who needs one hand-rolls the way
-     * home. Making the correct round trip the least typing is the point of it being here.
-     *
-     * <p><b>What runs on the lane must touch nothing.</b> No node, no tab, no model — it computes a value and
-     * returns it. Everything that acts on that value runs in {@code landed}, on this thread, in order with
-     * every other request in the queue. That is the whole discipline, and it is checkable by reading one
-     * lambda.
-     *
-     * @param work   the slow part: I/O, a decode, a parse. Runs on the offload lane
-     * @param landed what to do with the result, on the GUI thread
-     * @param failed what to do when {@code work} threw, on the GUI thread. A report, usually — this is not a
-     *               path that should take the application down, because the thing that failed was one request
-     */
-    /**
      * How long a posted task may hold this thread before {@link #reportStall} says something, in nanoseconds;
      * zero switches the check off.
      *
@@ -1209,6 +1183,38 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                         + " thread and hands the result back here");
     }
 
+    /**
+     * Do {@code work} on the offload lane and hand what it produced back here, on the GUI thread.
+     *
+     * <h2>Public for the same reason {@link #post} is</h2>
+     *
+     * That method was made public because applications were each growing a queue of their own. They have
+     * since moved up a level and are growing the <em>round trip</em>: submit to a pool, catch what it throws,
+     * post the result back, post the failure back. It is four lines that are wrong in a quiet way when they
+     * are wrong — a result applied on the pool thread works until the day it does not — and there is no
+     * reason for an application to write it.
+     *
+     * <p><b>This is the shortest correct way to do slow work, and that is deliberate.</b> Reading a file
+     * straight from a command handler is shorter still and stops the frame loop for as long as the disk takes;
+     * {@link Gui#async} is shorter and gives back no result, so a caller who needs one hand-rolls the way
+     * home. Making the correct round trip the least typing is the point of it being here.
+     *
+     * <p><b>What runs on the lane must touch nothing.</b> No node, no tab, no model — it computes a value and
+     * returns it. Everything that acts on that value runs in {@code landed}, on this thread, in order with
+     * every other request in the queue. That is the whole discipline, and it is checkable by reading one
+     * lambda.
+     *
+     * <p><b>Every outcome of {@code work} reaches exactly one of {@code landed} and {@code failed}.</b> A caller
+     * that shows a spinner until one of them runs is waiting on that promise, and an outcome that reaches
+     * neither is a spinner that never stops. See {@link #offloaded} for how an {@code Error} is told apart.
+     *
+     * @param work   the slow part: I/O, a decode, a parse. Runs on the offload lane
+     * @param landed what to do with the result, on the GUI thread
+     * @param failed what to do when {@code work} threw, on the GUI thread. A report, usually — this is not a
+     *               path that should take the application down, because the thing that failed was one request.
+     *               An {@code Exception} arrives as itself; an {@code Error} arrives wrapped in an
+     *               {@link java.util.concurrent.ExecutionException} whose cause it is
+     */
     public <T> void offload(java.util.concurrent.Callable<T> work, java.util.function.Consumer<T> landed,
                             java.util.function.Consumer<Exception> failed) {
         Gui gui = mainGui;
@@ -1216,16 +1222,57 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
             throw new IllegalStateException(
                     "no tree yet: offload needs the lane the Gui was built on, which run() binds");
         }
-        gui.offload().execute(() -> {
+        gui.offload().execute(offloaded(work, landed, failed, this::post));
+    }
+
+    /**
+     * The half of {@link #offload} that runs on the lane: call {@code work}, and {@code post} back whichever of
+     * {@code landed} and {@code failed} its outcome calls for. Apart from {@code offload} so it can be run
+     * without a window.
+     *
+     * <p><b>It catches {@code Throwable}, not {@code Exception}.</b> It caught {@code Exception}, so an
+     * {@code AssertionError}, a {@code StackOverflowError} from a recursive parse or an {@code OutOfMemoryError}
+     * from one oversized decode escaped onto the pool thread, neither callback ran, and a UI waiting on the
+     * result waited forever with nothing in the log saying why.
+     *
+     * <p><b>An {@code Error} is wrapped rather than the parameter widened.</b> {@code failed} is a
+     * {@code Consumer<Exception>}, and widening it to {@code Throwable} breaks every caller holding a
+     * {@code Consumer<Exception>} or passing a method that takes one. {@code ExecutionException} is the JDK's
+     * own word for "the computation threw this", it is what {@code Future.get} hands back for the same case, and
+     * a caller that only prints the message still prints the error's name, because the message is the cause's.
+     *
+     * <p><b>A {@code VirtualMachineError} is delivered and then rethrown.</b> Delivered, because the request
+     * still failed and its caller still needs to hear that. Rethrown, because an out-of-memory or a stack
+     * overflow says something about the process rather than about the one request, and swallowing it here would
+     * leave the only record of it being whatever {@code failed} chose to show. Rethrowing ends this pool thread
+     * through its uncaught-exception handler and the pool starts another. Any other {@code Error} — an
+     * assertion, a linkage error from a missing optional library — is about the request, and stops at
+     * {@code failed} the same way an exception does. The rethrow is in a {@code finally}, so a post that itself
+     * cannot allocate does not hide the error it was reporting.
+     */
+    static <T> Runnable offloaded(java.util.concurrent.Callable<T> work, java.util.function.Consumer<T> landed,
+                                  java.util.function.Consumer<Exception> failed,
+                                  java.util.function.Consumer<Runnable> post) {
+        return () -> {
             T value;
             try {
                 value = work.call();
             } catch (Exception e) {
-                post(() -> failed.accept(e));
+                post.accept(() -> failed.accept(e));
+                return;
+            } catch (Throwable t) {
+                Exception wrapped = new java.util.concurrent.ExecutionException(t);
+                try {
+                    post.accept(() -> failed.accept(wrapped));
+                } finally {
+                    if (t instanceof VirtualMachineError fatal) {
+                        throw fatal;
+                    }
+                }
                 return;
             }
-            post(() -> landed.accept(value));
-        });
+            post.accept(() -> landed.accept(value));
+        };
     }
 
     /**

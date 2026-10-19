@@ -47,6 +47,10 @@ the engine's `Surface`, and renders as enclosure boxes for the reasons in
 
 ## Constraints that are not visible in the code
 
+- **An application an agent starts is a background run, and that is not optional.** `CLAUDECODE`/`AI_AGENT` in the
+  environment make every window cloaked, never activated and deaf to the real devices (`dev.vexelray.os.BackgroundRun`,
+  [docs/plans/background-runs.md](docs/plans/background-runs.md)). Verbs and `shot` work as in a visible run. Never
+  set `VEXELRAY_FOREGROUND` or clear those variables unless the person asked to watch; a hook will ask them.
 - **Vulkan, the window and present stay on the main thread.** Startup latency is fixed cosmetically, never by
   moving them.
 - **All input arrives through tactroller, on the bus.** Adding a device-event path that bypasses it is a bug

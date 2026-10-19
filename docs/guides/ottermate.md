@@ -563,6 +563,16 @@ that size. Only `resize` refuses, because a minimized window has no size to set:
 `err the window is minimized, so it has no size to set (it is still laid out and photographed at 1400x900)`.
 Never restore or raise the window to get a picture: whoever put it out of the way meant it.
 
+### Started by an agent, it runs in the background
+
+An application launched from an agent's shell (one carrying `CLAUDECODE` or `AI_AGENT`) is a **background run**.
+That covers `--launch` and anything else started there. Its windows are real: they lay out, draw, present, and
+`shot` reads back real frames. But they are cloaked, never take the foreground, have no taskbar button, and get
+nothing from the real keyboard and mouse. Every verb works as in a visible run, and the person at the desk never
+sees it. Nothing has to be passed for this, and nothing should be passed to avoid it: `VEXELRAY_FOREGROUND=1` opens the windows
+for real, and it is only for when the person asked to watch. A hook asks them before any agent command sets it. See
+[background-runs.md](../plans/background-runs.md).
+
 ### `await` is for the application having finished thinking
 
 `settle` is exact about the frame loop, including the click's own handler on its worker: it waits for the

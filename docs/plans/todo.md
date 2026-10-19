@@ -368,7 +368,9 @@ Wanted eventually, deliberately not now.
   written by `AutomationServer` rather than the framework's `Driver`, so applications not on the framework are
   found too. **Left:** the guide's §1 still has the `PATH` edited by hand; it says to source `~/.mainframe/env.sh`
   once mainframe's `docs/stack-env.md` plan has shipped that file, which it has not.
-- **Headless running** (out of v1 of that plan): a frame loop that presents offscreen, input only from the socket.
+- **Headless running** (out of v1 of that plan): landed as background runs, which are cloaked, unreachable windows
+  with input only from the socket, chosen by the agent's environment. See [background-runs.md](background-runs.md).
+  A truly windowless run is still open, and nothing presently needs it.
 
 - **A diagonal draw.** `Placed.Sink` has `glyphs` and `bar`; `bar` is axis-aligned and a `Node` in the projection
   is too, so a diagonal line cannot be drawn at all. A commutative-diagram arrow is the first real thing an open

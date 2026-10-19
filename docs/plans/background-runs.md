@@ -1,8 +1,50 @@
 # Background runs: driving an application nobody can see or touch
 
-Status: **Proposed 2026-10-11, not started.** Written from a MainFrame session in which the person at the desk and an
-agent driving MainFrame with `ottermate` kept getting in each other's way. It widens the one-line *Headless running*
-entry in [todo.md](todo.md) §3.
+Status: **Landed 2026-10-18 on Windows.** Linux and macOS have no background window yet. Proposed 2026-10-11 from a
+MainFrame session in which the person at the desk and an agent driving MainFrame with `ottermate` kept getting in each
+other's way. The rest of this document is the proposal as written. What landed differs from it in one deliberate way,
+described next.
+
+## What landed
+
+**It is not a switch.** The proposal asked for one (`--background`), and earlier attempts at this were flags too. A
+flag is something an agent leaves off as soon as the visible run looks easier, so it always ended up left off.
+Instead, the process decides for itself, from the environment it inherits: an agent's shell carries `CLAUDECODE` or
+`AI_AGENT`, and anything started from it inherits them, whether through `mvn exec`, `ottermate --launch` or a script.
+`dev.vexelray.os.BackgroundRun` (in `vexelray-os-api`) reads them once. The only way out is
+`VEXELRAY_FOREGROUND=1` or `-Dvexelray.foreground=true`, for when the person asks to see the application. A Claude
+Code hook in the user's settings (`~/.claude/hooks/vexelray-background-guard.sh`) makes any agent command that sets
+it, or that clears the two variables, ask the person first. `-Dvexelray.background=true` forces a background run,
+and `vexelray-os-windows`'s own tests run that way so no build puts a window on the desk.
+
+**Where each piece lives:**
+
+- **`Win32Window`** (repo `vexelray`), the one place every window of every application is made. A background window
+  is created with `WS_EX_NOACTIVATE` and cloaked (`DWMWA_CLOAK`) before anything can show it, with its style and size
+  unchanged. It is shown with `SW_SHOWNOACTIVATE`. `focus()` only makes it exist. Full screen moves it without
+  raising it. `isFocused()` answers yes: the driver is always at it, and the loop must not park it as if nobody were.
+- **Minimized is the window's own state in a background run.** Coming back from minimized activates a window
+  whatever show state it is restored with (`SW_SHOWNOACTIVATE`, `SetWindowPlacement`: both measured to take the
+  foreground). So a background `minimize()` hides the window and remembers that it is minimized, and `isMinimized()`
+  answers from that. `GuiWindow` then does what it already does for a minimized window.
+- **`WindowsInputBackend`** (repo `tactroller`) reads the fact from the window it is handed: a window cloaked by its
+  own application (`DWM_CLOAKED_APP`, as opposed to `DWM_CLOAKED_SHELL` for another virtual desktop) is
+  *unattended*. Tactroller hands it nothing from the real devices, never moves or hides the real cursor (pointer
+  lock and warp included), and reports it focused, so the GUI draws it active, exactly as a focused visible run. The
+  socket's input reaches the bus without the backend, as before. No second copy of the environment check, and no
+  new dependency.
+- **Point 3 above was not a problem.** An occluded present is a success code the presenter ignores, and `shot`
+  reads back the Vulkan image, not the screen.
+
+**Measured:** `BackgroundRunWindowTest` (in `vexelray-os-windows`, every build) takes a window through create, focus,
+maximize, restore, minimize, restore and full screen and back. At every step it checks that the foreground has not
+moved, that DWM reports the window cloaked, and that `WindowFromPoint` at its centre does not land on it. It was the
+test that found full screen and the restore from minimized taking the foreground. End to end, the gui demo was
+driven with `ottermate --launch` (settle, tree, click, type, shot) while a watcher sampled `GetForegroundWindow`
+every 50 ms: the foreground never changed. The frame was complete, the typed text landed, and the field showed its
+focus ring in the active colour.
+
+**Not yet measured:** a pixel comparison against a visible run. Making one means putting a window on the desk.
 
 ## The problem
 

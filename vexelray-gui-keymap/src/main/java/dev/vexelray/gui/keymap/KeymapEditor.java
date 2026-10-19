@@ -15,6 +15,7 @@ import dev.vexelray.gui.icons.Icon;
 import dev.vexelray.gui.widget.Button;
 import dev.vexelray.gui.widget.IconButton;
 import dev.vexelray.gui.widget.TextField;
+import dev.vexelray.gui.widget.Unclip;
 import sibarum.atchung.Subscription;
 import sibarum.tactroller.api.Key;
 import sibarum.tactroller.api.Modifier;
@@ -40,6 +41,13 @@ import java.util.Set;
  * <p><b>Taking, not refusing.</b> A chord another action in the same place holds is taken from it, and the line
  * under the list says what moved; the reset beside each action undoes it. A conflict dialog would ask the person
  * to resolve something they have just resolved by pressing the key.
+ *
+ * <p><b>Cancel goes back to the visit's start.</b> Changes apply as they are made, so the person can try a chord
+ * at once; Cancel puts every binding back as it was at the last {@link #checkpoint} — when the editor was built,
+ * or when {@link KeymapWindow}'s window last opened — and is enabled only while there is something to put back.
+ *
+ * <p>An action name wider than its column is cut at the column's edge and drawn whole while the pointer is on
+ * it ({@link Unclip}).
  *
  * <p>Keyboard-complete: Tab walks the chips, Enter or Space records, Delete or Backspace removes. With the
  * pointer, the {@code ×} on a chip removes it and {@code +} adds another. Nothing appears on hover.
@@ -76,6 +84,7 @@ public final class KeymapEditor implements AutoCloseable {
     private final Node list;
     private final Node status;
     private final TextField filter;
+    private final Button cancel;
     private final List<Node> rows = new ArrayList<>();
     private final Map<Slot, Node> chips = new HashMap<>();
     private final Subscription mapSub;
@@ -83,6 +92,10 @@ public final class KeymapEditor implements AutoCloseable {
     private final Subscription focusSub;
 
     private volatile String query = "";
+    /** What {@link #cancel} goes back to: the bindings as they were at the last {@link #checkpoint}. */
+    private volatile Overrides opened;
+    /** Run after the Cancel button has reverted — where a window closes itself. */
+    private volatile Runnable onCancel = () -> { };
     /** The slot being recorded, and the node recording it; both null while nothing is. */
     private Slot recording;
     private Node capture;
@@ -109,9 +122,18 @@ public final class KeymapEditor implements AutoCloseable {
         // never moves the list above it.
         this.status = gui.text(HINT).role("keymap-status").width(Length.FILL).height(Length.rem(1.5f))
                 .textSize(Length.rem(0.75f)).textColor(theme.color(Role.DIM));
+        // Always present and only enabled once something has changed, like each row's reset.
+        this.opened = keymap.overrides().value();
+        this.cancel = new Button(gui, "Cancel").enabled(false).onPress(() -> {
+            cancel();
+            onCancel.run();
+        });
+        cancel.node().role("keymap-cancel");
+        Node footer = gui.row().width(Length.FILL).gap(Length.rem(0.5f)).alignItems(AlignItems.CENTER)
+                .children(status, cancel.node());
         this.node = gui.column().role("keymap-editor").width(Length.FILL).height(Length.FILL)
                 .padding(Length.rem(0.75f)).gap(Length.rem(0.5f))
-                .children(header, list, status);
+                .children(header, list, footer);
         this.mapSub = keymap.overrides().onCommitLatest(committed -> render());
         this.heldSub = gui.modifiers().onCommit(committed -> showHeld(committed.value()));
         this.focusSub = gui.bus().subscribe(gui.focusEvents(), this::focusMoved);
@@ -129,6 +151,32 @@ public final class KeymapEditor implements AutoCloseable {
      */
     public KeymapEditor refresh() {
         render();
+        return this;
+    }
+
+    /**
+     * Make the bindings as they are now the ones {@link #cancel} goes back to. The editor checkpoints when it is
+     * built; {@link KeymapWindow} checkpoints again each time its window opens, so Cancel undoes this visit only.
+     */
+    public synchronized KeymapEditor checkpoint() {
+        opened = keymap.overrides().value();
+        cancel.enabled(false);
+        return this;
+    }
+
+    /** Put every binding back as it was at the last {@link #checkpoint} — what the Cancel button does. */
+    public void cancel() {
+        synchronized (this) {
+            disarm();
+        }
+        keymap.load(opened);
+        say(HINT);
+        render();
+    }
+
+    /** Run {@code then} after the Cancel button has reverted — to close the window the editor is in, say. */
+    public KeymapEditor onCancel(Runnable then) {
+        this.onCancel = then == null ? () -> { } : then;
         return this;
     }
 
@@ -162,6 +210,7 @@ public final class KeymapEditor implements AutoCloseable {
         rows.clear();
         chips.clear();
         capture = null;
+        cancel.enabled(!keymap.overrides().value().equals(opened));
         for (Action a : keymap.actions()) {
             if (matches(a)) {
                 rows.add(row(a));
@@ -213,8 +262,13 @@ public final class KeymapEditor implements AutoCloseable {
 
     private Node row(Action a) {
         Theme theme = gui.theme();
-        Node label = gui.text(a.label()).role("keymap-label").width(Length.rem(12)).wordWrap(false)
+        // The column is fixed so the chips line up; a name wider than it is cut at the column's edge and shown
+        // whole while the pointer is on it, over the chips, which stay where they are and stay hittable.
+        Node label = gui.text(a.label()).role("keymap-label").wordWrap(false)
                 .textSize(TEXT).textColor(theme.color(Role.INK));
+        Node name = gui.row().role("keymap-name").width(Length.rem(12)).alignItems(AlignItems.CENTER)
+                .scroll(false, false).clip(true).children(label);
+        Unclip.of(gui).attach(name, label);
         Node chords = gui.row().width(Length.FILL).gap(Length.rem(0.3f)).alignItems(AlignItems.CENTER);
         List<Trigger> cs = a.chords();
         for (int i = 0; i < cs.size(); i++) {
@@ -234,7 +288,7 @@ public final class KeymapEditor implements AutoCloseable {
                 });
         return gui.row().role("keymap-row").width(Length.FILL).alignItems(AlignItems.CENTER)
                 .gap(Length.rem(0.5f)).padding(Length.rem(0.2f), Length.rem(0.3f))
-                .children(label, chords, reset.node());
+                .children(name, chords, reset.node());
     }
 
     private Node slot(Slot s, Trigger chord) {

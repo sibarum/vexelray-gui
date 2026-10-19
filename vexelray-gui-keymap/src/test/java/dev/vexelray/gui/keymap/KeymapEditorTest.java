@@ -136,4 +136,37 @@ class KeymapEditorTest {
             assertEquals(List.of(Shortcut.of(Key.ENTER, Modifier.CONTROL)), f.save().chords());
         }
     }
+
+    @Test
+    void theChordsLineUpHoweverLongTheNames() {
+        try (Headless h = new Headless()) {
+            Keymap keys = new Keymap(h.gui);
+            Action shortName = keys.action("a", "Save", CTRL_S);
+            Action longName = keys.action("b", "Close the menu, leave full screen, or close the viewer", CTRL_O);
+            KeymapEditor editor = new KeymapEditor(h.gui, keys);
+            h.gui.root().children(editor.node());
+            h.frame();
+
+            float a = editor.chip(shortName, 0).layout().rect().x();
+            float b = editor.chip(longName, 0).layout().rect().x();
+            assertEquals(a, b, 0.5f, "the long name is cut at its column, not pushing its chords right");
+        }
+    }
+
+    @Test
+    void cancelPutsBackWhatTheBindingsWereAtTheCheckpoint() {
+        try (Headless h = new Headless()) {
+            Fixture f = fixture(h);
+            f.keys().bind(f.open(), List.of(CTRL_K));
+            f.editor().checkpoint();
+
+            arm(h, f.editor().chip(f.save(), 0));
+            h.chord(Key.K, Key.LEFT_CONTROL);
+            assertEquals(List.of(), f.open().chords(), "Save took Ctrl+K from Open");
+            f.editor().cancel();
+
+            assertEquals(List.of(CTRL_S), f.save().chords(), "the recording is undone");
+            assertEquals(List.of(CTRL_K), f.open().chords(), "back to the checkpoint, not to the defaults");
+        }
+    }
 }

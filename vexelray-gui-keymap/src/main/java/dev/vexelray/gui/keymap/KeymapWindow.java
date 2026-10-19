@@ -28,6 +28,8 @@ import java.util.List;
  * <p>One window, however often it is asked for: a second click raises the one that is open ({@link AppWindow}).
  * It wears the main window's theme and the same client-drawn chrome every other window of the application
  * does, and its tree outlives it, so a filter typed and the window closed is still there when it comes back.
+ * Each opening is a visit: the editor's Cancel puts back what the bindings were when the window opened, and
+ * closes it.
  */
 public final class KeymapWindow {
 
@@ -62,14 +64,17 @@ public final class KeymapWindow {
             // Readable at the zoom the person chose for the window they opened it from, and zoomable on its own.
             float zoom = ZoomKeys.follow(g, main);
             TitleBar bar = new TitleBar(g, WindowControls.NONE, TITLE);
-            KeymapEditor editor = new KeymapEditor(g, keymap);
+            // Cancel undoes what was changed since this window opened, and closes it.
+            KeymapEditor editor = new KeymapEditor(g, keymap)
+                    .onCancel(() -> app.window(KEY).ifPresent(AppWindow::close));
             // The bar is a child of the root and the padding is the editor's own, below it: a bar inset from the
             // window edge is a bar with a gap the window manager still treats as caption.
             Node body = g.column().width(Length.FILL).height(Length.FILL).children(editor.node());
             g.root().background(g.theme().color(Role.PAGE)).children(bar.node(), body);
             return bar.commands(WindowSpec.of(
                     WindowConfig.of(TITLE, Math.round(680 * zoom), Math.round(520 * zoom))
-                            .decorations(Decorations.CLIENT), g));
+                            .decorations(Decorations.CLIENT), g)
+                    .onCreated(w -> editor.checkpoint()));
         });
     }
 }

@@ -254,4 +254,27 @@ class KeymapTest {
             assertEquals(List.of(tap, left), fit2.chords(), "read back by name");
         }
     }
+
+    @Test
+    void anOrderedActionRunsOnTheGuiThreadAndTheRestOnAWorker() {
+        List<Runnable> held = new ArrayList<>();
+        try (Headless h = new Headless(held::add)) {
+            List<String> log = new ArrayList<>();
+            Keymap keys = new Keymap(h.gui);
+            keys.action("file.save", "Save", CTRL_S).on(() -> log.add("save"));
+            Action paste = keys.action("edit.paste", "Paste", CTRL_K).on(() -> log.add("paste")).ordered();
+
+            h.frame().chord(Key.S, Key.LEFT_CONTROL).chord(Key.K, Key.LEFT_CONTROL);
+            assertEquals(List.of("paste"), log, "run inline, in the frame that dispatched it");
+
+            List.copyOf(held).forEach(Runnable::run);
+            assertTrue(log.contains("save"), "the other waited for a worker");
+
+            log.clear();
+            held.clear();
+            keys.bind(paste, List.of(CTRL_O));
+            h.frame().chord(Key.O, Key.LEFT_CONTROL);
+            assertEquals(List.of("paste"), log, "still ordered on its new chord");
+        }
+    }
 }

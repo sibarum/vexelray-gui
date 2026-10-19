@@ -23,7 +23,9 @@ claim and makes another; the handler never hears about it.
 - **The id is the stable part.** It is what a settings file stores: rename the label freely; rename the id
   and the user's choice for it is forgotten. Ids are dotted words, `[A-Za-z0-9._-]+`.
 - **Handlers run on a worker**, as every claim's command does. `Action.run()` runs it directly, for the menu
-  item or button that does the same thing.
+  item or button that does the same thing. `ordered()` runs it on the GUI thread in the order keys arrived instead
+  (`claimUi`), for a command that edits what typing edits too: a terminal's paste, which on a worker could land
+  among the characters typed around it. Bounded work only, as for any ordered stage.
 - **No handler, no claim.** A declared action that nothing implements yet swallows no key.
 - **Claimed on a node of the keymap's own**, never on the root. A rebind releases exactly the keymap's claim on
   the old chord; releasing it on the root would take the application's undo chords with it.

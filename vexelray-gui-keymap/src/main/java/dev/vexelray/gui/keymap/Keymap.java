@@ -55,7 +55,8 @@ import java.util.regex.Pattern;
  * from every window {@link #attach}es each one, as it would have bound its shortcuts on each. One keymap, one set
  * of chords, every window.
  *
- * <p>Thread-safe. Writes are serialised on the keymap; handlers run on workers, as claims always do.
+ * <p>Thread-safe. Writes are serialised on the keymap; handlers run on workers, as claims always do, but for an
+ * {@link Action#ordered} action's, which runs on the GUI thread in the order keys arrived.
  */
 public final class Keymap {
 
@@ -93,8 +94,8 @@ public final class Keymap {
         }
     }
 
-    /** One claim this keymap holds on the bus. */
-    private record Claimed(Gui gui, Node node, ClaimScope scope, Trigger chord, Action action) {
+    /** One claim this keymap holds on the bus, and whether its command runs in arrival order. */
+    private record Claimed(Gui gui, Node node, ClaimScope scope, Trigger chord, Action action, boolean ordered) {
     }
 
     private final List<Action> actions = new CopyOnWriteArrayList<>();
@@ -373,12 +374,13 @@ public final class Keymap {
                 continue;
             }
             Context c = a.context();
+            boolean ordered = a.runsOrdered();
             for (Trigger chord : now.get(a)) {
                 if (c.equals(Context.APPLICATION)) {
                     anchors.forEach((gui, anchor) -> want.add(
-                            new Claimed(gui, anchor, ClaimScope.GLOBAL, chord, a)));
+                            new Claimed(gui, anchor, ClaimScope.GLOBAL, chord, a, ordered)));
                 } else {
-                    want.add(new Claimed(c.gui(), c.node(), c.scope(), chord, a));
+                    want.add(new Claimed(c.gui(), c.node(), c.scope(), chord, a, ordered));
                 }
             }
         }
@@ -392,7 +394,11 @@ public final class Keymap {
         for (Claimed w : want) {
             if (!claimed.contains(w)) {
                 Action a = w.action();
-                w.gui().claim(w.node(), w.chord(), w.scope(), a::run);
+                if (w.ordered()) {
+                    w.gui().claimUi(w.node(), w.chord(), w.scope(), a::run);
+                } else {
+                    w.gui().claim(w.node(), w.chord(), w.scope(), a::run);
+                }
             }
         }
         claimed = want;

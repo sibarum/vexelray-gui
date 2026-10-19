@@ -26,8 +26,17 @@ final class Headless implements AutoCloseable {
     private static final float CELL = 10f;
 
     final Atchung bus = Atchung.create();
-    final Gui gui = new Gui(bus, Runnable::run);
+    final Gui gui;
     private RetainedNode last;
+
+    Headless() {
+        this(Runnable::run);
+    }
+
+    /** Handlers on {@code workers}: one that holds them back shows which commands ran on the GUI thread instead. */
+    Headless(java.util.concurrent.Executor workers) {
+        this.gui = new Gui(bus, workers);
+    }
 
     private final TextMeasurer measurer = new TextMeasurer() {
         @Override

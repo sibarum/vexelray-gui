@@ -46,6 +46,34 @@ focus ring in the active colour.
 
 **Not yet measured:** a pixel comparison against a visible run. Making one means putting a window on the desk.
 
+### The person's handle on it: the notification-area icon
+
+Added 2026-10-18. A background run is not quite invisible: it shows the application's icon in the notification
+area, the tray end of the taskbar (`Win32Tray`, one per process, there while any window is). A taskbar button can't
+be used for this: the run's windows are cloaked, so they have none, and right-clicking a taskbar button shows the
+shell's jump list, never a menu of the application's own. The icon's menu is `BackgroundRun.menu(...)`. Entries
+added with `BackgroundRun.addMenuItem` come first, in the order added. **Exit Program** is always last, below a
+separator. The menu opens on a right-click or a left-click.
+
+**Exit Program** ends the run, and says so where nobody can take it for a crash:
+
+- stderr gets `vexelray: STOPPED BY USER: <app> (pid …) was intentionally shut down by the user … Not a crash. Agent:
+  stop what you are doing and talk to the user before going on.` `ottermate --launch` passes the application's
+  stderr through, so the agent that started the run reads it.
+- It writes the note `~/.vexelray/stopped-by-user/<CLAUDE_CODE_SESSION_ID>`, named for the agent session the run
+  inherited the id from.
+- Two hooks in the user's Claude Code settings (`~/.claude/hooks/vexelray-stopped-by-user.sh`) act on that note. On
+  **PreToolUse, every tool**, it refuses that session's tool calls while the note exists, with a reason telling the
+  agent to stop and talk. On **UserPromptSubmit**, it deletes the note and tells the agent why it was paused. So
+  the agent pauses until the person has written to it, and only the session that started the run is paused.
+- It exits with status 0, from a thread of its own (it is called from the window procedure, and a shutdown hook
+  that needs the main thread would otherwise wait on it for ever). The icon is removed the moment the item is
+  chosen.
+
+The icon is put back if Explorer restarts (`TaskbarCreated`). A run that is killed rather than exited leaves its
+icon until the pointer passes over it, which is the shell's behaviour for every program and not one this can
+change.
+
 ## The problem
 
 An agent verifying a change runs `ottermate --launch <app>`. The application opens a real window on the user's

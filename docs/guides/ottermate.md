@@ -573,6 +573,11 @@ sees it. Nothing has to be passed for this, and nothing should be passed to avoi
 for real, and it is only for when the person asked to watch. A hook asks them before any agent command sets it. See
 [background-runs.md](../plans/background-runs.md).
 
+The one thing the person does see is the application's icon in the notification area, and its menu's **Exit Program**
+lets them end the run. When they do, the run prints `vexelray: STOPPED BY USER: ...` and exits 0, and every tool call
+from the session that started it is refused until they write to it. That is not a crash to retry around: stop and
+talk to them.
+
 ### `await` is for the application having finished thinking
 
 `settle` is exact about the frame loop, including the click's own handler on its worker: it waits for the

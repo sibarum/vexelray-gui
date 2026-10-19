@@ -70,6 +70,15 @@ separator. The menu opens on a right-click or a left-click.
   that needs the main thread would otherwise wait on it for ever). The icon is removed the moment the item is
   chosen.
 
+**Windows 11 hides a new icon until the person promotes it.** The shell accepts the icon (`NIM_ADD` succeeds), but
+an executable it has not seen before is filed under *Settings > Personalization > Taskbar > Other system tray
+icons*, switched off, so the icon shows nowhere at all. Explorer keys that switch by executable and icon id
+(`HKCU\Control Panel\NotifyIconSettings\<id>`, `IsPromoted`), so one switch covers every run of that executable:
+`java.exe` for everything started through `mvn`, and one per installed native application. On 2026-10-18 the
+`java.exe` entry was promoted on this machine. The application does not promote itself. That setting is the
+person's, and writing Explorer's undocumented key from an application is exactly what the shell keeps from
+programs.
+
 The icon is put back if Explorer restarts (`TaskbarCreated`). A run that is killed rather than exited leaves its
 icon until the pointer passes over it, which is the shell's behaviour for every program and not one this can
 change.

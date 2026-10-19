@@ -179,6 +179,39 @@ class TabsTest {
         }
     }
 
+    /**
+     * A frame can land anywhere in a selection, because the renderer drains concurrently with the thread selecting.
+     * Shown before the outgoing page was floated, the incoming page split the content area with it at full opacity.
+     * The transition below takes its frame from the middle of {@code select}, the worst place one can land.
+     */
+    @Test
+    void aFrameMidSelectionNeverSplitsTheContentArea() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Node one = page(h, "one");
+            Node two = page(h, "two");
+            float[] seen = new float[2];
+            Tabs tabs = new Tabs(h.gui).transition((change, done) -> {
+                h.frame();
+                seen[0] = one.layout().rect().h();
+                seen[1] = two.layout().rect().h();
+            });
+            tabs.add("One", one);
+            tabs.add("Two", two);
+            h.gui.root().children(tabs.node());
+            h.frame();
+            float full = one.layout().rect().h();
+            assertTrue(full > 0f);
+
+            tabs.select(1);
+            assertEquals(full, seen[0], 0.01f, "mid-selection, the outgoing page still fills the area");
+            assertEquals(0f, seen[1], 0.01f, "and the incoming one is not yet beside it");
+
+            h.frame();
+            assertEquals(full, one.layout().rect().h(), 0.01f, "then both fill it, the outgoing one floated");
+            assertEquals(full, two.layout().rect().h(), 0.01f);
+        }
+    }
+
     /** The reason visibility exists rather than remove/insert: an interactive page has to survive a round trip. */
     @Test
     void aTextFieldOnAHiddenPageStillWorksWhenItComesBack() {

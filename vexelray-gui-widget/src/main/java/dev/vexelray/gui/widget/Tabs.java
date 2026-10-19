@@ -570,12 +570,26 @@ public final class Tabs {
      * transition finish on its own terms — loses a page: click A→B→C quickly and the callback for A→B arrives
      * after C is showing, with no honest thing left for it to do. Settling first means the only page any
      * in-flight transition can still be holding is one this call is about to take charge of anyway.
+     *
+     * <p><b>The whole change is one batch.</b> It is a dozen prop writes on two pages and two headers, and the
+     * renderer drains concurrently with whatever thread is selecting: published one at a time, a frame that lands
+     * midway shows the incoming page visible while the outgoing one is still in flow — the column splits the
+     * content area between them, both at full opacity, under headers that still name the old tab. Batched, the
+     * first frame after a click is either the old tab at rest or the transition's start state, never a mixture.
      */
     public synchronized Tabs select(int index) {
         int next = Math.max(0, Math.min(headers.size() - 1, index));
         if (headers.isEmpty() || next == selected) {
             return this;
         }
+        gui.batch(() -> change(next));
+        int delivered = next;
+        gui.handlers().execute(() -> onSelect.accept(delivered));
+        return this;
+    }
+
+    /** The body of {@link #select}: every write of one tab change, run inside a single batch. */
+    private void change(int next) {
         // Before anything else, and in particular before the incoming page is shown: settling hides the page that
         // was on its way out, and going back to it (A→B then B→A mid-fade) would otherwise hide the one arriving.
         settle();
@@ -614,9 +628,6 @@ public final class Tabs {
             // ordinary child for painting, which is the whole reason overlays here are last-children.
             transition.run(new Change(outgoing, incoming, next > previous), this::settle);
         }
-        int delivered = next;
-        gui.handlers().execute(() -> onSelect.accept(delivered));
-        return this;
     }
 
     /**
@@ -624,18 +635,23 @@ public final class Tabs {
      * again; the incoming one opaque. Idempotent, and that is the whole interruption story — a {@code done} from
      * a transition that has already been superseded finds nothing to settle and does nothing, so it needs no
      * generation token and a transition never has to learn that it lost.
+     *
+     * <p>Batched for the same reason {@link #select} is: unfloating the outgoing page before hiding it puts it
+     * back in flow beside the incoming one, and a frame between those two writes would show the split.
      */
     private synchronized void settle() {
         Node out = fadingOut;
         Node in = fadingIn;
         fadingOut = null;
         fadingIn = null;
-        if (out != null) {
-            out.unfloat().hitInert(false).opacity(1f).translate(0f, 0f).visible(false);
-        }
-        if (in != null) {
-            in.hitInert(false).opacity(1f).translate(0f, 0f);
-        }
+        gui.batch(() -> {
+            if (out != null) {
+                out.unfloat().hitInert(false).opacity(1f).translate(0f, 0f).visible(false);
+            }
+            if (in != null) {
+                in.hitInert(false).opacity(1f).translate(0f, 0f);
+            }
+        });
     }
 
     /** Rename tab {@code index}'s header (e.g. an editor tab following a save-as). */

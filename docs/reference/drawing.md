@@ -148,10 +148,12 @@ a host stylesheet is for.
 
 ## 6. Colours, not roles
 
-A mark carries a resolved `Color`, like `Node.background(Color)` does — the application asks the theme when it
-decides what the mark *is*. A picture holding `Role`s would need the renderer to resolve per frame, which is a
-change to how every prop is themed (see the runtime-theme-swap note in todo.md §3) rather than something this
-module should decide on its own.
+A mark carries a resolved `Color` — the application asks the theme when it decides what the mark *is*. That is
+now the one place left where it does: a node holds a `Paint`, resolved against the tree's theme every frame, so a
+node follows a theme swapped at runtime and a picture does not until it is drawn again. Marks cannot hold a `Paint`,
+because this module knows nothing of themes and must not. The way through is an index rather than a role: a colour
+that is a slot in a table the renderer fills from the theme. That is R2–R3 of
+[runtime-themes.md](../plans/runtime-themes.md).
 
 ## 7. When it should be a marched surface instead
 

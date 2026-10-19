@@ -5,8 +5,8 @@ import dev.vexelray.canvas.Color;
 /**
  * What colour a node is drawn in, as distinct from the colour it was last given.
  *
- * <p>A widget repaints by writing colours: a button's hover is {@code background(theme.color(fill, HOVER))}, and the
- * write is the whole truth about the state it is in. What a write cannot state is the journey, so without this a
+ * <p>A widget repaints by writing paints: a button's hover is {@code background(fill.at(HOVER))}, and the write is the
+ * whole truth about the state it is in. What a write cannot state is the journey, so without this a
  * hover is a jump. {@link dev.vexelray.gui.core.layout.LayoutMotion} is the same idea for position, and this is the
  * same shape for paint: the framework says what changed, and asks what to draw.
  *
@@ -23,6 +23,10 @@ import dev.vexelray.canvas.Color;
  * to another. Nothing is reported for a colour's first appearance (there was no colour to come from), nor for a
  * colour cleared to none (a part that is not drawn has nothing to fade in). A widget whose part comes and goes uses a
  * transparent colour, as {@code Role.NONE} is, and that fades like any other.
+ *
+ * <p>A node holds a {@link Paint}, so what is reported is the colours it resolves to in the theme being drawn. A theme
+ * swap is reported the same way, for every node whose colours it changes — including text in the theme's ink that
+ * never stated a colour — so a source that fades a hover fades the whole tree from one look to the other.
  *
  * <p>{@link #repainted} is called on the GUI thread inside the frame, before the frame is drawn, so a fade started
  * there is in effect for the first frame that would have shown the new colour: a node never shows its destination

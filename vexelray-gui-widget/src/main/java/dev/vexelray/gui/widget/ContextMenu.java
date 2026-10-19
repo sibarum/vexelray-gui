@@ -9,6 +9,7 @@ import dev.vexelray.gui.core.input.MenuItem;
 import dev.vexelray.gui.core.input.MenuPresenter;
 import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.style.Finish;
 import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.icons.IconView;
@@ -89,10 +90,10 @@ public final class ContextMenu implements MenuPresenter {
         this.menu = gui.column()
                 .role("menu")
                 .visible(false)
-                .background(gui.theme().color(Role.PANEL))
+                .background(Role.PANEL)
                 .corner(Length.rem(0.5f))
-                .border(Length.rem(0.1f), gui.theme().color(Role.LINE))
-                .lit(gui.theme().lit())
+                .border(Length.rem(0.1f), Role.LINE)
+                .lit(Finish.LIT)
                 .elevation(gui.theme().elevation(Relief.FLOATING))
                 .padding(Length.dp(4))
                 .scroll(false, false);
@@ -245,7 +246,7 @@ public final class ContextMenu implements MenuPresenter {
             } else if (item.icon() != null) {
                 cell.append(own(gui.text(item.icon())
                         .textSize(Length.rem(1))
-                        .textColor(gui.theme().color(tone))
+                        .textColor(tone)
                         .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE)));
             }
             row.append(cell);
@@ -253,7 +254,7 @@ public final class ContextMenu implements MenuPresenter {
         row.append(own(gui.text(item.label())
                 .width(Length.FILL)
                 .textSize(Length.rem(1))
-                .textColor(gui.theme().color(item.enabled() ? Role.INK : Role.FAINT))
+                .textColor(item.enabled() ? Role.INK : Role.FAINT)
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE)));
         if (!item.enabled()) {
             return row;   // no handlers at all: nothing to hover, nothing to choose
@@ -261,7 +262,7 @@ public final class ContextMenu implements MenuPresenter {
         // Transparent at rest so the menu's own surface shows through, and the hover fill is the theme's, not a
         // constant of this widget's: an item is a panel the pointer is on.
         gui.onState(row, state -> row.background(
-                state == InteractionState.NORMAL ? null : gui.theme().color(Role.SELECTION)));
+                state == InteractionState.NORMAL ? null : Role.SELECTION));
         gui.onClick(row, () -> {
             hide();
             item.action().run();   // already on the handler executor — the lane app callbacks run on
@@ -271,7 +272,7 @@ public final class ContextMenu implements MenuPresenter {
 
     /** A thin horizontal rule between groups. */
     private Node rule() {
-        return gui.box().width(Length.FILL).height(Length.dp(1)).background(gui.theme().color(Role.LINE))
+        return gui.box().width(Length.FILL).height(Length.dp(1)).background(Role.LINE)
                 .margin(Length.dp(3)).scroll(false, false);
     }
 

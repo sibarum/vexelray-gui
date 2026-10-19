@@ -1,6 +1,5 @@
 package dev.vexelray.gui.widget;
 
-import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.drop.DragState;
@@ -17,9 +16,10 @@ import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.NodeLayout;
 import dev.vexelray.gui.core.layout.Rect;
+import dev.vexelray.gui.core.style.Finish;
+import dev.vexelray.gui.core.style.Paint;
 import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
-import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.text.TextLayout;
 import sibarum.atchung.Subscription;
 import sibarum.tactroller.api.Key;
@@ -85,6 +85,10 @@ public final class ListView<T> implements AutoCloseable {
     private static final int OVERSCAN = 2;
 
     private static final Shortcut SELECT_ALL = Shortcut.of(Key.A, Modifier.CONTROL);
+
+    /** The carried label's fill where releasing would place it, and where it would not: barely see-through. */
+    private static final Paint CARRY_ACCEPTS = Role.ACTION.alpha(0.92f);
+    private static final Paint CARRY_REFUSES = Role.DANGER.alpha(0.92f);
 
     private final Gui gui;
     private final RowBuilder<T> builder;
@@ -152,7 +156,7 @@ public final class ListView<T> implements AutoCloseable {
         this.rowRem = rowRem;
 
         this.root = gui.column().role(containerRole).width(Length.FILL).height(Length.FILL).scroll(false, true)
-                .background(gui.theme().color(Role.WELL));
+                .background(Role.WELL);
         this.spacerTop = gui.box().width(Length.FILL).height(Length.ZERO);
         this.spacerBottom = gui.box().width(Length.FILL).height(Length.ZERO);
         root.children(spacerTop, spacerBottom);
@@ -544,7 +548,7 @@ public final class ListView<T> implements AutoCloseable {
                 carried = gui.text("").width(Length.AUTO).height(Length.rem(2))
                         .padding(Length.ZERO, Length.rem(0.625f)).corner(Length.rem(0.4f))
                         .textSize(Length.rem(0.9375f)).align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE)
-                        .lit(gui.theme().lit()).elevation(gui.theme().elevation(Relief.FLOATING))
+                        .lit(Finish.LIT).elevation(gui.theme().elevation(Relief.FLOATING))
                         .hitInert(true).visible(false);
                 gui.root().append(carried);
             }
@@ -564,12 +568,11 @@ public final class ListView<T> implements AutoCloseable {
             shownLabel.visible(false);
             return;
         }
-        Theme theme = gui.theme();
         float dpi = Math.max(0.0001f, gui.dpi().value());
         shownLabel.text(text).visible(true)
                 .floatAt(Length.dp(drag.x() / dpi + 14f), Length.dp(drag.y() / dpi + 12f))
-                .background(Color.withAlpha(theme.color(drag.accepts() ? Role.ACTION : Role.DANGER), 0.92f))
-                .textColor(theme.color(drag.accepts() ? Role.ON_ACTION : Role.ON_DANGER));
+                .background(drag.accepts() ? CARRY_ACCEPTS : CARRY_REFUSES)
+                .textColor(drag.accepts() ? Role.ON_ACTION : Role.ON_DANGER);
     }
 
     /**
@@ -715,7 +718,7 @@ public final class ListView<T> implements AutoCloseable {
         gui.onDoubleClick(row, () -> onActivate.accept(item));
         gui.onContextClick(row, e -> onRowContextClick(item));
         gui.onContextMenu(row, menu -> contextMenu.accept(item, menu));
-        gui.onState(row, state -> row.background(hovered(item, state)));
+        gui.onState(row, state -> row.background(look(item).at(state)));
         root.insert(row, at);
         shown.put(item, row);
         return row;
@@ -844,22 +847,13 @@ public final class ListView<T> implements AutoCloseable {
      * ring it would have been anyway and nothing looks different.
      */
     private void paint(T item, Node row) {
-        row.background(fill(item));
-        row.border(Length.dp(1),
-                gui.theme().color(Objects.equals(selection.lead(), item) ? Role.ACCENT : Role.NONE));
+        row.background(look(item));
+        row.border(Length.dp(1), Objects.equals(selection.lead(), item) ? Role.ACCENT : Role.NONE);
     }
 
     /** The fill an item wears: selected outranks marked, because being chosen is the stronger fact. */
     private Role look(T item) {
         return selection.isSelected(item) ? selectedLook : marked.test(item) ? markedLook : Role.NONE;
-    }
-
-    private dev.vexelray.canvas.Color fill(T item) {
-        return gui.theme().color(look(item));
-    }
-
-    private dev.vexelray.canvas.Color hovered(T item, dev.vexelray.gui.core.input.InteractionState state) {
-        return gui.theme().color(look(item), state);
     }
 
     @Override

@@ -3,6 +3,7 @@ package dev.vexelray.gui.typeset;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
+import dev.vexelray.gui.core.style.Paint;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.text.Styling;
@@ -87,7 +88,7 @@ public final class TypesetBlock implements AutoCloseable {
     private final List<Node> projected = new ArrayList<>();
 
     private volatile Box content;
-    private volatile Color ink;
+    private volatile Paint ink;
     private volatile Placed placed = Placed.empty();
 
     /** Build a block for {@code content} and project it immediately, so {@link #node()} is usable at once. */
@@ -95,8 +96,9 @@ public final class TypesetBlock implements AutoCloseable {
         this.gui = gui;
         this.engine = engine;
         this.content = content;
-        // The theme's primary ink, so a block matches the text around it until told otherwise.
-        this.ink = gui.theme().color(Role.INK);
+        // The theme's primary ink, so a block matches the text around it until told otherwise — held as the role,
+        // not the colour it resolves to now, so a theme swapped later re-inks the block along with that text.
+        this.ink = Role.INK;
         // Never a scroll container: a block is a fixed-aspect atom in v1, and scrolling belongs to whatever holds
         // it. It also keeps the container's content box equal to its border box, which is what a floating child's
         // offsets resolve against.
@@ -118,11 +120,22 @@ public final class TypesetBlock implements AutoCloseable {
         return this;
     }
 
-    /** The colour glyphs and bars draw in; the theme's primary ink by default (Role.INK). */
-    public TypesetBlock ink(Color colour) {
-        this.ink = colour == null ? gui.theme().color(Role.INK) : colour;
+    /**
+     * What glyphs and bars draw in; the theme's primary ink by default ({@link Role#INK}). A role, or a paint made
+     * from one, follows the theme when it is swapped; {@code null} goes back to the default.
+     */
+    public TypesetBlock ink(Paint paint) {
+        this.ink = paint == null ? Role.INK : paint;
         rebuild();
         return this;
+    }
+
+    /**
+     * A colour the theme does not decide: the same in every theme. For one the theme does decide, pass its role to
+     * {@link #ink(Paint)} instead, or the block keeps today's colour after a swap.
+     */
+    public TypesetBlock ink(Color colour) {
+        return ink(Paint.of(colour));
     }
 
     /** The geometry behind the current projection, in pixels at density 1 (dp) — the block's <em>ink</em> box and its draw list.

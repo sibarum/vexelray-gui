@@ -9,6 +9,7 @@ import dev.vexelray.gui.core.app.WindowSpec;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.style.Finish;
 import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
@@ -106,15 +107,16 @@ public final class Modals implements AutoCloseable {
         // that mailbox is bounded and BLOCKs, so it eventually stops the application's own node setters. See
         // Gui(Atchung), which says which things may share a bus and which may not.
         this.gui = new Gui();
-        // The look first, before a single prop is written: a role resolves at the moment a widget writes a
-        // colour, so a theme installed after the tree is built reaches nothing that is already in it.
+        // The look first, before a single prop is written. Colours no longer need the order — a node holds a
+        // role, and the renderer resolves it against whatever theme the tree has when it draws — but what is still
+        // read from the theme as the tree is built, an elevation, does.
         if (appearance != null) {
             appearance.accept(gui);
         }
         this.bar = new TitleBar(gui, WindowControls.NONE, "");
         this.message = gui.text("")
                 .width(Length.FILL).height(Length.grow(1))
-                .textSize(Length.rem(1)).textColor(gui.theme().color(Role.INK))
+                .textSize(Length.rem(1)).textColor(Role.INK)
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.TOP);
         this.buttonRow = gui.row()
                 .width(Length.FILL).height(Length.AUTO)
@@ -136,7 +138,7 @@ public final class Modals implements AutoCloseable {
                 .padding(Length.dp(18)).gap(Length.dp(16))
                 .scroll(false, false)
                 .children(said, buttonRow);
-        gui.root().background(gui.theme().color(Role.PAGE)).children(bar.node(), body);
+        gui.root().background(Role.PAGE).children(bar.node(), body);
 
         // Registered once, not per dialog: a global claim has no node to release it with, so a dialog that
         // claimed Escape on the way up would leave that claim behind on the way down. These read the dialog that
@@ -261,12 +263,8 @@ public final class Modals implements AutoCloseable {
         Live current = new Live(modal, new AtomicReference<>(), new AtomicBoolean());
         live.set(current);
 
-        // The two colours the shared tree wrote once at construction, written again here. The buttons below
-        // are rebuilt per dialog and pick the theme up as they go; without these two, an application that
-        // changed its look after installing the dialogs would show a page and a message still wearing the old
-        // one.
-        gui.root().background(gui.theme().color(Role.PAGE));
-        message.textColor(gui.theme().color(Role.INK));
+        // Nothing to repaint before the next dialog: the page and the message hold roles, not the colours they
+        // resolved to, so a theme given to this tree after it was built reaches them without being written again.
         bar.title(modal.title());
         message.text(modal.message());
         Modal.Severity kind = modal.severity();
@@ -345,18 +343,17 @@ public final class Modals implements AutoCloseable {
         // rest are panels, and hover/press are the theme shading each of those -- not six more colours to pick.
         Role fill = spec.isDefault() ? Role.ACTION : Role.PANEL;
         Role label = spec.isDefault() ? Role.ON_ACTION : Role.INK;
-        Theme theme = gui.theme();
         Node b = gui.text(spec.label())
                 .height(Length.dp(32))
                 .padding(Length.ZERO, Length.dp(18))
-                .background(theme.color(fill))
+                .background(fill)
                 .corner(Length.rem(0.5f))
-                .border(Length.rem(0.1f), theme.color(Role.LINE))
-                .textSize(Length.rem(0.95f)).textColor(theme.color(label))
+                .border(Length.rem(0.1f), Role.LINE)
+                .textSize(Length.rem(0.95f)).textColor(label)
                 .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE)
-                .lit(theme.lit()).elevation(theme.elevation(Relief.CONTROL));
+                .lit(Finish.LIT).elevation(gui.theme().elevation(Relief.CONTROL));
         gui.onState(b, state -> {
-            b.background(gui.theme().color(fill, state));
+            b.background(fill.at(state));
             b.elevation(gui.theme().elevation(Relief.CONTROL, state));
         });
         gui.onClick(b, () -> dismiss(spec));

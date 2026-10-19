@@ -407,7 +407,7 @@ final class GuiWindow implements AutoCloseable {
         vertexBuffer.update(canvas.toVertexArray(), vertexCount * CanvasVertex.FLOATS_PER_VERTEX);
         tables.upload(images.looks(), canvas);
 
-        Color page = gui.theme().color(Role.PAGE);
+        Color page = gui.drawnTheme().color(Role.PAGE);
         byte[] rgba = OffscreenDraw.toRgba(device, capturePass.handle(), capturePipeline, w, h,
                 vertexBuffer.handle(), fonts.first().descriptorSet(), tables.buffer().descriptorSet(),
                 GuiApp.bind(canvas.runs(), vertexCount, images, fonts.textures()), page.r(), page.g(), page.b(), 1f);

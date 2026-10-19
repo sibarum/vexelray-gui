@@ -144,11 +144,11 @@ class SplitPaneTest {
             // drag is between frames, and as any drag is once a pane is at its limit.
             h.bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(10, (int) y, 10 - (int) x, 0, 0));
             h.frame().frame();
-            assertEquals(accent, h.retained(m.pane().grip()).background(), "lit while the drag is under way");
+            assertEquals(accent, h.retained(m.pane().grip()).background(h.gui.drawnTheme()), "lit while the drag is under way");
 
             h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, 10, (int) y, 0));
             h.frame().frame();
-            assertEquals(rest, h.retained(m.pane().grip()).background(), "back to rest once released elsewhere");
+            assertEquals(rest, h.retained(m.pane().grip()).background(h.gui.drawnTheme()), "back to rest once released elsewhere");
         }
     }
 
@@ -167,11 +167,11 @@ class SplitPaneTest {
             h.bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved((int) x, (int) y, 0, 0, 0));
             h.frame().frame();
             assertEquals(1, fades.size(), "hovering starts one fade");
-            assertEquals(rest, h.retained(m.pane().grip()).background(), "and nothing changes before it runs");
+            assertEquals(rest, h.retained(m.pane().grip()).background(h.gui.drawnTheme()), "and nothing changes before it runs");
 
             fades.get(0).accept(0.5);
             h.frame();
-            Color half = h.retained(m.pane().grip()).background();
+            Color half = h.retained(m.pane().grip()).background(h.gui.drawnTheme());
             assertTrue(!half.equals(rest) && !half.equals(accent), "halfway is neither end: " + half);
 
             // Leaving mid-fade turns round from the halfway colour, not from the accent.
@@ -180,10 +180,10 @@ class SplitPaneTest {
             assertEquals(2, fades.size());
             fades.get(0).accept(1.0);   // the superseded fade finishing must not repaint
             h.frame();
-            assertEquals(half, h.retained(m.pane().grip()).background());
+            assertEquals(half, h.retained(m.pane().grip()).background(h.gui.drawnTheme()));
             fades.get(1).accept(1.0);
             h.frame();
-            assertEquals(rest, h.retained(m.pane().grip()).background());
+            assertEquals(rest, h.retained(m.pane().grip()).background(h.gui.drawnTheme()));
         }
     }
 }

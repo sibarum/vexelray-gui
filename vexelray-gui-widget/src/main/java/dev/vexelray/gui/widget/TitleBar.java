@@ -124,11 +124,10 @@ public final class TitleBar {
     public TitleBar(Gui gui, WindowControls controls, String title) {
         this.gui = gui;
         this.controls = controls == null ? WindowControls.NONE : controls;
-        Theme theme = gui.theme();
 
         this.titleText = gui.text(title == null ? "" : title)
                 .textSize(TITLE_SIZE)
-                .textColor(theme.color(Role.DIM))
+                .textColor(Role.DIM)
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
         this.leading = gui.row()
                 .height(Length.FILL)
@@ -175,7 +174,7 @@ public final class TitleBar {
         // Instruments are tools and the controls are the window's: a hairline says they are two groups without a
         // gap wide enough to read as caption. A bar with no instruments has one group, and no hairline.
         this.divider = gui.box().width(Length.dp(1)).height(Length.dp(14)).margin(Length.dp(6))
-                .background(theme.color(Role.LINE)).scroll(false, false).visible(false);
+                .background(Role.LINE).scroll(false, false).visible(false);
 
         // Four zones, left to right: identity, caption, instruments, window controls (docs/reference/automation.md §7).
         // The caption is a spacer that takes the slack rather than SPACE_BETWEEN spreading three groups, because
@@ -192,7 +191,7 @@ public final class TitleBar {
                 .role("titlebar")
                 .width(Length.FILL)
                 .height(BAR_H)
-                .background(theme.color(Role.CHROME))
+                .background(Role.CHROME)
                 .alignItems(AlignItems.CENTER)
                 .scroll(false, false)
                 // Everything the buttons do not claim is caption: drag to move, double-click to maximize,
@@ -270,7 +269,7 @@ public final class TitleBar {
                 .role(tool.role())
                 .width(BUTTON_W)
                 .height(Length.FILL)
-                .background(gui.theme().color(Role.NONE))
+                .background(Role.NONE)
                 .scroll(false, false)
                 .windowRegion(WindowRegion.INTERACTIVE);
         // Authored against the box the layout settled on, and re-authored when that box changes or the pointer
@@ -470,7 +469,7 @@ public final class TitleBar {
                 .height(Length.FILL)
                 .justify(Justify.CENTER)
                 .alignItems(AlignItems.CENTER)
-                .background(gui.theme().color(Role.NONE))
+                .background(Role.NONE)
                 .scroll(false, false)
                 .windowRegion(region)
                 .children(own);

@@ -15,7 +15,6 @@ import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.nav.NavTopics;
 import dev.vexelray.gui.core.style.Role;
-import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.gui.icons.Icon;
 import dev.vexelray.gui.icons.IconView;
 import dev.vexelray.os.Decorations;
@@ -168,11 +167,10 @@ public final class Popout {
         this.edge = edge;
         this.content = content;
         this.title = title == null ? "" : title;
-        Theme theme = host.theme();
 
         this.headerTitle = host.text(this.title)
                 .textSize(Length.rem(0.8f))
-                .textColor(theme.color(Role.DIM))
+                .textColor(Role.DIM)
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
         // Down while the panel is open, right while it is folded: the same chevron a tree row turns, and read the same.
         this.collapseIcon = IconView.of(host, Icon.CHEVRON_DOWN).size(Length.rem(0.875f));
@@ -187,7 +185,7 @@ public final class Popout {
         this.header = host.row()
                 .width(Length.FILL)
                 .height(HEADER_H)
-                .background(theme.color(Role.CHROME))
+                .background(Role.CHROME)
                 .alignItems(AlignItems.CENTER)
                 .justify(Justify.SPACE_BETWEEN)
                 .padding(Length.ZERO, Length.dp(6))
@@ -197,19 +195,19 @@ public final class Popout {
         this.body = host.column()
                 .width(Length.FILL)
                 .height(Length.FILL)
-                .background(theme.color(Role.PANEL))
+                .background(Role.PANEL)
                 .scroll(false, false);
         content.build(host, body);
 
         this.panel = host.column()
-                .background(theme.color(Role.PANEL))
+                .background(Role.PANEL)
                 .scroll(false, false)
                 .children(header, body);
 
         // A one-pixel rule on the side facing the host's content, so the seam is a declared part of the panel
         // rather than something every application redraws beside it.
         Node rule = host.box()
-                .background(theme.color(Role.LINE))
+                .background(Role.LINE)
                 .scroll(false, false);
         if (edge.vertical()) {
             rule.size(Length.dp(1), Length.FILL);
@@ -434,26 +432,25 @@ public final class Popout {
      * anything clickable on a caption must: without it the window manager starts a window drag from the button
      * and the click never lands.
      *
-     * <p>Built here rather than in the constructor for two reasons that point the same way. A panel never popped
-     * costs no nodes; and the theme this reads is the one in force when the panel is first popped, not the one
-     * that happened to be installed while the application was still assembling itself.
+     * <p>Built here rather than in the constructor so that a panel never popped costs no nodes. The nodes hold
+     * roles, not colours, so nothing here is decided by which theme is in force at the time: the away tree takes
+     * the host's theme as it stands at the first pop, and paints in whatever theme it is given after that.
      */
     void buildAway() {
         if (awayBody != null) {
             return;   // idempotent: the spec is built once per name, but nothing here depends on that
         }
         away.theme(host.theme());
-        Theme theme = away.theme();
         this.awayBar = new TitleBar(away, WindowControls.NONE, title);
         awayBar.addLeading(button(away, IconView.of(away, Icon.DOCK).size(Length.rem(0.875f)).node(),
                 Role.RAISED, WindowRegion.INTERACTIVE, this::dock));
         this.awayBody = away.column()
                 .width(Length.FILL)
                 .height(Length.FILL)
-                .background(theme.color(Role.PANEL))
+                .background(Role.PANEL)
                 .scroll(false, false);
         away.root().direction(Direction.COLUMN)
-                .background(theme.color(Role.PAGE))
+                .background(Role.PAGE)
                 .children(awayBar.node(), awayBody);
         content.build(away, awayBody);
     }
@@ -531,13 +528,13 @@ public final class Popout {
                 .size(BUTTON, BUTTON)
                 .justify(Justify.CENTER)
                 .alignItems(AlignItems.CENTER)
-                .background(gui.theme().color(Role.NONE))
+                .background(Role.NONE)
                 .scroll(false, false)
                 .windowRegion(region)
                 .children(icon);
         gui.onClick(b, action);
         gui.onState(b, state -> b.background(
-                gui.theme().color(state == InteractionState.NORMAL ? Role.NONE : hover)));
+                state == InteractionState.NORMAL ? Role.NONE : hover));
         return b;
     }
 }

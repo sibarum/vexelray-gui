@@ -13,7 +13,6 @@ import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.NodeLayout;
 import dev.vexelray.gui.core.style.Role;
-import dev.vexelray.gui.core.style.Theme;
 import sibarum.tactroller.api.Key;
 
 import java.util.function.Consumer;
@@ -279,7 +278,6 @@ public final class Button {
     }
 
     private void paint() {
-        Theme theme = gui.theme();
         InteractionState s = enabled ? state : InteractionState.NORMAL;
         Role fill;
         Role ink;
@@ -314,9 +312,9 @@ public final class Button {
             fill = Role.CHROME;
             ink = Role.INK;
         }
-        node.background(theme.color(fill, s));
-        node.textColor(theme.color(ink));
+        node.background(fill.at(s));
+        node.textColor(ink);
         this.inkRole = ink;
-        node.border(Length.dp(1), theme.color(edge));
+        node.border(Length.dp(1), edge);
     }
 }

@@ -1,6 +1,5 @@
 package dev.vexelray.gui.demo.chapter;
 
-import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.drop.DragState;
@@ -12,7 +11,6 @@ import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.Rect;
 import dev.vexelray.gui.core.style.Role;
-import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.gui.demo.Chapter;
 import dev.vexelray.gui.demo.Console;
 import dev.vexelray.gui.demo.Stage;
@@ -115,7 +113,6 @@ public final class DragChapter implements Chapter {
     public Node build(Stage stage) {
         this.gui = stage.gui();
         Gui gui = this.gui;
-        Theme theme = stage.theme();
         this.console = stage.console();
 
         // Without a history, a drop resolves and draws but commits nothing — deliberately, because a drop that
@@ -203,16 +200,16 @@ public final class DragChapter implements Chapter {
         archiveList = gui.column().width(Length.FILL).height(Length.grow(1)).gap(Length.rem(0.25f))
                 .scroll(false, true);
         archive = gui.column().width(Length.FILL).height(Length.FILL)
-                .background(theme.color(Role.WELL)).corner(Length.rem(0.75f))
-                .border(Length.rem(0.15f), theme.color(Role.LINE))
+                .background(Role.WELL).corner(Length.rem(0.75f))
+                .border(Length.rem(0.15f), Role.LINE)
                 .padding(Length.dp(14)).gap(Length.rem(0.375f))
                 .children(
                         gui.text("Archive").width(Length.FILL).height(Length.rem(1.5f))
-                                .textSize(Length.rem(1)).textColor(theme.color(Role.INK))
+                                .textSize(Length.rem(1)).textColor(Role.INK)
                                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE),
                         gui.text("drop a task here to take it off the board")
                                 .width(Length.FILL)
-                                .textSize(Length.rem(0.875f)).textColor(theme.color(Role.FAINT))
+                                .textSize(Length.rem(0.875f)).textColor(Role.FAINT)
                                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.TOP),
                         archiveList);
         gui.onDrop(archive, (payload, x, y) -> payload.as(taskType)
@@ -230,7 +227,7 @@ public final class DragChapter implements Chapter {
         gui.drag().onCommit(v -> {
             DragState drag = v.value();
             boolean task = drag.active() && drag.payload().as(taskType).isPresent();
-            lightArchive(task && over(archive, drag) && drag.accepts(), theme);
+            lightArchive(task && over(archive, drag) && drag.accepts());
         });
 
         Node tools = Ui.strip(gui,
@@ -387,8 +384,8 @@ public final class DragChapter implements Chapter {
         for (Task task : archived) {
             Node row = gui.text(task.name).width(Length.FILL).height(Length.rem(1.75f))
                     .padding(Length.ZERO, Length.rem(0.5f))
-                    .background(gui.theme().color(Role.PANEL)).corner(Length.rem(0.3f))
-                    .textSize(Length.rem(0.875f)).textColor(gui.theme().color(Role.DIM))
+                    .background(Role.PANEL).corner(Length.rem(0.3f))
+                    .textSize(Length.rem(0.875f)).textColor(Role.DIM)
                     .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
             archiveList.append(row);
             archiveRows.add(row);
@@ -396,9 +393,9 @@ public final class DragChapter implements Chapter {
     }
 
     /** Light the archive while a drag it would take is over it, and put it back when the drag leaves. */
-    private void lightArchive(boolean on, Theme theme) {
-        archive.background(on ? Color.withAlpha(theme.color(Role.ACCENT), 0.18f) : theme.color(Role.WELL))
-                .border(Length.rem(0.15f), theme.color(on ? Role.ACCENT : Role.LINE));
+    private void lightArchive(boolean on) {
+        archive.background(on ? Role.ACCENT.alpha(0.18f) : Role.WELL)
+                .border(Length.rem(0.15f), on ? Role.ACCENT : Role.LINE);
     }
 
     private static boolean over(Node node, DragState drag) {

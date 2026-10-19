@@ -51,12 +51,12 @@ public final class Tooltip implements AutoCloseable {
                 .role("tooltip")
                 .visible(false)
                 .hitInert(true)
-                .background(gui.theme().color(Role.RAISED))
+                .background(Role.RAISED)
                 .corner(Length.rem(0.4f))
-                .border(Length.rem(0.08f), gui.theme().color(Role.EDGE))
+                .border(Length.rem(0.08f), Role.EDGE)
                 .elevation(gui.theme().elevation(Relief.FLOATING))
                 .textSize(Length.rem(0.9375f))
-                .textColor(gui.theme().color(Role.INK))
+                .textColor(Role.INK)
                 .padding(Length.dp(4), Length.dp(10))
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
     }

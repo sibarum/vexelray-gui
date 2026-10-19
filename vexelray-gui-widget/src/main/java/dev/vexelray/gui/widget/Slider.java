@@ -8,6 +8,7 @@ import dev.vexelray.gui.core.input.DragEvent;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.Rect;
+import dev.vexelray.gui.core.style.Finish;
 import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
@@ -100,10 +101,10 @@ public final class Slider {
         // it off the sunken track. Both are SDF transfer functions — no extra geometry, still one draw.
         Theme theme = gui.theme();
         Node thumb = gui.box().width(THICKNESS).height(Length.percent(100))
-                .background(theme.color(Role.ACCENT)).corner(Length.rem(0.55f))
-                .lit(theme.lit()).elevation(theme.elevation(Relief.CONTROL));
+                .background(Role.ACCENT).corner(Length.rem(0.55f))
+                .lit(Finish.LIT).elevation(theme.elevation(Relief.CONTROL));
         this.track = gui.row().role("slider").height(THICKNESS)
-                .background(theme.color(Role.TRACK)).corner(Length.rem(0.55f))
+                .background(Role.TRACK).corner(Length.rem(0.55f))
                 .alignItems(AlignItems.CENTER).scroll(false, false) // a slider never scrolls
                 .children(leftSpacer, thumb, rightSpacer);
         gui.onDrag(track, this::pointer);

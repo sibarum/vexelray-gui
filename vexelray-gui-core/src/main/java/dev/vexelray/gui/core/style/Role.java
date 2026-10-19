@@ -17,10 +17,25 @@ import dev.vexelray.canvas.Color;
  * tint the selection with its accent without turning every border blue.
  */
 @FunctionalInterface
-public interface Role {
+public interface Role extends Paint {
 
     /** Resolve this role against {@code palette}. */
     Color of(Palette palette);
+
+    /**
+     * This role at rest, in {@code theme} — through the theme rather than straight to its palette, so a theme that
+     * special-cases a role is obeyed. What makes a role a {@link Paint}: a node can hold one and have it resolved per
+     * frame.
+     */
+    @Override
+    default Color in(Theme theme) {
+        return theme.color(this);
+    }
+
+    /** This role as it looks while the pointer is in {@code state}, resolved when it is drawn. */
+    default Paint at(dev.vexelray.gui.core.input.InteractionState state) {
+        return Paint.of(this, state);
+    }
 
     // ---------------------------------------------------------------- surfaces
 

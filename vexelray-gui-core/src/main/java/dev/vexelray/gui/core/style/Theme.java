@@ -10,11 +10,12 @@ import dev.vexelray.gui.core.layout.Length;
  * the engine's depth effects. Held by {@code Gui}, read by every widget and by the renderer's own chrome, and
  * hard-coded nowhere.
  *
- * <p>Usage is always the same shape — a widget states the role and, if the node reacts to the pointer, the state:
+ * <p>Usage is always the same shape — a widget states the role and, if the node reacts to the pointer, the state, and
+ * never the colour either comes to:
  *
  * {@snippet :
- * Node button = gui.text("Save").background(gui.theme().color(Role.ACTION));
- * gui.onState(button, state -> button.background(gui.theme().color(Role.ACTION, state)));
+ * Node button = gui.text("Save").background(Role.ACTION).lit(Finish.LIT);
+ * gui.onState(button, state -> button.background(Role.ACTION.at(state)));
  * }
  *
  * <h2>Defining one</h2>
@@ -23,12 +24,12 @@ import dev.vexelray.gui.core.layout.Length;
  * theme that is not palette-driven at all (a high-contrast mode that ignores the ladders, say).
  *
  * <h2>When it is read</h2>
- * Roles resolve at the moment a widget paints a prop: at build time, and again in every state handler. A theme
- * swapped after the tree is built therefore reaches the renderer's chrome and everything that restyles on
- * interaction, but not the props already written — a live dark/light toggle needs a restyle pass over the built
- * nodes, which the framework does not yet publish. The long-term shape is for a node to hold the {@link Role}
- * itself and for the renderer to resolve it per frame, exactly as {@code Length} is resolved against zoom; that is
- * why {@code Role} is already the declaration and {@code Color} only ever the result.
+ * Every frame, by the renderer. A node holds a {@link Paint} — a role, a role in a state, a role thinned or mixed —
+ * and a {@link Finish} for lit and letterpress, and both resolve against the tree's theme as it is drawn, exactly as
+ * {@code Length} resolves against zoom. So {@code Gui.theme(t)} works at any time: the whole tree is drawn in the new
+ * look from the next frame, nothing is rewritten, and a tree with a {@code PaintMotion} fades there. A colour asked
+ * of the theme and written down as a colour is the one thing a swap cannot reach, which is why the framework's own
+ * classes are forbidden to ({@code RethemeGuardTest}).
  */
 public interface Theme {
 
@@ -78,7 +79,7 @@ public interface Theme {
      *
      * {@snippet :
      * gui.onState(button, state -> button
-     *         .background(gui.theme().color(Role.ACTION, state))
+     *         .background(Role.ACTION.at(state))
      *         .elevation(gui.theme().elevation(Relief.CONTROL, state)));
      * }
      */

@@ -4,6 +4,7 @@ import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.style.Paint;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.gui.demo.Chapter;
@@ -67,9 +68,9 @@ public final class MotionChapter implements Chapter {
 
         // --- cues ---------------------------------------------------------------------------------------
         Node target = gui.text("play a cue on me").width(Length.FILL).height(Length.rem(4))
-                .background(theme.color(Role.WELL)).corner(Length.rem(0.5f))
-                .border(Length.rem(0.1f), theme.color(Role.LINE))
-                .textSize(Length.rem(0.9375f)).textColor(theme.color(Role.DIM))
+                .background(Role.WELL).corner(Length.rem(0.5f))
+                .border(Length.rem(0.1f), Role.LINE)
+                .textSize(Length.rem(0.9375f)).textColor(Role.DIM)
                 .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE);
 
         Ramp insistent = (progress, done) -> krono.ramp(Dur.ms(650), Ease.LINEAR, progress, done);
@@ -103,8 +104,8 @@ public final class MotionChapter implements Chapter {
         Node stack = gui.column().width(Length.FILL).height(Length.AUTO).gap(Length.rem(0.375f));
         Node detail = gui.text("this panel took the room, and the rows below covered the distance")
                 .width(Length.FILL).height(Length.ZERO)
-                .background(theme.color(Role.SELECTION)).corner(Length.rem(0.375f))
-                .textSize(Length.rem(0.875f)).textColor(theme.color(Role.INK))
+                .background(Role.SELECTION).corner(Length.rem(0.375f))
+                .textSize(Length.rem(0.875f)).textColor(Role.INK)
                 .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE)
                 .clip(true)
                 .visible(false);
@@ -137,9 +138,9 @@ public final class MotionChapter implements Chapter {
 
         // --- animation ----------------------------------------------------------------------------------
         Node meter = gui.box().width(Length.rem(4)).height(Length.rem(1.5f))
-                .background(theme.color(Role.ACCENT)).corner(Length.rem(0.375f));
+                .background(Role.ACCENT).corner(Length.rem(0.375f));
         Node track = gui.row().width(Length.FILL).height(Length.rem(1.5f))
-                .background(theme.color(Role.TRACK)).corner(Length.rem(0.375f))
+                .background(Role.TRACK).corner(Length.rem(0.375f))
                 .children(meter);
         AtomicBoolean wide = new AtomicBoolean();
         Node animation = Ui.strip(gui,
@@ -154,9 +155,10 @@ public final class MotionChapter implements Chapter {
                                     Dur.ms(420), Ease.IN_OUT_CUBIC);
                             console.note("width driven from one value to another over 420ms");
                         }),
-                        Ui.button(gui, "Recolour", () -> krono.animate(meter, Node::background,
-                                theme.color(Role.ACCENT), theme.color(Role.DANGER),
-                                Dur.ms(420), Ease.LINEAR))),
+                        // Between the roles, not the colours they resolve to: every frame of the drive is a mix
+                        // the theme resolves, so a theme swapped mid-drive, or after it, carries the meter along.
+                        Ui.button(gui, "Recolour", () -> krono.<Paint>animate(meter, Node::background,
+                                Role.ACCENT, Role.DANGER, Dur.ms(420), Ease.LINEAR, Paint::mix))),
                 Ui.prose(gui, "Colour interpolates through Oklab rather than sRGB, so a blend between two "
                         + "saturated colours does not dip through grey on the way."));
 
@@ -206,15 +208,14 @@ public final class MotionChapter implements Chapter {
 
     private static Node note(Gui gui, String text) {
         return gui.text(text).width(Length.FILL).height(Length.FILL).padding(Length.rem(0.75f), Length.rem(1))
-                .textSize(Length.rem(0.9375f)).textColor(gui.theme().color(Role.DIM));
+                .textSize(Length.rem(0.9375f)).textColor(Role.DIM);
     }
 
     private static Node bar(Gui gui, String text) {
-        Theme theme = gui.theme();
         return gui.text(text).width(Length.FILL).height(Length.rem(2.25f))
-                .background(theme.color(Role.WELL)).corner(Length.rem(0.375f))
+                .background(Role.WELL).corner(Length.rem(0.375f))
                 .padding(Length.ZERO, Length.rem(0.75f))
-                .textSize(Length.rem(0.9375f)).textColor(theme.color(Role.DIM))
+                .textSize(Length.rem(0.9375f)).textColor(Role.DIM)
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
     }
 }

@@ -1,6 +1,10 @@
 package dev.vexelray.gui.core.model;
 
 import dev.vexelray.canvas.Color;
+import dev.vexelray.gui.core.style.Paint;
+import dev.vexelray.gui.core.style.PaintMotion;
+import dev.vexelray.gui.core.style.Role;
+import dev.vexelray.gui.core.style.Theme;
 
 import java.util.HashMap;
 import java.util.List;
@@ -52,7 +56,13 @@ public final class Reconciler implements Mutation.Sink {
         this.onRemoved = onRemoved == null ? id -> { } : onRemoved;
     }
 
-    private volatile dev.vexelray.gui.core.style.PaintMotion repaints = dev.vexelray.gui.core.style.PaintMotion.NONE;
+    private volatile PaintMotion repaints = PaintMotion.NONE;
+
+    /**
+     * What every paint in the tree resolves against — see {@link #retheme}. Volatile because the renderer reads it,
+     * though only ever between applies: it is written on the GUI thread inside the frame, like everything here.
+     */
+    private volatile Theme theme = Theme.DARK;
 
     /**
      * Report every colour change (background, border colour, text colour) to {@code sink}'s
@@ -220,13 +230,15 @@ public final class Reconciler implements Mutation.Sink {
             }
             n.set(key, value);
             drawDirty = true;
-            if (before instanceof Color from && value instanceof Color to) {
+            // A paint is reported as the colours it is in the theme being drawn: a hover from ACTION to ACTION-at-HOVER
+            // is a change of colour, and a write of another role that happens to resolve the same is not.
+            if (before instanceof Paint from && value instanceof Paint to) {
                 if (key == PropKey.BACKGROUND) {
-                    repaints.repainted(id, dev.vexelray.gui.core.style.PaintMotion.Channel.BACKGROUND, from, to);
+                    report(id, PaintMotion.Channel.BACKGROUND, from.in(theme), to.in(theme));
                 } else if (key == PropKey.BORDER_COLOR) {
-                    repaints.repainted(id, dev.vexelray.gui.core.style.PaintMotion.Channel.BORDER, from, to);
+                    report(id, PaintMotion.Channel.BORDER, from.in(theme), to.in(theme));
                 } else if (key == PropKey.TEXT_COLOR) {
-                    repaints.repainted(id, dev.vexelray.gui.core.style.PaintMotion.Channel.TEXT, from, to);
+                    report(id, PaintMotion.Channel.TEXT, from.in(theme), to.in(theme));
                 }
             }
             if (key.affectsLayout(before, value)) {
@@ -287,6 +299,48 @@ public final class Reconciler implements Mutation.Sink {
         // these back after it lays out (Gui.frame), which is the first moment the question has an answer.
         if (n != null) {
             reveals.add(n);
+        }
+    }
+
+    /**
+     * Every node now resolves against {@code next}. Nothing is written to a node — a paint is the same paint in any
+     * theme — but every colour that comes out differently is reported as if it had been, so a source that fades a
+     * hover fades the whole tree from one look to the other. Text that never stated a colour is drawn in the
+     * theme's ink, and is reported as that.
+     */
+    @Override
+    public void retheme(Theme next) {
+        Theme was = theme;
+        theme = next == null ? Theme.DARK : next;
+        if (was.equals(theme)) {
+            return;
+        }
+        drawDirty = true;
+        for (RetainedNode n : index.values()) {
+            Paint bg = n.background();
+            if (bg != null) {
+                report(n.id, PaintMotion.Channel.BACKGROUND, bg.in(was), bg.in(theme));
+            }
+            Paint border = n.borderColor();
+            if (border != null) {
+                report(n.id, PaintMotion.Channel.BORDER, border.in(was), border.in(theme));
+            }
+            Paint ink = n.textColor() != null ? n.textColor() : n.textString() != null ? Role.INK : null;
+            if (ink != null) {
+                report(n.id, PaintMotion.Channel.TEXT, ink.in(was), ink.in(theme));
+            }
+        }
+    }
+
+    /** The theme the tree is drawn in: the last one {@link #retheme} applied, {@link Theme#DARK} before any. */
+    public Theme theme() {
+        return theme;
+    }
+
+    /** Tell the paint motion source, for a change from one colour to another that is a change. */
+    private void report(long id, PaintMotion.Channel channel, Color from, Color to) {
+        if (from != null && to != null && !from.equals(to)) {
+            repaints.repainted(id, channel, from, to);
         }
     }
 

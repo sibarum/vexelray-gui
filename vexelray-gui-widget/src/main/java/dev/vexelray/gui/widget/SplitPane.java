@@ -1,6 +1,5 @@
 package dev.vexelray.gui.widget;
 
-import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.CursorShape;
@@ -12,7 +11,7 @@ import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.NodeLayout;
-import dev.vexelray.gui.core.style.Oklab;
+import dev.vexelray.gui.core.style.Paint;
 import dev.vexelray.gui.core.style.Role;
 
 import java.util.function.Consumer;
@@ -284,19 +283,20 @@ public final class SplitPane {
         }, () -> { });
     }
 
-    /** Paint the line {@code t} of the way from its resting colour to the accent, mixed in Oklab. */
+    /**
+     * Paint the line {@code t} of the way from its resting colour to the accent, mixed in Oklab when it is drawn —
+     * so a theme swapped mid-fade, or with the line at rest, repaints it in the new theme's line and accent. A line
+     * that is transparent at rest has no hue to mix from, and the mix fades the accent in over the gap instead.
+     * The ends are the roles themselves, so a line at rest holds exactly {@link Role#LINE}.
+     */
     private void paint(float t) {
-        Color rest = gui.theme().color(Role.LINE);
-        Color active = gui.theme().color(Role.ACCENT);
-        Color c;
+        Paint c;
         if (t <= 0f) {
-            c = rest;
+            c = Role.LINE;
         } else if (t >= 1f) {
-            c = active;
-        } else if (rest.a() == 0f) {
-            c = Oklab.of(active).toColor(active.a() * t);   // nothing to mix from: fade the accent in over the gap
+            c = Role.ACCENT;
         } else {
-            c = Oklab.of(rest).mix(Oklab.of(active), t).toColor(rest.a() + (active.a() - rest.a()) * t);
+            c = Role.LINE.mix(Role.ACCENT, t);
         }
         grip.background(c);
     }

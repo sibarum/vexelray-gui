@@ -7,7 +7,6 @@ import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.style.Role;
-import dev.vexelray.gui.core.style.Theme;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -50,13 +49,12 @@ public final class Segment<T> {
     /** Build an empty segment on {@code gui}; add options with {@link #option}. */
     public Segment(Gui gui) {
         this.gui = gui;
-        Theme theme = gui.theme();
         // A hairline gap between cells over a sunken ground is what separates them: the ground shows through as
         // the divider, so there is one border for the whole control rather than one per cell meeting its neighbour
         // at a doubled line.
         this.bar = gui.row().role("segment")
-                .background(theme.color(Role.WELL))
-                .border(Length.dp(1), theme.color(Role.EDGE))
+                .background(Role.WELL)
+                .border(Length.dp(1), Role.EDGE)
                 .corner(Length.rem(0.3f))
                 .padding(Length.dp(1))
                 .gap(Length.dp(1))
@@ -154,7 +152,6 @@ public final class Segment<T> {
     }
 
     private void paintOne(T value, boolean hover) {
-        Theme theme = gui.theme();
         Node cell = cells.get(value);
         if (cell == null) {
             return;
@@ -162,8 +159,7 @@ public final class Segment<T> {
         boolean isSelected = value.equals(selected);
         // The selected cell is the only one with a fill, so the control reads at a glance from its silhouette
         // rather than from a text colour that has to be found first.
-        cell.background(isSelected ? theme.color(Role.SELECTION)
-                : hover ? theme.color(Role.CHROME) : theme.color(Role.NONE));
-        cell.textColor(theme.color(isSelected ? Role.INK : hover ? Role.DIM : Role.FAINT));
+        cell.background(isSelected ? Role.SELECTION : hover ? Role.CHROME : Role.NONE);
+        cell.textColor(isSelected ? Role.INK : hover ? Role.DIM : Role.FAINT);
     }
 }

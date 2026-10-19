@@ -33,7 +33,7 @@ class UnclipNodeTest {
 
     private static RetainedNode box(Color bg, float x, float w) {
         RetainedNode n = new RetainedNode(nextId++);
-        n.set(PropKey.BACKGROUND, bg);
+        n.set(PropKey.BACKGROUND, dev.vexelray.gui.core.style.Paint.of(bg));
         n.x = x;
         n.y = 0f;
         n.w = w;

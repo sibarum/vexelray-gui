@@ -175,11 +175,11 @@ public final class TextField implements AutoCloseable {
                 .role("textfield")
                 .editable(true)
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE)
-                .textColor(gui.theme().color(Role.INK))
+                .textColor(Role.INK)
                 .height(Length.rem(2.5f))
-                .background(gui.theme().color(Role.WELL))
+                .background(Role.WELL)
                 .corner(Length.rem(0.5f))
-                .border(Length.rem(0.1f), gui.theme().color(Role.LINE))
+                .border(Length.rem(0.1f), Role.LINE)
                 .caret(-1);
 
         // The edit path, all of it ordered: typed text, edit commands, and pointer caret placement are the three

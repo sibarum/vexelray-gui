@@ -5,6 +5,7 @@ import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.app.AppWindow;
 import dev.vexelray.gui.core.app.WindowSpec;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.style.Finish;
 import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
@@ -180,24 +181,24 @@ public final class WindowChapter implements Chapter {
     private static void popupContent(Gui p, TitleBar bar) {
         Theme theme = p.theme();
         Node card = p.column().width(Length.FILL).height(Length.FILL)
-                .background(theme.color(Role.PANEL)).corner(Length.rem(1))
-                .border(Length.rem(0.1f), theme.color(Role.LINE))
-                .lit(theme.lit()).elevation(theme.elevation(Relief.OVERLAY))
+                .background(Role.PANEL).corner(Length.rem(1))
+                .border(Length.rem(0.1f), Role.LINE)
+                .lit(Finish.LIT).elevation(theme.elevation(Relief.OVERLAY))
                 .padding(Length.dp(16)).gap(Length.rem(0.5f))
                 .children(
                         p.text("A true OS window").height(Length.rem(2)).textSize(Length.rem(1.375f))
-                                .textColor(theme.color(Role.ACCENT)),
+                                .textColor(Role.ACCENT),
                         p.text("Created on the main thread, presented by the same frame loop as the main "
                                         + "window, drawn by the same shared device and SDF pipeline, and given "
                                         + "its own input backend when it was created. Close it with the "
                                         + "title-bar button; the application keeps running, and this tree is "
                                         + "still here when you open it again.")
                                 .width(Length.FILL)
-                                .textSize(Length.rem(0.9375f)).textColor(theme.color(Role.DIM))
+                                .textSize(Length.rem(0.9375f)).textColor(Role.DIM)
                                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.TOP));
         // The bar is a child of the root and the padding is on the body below it, not on the root: a title bar
         // inset from the window edge is a title bar with a gap the window manager still treats as caption.
         Node body = p.column().width(Length.FILL).height(Length.FILL).padding(Length.dp(16)).children(card);
-        p.root().background(theme.color(Role.PAGE)).children(bar.node(), body);
+        p.root().background(Role.PAGE).children(bar.node(), body);
     }
 }

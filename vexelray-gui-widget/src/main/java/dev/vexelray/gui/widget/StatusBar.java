@@ -68,7 +68,7 @@ public final class StatusBar {
         }
         Node text = gui.text(initial).font(face).role("statusitem")
                 .textSize(Length.rem(0.75f))
-                .textColor(gui.theme().color(Role.DIM))
+                .textColor(Role.DIM)
                 .wordWrap(false);
         slots.put(key, text);
         (side == Side.LEFT ? left : right).append(text);

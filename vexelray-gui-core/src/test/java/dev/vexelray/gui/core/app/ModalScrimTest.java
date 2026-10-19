@@ -53,7 +53,7 @@ class ModalScrimTest {
             Node page = gui.box().width(Length.FILL).height(Length.FILL);
             gui.root().children(page);
             ModalScrim scrim = ModalScrim.install(gui);
-            scrim.dim(true, Color.rgba(0f, 0f, 0f, 0.45f));
+            scrim.dim(true, dev.vexelray.gui.core.style.Paint.of(Color.rgba(0f, 0f, 0f, 0.45f)));
 
             RetainedNode root = gui.frame(W, H, ModalScrimTest::noText);
             RetainedNode sheet = find(root, scrim.node().id());
@@ -80,7 +80,7 @@ class ModalScrimTest {
             float w = before.w;
             float h = before.h;
 
-            scrim.dim(true, Color.rgba(0f, 0f, 0f, 0.45f));
+            scrim.dim(true, dev.vexelray.gui.core.style.Paint.of(Color.rgba(0f, 0f, 0f, 0.45f)));
             RetainedNode after = find(gui.frame(W, H, ModalScrimTest::noText), page.id());
             assertEquals(x, after.x, 0.001f, "a scrim that reflowed the page would be worse than no scrim");
             assertEquals(y, after.y, 0.001f);
@@ -95,7 +95,7 @@ class ModalScrimTest {
             Node page = gui.box().width(Length.FILL).height(Length.FILL);
             gui.root().children(page);
             ModalScrim scrim = ModalScrim.install(gui);
-            scrim.dim(true, Color.rgba(0f, 0f, 0f, 0.45f));
+            scrim.dim(true, dev.vexelray.gui.core.style.Paint.of(Color.rgba(0f, 0f, 0f, 0.45f)));
 
             RetainedNode root = gui.frame(W, H, ModalScrimTest::noText);
             RetainedNode hit = HitTest.at(root, W / 2, H / 2);
@@ -114,10 +114,10 @@ class ModalScrimTest {
             RetainedNode root = gui.frame(W, H, ModalScrimTest::noText);
             assertFalse(present(root, scrim.node().id()), "installing a scrim does not dim anything");
 
-            scrim.dim(true, Color.rgba(0f, 0f, 0f, 0.45f));
+            scrim.dim(true, dev.vexelray.gui.core.style.Paint.of(Color.rgba(0f, 0f, 0f, 0.45f)));
             assertTrue(present(gui.frame(W, H, ModalScrimTest::noText), scrim.node().id()));
 
-            scrim.dim(false, Color.rgba(0f, 0f, 0f, 0.45f));
+            scrim.dim(false, dev.vexelray.gui.core.style.Paint.of(Color.rgba(0f, 0f, 0f, 0.45f)));
             assertFalse(present(gui.frame(W, H, ModalScrimTest::noText), scrim.node().id()),
                     "and the window comes back undimmed when the dialog goes");
         }

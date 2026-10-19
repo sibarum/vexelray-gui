@@ -9,6 +9,7 @@ import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.input.MenuSink;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.NodeLayout;
+import dev.vexelray.gui.core.style.Finish;
 import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.draw.Picture;
@@ -257,7 +258,7 @@ public final class Tabs {
     public Tabs(Gui gui) {
         this.gui = gui;
         ContextMenu.presentOn(gui);   // every header gets a Close menu; something has to be able to show it
-        this.bar = gui.row().width(Length.FILL).height(Length.rem(2.25f)).background(gui.theme().color(Role.CHROME))
+        this.bar = gui.row().width(Length.FILL).height(Length.rem(2.25f)).background(Role.CHROME)
                 .gap(Length.dp(2)).alignItems(AlignItems.STRETCH)
                 // A horizontal scroller, so a bar with more headers than width still has every header somewhere
                 // it can be brought to: select() reveals the one it lands on, and the scrollbar that overflow
@@ -281,7 +282,7 @@ public final class Tabs {
         // the application put there, and a dissolve either bleeds through to it or refuses to fade at all. The
         // wrapper is that backdrop, and it is opaque, and it never moves.
         this.pages = gui.column().width(Length.FILL).height(Length.FILL)
-                .background(gui.theme().color(Role.CHROME))
+                .background(Role.CHROME)
                 .corner(Length.ZERO, Length.rem(0.5f))    // flat where it meets the bar, rounded where it ends
                 // And it is where the content area ends, which a page sliding through it has to be told. A
                 // translated child adds no overflow, so the automatic clipping that comes with scrolling would
@@ -808,9 +809,9 @@ public final class Tabs {
                 .textSize(Length.rem(1))
                 .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE)
                 .corner(Length.rem(0.5f), Length.ZERO)   // tab silhouette: rounded shoulders, flat seat
-                .background(selected ? gui.theme().color(Role.SELECTION) : gui.theme().color(Role.PANEL, state))
-                .textColor(gui.theme().color(selected ? Role.ACCENT : Role.DIM))
-                .lit(selected && gui.theme().lit())
+                .background(selected ? Role.SELECTION : Role.PANEL.at(state))
+                .textColor(selected ? Role.ACCENT : Role.DIM)
+                .lit(selected ? Finish.LIT : Finish.OFF)
                 .elevation(gui.theme().elevation(selected ? Relief.CONTROL : Relief.FLUSH));
     }
 }

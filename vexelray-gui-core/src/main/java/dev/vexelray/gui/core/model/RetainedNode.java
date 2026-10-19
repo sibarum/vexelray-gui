@@ -8,6 +8,9 @@ import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.core.layout.LayoutEnums.ScrollLock;
+import dev.vexelray.gui.core.style.Finish;
+import dev.vexelray.gui.core.style.Paint;
+import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.gui.draw.Picture;
 import dev.vexelray.target.ImageHandle;
 import dev.vexelray.text.TextLayout;
@@ -191,8 +194,21 @@ public final class RetainedNode {
 
     // --- typed accessors with defaults ---
 
-    public Color background() {
-        return (Color) props.get(PropKey.BACKGROUND);
+    /**
+     * The fill as this node holds it — a {@link Paint}, not a colour, because what colour it is depends on the theme
+     * the tree is drawn in. Null when it has none.
+     */
+    public Paint background() {
+        return (Paint) props.get(PropKey.BACKGROUND);
+    }
+
+    /** The fill in {@code theme}, or null when it has none. */
+    public Color background(Theme theme) {
+        return resolve(background(), theme);
+    }
+
+    private static Color resolve(Paint paint, Theme theme) {
+        return paint == null ? null : paint.in(theme);
     }
 
     public Length corner() {
@@ -212,9 +228,9 @@ public final class RetainedNode {
         return len(PropKey.ELEVATION, Length.ZERO);
     }
 
-    /** Whether the background fill is drawn lit (SDF edge light + vertical luminance gradient). */
-    public boolean lit() {
-        return Boolean.TRUE.equals(props.get(PropKey.LIT));
+    /** Whether the background fill is drawn lit (SDF edge light + vertical luminance gradient) in {@code theme}. */
+    public boolean lit(Theme theme) {
+        return props.get(PropKey.LIT) instanceof Finish f && f.in(theme);
     }
 
     /**
@@ -262,8 +278,8 @@ public final class RetainedNode {
     }
 
     /** Whether this node's text is drawn sunken: soft under-shadow + sharp black outline (letterpress). */
-    public boolean textSunken() {
-        return Boolean.TRUE.equals(props.get(PropKey.TEXT_SUNKEN));
+    public boolean textSunken(Theme theme) {
+        return props.get(PropKey.TEXT_SUNKEN) instanceof Finish f && f.in(theme);
     }
 
     /**
@@ -321,8 +337,14 @@ public final class RetainedNode {
         return (dev.vexelray.gui.core.style.FocusRing) props.get(PropKey.FOCUS_RING);
     }
 
-    public Color borderColor() {
-        return (Color) props.get(PropKey.BORDER_COLOR);
+    /** The border's paint as this node holds it, or null. */
+    public Paint borderColor() {
+        return (Paint) props.get(PropKey.BORDER_COLOR);
+    }
+
+    /** The border's colour in {@code theme}, or null. */
+    public Color borderColor(Theme theme) {
+        return resolve(borderColor(), theme);
     }
 
     public String textString() {
@@ -333,17 +355,14 @@ public final class RetainedNode {
         return len(PropKey.TEXT_SIZE, DEFAULT_TEXT_SIZE);
     }
 
-    public Color textColor() {
-        return textColor(Color.WHITE);
+    /** The text's paint as this node holds it, or null when it never stated one (and is drawn in the theme's ink). */
+    public Paint textColor() {
+        return (Paint) props.get(PropKey.TEXT_COLOR);
     }
 
-    /**
-     * The declared text colour, or {@code fallback} when the node never stated one. The renderer passes the
-     * theme's ink here: white is the model's last resort, not a look, and on a light page it is not even legible.
-     */
-    public Color textColor(Color fallback) {
-        Object c = props.get(PropKey.TEXT_COLOR);
-        return c != null ? (Color) c : fallback;
+    /** The declared text colour in {@code theme}, or null when the node never stated one. */
+    public Color textColor(Theme theme) {
+        return resolve(textColor(), theme);
     }
 
     public TextLayout.HAlign hAlign() {

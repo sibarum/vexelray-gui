@@ -1,14 +1,13 @@
 package dev.vexelray.gui.demo.chapter;
 
-import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.drop.DragRelease;
 import dev.vexelray.gui.core.edit.Change;
 import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.style.Finish;
 import dev.vexelray.gui.core.style.Role;
-import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.gui.demo.Chapter;
 import dev.vexelray.gui.demo.Console;
 import dev.vexelray.gui.demo.Stage;
@@ -71,7 +70,6 @@ public final class CardsChapter implements Chapter {
     @Override
     public Node build(Stage stage) {
         Gui gui = stage.gui();
-        Theme theme = stage.theme();
         this.console = stage.console();
         // One history for every transfer in a window, so Ctrl+Z undoes the last thing moved whichever widget it
         // was moved in. Another chapter may have set it already; a drop and a paste land in the same stack.
@@ -93,7 +91,7 @@ public final class CardsChapter implements Chapter {
 
         // What a card looks like, and how long anything takes to move. The board owns the card's elevation —
         // that is how a card shows it has been picked up — and everything else about it is ours.
-        Board<Task> board = new Board<Task>(gui, task -> card(gui, theme, task))
+        Board<Task> board = new Board<Task>(gui, task -> card(gui, task))
                 .motion((progress, done) -> stage.krono().ramp(Dur.ms(200), Ease.OUT_CUBIC, progress, done));
 
         Node row = gui.row().width(Length.FILL).height(Length.FILL).gap(Ui.GAP);
@@ -102,7 +100,7 @@ public final class CardsChapter implements Chapter {
             // Room either side for a card's shadow: the deck scrolls, and a scroller clips to its own box.
             deck.node().width(Length.FILL).height(Length.grow(1)).padding(Length.ZERO, Length.dp(8));
             decks.put(lane, deck);
-            row.append(lane(gui, theme, lane, deck));
+            row.append(lane(gui, lane, deck));
         }
         show();
 
@@ -134,40 +132,40 @@ public final class CardsChapter implements Chapter {
     // ------------------------------------------------------------------------------------------------ look
 
     /** A lane: a sunken well with a title, a count, and its deck. */
-    private Node lane(Gui gui, Theme theme, String name, Deck<Task> deck) {
+    private Node lane(Gui gui, String name, Deck<Task> deck) {
         Node count = gui.text("").width(Length.AUTO).height(Length.rem(1.5f))
-                .textSize(Length.rem(0.8125f)).textColor(theme.color(Role.FAINT))
+                .textSize(Length.rem(0.8125f)).textColor(Role.FAINT)
                 .align(TextLayout.HAlign.RIGHT, TextLayout.VAlign.MIDDLE);
         counts.put(name, count);
         Node header = gui.row().width(Length.FILL).height(Length.AUTO).padding(Length.ZERO, Length.dp(8))
                 .children(
                         gui.text(name).width(Length.grow(1)).height(Length.rem(1.5f))
-                                .textSize(Length.rem(0.9375f)).textColor(theme.color(Role.DIM))
+                                .textSize(Length.rem(0.9375f)).textColor(Role.DIM)
                                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE),
                         count);
         return gui.column().width(Length.grow(1)).height(Length.FILL)
-                .background(theme.color(Role.WELL)).corner(Length.rem(0.875f))
-                .border(Length.rem(0.08f), theme.color(Role.LINE))
+                .background(Role.WELL).corner(Length.rem(0.875f))
+                .border(Length.rem(0.08f), Role.LINE)
                 .padding(Length.dp(10), Length.dp(4)).gap(Length.rem(0.25f))
                 .children(header, deck.node());
     }
 
     /** A card: a lit panel with the task's title, and a tag under it. */
-    private static Node card(Gui gui, Theme theme, Task task) {
-        Color tagInk = theme.color(task.urgent() ? Role.ACCENT : Role.DIM);
+    private static Node card(Gui gui, Task task) {
+        Role tagInk = task.urgent() ? Role.ACCENT : Role.DIM;
         Node tag = gui.text(task.tag()).width(Length.AUTO).height(Length.rem(1.25f))
                 .padding(Length.ZERO, Length.rem(0.5f)).corner(Length.rem(0.625f))
-                .background(Color.withAlpha(tagInk, 0.14f)).textColor(tagInk)
+                .background(tagInk.alpha(0.14f)).textColor(tagInk)
                 .textSize(Length.rem(0.75f))
                 .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE);
         return gui.column().width(Length.FILL).height(Length.AUTO)
-                .background(theme.color(Role.PANEL)).corner(Length.rem(0.625f))
-                .border(Length.rem(0.06f), theme.color(Role.LINE))
-                .lit(theme.lit())
+                .background(Role.PANEL).corner(Length.rem(0.625f))
+                .border(Length.rem(0.06f), Role.LINE)
+                .lit(Finish.LIT)
                 .padding(Length.dp(12), Length.dp(14)).gap(Length.rem(0.5f))
                 .children(
                         gui.text(task.title()).width(Length.FILL)
-                                .textSize(Length.rem(0.9375f)).textColor(theme.color(Role.INK))
+                                .textSize(Length.rem(0.9375f)).textColor(Role.INK)
                                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.TOP),
                         gui.row().width(Length.FILL).height(Length.AUTO).children(tag));
     }

@@ -6,6 +6,7 @@ import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.style.Finish;
 import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
@@ -53,7 +54,6 @@ public final class LayoutChapter implements Chapter {
     @Override
     public Node build(Stage stage) {
         Gui gui = stage.gui();
-        Theme theme = stage.theme();
         Console console = stage.console();
 
         Node a = swatch(gui, "fixed 6rem", Length.rem(6), Role.ACCENT);
@@ -62,8 +62,8 @@ public final class LayoutChapter implements Chapter {
         Node d = swatch(gui, "fixed 4rem", Length.rem(4), Role.ACCENT);
 
         Node arena = gui.row().width(Length.FILL).height(Length.grow(1))
-                .background(theme.color(Role.WELL)).corner(Length.rem(0.5f))
-                .border(Length.rem(0.1f), theme.color(Role.LINE))
+                .background(Role.WELL).corner(Length.rem(0.5f))
+                .border(Length.rem(0.1f), Role.LINE)
                 .padding(Length.dp(12)).gap(Length.rem(0.625f))
                 .alignItems(ALIGN[align.get()])
                 .children(a, b, c, d);
@@ -120,9 +120,9 @@ public final class LayoutChapter implements Chapter {
     private static Node swatch(Gui gui, String label, Length width, Role fill) {
         Theme theme = gui.theme();
         return gui.text(label).width(width).height(Length.rem(4))
-                .background(theme.color(fill)).corner(Length.rem(0.375f))
-                .textSize(Length.rem(0.8125f)).textColor(theme.color(Role.ON_ACTION))
+                .background(fill).corner(Length.rem(0.375f))
+                .textSize(Length.rem(0.8125f)).textColor(Role.ON_ACTION)
                 .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE)
-                .lit(theme.lit()).elevation(theme.elevation(Relief.RAISED));
+                .lit(Finish.LIT).elevation(theme.elevation(Relief.RAISED));
     }
 }

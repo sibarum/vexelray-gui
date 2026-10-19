@@ -250,8 +250,8 @@ class ColorPickerTest {
             shared.use(Color.rgb(0x00FF00));
             h.frame();
 
-            assertEquals(Color.rgb(0x00FF00), swatchOf(h, a, 0).background());
-            assertEquals(Color.rgb(0x00FF00), swatchOf(h, b, 0).background());
+            assertEquals(Color.rgb(0x00FF00), swatchOf(h, a, 0).background(h.gui.drawnTheme()));
+            assertEquals(Color.rgb(0x00FF00), swatchOf(h, b, 0).background(h.gui.drawnTheme()));
         }
     }
 

@@ -1535,15 +1535,26 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
-     * Install the theme. Set it before building the UI: roles resolve when a widget writes a prop, so a swap after
-     * the fact reaches the renderer's chrome and everything that restyles on interaction, but leaves already-written
-     * props alone (see {@link Theme}).
+     * Install the theme, at any time. A node holds a {@code Paint} and a {@code Finish}, not a colour, and the renderer
+     * resolves them against the tree's theme every frame — so a swap after the UI is built repaints all of it, with
+     * nothing rewritten. It lands with the frame's other edits, and whatever the tree's {@code PaintMotion} does to a
+     * hover it does to every colour the swap changes.
+     *
+     * <p>What it cannot reach is a colour resolved early and written as one: {@code background(theme.color(role))} is
+     * the same constant in every theme after it. Write the role.
      */
     public Gui theme(Theme theme) {
         this.theme = theme == null ? Theme.DARK : theme;
-        // The renderer's own chrome reads the theme directly, not through a prop, so no edit announces this.
-        requestFrame();
+        sink.post(new Mutation.Retheme(this.theme));
         return this;
+    }
+
+    /**
+     * The theme the tree is drawn in: the last one {@link #theme(Theme)} asked for whose edit the tree has applied.
+     * The renderer's, so that a swap is drawn in the same frame its fades start; everything else asks {@link #theme()}.
+     */
+    public Theme drawnTheme() {
+        return reconciler.theme();
     }
 
     /**

@@ -16,6 +16,7 @@ import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.NodeLayout;
 import dev.vexelray.gui.core.layout.Rect;
+import dev.vexelray.gui.core.style.Paint;
 import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.draw.Picture;
@@ -84,9 +85,9 @@ public final class Board<T> {
     /** How thick it is, px. */
     private static final float RIM_PX = 1.5f;
 
-    /** The landing pad: a wash of the accent, and an edge of it. */
-    private static final float PAD_FILL_ALPHA = 0.07f;
-    private static final float PAD_EDGE_ALPHA = 0.38f;
+    /** The landing pad: a wash of the accent, and an edge of it, in whichever theme is drawing. */
+    private static final Paint PAD_FILL = Role.ACCENT.alpha(0.07f);
+    private static final Paint PAD_EDGE = Role.ACCENT.alpha(0.38f);
 
     private final Gui gui;
     private final Function<? super T, ? extends Node> faces;
@@ -1510,7 +1511,7 @@ public final class Board<T> {
                 }
             }
             for (Slot<T> slot : deck.slots) {
-                paintSlot(slot, accent);
+                paintSlot(slot);
             }
         }
         for (Flight<T> flight : flights) {
@@ -1521,7 +1522,7 @@ public final class Board<T> {
         }
     }
 
-    private void paintSlot(Slot<T> slot, Color accent) {
+    private void paintSlot(Slot<T> slot) {
         if (slot.natural()) {
             if (!Float.isInfinite(slot.paintedPx)) {
                 // The pad's inset goes too: a gap that a card has landed in is the card's slot now, and padding
@@ -1556,8 +1557,8 @@ public final class Board<T> {
             float corner = held != null ? held.card.face.layout().cornerTopPx() : 0f;
             slot.box.padding(px(inset), Length.ZERO);
             slot.pad.visible(true)
-                    .background(Color.withAlpha(accent, PAD_FILL_ALPHA))
-                    .border(Length.dp(1f), Color.withAlpha(accent, PAD_EDGE_ALPHA))
+                    .background(PAD_FILL)
+                    .border(Length.dp(1f), PAD_EDGE)
                     .corner(px(corner))
                     .opacity(pad);
         } else if (pad > 0f) {

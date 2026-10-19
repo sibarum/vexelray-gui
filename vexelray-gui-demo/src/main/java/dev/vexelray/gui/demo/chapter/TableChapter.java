@@ -76,7 +76,7 @@ public final class TableChapter implements Chapter {
         table.node().width(Length.FILL).height(Length.FILL);
 
         Node counter = gui.text("").width(Length.FILL).height(Length.rem(1.5f))
-                .textSize(Length.rem(0.9375f)).textColor(gui.theme().color(Role.DIM))
+                .textSize(Length.rem(0.9375f)).textColor(Role.DIM)
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
 
         // Read on every published layout, written only when it changed. The guard is not an optimisation: a
@@ -137,7 +137,7 @@ public final class TableChapter implements Chapter {
     private static Node cell(Gui gui, String text, boolean numeric) {
         return gui.text(text).width(Length.FILL).height(Length.FILL)
                 .textSize(Length.rem(0.9375f))
-                .textColor(gui.theme().color(numeric ? Role.DIM : Role.INK))
+                .textColor(numeric ? Role.DIM : Role.INK)
                 .align(numeric ? TextLayout.HAlign.RIGHT : TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
     }
 

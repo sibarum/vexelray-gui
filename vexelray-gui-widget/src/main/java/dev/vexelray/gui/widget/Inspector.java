@@ -7,7 +7,6 @@ import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.style.Role;
-import dev.vexelray.gui.core.style.Theme;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -179,14 +178,13 @@ public final class Inspector {
         if (section.isEmpty() || headings.containsKey(section)) {
             return into;
         }
-        Theme theme = gui.theme();
         Node label = gui.text(section.toUpperCase(java.util.Locale.ROOT))
                 .textSize(HEADING_SIZE)
-                .textColor(theme.color(Role.FAINT));
+                .textColor(Role.FAINT);
         // The rule beside the heading is the heading's underline made horizontal: it says "a group starts here"
         // without a full-width line boxing the group in, which over a translucent panel reads as a second panel.
         Node rule = gui.box().width(Length.grow(1f)).height(Length.dp(1))
-                .background(theme.color(Role.LINE));
+                .background(Role.LINE);
         Node head = gui.row().role("inspector-section")
                 .width(Length.grow(1f)).gap(ROW_GAP)
                 .padding(Length.rem(0.45f), Length.ZERO)
@@ -199,16 +197,15 @@ public final class Inspector {
 
     /** One row: label, control, value. Built here so every row in every card shares one geometry. */
     private Node row(Property property, Node unused) {
-        Theme theme = gui.theme();
         Node label = gui.text(property.name())
                 .width(Length.grow(1f))
                 .textSize(LABEL_SIZE)
                 .wordWrap(false)
-                .textColor(theme.color(Role.DIM));
+                .textColor(Role.DIM);
         Node value = gui.text("").width(VALUE_W)
                 .textSize(VALUE_SIZE)
                 .wordWrap(false)
-                .textColor(theme.color(Role.FAINT))
+                .textColor(Role.FAINT)
                 .align(dev.vexelray.text.TextLayout.HAlign.RIGHT, dev.vexelray.text.TextLayout.VAlign.MIDDLE);
         Node control = property.editor(gui, value::text);
         // Offered to every row, wherever the row came from — the panel or one of its cards — so a row added
@@ -245,16 +242,15 @@ public final class Inspector {
 
         private Card(Gui gui, String title, String badge, BooleanSupplier on, Consumer<Boolean> toggle) {
             this.on = on;
-            Theme theme = gui.theme();
             this.toggle = new Toggle(gui, on.getAsBoolean()).onChange(v -> {
                 toggle.accept(v);
                 paint();
             }).transition(knobs);
             Node name = gui.text(title).width(Length.grow(1f))
                     .textSize(TITLE_SIZE).wordWrap(false)
-                    .textColor(theme.color(Role.INK));
+                    .textColor(Role.INK);
             this.badgeNode = gui.text(badge).textSize(BADGE_SIZE).wordWrap(false)
-                    .textColor(theme.color(Role.FAINT));
+                    .textColor(Role.FAINT);
             this.caretIcon = dev.vexelray.gui.icons.IconView.of(gui, FOLDED).size(Length.rem(0.75f)).tint(Role.FAINT);
             this.caret = caretIcon.node();
             Node head = gui.row().role("inspector-card-head")
@@ -271,17 +267,17 @@ public final class Inspector {
                 gui.onClick(opener, this::fold);
             }
             gui.onState(head, s -> head.background(
-                    theme.color(s == InteractionState.NORMAL ? Role.PANEL : Role.RAISED)));
+                    s == InteractionState.NORMAL ? Role.PANEL : Role.RAISED));
             this.rows = gui.column().width(Length.grow(1f))
                     .padding(Length.rem(0.2f), Length.rem(0.5f))
-                    .background(theme.color(Role.WELL))
+                    .background(Role.WELL)
                     .visible(false);
             this.root = gui.column().role("inspector-card")
                     .width(Length.grow(1f))
                     .margin(Length.rem(0.15f))
                     .corner(Length.rem(0.35f))
-                    .background(theme.color(Role.PANEL))
-                    .border(Length.dp(1), theme.color(Role.EDGE))
+                    .background(Role.PANEL)
+                    .border(Length.dp(1), Role.EDGE)
                     .clip(true)
                     .children(head, rows);
             paint();

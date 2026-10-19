@@ -85,7 +85,7 @@ public final class TextChapter implements Chapter {
         java.util.function.Consumer<History.Status> show = s -> {
             counter.text(String.format("undo %d  ·  redo %d  ·  %s",
                     s.undoDepth(), s.redoDepth(), s.clean() ? "clean" : "modified"));
-            counter.textColor(theme.color(s.clean() ? Role.FAINT : Role.DIM));
+            counter.textColor(s.clean() ? Role.FAINT : Role.DIM);
         };
         history.status().onCommit(v -> show.accept(v.value()));
         // Subscribing says what happens *next*; the counter also has to be right before anything has happened,

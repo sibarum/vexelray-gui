@@ -98,7 +98,7 @@ final class FindBar implements AutoCloseable {
         this.statusLine = gui.text("")
                 .width(Length.rem(7))
                 .textSize(Length.rem(0.85f))
-                .textColor(gui.theme().color(Role.DIM))
+                .textColor(Role.DIM)
                 .align(TextLayout.HAlign.RIGHT, TextLayout.VAlign.MIDDLE);
         // The way out that does not need the keyboard: Escape is the gesture, this is the same thing for a hand
         // already on the mouse. Not a Tab stop — Tab from the query would land on a button whose only job Escape
@@ -124,7 +124,7 @@ final class FindBar implements AutoCloseable {
                 .gap(Length.dp(6))
                 .padding(Length.dp(3), Length.dp(3))
                 .alignItems(AlignItems.CENTER)
-                .background(gui.theme().color(Role.CHROME))
+                .background(Role.CHROME)
                 .scroll(false, false)
                 .children(lens, field.node(), statusLine, previous, next, exit);
         this.toggled = bar;

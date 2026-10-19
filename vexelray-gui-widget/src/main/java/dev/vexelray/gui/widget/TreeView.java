@@ -4,7 +4,6 @@ import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.IconSource;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.drop.Drop;
-import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.drop.DragState;
 import dev.vexelray.gui.core.drop.DragWatch;
 import dev.vexelray.gui.core.drop.DropEffect;
@@ -24,9 +23,10 @@ import dev.vexelray.gui.core.input.MenuItem;
 import dev.vexelray.gui.core.input.MenuSink;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.Rect;
+import dev.vexelray.gui.core.style.Finish;
+import dev.vexelray.gui.core.style.Paint;
 import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
-import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.gui.icons.Icon;
 import dev.vexelray.gui.icons.IconView;
 import dev.vexelray.text.TextLayout;
@@ -327,6 +327,10 @@ public final class TreeView<T> implements AutoCloseable {
     private static final Shortcut COPY = Shortcut.of(Key.C, Modifier.CONTROL);
     private static final Shortcut PASTE = Shortcut.of(Key.V, Modifier.CONTROL);
 
+    /** The carried label's fill where releasing would place it, and where it would not: barely see-through. */
+    private static final Paint CARRY_ACCEPTS = Role.ACTION.alpha(0.92f);
+    private static final Paint CARRY_REFUSES = Role.DANGER.alpha(0.92f);
+
     /** One item's presence in the tree: its row, its (possibly unmaterialised) children container, its state. */
     private final class Row {
         final T item;
@@ -392,7 +396,7 @@ public final class TreeView<T> implements AutoCloseable {
             this.checkBox = gui.row()
                     .width(Length.rem(0.95f)).height(Length.rem(0.95f))
                     .corner(Length.rem(0.2f))
-                    .border(Length.rem(0.1f), gui.theme().color(Role.EDGE))
+                    .border(Length.rem(0.1f), Role.EDGE)
                     .justify(LayoutEnums.Justify.CENTER)
                     .alignItems(LayoutEnums.AlignItems.CENTER)
                     .scroll(false, false)
@@ -415,7 +419,7 @@ public final class TreeView<T> implements AutoCloseable {
                 recheck();
             });
             gui.onState(checkBox, state -> checkBox.border(Length.rem(0.1f),
-                    gui.theme().color(state == InteractionState.NORMAL ? Role.EDGE : Role.ACCENT)));
+                    state == InteractionState.NORMAL ? Role.EDGE : Role.ACCENT));
 
             // One line, cut off at the row's edge. The row is a fixed height — that is what keeps paging exact —
             // and a fixed-height row cannot hold a wrapped label: the second line spills out of the strip and
@@ -429,7 +433,7 @@ public final class TreeView<T> implements AutoCloseable {
             // cut name is read in full.
             this.label = gui.text(source.label(item))
                     .textSize(Length.rem(1))
-                    .textColor(gui.theme().color(Role.INK))
+                    .textColor(Role.INK)
                     .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
             this.labelBox = gui.row()
                     .width(Length.grow(1))
@@ -683,9 +687,9 @@ public final class TreeView<T> implements AutoCloseable {
                 .role("tree")
                 .width(Length.FILL)
                 .height(Length.FILL)
-                .background(gui.theme().color(Role.WELL))
+                .background(Role.WELL)
                 .corner(Length.rem(0.5f))
-                .border(Length.rem(0.1f), gui.theme().color(Role.LINE))
+                .border(Length.rem(0.1f), Role.LINE)
                 .padding(Length.dp(4))
                 .scroll(false, false);
         this.rows = gui.column().width(Length.FILL).height(Length.FILL);
@@ -966,7 +970,7 @@ public final class TreeView<T> implements AutoCloseable {
                 carried = gui.text("").width(Length.AUTO).height(Length.rem(2))
                         .padding(Length.ZERO, Length.rem(0.625f)).corner(Length.rem(0.4f))
                         .textSize(Length.rem(0.9375f)).align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE)
-                        .lit(gui.theme().lit()).elevation(gui.theme().elevation(Relief.FLOATING))
+                        .lit(Finish.LIT).elevation(gui.theme().elevation(Relief.FLOATING))
                         .hitInert(true).visible(false);
                 gui.root().append(carried);
             }
@@ -986,12 +990,11 @@ public final class TreeView<T> implements AutoCloseable {
             label.visible(false);
             return;
         }
-        Theme theme = gui.theme();
         float dpi = Math.max(0.0001f, gui.dpi().value());
         label.text(text).visible(true)
                 .floatAt(Length.dp(drag.x() / dpi + 14f), Length.dp(drag.y() / dpi + 12f))
-                .background(Color.withAlpha(theme.color(drag.accepts() ? Role.ACTION : Role.DANGER), 0.92f))
-                .textColor(theme.color(drag.accepts() ? Role.ON_ACTION : Role.ON_DANGER));
+                .background(drag.accepts() ? CARRY_ACCEPTS : CARRY_REFUSES)
+                .textColor(drag.accepts() ? Role.ON_ACTION : Role.ON_DANGER);
     }
 
     /**
@@ -2330,15 +2333,14 @@ public final class TreeView<T> implements AutoCloseable {
     }
 
     private void styleLocked(Row row, InteractionState state) {
-        Theme theme = gui.theme();
         if (row == selected) {
-            row.rowNode.background(theme.color(Role.SELECTION));
-            row.label.textColor(theme.color(Role.ACCENT));
+            row.rowNode.background(Role.SELECTION);
+            row.label.textColor(Role.ACCENT);
         } else {
             // Transparent at rest, so an unselected row is the well it sits in rather than a rectangle of its own.
             boolean over = state != InteractionState.NORMAL;
-            row.rowNode.background(over ? theme.color(hoverFill) : null);
-            row.label.textColor(theme.color(over ? hoverInk : Role.INK));
+            row.rowNode.background(over ? hoverFill : null);
+            row.label.textColor(over ? hoverInk : Role.INK);
         }
     }
 

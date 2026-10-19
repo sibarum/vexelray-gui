@@ -5,9 +5,9 @@ import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.style.Finish;
 import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
-import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.text.TextLayout;
 
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -36,11 +36,10 @@ public final class Ui {
      * transfer functions of the same rounded-box SDF the fill already evaluates, so a card costs no texture.
      */
     public static Node card(Gui gui, Node... children) {
-        Theme theme = gui.theme();
         return gui.column().width(Length.FILL).height(Length.FILL)
-                .background(theme.color(Role.PANEL)).corner(Length.rem(0.875f))
-                .border(Length.rem(0.1f), theme.color(Role.LINE))
-                .lit(theme.lit()).elevation(theme.elevation(Relief.OVERLAY))
+                .background(Role.PANEL).corner(Length.rem(0.875f))
+                .border(Length.rem(0.1f), Role.LINE)
+                .lit(Finish.LIT).elevation(gui.theme().elevation(Relief.OVERLAY))
                 .padding(CARD_PAD).gap(GAP)
                 .children(children);
     }
@@ -53,7 +52,7 @@ public final class Ui {
     /** The title line of a section. */
     public static Node heading(Gui gui, String text) {
         return gui.text(text).width(Length.FILL).height(Length.rem(1.75f))
-                .textSize(Length.rem(1.25f)).textColor(gui.theme().color(Role.ACCENT))
+                .textSize(Length.rem(1.25f)).textColor(Role.ACCENT)
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
     }
 
@@ -64,14 +63,14 @@ public final class Ui {
      */
     public static Node prose(Gui gui, String text) {
         return gui.text(text).width(Length.FILL)
-                .textSize(Length.rem(0.9375f)).textColor(gui.theme().color(Role.DIM))
+                .textSize(Length.rem(0.9375f)).textColor(Role.DIM)
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.TOP);
     }
 
     /** A short caption beside a control. */
     public static Node label(Gui gui, String text, Length width) {
         return gui.text(text).width(width).height(Length.rem(2))
-                .textSize(Length.rem(0.9375f)).textColor(gui.theme().color(Role.DIM))
+                .textSize(Length.rem(0.9375f)).textColor(Role.DIM)
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
     }
 
@@ -85,7 +84,7 @@ public final class Ui {
     /** The loud one: filled with the action colour, its label letterpressed where the theme letterpresses. */
     public static Node action(Gui gui, String text, Runnable onClick) {
         Node b = shell(gui, text, Role.ON_ACTION, Role.ACTION, false)
-                .textSunken(gui.theme().letterpress());
+                .textSunken(Finish.LETTERPRESS);
         gui.onClick(b, onClick);
         return b;
     }
@@ -100,20 +99,19 @@ public final class Ui {
         AtomicBoolean value = new AtomicBoolean(initial);
         AtomicReference<InteractionState> last = new AtomicReference<>(InteractionState.NORMAL);
         Node t = gui.text(initial ? on : off).role("toggle").width(Length.rem(8.5f)).height(Length.rem(2.5f))
-                .corner(Length.rem(0.5f)).border(Length.rem(0.1f), gui.theme().color(Role.LINE))
+                .corner(Length.rem(0.5f)).border(Length.rem(0.1f), Role.LINE)
                 .textSize(Length.rem(0.9375f))
                 .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE)
-                .lit(gui.theme().lit());
+                .lit(Finish.LIT);
         Runnable restyle = () -> {
             boolean v = value.get();
             InteractionState state = last.get();
-            Theme theme = gui.theme();
             t.text(v ? on : off)
-                    .textColor(theme.color(v ? Role.ON_ACTION : Role.DIM))
+                    .textColor(v ? Role.ON_ACTION : Role.DIM)
                     // Letterpress only while the label is white-on-fill; the off state is low-contrast already.
-                    .textSunken(v && theme.letterpress())
-                    .background(theme.color(v ? Role.ACTION : Role.PANEL, state))
-                    .elevation(theme.elevation(Relief.CONTROL, state));
+                    .textSunken(v ? Finish.LETTERPRESS : Finish.OFF)
+                    .background((v ? Role.ACTION : Role.PANEL).at(state))
+                    .elevation(gui.theme().elevation(Relief.CONTROL, state));
         };
         restyle.run();
         gui.onState(t, state -> {
@@ -139,7 +137,7 @@ public final class Ui {
     /** A hairline between sections of a card. */
     public static Node rule(Gui gui) {
         return gui.box().width(Length.FILL).height(Length.rem(0.1f))
-                .background(gui.theme().color(Role.LINE));
+                .background(Role.LINE);
     }
 
     /**
@@ -150,15 +148,15 @@ public final class Ui {
     private static Node shell(Gui gui, String text, Role fg, Role fill, boolean bordered) {
         Node b = gui.text(text).role("button").width(Length.AUTO).height(Length.rem(2.5f))
                 .padding(Length.ZERO, Length.rem(0.875f))
-                .background(gui.theme().color(fill))
-                .corner(Length.rem(0.5f)).textColor(gui.theme().color(fg))
+                .background(fill)
+                .corner(Length.rem(0.5f)).textColor(fg)
                 .textSize(Length.rem(0.9375f))
                 .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE)
-                .lit(gui.theme().lit()).elevation(gui.theme().elevation(Relief.CONTROL));
+                .lit(Finish.LIT).elevation(gui.theme().elevation(Relief.CONTROL));
         if (bordered) {
-            b.border(Length.rem(0.1f), gui.theme().color(Role.LINE));
+            b.border(Length.rem(0.1f), Role.LINE);
         }
-        gui.onState(b, state -> b.background(gui.theme().color(fill, state))
+        gui.onState(b, state -> b.background(fill.at(state))
                 .elevation(gui.theme().elevation(Relief.CONTROL, state)));
         return b;
     }

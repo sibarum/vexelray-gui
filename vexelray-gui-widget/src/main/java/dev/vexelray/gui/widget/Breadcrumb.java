@@ -128,7 +128,7 @@ public final class Breadcrumb<T> {
             if (i == n - 1) {
                 add(gui.text(label.apply(item)).font(face)
                         .textSize(Length.rem(0.875f))
-                        .textColor(gui.theme().color(Role.INK))
+                        .textColor(Role.INK)
                         .padding(Length.rem(0.35f), Length.rem(0.5f))
                         .wordWrap(false).role("current"));
             } else {

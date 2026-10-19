@@ -55,7 +55,7 @@ class TextDisplacementTest {
         n.viewH = 24f;
         n.textSizePx = 16f;
         n.set(PropKey.TEXT, "");
-        n.set(PropKey.TEXT_COLOR, INK);
+        n.set(PropKey.TEXT_COLOR, dev.vexelray.gui.core.style.Paint.of(INK));
         n.set(PropKey.CARET, 0);
         n.set(PropKey.CARET_ON, true);
         n.textMetrics = new TextMetrics(List.of(
@@ -156,7 +156,7 @@ class TextDisplacementTest {
     @Test
     void theBoxAndTheTextTravelTogether() {
         RetainedNode n = caretNode(0f, 0f);
-        n.set(PropKey.BACKGROUND, BOX);
+        n.set(PropKey.BACKGROUND, dev.vexelray.gui.core.style.Paint.of(BOX));
         settled(n);
         float[] restBox = originOf(emit(n), BOX);
         float[] restInk = originOf(emit(n), INK);

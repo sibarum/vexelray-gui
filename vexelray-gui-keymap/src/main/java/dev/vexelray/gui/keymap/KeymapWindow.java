@@ -70,7 +70,7 @@ public final class KeymapWindow {
             // The bar is a child of the root and the padding is the editor's own, below it: a bar inset from the
             // window edge is a bar with a gap the window manager still treats as caption.
             Node body = g.column().width(Length.FILL).height(Length.FILL).children(editor.node());
-            g.root().background(g.theme().color(Role.PAGE)).children(bar.node(), body);
+            g.root().background(Role.PAGE).children(bar.node(), body);
             return bar.commands(WindowSpec.of(
                     WindowConfig.of(TITLE, Math.round(680 * zoom), Math.round(520 * zoom))
                             .decorations(Decorations.CLIENT), g)

@@ -10,7 +10,6 @@ import dev.vexelray.gui.core.input.Trigger;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.style.Role;
-import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.gui.icons.Icon;
 import dev.vexelray.gui.widget.Button;
 import dev.vexelray.gui.widget.IconButton;
@@ -103,7 +102,6 @@ public final class KeymapEditor implements AutoCloseable {
     public KeymapEditor(Gui gui, Keymap keymap) {
         this.gui = gui;
         this.keymap = keymap;
-        Theme theme = gui.theme();
         this.filter = new TextField(gui).onChange(text -> {
             query = text.strip().toLowerCase(Locale.ROOT);
             render();
@@ -114,14 +112,14 @@ public final class KeymapEditor implements AutoCloseable {
             say("Every action is back on its default chords.");
         });
         Node header = gui.row().width(Length.FILL).gap(Length.rem(0.5f)).alignItems(AlignItems.CENTER)
-                .children(gui.text("Filter").textSize(TEXT).wordWrap(false).textColor(theme.color(Role.DIM)),
+                .children(gui.text("Filter").textSize(TEXT).wordWrap(false).textColor(Role.DIM),
                         filter.node(), resetAll.node());
         this.list = gui.column().role("keymap-actions").width(Length.FILL).height(Length.FILL)
                 .gap(Length.rem(0.15f)).scroll(false, true);
         // The status line has its height reserved whether or not it has anything to say, so a message arriving
         // never moves the list above it.
         this.status = gui.text(HINT).role("keymap-status").width(Length.FILL).height(Length.rem(1.5f))
-                .textSize(Length.rem(0.75f)).textColor(theme.color(Role.DIM));
+                .textSize(Length.rem(0.75f)).textColor(Role.DIM);
         // Always present and only enabled once something has changed, like each row's reset.
         this.opened = keymap.overrides().value();
         this.cancel = new Button(gui, "Cancel").enabled(false).onPress(() -> {
@@ -219,7 +217,7 @@ public final class KeymapEditor implements AutoCloseable {
         if (rows.isEmpty()) {
             rows.add(gui.text(keymap.actions().isEmpty() ? "This application has no rebindable actions."
                             : "No action matches “" + query + "”.")
-                    .textSize(TEXT).textColor(gui.theme().color(Role.DIM)));
+                    .textSize(TEXT).textColor(Role.DIM));
         }
         list.children(rows.toArray(Node[]::new));
         if (capture != null) {
@@ -261,11 +259,10 @@ public final class KeymapEditor implements AutoCloseable {
     }
 
     private Node row(Action a) {
-        Theme theme = gui.theme();
         // The column is fixed so the chips line up; a name wider than it is cut at the column's edge and shown
         // whole while the pointer is on it, over the chips, which stay where they are and stay hittable.
         Node label = gui.text(a.label()).role("keymap-label").wordWrap(false)
-                .textSize(TEXT).textColor(theme.color(Role.INK));
+                .textSize(TEXT).textColor(Role.INK);
         Node name = gui.row().role("keymap-name").width(Length.rem(12)).alignItems(AlignItems.CENTER)
                 .scroll(false, false).clip(true).children(label);
         Unclip.of(gui).attach(name, label);
@@ -292,15 +289,14 @@ public final class KeymapEditor implements AutoCloseable {
     }
 
     private Node slot(Slot s, Trigger chord) {
-        Theme theme = gui.theme();
         if (s.equals(recording)) {
             // A node of its own rather than the chip in another state: the chip claims Enter and Delete by name,
             // and a named claim outranks a wildcard at one scope — so recording on the chip could never record
             // Enter. A fresh node has no claims but the one that records.
             capture = gui.text(Shortcut.prefix(gui.modifiers().value()) + "…").role("keymap-recording")
                     .wordWrap(false).textSize(TEXT).padding(Length.rem(0.15f), Length.rem(0.5f))
-                    .corner(Length.rem(0.3f)).background(theme.color(Role.SELECTION))
-                    .border(Length.rem(0.1f), theme.color(Role.ACCENT)).textColor(theme.color(Role.INK));
+                    .corner(Length.rem(0.3f)).background(Role.SELECTION)
+                    .border(Length.rem(0.1f), Role.ACCENT).textColor(Role.INK);
             gui.focusable(capture, true);
             gui.claimAny(capture, ClaimScope.FOCUSED, this::recorded);
             return capture;
@@ -309,17 +305,17 @@ public final class KeymapEditor implements AutoCloseable {
         if (chord == null) {
             chip = gui.text("+").role("keymap-add").wordWrap(false).textSize(TEXT)
                     .padding(Length.rem(0.15f), Length.rem(0.5f)).corner(Length.rem(0.3f))
-                    .border(Length.rem(0.1f), theme.color(Role.LINE)).textColor(theme.color(Role.DIM));
+                    .border(Length.rem(0.1f), Role.LINE).textColor(Role.DIM);
         } else {
             Node remove = gui.text("×").role("keymap-remove").wordWrap(false).textSize(TEXT)
-                    .textColor(theme.color(Role.DIM));
+                    .textColor(Role.DIM);
             gui.onClick(remove, () -> remove(s));
             gui.cursor(remove, CursorShape.POINTER);
             chip = gui.row().role("keymap-chord").alignItems(AlignItems.CENTER).gap(Length.rem(0.4f))
                     .padding(Length.rem(0.15f), Length.rem(0.5f)).corner(Length.rem(0.3f))
-                    .background(theme.color(Role.RAISED)).border(Length.rem(0.1f), theme.color(Role.LINE))
+                    .background(Role.RAISED).border(Length.rem(0.1f), Role.LINE)
                     .children(gui.text(chord.text()).wordWrap(false).textSize(TEXT)
-                            .textColor(theme.color(Role.INK)), remove);
+                            .textColor(Role.INK), remove);
             gui.claim(chip, DELETE, ClaimScope.FOCUSED, () -> remove(s));
             gui.claim(chip, BACKSPACE, ClaimScope.FOCUSED, () -> remove(s));
         }

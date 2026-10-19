@@ -33,7 +33,7 @@ class OverlayNodeTest {
 
     private static RetainedNode box(Color bg) {
         RetainedNode n = new RetainedNode(nextId++);
-        n.set(PropKey.BACKGROUND, bg);
+        n.set(PropKey.BACKGROUND, dev.vexelray.gui.core.style.Paint.of(bg));
         n.w = 100f;
         n.h = 50f;
         return n;

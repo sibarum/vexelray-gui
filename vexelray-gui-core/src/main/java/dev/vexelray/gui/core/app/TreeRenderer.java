@@ -99,8 +99,8 @@ public final class TreeRenderer {
     /** The application's fonts: which face each character is drawn in, the same answer the measurer gave. */
     private final TextFaces faces;
 
-    // The focus ring (FocusRing). Focus is the dispatcher's, handed in as a value; the ring's lengths resolve
-    // against the frame's context like any other length, and its role against the theme.
+    // What every node's paint and finish resolve against this frame, and the focus ring's role with them. Focus is
+    // the dispatcher's, handed in as a value; the ring's lengths resolve against the frame's context like any other.
     private final Theme theme;
     /** The colour each node is drawn in on its way to the one it was given. */
     private PaintMotion paint = PaintMotion.NONE;
@@ -138,8 +138,8 @@ public final class TreeRenderer {
         // noticed, and at full faint strength every indented line carries a row of them.
         this.marks = Color.withAlpha(gutterInk, gutterInk.a() * 0.6f);
         this.selection = theme.color(Role.HIGHLIGHT);
-        // The fallback for a text node that never declared a colour. The model answers white when asked with no
-        // opinion (RetainedNode.textColor), which is only right on a dark page -- so the renderer supplies one.
+        // The fallback for a text node that never declared a colour: the model has no opinion (RetainedNode.textColor
+        // answers null), so the renderer supplies the theme's.
         this.ink = theme.color(Role.INK);
         this.plateEdge = theme.color(Role.EDGE);
         this.plateSurface = theme.color(Role.RAISED);
@@ -155,23 +155,28 @@ public final class TreeRenderer {
      * {@code faces} resolves for it — the node's family and style, and its spans — which is the same resolution the
      * measurer made, so every glyph lands on the caret position the metrics baked for it.
      *
-     * <p>{@code theme} supplies only the chrome the tree does not declare (see the fields above); every colour a
-     * node carries was resolved when the prop was written.
+     * <p>{@code theme} supplies the chrome the tree does not declare (see the fields above), and is what every
+     * node's {@code Paint} and {@code Finish} resolve against — so the same tree drawn in another theme is that
+     * theme's picture of it, with nothing rewritten.
      */
     public static void emit(RetainedNode node, Canvas canvas, TextFaces faces, Theme theme) {
         emit(node, canvas, faces, theme, FocusState.NONE, null);
     }
 
     /**
-     * As {@link #emit(RetainedNode, Canvas, TextFaces, Theme)}, with {@code gui}'s theme, and its focus ring around
-     * whichever node holds keyboard focus, each node's colours as its {@link PaintMotion} has them on their way.
-     * Everything is read from {@code gui} here, once, and handed to the walk as values.
+     * As {@link #emit(RetainedNode, Canvas, TextFaces, Theme)}, in the theme {@code gui}'s tree is drawn in, and its
+     * focus ring around whichever node holds keyboard focus, each node's colours as its {@link PaintMotion} has them
+     * on their way. Everything is read from {@code gui} here, once, and handed to the walk as values.
+     *
+     * <p>The tree's theme, not {@code gui.theme()}: a swap lands in the tree with the frame's other edits, which is
+     * where the fades it starts are reported from, so drawing the asked-for theme a frame early would show the
+     * destination and then fade to it from where it was.
      */
     public static void emit(RetainedNode node, Canvas canvas, TextFaces faces, Gui gui) {
         Viewport v = gui.viewport().value();
         LayoutContext ctx = new LayoutContext(gui.rootEmPx(), gui.zoom().value(), gui.dpi().value(),
                 v == null ? 0f : v.width(), v == null ? 0f : v.height());
-        emit(node, canvas, faces, gui.theme(), gui.focusState(), ctx, gui.paintMotion());
+        emit(node, canvas, faces, gui.drawnTheme(), gui.focusState(), ctx, gui.paintMotion());
     }
 
     /**
@@ -378,7 +383,7 @@ public final class TreeRenderer {
     private java.util.List<Color> surfaceUnder(RetainedNode n) {
         java.util.ArrayDeque<Color> layers = new java.util.ArrayDeque<>();
         for (RetainedNode p = n.parent; p != null; p = p.parent) {
-            Color bg = p.background();
+            Color bg = p.background(theme);
             if (bg == null || bg.a() <= 0f) {
                 continue;
             }
@@ -822,20 +827,23 @@ public final class TreeRenderer {
         return settled == null ? null : paint.drawn(n.id, channel, settled);
     }
 
-    /** {@code n}'s text colour on its way, or the theme's ink when it never stated one (which does not fade). */
+    /**
+     * {@code n}'s text colour on its way, the theme's ink when it never stated one. The ink fades too: it only ever
+     * changes when the theme does, and a theme swap reports it (Reconciler.retheme).
+     */
     private Color inkOf(RetainedNode n) {
-        Color stated = n.textColor(null);
-        return stated == null ? ink : paint.drawn(n.id, PaintMotion.Channel.TEXT, stated);
+        Color stated = n.textColor(theme);
+        return paint.drawn(n.id, PaintMotion.Channel.TEXT, stated == null ? ink : stated);
     }
 
     private void drawSelf(RetainedNode n, Canvas canvas, TextLayout text) {
         // Border width, corner radius and text size were resolved to px by the layout pass (border-box), so the
         // renderer needs no units or layout context — it just paints the computed rect.
-        Color bg = drawn(n, PaintMotion.Channel.BACKGROUND, n.background());
+        Color bg = drawn(n, PaintMotion.Channel.BACKGROUND, n.background(theme));
         float rTop = n.cornerPx;
         float rBottom = n.cornerBottomPx;
         float bw = n.borderPx;
-        Color border = drawn(n, PaintMotion.Channel.BORDER, n.borderColor());
+        Color border = drawn(n, PaintMotion.Channel.BORDER, n.borderColor(theme));
         boolean hasBorder = bw > 0f && border != null;
         // Elevation: an analytic soft shadow under the border-box, dropped slightly with the light overhead.
         boolean hasShadow = n.elevationPx > 0f && (bg != null || border != null);
@@ -846,7 +854,7 @@ public final class TreeRenderer {
         Picture picture = n.picture();
         boolean between = n.image() != null || n.field() != null || (picture != null && !picture.isEmpty());
         boolean borderNow = hasBorder && !between;
-        int fill = bg == null ? NO_FILL : n.lit() ? LIT_FILL : PLAIN_FILL;
+        int fill = bg == null ? NO_FILL : n.lit(theme) ? LIT_FILL : PLAIN_FILL;
         if (borderNow || fill != NO_FILL || hasShadow) {
             box(canvas, n, borderNow ? fade(border) : null, bw, fill, fill == NO_FILL ? null : fade(bg), bevel,
                     hasShadow ? fade(shadow) : null, n.elevationPx);
@@ -1130,7 +1138,7 @@ public final class TreeRenderer {
             // Runs are split on the unfaded colour: the fade is uniform across the line, so it cannot merge or
             // divide a run, and comparing before it keeps the grouping independent of the current opacity.
             Color faded = fade(fg);
-            if (n.textSunken()) {
+            if (n.textSunken(theme)) {
                 // Letterpress: the press depth scales with the type size, so the effect survives zoom.
                 canvas.textSunken(text, s.substring(i, j), x, line.top(), wRun, line.height(), style, faded,
                         Math.max(1f, n.textSizePx * 0.07f));

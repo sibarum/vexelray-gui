@@ -103,7 +103,7 @@ public final class ChooserChapter implements Chapter {
         deep.onCommit(chosen -> console.good("swatch chosen: " + oneOf(chosen)));
 
         Node counter = gui.text("").width(Length.FILL).height(Length.rem(1.5f))
-                .textSize(Length.rem(0.9375f)).textColor(gui.theme().color(Role.DIM))
+                .textSize(Length.rem(0.9375f)).textColor(Role.DIM)
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
         // Read on every published layout, written only when it changed — a text write invalidates the layout that
         // produced it, so a counter that wrote unconditionally would relayout for ever.
@@ -221,7 +221,7 @@ public final class ChooserChapter implements Chapter {
                 .children(
                         gui.text(caption).width(Length.rem(5)).height(Length.rem(1.5f))
                                 .textSize(Length.rem(0.875f))
-                                .textColor(gui.theme().color(Role.DIM))
+                                .textColor(Role.DIM)
                                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE),
                         slider.node().width(Length.grow(1)),
                         readout);
@@ -245,7 +245,7 @@ public final class ChooserChapter implements Chapter {
                 .children(
                         gui.text(caption).width(Length.FILL).height(Length.rem(1.25f))
                                 .textSize(Length.rem(0.8125f))
-                                .textColor(gui.theme().color(Role.FAINT))
+                                .textColor(Role.FAINT)
                                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE),
                         control);
     }

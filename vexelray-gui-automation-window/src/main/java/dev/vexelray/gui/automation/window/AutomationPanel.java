@@ -57,16 +57,15 @@ public final class AutomationPanel implements AutoCloseable {
     public AutomationPanel(Gui gui, Sockets sockets) {
         this.gui = gui;
         this.sockets = sockets;
-        Theme theme = gui.theme();
         Node table = gui.column().role("automation-sockets").width(Length.FILL).gap(Length.rem(0.6f));
         for (Capability c : Capability.values()) {
             Row row = new Row(c);
             rows.put(c, row);
             table.children(row.node);
         }
-        Node hint = gui.text(HINT).width(Length.FILL).textSize(SMALL).textColor(theme.color(Role.DIM));
+        Node hint = gui.text(HINT).width(Length.FILL).textSize(SMALL).textColor(Role.DIM);
         this.footer = gui.text("").role("automation-status").width(Length.FILL).height(Length.rem(2.6f))
-                .textSize(SMALL).textColor(theme.color(Role.DIM));
+                .textSize(SMALL).textColor(Role.DIM);
         this.node = gui.column().role("automation-panel").width(Length.FILL).height(Length.FILL)
                 .padding(Length.rem(0.75f)).gap(Length.rem(0.6f))
                 .children(table, hint, footer);
@@ -137,7 +136,6 @@ public final class AutomationPanel implements AutoCloseable {
 
         Row(Capability capability) {
             this.capability = capability;
-            Theme theme = gui.theme();
             String word = capability.word();
             this.lamp = gui.box().role("automation-" + word + "-lamp").width(Length.rem(1f)).height(Length.rem(1f));
             gui.onResizeUi(lamp, computed -> {
@@ -153,7 +151,7 @@ public final class AutomationPanel implements AutoCloseable {
             });
             port.node().role("automation-" + word + "-port").width(Length.rem(5f));
             this.status = gui.text("off").role("automation-" + word + "-status").width(Length.FILL)
-                    .wordWrap(false).textSize(TEXT).textColor(theme.color(Role.DIM));
+                    .wordWrap(false).textSize(TEXT).textColor(Role.DIM);
             Node label = gui.text(capability == Capability.CONTROL ? "Remote control" : "Diagnostics")
                     .width(Length.rem(8f)).wordWrap(false).textSize(TEXT);
             this.node = gui.row().role("automation-" + word).width(Length.FILL).gap(Length.rem(0.6f))

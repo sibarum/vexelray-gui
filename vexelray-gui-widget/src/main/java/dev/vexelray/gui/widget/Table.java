@@ -192,7 +192,7 @@ public final class Table<T> implements AutoCloseable {
         // Cells stretch to the header's height rather than centring: a grip or an indicator slot that sizes to
         // its own (empty) content is a box of no height, which is nothing to aim at and nothing to draw in.
         this.header = gui.row().role("row").width(Length.FILL).height(Length.rem(rowRem)).scroll(false, false)
-                .background(gui.theme().color(Role.CHROME));
+                .background(Role.CHROME);
         buildHeader();
         root.children(header, body.node());
 
@@ -284,7 +284,7 @@ public final class Table<T> implements AutoCloseable {
      */
     public Table<T> headers(int face, Length size, Role ink) {
         for (Node label : headerLabels) {
-            label.font(face).textSize(size).textColor(gui.theme().color(ink));
+            label.font(face).textSize(size).textColor(ink);
         }
         return this;
     }
@@ -350,7 +350,7 @@ public final class Table<T> implements AutoCloseable {
             Node label = gui.text(column.title()).width(Length.FILL).height(Length.FILL)
                     .padding(Length.ZERO, CELL_PAD)
                     .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE)
-                    .textColor(gui.theme().color(Role.DIM));
+                    .textColor(Role.DIM);
             // The indicator's slot exists whether or not this column is the sorted one: sorting must not move the
             // header's text, and a slot that appears when needed is exactly the movement the rule forbids.
             IconView caret = IconView.of(gui, null).size(Length.rem(0.75f)).tint(Role.ACCENT);
@@ -359,7 +359,7 @@ public final class Table<T> implements AutoCloseable {
             // Declared, because it is the only control here a pointer can use and text cannot name: an agent
             // that cannot address the grip has to compute where a boundary is and aim a few pixels off it.
             Node grip = gui.box().role("columngrip").width(GRIP_W).height(Length.FILL)
-                    .background(gui.theme().color(Role.LINE));
+                    .background(Role.LINE);
 
             cell.children(label, mark, grip);
             if (column.sortable()) {

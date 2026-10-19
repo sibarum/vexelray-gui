@@ -34,7 +34,7 @@ class CullTest {
     /** A 100x20 row at {@code y}, in {@code colour}. */
     private static RetainedNode row(float y, Color colour) {
         RetainedNode n = new RetainedNode(nextId++);
-        n.set(PropKey.BACKGROUND, colour);
+        n.set(PropKey.BACKGROUND, dev.vexelray.gui.core.style.Paint.of(colour));
         n.x = 0f;
         n.y = y;
         n.w = 100f;
@@ -48,7 +48,7 @@ class CullTest {
      */
     private static RetainedNode viewport() {
         RetainedNode n = new RetainedNode(nextId++);
-        n.set(PropKey.BACKGROUND, PAGE);
+        n.set(PropKey.BACKGROUND, dev.vexelray.gui.core.style.Paint.of(PAGE));
         n.w = 100f;
         n.h = 40f;
         n.viewX = 0f;

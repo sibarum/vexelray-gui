@@ -136,7 +136,7 @@ public final class AutomationWindow {
             TitleBar bar = new TitleBar(g, WindowControls.NONE, TITLE);
             AutomationPanel panel = new AutomationPanel(g, sockets);
             Node body = g.column().width(Length.FILL).height(Length.FILL).children(panel.node());
-            g.root().background(g.theme().color(Role.PAGE)).children(bar.node(), body);
+            g.root().background(Role.PAGE).children(bar.node(), body);
             return bar.commands(WindowSpec.of(
                     WindowConfig.of(TITLE, Math.round(680 * zoom), Math.round(260 * zoom))
                             .decorations(Decorations.CLIENT), g));

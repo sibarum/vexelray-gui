@@ -70,7 +70,7 @@ public final class Console {
 
     private synchronized Console line(String text, Role role) {
         Node n = gui.text(text).width(Length.FILL)
-                .textSize(Length.rem(0.875f)).textColor(gui.theme().color(role))
+                .textSize(Length.rem(0.875f)).textColor(role)
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.TOP);
         lines.append(n);
         shown.addLast(n);

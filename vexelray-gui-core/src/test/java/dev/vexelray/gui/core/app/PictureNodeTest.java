@@ -39,7 +39,7 @@ class PictureNodeTest {
     /** A 100x50 box at {@code (x, y)} carrying a background, and whatever else the caller sets. */
     private static RetainedNode box(float x, float y) {
         RetainedNode n = new RetainedNode(nextId++);
-        n.set(PropKey.BACKGROUND, PANEL);
+        n.set(PropKey.BACKGROUND, dev.vexelray.gui.core.style.Paint.of(PANEL));
         n.x = x;
         n.y = y;
         n.w = 100f;
@@ -185,7 +185,7 @@ class PictureNodeTest {
         // buffer: an application's marks belong inside the frame the node draws around them.
         RetainedNode n = box(0f, 0f);
         n.borderPx = 2f;
-        n.set(PropKey.BORDER_COLOR, Color.rgba(0f, 1f, 0f, 1f));
+        n.set(PropKey.BORDER_COLOR, dev.vexelray.gui.core.style.Paint.of(Color.rgba(0f, 1f, 0f, 1f)));
         n.set(PropKey.PICTURE, dot(0, 0));
 
         float[] data = emit(n);

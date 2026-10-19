@@ -7,6 +7,7 @@ import dev.vexelray.gui.core.input.CursorShape;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.style.Paint;
 import dev.vexelray.gui.core.style.Role;
 
 import java.util.ArrayList;
@@ -365,8 +366,11 @@ final class Rows {
             for (Property.Swatch<T> s : options) {
                 Node strip = gui.row().height(Length.rem(0.95f)).width(Length.grow(1f))
                         .corner(Length.rem(0.2f)).clip(true);
+                // The stops are the map's own colours, not the look's: they stay what they are when the theme
+                // changes, which is the one place in this editor a literal paint is right.
                 for (Color stop : s.stops()) {
-                    strip.append(gui.box().width(Length.grow(1f)).height(Length.percent(100)).background(stop));
+                    strip.append(gui.box().width(Length.grow(1f)).height(Length.percent(100))
+                            .background(Paint.of(stop)));
                 }
                 Node label = gui.text(s.label()).width(Length.AUTO);
                 Node card = gui.row().role("swatch")
@@ -409,9 +413,9 @@ final class Rows {
 
         private void paint(Node card, T value, boolean hover) {
             boolean chosen = value.equals(get.get());
-            card.border(Length.dp(1), gui.theme().color(chosen ? Role.ACCENT : hover ? Role.GRIP : Role.EDGE));
-            card.background(gui.theme().color(chosen ? Role.SELECTION : hover ? Role.CHROME : Role.NONE));
-            card.textColor(gui.theme().color(chosen ? Role.INK : Role.DIM));
+            card.border(Length.dp(1), chosen ? Role.ACCENT : hover ? Role.GRIP : Role.EDGE);
+            card.background(chosen ? Role.SELECTION : hover ? Role.CHROME : Role.NONE);
+            card.textColor(chosen ? Role.INK : Role.DIM);
         }
     }
 

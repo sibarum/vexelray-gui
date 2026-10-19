@@ -32,9 +32,6 @@ class PaletteGuardTest {
     private static final Set<String> ALLOWED = Set.of(
             // The palette's own vocabulary: NONE is "paint nothing", which is not a palette decision.
             "dev/vexelray/gui/core/style/Role",
-            // The model's last-resort default for a text node that never declared a colour. The renderer passes
-            // the theme's ink in its place (RetainedNode.textColor(Color)), so this is a floor, not a look.
-            "dev/vexelray/gui/core/model/RetainedNode",
             // The one widget whose *subject* is colour. Everything it wears -- panel, borders, wells, the
             // accent on a hovered swatch -- still comes from a Role, and must. What is minted here is the
             // opposite category: the red at 0 degrees on the hue ramp, the black whose coverage *is* the value

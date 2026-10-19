@@ -167,13 +167,13 @@ public final class FocusChapter implements Chapter {
         // Single-line on purpose: a multiline field takes Tab as text, which would end the walk here.
         TextField fills = new TextField(gui, "Fills its panel: the ring comes inside");
         Node fillsPanel = gui.box().width(Length.FILL).height(Length.rem(2.75f)).clip(true)
-                .border(Length.rem(0.1f), gui.theme().color(Role.LINE)).corner(Length.rem(0.5f))
+                .border(Length.rem(0.1f), Role.LINE).corner(Length.rem(0.5f))
                 .scroll(false, false)
                 .children(fills.node().width(Length.FILL).height(Length.FILL));
 
         Node scroller = gui.column().width(Length.FILL).height(Length.rem(6)).gap(Length.rem(0.375f))
                 .padding(Length.rem(0.375f)).scroll(false, true)
-                .border(Length.rem(0.1f), gui.theme().color(Role.LINE)).corner(Length.rem(0.5f));
+                .border(Length.rem(0.1f), Role.LINE).corner(Length.rem(0.5f));
         for (int i = 1; i <= 6; i++) {
             scroller.append(new TextField(gui, "Row " + i).node().width(Length.FILL));
         }
@@ -195,7 +195,7 @@ public final class FocusChapter implements Chapter {
         list.items(List.of("This list marks focus", "with its own lead row,", "so it opts out of the ring:",
                 "FocusRing.NONE on its node."));
         list.node().width(Length.FILL).height(Length.rem(7)).focusRing(FocusRing.NONE)
-                .border(Length.rem(0.1f), gui.theme().color(Role.LINE)).corner(Length.rem(0.5f));
+                .border(Length.rem(0.1f), Role.LINE).corner(Length.rem(0.5f));
 
         Node cases = gui.column().width(Length.FILL).height(Length.AUTO).gap(Ui.GAP).scroll(false, false)
                 .children(
@@ -291,7 +291,7 @@ public final class FocusChapter implements Chapter {
 
     private static Node end(Gui gui, String word, TextLayout.HAlign align) {
         return gui.text(word).width(Length.rem(3.5f)).height(Length.rem(1.5f)).textSize(Length.rem(0.8125f))
-                .textColor(gui.theme().color(Role.FAINT)).align(align, TextLayout.VAlign.MIDDLE);
+                .textColor(Role.FAINT).align(align, TextLayout.VAlign.MIDDLE);
     }
 
     /** A captioned control, as on the Choosers page. */
@@ -300,7 +300,7 @@ public final class FocusChapter implements Chapter {
                 .children(
                         gui.text(caption).width(Length.FILL).height(Length.rem(1.25f))
                                 .textSize(Length.rem(0.8125f))
-                                .textColor(gui.theme().color(Role.FAINT))
+                                .textColor(Role.FAINT)
                                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE),
                         control);
     }

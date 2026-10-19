@@ -50,7 +50,6 @@ public final class ColorChapter implements Chapter {
     @Override
     public Node build(Stage stage) {
         Gui gui = stage.gui();
-        Theme theme = stage.theme();
         Console console = stage.console();
 
         Node fillSample = sample(gui, "Fill", Color.rgb(0x4C9AFF));
@@ -100,8 +99,8 @@ public final class ColorChapter implements Chapter {
                         + "not. Every point of this square is a different colour you can actually have."),
                 Ui.controls(gui,
                         Ui.button(gui, "Clear the samples", () -> {
-                            fillSample.background(theme.color(Role.WELL));
-                            strokeSample.background(theme.color(Role.WELL));
+                            fillSample.background(Role.WELL);
+                            strokeSample.background(Role.WELL);
                         }),
                         Ui.button(gui, "What is in the strip?", () ->
                                 console.note("recents: " + shared.current().stream()
@@ -118,7 +117,7 @@ public final class ColorChapter implements Chapter {
                 .background(initial)
                 .corner(Length.rem(0.5f))
                 .textSize(Length.rem(0.8125f))
-                .textColor(theme.color(Role.ON_ACTION))
+                .textColor(Role.ON_ACTION)
                 .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE)
                 .elevation(theme.elevation(Relief.RAISED));
     }

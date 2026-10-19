@@ -11,6 +11,7 @@ import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.NodeLayout;
 import dev.vexelray.gui.core.layout.Rect;
+import dev.vexelray.gui.core.style.Finish;
 import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.icons.Icon;
@@ -155,12 +156,12 @@ public final class Select<T> implements AutoCloseable {
                 .width(Length.FILL)
                 .wordWrap(false)
                 .textSize(Length.rem(1))
-                .textColor(theme.color(Role.INK))
+                .textColor(Role.INK)
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
         this.control = gui.row().role("combobox")
                 .width(Length.FILL)
-                .background(theme.color(Role.WELL))
-                .border(Length.dp(BORDER_DP), theme.color(Role.EDGE))
+                .background(Role.WELL)
+                .border(Length.dp(BORDER_DP), Role.EDGE)
                 .corner(Length.rem(0.3f))
                 .padding(Length.rem(0.2f), Length.rem(0.5f))
                 .gap(Length.rem(0.4f))
@@ -170,14 +171,14 @@ public final class Select<T> implements AutoCloseable {
         gui.focusable(control, true);
         gui.cursor(control, CursorShape.POINTER);
         gui.onClick(control, this::toggleOpen);
-        gui.onState(control, state -> control.background(theme.color(Role.WELL, state)));
+        gui.onState(control, state -> control.background(Role.WELL.at(state)));
 
         this.list = new ListView<>(gui, ROW_REM, (g, item) -> g.text(label.apply(item))
                         .width(Length.FILL)
                         .wordWrap(false)
                         .padding(Length.ZERO, Length.rem(0.5f))
                         .textSize(Length.rem(1))
-                        .textColor(g.theme().color(Role.INK))
+                        .textColor(Role.INK)
                         .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE),
                 selection)
                 .roles("listbox", "option")
@@ -202,10 +203,10 @@ public final class Select<T> implements AutoCloseable {
 
         this.popup = gui.column()
                 .visible(false)
-                .background(theme.color(Role.PANEL))
-                .border(Length.dp(BORDER_DP), theme.color(Role.LINE))
+                .background(Role.PANEL)
+                .border(Length.dp(BORDER_DP), Role.LINE)
                 .corner(Length.rem(0.3f))
-                .lit(theme.lit())
+                .lit(Finish.LIT)
                 .elevation(theme.elevation(Relief.FLOATING))
                 .scroll(false, false)
                 .children(list.node());
@@ -518,7 +519,7 @@ public final class Select<T> implements AutoCloseable {
         Set<T> chosen = selection.selection();
         String text = chosen.isEmpty() ? placeholder : summary.apply(chosen);
         valueText.text(text == null ? "" : text);
-        valueText.textColor(gui.theme().color(chosen.isEmpty() ? Role.FAINT : Role.INK));
+        valueText.textColor(chosen.isEmpty() ? Role.FAINT : Role.INK);
     }
 
     private String defaultSummary(Set<T> chosen) {

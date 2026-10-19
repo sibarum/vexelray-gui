@@ -1092,7 +1092,7 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
             return;   // a tree that has never been dimmed needs no scrim to un-dim
         }
         scrims.computeIfAbsent(gui, ModalScrim::install)
-                .dim(dimmed, modalDimSet ? modalDim : gui.theme().color(dev.vexelray.gui.core.style.Role.SCRIM));
+                .dim(dimmed, modalDimSet ? dev.vexelray.gui.core.style.Paint.of(modalDim) : dev.vexelray.gui.core.style.Role.SCRIM);
     }
 
     /**

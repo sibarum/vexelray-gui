@@ -10,6 +10,8 @@ import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.core.model.Mutation;
 import dev.vexelray.gui.core.model.PropKey;
+import dev.vexelray.gui.core.style.Finish;
+import dev.vexelray.gui.core.style.Paint;
 import dev.vexelray.gui.draw.Picture;
 import dev.vexelray.text.TextLayout;
 import dev.vexelray.vulkan.present.SampledImage;
@@ -51,8 +53,18 @@ public final class Node {
 
     // --- visual ---
 
+    /** A colour the look does not decide — the same in every theme. For one it does, pass a {@link Paint}. */
     public Node background(Color c) {
-        return prop(PropKey.BACKGROUND, c);
+        return background(Paint.of(c));
+    }
+
+    /**
+     * Fill this node with {@code paint}, resolved against the tree's theme every frame — so
+     * {@code background(Role.PANEL)} follows a theme swapped after the fact, and
+     * {@code background(Role.ACTION.at(state))} is how a state handler says what the pointer did. Null removes it.
+     */
+    public Node background(Paint paint) {
+        return prop(PropKey.BACKGROUND, paint);
     }
 
     /**
@@ -234,8 +246,13 @@ public final class Node {
     }
 
     public Node border(Length width, Color color) {
+        return border(width, Paint.of(color));
+    }
+
+    /** A border of {@code width} in {@code paint}, resolved against the tree's theme every frame. */
+    public Node border(Length width, Paint paint) {
         prop(PropKey.BORDER_WIDTH, width);
-        return prop(PropKey.BORDER_COLOR, color);
+        return prop(PropKey.BORDER_COLOR, paint);
     }
 
     /**
@@ -252,6 +269,11 @@ public final class Node {
      * the light modulates whatever {@link #background} is set to, so hover/press restyles keep working.
      */
     public Node lit(boolean lit) {
+        return lit(Finish.of(lit));
+    }
+
+    /** As {@link #lit(boolean)}, decided by the tree's theme every frame: {@link Finish#LIT} is "as the look says". */
+    public Node lit(Finish lit) {
         return prop(PropKey.LIT, lit);
     }
 
@@ -362,7 +384,12 @@ public final class Node {
     }
 
     public Node textColor(Color c) {
-        return prop(PropKey.TEXT_COLOR, c);
+        return textColor(Paint.of(c));
+    }
+
+    /** Text in {@code paint}, resolved against the tree's theme every frame. Null is the theme's ink. */
+    public Node textColor(Paint paint) {
+        return prop(PropKey.TEXT_COLOR, paint);
     }
 
     /**
@@ -371,6 +398,11 @@ public final class Node {
      * glyph geometry is unchanged, so nothing reflows.
      */
     public Node textSunken(boolean sunken) {
+        return textSunken(Finish.of(sunken));
+    }
+
+    /** As {@link #textSunken(boolean)}, decided by the tree's theme: {@link Finish#LETTERPRESS} is "as the look says". */
+    public Node textSunken(Finish sunken) {
         return prop(PropKey.TEXT_SUNKEN, sunken);
     }
 

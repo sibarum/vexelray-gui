@@ -1,6 +1,5 @@
 package dev.vexelray.gui.core.app;
 
-import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.Length;
@@ -45,8 +44,8 @@ final class ModalScrim {
         return new ModalScrim(node);
     }
 
-    /** Show the scrim in {@code color}, or hide it. A null colour is "do not dim at all". */
-    void dim(boolean dimmed, Color color) {
+    /** Show the scrim in {@code paint}, or hide it. A null paint is "do not dim at all". */
+    void dim(boolean dimmed, dev.vexelray.gui.core.style.Paint color) {
         if (color != null) {
             node.background(color);
         }

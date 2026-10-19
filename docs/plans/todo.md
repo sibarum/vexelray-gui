@@ -411,7 +411,10 @@ Wanted eventually, deliberately not now.
   the drawing, but nothing in `MenuSink` can express "these items, under that one" yet, and the
   temptation to model it as a `MenuItem` with children is exactly how a menu stops being a list.
   Sequenced in §4.3.
-- **A theme swapped at runtime.** `Gui.theme(Theme)` is read when a widget writes a prop, so a swap after the tree
+- ~~**A theme swapped at runtime.**~~ **Node paints done (2026-10-19); the rest is a plan** — see
+  [runtime-themes.md](runtime-themes.md). A node holds a `Paint` and a `Finish`, resolved per frame, which is the
+  "right one" below; where interaction state is applied was answered by `Role.at(state)`, so the handler still says
+  which state and the theme says what it looks like. The original note: `Gui.theme(Theme)` is read when a widget writes a prop, so a swap after the tree
   is built reaches the renderer's chrome (scrollbars, gutter, selection, shadow) and everything that restyles on
   interaction, but not the props already written — a live dark/light toggle would leave stale colours behind. The
   cheap fix is a restyle notification (a per-node observer shaped like `onState`, released with the node); the

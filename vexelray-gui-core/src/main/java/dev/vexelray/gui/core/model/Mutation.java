@@ -61,6 +61,9 @@ public interface Mutation {
 
         /** Record that a node should be brought into view once the layout knows where it is. */
         void reveal(long id);
+
+        /** Draw the whole tree in {@code theme}: every paint and finish resolves against it from now on. */
+        void retheme(dev.vexelray.gui.core.style.Theme theme);
     }
 
     /**
@@ -256,6 +259,34 @@ public interface Mutation {
         @Override
         public void emitTo(Sink sink) {
             sink.reveal(id);
+        }
+    }
+
+    /**
+     * Draw the whole tree in {@code theme} from this frame on. An edit to the tree like any other, rather than a field
+     * the renderer reads, so that it lands in order with the frame's other edits and the writer that reports colour
+     * changes sees it: every node whose paint resolves differently in the new theme fades there like a hover would.
+     *
+     * <p>One cell for the tree: two swaps before a frame are one, and only the second could have been seen.
+     */
+    record Retheme(dev.vexelray.gui.core.style.Theme theme) implements Mutation {
+
+        /** What every swap writes to. */
+        private static final Object CELL = new Object();
+
+        @Override
+        public long targetId() {
+            return 0L;
+        }
+
+        @Override
+        public Object cell() {
+            return CELL;
+        }
+
+        @Override
+        public void emitTo(Sink sink) {
+            sink.retheme(theme);
         }
     }
 

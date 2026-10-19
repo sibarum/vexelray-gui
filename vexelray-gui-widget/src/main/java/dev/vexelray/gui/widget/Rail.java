@@ -6,6 +6,7 @@ import dev.vexelray.gui.core.input.CursorShape;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.style.Finish;
 import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
@@ -242,16 +243,16 @@ public final class Rail {
                 .gap(Length.rem(0.2f))
                 .padding(Length.rem(0.35f))
                 .corner(Length.rem(0.5f))
-                .background(theme.color(Role.CHROME))
-                .border(Length.dp(1), theme.color(Role.EDGE))
-                .lit(theme.lit()).elevation(theme.elevation(Relief.FLOATING))
+                .background(Role.CHROME)
+                .border(Length.dp(1), Role.EDGE)
+                .lit(Finish.LIT).elevation(theme.elevation(Relief.FLOATING))
                 .alignItems(AlignItems.CENTER)
                 .scroll(false, false);
 
         this.panelTitle = gui.text("").width(Length.grow(1f))
-                .textSize(Length.rem(0.62f)).wordWrap(false).textColor(theme.color(Role.DIM));
+                .textSize(Length.rem(0.62f)).wordWrap(false).textColor(Role.DIM);
         this.panelHint = gui.text("")
-                .textSize(Length.rem(0.6f)).wordWrap(false).textColor(theme.color(Role.FAINT));
+                .textSize(Length.rem(0.6f)).wordWrap(false).textColor(Role.FAINT);
         Node close = new IconButton(gui, dev.vexelray.gui.icons.Icon.CLOSE, "Close")
                 .size(Length.rem(1.2f), Length.rem(0.75f))
                 .ink(Role.FAINT)
@@ -263,13 +264,13 @@ public final class Rail {
                 .alignItems(AlignItems.CENTER)
                 .children(panelTitle, panelHint, close);
         Node headRule = gui.box().width(Length.percent(100)).height(Length.dp(1))
-                .background(theme.color(Role.LINE));
+                .background(Role.LINE);
         this.panelBody = gui.column().width(Length.grow(1f)).height(Length.grow(1f)).scroll(false, true);
         this.panel = gui.column().role("rail-panel")
                 .corner(Length.rem(0.5f))
-                .background(theme.color(Role.PANEL))
-                .border(Length.dp(1), theme.color(Role.EDGE))
-                .lit(theme.lit()).elevation(theme.elevation(Relief.FLOATING))
+                .background(Role.PANEL)
+                .border(Length.dp(1), Role.EDGE)
+                .lit(Finish.LIT).elevation(theme.elevation(Relief.FLOATING))
                 .clip(true)
                 .visible(false)
                 .children(head, headRule, panelBody);
@@ -309,10 +310,9 @@ public final class Rail {
      * home. It never becomes the selection, so opening it does not put away whatever panel is on show.
      */
     public Rail action(Node icon, Runnable act) {
-        Theme theme = gui.theme();
         Node rule = gui.box().width(Length.percent(70)).height(Length.dp(1))
                 .margin(Length.rem(0.15f))
-                .background(theme.color(Role.LINE));
+                .background(Role.LINE);
         Node tile = gui.box().role("rail-action")
                 .size(TILE, TILE)
                 .corner(Length.rem(0.35f))
@@ -324,10 +324,10 @@ public final class Rail {
         gui.cursor(tile, CursorShape.POINTER);
         gui.onClick(tile, act);
         gui.onState(tile, s -> {
-            tile.background(theme.color(s == InteractionState.NORMAL ? Role.NONE : Role.SELECTION));
-            tile.textColor(theme.color(s == InteractionState.NORMAL ? Role.FAINT : Role.INK));
+            tile.background(s == InteractionState.NORMAL ? Role.NONE : Role.SELECTION);
+            tile.textColor(s == InteractionState.NORMAL ? Role.FAINT : Role.INK);
         });
-        tile.textColor(theme.color(Role.FAINT));
+        tile.textColor(Role.FAINT);
         bar.append(rule);
         bar.append(tile);
         return this;
@@ -508,10 +508,8 @@ public final class Rail {
     }
 
     private void paintTile(Item item, boolean hover) {
-        Theme theme = gui.theme();
         boolean isSelected = item.key().equals(selected);
-        item.tile().background(theme.color(
-                isSelected ? Role.SELECTION : hover ? Role.RAISED : Role.NONE));
-        item.tile().textColor(theme.color(isSelected ? Role.ACCENT : hover ? Role.INK : Role.DIM));
+        item.tile().background(isSelected ? Role.SELECTION : hover ? Role.RAISED : Role.NONE);
+        item.tile().textColor(isSelected ? Role.ACCENT : hover ? Role.INK : Role.DIM);
     }
 }

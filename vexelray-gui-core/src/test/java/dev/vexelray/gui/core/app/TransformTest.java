@@ -35,7 +35,7 @@ class TransformTest {
     /** A 100x100 box at the origin with a background, and whatever else the caller sets. */
     private static RetainedNode box(Color background) {
         RetainedNode n = new RetainedNode(nextId++);
-        n.set(PropKey.BACKGROUND, background);
+        n.set(PropKey.BACKGROUND, dev.vexelray.gui.core.style.Paint.of(background));
         n.w = 100f;
         n.h = 100f;
         return n;

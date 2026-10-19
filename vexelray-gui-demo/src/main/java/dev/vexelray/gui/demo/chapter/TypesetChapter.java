@@ -3,7 +3,6 @@ package dev.vexelray.gui.demo.chapter;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.Length;
-import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.demo.Chapter;
 import dev.vexelray.gui.demo.Console;
 import dev.vexelray.gui.demo.Stage;
@@ -74,10 +73,6 @@ public final class TypesetChapter implements Chapter {
         TypesetBlock series = new TypesetBlock(gui, engine, series(profile));
         TypesetBlock piecewise = new TypesetBlock(gui, engine, piecewise(profile));
         TypesetBlock matrix = new TypesetBlock(gui, engine, matrix(profile));
-        quadratic.ink(gui.theme().color(Role.INK));
-        series.ink(gui.theme().color(Role.INK));
-        piecewise.ink(gui.theme().color(Role.INK));
-        matrix.ink(gui.theme().color(Role.INK));
 
         return Ui.card(gui,
                 Ui.heading(gui, "Four constructs, one atom each"),

@@ -5,6 +5,7 @@ import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.CursorShape;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.style.Finish;
 import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
@@ -62,8 +63,8 @@ public final class Toggle {
         this.after = gui.box().width(Length.grow(1f - w)).height(Length.percent(100));
         this.knob = gui.box().width(Length.rem(0.7f)).height(Length.rem(0.7f))
                 .corner(Length.rem(0.35f))
-                .background(theme.color(Role.INK))
-                .lit(theme.lit()).elevation(theme.elevation(Relief.CONTROL));
+                .background(Role.INK)
+                .lit(Finish.LIT).elevation(theme.elevation(Relief.CONTROL));
         this.track = gui.row().role("switch")
                 .width(Length.rem(1.6f)).height(Length.rem(0.9f))
                 .corner(Length.rem(0.45f))
@@ -190,12 +191,11 @@ public final class Toggle {
     }
 
     private void paint(boolean hover) {
-        Theme theme = gui.theme();
         // On is the accent because the switch is the one control here whose whole reading is a colour; off is the
         // track every other control sinks into, so a row of switches has one shape and two colours rather than two
         // shapes.
-        track.background(on ? theme.color(Role.ACCENT) : theme.color(Role.TRACK));
-        track.border(Length.dp(1), theme.color(hover ? Role.GRIP : Role.EDGE));
-        knob.background(on ? theme.color(Role.ON_ACTION) : theme.color(Role.DIM));
+        track.background(on ? Role.ACCENT : Role.TRACK);
+        track.border(Length.dp(1), hover ? Role.GRIP : Role.EDGE);
+        knob.background(on ? Role.ON_ACTION : Role.DIM);
     }
 }

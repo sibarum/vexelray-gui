@@ -27,7 +27,7 @@ class ListViewMarksTest {
     }
 
     private static Color fill(HeadlessGui h, ListView<String> list, String item) {
-        return h.retained(list.rowNode(item)).background();
+        return h.retained(list.rowNode(item)).background(h.gui.drawnTheme());
     }
 
     @Test

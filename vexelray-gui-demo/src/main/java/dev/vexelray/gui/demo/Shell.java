@@ -6,7 +6,6 @@ import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.style.Role;
-import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.gui.krono.KronoGui;
 import dev.vexelray.gui.widget.Cues;
 import dev.vexelray.gui.widget.Tabs;
@@ -58,7 +57,6 @@ public final class Shell {
 
     public Shell(Gui gui, KronoGui krono, List<Chapter> content) {
         this.gui = gui;
-        Theme theme = gui.theme();
         this.console = new Console(gui);
         // One cue player for the gallery. 420ms rather than something snappier: a cue competes with whatever the
         // user is actually looking at, so under about a third of a second it reads as a rendering glitch if it
@@ -77,18 +75,18 @@ public final class Shell {
         pages.bar().visible(false);   // the rail is the tab bar; see the class note
 
         this.pageTitle = gui.text("").width(Length.FILL).height(Length.rem(2.25f))
-                .textSize(Length.rem(1.5f)).textColor(theme.color(Role.INK))
+                .textSize(Length.rem(1.5f)).textColor(Role.INK)
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
         this.pageBlurb = gui.text("").width(Length.FILL)
-                .textSize(Length.rem(0.9375f)).textColor(theme.color(Role.DIM))
+                .textSize(Length.rem(0.9375f)).textColor(Role.DIM)
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.TOP);
         this.status = gui.text("").height(Length.FILL).width(Length.grow(1))
-                .textSize(Length.rem(0.875f)).textColor(theme.color(Role.FAINT))
+                .textSize(Length.rem(0.875f)).textColor(Role.FAINT)
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
         this.titleBar = new TitleBar(gui, dev.vexelray.gui.core.WindowControls.NONE, "VexelRay GUI");
 
         Node nav = gui.column().width(NAV_W).height(Length.FILL)
-                .background(theme.color(Role.CHROME))
+                .background(Role.CHROME)
                 .padding(Length.dp(10)).gap(Length.rem(0.125f))
                 .scroll(false, true);
         for (Chapter chapter : content) {
@@ -103,18 +101,18 @@ public final class Shell {
                         pages.node());
 
         Node activity = gui.column().width(LOG_W).height(Length.FILL)
-                .background(theme.color(Role.CHROME))
+                .background(Role.CHROME)
                 .padding(Length.dp(14)).gap(Length.rem(0.5f))
                 .children(
                         gui.text("Activity").width(Length.FILL).height(Length.rem(1.5f))
-                                .textSize(Length.rem(0.9375f)).textColor(theme.color(Role.ACCENT))
+                                .textSize(Length.rem(0.9375f)).textColor(Role.ACCENT)
                                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE),
                         console.node());
 
         Node body = gui.row().width(Length.FILL).height(Length.FILL)
                 .children(nav, page, activity);
 
-        gui.root().background(theme.color(Role.PAGE))
+        gui.root().background(Role.PAGE)
                 .children(titleBar.node(), body, statusBar());
 
         // Ctrl+1..9 jumps to a chapter. An ordinary GLOBAL claim, so a focused text field that wants one of
@@ -190,21 +188,21 @@ public final class Shell {
     /**
      * Paint the rail: the current chapter is a selection, the rest are quiet until pointed at.
      *
-     * <p>All of them, on every change, rather than only the two that differ. Nine writes of a colour a node
+     * <p>All of them, on every change, rather than only the two that differ. Nine writes of a paint a node
      * already holds cost a comparison each; tracking which two changed costs a bug the first time a third thing
-     * can change one of them — and something already can, since the theme is switchable underneath this.
+     * can change one of them. The theme is not such a thing: the rail holds roles, not the colours they resolved
+     * to, so a theme swapped underneath it repaints with no write here at all.
      */
     private void paintNav() {
-        Theme theme = gui.theme();
         int current = pages.selected();
         for (int i = 0; i < navItems.size(); i++) {
             boolean on = i == current;
             InteractionState s = navStates.get(i).get();
             navItems.get(i)
-                    .textColor(theme.color(on ? Role.INK : Role.DIM))
-                    .background(on ? theme.color(Role.SELECTION, s)
-                            : s == InteractionState.NORMAL ? dev.vexelray.canvas.Color.TRANSPARENT
-                                    : theme.color(Role.PANEL, s));
+                    .textColor(on ? Role.INK : Role.DIM)
+                    .background(on ? Role.SELECTION.at(s)
+                            : s == InteractionState.NORMAL ? Role.NONE
+                                    : Role.PANEL.at(s));
         }
     }
 
@@ -237,9 +235,8 @@ public final class Shell {
     }
 
     private Node statusBar() {
-        Theme theme = gui.theme();
         return gui.row().width(Length.FILL).height(Length.rem(1.875f))
-                .background(theme.color(Role.CHROME))
+                .background(Role.CHROME)
                 .padding(Length.ZERO, Length.dp(14)).gap(Length.rem(0.75f))
                 .alignItems(AlignItems.CENTER).scroll(false, false)
                 .children(status);

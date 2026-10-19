@@ -7,7 +7,6 @@ import dev.vexelray.gui.core.app.GuiApp;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.style.Role;
-import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.gui.demo.Chapter;
 import dev.vexelray.gui.demo.Console;
 import dev.vexelray.gui.demo.Stage;
@@ -89,22 +88,21 @@ public final class ImageChapter implements Chapter {
     @Override
     public Node build(Stage stage) {
         Gui gui = stage.gui();
-        Theme theme = stage.theme();
 
         // Built empty and filled in when the window exists: a texture belongs to a device, and there is no
         // device until there is a window. Stage.onApp is exactly this shape of problem — see its javadoc.
-        Node whole = plate(gui, theme, Length.rem(14f), Length.rem(5.6f));
+        Node whole = plate(gui, Length.rem(14f), Length.rem(5.6f));
         Node[] cells = new Node[CELLS];
         for (int i = 0; i < CELLS; i++) {
-            cells[i] = plate(gui, theme, CELL, CELL);
+            cells[i] = plate(gui, CELL, CELL);
         }
-        Node player = plate(gui, theme, Length.rem(5.5f), Length.rem(5.5f));
+        Node player = plate(gui, Length.rem(5.5f), Length.rem(5.5f));
         Node caption = Ui.prose(gui, "decoding…");
 
         Node[] vectors = {
-                plate(gui, theme, Length.rem(1.5f), Length.rem(1.5f)),
-                plate(gui, theme, Length.rem(3f), Length.rem(3f)),
-                plate(gui, theme, Length.rem(6f), Length.rem(6f)),
+                plate(gui, Length.rem(1.5f), Length.rem(1.5f)),
+                plate(gui, Length.rem(3f), Length.rem(3f)),
+                plate(gui, Length.rem(6f), Length.rem(6f)),
         };
 
         stage.onApp(app -> load(app, stage, whole, cells, player, caption, vectors));
@@ -140,10 +138,10 @@ public final class ImageChapter implements Chapter {
     }
 
     /** A well to draw a picture in, so an image that is transparent still reads as a thing on the page. */
-    private static Node plate(Gui gui, Theme theme, Length w, Length h) {
+    private static Node plate(Gui gui, Length w, Length h) {
         return gui.box().size(w, h).corner(CORNER)
-                .background(theme.color(Role.WELL))
-                .border(Length.rem(0.1f), theme.color(Role.LINE));
+                .background(Role.WELL)
+                .border(Length.rem(0.1f), Role.LINE);
     }
 
     private static Node row(Gui gui, Node... children) {
@@ -199,7 +197,7 @@ public final class ImageChapter implements Chapter {
             // Named, not swallowed: a page that quietly shows nothing is worse than one that says why.
             console.refused("images unavailable: " + e.getMessage());
             caption.text("images unavailable — see the activity rail");
-            caption.textColor(gui.theme().color(Role.DIM));
+            caption.textColor(Role.DIM);
         }
     }
 

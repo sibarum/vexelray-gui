@@ -169,7 +169,7 @@ public final class IconButton {
         boolean lit = toggle && on;
         // What the icon does under the pointer and when on is the theme's, as the hover fill is.
         IconEffects icons = gui.theme().icons();
-        node.background(s == InteractionState.NORMAL ? null : gui.theme().color(hover));
+        node.background(s == InteractionState.NORMAL ? null : hover);
         if (!enabled) {
             glyph.tint(Role.FAINT).glow(0f).weight(0f);
         } else if (lit) {

@@ -168,7 +168,7 @@ class FocusRingTest {
         RetainedNode root = box(0, 0, 400, 200);
         RetainedNode field = adopt(root, box(0, 0, 100, 30));
         RetainedNode next = adopt(root, box(100, 0, 100, 30));
-        next.set(PropKey.BACKGROUND, SIBLING);
+        next.set(PropKey.BACKGROUND, dev.vexelray.gui.core.style.Paint.of(SIBLING));
 
         Canvas d = emit(root, field.id, FocusCause.KEYBOARD);
         assertTrue(first(d, SIBLING) >= 0 && first(d, null) > first(d, SIBLING),
@@ -183,7 +183,7 @@ class FocusRingTest {
         RetainedNode popup = adopt(root, box(20, 20, 100, 100));
         popup.set(PropKey.FLOAT_X, Length.ZERO);
         popup.set(PropKey.FLOAT_Y, Length.ZERO);
-        popup.set(PropKey.BACKGROUND, POPUP);
+        popup.set(PropKey.BACKGROUND, dev.vexelray.gui.core.style.Paint.of(POPUP));
 
         Canvas d = emit(root, field.id, FocusCause.KEYBOARD);
         assertTrue(first(d, null) >= 0 && first(d, null) < first(d, POPUP), "ring first, popup over it");

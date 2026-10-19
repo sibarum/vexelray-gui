@@ -568,6 +568,11 @@ that size. Only `resize` refuses, because a minimized window has no size to set:
 `err the window is minimized, so it has no size to set (it is still laid out and photographed at 1400x900)`.
 Never restore or raise the window to get a picture: whoever put it out of the way meant it.
 
+`hide` and `show` take the chosen window off the screen and bring it back, as the application's own `hide()` and
+`show()` do, for checking what an application does while it has nothing up. A hidden window stays in `windows` and
+is still driven. It wears the application's background icon, and once every window is hidden so does a background
+run's icon in the notification area (vexelray's `docs/window-icons.md`). `show` puts the usual icon back.
+
 ### Started by an agent, it runs in the background
 
 An application launched from an agent's shell (one carrying `CLAUDECODE` or `AI_AGENT`) is a **background run**.

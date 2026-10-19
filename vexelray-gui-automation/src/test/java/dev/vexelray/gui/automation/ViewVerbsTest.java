@@ -96,6 +96,32 @@ class ViewVerbsTest {
             width = Math.max(minW, w);
             height = Math.max(minH, h);
         }
+
+        boolean hidden;
+
+        @Override
+        public void hide() {
+            hidden = true;
+        }
+
+        @Override
+        public void show() {
+            hidden = false;
+        }
+    }
+
+    @Test
+    void hideAndShowTakeTheWindowOffTheScreenAndBack() {
+        try (Gui gui = deterministic()) {
+            FakeWindow window = new FakeWindow(800, 600, 100, 100);
+            Automation automation = new Automation(gui, window);
+            assertEquals("ok hidden", automation.command("hide"));
+            assertTrue(window.hidden);
+            assertEquals("ok shown", automation.command("show"));
+            assertTrue(!window.hidden);
+            assertTrue(Automation.driving("hide", "") && Automation.driving("show", ""), "the hand's verbs");
+            assertTrue(new Automation(gui).command("hide").startsWith("err there is no window"));
+        }
     }
 
     private static Gui deterministic() {

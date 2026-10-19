@@ -92,6 +92,19 @@ public interface WindowControls {
     }
 
     /**
+     * Take the window off the screen, keeping it open: what {@code AppWindow.hide()} does, for an instrument that has
+     * to drive it. Not a title-bar command; nothing to hide where there is no window.
+     */
+    default void hide() {
+        // no window to hide
+    }
+
+    /** Bring a {@linkplain #hide hidden} window back. Nothing to show where there is no window. */
+    default void show() {
+        // no window to show
+    }
+
+    /**
      * Run {@code task} on the thread that owns this window. A caption button is clicked on a worker, and some of
      * what an instrument does — a native file dialog — has to happen on the window's own thread. Where there is
      * no window there is no such thread, and the task runs here.
@@ -171,6 +184,16 @@ public interface WindowControls {
                             window.outerWidth() + (width - window.width()),
                             window.outerHeight() + (height - window.height()));
                 });
+            }
+
+            @Override
+            public void hide() {
+                mainThread.accept(window::hide);
+            }
+
+            @Override
+            public void show() {
+                mainThread.accept(window::show);
             }
 
             @Override

@@ -226,7 +226,7 @@ public final class Automation implements Commands {
     static boolean driving(String verb, String rest) {
         return switch (verb) {
             case "move", "click", "rightclick", "drag", "down", "up", "scroll", "touch", "tap", "type", "key",
-                 "keydown", "keyup", "go" -> true;
+                 "keydown", "keyup", "go", "hide", "show" -> true;
             case "zoom", "dpi", "resize" -> !rest.isBlank();
             default -> false;
         };
@@ -274,6 +274,8 @@ public final class Automation implements Commands {
             case "zoom" -> zoom(rest);
             case "dpi" -> dpi(rest);
             case "resize" -> resize(rest);
+            case "hide" -> visibility(false);
+            case "show" -> visibility(true);
             case "mark" -> mark(rest);
             case "log" -> log(rest);
             case "help" -> HELP;
@@ -1200,6 +1202,25 @@ public final class Automation implements Commands {
     }
 
     /**
+     * {@code hide} and {@code show}: take this window off the screen and bring it back, as the application's own
+     * {@code AppWindow.hide()} and {@code show()} do, so what an application does with a hidden window — the mark it
+     * wears, the notification-area icon of a background run — can be driven and checked. The window stays open and
+     * driven while hidden, like a minimized one: {@code tree}, {@code shot} and the rest still answer.
+     */
+    private String visibility(boolean show) {
+        WindowControls controls = this.controls.get();
+        if (controls.width() <= 0) {
+            return "err there is no window to " + (show ? "show" : "hide");
+        }
+        if (show) {
+            controls.show();
+        } else {
+            controls.hide();
+        }
+        return show ? "ok shown" : "ok hidden";
+    }
+
+    /**
      * Size the window's drawable area: {@code resize 1024x768}, {@code resize 1024 768}, or with units --
      * {@code resize 46em 30em}, {@code resize 800px 40em}. No unit means pixels.
      *
@@ -1454,6 +1475,8 @@ public final class Automation implements Commands {
             "zoom [factor]            read or set the zoom; clamped to the application's own range, and says so",
             "dpi [factor]             read or set the display density factor",
             "resize <w>x<h>           size the window: pixels, or em with a unit (resize 46em 30em)",
+            "hide                     take this window off the screen, as the application's hide() does",
+            "show                     bring a hidden window back",
             "log [logger] [level]     read, or set, how much is logged; the reply says where the file is",
             "mark <note>              write why into the correlation log"));
 }

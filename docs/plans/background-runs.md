@@ -66,6 +66,9 @@ separator. The menu opens on a right-click or a left-click.
   **PreToolUse, every tool**, it refuses that session's tool calls while the note exists, with a reason telling the
   agent to stop and talk. On **UserPromptSubmit**, it deletes the note and tells the agent why it was paused. So
   the agent pauses until the person has written to it, and only the session that started the run is paused.
+  UserPromptSubmit also fires for Claude Code's own automated messages, so a `<task-notification>` (the first one
+  to arrive being the notice that the stopped run's task finished) or a session or CI event leaves the note where
+  it is. The first live test found this: the task notice lifted the pause before the person had said anything.
 - It exits with status 0, from a thread of its own (it is called from the window procedure, and a shutdown hook
   that needs the main thread would otherwise wait on it for ever). The icon is removed the moment the item is
   chosen.

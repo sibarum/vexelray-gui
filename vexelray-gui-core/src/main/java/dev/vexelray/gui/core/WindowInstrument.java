@@ -170,12 +170,11 @@ public record WindowInstrument(String role, String tooltip,
             if (l == null) {
                 return plug;
             }
-            double s = Math.min(box.w(), box.h()) * 0.42;
-            double r = s * 0.3;
-            double cy = box.h() * 0.5;
+            // Pips on the plug's centre line, the size of a key on the keyboard beside it: status, not a second icon.
+            CaptionGrid g = CaptionGrid.of(box);
             java.util.List<Picture.Mark> marks = new java.util.ArrayList<>(plug.marks());
-            marks.addAll(lampMarks(box.w() * 0.5 - s * 1.08, cy, r, l.control(), l.controlColor(), l.used()));
-            marks.addAll(lampMarks(box.w() * 0.5 + s * 1.08, cy, r, l.diagnostics(), l.diagnosticsColor(), l.used()));
+            marks.addAll(lampMarks(g, -8.5, l.control(), l.controlColor(), l.used()));
+            marks.addAll(lampMarks(g, 8.5, l.diagnostics(), l.diagnosticsColor(), l.used()));
             return Picture.of(marks.toArray(Picture.Mark[]::new));
         }, open, live);
     }
@@ -183,100 +182,92 @@ public record WindowInstrument(String role, String tooltip,
     /** One lamp centred in {@code box}, for a panel that shows the same lamp beside a row. */
     public static Picture lamp(Rect box, Lamp lamp, Color color, Color used) {
         double r = Math.min(box.w(), box.h()) * 0.3;
-        return Picture.of(lampMarks(box.w() * 0.5, box.h() * 0.5, r, lamp, color, used).toArray(Picture.Mark[]::new));
+        double cx = box.w() * 0.5;
+        double cy = box.h() * 0.5;
+        return Picture.of(lampMarks(lamp, color, used,
+                (d, c) -> new Picture.Fill(cx - d * r, cy - d * r, 2 * d * r, 2 * d * r, d * r, d * r, c, null),
+                c -> new Picture.Outline(cx - r, cy - r, r * 2, r * 2, r, r, 1.5, c, null))
+                .toArray(Picture.Mark[]::new));
+    }
+
+    /** A title-bar lamp: radius two grid units, {@code gx} from the button's centre, at the bar's stroke. */
+    private static java.util.List<Picture.Mark> lampMarks(CaptionGrid g, double gx, Lamp lamp, Color color,
+                                                          Color used) {
+        return lampMarks(lamp, color, used,
+                (d, c) -> g.dot(gx, 0, 4 * d, c),
+                c -> g.outline(gx - 2, -2, 4, 4, 2, c));
     }
 
     /**
-     * A lamp of radius {@code r} about ({@code cx}, {@code cy}): a ring while the port is open, filled while something
-     * is connected, a grey dot for a connection that has gone. Shapes as well as colours, so the states differ for a
-     * reader who cannot tell red from grey.
+     * A lamp: a ring while the port is open, filled while something is connected, a grey dot for a connection that
+     * has gone. Shapes as well as colours, so the states differ for a reader who cannot tell red from grey.
+     * {@code disc} draws a filled disc at a fraction of the lamp's radius; {@code ring} the open ring.
      */
-    private static java.util.List<Picture.Mark> lampMarks(double cx, double cy, double r, Lamp lamp, Color color,
-                                                          Color used) {
+    private static java.util.List<Picture.Mark> lampMarks(Lamp lamp, Color color, Color used,
+                                                          java.util.function.BiFunction<Double, Color, Picture.Mark> disc,
+                                                          java.util.function.Function<Color, Picture.Mark> ring) {
         if (lamp == null) {
             return java.util.List.of();
         }
-        double dot = r * 0.5;
-        Picture.Mark ring = new Picture.Outline(cx - r, cy - r, r * 2, r * 2, r, r, 1.5, color, null);
-        Picture.Mark grey = new Picture.Fill(cx - dot, cy - dot, dot * 2, dot * 2, dot, dot, used, null);
         return switch (lamp) {
             case OFF -> java.util.List.of();
-            case LISTENING -> java.util.List.of(ring);
-            case CONNECTED -> java.util.List.of(new Picture.Fill(cx - r, cy - r, r * 2, r * 2, r, r, color, null));
-            case WAS_CONNECTED -> java.util.List.of(ring, grey);
-            case CLOSED_AFTER_USE -> java.util.List.of(grey);
+            case LISTENING -> java.util.List.of(ring.apply(color));
+            case CONNECTED -> java.util.List.of(disc.apply(1.0, color));
+            case WAS_CONNECTED -> java.util.List.of(ring.apply(color), disc.apply(0.45, used));
+            case CLOSED_AFTER_USE -> java.util.List.of(disc.apply(0.45, used));
         };
     }
 
+    // --- the marks ------------------------------------------------------------------------------------------
+    //
+    // All three are drawn on the caption grid (CaptionGrid): the same unit, the same single stroke and the same
+    // pixel snapping as the window controls they sit beside, inside a 16 x 12 unit envelope centred in the button,
+    // so the strip reads as one hand. Outlines, not fills: a filled key or a filled prong is three times the ink of
+    // the hairline close beside it, and that difference in weight is what makes a strip look assembled.
+
     /**
-     * A plug — two prongs, a body, a cord — for the thing that is plugged into from outside. Not a wall socket: a ring
-     * with two slots, at caption size, is a pause button. Drawn, like the camera and the keyboard beside it, and at
-     * their weight.
+     * A plug — two prongs, a body rounded at the bottom, a cord — for the thing that is plugged into from outside. Not
+     * a wall socket: a ring with two slots, at caption size, is a pause button.
      */
     private static Picture plugMark(Rect box, Color ink) {
-        double s = Math.min(box.w(), box.h()) * 0.42;
-        double cx = box.w() * 0.5;
-        double top = box.h() * 0.5 - s * 0.75;
-        double prongW = s * 0.14;
-        double prongH = s * 0.4;
-        double bodyW = s * 0.95;
-        double bodyH = s * 0.7;
-        double bodyY = top + prongH;
-        double cordW = s * 0.16;
+        CaptionGrid g = CaptionGrid.of(box);
         return Picture.of(
-                new Picture.Fill(cx - s * 0.24 - prongW * 0.5, top, prongW, prongH + 1, prongW * 0.3, 0, ink, null),
-                new Picture.Fill(cx + s * 0.24 - prongW * 0.5, top, prongW, prongH + 1, prongW * 0.3, 0, ink, null),
-                new Picture.Outline(cx - bodyW * 0.5, bodyY, bodyW, bodyH, s * 0.12, s * 0.3, 1.5, ink, null),
-                new Picture.Fill(cx - cordW * 0.5, bodyY + bodyH - 1, cordW, s * 0.4 + 1, 0, 0, ink, null));
+                g.vline(-2, -6, -2.5, ink),
+                g.vline(2, -6, -2.5, ink),
+                g.outline(-4.5, -3, 9, 6, 1, 3, ink),
+                g.vline(0, 2.5, 6, ink));
     }
 
     /**
-     * A keyboard, drawn for the reason the camera is: the mark is composed against the button's own box, so it
-     * is crisp at every zoom, and it carries the same visual weight as the camera beside it.
+     * A keyboard: the case, two rows of four keys, and the space bar — few enough to read at caption size. The keys
+     * are points one stroke square, so the gaps between them survive at 100%; drawn as blocks they ran together into
+     * a bar.
      */
     private static Picture keyboardMark(Rect box, Color ink) {
-        double s = Math.min(box.w(), box.h()) * 0.42;
-        double w = s * 1.6;
-        double h = s;
-        double x = box.w() * 0.5 - w * 0.5;
-        double y = box.h() * 0.5 - h * 0.5;
-        double key = s * 0.16;
-        double pitch = (w - s * 0.3) / 4;
+        CaptionGrid g = CaptionGrid.of(box);
         java.util.List<Picture.Mark> marks = new java.util.ArrayList<>();
-        marks.add(new Picture.Outline(x, y, w, h, s * 0.14, s * 0.14, 1.5, ink, null));
-        // Two rows of keys and a space bar: few enough to read at caption size, enough to read as a keyboard.
-        for (int row = 0; row < 2; row++) {
-            for (int col = 0; col < 4; col++) {
-                double kx = x + s * 0.15 + col * pitch + (pitch - key) * 0.5;
-                double ky = y + h * (0.2 + row * 0.25);
-                marks.add(new Picture.Fill(kx, ky, key, key, key * 0.25, 0, ink, null));
+        marks.add(g.outline(-8, -5.5, 16, 11, 2, ink));
+        for (double row : new double[] {-2.5, 0}) {
+            for (double col : new double[] {-4.5, -1.5, 1.5, 4.5}) {
+                marks.add(g.fill(col - 0.5, row - 0.5, 1, 1, 0, ink));
             }
         }
-        marks.add(new Picture.Fill(x + w * 0.28, y + h * 0.7, w * 0.44, key, key * 0.25, 0, ink, null));
+        marks.add(g.hline(-3.5, 3.5, 2.5, ink));
         return Picture.of(marks.toArray(Picture.Mark[]::new));
     }
 
     /**
-     * A camera, drawn rather than typed. The primary atlas carries no camera glyph — and a mark composed of
-     * rectangles is resolution-independent in a way a glyph at this size is not, which matters for a control
-     * that is 46dp wide at every zoom the window is opened at.
+     * A camera: body, viewfinder housing, lens, and the small flash that makes it a camera rather than a box with a
+     * ring in it. Drawn rather than typed — the primary atlas carries no camera glyph, and a mark composed against
+     * the button's own box is crisp at every density the window is opened at.
      */
     private static Picture cameraMark(Rect box, Color ink) {
-        // Authored against the button's own box, centred, at a size that leaves the caption buttons' visual
-        // weight: a 16-unit square inside a 46-wide button reads as the same size as the close glyph beside it.
-        double s = Math.min(box.w(), box.h()) * 0.42;
-        double cx = box.w() * 0.5;
-        double cy = box.h() * 0.5;
-        double bodyW = s * 1.35;
-        double bodyH = s;
-        double x = cx - bodyW * 0.5;
-        double y = cy - bodyH * 0.5;
-        double lens = s * 0.28;
+        CaptionGrid g = CaptionGrid.of(box);
         return Picture.of(
-                // The body, and the viewfinder bump on top of it.
-                new Picture.Outline(x, y, bodyW, bodyH, s * 0.18, s * 0.18, 1.5, ink, null),
-                new Picture.Fill(cx - s * 0.22, y - s * 0.2, s * 0.44, s * 0.22, s * 0.08, 0, ink, null),
-                // The lens: a ring, so the mark reads as a camera rather than as a filled box with a bump.
-                new Picture.Outline(cx - lens, cy - lens, lens * 2, lens * 2, lens, lens, 1.5, ink, null));
+                // The housing first, so its lower edge lies under the body's top edge: one stroke where they meet.
+                g.outline(-3, -6, 6, 3, 1, 0, ink),
+                g.outline(-7.5, -4, 15, 10, 2.5, ink),
+                g.outline(-3, -2, 6, 6, 3, ink),
+                g.dot(4.75, -1.75, 1.5, ink));
     }
 }

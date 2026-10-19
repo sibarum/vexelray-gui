@@ -540,6 +540,12 @@ public final class Gui implements AutoCloseable {
      * way to see whether it actually holds: anything that fails to move with the rest is still pinned to device
      * pixels. The one deliberate exception is {@link Length#dp}: chrome that honours density and opts out of zoom
      * (§6), so a gap or a hairline in dp is meant to stay put.
+     *
+     * <p><b>The window follows.</b> In a {@code GuiApp}, a window that is not maximized, minimized or fullscreen
+     * scales its client area by the same ratio, so a zoom keeps the composition rather than crowding or emptying
+     * the window; an axis already spanning the screen's work area keeps its span, and a window that would outgrow
+     * the screen is fitted into it. A resize by hand is the new base. A zoom set before the first frame (a restored
+     * one) is not a change: the window was already sized for it.
      */
     public State<Float> zoom() {
         return metrics.zoom();

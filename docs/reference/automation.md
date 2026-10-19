@@ -732,9 +732,13 @@ has: the bar commands an interface and knows no implementations.
 - **Never revealed on hover.** Instruments are always present and reserve their width. Where the bar is too
   narrow they collapse into an overflow instrument that is itself always present. Nothing in this strip may
   appear, move or grow under the pointer.
-- **Marks, not glyphs.** The primary atlas carries no camera or record symbol, and `TitleBar` already draws its
-  icons as rectangles rather than font characters. Instrument marks are `Picture` geometry, which also stays
-  crisp under zoom.
+- **Marks, not glyphs.** The primary atlas carries no camera or record symbol, so instrument marks are `Picture`
+  geometry, which also stays crisp under zoom. They are drawn on `CaptionGrid` — the same unit, the same single
+  pixel-snapped stroke, the same 16 × 12 unit envelope as the window controls, which `TitleBar` now draws the same
+  way — so the strip reads as one hand. Every button paints through one path: secondary ink at rest, full ink on
+  a rounded plate under the pointer, the danger colour on close.
+- **Windows an instrument opens are readable too.** They take Ctrl+= / Ctrl+- / Ctrl+0 (`ZoomKeys`), and open at
+  the zoom of the window they were opened from, at the size that zoom implies.
 - **Opt-in per window.** A shipped application must not carry a macro-record button it never asked for. The
   framework supplies a default set; a `WindowSpec` may take fewer, or none. Free to *enable* — not present
   unconditionally.

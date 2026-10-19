@@ -10,6 +10,7 @@ import dev.vexelray.gui.core.app.WindowSpec;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.widget.TitleBar;
+import dev.vexelray.gui.widget.ZoomKeys;
 import dev.vexelray.os.Decorations;
 import dev.vexelray.os.WindowConfig;
 
@@ -58,6 +59,8 @@ public final class KeymapWindow {
         return app.window(KEY, () -> {
             Gui g = new Gui();
             g.theme(main.theme());
+            // Readable at the zoom the person chose for the window they opened it from, and zoomable on its own.
+            float zoom = ZoomKeys.follow(g, main);
             TitleBar bar = new TitleBar(g, WindowControls.NONE, TITLE);
             KeymapEditor editor = new KeymapEditor(g, keymap);
             // The bar is a child of the root and the padding is the editor's own, below it: a bar inset from the
@@ -65,7 +68,8 @@ public final class KeymapWindow {
             Node body = g.column().width(Length.FILL).height(Length.FILL).children(editor.node());
             g.root().background(g.theme().color(Role.PAGE)).children(bar.node(), body);
             return bar.commands(WindowSpec.of(
-                    WindowConfig.of(TITLE, 680, 520).decorations(Decorations.CLIENT), g));
+                    WindowConfig.of(TITLE, Math.round(680 * zoom), Math.round(520 * zoom))
+                            .decorations(Decorations.CLIENT), g));
         });
     }
 }

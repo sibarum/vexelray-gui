@@ -1,5 +1,7 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.canvas.Color;
+import dev.vexelray.gui.core.CaptionGrid;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.IconSource;
 import dev.vexelray.gui.core.Node;
@@ -14,6 +16,7 @@ import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
+import dev.vexelray.gui.draw.Picture;
 import dev.vexelray.gui.icons.IconView;
 import dev.vexelray.os.Icon;
 import dev.vexelray.text.TextLayout;
@@ -22,8 +25,9 @@ import dev.vexelray.text.TextLayout;
  * The application's own window title bar: a draggable strip carrying a title and the minimize, maximize and
  * close buttons, for a window created with client decorations.
  *
- * <p><b>Almost none of this is special.</b> The strip is a row, the buttons are clickable boxes with hover
- * shading, the icons are rectangles and one glyph — ordinary framework machinery, laid out and hit-tested like
+ * <p><b>Almost none of this is special.</b> The strip is a row, the buttons are clickable boxes that paint a
+ * rounded plate under the pointer, every glyph is a picture on one shared grid ({@link CaptionGrid}) — ordinary
+ * framework machinery, laid out and hit-tested like
  * any other widget. Two declarations are all that separate it from a toolbar: the strip is
  * {@link WindowRegion#DRAG}, so the window manager moves the window when it is dragged (and maximizes on
  * double-click, and opens the system menu on right-click, and offers snap when it is dragged to an edge), and
@@ -53,16 +57,23 @@ public final class TitleBar {
      * the 16px root, so nothing moves at 100%.)
      */
     private static final Length TITLE_SIZE = Length.dp(13.6f);
-    /** The window controls' icons: the small drawings, at their own size. */
+    /** An application's own window-control glyph ({@link #glyphs}), drawn at this size. */
     private static final Length GLYPH = Length.dp(16);
     /**
-     * The set's own drawings for the window controls, drawn for the title bar: what the bar shows until
-     * {@link #glyphs} says otherwise, and what a {@code null} there puts back.
+     * The window controls' own drawings, on the caption grid with the instruments' marks ({@link CaptionGrid}): what
+     * the bar shows until {@link #glyphs} says otherwise, and what a {@code null} there puts back. A 10-unit square,
+     * the native caption's glyph size, in the strip's one stroke.
      */
-    private static final dev.vexelray.gui.icons.Icon MINIMIZE = dev.vexelray.gui.icons.Icon.TB_MINIMIZE;
-    private static final dev.vexelray.gui.icons.Icon MAXIMIZE = dev.vexelray.gui.icons.Icon.TB_MAXIMIZE;
-    private static final dev.vexelray.gui.icons.Icon RESTORE = dev.vexelray.gui.icons.Icon.TB_WINDOWED;
-    private static final dev.vexelray.gui.icons.Icon CLOSE = dev.vexelray.gui.icons.Icon.TB_EXIT;
+    private static final Glyph MINIMIZE = (g, ink, under) -> Picture.of(g.hline(-5, 5, 0, ink));
+    private static final Glyph MAXIMIZE = (g, ink, under) -> Picture.of(g.outline(-5, -5, 10, 10, 1.5, ink));
+    /** The window behind, then the face of the one in front painted over it in what is under the glyph. */
+    private static final Glyph RESTORE = (g, ink, under) -> Picture.of(
+            g.outline(-3, -5, 8, 8, 1.5, ink),
+            g.fill(-5, -3, 8, 8, 1.5, under),
+            g.outline(-5, -3, 8, 8, 1.5, ink));
+    private static final Glyph CLOSE = (g, ink, under) -> Picture.of(
+            g.line(-4.75, -4.75, 4.75, 4.75, ink),
+            g.line(-4.75, 4.75, 4.75, -4.75, ink));
     /** The mark's side: the native caption's small icon, 16px at 100%. */
     private static final int ICON_DP = 16;
 
@@ -90,13 +101,24 @@ public final class TitleBar {
     /** The application's mark, first in {@link #leading}; null until given one. */
     private Node icon;
     private final Node titleText;
-    /** The window controls' drawings, kept as views so {@link #glyphs} can redraw them in place. */
+    /** The hairline between the instruments and the window controls; shown while there are instruments. */
+    private final Node divider;
+    /** The window controls, each painting its own plate and glyph. */
+    private final Caption minimize;
+    private final Caption maximize;
+    private final Caption close;
+    /**
+     * An application's own glyphs ({@link #glyphs}), shown in place of the drawn ones; hidden while the drawn one is
+     * in use. Kept as views so they can be redrawn in place.
+     */
     private final IconView minimizeGlyph;
     private final IconView maximizeGlyph;
     private final IconView restoreGlyph;
     private final IconView closeGlyph;
-    private final Node maximizeIcon;
-    private final Node restoreIcon;
+    private volatile boolean minimizeOwn;
+    private volatile boolean maximizeOwn;
+    private volatile boolean restoreOwn;
+    private volatile boolean closeOwn;
 
     /** Build a title bar showing {@code title}, driving {@code controls}. */
     public TitleBar(Gui gui, WindowControls controls, String title) {
@@ -116,29 +138,44 @@ public final class TitleBar {
                 .scroll(false, false)
                 .children(titleText);
 
-        // The set's window controls. Maximize and restore share a button and swap with the window's state, which
-        // syncMaximized() follows; both are built so the swap is a visibility change and never a rebuild.
-        this.minimizeGlyph = IconView.of(gui, MINIMIZE).size(GLYPH);
-        this.maximizeGlyph = IconView.of(gui, MAXIMIZE).size(GLYPH);
-        this.restoreGlyph = IconView.of(gui, RESTORE).size(GLYPH);
-        this.closeGlyph = IconView.of(gui, CLOSE).size(GLYPH);
-        this.maximizeIcon = maximizeGlyph.node();
-        this.restoreIcon = restoreGlyph.node().visible(false);
+        // An application's own glyphs, if it gives any (glyphs()); until then the buttons draw their own and these are
+        // hidden. Maximize and restore share a button and swap with the window's state, which syncMaximized()
+        // follows; both are built so the swap is a repaint and a visibility change, never a rebuild.
+        this.minimizeGlyph = IconView.of(gui, dev.vexelray.gui.icons.Icon.TB_MINIMIZE).size(GLYPH);
+        this.maximizeGlyph = IconView.of(gui, dev.vexelray.gui.icons.Icon.TB_MAXIMIZE).size(GLYPH);
+        this.restoreGlyph = IconView.of(gui, dev.vexelray.gui.icons.Icon.TB_WINDOWED).size(GLYPH);
+        this.closeGlyph = IconView.of(gui, dev.vexelray.gui.icons.Icon.TB_EXIT).size(GLYPH);
+        minimizeGlyph.node().visible(false);
+        maximizeGlyph.node().visible(false);
+        restoreGlyph.node().visible(false);
+        closeGlyph.node().visible(false);
 
         // The handlers read the field, not the constructor argument, so they resolve the controls at click
         // time and rebinding later rewires every button. Closing over the argument would capture what the
         // window did not exist yet to be -- WindowControls.NONE, for every application, permanently.
-        Node minimize = button(minimizeGlyph.node(),
-                WindowRegion.INTERACTIVE, Role.RAISED, () -> this.controls.minimize());
-        Node maximize = button(gui.box().size(GLYPH, GLYPH).scroll(false, false)
-                        .children(maximizeIcon.floatAt(Length.ZERO, Length.ZERO),
-                                restoreIcon.floatAt(Length.ZERO, Length.ZERO)),
-                WindowRegion.MAXIMIZE_BUTTON, Role.RAISED, () -> this.controls.toggleMaximize());
-        Node close = button(closeGlyph.node(),
-                WindowRegion.INTERACTIVE, Role.DANGER, () -> this.controls.close());
+        this.minimize = new Caption(gui.box(), false,
+                (g, ink, under) -> minimizeOwn ? Picture.EMPTY : MINIMIZE.draw(g, ink, under));
+        this.maximize = new Caption(gui.box(), false, (g, ink, under) -> {
+            boolean max = this.controls.maximized();
+            return (max ? restoreOwn : maximizeOwn) ? Picture.EMPTY : (max ? RESTORE : MAXIMIZE).draw(g, ink, under);
+        });
+        this.close = new Caption(gui.box(), true,
+                (g, ink, under) -> closeOwn ? Picture.EMPTY : CLOSE.draw(g, ink, under));
+        Node minimizeButton = button(minimize, minimizeGlyph.node(),
+                WindowRegion.INTERACTIVE, () -> this.controls.minimize());
+        Node maximizeButton = button(maximize, gui.box().size(GLYPH, GLYPH).scroll(false, false)
+                        .children(maximizeGlyph.node().floatAt(Length.ZERO, Length.ZERO),
+                                restoreGlyph.node().floatAt(Length.ZERO, Length.ZERO)),
+                WindowRegion.MAXIMIZE_BUTTON, () -> this.controls.toggleMaximize());
+        Node closeButton = button(close, closeGlyph.node(),
+                WindowRegion.INTERACTIVE, () -> this.controls.close());
 
         Node buttons = gui.row().height(Length.FILL).alignItems(AlignItems.STRETCH).scroll(false, false)
-                .children(minimize, maximize, close);
+                .children(minimizeButton, maximizeButton, closeButton);
+        // Instruments are tools and the controls are the window's: a hairline says they are two groups without a
+        // gap wide enough to read as caption. A bar with no instruments has one group, and no hairline.
+        this.divider = gui.box().width(Length.dp(1)).height(Length.dp(14)).margin(Length.dp(6))
+                .background(theme.color(Role.LINE)).scroll(false, false).visible(false);
 
         // Four zones, left to right: identity, caption, instruments, window controls (docs/reference/automation.md §7).
         // The caption is a spacer that takes the slack rather than SPACE_BETWEEN spreading three groups, because
@@ -166,7 +203,7 @@ public final class TitleBar {
                 // past the minimum laid the bar out on that canvas and the window controls off the window.
                 .floatAt(Length.ZERO, Length.ZERO)
                 .dock(true)
-                .children(leading, caption, instruments, buttons);
+                .children(leading, caption, instruments, divider, buttons);
 
         // The window can be maximized or restored without this widget being the cause, and every one of those
         // routes changes the viewport. Re-deriving from the window on that signal is what keeps the icon honest.
@@ -204,6 +241,7 @@ public final class TitleBar {
         unwatch.forEach(Runnable::run);
         unwatch.clear();
         this.tools = tools == null ? java.util.List.of() : java.util.List.copyOf(tools);
+        divider.visible(!this.tools.isEmpty());
         if (tools == null || tools.isEmpty()) {
             return this;
         }
@@ -235,28 +273,17 @@ public final class TitleBar {
                 .background(gui.theme().color(Role.NONE))
                 .scroll(false, false)
                 .windowRegion(WindowRegion.INTERACTIVE);
-        // Authored against the box the layout settled on, and re-authored when that box changes. A picture
-        // resolves no units of its own, so this is the only way a mark survives a zoom.
-        // A live one is re-authored against the last box when what it shows changes, too.
-        java.util.concurrent.atomic.AtomicReference<dev.vexelray.gui.core.layout.Rect> box =
-                new java.util.concurrent.atomic.AtomicReference<>();
-        gui.onResizeUi(b, computed -> {
-            box.set(computed.rect());
-            b.picture(tool.mark().apply(computed.rect(), gui.theme().color(Role.INK)));
-        });
+        // Authored against the box the layout settled on, and re-authored when that box changes or the pointer
+        // changes what the button is doing. A picture resolves no units of its own, so this is the only way a mark
+        // survives a zoom. The ink is the bar's, never the instrument's (WindowInstrument's mark).
+        Caption caption = new Caption(b, false, (g, ink, under) -> tool.mark().apply(g.box(), ink));
         // The instrument asks the window, not the application: a bar in a popup photographs the popup. Resolved
         // at click time like every other button here, so a bar built before its window still works.
         gui.onClick(b, () -> tool.action().accept(this.controls));
-        gui.onState(b, state -> b.background(
-                gui.theme().color(state == InteractionState.NORMAL ? Role.NONE : Role.RAISED)));
         WindowInstrument.Live live = tool.live();
         if (live != null) {
-            unwatch.add(live.watch(() -> {
-                dev.vexelray.gui.core.layout.Rect r = box.get();
-                if (r != null) {
-                    b.picture(tool.mark().apply(r, gui.theme().color(Role.INK)));
-                }
-            }));
+            // A live one is re-authored against the last box when what it shows changes, too.
+            unwatch.add(live.watch(caption::paint));
             instrumentTips.attach(b, () -> {
                 String now = live.tooltip();
                 return now != null ? now : tool.tooltip();
@@ -266,7 +293,6 @@ public final class TitleBar {
         }
         return b;
     }
-
     /**
      * Bind (or rebind) the window this bar commands — call it once the OS window exists. Every button resolves
      * the controls at click time, so a bar built before its window is not a bar wired to nothing.
@@ -382,24 +408,36 @@ public final class TitleBar {
 
     /**
      * Draw the window controls with {@code minimize}, {@code maximize}, {@code restore} and {@code close} instead of
-     * the set's own. A {@code null} is the set's own drawing for that button, so {@code glyphs(null, null, null,
+     * the bar's own. A {@code null} is the bar's own drawing for that button, so {@code glyphs(null, null, null,
      * mine)} changes only close, and four nulls put the defaults back.
      *
      * <p><b>Only the drawing changes.</b> The buttons, their window regions (maximize still earns Snap Layouts),
-     * their hover roles and their size stay the bar's, and each glyph is still drawn {@code GLYPH} square in the
-     * theme's ink, so any {@link IconSource} will do: another {@link dev.vexelray.gui.icons.Icon}, or a field of the
-     * application's own. Maximize and restore are separate because they are two drawings the bar swaps between as
-     * the window changes, whoever changed it; giving one without the other would show the default half the time.
+     * their hover plates and their size stay the bar's, and each glyph is drawn {@code GLYPH} square in the theme's
+     * ink, so any {@link IconSource} will do: a {@link dev.vexelray.gui.icons.Icon}, or a field of the application's
+     * own. Maximize and restore are separate because they are two drawings the bar swaps between as the window
+     * changes, whoever changed it; giving one without the other would show the default half the time.
      *
      * <p>Replacing rather than accumulating, like {@link #instruments}: the call says what the controls look like
      * now. Redrawn in place, so it can be called at any time, before the window exists or after.
      */
     public TitleBar glyphs(IconSource minimize, IconSource maximize, IconSource restore, IconSource close) {
-        minimizeGlyph.icon(minimize != null ? minimize : MINIMIZE);
-        maximizeGlyph.icon(maximize != null ? maximize : MAXIMIZE);
-        restoreGlyph.icon(restore != null ? restore : RESTORE);
-        closeGlyph.icon(close != null ? close : CLOSE);
+        minimizeOwn = own(minimizeGlyph, minimize);
+        maximizeOwn = own(maximizeGlyph, maximize);
+        restoreOwn = own(restoreGlyph, restore);
+        closeOwn = own(closeGlyph, close);
+        syncMaximized();
+        this.minimize.paint();
+        this.close.paint();
         return this;
+    }
+
+    /** Point {@code view} at {@code source}, if there is one; whether the application's glyph is now in use. */
+    private static boolean own(IconView view, IconSource source) {
+        if (source != null) {
+            view.icon(source);
+        }
+        view.node().visible(source != null);
+        return source != null;
     }
 
     /**
@@ -413,19 +451,21 @@ public final class TitleBar {
         return this;
     }
 
-    /** Point the maximize button's icon at what the window actually is right now. */
+    /** Point the maximize button's glyph at what the window actually is right now. */
     private void syncMaximized() {
         boolean max = controls.maximized();
-        maximizeIcon.visible(!max);
-        restoreIcon.visible(max);
+        maximizeGlyph.node().visible(maximizeOwn && !max);
+        restoreGlyph.node().visible(restoreOwn && max);
+        maximize.paint();
     }
 
     /**
-     * One caption button: a fixed-width, full-height box wrapping {@code icon}, hover-shaded, clickable, and
-     * declared to the window manager so the caption it sits on does not swallow the click.
+     * One window control: a fixed-width, full-height box that paints itself ({@code caption}) and holds the
+     * application's own glyph if it gave one, clickable, and declared to the window manager so the caption it sits
+     * on does not swallow the click.
      */
-    private Node button(Node icon, WindowRegion region, Role hover, Runnable action) {
-        Node b = gui.box()
+    private Node button(Caption caption, Node own, WindowRegion region, Runnable action) {
+        Node b = caption.node
                 .width(BUTTON_W)
                 .height(Length.FILL)
                 .justify(Justify.CENTER)
@@ -433,12 +473,76 @@ public final class TitleBar {
                 .background(gui.theme().color(Role.NONE))
                 .scroll(false, false)
                 .windowRegion(region)
-                .children(icon);
+                .children(own);
         gui.onClick(b, action);
-        // Which role, not which colour: a caption button paints nothing until the pointer arrives, and what it
-        // paints then is the theme's business (a close button says DANGER, the others just lift).
-        gui.onState(b, state -> b.background(
-                gui.theme().color(state == InteractionState.NORMAL ? Role.NONE : hover)));
         return b;
+    }
+
+    /** A caption glyph: drawn on the button's grid, in {@code ink}, over {@code under} (what is behind it). */
+    @FunctionalInterface
+    private interface Glyph {
+        Picture draw(CaptionGrid grid, Color ink, Color under);
+    }
+
+    /**
+     * How every button in the strip paints — instruments and window controls alike, so they cannot drift apart.
+     *
+     * <p><b>Quiet until approached.</b> At rest a glyph is drawn in the theme's secondary ink on nothing, so the strip
+     * recedes behind the title and the content; under the pointer it takes the full ink on a rounded plate inset in
+     * the button, and pressed the plate deepens. Close is the one that warns: its plate is the danger colour and its
+     * glyph the colour that reads on it.
+     *
+     * <p><b>Nothing appears or grows.</b> The plate is a colour change inside a box that was always the button's —
+     * the hit target is the full button at every state, plate or no plate, so a pointer that lands on a button keeps
+     * landing on it. The plate is drawn into the same picture as the glyph, on the same grid, so a zoom or a move to
+     * another display re-authors both at once.
+     */
+    private final class Caption {
+        final Node node;
+        private final boolean danger;
+        private final Glyph glyph;
+        private volatile dev.vexelray.gui.core.layout.Rect box;
+        private volatile InteractionState state = InteractionState.NORMAL;
+
+        Caption(Node node, boolean danger, Glyph glyph) {
+            this.node = node;
+            this.danger = danger;
+            this.glyph = glyph;
+            gui.onResizeUi(node, computed -> {
+                box = computed.rect();
+                paint();
+            });
+            gui.onState(node, s -> {
+                state = s;
+                paint();
+            });
+        }
+
+        /** Author the picture for the box the layout settled on and the state the pointer left it in. Any thread. */
+        void paint() {
+            dev.vexelray.gui.core.layout.Rect b = box;
+            if (b == null) {
+                return;
+            }
+            Theme theme = gui.theme();
+            Color chrome = theme.color(Role.CHROME);
+            CaptionGrid g = CaptionGrid.of(b);
+            InteractionState s = state;
+            if (s == InteractionState.NORMAL) {
+                node.picture(glyph.draw(g, theme.color(Role.DIM), chrome));
+                return;
+            }
+            Color plate = danger ? theme.color(Role.DANGER) : theme.color(Role.RAISED);
+            if (s == InteractionState.PRESSED) {
+                plate = danger ? Color.lerp(plate, chrome, 0.25f) : theme.color(Role.LINE);
+            }
+            Color ink = theme.color(danger ? Role.ON_DANGER : Role.INK);
+            // Inset three units at the sides and four top and bottom: a 40 x 24 plate in a 46 x 32 button, rounded
+            // at five, which keeps a gap between neighbouring plates so two adjacent buttons never read as one bar.
+            java.util.List<Picture.Mark> marks = new java.util.ArrayList<>();
+            marks.add(g.fill(-20, -12, 40, 24, 5, plate));
+            marks.addAll(glyph.draw(g, ink, plate).marks());
+            node.picture(new Picture(marks));
+        }
     }
 }

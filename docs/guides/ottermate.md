@@ -323,6 +323,11 @@ dpi 2                         # ok dpi=2      -- the framework's density factor,
 shot dense.png
 ```
 
+**A zoom resizes a window that is not at a bound.** A restored window's client area scales with the zoom (and back
+to the exact pixel), so `zoom 1.5` on a 1180x720 window answers `size` with 1770x1080 unless the screen stops it; a
+maximized window, or an axis already spanning the work area, keeps its size. To photograph a zoom at a fixed size,
+`resize` after `zoom`, as the options below do.
+
 The same four as options, for a one-off. They are sent first, in the order window, dpi, zoom, size, and the run
 stops if one answers `err` — a picture at the wrong zoom reported as the right one is the thing to avoid:
 

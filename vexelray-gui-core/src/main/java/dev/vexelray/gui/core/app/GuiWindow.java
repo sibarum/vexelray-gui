@@ -94,6 +94,8 @@ final class GuiWindow implements AutoCloseable {
     final NativeWindow window;
     /** The tree shown in this window. Set at creation for popups; bound by {@code run} for the main window. */
     Gui gui;
+    /** Grows and shrinks this window with its tree's zoom. */
+    private final ZoomSizing zoomSizing = new ZoomSizing(WindowMemory.Desktop.PLATFORM);
     private final VulkanInstance instance;
     /** Held for {@link #capture}: the offscreen pass and pipeline it needs are built on this window's device. */
     private final VulkanDevice device;
@@ -260,6 +262,11 @@ final class GuiWindow implements AutoCloseable {
         this.beforeFrame = beforeFrame == null ? () -> { } : beforeFrame;
         if (!window.pumpEvents()) {
             return false;
+        }
+        if (gui != null) {
+            // Before the frame, so the resize it may ask for is pumped by this frame's input and laid out once,
+            // rather than drawn a frame at the new zoom in the old size and then again.
+            zoomSizing.follow(window, gui.zoom().value());
         }
         if (window.isMinimized()) {
             // A minimized window is 0x0: there is nothing to present to, and a swapchain acquired against a

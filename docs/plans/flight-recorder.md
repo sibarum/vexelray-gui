@@ -346,6 +346,12 @@ actions appear in the recorder, in the stream and in the Inspector, in order wit
    the pacing witness code (meter.md step 6).
 7. **The domain verbs**, each landing with its upstream hook: `bus`, `kron`, `gpu`, `ledger`, `threads`, then
    `heap` after the Q5 spike.
+
+   **`bus graph` landed ahead of `bus`** (2026-10-19). It is the program's declared message graph, which
+   vexelray-framework's processor hands to `BusGraph.declare` at startup, for the Inspector's bus circuit
+   (vexelray-inspector docs/bus-circuit.md). It needs no registry or tap, so `hello` lists it on its own as
+   `bus.graph=yes|no`. `bus` itself stays `missing` until the registry and tap land. See automation.md §5, *The
+   declared bus graph*.
 8. **`diagnose`.**
 9. **`help --schema`.** An `ottermate mcp` adapter only if §7's condition is met.
 

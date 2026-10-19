@@ -53,7 +53,7 @@ import java.util.function.Supplier;
  * <p>The flight recorder's verbs ({@code recorder}, {@code rows}, {@code gaps}, {@code frames}, {@code why}, and
  * {@code stream}, which the server runs through {@link #streaming}) are
  * answered here too, before any window is asked for: the ring is the process's, not a window's. See
- * {@link RecorderVerbs}.
+ * {@link RecorderVerbs}. So is {@code bus graph}, the graph the program declared ({@link BusGraph}).
  */
 public final class Windows implements Commands {
 
@@ -69,7 +69,8 @@ public final class Windows implements Commands {
             "windows                  the open windows: number, name, size and view; * is the chosen one",
             "window <name|number>     choose the window the other commands act on (default: the main one)",
             "<verb> <window>/<landmark> ...",
-            "                         a target naming its window acts there, this command only (click viewport/home)");
+            "                         a target naming its window acts there, this command only (click viewport/home)",
+            "bus graph                the declared message graph: components, mailboxes, who publishes what");
 
     private final Supplier<List<WindowView>> source;
     private final Timeline timeline;
@@ -182,7 +183,8 @@ public final class Windows implements Commands {
         lines.add("recorder " + (r == null ? "off" : "on rows=" + r.held() + " capacity_rows=" + r.capacity()
                 + " lost_total=" + r.lost() + " frame_stamp=" + (r.stamped() ? "yes" : "no")));
         lines.add("domain  loop=" + (counters != null ? "yes" : "no") + " recorder=" + (r != null ? "yes" : "no")
-                + " stream=" + (r != null ? "text" : "no") + Domains.line());
+                + " stream=" + (r != null ? "text" : "no")
+                + " bus.graph=" + (BusGraph.text().isPresent() ? "yes" : "no") + Domains.line());
         return lines;
     }
 
@@ -209,6 +211,10 @@ public final class Windows implements Commands {
             // The ring is the process's, not a window's: it answers before any window is asked for, or open.
             if (RecorderVerbs.owns(verb)) {
                 return ring.answer(verb, rest);
+            }
+            // The declared graph is the program's, landed ahead of the bus domain it belongs to (the registry and tap).
+            if (verb.equals("bus") && rest.equalsIgnoreCase("graph")) {
+                return BusGraph.answer();
             }
             if (Domains.owns(verb)) {
                 return Domains.answer(verb);

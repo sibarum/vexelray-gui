@@ -206,7 +206,7 @@ line needs (`Commands.needs`), so the server holds no list:
 | Capability | Verbs |
 |---|---|
 | `control` | the hand and what it is aimed through: `move`, `click`, `type`, `key`, `go`, `drag`, …, `zoom`/`dpi`/`resize`, and the view reads `tree`, `find`, `where`, `size`, `windows`, `window`, `shot`, `settle`, `await`, `hand` |
-| `diagnostics` | what the process recorded about itself: `recorder`, `rows`, `gaps`, `frames`, `why`, `stream`, `log`, `mark`, the planned domains (`bus`, `kron`, …), and the Inspector link |
+| `diagnostics` | what the process recorded about itself: `recorder`, `rows`, `gaps`, `frames`, `why`, `stream`, `log`, `mark`, `bus graph`, the planned domains (`bus`, `kron`, …), and the Inspector link |
 | both | `hello` and `help`, which say what this socket is |
 
 A line a socket does not serve is refused, and nothing of it runs. The refusal says where the other one is:
@@ -293,7 +293,9 @@ applications on free ports apart.
 - **`hello`** gives the protocol version (`major.minor`, `AutomationServer.PROTOCOL`), this process and its
   connections, then one line each for the windows, the probe, the recorder and the domains. A domain that is not built
   yet shows as `missing(<what it waits for>)`. Its verb answers `err not available yet: <verb> needs <what>` from the
-  same table (`Domains`).
+  same table (`Domains`). `bus.graph=yes` or `no` says whether the program declared its bus graph (*The declared bus
+  graph* below). It sits beside `bus=missing(...)`, because the graph landed before the registry and tap that `bus`
+  waits for. The transcript below is from before it.
 
 `ottermate list` reads the folder, and `--app` or `--pid` choose from it. With none of `--port`, `--app`, `--pid` or
 `--launch`, ottermate drives the one application running. If several are running, it refuses and lists them. If none
@@ -558,11 +560,43 @@ socket and ottermate do not depend on that module.
   - `Snap` follows on its schedule, with the loop's counters and the ring's.
   - `StreamClose` ends the stream. Leaving ends it too.
   - `Query(line)` asks any read verb in the socket's words. `QueryReply` carries the socket's text. A verb that
-    drives is refused, because the hand stays the socket's.
+    drives is refused, because the hand stays the socket's. The Inspector asks `bus graph` this way once, on
+    attaching.
 - **How it behaves.** Each Inspector gets its own sender thread and cursor into the ring, so a slow one slows only
   itself. A send blocked for 2 s drops that Inspector.
 - **The client.** The Inspector's end is `LinkClient`: `connect(discoveryFile)`, then `open`, `query` and
   `closeStream`.
+
+#### The declared bus graph
+
+The program's message graph, as its declarations state it: the components and other publishers, each `@Subscribe`
+mailbox with its topic, payload type, overflow policy and capacity, and each topic a type declares it publishes. The
+format, version 1, is fixed by the Inspector's contract
+([vexelray-inspector docs/bus-circuit.md](../../../vexelray-inspector/docs/bus-circuit.md) §1). The Inspector draws
+the bus as a circuit from it.
+
+- **Where it comes from.** vexelray-framework's processor writes it as a `BUS_GRAPH` constant, and the generated
+  wiring hands it to `BusGraph.declare(String)` at startup, the way the build identity reaches `Discovery.build`.
+  `declare` refuses, at once, any text whose first line is not `# vexelray bus graph 1`. An application not built by
+  the processor declares none.
+- **How to read it.** `bus graph` is a diagnostics read. It answers `ok bus graph lines=<n>`, then the `n` lines as
+  declared, header first, or `err no bus graph: <why>` when none was declared. The link answers the same verb as a
+  `Query`. `BusGraph.text()` gives it in-process.
+
+The reply's shape, for the contract's sample graph. This is not a transcript: no application declares a graph until
+the framework's processor emits one.
+
+```
+$ ottermate --app witness bus graph
+ok bus graph lines=9
+# vexelray bus graph 1
+component  dev.example.Worker      lane=worker
+...
+publishes  dev.example.Worker       topic=witness.ping
+```
+
+The rest of `bus` (the topic registry and the tap) is still `missing`, and `bus` alone or with any other word
+answers so.
 
 ### The protocol
 
@@ -605,6 +639,7 @@ whether the run succeeded.
 | `mark <note>` | Write a row into the correlation log saying *why*. Changes nothing else. |
 | `hand`, `hand take`, `hand release` | Who holds the hand and which connection this is; take it if free; let it go. See *Many observers, one hand* above. |
 | `hello` | The protocol version, this process, what this socket `serves=`, its connections and the hand; then the windows, the probe, the recorder and each domain, present or `missing(...)`. See *Finding a running application* above. Answered on every socket. |
+| `bus graph` | The program's declared message graph, `ok bus graph lines=<n>` and then its lines, or `err no bus graph: <why>`. See *The declared bus graph* above. |
 | `bus`, `kron`, `gpu`, `ledger`, `threads`, `heap`, `meter`, `diagnose` | Not built yet: each answers `err not available yet: <verb> needs <what>`, in the words `hello`'s `domain` line uses. |
 | `recorder` | The flight recorder: rows held, the span they cover, loss, row rate, frame range, lanes on. See *The flight recorder* below. |
 | `rows [--lane L] [--kind K] [--thread T] [--grep S] [--frame N] [n]` | The last `n` (50) matching rows from the ring, as correlation-log lines with the frame stamp last. |

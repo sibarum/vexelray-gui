@@ -405,6 +405,20 @@ options that ottermate does not know are passed to the command once the command 
 against the park before it. With the probe off, all five verbs answer
 `err the recorder is off: start with -Dprobe=...`.
 
+### Reading the declared bus graph
+
+`bus graph` prints the message graph the program declared: its components, each `@Subscribe` mailbox and its topic,
+and who declares publishing what ([automation.md](../reference/automation.md) §5, *The declared bus graph*). It is a
+diagnostics read, so add `--diagnostics` when the run keeps that on its own port:
+
+```bash
+ottermate --app calculator-vexel-demo bus graph
+```
+
+The reply is `ok bus graph lines=<n>` and then the graph, header line first. An application that declared none,
+including every one built before vexelray-framework's processor emits the graph, answers
+`err no bus graph: none was declared ...`.
+
 ### An application with more than one window
 
 ```bash

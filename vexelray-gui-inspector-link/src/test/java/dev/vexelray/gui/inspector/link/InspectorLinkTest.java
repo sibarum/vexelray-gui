@@ -1,6 +1,7 @@
 package dev.vexelray.gui.inspector.link;
 
 import dev.vexelray.gui.automation.AutomationServer;
+import dev.vexelray.gui.automation.BusGraph;
 import dev.vexelray.gui.automation.Commands;
 import dev.vexelray.gui.automation.Windows;
 import dev.vexelray.gui.recorder.Recorder;
@@ -184,6 +185,20 @@ class InspectorLinkTest {
         assertFalse(click.ok());
         assertTrue(click.text().startsWith("err the link only reads: 'click' drives"), click.text());
         assertFalse(client.query("stream gpu").ok());
+    }
+
+    @Test
+    void theInspectorAsksForTheBusGraphAsAQuery() throws Exception {
+        InspectorLink link = keep(InspectorLink.start(socket(), new Recorder(8, () -> 1), null, new Windows(List::of)));
+        LinkClient client = keep(LinkClient.connect(link.endpoint()));
+        // Nothing declared yet in this JVM: the socket's words, over the link.
+        QueryReply none = client.query("bus graph");
+        assertFalse(none.ok());
+        assertTrue(none.text().startsWith("err no bus graph: "), none.text());
+
+        String graph = "# vexelray bus graph 1\npublishes  dev.example.Ui  topic=witness.job\n";
+        BusGraph.declare(graph);
+        assertEquals(new QueryReply(true, "ok bus graph lines=2\n" + graph.stripTrailing()), client.query("bus graph"));
     }
 
     @Test

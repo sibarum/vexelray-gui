@@ -145,12 +145,8 @@ public final class Sockets implements AutoCloseable {
             default -> {
                 Set<Capability> set = EnumSet.noneOf(Capability.class);
                 for (String word : want.split("[,\\s]+")) {
-                    set.add(switch (word) {
-                        case "control" -> Capability.CONTROL;
-                        case "diagnostics" -> Capability.DIAGNOSTICS;
-                        default -> throw new IllegalArgumentException("'" + setting + "' is not all, none, control,"
-                                + " diagnostics, or a list of those");
-                    });
+                    set.add(Capability.named(word).orElseThrow(() -> new IllegalArgumentException("'" + setting
+                            + "' is not all, none, control, diagnostics, or a list of those")));
                 }
                 return set;
             }

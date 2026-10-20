@@ -1,7 +1,9 @@
 package dev.vexelray.gui.automation;
 
+import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -28,6 +30,11 @@ public enum Capability {
     /** As it is written on the wire, in the discovery file and in settings: {@code control}, {@code diagnostics}. */
     public String word() {
         return name().toLowerCase(Locale.ROOT);
+    }
+
+    /** The capability whose {@link #word()} is {@code word}, or none. */
+    public static Optional<Capability> named(String word) {
+        return Arrays.stream(values()).filter(c -> c.word().equals(word)).findFirst();
     }
 
     /** {@code control,diagnostics}, in declaration order; {@code -} for none. */

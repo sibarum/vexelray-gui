@@ -112,6 +112,50 @@ class SplitPaneTest {
     }
 
     @Test
+    void movesThatArriveBetweenTwoLayoutsAreAllCounted() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Mounted m = mount(h, SplitPane.Orientation.SIDE_BY_SIDE);
+            Rect r = m.first().layout().rect();
+            int x = (int) (r.x() + r.w() + 2f);
+            int y = (int) (r.y() + 50f);
+            h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, x, y, 0));
+            h.frame();
+            // Four moves of 10 before the layout catches up: a mouse polling faster than the frame rate.
+            for (int i = 1; i <= 4; i++) {
+                h.bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(x + 10 * i, y, 10, 0, 0));
+            }
+            h.frame();
+            h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, x + 40, y, 0));
+            h.frame().frame();
+            assertEquals(200f, m.first().layout().rect().w(), 1.5f, "all forty, not the last ten");
+        }
+    }
+
+    @Test
+    void aPointerThatOvershootsAMinimumHasToComeBackBeforeTheDividerMoves() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Mounted m = mount(h, SplitPane.Orientation.SIDE_BY_SIDE);
+            Rect r = m.first().layout().rect();
+            int x = (int) (r.x() + r.w() + 2f);
+            int y = (int) (r.y() + 50f);
+            h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, x, y, 0));
+            h.frame();
+            // 160 down to the 64 minimum is 96; go 146 left, then 50 back, which leaves the pointer where the
+            // divider stopped, so the divider has not moved off its minimum.
+            h.bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(x - 146, y, -146, 0, 0));
+            h.frame().frame();
+            h.bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(x - 96, y, 50, 0, 0));
+            h.frame().frame();
+            assertEquals(64f, m.first().layout().rect().w(), 1.5f, "the divider waits for the pointer");
+            h.bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(x - 56, y, 40, 0, 0));
+            h.frame().frame();
+            h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, x - 56, y, 0));
+            h.frame().frame();
+            assertEquals(104f, m.first().layout().rect().w(), 1.5f, "and then follows it with no offset");
+        }
+    }
+
+    @Test
     void aWideGutterIsAllDragTargetAndPaintsOnlyItsLine() {
         try (HeadlessGui h = new HeadlessGui()) {
             Mounted m = mount(h, SplitPane.Orientation.SIDE_BY_SIDE);

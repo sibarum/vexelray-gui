@@ -79,6 +79,9 @@ public final class SplitPane {
     /** Guarded by {@code this}: the pointer's state over the divider, and whether a drag is under way. */
     private InteractionState pointer = InteractionState.NORMAL;
     private boolean dragging;
+    /** Guarded by {@code this}: the sized pane's size in px when the drag began, and the pointer's travel since. */
+    private float anchorPx;
+    private float travelPx;
     /** Guarded by {@code this}: how lit the line is, 0 at rest to 1 in the accent, and which fade owns it. */
     private float lit;
     private long fade;
@@ -221,9 +224,14 @@ public final class SplitPane {
 
     private void drag(DragEvent e) {
         boolean across = orientation == Orientation.SIDE_BY_SIDE;
+        float dpi = Math.max(0.0001f, gui.dpi().value());
         if (e.phase() != DragEvent.Phase.MOVE) {
             synchronized (this) {
                 dragging = e.phase() == DragEvent.Phase.START;
+                if (dragging) {
+                    anchorPx = sizeDp * dpi;
+                    travelPx = 0f;
+                }
             }
             retarget();
             if (e.phase() == DragEvent.Phase.END) {
@@ -233,22 +241,27 @@ public final class SplitPane {
         }
         boolean first = sized == Pane.FIRST;
         NodeLayout frameLayout = frame.layout();
-        NodeLayout sizedLayout = (first ? firstBox : secondBox).layout();
-        if (!frameLayout.present() || !sizedLayout.present()) {
+        if (!frameLayout.present()) {
             return;
         }
-        float dpi = Math.max(0.0001f, gui.dpi().value());
         LayoutContext ctx = LayoutContext.of(frameLayout.rect().w(), frameLayout.rect().h());
         float total = across ? frameLayout.rect().w() : frameLayout.rect().h();
         float dividerPx = gutter.scalarPx(ctx, 0f);
-        float now = across ? sizedLayout.rect().w() : sizedLayout.rect().h();
         float lo = (first ? minFirst : minSecond).scalarPx(ctx, 0f);
         float other = (first ? minSecond : minFirst).scalarPx(ctx, 0f);
         float hi = Math.max(lo, total - dividerPx - other);
         // Dragging toward the sized pane shrinks it when it is the second one: the divider moves the same way as
         // the pointer, and the pane on the far side of it is the one that gets smaller or larger.
         float delta = (across ? e.dx() : e.dy()) * (first ? 1f : -1f);
-        float wanted = Math.min(hi, Math.max(lo, now + delta));
+        // The size is the size at the start plus all the travel since, clamped — never the last layout plus this
+        // event's motion. The layout lags the pointer by up to a frame, so building on it drops every move but
+        // the last that arrives in one frame; and building on a clamped size lets the divider leave a minimum the
+        // moment the pointer turns round, wherever the pointer is, and trail it by the overshoot from then on.
+        float wanted;
+        synchronized (this) {
+            travelPx += delta;
+            wanted = Math.min(hi, Math.max(lo, anchorPx + travelPx));
+        }
         this.sizeDp = wanted / dpi;
         place(Length.dp(sizeDp));
     }

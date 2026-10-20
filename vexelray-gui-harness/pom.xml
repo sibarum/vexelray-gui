@@ -32,5 +32,11 @@
             <artifactId>vexelray-gui-widget</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Test scope only, for CanvasShaderCostTest: the demo's composition is the core set and every effect. -->
+        <dependency>
+            <groupId>dev.vexelray</groupId>
+            <artifactId>vexelray-shadelets</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>

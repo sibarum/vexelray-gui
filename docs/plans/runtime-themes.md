@@ -1,9 +1,14 @@
 # Runtime themes: a theme is part of the ubershader
 
-**Status: R1 landed 2026-10-19 (node paints, below); R0 and R2–R6 not started.** The measurement that makes this
-checkable is a capture diff: build the demo in `Theme.DARK`, swap to `Theme.LIGHT`, settle and capture; build it
-fresh in `Theme.LIGHT` and capture; diff the two. The plan is done when that diff is empty, and stays empty under a
-guard. Today it is not, and R0 is to put the number here: every site in §5 is a region of it.
+**Status: R0 and R1 landed 2026-10-19 (measurements and node paints, below); R2–R6 not started.** The measurement
+that makes this checkable is a capture diff: build a tree in `Theme.DARK`, swap to `Theme.LIGHT`, settle and capture;
+build it fresh in `Theme.LIGHT` and capture; diff the two. The plan is done when that diff is empty, and stays empty
+under a guard. Today it is not: **1539 stale pixels** in `RethemeCaptureTest` (harness), all from §5 sites — tabs
+indicator 238, slider ticks 170, text spans 1131; the R1 control panel and the button swap clean. The test asserts
+1539 as a ceiling that may only go down.
+
+A theme whose composition differs costs, on this machine, **~0.1 s to lower** (first lowering in the process; ~10 ms
+once warm) and **~0.5 s to build its pipeline** on the main thread (core set alone: ~0.17 s). §3 R0 has the detail.
 
 The decision this plan rests on, from the owner: **a theme can change anything about the ubershader.** Not a table of
 colours the shader reads, but a contribution to the composition, the way an effect is. A swap is therefore allowed to
@@ -49,6 +54,53 @@ carry it.
 - The two numbers no document has: lowering the canvas composition in-process (`CoreToSpirv`, on a worker), and
   `vkCreateGraphicsPipelines` for it on the main thread. The only measured pipeline is a surface-compiled SDF shader
   at five seconds, which is not this one. These numbers decide how much UX §4 has to cover.
+
+**Landed 2026-10-19.**
+
+*The gate.* `vexelray-gui-harness/.../RethemeCaptureTest` builds one tree of the §5 widgets that
+`vexelray-gui-widget` can build without input — `Tabs` with an indicator, a `Slider` on an 8-interval lattice, a
+read-only `TextField` with a background and a foreground `Span` resolved from the theme as the demo's text chapter does,
+a `Button` — plus a panel of R1 node paints as the control, in a 640×360 harness window. It diffs swapped against
+born-light at tolerance 2 and attributes the diff to each widget's laid-out rect. It writes `swapped.png`,
+`born-light.png` and `diff.png` to `vexelray-gui-harness/target/retheme/`. Today, identical on every run:
+
+| Region | Stale pixels |
+| --- | --- |
+| panel (R1 node paints, the control) | 0 |
+| `Tabs` indicator (`Picture.Fill`) | 238 |
+| `Slider` tick sketch | 170 |
+| `TextField` spans (background wash + accent) | 1131 |
+| `Button` | 0 |
+| elsewhere | 0 |
+| **total** (max channel delta 163) | **1539** |
+
+The test is a ratchet rather than `@Disabled`: it asserts the control panel is clean and the total is at most 1539, so it
+keeps measuring, fails on a new early-resolution site, and its `CEILING` drops with each R3 site until it is zero (R6).
+It is not the whole demo: the harness cannot depend on the demo module. `IconView`, `TitleBar`, `Board`, the drop
+indicators, the automation lamps, `FileIconView`, cues and `Popout` are §5 sites it does not yet draw; each R3 change
+should add its widget to the tree as it moves it.
+
+*The costs.* `vexelray-gui-harness/.../CanvasShaderCostTest`, opt-in (`-Dmeasure=true`). RTX 5070 Ti Laptop GPU,
+NVIDIA driver, three processes, five runs each; "first" is the first lowering in the process, the one a swap pays,
+because an application with a precompiled shader has never run the lowerer.
+
+| Step | Core + `Effects.ALL` (the demo's) | Core set alone |
+| --- | --- | --- |
+| compose + `CoreToSpirv`, first in process | 106–161 ms | — |
+| compose + `CoreToSpirv`, warm (median) | ~10 ms | ~4 ms |
+| `GraphicsPipeline` (shader modules, layout, `vkCreateGraphicsPipelines`), SPIR-V new to the driver (median) | **~490 ms** (first 500–740) | ~170 ms |
+| the same, SPIR-V the driver has seen | ~1.3 ms | ~1 ms |
+
+Each pipeline build is given SPIR-V with a nonce in an `OpModuleProcessed`, so the driver's shader cache cannot answer
+for it; without that, a rebuild of a known shader costs about a millisecond. So:
+
+- **Lowering is not the cost.** 0.1–0.16 s cold, on a worker, where it stalls nothing.
+- **The pipeline is, and it is on the main thread.** Half a second for the demo's composition, a stall of every
+  window, scaling with the effects composed in (×3 over the core set). R5's pending state and cross-fade have to cover
+  about 0.5–0.75 s on a fast GPU — and more on a slow one.
+- **A theme seen before is nearly free** once the driver has its SPIR-V: R4's structural `ShaderCache` hit plus the
+  driver's cache makes a return swap ~1 ms of pipeline. A `VkPipelineCache` the framework keeps would make that true
+  across drivers rather than by NVIDIA's courtesy.
 
 ### R2 — paints as ids: the paint table
 
@@ -136,7 +188,7 @@ Each of these is a region of R0's diff, and each moves with the phase named:
 | `TitleBar.java` `Caption.paint` | caption-button glyph pictures, plate colours, a `Color.lerp` | R3 |
 | `Board.java` (rim `Picture.Outline`) | the rim round a carried card | R3 |
 | `ListView.java`, `TreeView.java` (`DropIndicator.of`) | drop ring and line; TreeView builds its default once | R3 |
-| `AutomationWindow.java` `lamps()`, `AutomationPanel.java` `paintLamp()` | instrument lamp pictures | R3 |
+| `AutomationButton.java` `lamps()` | the title-bar instrument's lamp pictures | R3 |
 | `IconView.java` `paint()`, `look()` | icon tint and outline band | R3 |
 | `FileIconView.java` `dark(theme)` | picks the dark or light icon family once | R3 (or a role per family) |
 | `TextField.java` find highlight (`Span.background`) | search-match wash | R3 |

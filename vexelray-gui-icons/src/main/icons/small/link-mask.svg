@@ -1,0 +1,14 @@
+<svg color="#e9ecf2" width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<mask id="ucslink_4m" maskUnits="userSpaceOnUse" x="0" y="0" width="16" height="16">
+<rect width="16" height="16" fill="#000"/>
+<g>
+<path d="M6.75 11.25 L5.5 12.5 Q4 14 2.5 12.5 Q1 11 2.5 9.5 L4.75 7.25 Q6.25 5.75 7.75 7.25" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M9.25 4.75 L10.5 3.5 Q12 2 13.5 3.5 Q15 5 13.5 6.5 L11.25 8.75 Q9.75 10.25 8.25 8.75" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+</mask>
+</defs>
+<g mask="url(#ucslink_4m)">
+<rect width="16" height="16" fill="currentColor"/>
+</g>
+</svg>

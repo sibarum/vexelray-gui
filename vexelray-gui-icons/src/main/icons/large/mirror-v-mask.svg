@@ -1,0 +1,17 @@
+<svg color="#e9ecf2" width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<mask id="uclxmirrorvm" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
+<rect width="64" height="64" fill="#000"/>
+<g transform="scale(4)">
+<g transform="rotate(90 8 8)">
+<path d="M6.5 3 V13 H1.75 Z" fill="#fff" stroke="#fff" stroke-width="0.6" stroke-linejoin="round"/>
+<path d="M9.5 3.6 V12.4 H13.7 Z" fill="none" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/>
+<path d="M8 1.5 V14.5" fill="none" stroke="#fff" stroke-width="1" stroke-dasharray="1.5 1.25"/>
+</g>
+</g>
+</mask>
+</defs>
+<g mask="url(#uclxmirrorvm)">
+<rect width="64" height="64" fill="currentColor"/>
+</g>
+</svg>

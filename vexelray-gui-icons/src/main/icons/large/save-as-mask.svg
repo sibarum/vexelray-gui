@@ -1,0 +1,15 @@
+<svg color="#e9ecf2" width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<mask id="uclsaveas_3m" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
+<rect width="64" height="64" fill="#000"/>
+<g transform="scale(4)">
+<path d="M3 2 H10.5 L13 4.5 V7 L7.5 12.5 V14 H3 Q2 14 2 13 V3 Q2 2 3 2 Z" fill="#fff" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/>
+<rect x="5" y="2" width="4.5" height="3.5" rx="0.5" fill="#000"/>
+<path d="M9.25 14 V12.5 L13.25 8.5 L14.75 10 L10.75 14 Z" fill="#fff" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/>
+</g>
+</mask>
+</defs>
+<g mask="url(#uclsaveas_3m)">
+<rect width="64" height="64" fill="currentColor"/>
+</g>
+</svg>

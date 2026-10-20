@@ -1,0 +1,14 @@
+<svg color="#e9ecf2" width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<mask id="ucsstep_4m" maskUnits="userSpaceOnUse" x="0" y="0" width="16" height="16">
+<rect width="16" height="16" fill="#000"/>
+<g>
+<path d="M3.25 3.25 L9.75 8 L3.25 12.75 Z" fill="#fff" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/>
+<rect x="11" y="2.75" width="2" height="10.5" rx="0.75" fill="#fff"/>
+</g>
+</mask>
+</defs>
+<g mask="url(#ucsstep_4m)">
+<rect width="16" height="16" fill="currentColor"/>
+</g>
+</svg>

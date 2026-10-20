@@ -1,0 +1,13 @@
+<svg color="#e9ecf2" width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<mask id="uclstop_2m" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
+<rect width="64" height="64" fill="#000"/>
+<g transform="scale(4)">
+<rect x="3.5" y="3.5" width="9" height="9" rx="1.5" fill="#fff"/>
+</g>
+</mask>
+</defs>
+<g mask="url(#uclstop_2m)">
+<rect width="64" height="64" fill="currentColor"/>
+</g>
+</svg>

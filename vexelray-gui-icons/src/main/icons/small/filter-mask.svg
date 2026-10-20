@@ -1,0 +1,13 @@
+<svg color="#e9ecf2" width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<mask id="ucsfilter_5m" maskUnits="userSpaceOnUse" x="0" y="0" width="16" height="16">
+<rect width="16" height="16" fill="#000"/>
+<g>
+<path d="M2.25 3 H13.75 L9.25 8.5 V12.75 L6.75 14 V8.5 Z" fill="#fff" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/>
+</g>
+</mask>
+</defs>
+<g mask="url(#ucsfilter_5m)">
+<rect width="16" height="16" fill="currentColor"/>
+</g>
+</svg>

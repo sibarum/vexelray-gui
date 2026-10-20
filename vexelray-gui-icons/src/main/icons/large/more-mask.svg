@@ -1,0 +1,15 @@
+<svg color="#e9ecf2" width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<mask id="uclmore_8m" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
+<rect width="64" height="64" fill="#000"/>
+<g transform="scale(4)">
+<circle cx="3.25" cy="8" r="1.4" fill="#fff"/>
+<circle cx="8" cy="8" r="1.4" fill="#fff"/>
+<circle cx="12.75" cy="8" r="1.4" fill="#fff"/>
+</g>
+</mask>
+</defs>
+<g mask="url(#uclmore_8m)">
+<rect width="64" height="64" fill="currentColor"/>
+</g>
+</svg>

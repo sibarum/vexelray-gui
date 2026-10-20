@@ -1,0 +1,13 @@
+<svg color="#e9ecf2" width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<mask id="ucschevronright_3m" maskUnits="userSpaceOnUse" x="0" y="0" width="16" height="16">
+<rect width="16" height="16" fill="#000"/>
+<g>
+<path d="M6 4 L10 8 L6 12" fill="none" stroke="#fff" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+</mask>
+</defs>
+<g mask="url(#ucschevronright_3m)">
+<rect width="16" height="16" fill="currentColor"/>
+</g>
+</svg>

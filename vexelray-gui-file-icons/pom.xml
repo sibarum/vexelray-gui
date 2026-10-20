@@ -14,10 +14,10 @@
 
     <description>
         The file-type families as signed distance fields, in an atlas of their own: the eight sheets every file icon
-        is cut from and each family's emblem, baked from vexelray-icons (committed, as the icon atlas is), and the
-        FileSheet and FileFamily enums that name them, with each family's palette row and extensions, and
-        FileIconView, which draws one. Apart from vexelray-gui-icons because only a file browser draws
-        them, and one that does wants the whole set. Rebaked by vexelray-icons/tools/Bake.java when the art changes.
+        is cut from and each family's emblem, from src/main/icons (copied from vexelray-icons), baked at build time
+        by vexelray-gui-icons-maven-plugin; the FileSheet and FileFamily enums that name them, with each family's
+        palette row and extensions from families.tsv; and FileIconView, which draws one. Apart from vexelray-gui-icons
+        because only a file browser draws them, and one that does wants the whole set.
     </description>
 
     <dependencies>
@@ -31,4 +31,23 @@
             <artifactId>vexelray-gui-icons</artifactId>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>dev.vexelray.gui</groupId>
+                <artifactId>vexelray-gui-icons-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>file-families</goal>
+                        </goals>
+                        <configuration>
+                            <directory>src/main/icons</directory>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 </project>

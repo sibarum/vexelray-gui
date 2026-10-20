@@ -17,7 +17,8 @@ import dev.vexelray.shadelets.WeightStyleLayout;
 import java.util.List;
 
 /**
- * A node showing one icon (an {@link Icon}, or any {@link IconSource}): the icon set's answer to a font-icon component.
+ * A node showing one icon (an {@link Icon}, an application's own {@link BakedIcon}, or any {@link IconSource}): the
+ * icon set's answer to a font-icon component.
  * Name the icon, give it a size and a colour, and place {@link #node()} like any other box.
  *
  * <pre>{@code
@@ -153,7 +154,10 @@ public final class IconView {
         return this;
     }
 
-    /** Always use {@code size}'s drawing of an {@link Icon}, whatever the size drawn; null to choose by size again. */
+    /**
+     * Always use {@code size}'s drawing of a {@link BakedIcon} (an {@link Icon}, or an application's own), whatever the
+     * size drawn; null to choose by size again.
+     */
     public IconView drawing(IconSize size) {
         this.forced = size;
         paint();
@@ -168,7 +172,7 @@ public final class IconView {
             return;
         }
         Color c = color != null ? color : gui.theme().color(role);
-        ImageField field = forced != null && i instanceof Icon set ? set.field(forced, c) : i.field(side, c);
+        ImageField field = forced != null && i instanceof BakedIcon set ? set.field(forced, c) : i.field(side, c);
         node.field(field.look(look(side)));
     }
 

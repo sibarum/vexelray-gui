@@ -21,10 +21,10 @@ class IconTest {
 
     @Test
     void theAtlasIsTheSizeTheEnumWasGeneratedFor() {
-        AtlasPixels pixels = IconAtlas.read();
-        assertEquals(AtlasLayout.WIDTH, pixels.width());
-        assertEquals(AtlasLayout.HEIGHT, pixels.height());
-        assertEquals(AtlasLayout.WIDTH * AtlasLayout.HEIGHT * 4, IconAtlas.INSTANCE.rgba().length);
+        AtlasPixels pixels = IconAtlas.INSTANCE.read();
+        assertEquals(IconAtlas.INSTANCE.width(), pixels.width());
+        assertEquals(IconAtlas.INSTANCE.height(), pixels.height());
+        assertEquals(pixels.width() * pixels.height() * 4, IconAtlas.INSTANCE.rgba().length);
     }
 
     @Test
@@ -53,13 +53,13 @@ class IconTest {
                     continue;
                 }
                 ImageField f = icon.field(size, INK);
-                int x0 = Math.round(f.region().u0() * AtlasLayout.WIDTH);
-                int y0 = Math.round(f.region().v0() * AtlasLayout.HEIGHT);
+                int x0 = Math.round(f.region().u0() * IconAtlas.INSTANCE.width());
+                int y0 = Math.round(f.region().v0() * IconAtlas.INSTANCE.height());
                 int max = 0;
                 int border = 0;
                 for (int y = 0; y < f.side(); y++) {
                     for (int x = 0; x < f.side(); x++) {
-                        int v = atlas[((y0 + y) * AtlasLayout.WIDTH + x0 + x) * 4] & 0xFF;
+                        int v = atlas[((y0 + y) * IconAtlas.INSTANCE.width() + x0 + x) * 4] & 0xFF;
                         max = Math.max(max, v);
                         if (x == 0 || y == 0 || x == f.side() - 1 || y == f.side() - 1) {
                             border = Math.max(border, v);
@@ -79,8 +79,8 @@ class IconTest {
         assertEquals(IconSize.LARGE, IconSize.forPixels(32f));
         ImageField small = Icon.SAVE.field(16f, INK);
         ImageField large = Icon.SAVE.field(48f, INK);
-        assertEquals(AtlasLayout.SMALL_CELL, small.side());
-        assertEquals(AtlasLayout.LARGE_CELL, large.side());
+        assertEquals(48 + 2 * 12, small.side());
+        assertEquals(64 + 2 * 16, large.side());
         assertEquals(0.25f, small.margin(), 1e-6f);
         assertEquals(0.25f, large.margin(), 1e-6f);
     }

@@ -1,0 +1,13 @@
+<svg color="#e9ecf2" width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<mask id="uclwindowminimize_0m" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
+<rect width="64" height="64" fill="#000"/>
+<g transform="scale(4)">
+<path d="M3.5 12 H12.5" fill="none" stroke="#fff" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+</mask>
+</defs>
+<g mask="url(#uclwindowminimize_0m)">
+<rect width="64" height="64" fill="currentColor"/>
+</g>
+</svg>

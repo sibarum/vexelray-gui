@@ -1,0 +1,16 @@
+<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" color="#e9ecf2">
+<defs>
+<clipPath id="sheet">
+<path d="M7.35 1.6Q8 1.25 8.65 1.6L13.2 4.25Q13.85 4.6 13.85 5.35V10.65Q13.85 11.4 13.2 11.75L8.65 14.4Q8 14.75 7.35 14.4L2.8 11.75Q2.15 11.4 2.15 10.65V5.35Q2.15 4.6 2.8 4.25Z"/>
+</clipPath>
+<mask id="emblem" maskUnits="userSpaceOnUse" x="0" y="0" width="16" height="16">
+<rect width="16" height="16" fill="#000"/>
+<circle cx="8" cy="8" r="2.5" fill="#fff"/>
+</mask>
+</defs>
+<g clip-path="url(#sheet)">
+<g mask="url(#emblem)">
+<rect width="16" height="16" fill="currentColor"/>
+</g>
+</g>
+</svg>

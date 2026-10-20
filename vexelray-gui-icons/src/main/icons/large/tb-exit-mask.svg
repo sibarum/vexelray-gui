@@ -1,0 +1,11 @@
+<svg color="#e9ecf2" width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<mask id="mUt72m" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
+<rect width="64" height="64" fill="#000"/>
+<path d="M14 14 L50 50 M50 14 L14 50" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+</mask>
+</defs>
+<g mask="url(#mUt72m)">
+<rect width="64" height="64" fill="currentColor"/>
+</g>
+</svg>

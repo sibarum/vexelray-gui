@@ -1,0 +1,14 @@
+<svg color="#e9ecf2" width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<mask id="mUt50m" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
+<rect width="64" height="64" fill="#000"/>
+<path d="M53.71 40.99 L40.99 53.71 L23.01 53.71 L10.29 40.99 L10.29 23.01 L23.01 10.29 L40.99 10.29 L53.71 23.01 Z" fill="#fff"/>
+<path d="M53.71 40.99 L40.99 53.71 L23.01 53.71 L10.29 40.99 L10.29 23.01 L23.01 10.29 L40.99 10.29 L53.71 23.01 Z" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M32 19 V35" fill="none" stroke="#000" stroke-width="5.6" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="32" cy="44" r="3.3" fill="#000"/>
+</mask>
+</defs>
+<g mask="url(#mUt50m)">
+<rect width="64" height="64" fill="currentColor"/>
+</g>
+</svg>

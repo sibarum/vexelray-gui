@@ -1,0 +1,13 @@
+<svg color="#e9ecf2" width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<mask id="mUt22m" maskUnits="userSpaceOnUse" x="0" y="0" width="16" height="16">
+<rect width="16" height="16" fill="#000"/>
+<path d="M14.5 1.5 L9.25 6.75" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M8.6 6.4 L6.9 8.1" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="butt" stroke-linejoin="round"/>
+<path d="M6.2 7.4 L8.6 9.8 Q7.5 13.5 1.5 14.5 Q2.5 8.5 6.2 7.4 Z" fill="#fff"/>
+</mask>
+</defs>
+<g mask="url(#mUt22m)">
+<rect width="16" height="16" fill="currentColor"/>
+</g>
+</svg>

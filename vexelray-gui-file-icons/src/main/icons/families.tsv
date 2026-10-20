@@ -1,0 +1,25 @@
+family	sheet	dark-hue	dark-ink	light-hue	light-ink	extensions
+folders	folder	#e8b54d		#987020		
+plain-text	page	#b4c2d6	#15111d	#455873	#ffffff	txt log md rtf
+documents	page	#84b4ff	#15111d	#0e4baa	#ffffff	docx doc odt epub
+pdf	page	#ff8178	#15111d	#aa180e	#ffffff	pdf
+spreadsheets	page	#6fd68b	#15111d	#308748	#ffffff	xlsx xls ods csv tsv
+presentations	page	#ffa65e	#15111d	#aa540e	#ffffff	pptx ppt odp
+images	page	#f68fcf	#15111d	#9e196c	#ffffff	png jpg jpeg gif webp avif heic bmp tiff ico psd
+vector-graphics	page	#dfa0f5	#15111d	#7a1d9b	#ffffff	svg eps ai
+audio	page	#a5adff	#15111d	#0e1caa	#ffffff	mp3 wav flac ogg m4a aac opus mid
+video	page	#c59cff	#15111d	#4e0eaa	#ffffff	mp4 mkv webm mov avi wmv
+source-code	page	#3fd6ea	#15111d	#1d8c9a	#ffffff	java kt js ts py c cpp h cs rs go rb php swift lua sql html css
+scripts	page	#3fd6ea	#15111d	#1d8c9a	#ffffff	sh bat cmd ps1
+shaders	page	#3fd6ea	#15111d	#1d8c9a	#ffffff	glsl hlsl wgsl spv
+data-and-config	page	#49d8b6	#15111d	#298e76	#ffffff	json xml yaml yml toml ini cfg env props
+programs	window	#64c6ff	#15111d	#0e70aa	#ffffff	exe app appimg apk
+installers	box	#64c6ff	#15111d	#0e70aa	#ffffff	msi msix deb rpm pkg
+archives	box	#e2ac6b	#15111d	#906127	#ffffff	zip 7z rar tar gz xz bz2 zst
+disk-images	disc	#a8bed6	#15111d	#405b78	#ffffff	iso img vhdx dmg
+libraries-and-bytecode	nut	#9cc6de	#15111d	#356683	#ffffff	dll so dylib jar class wasm
+fonts	page	#ff9db2	#15111d	#aa0e2f	#ffffff	ttf otf woff woff2
+3d-models	page	#d9be55	#15111d	#8d792a	#ffffff	obj gltf glb stl fbx blend
+email	envelope	#7fd0d6	#15111d	#347e84	#ffffff	eml msg
+calendars-and-contacts	calendar	#f7a2a8	#15111d	#9d1a23	#ffffff	ics vcf
+unknown	page	#aab3bf	#15111d	#515a67	#ffffff	

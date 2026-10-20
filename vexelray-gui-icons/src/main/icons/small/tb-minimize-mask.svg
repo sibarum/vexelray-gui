@@ -1,0 +1,11 @@
+<svg color="#e9ecf2" width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<mask id="mUt69m" maskUnits="userSpaceOnUse" x="0" y="0" width="16" height="16">
+<rect width="16" height="16" fill="#000"/>
+<rect x="3" y="8" width="10" height="1" rx="0" fill="#fff"/>
+</mask>
+</defs>
+<g mask="url(#mUt69m)">
+<rect width="16" height="16" fill="currentColor"/>
+</g>
+</svg>

@@ -1,0 +1,15 @@
+<svg color="#e9ecf2" width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<mask id="uclquestion_1m" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
+<rect width="64" height="64" fill="#000"/>
+<g transform="scale(4)">
+<circle cx="8" cy="8" r="6.75" fill="#fff"/>
+<path d="M6 6.2 Q6 4.25 8 4.25 Q10 4.25 10 6.05 Q10 7.25 8.65 7.85 Q8 8.15 8 9.25" fill="none" stroke="#000" stroke-width="1.28" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="8" cy="11.5" r="1.05" fill="#000"/>
+</g>
+</mask>
+</defs>
+<g mask="url(#uclquestion_1m)">
+<rect width="64" height="64" fill="currentColor"/>
+</g>
+</svg>

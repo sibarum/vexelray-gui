@@ -1,0 +1,13 @@
+<svg color="#e9ecf2" width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<mask id="ucsbookmark_4m" maskUnits="userSpaceOnUse" x="0" y="0" width="16" height="16">
+<rect width="16" height="16" fill="#000"/>
+<g>
+<path d="M4.25 2 H11.75 V14 L8 10.75 L4.25 14 Z" fill="#fff" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/>
+</g>
+</mask>
+</defs>
+<g mask="url(#ucsbookmark_4m)">
+<rect width="16" height="16" fill="currentColor"/>
+</g>
+</svg>

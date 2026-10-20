@@ -1,0 +1,15 @@
+<svg color="#e9ecf2" width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<mask id="uclskipnext_8m" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
+<rect width="64" height="64" fill="#000"/>
+<g transform="scale(4)">
+<path d="M2.5 3.5 L7.5 8 L2.5 12.5 Z" fill="#fff" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/>
+<path d="M7.5 3.5 L12.5 8 L7.5 12.5 Z" fill="#fff" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/>
+<rect x="12.5" y="3" width="1.75" height="10" rx="0.75" fill="#fff"/>
+</g>
+</mask>
+</defs>
+<g mask="url(#uclskipnext_8m)">
+<rect width="64" height="64" fill="currentColor"/>
+</g>
+</svg>

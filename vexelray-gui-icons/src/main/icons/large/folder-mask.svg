@@ -1,0 +1,14 @@
+<svg color="#e9ecf2" width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<mask id="uclfolder_1m" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
+<rect width="64" height="64" fill="#000"/>
+<g transform="scale(4)">
+<path d="M1.75 4 Q1.75 3 2.75 3 H6 L7.5 4.5 H13.25 Q14.25 4.5 14.25 5.5 V12.5 Q14.25 13.5 13.25 13.5 H2.75 Q1.75 13.5 1.75 12.5 Z" fill="#fff" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/>
+<path d="M1.75 6.25 H14.25" fill="none" stroke="#000" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+</mask>
+</defs>
+<g mask="url(#uclfolder_1m)">
+<rect width="64" height="64" fill="currentColor"/>
+</g>
+</svg>

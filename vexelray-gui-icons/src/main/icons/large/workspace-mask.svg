@@ -1,0 +1,19 @@
+<svg color="#e9ecf2" width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<mask id="mUt3m" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
+<rect width="64" height="64" fill="#000"/>
+<path d="M8 9.5 Q8 7 10.5 7 H15 L17.5 9.5 H22 Q24.5 9.5 24.5 12 V18.5 Q24.5 21 22 21 H10.5 Q8 21 8 18.5 Z" fill="#fff"/>
+<rect x="29.5" y="11" width="27" height="7" rx="3.5" fill="#fff"/>
+<path d="M8 27.5 Q8 25 10.5 25 H15 L17.5 27.5 H22 Q24.5 27.5 24.5 30 V36.5 Q24.5 39 22 39 H10.5 Q8 39 8 36.5 Z" fill="#fff"/>
+<rect x="29.5" y="29" width="20" height="7" rx="3.5" fill="#fff"/>
+<path d="M8 45.5 Q8 43 10.5 43 H15 L17.5 45.5 H22 Q24.5 45.5 24.5 48 V54.5 Q24.5 57 22 57 H10.5 Q8 57 8 54.5 Z" fill="#fff"/>
+<rect x="29.5" y="47" width="24" height="7" rx="3.5" fill="#fff"/>
+<path d="M11.5 15.5 H21" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M11.5 33.5 H21" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M11.5 51.5 H21" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</mask>
+</defs>
+<g mask="url(#mUt3m)">
+<rect width="64" height="64" fill="currentColor"/>
+</g>
+</svg>

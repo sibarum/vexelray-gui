@@ -1,0 +1,16 @@
+<svg color="#e9ecf2" width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<mask id="mUt8m" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
+<rect width="64" height="64" fill="#000"/>
+<rect x="10" y="14" width="44" height="7" rx="3.5" fill="#fff"/>
+<rect x="10" y="28.5" width="44" height="7" rx="3.5" fill="#fff"/>
+<rect x="10" y="43" width="44" height="7" rx="3.5" fill="#fff"/>
+<circle cx="15" cy="17.5" r="1.6" fill="#000"/>
+<circle cx="15" cy="32" r="1.6" fill="#000"/>
+<circle cx="15" cy="46.5" r="1.6" fill="#000"/>
+</mask>
+</defs>
+<g mask="url(#mUt8m)">
+<rect width="64" height="64" fill="currentColor"/>
+</g>
+</svg>

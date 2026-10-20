@@ -1,0 +1,11 @@
+<svg color="#e9ecf2" width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<mask id="mUt37m" maskUnits="userSpaceOnUse" x="0" y="0" width="16" height="16">
+<rect width="16" height="16" fill="#000"/>
+<path d="M1.50 8.00 L1.82 7.22 L2.15 6.45 L2.48 5.73 L2.80 5.06 L3.12 4.46 L3.45 3.95 L3.77 3.54 L4.10 3.24 L4.43 3.06 L4.75 3.00 L5.08 3.06 L5.40 3.24 L5.73 3.54 L6.05 3.95 L6.38 4.46 L6.70 5.06 L7.02 5.73 L7.35 6.45 L7.67 7.22 L8.00 8.00 L8.32 8.78 L8.65 9.55 L8.97 10.27 L9.30 10.94 L9.62 11.54 L9.95 12.05 L10.28 12.46 L10.60 12.76 L10.92 12.94 L11.25 13.00 L11.58 12.94 L11.90 12.76 L12.22 12.46 L12.55 12.05 L12.88 11.54 L13.20 10.94 L13.53 10.27 L13.85 9.55 L14.17 8.78 L14.50 8.00" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</mask>
+</defs>
+<g mask="url(#mUt37m)">
+<rect width="16" height="16" fill="currentColor"/>
+</g>
+</svg>

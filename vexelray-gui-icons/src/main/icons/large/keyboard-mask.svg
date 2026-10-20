@@ -1,0 +1,25 @@
+<svg color="#e9ecf2" width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<mask id="mUt24m" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
+<rect width="64" height="64" fill="#000"/>
+<rect x="5" y="16" width="54" height="33" rx="5" fill="#fff"/>
+<rect x="10" y="21" width="5.5" height="5.5" rx="1.2" fill="#000"/>
+<rect x="18" y="21" width="5.5" height="5.5" rx="1.2" fill="#000"/>
+<rect x="26" y="21" width="5.5" height="5.5" rx="1.2" fill="#000"/>
+<rect x="34" y="21" width="5.5" height="5.5" rx="1.2" fill="#000"/>
+<rect x="42" y="21" width="5.5" height="5.5" rx="1.2" fill="#000"/>
+<rect x="50" y="21" width="5.5" height="5.5" rx="1.2" fill="#000"/>
+<rect x="14" y="29" width="5.5" height="5.5" rx="1.2" fill="#000"/>
+<rect x="22" y="29" width="5.5" height="5.5" rx="1.2" fill="#000"/>
+<rect x="30" y="29" width="5.5" height="5.5" rx="1.2" fill="#000"/>
+<rect x="38" y="29" width="5.5" height="5.5" rx="1.2" fill="#000"/>
+<rect x="46" y="29" width="5.5" height="5.5" rx="1.2" fill="#000"/>
+<rect x="10" y="37" width="5.5" height="5.5" rx="1.2" fill="#000"/>
+<rect x="18" y="37" width="28" height="5.5" rx="1.2" fill="#000"/>
+<rect x="48.5" y="37" width="5.5" height="5.5" rx="1.2" fill="#000"/>
+</mask>
+</defs>
+<g mask="url(#mUt24m)">
+<rect width="64" height="64" fill="currentColor"/>
+</g>
+</svg>

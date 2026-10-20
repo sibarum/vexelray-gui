@@ -1,0 +1,12 @@
+<svg color="#e9ecf2" width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<mask id="mUt44m" maskUnits="userSpaceOnUse" x="0" y="0" width="16" height="16">
+<rect width="16" height="16" fill="#000"/>
+<path d="M2 5.5 H4.5 L8 2.5 V13.5 L4.5 10.5 H2 Z" fill="#fff"/>
+<path d="M10.44 6.06 A2.75 2.75 0 0 1 10.44 9.94" fill="none" stroke="#fff" stroke-width="1.25" stroke-linecap="butt" stroke-linejoin="round"/>
+</mask>
+</defs>
+<g mask="url(#mUt44m)">
+<rect width="16" height="16" fill="currentColor"/>
+</g>
+</svg>

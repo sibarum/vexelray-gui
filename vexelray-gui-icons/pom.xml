@@ -13,10 +13,12 @@
     <artifactId>vexelray-gui-icons</artifactId>
 
     <description>
-        The suite's icons as signed distance fields: every mask in vexelray-icons baked into one atlas (committed,
-        as the font atlases are), the Icon enum that names each drawing, and IconView, a node that shows one at any
-        size, colour, glow and shadow. The renderer uploads the atlas itself, once per device, so a widget names an
-        icon and never handles a texture. Rebaked by vexelray-icons/tools/Bake.java when the art changes.
+        The suite's icons as signed distance fields, and the shared set every application includes: every mask in
+        src/main/icons (copied from vexelray-icons) baked at build time by vexelray-gui-icons-maven-plugin into one
+        atlas, the Icon enum that names each drawing, and IconView, a node that shows one at any size, colour, glow
+        and shadow. The renderer uploads the atlas itself, once per device, so a widget names an icon and never
+        handles a texture. An application's own icons are a set that extends dev.vexelray.gui.icons.Icon, and go
+        anywhere an Icon goes (BakedIcon). See README.md.
     </description>
 
     <dependencies>
@@ -31,4 +33,40 @@
             <artifactId>vexelray-shadelets</artifactId>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <!-- The shared set. Its manifest goes in the jar, and a set that names dev.vexelray.gui.icons.Icon in
+                 <extends> takes these grids and none of these names. A mask is one name at either size or both:
+                 small/save-mask.svg and large/save-mask.svg are Icon.SAVE. -->
+            <plugin>
+                <groupId>dev.vexelray.gui</groupId>
+                <artifactId>vexelray-gui-icons-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>bake</goal>
+                        </goals>
+                        <configuration>
+                            <packageName>dev.vexelray.gui.icons</packageName>
+                            <enumName>Icon</enumName>
+                            <atlasName>icons</atlasName>
+                            <directories>
+                                <directory>
+                                    <path>src/main/icons/small</path>
+                                    <size>small</size>
+                                    <suffix>-mask</suffix>
+                                </directory>
+                                <directory>
+                                    <path>src/main/icons/large</path>
+                                    <size>large</size>
+                                    <suffix>-mask</suffix>
+                                </directory>
+                            </directories>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 </project>

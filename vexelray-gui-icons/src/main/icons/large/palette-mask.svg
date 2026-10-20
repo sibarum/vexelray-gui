@@ -1,0 +1,16 @@
+<svg color="#e9ecf2" width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<mask id="mUt55m" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
+<rect width="64" height="64" fill="#000"/>
+<path d="M32 7 C46.5 7 57.5 16.5 57.5 29.5 C57.5 38 51.5 41.5 45.5 40.5 C40.5 39.8 37.5 42.5 38.5 46.5 C39.5 50.5 41.5 52.5 38.5 55 C35.5 57 32.5 57.5 30.5 57.5 C17 57.5 6.5 46 6.5 32 C6.5 18 17.5 7 32 7 Z" fill="#fff"/>
+<circle cx="25" cy="45" r="5" fill="#000"/>
+<circle cx="19" cy="25" r="5" fill="#000"/>
+<circle cx="31.5" cy="16.5" r="5" fill="#000"/>
+<circle cx="44" cy="22" r="5" fill="#000"/>
+<circle cx="15.5" cy="37.5" r="4.6" fill="#000"/>
+</mask>
+</defs>
+<g mask="url(#mUt55m)">
+<rect width="64" height="64" fill="currentColor"/>
+</g>
+</svg>

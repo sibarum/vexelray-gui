@@ -1,0 +1,17 @@
+<svg color="#e9ecf2" width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<mask id="ucstrash_0m" maskUnits="userSpaceOnUse" x="0" y="0" width="16" height="16">
+<rect width="16" height="16" fill="#000"/>
+<g>
+<path d="M2.5 4 H13.5" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M6 4 V2.5 H10 V4" fill="none" stroke="#fff" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M3.75 5.5 H12.25 L11.5 13.25 Q11.4 14.25 10.4 14.25 H5.6 Q4.6 14.25 4.5 13.25 Z" fill="#fff" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/>
+<path d="M6.5 7.75 L6.6 12" fill="none" stroke="#000" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M9.5 7.75 L9.4 12" fill="none" stroke="#000" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+</mask>
+</defs>
+<g mask="url(#ucstrash_0m)">
+<rect width="16" height="16" fill="currentColor"/>
+</g>
+</svg>

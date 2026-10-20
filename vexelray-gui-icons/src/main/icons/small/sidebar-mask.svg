@@ -1,0 +1,14 @@
+<svg color="#e9ecf2" width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<mask id="ucssidebar_5m" maskUnits="userSpaceOnUse" x="0" y="0" width="16" height="16">
+<rect width="16" height="16" fill="#000"/>
+<g>
+<rect x="1.5" y="2.5" width="13" height="11" rx="1.75" fill="#fff"/>
+<rect x="6.5" y="4" width="6.5" height="8" rx="0.75" fill="#000"/>
+</g>
+</mask>
+</defs>
+<g mask="url(#ucssidebar_5m)">
+<rect width="16" height="16" fill="currentColor"/>
+</g>
+</svg>

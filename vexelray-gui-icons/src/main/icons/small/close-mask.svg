@@ -1,0 +1,11 @@
+<svg color="#e9ecf2" width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<mask id="mUt4m" maskUnits="userSpaceOnUse" x="0" y="0" width="16" height="16">
+<rect width="16" height="16" fill="#000"/>
+<path d="M3.5 3.5 L12.5 12.5 M12.5 3.5 L3.5 12.5" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="butt" stroke-linejoin="round"/>
+</mask>
+</defs>
+<g mask="url(#mUt4m)">
+<rect width="16" height="16" fill="currentColor"/>
+</g>
+</svg>

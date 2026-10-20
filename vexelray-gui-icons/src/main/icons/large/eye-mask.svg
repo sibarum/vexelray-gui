@@ -1,0 +1,15 @@
+<svg color="#e9ecf2" width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<mask id="ucleye_0m" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
+<rect width="64" height="64" fill="#000"/>
+<g transform="scale(4)">
+<path d="M1 8 Q8 0.25 15 8 Q8 15.75 1 8 Z" fill="#fff"/>
+<circle cx="8" cy="8" r="2.75" fill="#000"/>
+<circle cx="8" cy="8" r="1.25" fill="#fff"/>
+</g>
+</mask>
+</defs>
+<g mask="url(#ucleye_0m)">
+<rect width="64" height="64" fill="currentColor"/>
+</g>
+</svg>

@@ -9,7 +9,7 @@ import java.io.UncheckedIOException;
 
 /**
  * The atlas every {@link FileSheet} and emblem is a cell of: {@code file-icons.rgba} on the class path, baked by
- * {@code vexelray-icons/tools/Bake.java} in the font atlas's layout. One instance, so the renderer uploads it once
+ * {@code vexelray-gui-icons-maven-plugin} in the font atlas's layout. One instance, so the renderer uploads it once
  * per device ({@link Pixels}), and only in an application that draws a file icon. Its size is known without reading
  * it; its texels are read the first time a frame draws one, and not kept here once the renderer has them.
  */

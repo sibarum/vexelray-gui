@@ -1,0 +1,15 @@
+<svg color="#e9ecf2" width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<mask id="mUt38m" maskUnits="userSpaceOnUse" x="0" y="0" width="16" height="16">
+<rect width="16" height="16" fill="#000"/>
+<rect x="1" y="2" width="2" height="12" rx="0.5" fill="#fff"/>
+<rect x="4" y="8" width="2" height="6" rx="0.5" fill="#fff"/>
+<rect x="7" y="10" width="2" height="4" rx="0.5" fill="#fff"/>
+<rect x="10" y="11" width="2" height="3" rx="0.5" fill="#fff"/>
+<rect x="13" y="12" width="2" height="2" rx="0.5" fill="#fff"/>
+</mask>
+</defs>
+<g mask="url(#mUt38m)">
+<rect width="16" height="16" fill="currentColor"/>
+</g>
+</svg>

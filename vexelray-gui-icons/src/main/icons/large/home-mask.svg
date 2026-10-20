@@ -1,0 +1,14 @@
+<svg color="#e9ecf2" width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<mask id="uclhome_4m" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
+<rect width="64" height="64" fill="#000"/>
+<g transform="scale(4)">
+<path d="M2.5 7.25 L8 2.5 L13.5 7.25 V13 Q13.5 13.75 12.75 13.75 H3.25 Q2.5 13.75 2.5 13 Z" fill="#fff" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/>
+<rect x="6.5" y="9.25" width="3" height="5" rx="0.5" fill="#000"/>
+</g>
+</mask>
+</defs>
+<g mask="url(#uclhome_4m)">
+<rect width="64" height="64" fill="currentColor"/>
+</g>
+</svg>

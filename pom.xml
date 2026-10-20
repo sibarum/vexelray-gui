@@ -26,6 +26,9 @@
              Length + flex layout, lifecycle FSM + animation transform layer, input dispatch, RichText,
              GuiApp loop. -->
         <module>vexelray-gui-core</module>
+        <!-- Build-time icon atlases: art (SVG or raster) into distance fields, an atlas and the enum naming them.
+             A Maven plugin, built before the modules that bake with it. See vexelray-gui-icons/README.md. -->
+        <module>vexelray-gui-icons-maven-plugin</module>
         <!-- The suite's icons: every drawing in vexelray-icons baked into one atlas of distance fields, and the Icon
              enum that names them. On core only, so widgets can wear them. See vexelray-gui-icons/README.md. -->
         <module>vexelray-gui-icons</module>
@@ -102,12 +105,16 @@
         <kronometer.version>1.2-SNAPSHOT</kronometer.version>
         <!-- imagelib: Panama bindings over one C ABI for every image format (PNG/JPEG/GIF/WebP/... and SVG).
              Application edge only, and deliberately: decoding is not this framework's business, and no module
-             here names a format. The demo depends on it to show what GuiApp.texture is for. -->
+             here names a format at run time. The demo depends on it to show what GuiApp.texture is for, and the
+             icon plugin reads art with it at build time. -->
         <imagelib.version>0.1.2-SNAPSHOT</imagelib.version>
         <joml.version>1.10.7</joml.version>
         <junit.version>5.11.4</junit.version>
-        <!-- ASM: bytecode reading for the architecture guard only (test scope, one module). -->
+        <!-- ASM: bytecode reading for the architecture guard (test scope), and the icon plugin's descriptor scan. -->
         <asm.version>9.9.1</asm.version>
+        <!-- Maven plugin tooling, for vexelray-gui-icons-maven-plugin. -->
+        <maven-plugin-api.version>3.9.9</maven-plugin-api.version>
+        <maven-plugin-tools.version>3.15.1</maven-plugin-tools.version>
     </properties>
 
     <dependencyManagement>
@@ -322,6 +329,11 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>3.5.2</version>
+                </plugin>
+                <plugin>
+                    <groupId>dev.vexelray.gui</groupId>
+                    <artifactId>vexelray-gui-icons-maven-plugin</artifactId>
+                    <version>${project.version}</version>
                 </plugin>
             </plugins>
         </pluginManagement>

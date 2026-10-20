@@ -108,6 +108,27 @@ class InstrumentStripTest {
     }
 
     @Test
+    void anInstrumentWithAMenuOpensItAtTheClickAndAScriptCanReachBoth() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            List<String> fired = new ArrayList<>();
+            ContextMenu menu = new ContextMenu(h.gui);
+            TitleBar bar = new TitleBar(h.gui, new Recorder(), "app")
+                    .instruments(List.of(WindowInstrument.automation("debug",
+                            m -> m.item("Restart in debug mode", () -> fired.add("restart")))));
+            h.gui.root().children(bar.node());
+            h.frame();
+
+            h.click(fromRight(3), 16f);
+            h.frame();
+            assertTrue(menu.isOpen(), "the plain click opens the menu, and is not taken for a click away from it");
+            assertEquals(List.of("Restart in debug mode"), menu.items().stream().map(i -> i.label()).toList());
+            assertTrue(fired.isEmpty(), "opening the menu runs nothing");
+            assertTrue(h.gui.landmarkNode("instrument-automation").isPresent(), "the button is reached by its role");
+            assertTrue(h.gui.landmarkNode("menu.restart-in-debug-mode").isPresent(), "the item by what it says");
+        }
+    }
+
+    @Test
     void theStripIsReplacedRatherThanAppended() {
         try (HeadlessGui h = new HeadlessGui()) {
             List<String> fired = new ArrayList<>();

@@ -13,9 +13,9 @@
     <artifactId>vexelray-gui-automation-window</artifactId>
 
     <description>
-        The automation sockets switched by hand while the application runs: remote control and diagnostics, each
-        on or off, sharing a port or on one each. AutomationPanel is the control, to embed anywhere;
-        AutomationWindow puts it behind a title-bar instrument beside the key bindings. Its own module so that
+        The automation sockets in the title bar: a debug run's button (AutomationButton), with each socket's lamp,
+        its state in words, and its ports at the top of the button's menu. Sockets are opened at launch; the
+        framework's Driver adds the restarts into and out of a debug run. Its own module so that
         vexelray-gui-automation stays free of widgets, and a debug edition opts in by depending on it.
     </description>
 

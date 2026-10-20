@@ -4,7 +4,7 @@ import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.automation.Capability;
 import dev.vexelray.gui.automation.Sockets;
 import dev.vexelray.gui.automation.Windows;
-import dev.vexelray.gui.automation.window.AutomationWindow;
+import dev.vexelray.gui.automation.window.AutomationButton;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.TextClipboard;
 import dev.vexelray.gui.core.app.AppHome;
@@ -160,14 +160,14 @@ public final class Demo {
 
             attachInput(input, gui, app);
             shell.titleBar().controls(app.controls());   // the window exists now; point the chrome at it
-            // The automation sockets, made now and switched on only if a setting asks; the button below switches
-            // them while the gallery runs.
+            // The automation sockets, made now and switched on only if a setting asks; the button below shows them.
+            // The gallery is wired by hand, so it has no restart into a debug run: that is the framework's.
             Sockets driving = sockets(app, krono);
             // The framework's tools in the caption: a screenshot that asks where to put it, the key bindings beside
-            // it, and the automation switches beside those. All opt-in — a bar has none until it is handed some.
+            // it, and the sockets' lamps beside those. All opt-in — a bar has none until it is handed some.
             shell.titleBar().instruments(java.util.List.of(
                     SaveScreenshot.instrument(), KeymapWindow.instrument(app, gui, keys),
-                    AutomationWindow.instrument(app, gui, driving)));
+                    AutomationButton.instrument(gui, driving, menu -> { })));
             if (memory.maximized("main")) {
                 app.window().maximize();
             }

@@ -83,6 +83,8 @@ public final class ContextMenu implements MenuPresenter {
 
     private volatile boolean attached;
     private volatile boolean shown;
+    /** The click this menu was opened at: not a click away from it, whichever button it was. */
+    private volatile ClickEvent opener;
 
     /** Build the panel and install it as {@code gui}'s menu presenter, replacing any presenter already there. */
     public ContextMenu(Gui gui) {
@@ -145,6 +147,7 @@ public final class ContextMenu implements MenuPresenter {
      */
     @Override
     public synchronized void present(ClickEvent where, List<MenuItem> menuItems) {
+        opener = where;
         rebuild(menuItems);
         if (!attached) {
             attached = true;
@@ -267,7 +270,15 @@ public final class ContextMenu implements MenuPresenter {
             hide();
             item.action().run();   // already on the handler executor — the lane app callbacks run on
         });
+        // Addressable by what it says, so a script can choose it: menu.restart-in-debug-mode. Released with the row.
+        gui.landmark("menu." + slug(item.label()), row);
         return row;
+    }
+
+    /** {@code Restart in debug mode} as {@code restart-in-debug-mode}: lower case, a dash for every run of anything else. */
+    static String slug(String label) {
+        String s = label.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9]+", "-");
+        return s.replaceAll("^-+|-+$", "");
     }
 
     /** A thin horizontal rule between groups. */
@@ -282,7 +293,9 @@ public final class ContextMenu implements MenuPresenter {
      * too, and must not race the show it triggers.
      */
     private void onAnyClick(ClickEvent e) {
-        if (shown && e.button() == MouseButton.LEFT && !ownIds.contains(e.nodeId())) {
+        // Nor the left click that opened it, which a button whose click is a menu (a title-bar instrument's) publishes
+        // too, and which may arrive here after the show.
+        if (shown && e.button() == MouseButton.LEFT && !ownIds.contains(e.nodeId()) && !e.equals(opener)) {
             hide();
         }
     }

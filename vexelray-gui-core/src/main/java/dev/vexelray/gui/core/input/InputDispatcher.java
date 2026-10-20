@@ -2007,4 +2007,25 @@ public final class InputDispatcher {
             return;   // consumed; the walk stops at the first node that has a menu
         }
     }
+
+    /**
+     * Ask {@code source} for a menu and show it at {@code e}, as a right click on a node with a menu would: for a
+     * control whose plain click opens a menu (a title-bar instrument's). On the handler lane, as the sources are.
+     */
+    public void openMenu(ClickEvent e, Consumer<MenuSink> source) {
+        MenuPresenter presenter = menuPresenter;
+        if (presenter == null) {
+            dev.vexelray.diag.Diagnostics.dropped("context-menu-presenter", "the menu of node " + e.nodeId(),
+                    "no MenuPresenter is installed on this tree; install one with Gui.menus");
+            return;
+        }
+        handlerExecutor.execute(() -> {
+            MenuCollector collector = new MenuCollector(e, menuHistory.apply(e.nodeId()));
+            source.accept(collector);
+            java.util.List<MenuItem> items = collector.build();
+            if (!items.isEmpty()) {
+                presenter.present(e, items);
+            }
+        });
+    }
 }

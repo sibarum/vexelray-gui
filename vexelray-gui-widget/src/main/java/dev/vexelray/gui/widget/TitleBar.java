@@ -277,8 +277,17 @@ public final class TitleBar {
         // survives a zoom. The ink is the bar's, never the instrument's (WindowInstrument's mark).
         Caption caption = new Caption(b, false, (g, ink, under) -> tool.mark().apply(g.box(), ink));
         // The instrument asks the window, not the application: a bar in a popup photographs the popup. Resolved
-        // at click time like every other button here, so a bar built before its window still works.
-        gui.onClick(b, () -> tool.action().accept(this.controls));
+        // at click time like every other button here, so a bar built before its window still works. One with a
+        // menu opens it at the click instead, built then, against what is true then.
+        if (tool.menu() != null) {
+            gui.onClick(b, (dev.vexelray.gui.core.input.ClickEvent e) -> gui.openMenu(e, tool.menu()));
+        } else {
+            gui.onClick(b, () -> tool.action().accept(this.controls));
+        }
+        // Its role as a landmark, so a script reaches it by the name the tree shows (click instrument-automation).
+        if (!tool.role().isEmpty()) {
+            gui.landmark(tool.role(), b);
+        }
         WindowInstrument.Live live = tool.live();
         if (live != null) {
             // A live one is re-authored against the last box when what it shows changes, too.

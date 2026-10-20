@@ -829,6 +829,19 @@ public final class Gui implements AutoCloseable {
         return this;
     }
 
+    /**
+     * Show the menu {@code source} builds at {@code at}, now: for a control whose plain click opens a menu, as a
+     * title-bar instrument's does. Built and shown as a right click's would be, by the installed presenter (the
+     * default one, if this tree has none yet).
+     */
+    public Gui openMenu(ClickEvent at, java.util.function.Consumer<MenuSink> source) {
+        if (input.menuPresenter() == null) {
+            presentMenus();
+        }
+        input.openMenu(at, source);
+        return this;
+    }
+
     /** Install the default presenter if this tree still has none, once even when two threads race to ask. */
     private void presentMenus() {
         synchronized (menusLock) {

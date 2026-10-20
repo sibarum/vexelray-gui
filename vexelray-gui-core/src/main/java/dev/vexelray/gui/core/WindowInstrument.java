@@ -39,10 +39,13 @@ import java.util.function.Consumer;
  * @param action  what it asks of the window it is in
  * @param live    what the mark and tooltip show changes while the window is open, and this says when; {@code null}
  *                for a mark that only changes with its box
+ * @param menu    what a click opens instead of running {@code action}: a menu, built at each click against what is
+ *                true then; {@code null} for an instrument that acts when clicked
  */
 public record WindowInstrument(String role, String tooltip,
                                java.util.function.BiFunction<Rect, Color, Picture> mark,
-                               Consumer<WindowControls> action, Live live) {
+                               Consumer<WindowControls> action, Live live,
+                               Consumer<dev.vexelray.gui.core.input.MenuSink> menu) {
 
     /** Where a screenshot goes when nobody said: a timestamped PNG in the working directory. */
     private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
@@ -55,7 +58,13 @@ public record WindowInstrument(String role, String tooltip,
     /** An instrument whose mark changes only with its box. */
     public WindowInstrument(String role, String tooltip, java.util.function.BiFunction<Rect, Color, Picture> mark,
                             Consumer<WindowControls> action) {
-        this(role, tooltip, mark, action, null);
+        this(role, tooltip, mark, action, null, null);
+    }
+
+    /** An instrument that acts when clicked. */
+    public WindowInstrument(String role, String tooltip, java.util.function.BiFunction<Rect, Color, Picture> mark,
+                            Consumer<WindowControls> action, Live live) {
+        this(role, tooltip, mark, action, live, null);
     }
 
     /**
@@ -145,38 +154,38 @@ public record WindowInstrument(String role, String tooltip,
     }
 
     /**
-     * The automation button: {@code open} shows whatever switches the application's automation sockets — remote
-     * control and diagnostics — on and off while it runs. Core's button, so an agent and a person find it by one name
-     * in every application; what it opens is the caller's. {@code vexelray-gui-automation-window}'s
-     * {@code AutomationWindow} is the one that opens the switches.
+     * The automation button of a run that is not a debug run: the plug, and a click opens {@code menu} (the
+     * framework's offers to restart in debug mode). Core's button, so an agent and a person find it by one name,
+     * {@code instrument-automation}, in every application, whichever run it is.
      *
-     * <p>Never in {@link #standard()}: an application without the automation module has no socket to switch, and must
-     * not carry a button for one.
+     * <p>Never in {@link #standard()}: an application without the automation module cannot be debugged through it, and
+     * must not carry a button for it.
      */
-    public static WindowInstrument automation(String tooltip, Consumer<WindowControls> open) {
-        return new WindowInstrument("instrument-automation", tooltip, WindowInstrument::plugMark, open);
+    public static WindowInstrument automation(String tooltip, Consumer<dev.vexelray.gui.core.input.MenuSink> menu) {
+        return new WindowInstrument("instrument-automation", tooltip, WindowInstrument::plugMark, c -> { }, null,
+                menu);
     }
 
     /**
-     * The automation button with each socket's lamp beside the plug, read from {@code lamps} whenever {@code live} says
-     * they changed, so whether a port is open, and whether anything is or was connected to it, shows in the title bar
-     * at a glance. {@code vexelray-gui-automation-window}'s {@code AutomationWindow} is the one that reads the sockets.
+     * The automation button of a debug run: a bug in place of the plug, so a debug run is told from a normal one at
+     * a glance, with each socket's lamp beside it, read from {@code lamps} whenever {@code live} says they changed. A
+     * click opens {@code menu}: the ports, and the way back out. The same role as {@link #automation(String, Consumer)}.
      */
-    public static WindowInstrument automation(String tooltip, Consumer<WindowControls> open,
-                                              java.util.function.Supplier<Lamps> lamps, Live live) {
+    public static WindowInstrument debugging(String tooltip, Consumer<dev.vexelray.gui.core.input.MenuSink> menu,
+                                             java.util.function.Supplier<Lamps> lamps, Live live) {
         return new WindowInstrument("instrument-automation", tooltip, (box, ink) -> {
-            Picture plug = plugMark(box, ink);
+            Picture bug = bugMark(box, ink);
             Lamps l = lamps.get();
             if (l == null) {
-                return plug;
+                return bug;
             }
-            // Pips on the plug's centre line, the size of a key on the keyboard beside it: status, not a second icon.
+            // Pips on the mark's centre line, the size of a key on the keyboard beside it: status, not a second icon.
             CaptionGrid g = CaptionGrid.of(box);
-            java.util.List<Picture.Mark> marks = new java.util.ArrayList<>(plug.marks());
+            java.util.List<Picture.Mark> marks = new java.util.ArrayList<>(bug.marks());
             marks.addAll(lampMarks(g, -8.5, l.control(), l.controlColor(), l.used()));
             marks.addAll(lampMarks(g, 8.5, l.diagnostics(), l.diagnosticsColor(), l.used()));
             return Picture.of(marks.toArray(Picture.Mark[]::new));
-        }, open, live);
+        }, c -> { }, live, menu);
     }
 
     /** One lamp centred in {@code box}, for a panel that shows the same lamp beside a row. */
@@ -229,6 +238,23 @@ public record WindowInstrument(String role, String tooltip,
      * A plug — two prongs, a body rounded at the bottom, a cord — for the thing that is plugged into from outside. Not
      * a wall socket: a ring with two slots, at caption size, is a pause button.
      */
+    /** A bug: head and antennae, a body split down its back, three legs a side kept clear of the lamps. */
+    private static Picture bugMark(Rect box, Color ink) {
+        CaptionGrid g = CaptionGrid.of(box);
+        return Picture.of(
+                g.outline(-1.75, -5, 3.5, 3, 1.5, ink),
+                g.line(-1, -5, -2.5, -7, ink),
+                g.line(1, -5, 2.5, -7, ink),
+                g.outline(-3, -2, 6, 8, 3, ink),
+                g.vline(0, -2, 6, ink),
+                g.line(-3, 0, -5.5, -1, ink),
+                g.line(-3, 2.5, -5.5, 2.5, ink),
+                g.line(-3, 5, -5.5, 6, ink),
+                g.line(3, 0, 5.5, -1, ink),
+                g.line(3, 2.5, 5.5, 2.5, ink),
+                g.line(3, 5, 5.5, 6, ink));
+    }
+
     private static Picture plugMark(Rect box, Color ink) {
         CaptionGrid g = CaptionGrid.of(box);
         return Picture.of(

@@ -1,0 +1,6 @@
+{
+  "resources": [
+    { "glob": "natives/linux-x64/libnfd.so" },
+    { "glob": "META-INF/services/dev.vexelray.gui.nfd.spi.NfdPlatform" }
+  ]
+}

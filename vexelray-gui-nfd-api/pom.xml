@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>dev.vexelray.gui</groupId>
+        <artifactId>vexelray-gui</artifactId>
+        <version>0.1.2-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>vexelray-gui-nfd-api</artifactId>
+
+    <description>
+        What vexelray-gui-nfd needs from an operating system, as an interface: where the NFDe library is, how its
+        strings are encoded, what a window handle is, and where a dialog may run. One vexelray-gui-nfd-&lt;os&gt;
+        module implements it per OS; the facade finds that one through ServiceLoader. Depends on nothing, so the
+        OS modules and the facade can both depend on it without depending on each other.
+    </description>
+</project>

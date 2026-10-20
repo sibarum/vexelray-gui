@@ -1,8 +1,4 @@
 {
-  "resources": [
-    { "glob": "natives/windows-x64/nfd.dll" },
-    { "glob": "natives/macos-aarch64/libnfd.dylib" }
-  ],
   "foreign": {
     "downcalls": [
         { "returnType": "jint", "parameterTypes": [] },

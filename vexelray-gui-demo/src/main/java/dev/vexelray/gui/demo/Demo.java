@@ -34,7 +34,6 @@ import sibarum.tactroller.api.BackendException;
 import sibarum.tactroller.api.CoordinateSpace;
 import sibarum.tactroller.api.Key;
 import sibarum.tactroller.api.Modifier;
-import sibarum.tactroller.api.NativeWindow;
 import sibarum.tactroller.api.Tactroller;
 import sibarum.tactroller.atchung.TactrollerInputBridge;
 import sibarum.tactroller.clipboard.Clipboard;
@@ -355,7 +354,7 @@ public final class Demo {
             return;
         }
         try {
-            input.attach(NativeWindow.ofHwnd(app.windowHandle()));
+            input.attach(app.windowHandle());
             input.setCoordinateSpace(CoordinateSpace.CLIENT);
             // The GUI may carry the pointer along with something it animates — a cancelled card flying home with
             // the hand on it. Positions are in the CLIENT space just configured, the same space they arrive in.
@@ -419,7 +418,7 @@ public final class Demo {
         Tactroller backend;
         try {
             backend = Tactroller.open();
-            backend.attach(NativeWindow.ofHwnd(window.osHandle()));
+            backend.attach(window.osHandle());
             backend.setCoordinateSpace(CoordinateSpace.CLIENT);
         } catch (BackendException e) {
             System.out.println("input unavailable for this window (" + e.getMessage() + ")");

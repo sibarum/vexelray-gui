@@ -6,6 +6,8 @@ import java.lang.foreign.Linker;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SymbolLookup;
 import java.lang.invoke.MethodHandle;
+import dev.vexelray.gui.nfd.spi.NfdPlatform;
+
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -23,7 +25,7 @@ import static java.lang.foreign.ValueLayout.JAVA_SHORT;
  *
  * <p><b>Threading.</b> Every call here blocks until the dialog is dismissed, on whatever thread makes it. Which
  * thread that may be is the OS's rule, and {@link FileDialog}'s {@code *Async} methods apply it for you: on
- * Windows a dialog thread of the module's own, on macOS the GUI thread. Calling in here directly is calling it on
+ * Windows and Linux a dialog thread of the module's own, on macOS the GUI thread. Calling in here directly is calling it on
  * your own thread, with the rules that come with that thread.
  *
  * <p><b>Init and quit are per thread.</b> On Windows {@code NFD_Init} enters a COM apartment, and an apartment
@@ -33,7 +35,7 @@ import static java.lang.foreign.ValueLayout.JAVA_SHORT;
  *
  * String encoding: NFDe's {@code nfdnchar_t} is {@code wchar_t} (UTF-16LE)
  * on Windows and {@code char} (UTF-8) on POSIX. The helpers in this class
- * select the right encoding per platform.
+ * use the encoding the platform's {@link NfdPlatform} names.
  */
 @SuppressWarnings("restricted")
 public final class Nfd {
@@ -43,14 +45,15 @@ public final class Nfd {
     public static final int NFD_CANCEL = 2;
 
     public static final long NFD_WINDOW_HANDLE_TYPE_UNSET   = 0;
-    public static final long NFD_WINDOW_HANDLE_TYPE_WINDOWS = 1;
-    public static final long NFD_WINDOW_HANDLE_TYPE_COCOA   = 2;
+    public static final long NFD_WINDOW_HANDLE_TYPE_WINDOWS = NfdPlatform.WINDOW_HANDLE_TYPE_WINDOWS;
+    public static final long NFD_WINDOW_HANDLE_TYPE_COCOA   = NfdPlatform.WINDOW_HANDLE_TYPE_COCOA;
+    public static final long NFD_WINDOW_HANDLE_TYPE_X11     = NfdPlatform.WINDOW_HANDLE_TYPE_X11;
 
     /** Matches NFD_INTERFACE_VERSION in nfd.h; required first arg to every {@code _With_Impl}. */
     private static final long NFD_INTERFACE_VERSION = 1L;
 
-    /** What platform this is, asked once. See {@link Os} for why it is asked in exactly one place. */
-    private static final Os OS = Os.current();
+    /** What platform this is, asked once, of the OS module on the class path (see {@link Platform}). */
+    private static final NfdPlatform OS = Platform.current();
 
     /** How NFDe's {@code nfdnchar_t} is encoded here. */
     public static final Charset NATIVE_CHARSET = OS.charset();

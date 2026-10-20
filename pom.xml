@@ -38,7 +38,12 @@
         <!-- Widgets built on core: box, text, button, slider, list, scroll, text field, ... -->
         <module>vexelray-gui-widget</module>
         <!-- The GUI's one native binding: a Panama nativefiledialog-extended facade. -->
+        <module>vexelray-gui-nfd-api</module>
         <module>vexelray-gui-nfd</module>
+        <!-- The facade's OS halves: NFDe built for each platform. vexelray-gui-nfd's profiles add one. -->
+        <module>vexelray-gui-nfd-windows</module>
+        <module>vexelray-gui-nfd-macos</module>
+        <module>vexelray-gui-nfd-linux</module>
         <!-- Rebindable key bindings, opt-in: named actions with default chords the user can change, persisted
              through Settings, and the editor (and title-bar instrument) that changes them. On widget. -->
         <module>vexelray-gui-keymap</module>
@@ -164,6 +169,26 @@
             <dependency>
                 <groupId>dev.vexelray.gui</groupId>
                 <artifactId>vexelray-gui-nfd</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.vexelray.gui</groupId>
+                <artifactId>vexelray-gui-nfd-api</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.vexelray.gui</groupId>
+                <artifactId>vexelray-gui-nfd-windows</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.vexelray.gui</groupId>
+                <artifactId>vexelray-gui-nfd-macos</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.vexelray.gui</groupId>
+                <artifactId>vexelray-gui-nfd-linux</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

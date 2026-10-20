@@ -1,0 +1,6 @@
+{
+  "resources": [
+    { "glob": "natives/macos-aarch64/libnfd.dylib" },
+    { "glob": "META-INF/services/dev.vexelray.gui.nfd.spi.NfdPlatform" }
+  ]
+}

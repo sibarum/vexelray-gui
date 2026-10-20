@@ -8,7 +8,7 @@ import java.util.concurrent.RejectedExecutionException;
 
 /**
  * One long-lived thread that native file dialogs run on, one at a time, where the OS lets a dialog run somewhere
- * other than the thread that owns the window — Windows, today ({@link Os#dialogLane}).
+ * other than the thread that owns the window — Windows and Linux, today ({@link Platform#lane}).
  *
  * <p><b>Why a thread of its own.</b> A dialog is modal and synchronous: the call does not return until the person
  * does. Run on the frame loop, that is a window that stops drawing and taking input for as long as somebody reads

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>dev.vexelray.gui</groupId>
+        <artifactId>vexelray-gui</artifactId>
+        <version>0.1.2-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>vexelray-gui-nfd-windows</artifactId>
+
+    <description>
+        vexelray-gui-nfd on Windows: the NFDe library built for Windows (IFileDialog through COM) and the facts about it that
+        differ per OS, as an NfdPlatform found through ServiceLoader. vexelray-gui-nfd's OS-activated build profile
+        adds this as a runtime dependency.
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>dev.vexelray.gui</groupId>
+            <artifactId>vexelray-gui-nfd-api</artifactId>
+        </dependency>
+    </dependencies>
+</project>

@@ -106,7 +106,7 @@ class FileDialogTest {
         });
         assertInstanceOf(UnsatisfiedLinkError.class, failureOf(unlinked));
 
-        CompletableFuture<String> nowhere = FileDialog.ask(() -> Os.of("Linux").dialogLane(Runnable::run),
+        CompletableFuture<String> nowhere = FileDialog.ask(() -> Platform.lane(Platform.choose(List.of()), Runnable::run),
                 () -> "never asked");
         assertInstanceOf(UnsatisfiedLinkError.class, failureOf(nowhere));
     }

@@ -22,8 +22,8 @@ import java.util.Map;
  *   <li>System property {@code vexelray.natives.dir} or env var
  *       {@code VEXELRAY_NATIVES_DIR} — directory containing the platform-correct
  *       filename (e.g. {@code nfd.dll} on Windows, {@code libnfd.dylib} on macOS).</li>
- *   <li>Classpath resource at {@code /natives/<os>-<arch>/<file>}, extracted
- *       to a temp directory and loaded.</li>
+ *   <li>The classpath resource the OS module names ({@code /natives/<os>-<arch>/<file>}),
+ *       extracted to a temp directory and loaded.</li>
  *   <li>{@code System.loadLibrary(libName)} fallback.</li>
  * </ol>
  *
@@ -62,8 +62,8 @@ final class NativeLibLoader {
         }
 
         Path resolved = null;
-        String resource = "/natives/" + osArchDir() + "/" + fileName;
-        try (InputStream in = NativeLibLoader.class.getResourceAsStream(resource)) {
+        String resource = Platform.current().libraryResource();
+        try (InputStream in = resource == null ? null : NativeLibLoader.class.getResourceAsStream(resource)) {
             if (in != null) {
                 Path tmpDir = Files.createTempDirectory("vexelray-natives-");
                 tmpDir.toFile().deleteOnExit();
@@ -95,22 +95,8 @@ final class NativeLibLoader {
         return libName.toUpperCase(Locale.ROOT).replace('-', '_').replace('.', '_');
     }
 
+    /** The platform's file name for the library; the loader only ever loads {@code nfd}. */
     private static String libFileName(String libName) {
-        return Os.current().libraryFileName(libName);
-    }
-
-    private static String osArchDir() {
-        return Os.current().resourceDirectory() + "-" + currentArch();
-    }
-
-    private static String currentArch() {
-        String arch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
-        if (arch.contains("aarch64") || arch.contains("arm64")) {
-            return "aarch64";
-        }
-        if (arch.contains("64")) {
-            return "x64";
-        }
-        throw new UnsatisfiedLinkError("Unsupported arch: " + arch);
+        return Platform.current().libraryFileName();
     }
 }

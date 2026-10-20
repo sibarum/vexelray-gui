@@ -41,7 +41,7 @@ import java.util.function.Supplier;
  * the owner's thread has to receive, so a GUI thread that waits without pumping waits forever.
  *
  * <p>The parent handle is the raw OS window handle as returned by {@code GuiApp.windowHandle()} — an HWND on
- * Windows, an NSWindow* on macOS. Pass 0 for no parent.
+ * Windows, an NSWindow* on macOS, an X11 Window on Linux. Pass 0 for no parent.
  */
 public final class FileDialog {
 
@@ -112,7 +112,7 @@ public final class FileDialog {
 
     private static <T> CompletableFuture<T> ask(Executor guiThread, Supplier<T> dialog) {
         Objects.requireNonNull(guiThread, "guiThread");
-        return ask(() -> Os.current().dialogLane(guiThread), dialog);
+        return ask(() -> Platform.lane(Platform.current(), guiThread), dialog);
     }
 
     /**
@@ -174,6 +174,6 @@ public final class FileDialog {
     }
 
     private static long handleTypeOf(long parentWindow) {
-        return parentWindow == 0L ? Nfd.NFD_WINDOW_HANDLE_TYPE_UNSET : Os.current().windowHandleType();
+        return parentWindow == 0L ? Nfd.NFD_WINDOW_HANDLE_TYPE_UNSET : Platform.current().windowHandleType();
     }
 }

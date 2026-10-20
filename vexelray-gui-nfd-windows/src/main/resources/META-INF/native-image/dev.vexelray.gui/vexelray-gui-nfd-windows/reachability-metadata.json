@@ -1,0 +1,6 @@
+{
+  "resources": [
+    { "glob": "natives/windows-x64/nfd.dll" },
+    { "glob": "META-INF/services/dev.vexelray.gui.nfd.spi.NfdPlatform" }
+  ]
+}

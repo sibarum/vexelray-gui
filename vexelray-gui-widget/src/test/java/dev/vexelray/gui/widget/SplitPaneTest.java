@@ -156,6 +156,42 @@ class SplitPaneTest {
     }
 
     @Test
+    void aSizeInRemGivenBeforeAZoomIsDraggedFromWhereItIsDrawn() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Mounted m = mount(h, SplitPane.Orientation.SIDE_BY_SIDE);
+            h.gui.zoom(1.5f);
+            h.frame().frame();
+            Rect r = m.first().layout().rect();
+            assertEquals(240f, r.w(), 1f, "ten rem at 24px");
+
+            drag(h, r.x() + r.w() + 2f, r.y() + 50f, 40f, 0f);
+
+            assertEquals(280f, m.first().layout().rect().w(), 1.5f, "forty on from what was drawn, not from 160");
+        }
+    }
+
+    @Test
+    void aPaneAloneFillsTheFrameAndTheOtherComesBackAtItsSize() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Mounted m = mount(h, SplitPane.Orientation.SIDE_BY_SIDE);
+            float whole = m.pane().node().layout().rect().w();
+
+            m.pane().alone(SplitPane.Pane.FIRST);
+            h.frame().frame();
+            assertEquals(whole, m.first().layout().rect().w(), 1f,
+                    "the sized pane alone takes the whole width: no divider, no other pane");
+
+            m.pane().alone(SplitPane.Pane.SECOND);
+            h.frame().frame();
+            assertEquals(whole, m.second().layout().rect().w(), 1f, "the free pane alone takes the whole width");
+
+            m.pane().alone(null);
+            h.frame().frame();
+            assertEquals(160f, m.first().layout().rect().w(), 1f, "both again, at the divider's size");
+        }
+    }
+
+    @Test
     void aWideGutterIsAllDragTargetAndPaintsOnlyItsLine() {
         try (HeadlessGui h = new HeadlessGui()) {
             Mounted m = mount(h, SplitPane.Orientation.SIDE_BY_SIDE);

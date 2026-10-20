@@ -76,6 +76,8 @@ public final class SplitPane {
     private volatile Length line;
     private volatile Ramp motion;
     private volatile Pane sized = Pane.FIRST;
+    /** The one pane shown, filling the frame with no divider; null while both are. */
+    private volatile Pane alone;
     /** Guarded by {@code this}: the pointer's state over the divider, and whether a drag is under way. */
     private InteractionState pointer = InteractionState.NORMAL;
     private boolean dragging;
@@ -172,6 +174,20 @@ public final class SplitPane {
         return this;
     }
 
+    /**
+     * Show only {@code pane}, filling the frame, with the other pane and the divider hidden; {@code null} shows both
+     * again, at the size the divider had. Hidden rather than removed, so the other pane comes back as it was — for
+     * a place that something else takes over for a while, as a second folder takes the suggestion rail's.
+     */
+    public SplitPane alone(Pane pane) {
+        this.alone = pane;
+        firstBox.visible(pane != Pane.SECOND);
+        secondBox.visible(pane != Pane.FIRST);
+        divider.visible(pane == null);
+        place(Length.dp(sizeDp));
+        return this;
+    }
+
     /** The size of the sized pane. Applies at once and does not notify {@link #onResize}. */
     public SplitPane size(Length size) {
         float em = Math.max(1f, gui.rootEmPx());
@@ -213,11 +229,13 @@ public final class SplitPane {
         boolean across = orientation == Orientation.SIDE_BY_SIDE;
         Node fixed = sized == Pane.FIRST ? firstBox : secondBox;
         Node free = sized == Pane.FIRST ? secondBox : firstBox;
+        // The sized pane on its own takes the whole frame, as the other would; its size is kept for its return.
+        Length main = alone == sized ? Length.grow(1f) : size;
         if (across) {
-            fixed.width(size).height(Length.FILL);
+            fixed.width(main).height(Length.FILL);
             free.width(Length.grow(1f)).height(Length.FILL);
         } else {
-            fixed.width(Length.FILL).height(size);
+            fixed.width(Length.FILL).height(main);
             free.width(Length.FILL).height(Length.grow(1f));
         }
     }
@@ -229,7 +247,10 @@ public final class SplitPane {
             synchronized (this) {
                 dragging = e.phase() == DragEvent.Phase.START;
                 if (dragging) {
-                    anchorPx = sizeDp * dpi;
+                    // From the size on screen: sizeDp is only as good as the em it was converted at, and a size
+                    // given in rem before the window's zoom and density arrived is laid out larger than it says.
+                    NodeLayout laid = (sized == Pane.FIRST ? firstBox : secondBox).layout();
+                    anchorPx = laid.present() ? (across ? laid.rect().w() : laid.rect().h()) : sizeDp * dpi;
                     travelPx = 0f;
                 }
             }

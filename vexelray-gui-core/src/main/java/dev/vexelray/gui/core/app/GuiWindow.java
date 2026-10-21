@@ -349,10 +349,14 @@ final class GuiWindow implements AutoCloseable {
             }
             rgba = offscreen(w, h);
         } else {
-            updated = update();
-            drawOwed = true;
-            presenter.render(0, this::draw);
-            rgba = presenter.readFrame();
+            try (Zone z = Probe.zone(Lane.FRAME, "capture render")) {
+                updated = update();
+                drawOwed = true;
+                presenter.render(0, this::draw);
+            }
+            try (Zone z = Probe.zone(Lane.FRAME, "capture read back")) {
+                rgba = presenter.readFrame();
+            }
             w = presenter.width();
             h = presenter.height();
         }
@@ -368,7 +372,9 @@ final class GuiWindow implements AutoCloseable {
         // Moving atomically makes "the file is there" mean "the file is complete", for every consumer, forever.
         File target = new File(path);
         File tmp = new File(target.getAbsolutePath() + ".part");
-        PngWriter.write(rgba, w, h, tmp.toPath());
+        try (Zone z = Probe.zone(Lane.FRAME, "capture encode")) {
+            PngWriter.write(rgba, w, h, tmp.toPath());
+        }
         try {
             java.nio.file.Files.move(tmp.toPath(), target.toPath(),
                     java.nio.file.StandardCopyOption.REPLACE_EXISTING,
@@ -387,16 +393,24 @@ final class GuiWindow implements AutoCloseable {
      */
     private byte[] offscreen(int w, int h) {
         if (capturePass == null || captureW != w || captureH != h) {
-            closeCapture();
-            capturePass = new VulkanRenderPass(device, Vk.FORMAT_R8G8B8A8_UNORM,
-                    Vk.IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-            capturePipeline = new GraphicsPipeline(device, capturePass.handle(), w, h,
-                    CanvasShader.vertex().spirv(), "main", images.fragment().spirv(), "main",
-                    GuiApp.canvasConfig(fonts.first(), images.placeholder(), tables.buffer(), false)); // fixed viewport: offscreen never resizes mid-draw
-            captureW = w;
-            captureH = h;
+            try (Zone z = Probe.zone(Lane.FRAME, "capture pipeline")) {
+                closeCapture();
+                capturePass = new VulkanRenderPass(device, Vk.FORMAT_R8G8B8A8_UNORM,
+                        Vk.IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+                capturePipeline = new GraphicsPipeline(device, capturePass.handle(), w, h,
+                        CanvasShader.vertex().spirv(), "main", images.fragment().spirv(), "main",
+                        GuiApp.canvasConfig(fonts.first(), images.placeholder(), tables.buffer(), false)); // fixed viewport: offscreen never resizes mid-draw
+                captureW = w;
+                captureH = h;
+            }
         }
+        try (Zone z = Probe.zone(Lane.FRAME, "capture offscreen draw")) {
+            return drawOffscreen(w, h);
+        }
+    }
 
+    /** {@link #offscreen}'s drawing, into the pass and pipeline it has made sure of. */
+    private byte[] drawOffscreen(int w, int h) {
         RetainedNode root = update();
         canvas.begin();
         if (root != null) {

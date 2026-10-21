@@ -132,6 +132,23 @@ Keyed<Task> rows = list.keyed(Task::id, task -> gui.text(""));
 rows.reconcile(tasks, (task, row) -> row.text(task.title()));   // after every change: keep, move, exit, enter
 ```
 
+#### Scrolling only where a scrollbar fits
+
+Not motion, but the same complaint: a scrollbar arrives in one frame and narrows what it scrolls, so a pill
+popping into a chip or a fixed-height row whenever its content grew by a pixel is a jump nothing can animate. A
+container that never declared `scroll(...)` now scrolls along an axis (overflow, scrollbar, gutter) only where its
+content box is at least `FlexLayout.SENSIBLE_SCROLL` (4) scrollbar thicknesses long — about 3.4 em, a
+minimum-length thumb plus as much again to travel. Shorter, it overflows unscrolled and unclipped, exactly as with
+`scroll(false, false)`, which applications had been writing on every such box. A declaration either way wins, so
+a short box that must scroll says so; text leaves keep their own rules. An overlay scrollbar that fades in and
+takes no gutter was the alternative, and is the bigger change: it breaks "reserve the space, show a scrollbar on
+overflow" and reworks the renderer, hit-testing and every viewport width, where this is one condition in the layout.
+
+```java
+gui.row().height(Length.rem(2))            // a chip: overflows, never grows a pill
+gui.column().height(Length.rem(2)).scroll(false, true)   // short, but asked: scrolls
+```
+
 This adds no new concept. `FlexLayout.layout()` already writes `x/y/w/h`, `viewX/viewY`, `contentW/H` and
 `overflow` into `RetainedNode` — on the GUI thread, in the write phase, and nobody calls that a violation.
 "Derived geometry" is simply that category, named. Anything that is a pure function of (authored props +

@@ -634,6 +634,19 @@ public final class RetainedNode {
         return !(v instanceof Boolean b) || b;
     }
 
+    /**
+     * Whether this node said whether it scrolls horizontally ({@code Node.scroll}), rather than taking the default.
+     * The layout gives an undeclared container a scrollbar only where it is long enough to hold a usable one.
+     */
+    public boolean scrollXDeclared() {
+        return props.get(PropKey.SCROLL_X) instanceof Boolean;
+    }
+
+    /** As {@link #scrollXDeclared}, vertically. */
+    public boolean scrollYDeclared() {
+        return props.get(PropKey.SCROLL_Y) instanceof Boolean;
+    }
+
     /** Whether this node takes part in layout, drawing and hit-testing (default true). See {@link PropKey#VISIBLE}. */
     public boolean visible() {
         return !Boolean.FALSE.equals(props.get(PropKey.VISIBLE));

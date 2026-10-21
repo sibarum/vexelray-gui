@@ -412,7 +412,8 @@ class MultilineTest {
         try (HeadlessGui h = new HeadlessGui()) {
             dev.vexelray.gui.core.Node col = h.gui.column()
                     .width(Length.vw(12.5f))     // 100px
-                    .height(Length.rem(2.5f));   // 40px — three wrapped labels will overflow it
+                    .height(Length.rem(2.5f))    // 40px — three wrapped labels will overflow it
+                    .scroll(false, true);        // too short to scroll unasked, so asked
             var labels = new java.util.ArrayList<dev.vexelray.gui.core.Node>();
             for (int i = 0; i < 3; i++) {
                 labels.add(h.gui.text("abcdefghijklmnop"));   // 16 chars

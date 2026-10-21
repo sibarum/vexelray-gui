@@ -131,12 +131,20 @@ public final class FlexLayout {
         // Overflow + reserve: a scrollbar on one axis reserves a strip on the other. Recompute once so reserving
         // vertical space can reveal horizontal overflow and vice versa. Scrollbars appear purely from overflow.
         float sb = scrollbarThickness(ctx);
-        boolean overY = n.scrollYAllowed() && neededH > baseH + EPS;
-        boolean overX = n.scrollXAllowed() && neededW > baseW + EPS;
+        // A container that never said whether it scrolls scrolls only along an axis long enough to hold a scrollbar
+        // worth having: a thumb is at least two thicknesses long, so below SENSIBLE_SCROLL of them it has nowhere to
+        // travel, and a pill squeezed into a chip, a button or a fixed-height row is chrome that scrolls by a few
+        // pixels and narrows the content it was meant to reveal. Such a box overflows instead, as it would with
+        // scroll(false, false) — what every application had been writing on each one by hand. Declared either way,
+        // the declaration wins, so a short box that genuinely scrolls says scroll(..., true).
+        boolean scrollsY = n.scrollYAllowed() && (n.scrollYDeclared() || baseH >= SENSIBLE_SCROLL * sb);
+        boolean scrollsX = n.scrollXAllowed() && (n.scrollXDeclared() || baseW >= SENSIBLE_SCROLL * sb);
+        boolean overY = scrollsY && neededH > baseH + EPS;
+        boolean overX = scrollsX && neededW > baseW + EPS;
         float viewW = baseW - (overY ? sb : 0f);
         float viewH = baseH - (overX ? sb : 0f);
-        overY = n.scrollYAllowed() && neededH > viewH + EPS;
-        overX = n.scrollXAllowed() && neededW > viewW + EPS;
+        overY = scrollsY && neededH > viewH + EPS;
+        overX = scrollsX && neededW > viewW + EPS;
         viewW = Math.max(0f, baseW - (overY ? sb : 0f));
         viewH = Math.max(0f, baseH - (overX ? sb : 0f));
 
@@ -511,6 +519,12 @@ public final class FlexLayout {
     }
 
     /** Scrollbar thickness in px — scales with the root em so it tracks zoom/DPI like everything else. */
+    /**
+     * How many scrollbar thicknesses a container's content box must be along an axis before it scrolls there without
+     * having been asked to: a minimum-length thumb (two thicknesses) plus as much again to travel.
+     */
+    static final float SENSIBLE_SCROLL = 4f;
+
     private static float scrollbarThickness(LayoutContext ctx) {
         return 0.85f * emBasis(ctx);
     }

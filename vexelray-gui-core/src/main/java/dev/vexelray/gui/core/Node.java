@@ -621,7 +621,14 @@ public final class Node {
         return prop(PropKey.VISIBLE, visible);
     }
 
-    /** Enable/disable overflow scrolling per axis (both default on — auto scrollbars appear on overflow). */
+    /**
+     * Enable/disable overflow scrolling per axis. Undeclared, a container scrolls along an axis — a scrollbar appearing
+     * on overflow — only where its content box is at least four scrollbar thicknesses long (about 3.4 em), enough
+     * for a thumb with somewhere to travel; a shorter one (a chip, a button, a fixed-height row) lets its content
+     * overflow instead, unscrolled and unclipped, as {@code scroll(false, false)} does. Declaring an axis either way
+     * overrides that, so a short box that should scroll says {@code scroll(false, true)}. Text leaves keep their own
+     * rules (a single-line field scrolls with its caret, a multi-line one vertically).
+     */
     public Node scroll(boolean allowX, boolean allowY) {
         prop(PropKey.SCROLL_X, allowX);
         return prop(PropKey.SCROLL_Y, allowY);

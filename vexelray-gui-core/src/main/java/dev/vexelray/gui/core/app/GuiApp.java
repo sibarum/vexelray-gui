@@ -15,7 +15,6 @@ import sibarum.probe.Lane;
 import sibarum.probe.Probe;
 import sibarum.probe.Zone;
 import dev.vexelray.os.NativeWindow;
-import dev.vexelray.os.Platform;
 import dev.vexelray.os.WindowConfig;
 import dev.vexelray.shader.ComposedShader;
 import dev.vexelray.gui.core.text.TextFaces;
@@ -356,11 +355,10 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                     selection.deviceName());
         }
 
-        // On Windows every window presents through DXGI, and there is no fall-back: a Vulkan swapchain there is what
-        // DXGI replaces, because a resize that recreates it is fragile (on some machines it freezes the desktop). So
-        // an application that cannot present through DXGI does not start. The provider has to be chosen before the
-        // device exists, because it needs device extensions. Elsewhere windows use a Vulkan swapchain.
-        dev.vexelray.vulkan.present.PresenterProvider provider = presenterProvider(platform.platform());
+        // The platform says whether its windows present through something other than a Vulkan swapchain (DXGI on
+        // Windows), and there is no fall-back from one it names: an application that cannot present through it does
+        // not start. The provider has to be chosen before the device exists, because it needs device extensions.
+        dev.vexelray.vulkan.present.PresenterProvider provider = presenterProvider(platform);
         VulkanDevice made = null;
         dev.vexelray.vulkan.present.PresenterProvider.Backend backend = null;
         if (provider != null) {
@@ -402,17 +400,14 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
     }
 
     /**
-     * What presents this platform's windows, or null for a Vulkan swapchain. On Windows it is DXGI, which
-     * {@code vexelray-present-dxgi} provides; this module's {@code platform-windows} profile puts it on every
-     * application's class path, so its absence is a build that stepped around that, and is said at startup.
+     * What presents this platform's windows ({@link NativePlatform#presenter()}), or null for a Vulkan swapchain. The
+     * module that provides it is on every application's class path through this module's OS-activated profile, so
+     * its absence is a build that stepped around that, and is said at startup.
      */
-    private static dev.vexelray.vulkan.present.PresenterProvider presenterProvider(Platform platform) {
-        if (platform != Platform.WINDOWS) {
-            return null;
-        }
-        return dev.vexelray.vulkan.present.PresenterProvider.find("dxgi").orElseThrow(() ->
-                new IllegalStateException("VexelRay on Windows presents through DXGI, and vexelray-present-dxgi is"
-                        + " not on the class path"));
+    private static dev.vexelray.vulkan.present.PresenterProvider presenterProvider(NativePlatform platform) {
+        return platform.presenter().map(name -> dev.vexelray.vulkan.present.PresenterProvider.find(name).orElseThrow(
+                () -> new IllegalStateException("VexelRay on " + platform.platform() + " presents through " + name
+                        + ", and no provider of it is on the class path"))).orElse(null);
     }
 
     /**

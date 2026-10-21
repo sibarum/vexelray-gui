@@ -1305,7 +1305,18 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                 // that fails silently is the thing being troubleshot.
                 LOG.error("could not write capture to " + path, e);
             }
-        }), this::post);
+        }), this::post, tap -> {
+            // On the frame loop, between frames, like the capture: the presenter is Vulkan and is only touched there.
+            java.util.concurrent.CompletableFuture<Boolean> set = new java.util.concurrent.CompletableFuture<>();
+            post(() -> {
+                try {
+                    set.complete(window.tap(tap));
+                } catch (RuntimeException e) {
+                    set.completeExceptionally(e);
+                }
+            });
+            return set;
+        });
     }
 
     /**

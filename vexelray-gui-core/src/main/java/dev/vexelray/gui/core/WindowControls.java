@@ -114,6 +114,28 @@ public interface WindowControls {
     }
 
     /**
+     * Hand every frame this window presents from now on to {@code tap}, read back off the GPU a frame or two late
+     * without the frame loop waiting ({@link dev.vexelray.vulkan.present.FrameTap}); {@code null} stops, once the
+     * frames already copied for the old tap have been handed to it. What a recording watches a window through.
+     *
+     * <p><b>Asynchronous</b>, like {@link #capture}: the tap is set on the main thread, between frames, and a frame is
+     * drawn at once so the tap's first frame is the window as it is. The answer says whether this window can be tapped
+     * at all; where there is no window, or the presenter cannot read its frames back, it is false and nothing comes.
+     */
+    default java.util.concurrent.CompletableFuture<Boolean> tap(dev.vexelray.vulkan.present.FrameTap tap) {
+        return java.util.concurrent.CompletableFuture.completedFuture(false);
+    }
+
+    /**
+     * The usable area of the monitor this window is on, in physical pixels, or empty where there is no window or the
+     * platform cannot say. What a recording sizes its canvas by, so the window can grow to fill its screen and stay
+     * in the picture.
+     */
+    default java.util.Optional<dev.vexelray.os.WorkArea> workArea() {
+        return java.util.Optional.empty();
+    }
+
+    /**
      * Controls bound to a real OS window — what an application-drawn title bar in <em>any</em> window commands,
      * not just the main one. Close is a <em>request</em>, not a teardown: it travels the same route the system
      * close button's does, so the frame loop observes it and releases the window's resources in the order it
@@ -142,11 +164,30 @@ public interface WindowControls {
      */
     static WindowControls of(dev.vexelray.os.NativeWindow window, java.util.function.Consumer<String> capture,
                              java.util.function.Consumer<Runnable> mainThread) {
+        return of(window, capture, mainThread, tap -> java.util.concurrent.CompletableFuture.completedFuture(false));
+    }
+
+    /** As above, with {@code tap} setting a {@link #tap frame tap} on the window's presenter. */
+    static WindowControls of(dev.vexelray.os.NativeWindow window, java.util.function.Consumer<String> capture,
+                             java.util.function.Consumer<Runnable> mainThread,
+                             java.util.function.Function<dev.vexelray.vulkan.present.FrameTap,
+                                     java.util.concurrent.CompletableFuture<Boolean>> tap) {
         return new WindowControls() {
 
             @Override
             public void capture(String path) {
                 capture.accept(path);
+            }
+
+            @Override
+            public java.util.concurrent.CompletableFuture<Boolean> tap(dev.vexelray.vulkan.present.FrameTap frames) {
+                return tap.apply(frames);
+            }
+
+            @Override
+            public java.util.Optional<dev.vexelray.os.WorkArea> workArea() {
+                return dev.vexelray.os.NativePlatform.current().workArea(
+                        window.screenX() + window.outerWidth() / 2, window.screenY() + window.outerHeight() / 2);
             }
 
             @Override

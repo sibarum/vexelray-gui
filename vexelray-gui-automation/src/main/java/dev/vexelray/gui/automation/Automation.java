@@ -53,6 +53,9 @@ public final class Automation implements Commands {
      */
     private static final long SHOT_TIMEOUT_MS = 5_000L;
 
+    /** How long {@code record stop} waits for the file to be finished: the frames still queued, encoded. */
+    private static final long RECORD_STOP_TIMEOUT_MS = 30_000L;
+
     /** How often {@link #shot} looks. Off the frame loop, so this costs the application nothing. */
     private static final long SHOT_POLL_MS = 10L;
 
@@ -270,6 +273,7 @@ public final class Automation implements Commands {
             case "settle" -> settle();
             case "await" -> await(rest);
             case "shot" -> shot(rest);
+            case "record" -> record(rest);
             case "size" -> size();
             case "zoom" -> zoom(rest);
             case "dpi" -> dpi(rest);
@@ -1377,6 +1381,51 @@ public final class Automation implements Commands {
     }
 
     /**
+     * Record this window to a video file, or stop: the camera's <i>Record video to file…</i> told where rather than
+     * asking, so a script can film what it drives. The recording is {@link dev.vexelray.gui.core.WindowRecording}'s,
+     * the same one the camera starts and stops, so a person can stop what a script started and the other way round.
+     *
+     * <p>{@code record <path>} answers once frames are flowing, with the canvas every frame is drawn on.
+     * {@code record stop} answers once the file is whole, with its size, the way {@code shot} answers only once its
+     * picture exists: an {@code ok} naming a file still being written would be a promise, not a fact.
+     */
+    private String record(String rest) {
+        String arg = rest.trim();
+        if (arg.isEmpty()) {
+            return dev.vexelray.gui.core.WindowRecording.file().map(f -> "ok recording " + f)
+                    .orElse(dev.vexelray.gui.core.WindowRecording.available() ? "ok not recording"
+                            : "ok not recording (nothing here records video)");
+        }
+        if (arg.equalsIgnoreCase("stop")) {
+            var stopping = dev.vexelray.gui.core.WindowRecording.stop();
+            if (stopping.isEmpty()) {
+                return "err not recording";
+            }
+            try {
+                java.nio.file.Path file = stopping.get().get(RECORD_STOP_TIMEOUT_MS,
+                        java.util.concurrent.TimeUnit.MILLISECONDS);
+                return "ok " + file + " " + java.nio.file.Files.size(file) + " bytes";
+            } catch (java.util.concurrent.ExecutionException e) {
+                return "err " + e.getCause().getMessage();
+            } catch (java.util.concurrent.TimeoutException e) {
+                return "err the file was not finished within " + RECORD_STOP_TIMEOUT_MS + "ms";
+            } catch (java.io.IOException e) {
+                return "err " + e.getMessage();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return "err interrupted waiting for the file";
+            }
+        }
+        java.nio.file.Path file = java.nio.file.Path.of(arg).toAbsolutePath();
+        try {
+            int[] canvas = dev.vexelray.gui.core.WindowRecording.start(controls.get(), file);
+            return "ok recording " + file + " on " + canvas[0] + "x" + canvas[1];
+        } catch (java.io.IOException e) {
+            return "err " + e.getMessage();
+        }
+    }
+
+    /**
      * Write a row into the correlation log saying what the agent was doing and why.
      *
      * <p>The one command that changes nothing. A run is read back by someone who does not have the transcript
@@ -1471,6 +1520,8 @@ public final class Automation implements Commands {
             "await <landmark> <text>  wait until that landmark is named something containing text",
             "await <landmark>         wait until a node with that landmark exists",
             "shot [path]              photograph this window, and wait for the file (err if none arrives)",
+            "record <path.mkv>        record this window to a video, as the camera's Record does, until record stop",
+            "record stop              stop, and wait for the file to be whole; record alone says what is recording",
             "size                     this window's pixels, zoom, dpi and em, in one line",
             "zoom [factor]            read or set the zoom; clamped to the application's own range, and says so",
             "dpi [factor]             read or set the display density factor",

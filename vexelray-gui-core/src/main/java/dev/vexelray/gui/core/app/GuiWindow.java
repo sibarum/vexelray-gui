@@ -387,6 +387,19 @@ final class GuiWindow implements AutoCloseable {
     }
 
     /**
+     * Hand every frame this window presents to {@code tap}, or stop with {@code null} ({@link WindowPresenter#tap}).
+     * A frame is owed at once, so a tap's first frame is the window as it is now rather than whenever something next
+     * changes in it. On the main thread, between frames. False when the presenter cannot read its frames back.
+     */
+    boolean tap(dev.vexelray.vulkan.present.FrameTap tap) {
+        boolean ok = presenter.tap(tap);
+        if (ok && tap != null) {
+            drawOwed = true;
+        }
+        return ok;
+    }
+
+    /**
      * The tree drawn again offscreen, for a presenter that cannot read its frames back: the same drain-and-lay-out,
      * the same {@link TreeRenderer} emit into the same {@link Canvas}, and the same runs. The background is the
      * theme's page colour rather than transparent: a PNG of a translucent UI over nothing is unreadable.
@@ -566,6 +579,9 @@ final class GuiWindow implements AutoCloseable {
         closed = true;
         window.setFrameSink(null);   // nothing may pull a frame through objects that are being torn down
         presenter.close();   // waits the device idle before tearing down per-window GPU objects
+        // A recording of this window ends with it: the presenter has handed over its last frames, so the file is
+        // finished now, whole, rather than left for a shutdown hook a killed process never runs.
+        dev.vexelray.gui.core.WindowRecording.windowClosed(window.osHandle());
         closeCapture();
         pipeline.close();
         vertexBuffer.close();

@@ -280,7 +280,9 @@ public final class TitleBar {
         // at click time like every other button here, so a bar built before its window still works. One with a
         // menu opens it at the click instead, built then, against what is true then.
         if (tool.menu() != null) {
-            gui.onClick(b, (dev.vexelray.gui.core.input.ClickEvent e) -> gui.openMenu(e, tool.menu()));
+            // Told which window it is in, as an action is: a recording started from a popup records the popup.
+            gui.onClick(b, (dev.vexelray.gui.core.input.ClickEvent e) ->
+                    gui.openMenu(e, sink -> tool.menu().accept(this.controls, sink)));
         } else {
             gui.onClick(b, () -> tool.action().accept(this.controls));
         }

@@ -40,12 +40,12 @@ import java.util.function.Consumer;
  * @param live    what the mark and tooltip show changes while the window is open, and this says when; {@code null}
  *                for a mark that only changes with its box
  * @param menu    what a click opens instead of running {@code action}: a menu, built at each click against what is
- *                true then; {@code null} for an instrument that acts when clicked
+ *                true then, for the window the bar is in; {@code null} for an instrument that acts when clicked
  */
 public record WindowInstrument(String role, String tooltip,
                                java.util.function.BiFunction<Rect, Color, Picture> mark,
                                Consumer<WindowControls> action, Live live,
-                               Consumer<dev.vexelray.gui.core.input.MenuSink> menu) {
+                               java.util.function.BiConsumer<WindowControls, dev.vexelray.gui.core.input.MenuSink> menu) {
 
     /** Where a screenshot goes when nobody said: a timestamped PNG in the working directory. */
     private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
@@ -163,7 +163,7 @@ public record WindowInstrument(String role, String tooltip,
      */
     public static WindowInstrument automation(String tooltip, Consumer<dev.vexelray.gui.core.input.MenuSink> menu) {
         return new WindowInstrument("instrument-automation", tooltip, WindowInstrument::plugMark, c -> { }, null,
-                menu);
+                (controls, sink) -> menu.accept(sink));
     }
 
     /**
@@ -185,7 +185,24 @@ public record WindowInstrument(String role, String tooltip,
             marks.addAll(lampMarks(g, -8.5, l.control(), l.controlColor(), l.used()));
             marks.addAll(lampMarks(g, 8.5, l.diagnostics(), l.diagnosticsColor(), l.used()));
             return Picture.of(marks.toArray(Picture.Mark[]::new));
-        }, c -> { }, live, menu);
+        }, c -> { }, live, (controls, sink) -> menu.accept(sink));
+    }
+
+    /**
+     * The camera as a menu: a click opens {@code menu}, built for the window it was clicked in (a screenshot, a
+     * recording started or stopped). While {@code recording} says so, the lens is filled, so a recording in progress
+     * is seen at a glance in every window's bar, and {@code live} says when that changes. The same role as
+     * {@link #screenshot()}, so an agent finds the camera by one name whether it is a button or a menu.
+     * {@code vexelray-gui-nfd}'s {@code SaveScreenshot} makes this one when a {@link WindowRecorder} is on the class
+     * path.
+     */
+    public static WindowInstrument camera(String tooltip,
+                                          java.util.function.BiConsumer<WindowControls,
+                                                  dev.vexelray.gui.core.input.MenuSink> menu,
+                                          java.util.function.BooleanSupplier recording, Live live) {
+        return new WindowInstrument("instrument-screenshot", tooltip,
+                (box, ink) -> recording.getAsBoolean() ? recordingMark(box, ink) : cameraMark(box, ink),
+                c -> { }, live, menu);
     }
 
     /** One lamp centred in {@code box}, for a panel that shows the same lamp beside a row. */
@@ -294,6 +311,19 @@ public record WindowInstrument(String role, String tooltip,
                 g.outline(-3, -6, 6, 3, 1, 0, ink),
                 g.outline(-7.5, -4, 15, 10, 2.5, ink),
                 g.outline(-3, -2, 6, 6, 3, ink),
+                g.dot(4.75, -1.75, 1.5, ink));
+    }
+
+    /**
+     * The camera recording: the same body, its lens filled solid. A shape rather than a colour, because an instrument
+     * does not pick colours and a red dot would be read only by those who see red.
+     */
+    private static Picture recordingMark(Rect box, Color ink) {
+        CaptionGrid g = CaptionGrid.of(box);
+        return Picture.of(
+                g.outline(-3, -6, 6, 3, 1, 0, ink),
+                g.outline(-7.5, -4, 15, 10, 2.5, ink),
+                g.fill(-3, -2, 6, 6, 3, ink),
                 g.dot(4.75, -1.75, 1.5, ink));
     }
 }

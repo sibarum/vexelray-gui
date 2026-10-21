@@ -2,6 +2,7 @@ package dev.vexelray.gui.nfd;
 
 import dev.vexelray.gui.core.WindowControls;
 import dev.vexelray.gui.core.WindowInstrument;
+import dev.vexelray.gui.core.WindowRecorder;
 
 import java.nio.file.Path;
 import java.time.LocalDateTime;
@@ -46,12 +47,20 @@ public final class SaveScreenshot {
     private SaveScreenshot() {
     }
 
-    /** The screenshot button, asking for a path on every click. */
+    /**
+     * The screenshot button, asking for a path on every click; or, where a module on the class path records video
+     * ({@link WindowRecorder#find}), the camera as a menu that also records ({@link SaveRecording}).
+     */
     public static WindowInstrument instrument() {
+        return WindowRecorder.find().map(SaveRecording::instrument).orElseGet(SaveScreenshot::screenshotOnly);
+    }
+
+    /** The screenshot button alone, whatever is on the class path. */
+    public static WindowInstrument screenshotOnly() {
         return WindowInstrument.screenshot("Save a screenshot of this window", SaveScreenshot::ask);
     }
 
-    private static void ask(WindowControls controls) {
+    static void ask(WindowControls controls) {
         ask(controls, (guiThread, parent, folder, name) ->
                 FileDialog.saveAsync(guiThread, parent, List.of(PNG), folder, name));
     }

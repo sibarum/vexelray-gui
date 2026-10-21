@@ -351,6 +351,9 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
             request = request.withQueues(ownFamily, 1, COMPUTE_PRIORITY).withTimelineSemaphore();
             LOG.info("compute has a queue of its own, of family {}", ownFamily);
         } else if (compute == Compute.OWN_QUEUE) {
+            // Still with timelines: what computes beside the queue that draws (ComputeQueue.drawingQueue) orders its
+            // copies against the frames by them all the same.
+            request = request.withTimelineSemaphore();
             LOG.info("{} has no compute-only queue family, so compute shares the queue that draws",
                     selection.deviceName());
         }
@@ -814,6 +817,8 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
 
     /** Whether {@link #lendComputeQueue} has been called: it lends once. */
     private boolean lent;
+    /** The thread that made the application, which draws and is the only one to submit to the queue that draws. */
+    private final Thread mainThread = Thread.currentThread();
 
     /**
      * The queue compute has of its own, lent once, to whoever will submit to it from a thread of its own; see
@@ -831,9 +836,12 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
         if (gpu.ownQueue()) {
             return ComputeQueue.of(instance, device, computeFamily);
         }
+        DrawingQueue drawing = device.computeSupport().isPresent()
+                && instance.queueFamilySupports(device.physicalDevice(), computeFamily, VulkanInstance.QUEUE_COMPUTE)
+                ? new DrawingQueue(this, mainThread, instance, device, computeFamily) : null;
         return ComputeQueue.none(computeRequested
                 ? "the device has no compute-only queue family"
-                : "the application did not ask for one (GuiApp.Compute.OWN_QUEUE)");
+                : "the application did not ask for one (GuiApp.Compute.OWN_QUEUE)", drawing);
     }
 
     /**

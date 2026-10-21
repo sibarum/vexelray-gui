@@ -15,7 +15,8 @@ import dev.vexelray.gui.core.app.GuiApp.Compute;
  *
  * <p>Not {@linkplain #available() available} where the device has no compute-only queue family, or where the
  * application did not ask for one ({@link Compute#OWN_QUEUE}): then there is nothing to lend that the main thread
- * does not already submit to, and {@link #why()} says which.
+ * does not already submit to, and {@link #why()} says which. The queue that draws may then be offered instead, through
+ * the main thread ({@link #drawingQueue()}).
  */
 public final class ComputeQueue {
 
@@ -23,20 +24,31 @@ public final class ComputeQueue {
     private final VulkanDevice device;
     private final int family;
     private final String why;
+    private final DrawingQueue drawing;
 
-    private ComputeQueue(VulkanInstance instance, VulkanDevice device, int family, String why) {
+    private ComputeQueue(VulkanInstance instance, VulkanDevice device, int family, String why, DrawingQueue drawing) {
         this.instance = instance;
         this.device = device;
         this.family = family;
         this.why = why;
+        this.drawing = drawing;
     }
 
     static ComputeQueue of(VulkanInstance instance, VulkanDevice device, int family) {
-        return new ComputeQueue(instance, device, family, null);
+        return new ComputeQueue(instance, device, family, null, null);
     }
 
-    static ComputeQueue none(String why) {
-        return new ComputeQueue(null, null, -1, why);
+    /** None of its own; {@code drawing} is the queue that draws where it computes, or null. */
+    static ComputeQueue none(String why, DrawingQueue drawing) {
+        return new ComputeQueue(null, null, -1, why, drawing);
+    }
+
+    /**
+     * Where there is no queue of its own ({@link #available()} is false): the queue that draws, reached through the
+     * main thread, when it can compute. Empty where there is a queue of its own, or the queue that draws cannot.
+     */
+    public java.util.Optional<DrawingQueue> drawingQueue() {
+        return java.util.Optional.ofNullable(drawing);
     }
 
     /** Whether there is a queue here to compute on. */

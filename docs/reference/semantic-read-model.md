@@ -19,10 +19,10 @@ heading, a disabled label, or a table cell that happens to say the same thing.
 
 Three readers need better than that, and none of them is hypothetical:
 
-- **An automation agent** (docs/automation.md) driving the real app for troubleshooting. It must click "the Save
+- **An automation agent** (docs/reference/automation.md) driving the real app for troubleshooting. It must click "the Save
   button", not "the box at 412,88" — coordinates are exactly the thing that goes stale between the frame it read
   and the frame it clicked in.
-- **A remote thin client** (C4 in docs/architecture-proof-plan.md, M5). A peer with no atlas already has glyph
+- **A remote thin client** (C4 in docs/plans/architecture-proof.md, M5). A peer with no atlas already has glyph
   positions baked into `TextMetrics`, so in principle it can draw. It cannot navigate, focus, or announce
   anything without knowing what the boxes are.
 - **A screen reader**, eventually. The same question, asked by a different consumer.

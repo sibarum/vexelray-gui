@@ -10,11 +10,14 @@ shadows, lighting, and text included. A window showing no images is one draw cal
 a ray-marched **viewport** costs a rebind per image and nothing else, because a viewport is a box
 that samples rather than a second pipeline.
 
+Building an application on the stack? Start at the developer guide: https://sibarum.github.io/vexelray-framework/developers/
+
 <p align="center">
   <img src="docs/demo.png" alt="The gallery demo: a chapter rail, a live editor page, and the activity rail" width="720">
 </p>
 
-It is the top of a three-sibling stack, each its own repo:
+It is one of the eleven sibling repos of the VexelRay stack (see **Building**). The three it sits on most
+directly:
 
 | Repo | Role |
 | --- | --- |
@@ -27,13 +30,14 @@ The GUI's job is what sits above pixels and wire: **identity, layout, dispatch, 
 
 ## Building
 
-The siblings install to the local Maven repo, in dependency order:
+The stack is built and installed to the local Maven repo by `../vexelray-framework/bootstrap.sh`. It clones
+what is missing beside it and installs every repo in dependency order; `--from <repo>` reinstalls from that one
+onward (after a pull, say). The walk-through is
+[Getting started](https://sibarum.github.io/vexelray-framework/getting-started.html).
 
 ```bash
-cd ../supirvast   && mvn install
-cd ../vexelray    && mvn install
-cd ../tactroller  && mvn install    # and atchung, if not pulled in transitively
-cd ../vexelray-gui && mvn install
+../vexelray-framework/bootstrap.sh
+../vexelray-framework/bootstrap.sh --from vexelray-gui
 ```
 
 Run the interactive showcase (needs a Vulkan-capable GPU):
@@ -67,8 +71,8 @@ Three rules explain almost everything:
    Every setter posts a mutation onto the bus; the GUI thread applies it. You can hold a handle
    forever and mutate from any thread — that is the normal way, not the exception.
 2. **The GUI thread is the main thread; app logic is not.** Handlers (`onClick`, `onChange`, …)
-   run on worker threads and talk back through handles. Vulkan, the window, and presentation stay
-   on main.
+   run on the handler lane and talk back through handles; slow work goes to the offload lane (`gui.async`). Vulkan,
+   the window, and presentation stay on the main thread.
 3. **Layout owns geometry.** Everything is a `Length` resolved by the flex pass; the renderer is a
    pure consumer of resolved pixels. Reads come from a published snapshot (`node.layout()`), one
    frame stale by design.
@@ -157,7 +161,7 @@ bloom) are deliberately out of scope for the single-pass batch.
 Input arrives tactroller → atchung → the framework's dispatch; you subscribe by node:
 
 ```java
-gui.onClick(button, () -> log.append(gui.text("clicked")));       // worker thread
+gui.onClick(button, () -> log.append(gui.text("clicked")));       // the handler lane
 gui.onContextClick(row, e -> menu.show(e.x(), e.y()));            // right-click, with the pointer position
 gui.onState(button, s -> button.background(gui.theme().color(Role.PANEL, s))); // observers add up
 gui.onDrag(slider, e -> set(e.fractionX()));                      // pointer-captured
@@ -655,14 +659,21 @@ down on arrival runs in the same batch as the final sample unless something sepa
 | --- | --- |
 | **`-draw`** | `Picture`: marks in a pixel frame, to a canvas or to SVG. Below `-core`; see above |
 | **`-core`** | Identity, layout, dispatch, the read-models, the theme, navigation, transfer |
+| **`-icons-maven-plugin`** | Build-time icon atlases: bakes SVG or raster art into signed distance fields packed in one atlas, and generates the enum that names them, so nothing at run time reads an image format. See `vexelray-gui-icons/README.md` |
+| **`-icons`** | The suite's shared icon set, baked by that plugin: the `Icon` enum and `IconView`, which shows one at any size, colour, glow and shadow. An application's own set extends it |
+| **`-file-icons`** | The file-type families' sheets and emblems, in an atlas of their own, and `FileIconView`. Apart from `-icons` because only a file browser draws them |
 | **`-widget`** | Everything under **Widgets**, built entirely on public `Node`/`Gui` API |
 | **`-typeset`** | Structured, **non-editable** rich text: an open set of composable `Box`es (seven built in), notation assembled by `Recipes`, per-content parameters as a `Profile`. It holds **no opinion about markup** — the application parses whatever it likes and builds the IR, which is what lets new formats be pioneered without touching the framework and what makes selection recoverable later (a run can carry a reference into the app's own source). A typeset block is an **atom** in flex layout, never content inside a `TextField`, which is what keeps the field's layout one-dimensional and deterministic. See [docs/reference/typeset.md](docs/reference/typeset.md) |
 | **`-plot`** | Reliable graphing's substrate. **Point sampling cannot be made honest** — a curve drawn by joining N samples will run a confident line straight through an asymptote, and no sample count fixes it. So an expression is evaluated over a *column* of x by interval arithmetic and returns an `Enclosure` that provably contains every value it takes there: a pole is found by the arithmetic, not by a solver. `Expr` is open (twelve nodes built in; a node encloses *and differentiates* itself), the region is a value (`Cell`), and evaluation is split from classification so panning in y re-classifies and re-evaluates nothing. See [docs/reference/reliable-plotting.md](docs/reference/reliable-plotting.md) |
 | **`-krono`** | The timing framework slotted into the existing loop and bus; see **Motion** |
 | **`-nfd`** | Native open/save/pick-folder dialogs as `Optional<Path>` |
+| **`-nfd-api`** | What `-nfd` needs from an operating system, as an interface found through `ServiceLoader`. Depends on nothing |
+| **`-nfd-windows`**, **`-nfd-macos`**, **`-nfd-linux`** | The dialog library built for each OS (IFileDialog; NSOpenPanel and NSSavePanel; xdg-desktop-portal over D-Bus). `-nfd`'s OS-activated profile adds the one that matches |
 | **`-keymap`** | Rebindable key bindings, opt-in: a `Keymap` of named actions, the `KeymapEditor` that changes their chords, and the title-bar key button that opens it; see **Key bindings** |
 | **`-automation`** | Driving the running application the way a person does; see below and [docs/reference/automation.md](docs/reference/automation.md) |
 | **`-automation-window`** | A debug run's title-bar button (`AutomationButton`): a bug between the two sockets' lamps, and a menu that starts with their ports. Sockets open at launch; the framework's `Driver` adds *Restart in debug mode* and *Restart without debugging*. Its own module so `-automation` stays free of widgets; a debug edition opts in. See [docs/reference/automation.md](docs/reference/automation.md) §5 |
+| **`-recorder`** | The flight recorder: a ring of the probe's recent rows held inside the application, and the questions asked of it (`recorder`, `rows`, `gaps`, `frames`, `why`), each answered as a plain record any transport can carry. Depends on `atchung-probe` alone. See [docs/plans/flight-recorder.md](docs/plans/flight-recorder.md) |
+| **`-inspector-link`** | The Inspector's live stream: the recorder's rows, loop snapshots and read-only queries as typed intrabuf records over an elektro-Q conduit beside the discovery file. See [docs/plans/flight-recorder.md](docs/plans/flight-recorder.md) §6 |
 | **`-automation-cli`** | The client for that socket: `ottermate`, a command line that attaches to a running application or launches one, and carries the verdict in its exit status. **An empty dependency block** — a socket, line I/O and `ProcessBuilder` — so it runs as a standalone jar with none of the stack on its classpath, which is what keeps automation from becoming a runtime dependency of anything shipped. It lives beside the server rather than beside its callers for the reason `CsvView` lives beside the log it reads: a reader in another repo drifts from the format. See [docs/reference/automation-cli.md](docs/reference/automation-cli.md) |
 | **`-harness`** | A whole application running its **real** frame loop, with the loop under a test's control. The gap it fills is narrow and it is the one that matters: every hand-driven frame test is structurally unable to ask *after this click, does a frame arrive on its own?* — which is how five missing wakes shipped past a green suite. Real windows are created and never shown — **every** window, not just the one the test started with: the application is built with a window factory, so the popup a menu opens is asked for off screen (`WindowConfig.hidden`) and wrapped exactly as the main window is. Surface, swapchain and presenter therefore behave as in production; only pump, wait, wake and focus are intercepted. That matters because a mapped window takes real focus and real keyboard input, so a focus or routing assertion made beside one is answering a question about the window manager. Needs a Vulkan device, and fails to start rather than silently proving nothing |
 | **`-architecture`** | The rules, as tests that fail the build rather than as review comments. No framework class mints its own `Color` instead of naming a `Role` (`PaletteGuardTest`); no widget remembers a shadow depth instead of naming a `Relief` rung (`ReliefGuardTest`); nothing writes the retained model outside its single writer (`ModelWriterGuardTest`); no module reaches across a layer (`LayeringGuardTest`); no control's `show(x)` fires its own callback, because a sync reported as an edit is an unbounded loop (`SyncSeamGuardTest`); and **no sealed type has its cases read from outside it, and no `default:` throws** (`DispatchGuardTest`, whose two halves are enforced at different widths: the throwing-default walk runs on every module because none had one, the sealed-type check only on the modules converted so far) — both being the same failure, behaviour living somewhere other than the type it belongs to. That last one was learned the expensive way: `-typeset`'s IR began as a sealed interface of seven records with a seven-case engine switch, and the switch was exactly what made the vocabulary closed. Each guard carries its own proof-of-life test, because a detector that silently matched nothing would look exactly like a clean codebase |

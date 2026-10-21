@@ -6,6 +6,7 @@
 The user guide for `vexelray-gui-automation-cli`. The transcripts below are real runs captured against
 `calculator-vexel-demo` while writing this — only the working directory in a path has been shortened to
 `C:\work`. Where a run is unreliable, the transcript shows it being unreliable rather than being tidied up.
+The stack's developer guide is https://sibarum.github.io/vexelray-framework/developers/ .
 
 - [automation.md](../reference/automation.md) — what the socket is and why the pointer travels
 - [automation-cli.md](../reference/automation-cli.md) — why the client exists, and what is still missing
@@ -18,11 +19,10 @@ The user guide for `vexelray-gui-automation-cli`. The transcripts below are real
 cd vexelray-gui && mvn -pl vexelray-gui-automation-cli install
 ```
 
-The jar is executable as it stands — the module has no dependencies, so there is nothing to shade:
-
-```bash
-java -jar vexelray-gui-automation-cli/target/vexelray-gui-automation-cli-0.1.0-SNAPSHOT.jar --help
-```
+The jar is executable as it stands — the module has no dependencies, so there is nothing to shade. It lands in
+`vexelray-gui-automation-cli/target/` (on Linux, `target-linux/`, so a Windows host and a Linux VM sharing the
+checkout keep their own jars), with the parent pom's version in its name. Run it through the `ottermate` wrapper
+rather than by that path.
 
 **Then put `vexelray-gui-automation-cli` on your `PATH`, once**, and the rest of this guide runs as written:
 
@@ -36,7 +36,7 @@ glob rather than by name, so neither goes stale when the version moves, and both
 through unchanged — the status is the verdict, and this guide's §4 build-script example depends on it. If
 the jar is not built they say so and exit `127`, with the one command that builds it.
 
-Prefer either to an alias of the `java -jar` line above: an alias has the version number in it, which is
+Prefer either to an alias of `java -jar` on the jar's path: an alias has the version number in it, which is
 the thing that goes stale, and it does not exist in a script, a `cmd` window, or anyone else's shell.
 
 ## 2. Switching the socket on
@@ -77,8 +77,8 @@ So you rarely need a port:
 - **`--diagnostics`** attaches to that application's diagnostics socket (`recorder`, `rows`, `frames`, `log`,
   `stream`) rather than its control one. That only matters when the two are on different ports, and `list` has a
   `diagnostics` column that shows it. A verb sent to the socket that does not serve it is refused, with the port of
-  the one that does. Either socket can be switched on while the application runs, from the automation button in its
-  title bar, beside the key bindings ([automation.md §5](../reference/automation.md)).
+  the one that does. Sockets open at launch, not while the application runs: the automation button in its title
+  bar, beside the key bindings, restarts it in debug mode with both on ([automation.md §5](../reference/automation.md)).
 - **With no `--port`, `--app`, `--pid` or `--launch`,** ottermate drives the one application running. It names that
   application on stderr. With several running, it refuses and prints the `--pid` that picks each. With none, it
   tries 7654.
@@ -357,9 +357,9 @@ otherwise). Everything about levels, settings and locations is in `atchung/docs/
 
 ### Asking why a frame was slow
 
-With the probe on, the application keeps its recent probe rows in memory, and five verbs read them while it runs:
-`recorder`, `rows`, `gaps`, `frames` and `why` ([automation.md](../reference/automation.md) §5, *The flight
-recorder*). Put a `mark` before the thing you want to look at, and then ask for the frames after it. Here is a
+With the probe on, the application keeps its recent probe rows in memory, and six verbs read them while it runs:
+`recorder`, `rows`, `gaps`, `frames`, `why`, and `stream`, which follows them live (see *Watching while something
+else drives*) ([automation.md](../reference/automation.md) §5, *The flight recorder*). Put a `mark` before the thing you want to look at, and then ask for the frames after it. Here is a
 real run against the gui demo, started with `-Ddemo.jvmArgs="-Dprobe=all -Dprobe.format=csv -Dprobe.out=run.csv"` (asking for lanes yourself needs
 the CSV format, or `-Dprobe.trace=true`, for rows to reach the recorder):
 
@@ -402,7 +402,7 @@ afterwards. Every reply says which span of the ring it read (`over=`) and how ma
 options that ottermate does not know are passed to the command once the command has begun.
 
 `frames worst 5` lists the slowest frames still in the ring. `gaps` lists silences between frames, each judged
-against the park before it. With the probe off, all five verbs answer
+against the park before it. With the probe off, all six verbs answer
 `err the recorder is off: start with -Dprobe=...`.
 
 ### Reading the declared bus graph
@@ -456,7 +456,7 @@ that opens after the application starts or is closed and reopened: nothing is bo
 
 The socket takes up to four connections at once (`-Dautomation.connections=<n>` on the application changes
 that). Any of them can read; only the one holding **the hand** can drive — `move`, `click`, `rightclick`, `drag`,
-`down`, `up`, `scroll`, `touch`, `tap`, `type`, `key`, `go`, and `zoom`, `dpi`, `resize` with a value. The first of those a
+`down`, `up`, `scroll`, `touch`, `tap`, `type`, `key`, `keydown`, `keyup`, `go`, `hide`, `show`, and `zoom`, `dpi`, `resize` with a value. The first of those a
 connection sends takes the hand if it is free, and closing the connection lets go. A real run against the gui
 demo, A driving while B watches from a second `ottermate`:
 
@@ -652,9 +652,9 @@ slashes (`C:/work/after.png`) work everywhere.
 
 | What you see | What it means |
 | --- | --- |
-| `ottermate: nothing is listening on localhost:7654; start the application with --automation=7654` | The socket is off. It is off by default |
+| `ottermate: nothing is listening on localhost:7654; start the application with --automation=7654` | The socket is off. It is off by default. `--automation=7654` is the flag a `vexelray-framework` application takes when run directly, as its exe or with `java`; under Maven it is `mvn exec:exec -Dautomation=7654` (§2) |
 | `ottermate: Cannot run program "mvn": CreateProcess error=2` | Windows: `mvn` is `mvn.cmd`, and `--launch` hands the line to `ProcessBuilder`, which does not consult `PATHEXT`. Name the real program |
-| `ottermate: launched '...' and it did not announce a port within 60s` | The command started something, but nothing printed `automation: localhost:<port>`. Add `--automation=0` to the launched command line |
+| `ottermate: launched '...' and it did not announce a port within 60s` | The command started something, but nothing printed `automation: localhost:<port>`. Add `--automation=0` to the launched command line when it runs the application directly, or `-Dautomation=0` when it is `mvn exec:exec` |
 | `ottermate: launched '...' and it exited without announcing one (status 1)` | It fell over on startup. Its own output is above, on stderr |
 | `err the hand is held by connection 2 (since +4.1s)` | Another connection is driving. Reads still work; wait for it to close or `hand release`. `hand` says who |
 | `err the automation socket is full: 4 connections are open …` | Four clients already attached — often a forgotten interactive `ottermate`. Close one, or start the application with `-Dautomation.connections=<n>` |

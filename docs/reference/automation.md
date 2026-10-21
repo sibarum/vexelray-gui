@@ -1,6 +1,6 @@
 # Driving the app for real: `vexelray-gui-automation`
 
-Status: **A0–A5 landed** (see §8). A module that lets an out-of-process agent run the actual application — real window, real
+Status: **A0–A6 landed** (see §8). A module that lets an out-of-process agent run the actual application — real window, real
 Vulkan, real frame loop — and interact with it the way a person does, while emitting one correlation log that
 explains what happened.
 
@@ -205,7 +205,7 @@ line needs (`Commands.needs`), so the server holds no list:
 
 | Capability | Verbs |
 |---|---|
-| `control` | the hand and what it is aimed through: `move`, `click`, `type`, `key`, `go`, `drag`, …, `zoom`/`dpi`/`resize`, and the view reads `tree`, `find`, `where`, `size`, `windows`, `window`, `shot`, `settle`, `await`, `hand` |
+| `control` | the hand and what it is aimed through: `move`, `click`, `drag`, `touch`, `tap`, `type`, `key`, `keydown`, `keyup`, `go`, …, `hide`/`show`, `zoom`/`dpi`/`resize`, and the view reads `tree`, `find`, `where`, `size`, `windows`, `window`, `shot`, `settle`, `await`, `hand` |
 | `diagnostics` | what the process recorded about itself: `recorder`, `rows`, `gaps`, `frames`, `why`, `stream`, `log`, `mark`, `bus graph`, the planned domains (`bus`, `kron`, …), and the Inspector link |
 | both | `hello` and `help`, which say what this socket is |
 
@@ -357,8 +357,8 @@ because a client that has already written its first command would otherwise see 
 
 Every connection is an **observer**: any verb that reads works on any of them, at any time, including while
 another connection's `click` or `await` is in flight. Only the connection holding **the hand** may run a verb
-that drives: `move`, `click`, `rightclick`, `drag`, `down`, `up`, `scroll`, `type`, `key`, `go`, and `zoom`,
-`dpi` and `resize` when given a value. `go` is on the list although it is not input: it moves focus and scrolls,
+that drives: `move`, `click`, `rightclick`, `drag`, `down`, `up`, `scroll`, `touch`, `tap`, `type`, `key`,
+`keydown`, `keyup`, `go`, `hide`, `show`, and `zoom`, `dpi` and `resize` when given a value. `go` is on the list although it is not input: it moves focus and scrolls,
 which is where the holder's next `type` lands and what its next `click` aims through. Each verb surface answers
 for its own verbs (`Commands.drives`), so the server holds no list.
 
@@ -637,16 +637,19 @@ whether the run succeeded.
 | `drag <target> <target>` | Press, travel, release. |
 | `down <target>` / `up [target]` | A drag held open: travel there and press; then `move` and `shot` as often as wanted; then let go, where the pointer is or after travelling. `drag` is over before anything could photograph it, and the middle of a gesture — a card half-carried, a gap half-open — is often what needs looking at. |
 | `scroll <target> <dx> <dy>` | Wheel notches there. |
+| `touch <target> <n> <dx> <dy> [scale] [turn] [ms]` | `n` fingers on the touchpad, the pointer there: they land in a ring, then over `ms` (200) their centre moves `dx`, `dy` mm, their spread grows by `scale` and they turn `turn` degrees, and they lift. A swipe is `touch @x 3 -30 0`; a pinch, `touch @x 2 0 0 2`. Published as the touchpad's driver path publishes contacts, so the recognizer, the dispatcher's claims and the widget are all exercised. |
+| `tap <target> <n> [times]` | `n` fingers touch down together and lift without moving, `times` over (once by default; 2 is a double tap). |
 | `type <text>` | One code point at a time, through the ordinary character channel. |
 | `key <NAME>`, `key <MOD+...+NAME>` | Press and release a named `Key`; or a chord (`key CTRL+SHIFT+W`): each modifier's left-hand key down in the order written, the key down and up, the modifiers up in reverse — the dispatcher derives what is held from the modifier keys it has seen go down, so this is how a chord reaches a claim. Modifiers `CONTROL`\|`CTRL`, `SHIFT`, `ALT`, `SUPER`\|`META`\|`WIN`\|`CMD`, any case. A modifier `keydown` already holds is left held. |
 | `keydown <[MOD+...+]NAME>` / `keyup [MOD+...+NAME]` | Hold keys across commands: `keydown SHIFT`, then `click`, `key` or `shot` as often as wanted, then `keyup SHIFT`. `keyup` releases in reverse; alone, it releases everything held. Refuses a key already held (down) or not held (up) before touching anything. The reply ends `held: <keys>`. **Everything held is released when the hand is let go** — `quit`, a dropped connection, `hand release` — last pressed first. A held non-modifier key auto-repeats as a real one does (the dispatcher's own repeat). |
-| `settle` | Wait for the loop to catch up with everything published so far. |
+| `settle` | Wait for the loop to catch up with everything published so far, and any animation to finish. |
 | `await <landmark> <text>` | Wait until that landmark's name contains the text — how an application's own readiness is waited on. |
 | `await <landmark>` | Wait until a node with that landmark exists (hidden counts), and answer `ok <ref> "<name>" @<landmark>`. The first wait of a scene, where `settle` straight after launch can answer before the tree is built. Same 30 s bound and refusal as the form with text. |
 | `shot [path]` | PNG of the window this driver is attached to: its tree presented, then that frame read back from the presenter's image, so it is the screen's pixels, not a second drawing. Not the desktop compositor's: the window border and anything the compositor does are outside it. Clears the target, waits for the file, `err` if none arrives. |
 | `size` | The window's pixels, zoom, dpi and em, in one line. |
 | `zoom [factor]`, `dpi [factor]` | Read, or set and wait for layout. Answer with the value the window *became*, and say when a clamp changed it. |
 | `resize <w>x<h>` | Size the drawable area — pixels, or em with a unit (`46emx30em`), which an em resolves at the zoom and density in force. Answers with the size reached. |
+| `hide`, `show` | Take this window off the screen, as the application's `hide()` does; bring a hidden window back. Answer `ok hidden` / `ok shown`, or `err` when there is no window. |
 | `windows`, `window <name\|n>` | List the application's open windows; choose the one the other verbs act on (default: the main one). Each window has its own driver. |
 | `log [logger] [level]` | Read how much is logged and where the file is; or set a level for both sinks, or for one logger and everything beneath it. To the running process only. A driven run is already the loudest mode (`TRACE` file, probe on) — see `atchung/docs/logging.md`. |
 | `mark <note>` | Write a row into the correlation log saying *why*. Changes nothing else. |
@@ -681,19 +684,22 @@ view) and then rechecked once the frame carrying that scroll has been published;
 refused, naming which kind of unreachable it was — `is not visible`, `has no laid-out box`, `is scrolled out of
 view`. A row half out of the window is neither: it is clicked on the half that is there.
 
-**What `settle` does and does not promise.** It waits on the layout commit signal until no frame is owed, so it
-is exact about the frame loop and never a sleep. It cannot see a handler still running on a worker: that
-handler has published nothing yet, so nothing reports it owed. An agent needing "the application has finished
-thinking" has to wait on something the application names.
+**What `settle` does and does not promise.** It waits until the loop owes nothing (`Gui.frameOwed`): the wake,
+the frame that took it until that frame has published, and every handler the frame dispatched until it has
+returned, so a click's own handler, which posts its mutation after the frame that dispatched it, is waited for
+too. It is woken by the debt being paid, not by a layout commit, because a frame that changed nothing publishes
+nothing (2 s, then `err did not settle`). Then, when the host handed over a `Timeline`, it waits for the
+timeline to go quiet (10 s; a repeating cue is named rather than waited out), and for the loop once more. So it
+is exact about the frame loop, its handlers and the clock, and never a sleep. It cannot see work the
+application started for itself, on `Gui.async` or a thread of its own: that is not the loop's debt. An agent
+needing "the application has finished thinking" has to wait on something the application names.
 
 **`await` is how it waits on that**, and deliberately without an application-specific hook. An accessible name
 is published for every node and a landmark is already the durable way to say *which* node, so an application
 declares readiness by writing it down where it is legible — a landmark whose name says what state it is in —
 and `await <landmark> <text>` blocks on the layout commit signal until it does. The rejected alternative was a
 readiness predicate supplied by the host, which would have made each application's synchronisation a private
-arrangement with `Automation` instead of a fact in the read-model that `tree` and `find` can already see. The
-calculator's ray-marched preview is the first consumer: see
-[calculator-vexel-demo/docs/driving-the-preview.md](../../../calculator-vexel-demo/docs/driving-the-preview.md).
+arrangement with `Automation` instead of a fact in the read-model that `tree` and `find` can already see.
 
 **`shot` waits for the picture, and can fail.** `WindowControls.capture` is asynchronous and cannot report, so
 a `shot` that replied on return said `ok` for a minimized window, for a host whose capture sink does nothing,
@@ -816,7 +822,7 @@ instrument, which is the strongest available guarantee that what the agent synth
 
 - **A1 — `SemanticSnapshot`.** The read-model, published from the compute phase, joined by id and version;
   architecture-guard rule added. **The bulk of the work, and owed to C4 regardless.** *(Landed — see
-  docs/semantic-read-model.md. Widget and demo roles landed with it.)*
+  reference/semantic-read-model.md. Widget and demo roles landed with it.)*
 - **A0 — Live capture.** Capture on the running app, **per window** (§7), posted to the `tasks` queue so it
   happens on the main thread inside the frame loop. Keep or delete the static per its remaining CI value.
   *(Prereq for `shot` and for the screenshot instrument.)*
@@ -830,8 +836,9 @@ instrument, which is the strongest available guarantee that what the agent synth
   exit status is the verdict. It was missing for long enough that the usage example above was the format's
   documentation rather than a runnable command, and an agent needing a picture rebuilt the protocol in
   PowerShell from these notes. Designed in [automation-cli.md](automation-cli.md), together with the
-  retirement of per-application `--capture` that it unblocks and which has **not** happened yet: that waits
-  on the `zoom`, `resize` and timeline-aware `settle` verbs of its §5.
+  retirement of per-application `--capture` that it unblocks. That retirement has happened: the calculator's on
+  2026-09-10, ahead of the `zoom` and `resize` verbs of its §5 (its §6 records the cost), and
+  `vexelray-framework`'s template on 2026-09-30.
 - **A6 — Clipping, found by driving a real table.** *(Landed: `NodeLayout.visibleRect` + `Clip` in core;
   reveal-or-refuse in `Automation.target`; `table` / `row` / `columnheader` / `columngrip` / `rowgroup` roles on
   `Table` and `list` / `listitem` on `ListView`.)* The driver clicked a ref for a row a hundred thousand-row

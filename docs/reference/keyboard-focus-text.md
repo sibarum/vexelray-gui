@@ -13,7 +13,7 @@ disabled look, and hard tabs.
 Three sections were **superseded by implementation** rather than merely completed, and are rewritten in
 place: §3 (shortcuts became claims), §4.2 (the Tab question is resolved) and §5 (bold and italic are real
 faces, chosen per character, never faux). Where this doc and
-docs/layout-read-model.md overlap on text geometry, that one is authoritative.
+docs/reference/layout-read-model.md overlap on text geometry, that one is authoritative.
 
 ---
 
@@ -300,7 +300,7 @@ resolves to regular, the nearest face there is. Adding the files to that directo
 4. **Editing** — caret, insert/delete, the edit-diff, undo/redo. **[done]**
 5. **Auto-diff spans** — remap all spans through the edit-diff; single + bulk span updates. **[done]**
 6. **Multiline** — Enter, wrap, Up/Down with a sticky desired column, visual Home/End, PageUp/Down,
-   vertical scroll, soft tabs, line numbers. **[done — docs/layout-read-model.md §11]**
+   vertical scroll, soft tabs, line numbers. **[done — docs/reference/layout-read-model.md §11]**
 7. **Hyperlink / tooltip spans** — hover/click emission with the editable/Control gating; tooltip needs
    the overlay layer (§6). **[not started — the overlay layer is the blocker]**
 8. **Remaining polish** — the text field's disabled look, non-editable selection, hard tabs, Shift+Tab outdent.

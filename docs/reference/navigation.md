@@ -51,7 +51,7 @@ with the node, like every other registration keyed by node id.
 
 ```java
 Navigation nav = gui.navigate("prefs.theme.accent");
-nav.arrival().thenAccept(node -> Cues.play(node, Cue.sweep()));   // say where the eye should go
+nav.arrival().thenAccept(node -> cues.play(node, Cue.ring(theme.color(Role.ACCENT))));   // say where the eye should go
 ```
 
 The walk, one step per frame:

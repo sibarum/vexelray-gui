@@ -71,11 +71,14 @@ the engine's `Surface`, and renders as enclosure boxes for the reasons in
 
 ## Building
 
-Siblings install in dependency order, then this repo (`imagelib-wrapper` needs `./native/build.sh` run once
-first, with a Rust toolchain; `vexelray-framework/docs/getting-started.md` §2 is the full walk-through):
+Siblings install in dependency order, then this repo. `vexelray-framework/bootstrap.sh` does it: it clones what is
+missing beside it, builds `imagelib-wrapper`'s native library (`imagelib-wrapper-<os>/native/build.sh`, which needs
+a Rust toolchain), and installs `vexelray-build` through `vexelray-framework` in order. `--from <repo>` reinstalls
+from that repo onward. `vexelray-framework/docs/getting-started.md` §2 is the full walk-through:
 
 ```bash
-for r in intrabuf atchung supirvast dxgi-bridge kronometer tactroller vexelray imagelib-wrapper vexelray-gui; do (cd ../$r && mvn install) || break; done
+../vexelray-framework/bootstrap.sh
+../vexelray-framework/bootstrap.sh --from vexelray-gui
 ```
 
 The interactive showcase, and the headless capture that works without an input backend:

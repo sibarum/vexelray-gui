@@ -258,7 +258,7 @@ laid-out rect, scroll or caret geometry off the write-only handle, and the answe
 callback: core publishes an immutable, versioned `LayoutSnapshot` of the whole tree as a coalesced
 `State`, and `Node.layout()` reads its entry lock-free. Pure data, no captured measurer — so a widget, a
 test, a devtools overlay, or a remote client with no glyph atlas all answer the same questions the same
-way. **docs/layout-read-model.md is the full treatment**; the load-bearing parts to know here:
+way. **docs/reference/layout-read-model.md is the full treatment**; the load-bearing parts to know here:
 
 - **Three tiers, one writer each** (§2.1 there): *authored props* written by the command phase,
   *derived geometry* written by the compute phase, and the *read-model* which `publishLayout` only
@@ -425,7 +425,7 @@ also why `IMAGE` is not layout-affecting: putting a scene on a node moves nothin
 It draws **between the background and the border**, so a background shows through anything transparent in the
 image and a border frames it. The tint is an alpha rather than a colour: the shader multiplies the texel, so
 untinted *is* opaque white, which is a fact about the multiply and not a shade any theme would name (the
-palette guard of docs/architecture-proof-plan.md enforces exactly that distinction).
+palette guard of docs/plans/architecture-proof.md enforces exactly that distinction).
 
 **Where targets come from.** `GuiApp.viewport(width, height)` mints a `SampledColorTarget` on the application's
 device. The device is deliberately not public — GPU lifetime is the framework's business — and a target
@@ -471,7 +471,7 @@ sheet are also one run and one draw — which is the second reason to pack a she
 > **Partly built.** `OPACITY`, `TRANSLATE_X/Y`, `ROTATE`, `OVERLAY` and `UNCLIP` are in, motion runs on Kronometer
 > through `vexelray-gui-krono`, and there are three consumers: the tab transition (`Tabs.slide` +
 > `KronoGui.ramp`), one-shot cues (`Cue` + `Cues`), and a cut-off node shown whole on hover (`Unclip`). `SCALE` and `TINT`, the visibility FSM,
-> `gui.motion(DISABLED)` and the deadline-driven wait loop are not. See docs/reactive-timing.md for the
+> `gui.motion(DISABLED)` and the deadline-driven wait loop are not. See docs/reference/reactive-timing.md for the
 > Kronometer seam and what it still owes.
 
 Opt-in per node; nothing fires unless an animation is attached. Animatable properties are a
@@ -752,38 +752,63 @@ native presenter; the GUI writes no Vulkan.
 vexelray-gui           parent (pom), groupId dev.vexelray.gui, Java 25
 ├─ vexelray-gui-draw   a picture: marks in one pixel frame, and the two targets that consume one -- the
 │                      engine's Canvas, and an SVG writer. Below -core, and knows nothing of nodes, layout,
-│                      themes or the bus. See docs/drawing.md.          -> vexelray-canvas, -text
+│                      themes or the bus. See docs/reference/drawing.md.    -> vexelray-canvas, -text
 ├─ vexelray-gui-plot   the substrate for graphing that cannot lie: an expression evaluated over a column of
 │                      x by interval arithmetic, returning an Enclosure that provably contains every value it
 │                      takes there. Depends on nothing at all -- not even -core -- because an enclosure is
-│                      arithmetic and has no opinion about how it is drawn. See docs/reliable-plotting.md.
+│                      arithmetic and has no opinion about how it is drawn.
+│                      See docs/reference/reliable-plotting.md.
 ├─ vexelray-gui-core   the framework core: model (Node/RetainedNode, Mutation, reconciler), the
 │                      Atchung-backed mutation channel + event/state publishing, Length + flex layout,
 │                      lifecycle FSM + animation transform layer, framework-owned input dispatch,
 │                      RichText, and the app loop (GuiApp).
 │                      -> -draw, vexelray-canvas, -text, -vulkan, -os-api, atchung-core
-├─ vexelray-gui-widget interaction protocols on core: tabs, tree, text field, slider, menus, … -> -core
+├─ vexelray-gui-icons-maven-plugin  build-time icon atlases: bakes art (SVG or raster) into signed distance
+│                      fields packed in one atlas, and generates the enum that names them, so nothing at run
+│                      time reads an image format.                          -> imagelib-wrapper, vexelray-canvas
+├─ vexelray-gui-icons  the suite's shared icon set, baked by that plugin: the Icon enum and IconView, which
+│                      shows one at any size, colour, glow and shadow.    -> -core, vexelray-shadelets
+├─ vexelray-gui-file-icons  the file-type families' sheets and emblems in an atlas of their own, and
+│                      FileIconView; apart from -icons because only a file browser draws them. -> -core, -icons
+├─ vexelray-gui-widget interaction protocols on core: tabs, tree, text field, slider, menus, … -> -core, -icons
+├─ vexelray-gui-keymap rebindable key bindings, opt-in: named actions with default chords the user can
+│                      change, persisted through Settings; KeymapEditor and KeymapWindow. -> -core, -widget, -icons
 ├─ vexelray-gui-typeset structured, non-editable rich text over an open set of composable Boxes, sized as
 │                      ratios and tone-mapped into a legible pixel range. Holds no opinion about markup: the
-│                      application parses and builds the IR. See docs/typeset.md.                     -> -core
+│                      application parses and builds the IR. See docs/reference/typeset.md.          -> -core
 ├─ vexelray-gui-krono  the timing framework slotted into the loop and bus that already exist: one Kron ticked
 │                      per presented frame, input entering the graph as a Topic driving a Cell, and the
 │                      Interp instances Kronometer leaves to whoever owns the type (Length, Color).
-│                      See docs/reactive-timing.md.   -> -core, kronometer-core/-anim/-atchung, tactroller-api
-├─ vexelray-gui-nfd    the GUI's one native binding — a Panama nativefiledialog-extended facade;
-│                      results delivered back through Atchung.                                        -> -core
+│                      See docs/reference/reactive-timing.md.
+│                      -> -core, kronometer-core/-anim/-atchung, tactroller-api
+├─ vexelray-gui-nfd    the GUI's one native binding — a Panama nativefiledialog-extended facade (open / save /
+│                      pick-folder), asked from any thread, answered as a future. Holds no platform knowledge:
+│                      an OS-activated profile adds the one -nfd-<os> module.  -> -core, -nfd-api
+├─ vexelray-gui-nfd-api  what -nfd needs from an operating system, as an interface found through
+│                      ServiceLoader: where the library is, its string encoding, window handles, which thread
+│                      a dialog runs on. Depends on nothing.
+├─ vexelray-gui-nfd-windows, -nfd-macos, -nfd-linux  the NFDe library built for that OS (IFileDialog;
+│                      NSOpenPanel/NSSavePanel; xdg-desktop-portal over D-Bus) and its NfdPlatform. -> -nfd-api
 ├─ vexelray-gui-automation  an out-of-process agent driving the real application — real window, real Vulkan,
 │                      real frame loop — over a socket, emitting one correlation log that explains what
-│                      happened. See docs/automation.md.                                    -> -core, -recorder
+│                      happened. See docs/reference/automation.md.                    -> -core, -recorder
 ├─ vexelray-gui-recorder  the flight recorder: a ring of recent probe rows fed by a live sink, and the
 │                      queries over it (recorder, rows, gaps, frames, why), each answered as a plain record
 │                      that any transport can carry. See docs/plans/flight-recorder.md.             -> atchung-probe
 ├─ vexelray-gui-automation-cli  ottermate, the client for that socket. An empty dependency block — socket,
 │                      line I/O and ProcessBuilder — so it runs as a standalone jar with none of the stack on
 │                      its classpath, which is what keeps automation out of anything shipped.
-│                      See docs/automation-cli.md (design) and docs/ottermate.md (user guide).
+│                      See docs/reference/automation-cli.md (design) and docs/guides/ottermate.md (user guide).
+├─ vexelray-gui-inspector-link  the Inspector's live stream: the recorder's rows, loop snapshots and read-only
+│                      queries as typed intrabuf records over an elektro-Q conduit beside the discovery file.
+│                      See docs/plans/flight-recorder.md §6.
+│                      -> -automation, -recorder, elektroq-core/-transport-uds/-transport-tcp, intrabuf-runtime
+├─ vexelray-gui-automation-window  the automation sockets in the title bar: AutomationButton, with each
+│                      socket's lamp and ports. Its own module so -automation stays free of widgets.
+│                      -> -automation, -widget
 ├─ vexelray-gui-demo   canonical showcase app; wires tactroller-atchung for real input.
-│                      -> -widget, -nfd, tactroller-api, tactroller-windows, tactroller-atchung
+│                      -> -widget, -nfd, -keymap, -typeset, -plot, -krono, -automation, -automation-window,
+│                         -inspector-link, tactroller-atchung, tactroller-<os>
 ├─ vexelray-gui-harness  a whole application running its real frame loop, with the loop under a test's
 │                      control — the one way to ask "after this click, does a frame arrive on its own?".
 │                      Real windows are created and never shown; only pump, wait, wake and focus are
@@ -797,13 +822,14 @@ vexelray-gui           parent (pom), groupId dev.vexelray.gui, Java 25
                        -> -core, -widget (test), asm (test)
 ```
 
-Core packages: `model · layout · anim · input · text · app`. **Dependencies on the siblings:** `-core`
+Core packages: `model · layout · input · text · edit · nav · drop · style · app`. **Dependencies on the siblings:** `-core`
 depends on `atchung-core` (the bus is core to the model and threading). Tactroller enters at the
 **application edge** — the demo (and any real app) constructs a `Tactroller`, a `TactrollerInputBridge`,
 and hands the GUI the same `Atchung` bus, so the framework core stays decoupled from any specific input
 source (it only knows the `"tactroller.input"` topic contract). The NFD Panama facade (req 7) is the
-GUI's single native binding, invoked on the GUI thread (NFD is modal/main-thread), result published to
-the bus.
+GUI's single native binding. It may be asked from any thread; the dialog runs on a thread of its own on
+Windows and Linux, so the window keeps drawing, and on the GUI thread on macOS, where AppKit requires it.
+The answer is a `CompletableFuture` (`FileDialog.openAsync` and its siblings), completed off the GUI thread.
 
 ---
 
@@ -831,12 +857,12 @@ exists as siblings, so those steps are *integration*, not construction.
    node, so a widget that moves a selection off screen can put it back in the same frame.]**
 8. **The layout read-model (§4)** and everything built on it: boxes → text metrics → click-to-caret → the
    compute phase → multiline, wrap and vertical navigation → line numbers → the unified label draw path.
-   **[done — see docs/layout-read-model.md, which is closed.]**
+   **[done — see docs/reference/layout-read-model.md, which is closed.]**
 9. Application event/state publishing (§4) + `gui.on/onUi` over Atchung (§5); the E2 wake subscriber.
 10. Lifecycle FSM + animation transform layer (§7).
 11. Overlay/popup layer (tooltips, menus, dialogs); then (later) semantic-transaction choreography; file
     dialog. Proving the architecture end-to-end — transports, bridge, a headless remote GUI — is its own
-    plan in docs/architecture-proof-plan.md (M0 landed).
+    plan in docs/plans/architecture-proof.md (M0 landed).
 
 ---
 
@@ -859,7 +885,7 @@ exists as siblings, so those steps are *integration*, not construction.
 7. **Computed state is a read-model, never a callback (§4):** the single-writer rule was always about
    *unordered writes*, not about reads. Geometry a worker needs flows back as a published snapshot; the
    ad-hoc per-feature seams it replaced (`onCaretHit`/`onCaretDrag`) are deleted, and adding a new one is
-   the wrong answer by default. See docs/layout-read-model.md.
+   the wrong answer by default. See docs/reference/layout-read-model.md.
 8. **Derived geometry has one owner (§4, §6):** the compute phase computes, publish copies, renderers and
    widgets read. Enforced by `vexelray-gui-architecture`, after a live instance of the opposite —
    caret-follow scroll living in `TreeRenderer` meant a field behaved one way on screen and another way

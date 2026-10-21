@@ -176,7 +176,7 @@ A consumer implements two methods and is done, including for draw kinds written 
 Widening `Sink` stays a real, visible decision with consequences in every consumer — which is what it should be.
 
 `Sink` deliberately has **no default methods**: a renderer that silently drops a draw kind is a bug, and the
-compiler should catch it. Contrast a producer-owned event stream (`InputSink`, docs/todo.md §1.5), where the same
+compiler should catch it. Contrast a producer-owned event stream (`InputSink`, docs/plans/todo.md §1.5), where the same
 inversion wants no-op defaults because consumers legitimately ignore most events. Same shape, opposite tuning.
 
 
@@ -374,7 +374,7 @@ One honest correction to the old note: "ugly to retrofit" was wrong too. The qua
 looked at the numbers five phases earlier.
 
 **Left over.** The tone map is stable; the *projection* still tears down and rebuilds every node on each zoom
-commit, and that is now the live-behaviour cost worth measuring (docs/todo.md §2).
+commit, and that is now the live-behaviour cost worth measuring (docs/plans/todo.md §2).
 
 ### 4.4 What the map actually guarantees
 
@@ -807,7 +807,7 @@ sealed types predating the rule — `Length`, `Mutation`, `Edit`, dispatched fro
 `Document` and `InputDispatcher` — and widening `RULED` to cover them is the conversion.s definition of done.
 
 Every refactor this session surfaced in existing code — `Length`, `Mutation`, `Edit`, and one throwing default in
-`GuiApp` — is written up in docs/todo.md §1 with the shape of each conversion. `-core` is deliberately untouched.
+`GuiApp` — is written up in docs/plans/todo.md §1 with the shape of each conversion. `-core` is deliberately untouched.
 
 The throwing-default half of the rule is not yet mechanised: detecting a `default:` arm that reaches an `athrow`
 means walking switch targets in the bytecode, which is real work rather than an attribute read. Reviewed by hand
@@ -819,7 +819,7 @@ a guard that does not look at a module cannot fail for it.
 
 ## 11. Open items
 
-Tracked in docs/todo.md; repeated here only where a phase blocks on them.
+Tracked in docs/plans/todo.md; repeated here only where a phase blocks on them.
 
 - ~~Add a one-line `Gui.rootEmPx()` before P4.~~ **Done in P4**, and it stayed a one-liner. Not a `State` like
   `zoom()` and `dpi()`, because nothing can change it; if it ever becomes settable it becomes one, and a caller
@@ -832,6 +832,6 @@ Tracked in docs/todo.md; repeated here only where a phase blocks on them.
   hold a ceiling. A family's `<charset>` narrows it to italic and bold-italic if the whole U+1D400 block costs too
   much; skip fraktur, script and double-struck first.
 - The projection rebuilds every node on each basis change. The tone map is stable; this is not yet measured, and
-  it is the live-behaviour cost that replaced hysteresis as the thing to watch (docs/todo.md §2).
+  it is the live-behaviour cost that replaced hysteresis as the thing to watch (docs/plans/todo.md §2).
 - No reference front-end ships. Test input is hand-built IR trees, which prove the primitives rather than a
   format — and leave the format question entirely open.

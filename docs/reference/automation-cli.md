@@ -317,25 +317,35 @@ binary — is `mainframe`'s territory if it is anyone's, and R3 exists so this t
 ## 10. What landed
 
 `vexelray-gui-automation-cli`, a sibling module with an empty dependency block, main class
-`dev.vexelray.gui.automation.cli.Ottermate`. Six classes and no surprises: `AutomationClient` (the wire, and the
-part worth depending on), `Reply`, `Options`, `Launch`, `Session`, `Ottermate`.
+`dev.vexelray.gui.automation.cli.Ottermate`. Eight classes and no surprises: `AutomationClient` (the wire, and the
+part worth depending on), `Reply`, `Options`, `Launch`, `Session`, `Discovery`, `UsageException`, `Ottermate`.
 
 ```
 ottermate [options] [command...]     one command from the remaining arguments
 ottermate [options] --script <file>  one command per line; - is stdin
 ottermate [options]                  commands from stdin (a prompt, at a terminal)
+ottermate list                       the running applications, from their discovery files
 
-  --port <n>            attach to this port (default 7654)
+  --app <name>          attach to the running application of this name (see list)
+  --pid <n>             attach to the running application with this process id
+  --port <n>            attach to this port. Without --port, --app, --pid or --launch: the one
+                        application running, or 7654 if none is; several is an error
+  --diagnostics         attach to the application's diagnostics socket (recorder, rows, frames, log,
+                        stream) rather than its control one, when the two are on different ports
   --script <file|->     read commands from a file, or - for stdin
-  --launch <command...> start the application, drive it, shut it down; takes the rest of the line
-  --launch-timeout <s>  how long it may take to announce a port (default 60)
+  --launch <command...> start the application, drive it, shut it down; takes the rest of the
+                        line, and reads the port from its 'automation: localhost:<port>' line,
+                        so give the application --automation=0 for a free one
+  --launch-timeout <s>  how long it may take to announce that (default 60)
   --timeout <s>         how long one reply may take (default 120)
-  --window <name|n>     act on this window (default: the main one)
+  --window <name|n>     act on this window (default: the main one); 'ottermate windows' lists them
   --dpi <factor>        set the display density first
   --zoom <factor>       set the zoom first; clamped to the application's range, and the reply says so
-  --size <w>x<h>        size the window first: pixels, or em with a unit (1024x768, 46emx30em)
+  --size <w>x<h>        size the window first: pixels, or em with a unit, e.g. 1024x768 or 46emx30em
+                        (view options go before --launch, which takes the rest of the line)
   --keep-going          run the rest after a reply that begins err (still exits non-zero)
   --quiet, -q           print only err replies
+  --help, -h            this
 ```
 
 The four view options go before `--launch`, which takes the rest of the line, and are sent first, in the order

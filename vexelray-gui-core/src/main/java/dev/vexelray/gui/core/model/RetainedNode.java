@@ -63,6 +63,15 @@ public final class RetainedNode {
     public float layoutScrollX;
     public float layoutScrollY;
 
+    // Arrival and departure (EnterMotion, ExitMotion). `leaving` is the reconciler's: set when a remove was taken by
+    // the exit motion, so the node stays where it is, drawn going, until its presence reaches zero. The other two
+    // are the motion stage's, rewritten from the motion sources each frame anything is arriving or leaving, the way
+    // a displacement is: how much of the node is drawn (multiplying its own opacity, never replacing it), and how
+    // far below its laid-out place it is drawn on the way in, px.
+    public boolean leaving;
+    public float presence = 1f;
+    public float presenceRise;
+
     // Layout-computed, resolved-to-px render inputs (filled each layout pass so the renderer needs no units/ctx).
     public float borderPx;
     public float cornerPx;
@@ -569,9 +578,12 @@ public final class RetainedNode {
         return open;
     }
 
-    /** Whether this node (and its subtree) is pointer-transparent (see {@link PropKey#HIT_INERT}). */
+    /**
+     * Whether this node (and its subtree) is pointer-transparent (see {@link PropKey#HIT_INERT}) — declared so, or
+     * {@link #leaving}: a node on its way out is never the thing a click acts on.
+     */
     public boolean hitInert() {
-        return Boolean.TRUE.equals(props.get(PropKey.HIT_INERT));
+        return leaving || Boolean.TRUE.equals(props.get(PropKey.HIT_INERT));
     }
 
     /** Whether this node floats out of its parent's flow (see {@link PropKey#FLOAT_X}). */

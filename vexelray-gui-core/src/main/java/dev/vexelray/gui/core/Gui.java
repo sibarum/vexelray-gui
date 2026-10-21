@@ -13,6 +13,8 @@ import dev.vexelray.gui.core.layout.LayoutContext;
 import dev.vexelray.gui.core.layout.Metrics;
 import dev.vexelray.gui.core.layout.ReadModels;
 import dev.vexelray.gui.core.layout.LayoutMotion;
+import dev.vexelray.gui.core.layout.EnterMotion;
+import dev.vexelray.gui.core.layout.ExitMotion;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
 import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
 import dev.vexelray.gui.core.layout.LayoutSnapshot;
@@ -214,6 +216,11 @@ public final class Gui implements AutoCloseable {
     /** What colour nodes are drawn in relative to the colour they were given; NONE until a source is attached. */
     private volatile dev.vexelray.gui.core.style.PaintMotion paintMotion =
             dev.vexelray.gui.core.style.PaintMotion.NONE;
+    /** How much of a node arriving or leaving is drawn; NONE until a source is attached. */
+    private volatile EnterMotion enterMotion = EnterMotion.NONE;
+    private volatile ExitMotion exitMotion = ExitMotion.NONE;
+    /** Whether the last frame found something arriving or leaving, so this one must walk for presence again. */
+    private boolean presencing;
     /** What a run without a frame loop steps to bring animations to rest; null until a clock registers. */
     private volatile AnimationClock animationClock;
     /**
@@ -1979,6 +1986,38 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
+     * Attach the source that brings an arriving node up from nothing — see {@link EnterMotion}.
+     * {@link EnterMotion#NONE} (the default) shows every node fully the frame it is added. One source per tree, last
+     * call wins, from the next edit on.
+     */
+    public Gui enterMotion(EnterMotion source) {
+        this.enterMotion = java.util.Objects.requireNonNull(source, "source");
+        reconciler.presences(enterMotion, exitMotion);
+        return this;
+    }
+
+    /** The attached enter motion source, or {@link EnterMotion#NONE}. */
+    public EnterMotion enterMotion() {
+        return enterMotion;
+    }
+
+    /**
+     * Attach the source that a {@code Node.remove()} is offered to first, and that draws a node it takes leaving
+     * before it is detached — see {@link ExitMotion}. {@link ExitMotion#NONE} (the default) removes at once. One
+     * source per tree, last call wins, from the next removal on.
+     */
+    public Gui exitMotion(ExitMotion source) {
+        this.exitMotion = java.util.Objects.requireNonNull(source, "source");
+        reconciler.presences(enterMotion, exitMotion);
+        return this;
+    }
+
+    /** The attached exit motion source, or {@link ExitMotion#NONE}. */
+    public ExitMotion exitMotion() {
+        return exitMotion;
+    }
+
+    /**
      * Attach the source that says what colour each node is drawn in on its way to the colour it was given — see
      * {@link dev.vexelray.gui.core.style.PaintMotion}. {@code PaintMotion.NONE} (the default) draws every colour the
      * moment it is written, which is also the reduced-motion setting. One source per tree, last call wins, as for
@@ -2117,12 +2156,27 @@ public final class Gui implements AutoCloseable {
                 }
                 moving = Displacement.displace(r, motion);
             }
+            // Arrival and departure, in the same stage and for the same reason: everything after this reads what
+            // is drawn. Walked only while something is arriving or leaving — an edit that started one says so, and
+            // a walk that found one asks for the next — and the walk that finds everything at rest is the one that
+            // writes the resting values back. A node that has finished leaving is detached here, before publish,
+            // so the snapshot never names a node the tree no longer holds.
+            boolean presenting = false;
+            boolean departing = false;
+            if (presencing | reconciler.takePresenceDirty()) {
+                java.util.List<RetainedNode> gone = new java.util.ArrayList<>();
+                presenting = Displacement.present(r, enterMotion, exitMotion, gone);
+                presencing = presenting;
+                departing = reconciler.depart(gone);
+            } else {
+                departing = reconciler.depart(java.util.List.of());   // release the last frame's departures
+            }
             // Focus is in the semantic snapshot but not in the tree, so a focus move that edits no node (a button
             // has nothing to restyle) has to republish on its own, or the snapshot says focus is where it was.
             // The theme likewise: its focus ring decides ringShown.
             dev.vexelray.gui.core.input.FocusState focusNow = input.focusState();
             boolean focusMoved = !focusNow.equals(publishedFocus) || theme != publishedTheme;
-            if (geometryChanged || moving || focusMoved) {
+            if (geometryChanged || moving || focusMoved || departing) {
                 // Last of the compute phase, because it is a fact about the rects everything above just
                 // finished writing: displacement moves a node after layout placed it, and a clip resolved
                 // before that would describe a frame nobody sees.
@@ -2145,12 +2199,21 @@ public final class Gui implements AutoCloseable {
             if (fading) {
                 wake("paint motion");
             }
+            if (presenting) {
+                wake("presence");
+            }
             reconciler.clearDirty();
+            if (departing) {
+                // A node detached above leaves a gap the next layout closes (and the next drain may yet fill), and
+                // a release still owed for it: both are the next frame's, so the next frame must come.
+                reconciler.markLayoutDirty();
+                wake("departure");
+            }
             // Render-on-change: everything above that could alter a pixel. The reconciler's bit covers edits that
             // changed something (equal writes leave it clear); the layout covers a size or zoom change that no
             // edit made; geometry covers a caret that moved without reflowing; motion covers a transition between
             // frames. Taken with |=, because a frame that is run and not drawn keeps what it found for the next.
-            if (reconciler.takeDrawDirty() | layoutRan | geometryChanged | moving | fading) {
+            if (reconciler.takeDrawDirty() | layoutRan | geometryChanged | moving | fading | presenting) {
                 drawNeeded = true;
             }
         }

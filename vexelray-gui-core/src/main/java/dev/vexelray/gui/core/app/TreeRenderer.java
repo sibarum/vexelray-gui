@@ -401,7 +401,9 @@ public final class TreeRenderer {
             return;   // hidden: nothing drawn, and the subtree is not walked
         }
         float inherited = alpha;
-        alpha = inherited * node.opacity();
+        // Presence (EnterMotion, ExitMotion) multiplies the node's own opacity rather than standing in for it: the
+        // framework fading a node in or out never overwrites what the application set.
+        alpha = inherited * node.opacity() * node.presence;
         // Fully transparent: skip the subtree exactly as a hidden node does. Not the same as hiding it, though —
         // it was laid out, so its box is real and it is still hit-testable unless it also said hitInert.
         if (alpha > 0f) {
@@ -412,7 +414,7 @@ public final class TreeRenderer {
             // Displacement, in multiples of this node's own baked em, so it tracks zoom and density with no
             // layout context to consult. Pushed around the node and its whole subtree, and cumulative.
             float dx = node.translateX() * node.emPx;
-            float dy = node.translateY() * node.emPx;
+            float dy = node.translateY() * node.emPx + node.presenceRise;   // and the rise of a node arriving
             boolean moved = dx != 0f || dy != 0f;
             float keepTransX = transX;
             float keepTransY = transY;

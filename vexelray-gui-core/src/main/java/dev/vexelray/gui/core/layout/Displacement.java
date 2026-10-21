@@ -10,6 +10,9 @@ import dev.vexelray.gui.core.model.RetainedNode;
  * layout just wrote, and {@link #displace} must be able to run on a frame where layout did not run at all and
  * still produce the same answer. The second property is the one that keeps a transition from drifting, and it
  * is not observable from a single frame.
+ *
+ * <p>{@link #present} is the third walk, the same stage's answer for nodes arriving and leaving rather than moving
+ * ({@link EnterMotion}, {@link ExitMotion}): how much of each node is drawn, rebuilt from the sources every frame.
  */
 public final class Displacement {
 
@@ -120,6 +123,32 @@ public final class Displacement {
         node.viewY = node.layoutViewY + dy;
         boolean moving = dx != 0f || dy != 0f;
         return displaceChildren(node, motion, dx, dy) || moving;
+    }
+
+    /**
+     * Write how much of every node is drawn, from {@code enter} for a node in the tree and {@code exit} for one
+     * leaving it, collecting into {@code gone} each leaving node whose presence has reached zero; and report whether
+     * anything is still arriving or leaving.
+     *
+     * <p>Absolute, as {@link #displace} is: each node's values are read afresh from the sources every time, so the
+     * walk that finds everything at rest is also the one that writes the resting values back, and a frame that runs
+     * it twice draws the same tree. The caller detaches what is gone; a walk is no place to edit structure.
+     *
+     * @return whether a further frame is owed: something is short of fully present, or still leaving
+     */
+    public static boolean present(RetainedNode node, EnterMotion enter, ExitMotion exit,
+                                  java.util.List<RetainedNode> gone) {
+        float presence = node.leaving ? exit.presence(node) : enter.presence(node);
+        node.presence = Math.max(0f, Math.min(1f, presence));
+        node.presenceRise = node.leaving ? 0f : enter.rise(node);
+        if (node.leaving && node.presence <= 0f) {
+            gone.add(node);
+        }
+        boolean moving = node.leaving || node.presence != 1f || node.presenceRise != 0f;
+        for (RetainedNode child : node.children) {
+            moving |= present(child, enter, exit, gone);   // not short-circuited: every child is written
+        }
+        return moving;
     }
 
     private static boolean displaceChildren(RetainedNode node, LayoutMotion motion, float ax, float ay) {

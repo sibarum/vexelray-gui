@@ -1,6 +1,8 @@
 package dev.vexelray.gui.core.model;
 
 import dev.vexelray.canvas.Color;
+import dev.vexelray.gui.core.layout.EnterMotion;
+import dev.vexelray.gui.core.layout.ExitMotion;
 import dev.vexelray.gui.core.style.Paint;
 import dev.vexelray.gui.core.style.PaintMotion;
 import dev.vexelray.gui.core.style.Role;
@@ -72,6 +74,72 @@ public final class Reconciler implements Mutation.Sink {
      */
     public void repaints(dev.vexelray.gui.core.style.PaintMotion sink) {
         this.repaints = sink == null ? dev.vexelray.gui.core.style.PaintMotion.NONE : sink;
+    }
+
+    private volatile EnterMotion enters = EnterMotion.NONE;
+    private volatile ExitMotion exits = ExitMotion.NONE;
+
+    /** Whether something arrived or began to leave since {@link #takePresenceDirty} last asked. */
+    private boolean presenceDirty;
+
+    /**
+     * Nodes whose departure finished in the frame {@link #depart} last ran: detached, and kept in the index for one
+     * more drain so an edit that was already on its way when they went can still put them back. See {@link #depart}.
+     */
+    private final List<RetainedNode> departed = new java.util.ArrayList<>();
+
+    /**
+     * Report arrivals to {@code enter} and offer removals to {@code exit} from the next edit on — see
+     * {@link EnterMotion} and {@link ExitMotion}. Null is {@code NONE}.
+     */
+    public void presences(EnterMotion enter, ExitMotion exit) {
+        this.enters = enter == null ? EnterMotion.NONE : enter;
+        this.exits = exit == null ? ExitMotion.NONE : exit;
+    }
+
+    /**
+     * Whether a node arrived, began to leave or came back since the last call, and clear it: the frame's cue to
+     * walk the tree for presence even though nothing was in motion a frame ago.
+     */
+    public boolean takePresenceDirty() {
+        boolean was = presenceDirty;
+        presenceDirty = false;
+        return was;
+    }
+
+    /**
+     * Detach {@code gone} — leaving nodes whose presence has reached zero — and release whatever an earlier call
+     * detached that nothing has put back since. Returns whether anything is still owed a frame: a node detached now
+     * is released by the next call, so the caller must make sure there is one.
+     *
+     * <p><b>Why released a frame late.</b> A reader decides to put a leaving node back from the published snapshot,
+     * which is a frame old, and its edit lands at the next drain. A node detached and released in one go could be
+     * released in the gap between the reader looking and the edit arriving, and the edit would then name a node that
+     * no longer exists — the row the user asked for back simply missing. Held for one drain, every such edit finds
+     * it. Detached is not drawn, not laid out and not hit, so the extra frame is invisible.
+     *
+     * <p>Unlike every other edit here this one is the frame's, not a mutation's: it is a consequence of the motion
+     * stage having drawn the node at nothing, and the frame is what knows that.
+     */
+    public boolean depart(List<RetainedNode> gone) {
+        if (!departed.isEmpty()) {
+            for (RetainedNode d : departed) {
+                if (d.parent == null && index.get(d.id) == d) {
+                    removeSubtree(d);
+                }
+            }
+            departed.clear();
+        }
+        for (RetainedNode g : gone) {
+            if (g.parent != null) {
+                g.parent.children.remove(g);
+                g.parent = null;
+            }
+            departed.add(g);
+            layoutDirty = true;
+            drawDirty = true;
+        }
+        return !departed.isEmpty();
     }
 
     /** Nodes asked to be brought into view since the frame last took them (see {@link Mutation.Reveal}). */
@@ -191,6 +259,7 @@ public final class Reconciler implements Mutation.Sink {
             // subtree, so that loses the handle, its registrations, and any widget state hanging off it.
             // A reorderable list, a reorderable tab bar and a tree that can be dragged into all needed
             // this one line.
+            RetainedNode was = ch.parent;
             if (ch.parent != null) {
                 ch.parent.children.remove(ch);
             }
@@ -200,17 +269,48 @@ public final class Reconciler implements Mutation.Sink {
             } else {
                 p.children.add(index, ch);
             }
+            attached(ch, was, p);
         }
         layoutDirty = true;
         drawDirty = true;
+    }
+
+    /**
+     * {@code ch} has just been put under {@code p}, having been under {@code was}: report it to the enter motion if
+     * that is an arrival. A leaving node put back is one, wherever it was put; a node that had no parent is one when
+     * the parent it joins has been laid out, so a subtree built off-screen arrives once, at its top, and nothing in
+     * the first frame's tree arrives at all. A move between two parents is not one.
+     */
+    private void attached(RetainedNode ch, RetainedNode was, RetainedNode p) {
+        boolean returning = ch.leaving;
+        if (returning) {
+            ch.leaving = false;
+        }
+        if (was == null) {
+            departed.remove(ch);
+        }
+        if (returning || (was == null && p.layoutCtx != null)) {
+            enters.entered(ch);
+            presenceDirty = true;
+        }
     }
 
     @Override
     public void remove(long id) {
         RetainedNode n = index.get(id);
         if (n != null) {
+            // Offered to the exit motion first, if it is on screen to be seen going: one that takes it keeps it in
+            // place, drawn leaving, until the frame detaches it (depart). A second remove of a leaving node is "now".
+            if (!n.leaving && n.parent != null && n.layoutCtx != null && n.visible() && exits.leave(n)) {
+                n.leaving = true;
+                presenceDirty = true;
+                drawDirty = true;
+                return;
+            }
             if (n.parent != null) {
                 n.parent.children.remove(n);
+            } else {
+                departed.remove(n);
             }
             removeSubtree(n);
         }
@@ -351,6 +451,7 @@ public final class Reconciler implements Mutation.Sink {
         for (RetainedNode c : n.children) {
             removeSubtree(c);
         }
+        exits.left(n);
         onRemoved.accept(n.id);   // after the descendants, so a listener sees children released before parents
     }
 }

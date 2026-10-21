@@ -58,6 +58,7 @@ the first draft of §11.3 merely moved that write into publish. Naming the missi
 | **Authored props** | text, caret, selection, editable, **scroll intent** | worker → `Mutation` → `pump.drain()` | command |
 | **Derived geometry** | `rect`, `content`, `contentW/H`, `overflow`, **effective scroll**, **text metrics**, gutter width | the layout pass | compute |
 | **Drawn position** | `x/y` and `viewX/viewY` again — the settled values, moved by however far a node is still short of them | `Displacement`, from a `LayoutMotion` | motion |
+| **Drawn presence** | `presence`, `presenceRise` — how much of an arriving or leaving node is drawn | `Displacement.present`, from an `EnterMotion` / `ExitMotion` | motion |
 | **Reachability** | `clipX/Y/W/H` — the box less every ancestor's clip | `Clip.resolve`, after motion | compute |
 | **Read-model** | `LayoutSnapshot` | `publishLayout` — a pure copy | publish |
 
@@ -87,6 +88,31 @@ will ever exist without naming one.
 rectangle was first worked out inside `publishLayout`, which is a projection and computes nothing. It runs last
 in the compute phase — after motion, because a node that is mid-flight is clipped where it is drawn, not where
 it will land — and writes only derived geometry.
+
+#### Arrival and departure: `EnterMotion`, `ExitMotion`
+
+`LayoutMotion` says nothing about a node's first appearance or its removal, because neither has a "from". The two
+companions beside it in `layout/` do: an `EnterMotion` is told `entered(node)` when a node joins a parent that has
+already been laid out (a new row, a subtree built off-screen and attached — only its top — or a leaving node put
+back), and an `ExitMotion` is offered every `Node.remove()` first. One it takes is marked `leaving`: it stays in
+the tree and the flow where it was, pointer-transparent, until its presence reads 0, and is then detached by the
+frame — before publish, so the snapshot never names a node the tree no longer holds — and released one frame
+later, so an edit decided from the previous snapshot can still put it back. Put back while leaving (or in that
+frame), it is the same node with its handlers and widget state, reported to `entered` at the presence it is drawn
+at, so the arrival continues from there. A second `remove()` of a leaving node is "now".
+
+The motion stage (`Displacement.present`) rewrites `presence` and `presenceRise` from the sources only while
+something is arriving or leaving; the renderer multiplies `presence` into the node's own `opacity` (never
+overwriting it) and draws `presenceRise` like a translate. Nothing in the first frame's tree arrives, and a move
+between parents is not an arrival. `Presence` in `gui-krono` implements both, enrolled exactly as `Transitions`
+is (`follow`, `followChildren`, `followSubtree`; nearest wins; `Dur.ZERO` is reduced motion):
+
+```java
+Presence presence = Presence.on(krono).rise(0.35f);
+presence.followSubtree(page, Dur.ms(140), Ease.OUT_CUBIC);
+gui.enterMotion(presence).exitMotion(presence);
+row.remove();        // fades out in place, then leaves; list.append(row) before then brings it back up
+```
 
 This adds no new concept. `FlexLayout.layout()` already writes `x/y/w/h`, `viewX/viewY`, `contentW/H` and
 `overflow` into `RetainedNode` — on the GUI thread, in the write phase, and nobody calls that a violation.

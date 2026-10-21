@@ -518,13 +518,13 @@ public final class FlexLayout {
         layoutBox(c, ctx, tm);
     }
 
-    /** Scrollbar thickness in px — scales with the root em so it tracks zoom/DPI like everything else. */
     /**
      * How many scrollbar thicknesses a container's content box must be along an axis before it scrolls there without
      * having been asked to: a minimum-length thumb (two thicknesses) plus as much again to travel.
      */
     static final float SENSIBLE_SCROLL = 4f;
 
+    /** Scrollbar thickness in px — scales with the root em so it tracks zoom/DPI like everything else. */
     private static float scrollbarThickness(LayoutContext ctx) {
         return 0.85f * emBasis(ctx);
     }

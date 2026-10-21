@@ -17,6 +17,10 @@ import java.util.concurrent.TimeoutException;
  * device: copying a finished step into the buffers its picture reads. A device with one queue family (llvmpipe, and
  * some real GPUs) has nothing else to offer it.
  *
+ * <p><b>Hand over the submission, nothing more.</b> Every frame waits while the main thread runs what is handed here.
+ * Making buffers and pipelines, recording, waiting on a fence and freeing touch no queue: do them on the thread that
+ * asked, which is waiting anyway, and pass {@link #run} only the call that submits.
+ *
  * <p><b>Never hangs.</b> A main thread that has stopped taking work (closing, or itself waiting on the thread that
  * asked) is waited for {@value #WAIT_SECONDS} seconds and then given up on, with an {@link IllegalStateException}.
  */

@@ -47,6 +47,12 @@ public interface Mutation {
         /** Drop the node and everything under it. */
         void remove(long id);
 
+        /**
+         * Make {@code children} the parent's children, in that order: each moved there from wherever it is, and every
+         * other child removed. See {@link Arrange}.
+         */
+        void arrange(long parent, long[] children);
+
         /** Write one property. */
         void setProp(long id, PropKey key, Object value);
 
@@ -132,6 +138,26 @@ public interface Mutation {
         @Override
         public void emitTo(Sink sink) {
             sink.remove(id);
+        }
+    }
+
+    /**
+     * A parent's whole child list, by identity: the keyed reconcile's one edit. Structure, so not a cell — two
+     * arranges of one parent are two orders, and the later one is applied after the earlier.
+     */
+    record Arrange(long parent, long[] children) implements Mutation {
+        public Arrange {
+            children = children.clone();
+        }
+
+        @Override
+        public long targetId() {
+            return parent;
+        }
+
+        @Override
+        public void emitTo(Sink sink) {
+            sink.arrange(parent, children.clone());
         }
     }
 

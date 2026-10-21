@@ -114,6 +114,24 @@ gui.enterMotion(presence).exitMotion(presence);
 row.remove();        // fades out in place, then leaves; list.append(row) before then brings it back up
 ```
 
+#### Keyed children: `Node.arrange`, `Node.keyed`
+
+Motion is keyed on node identity, so "rebuild the list from state" — new nodes every time — defeats all of it:
+nothing moved, everything vanished and arrived. `Node.arrange(children)` is one structural edit (`Mutation.Arrange`)
+that makes a parent's child list exactly the given nodes in order: each is *moved* there (so `LayoutMotion` sees a
+reordered row travel), every other child is removed (so it leaves, under an `ExitMotion`), a leaving child not named
+keeps its place right after its old predecessor while it fades, and a leaving child that is named comes back. An
+unchanged order is a no-op and owes no frame. `Node.keyed(key, build)` returns a `Keyed<T>` that does the diff by
+key on top of it: `reconcile(items, update)` keeps the node of every key still present (changed in place by `update`),
+builds one for a new key, and arranges. A key reconciled again while its node is still leaving — still in the
+snapshot — gets that node back, turned round where it is drawn; the one-frame-late release above is what makes
+that safe against the snapshot being a frame old.
+
+```java
+Keyed<Task> rows = list.keyed(Task::id, task -> gui.text(""));
+rows.reconcile(tasks, (task, row) -> row.text(task.title()));   // after every change: keep, move, exit, enter
+```
+
 This adds no new concept. `FlexLayout.layout()` already writes `x/y/w/h`, `viewX/viewY`, `contentW/H` and
 `overflow` into `RetainedNode` — on the GUI thread, in the write phase, and nobody calls that a violation.
 "Derived geometry" is simply that category, named. Anything that is a pure function of (authored props +

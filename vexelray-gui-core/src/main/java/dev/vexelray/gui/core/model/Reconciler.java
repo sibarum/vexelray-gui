@@ -8,6 +8,7 @@ import dev.vexelray.gui.core.style.PaintMotion;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -270,6 +271,71 @@ public final class Reconciler implements Mutation.Sink {
                 p.children.add(index, ch);
             }
             attached(ch, was, p);
+        }
+        layoutDirty = true;
+        drawDirty = true;
+    }
+
+    /**
+     * Make {@code children} {@code parent}'s children, in order. A child not named is removed — through the exit
+     * motion, like any removal — and one already leaving that is not named keeps its place, after whatever preceded it
+     * that is still there, rather than jumping about as its neighbours reorder while it fades. A named node is moved
+     * here from wherever it was, which is what lets a {@code LayoutMotion} see a reordered row travel; a named node
+     * that was leaving comes back. Changes nothing, and owes no frame, when the order is the one already there.
+     */
+    @Override
+    public void arrange(long parent, long[] children) {
+        RetainedNode p = index.get(parent);
+        if (p == null) {
+            return;
+        }
+        java.util.Set<RetainedNode> named = new java.util.LinkedHashSet<>();
+        for (long id : children) {
+            RetainedNode n = index.get(id);
+            if (n != null && n != p) {
+                named.add(n);   // a repeat names nothing new: a node is in one place
+            }
+        }
+        if (named.stream().noneMatch(n -> n.leaving) && p.children.equals(new ArrayList<>(named))) {
+            return;
+        }
+        for (RetainedNode c : List.copyOf(p.children)) {
+            if (!named.contains(c) && !c.leaving) {
+                remove(c.id);   // leaves, or goes at once, exactly as Node.remove() would have it
+            }
+        }
+        List<RetainedNode> old = List.copyOf(p.children);   // the named still here, and the leaving
+        List<RetainedNode> order = new ArrayList<>(named);
+        for (int i = 0; i < old.size(); i++) {
+            RetainedNode c = old.get(i);
+            if (named.contains(c)) {
+                continue;
+            }
+            int at = 0;
+            for (int j = i - 1; j >= 0; j--) {
+                int k = order.indexOf(old.get(j));
+                if (k >= 0) {
+                    at = k + 1;
+                    break;
+                }
+            }
+            order.add(at, c);
+        }
+        Map<RetainedNode, RetainedNode> was = new HashMap<>();
+        for (RetainedNode n : named) {
+            was.put(n, n.parent);
+            if (n.parent != null && n.parent != p) {
+                n.parent.children.remove(n);
+            }
+            n.parent = p;
+        }
+        p.children.clear();
+        p.children.addAll(order);
+        for (RetainedNode n : named) {
+            RetainedNode from = was.get(n);
+            if (from != p || n.leaving) {
+                attached(n, from == p ? p : from, p);
+            }
         }
         layoutDirty = true;
         drawDirty = true;

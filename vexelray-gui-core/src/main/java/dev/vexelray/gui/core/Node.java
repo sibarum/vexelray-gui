@@ -729,6 +729,44 @@ public final class Node {
         return this;
     }
 
+    /**
+     * Make {@code children} exactly this node's children, in this order: each is moved here from wherever it is (so a
+     * row whose place changed slides, under a {@code LayoutMotion}), and every other child is removed (so it leaves,
+     * under an {@code ExitMotion}). A child already leaving that is not named keeps its place while it goes; one that
+     * is named comes back. One edit, applied whole, so no frame ever sees the list half-reordered.
+     *
+     * <p>The primitive under {@link #keyed}, which is usually what you want: this matches by node, that by key.
+     */
+    public Node arrange(java.util.List<Node> children) {
+        long[] ids = new long[children.size()];
+        for (int i = 0; i < ids.length; i++) {
+            ids[i] = children.get(i).id;
+        }
+        sink.post(new Mutation.Arrange(id, ids));
+        return this;
+    }
+
+    /** {@link #arrange(java.util.List)}, spelled out. */
+    public Node arrange(Node... children) {
+        return arrange(java.util.List.of(children));
+    }
+
+    /**
+     * Keep this node's children in step with a list of items by key — see {@link Keyed}. {@code key} names an item's
+     * identity ({@code Task::id}); {@code build} makes the node for a key not seen before. Then
+     * {@link Keyed#reconcile} after every change to the list: a key still present keeps its node, which is changed in
+     * place, moved if its position changed, the rest leave and new ones arrive.
+     *
+     * <pre>{@code
+     * Keyed<Task> rows = list.keyed(Task::id, task -> gui.text(""));
+     * rows.reconcile(tasks, (task, row) -> row.text(task.title()));
+     * }</pre>
+     */
+    public <T> Keyed<T> keyed(java.util.function.Function<? super T, ?> key,
+                              java.util.function.Function<? super T, Node> build) {
+        return new Keyed<>(this, key, build);
+    }
+
     public void remove() {
         sink.post(new Mutation.Remove(id));
     }

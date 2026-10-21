@@ -1241,3 +1241,21 @@ tactroller. In a scripted run that cancels a drag, the real cursor jumps into th
 flight, and the next poll reports it as motion. Harmless, and the ride still behaves — it is the hand that wins,
 and the automation's pointer agrees with the ride's steps — but a run on a desk somebody is using moves their
 mouse. Automation could install a `PointerWarp` that moves its own `Cursor` instead.
+
+## 10. Found reviewing enter and exit motion
+
+Both are costs of `3844bff` (EnterMotion, ExitMotion, Presence), found reading it after it landed. Neither changes
+what is drawn; both are frame-loop work the rules say should not be there.
+
+### 10.1 The presence walk allocates a list every frame something arrives or leaves
+
+`Gui`'s frame builds `new ArrayList<>()` for `Displacement.present` to collect finished departures into, on every
+frame the walk runs, which is every frame of an arrival or a departure. The frame loop is not to allocate. Keep one
+list on the `Gui` and clear it per walk, as `Reconciler.departed` already is.
+
+### 10.2 An arrival with no enter motion still costs a whole-tree walk
+
+`Reconciler.attached` sets `presenceDirty` for every node that joins a laid-out parent, whatever `enters` is, so
+with `EnterMotion.NONE` attached (the default) each frame that adds a node walks the whole tree once to write
+presence 1 and rise 0, which it already was. Large trees that add often (the editor's rows, a log) pay it on every
+edit. Set the flag only when the motion is not `NONE`, or when it is a leaving node coming back.

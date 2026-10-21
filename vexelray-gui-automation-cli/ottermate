@@ -17,7 +17,11 @@ here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 # bumped version wins over the stale jar beside it rather than being picked by lexical accident. The filter
 # is for the -sources and -javadoc jars a release build leaves in the same directory; neither has a manifest
 # to run, and picking one gives "no main manifest attribute", which reads as a broken tool.
-jar=$(ls -t "$here"/target/vexelray-gui-automation-cli-*.jar 2>/dev/null \
+# Linux builds into target-linux/ (the linux-build-output profile in the root pom), so a Windows host and a Linux VM
+# sharing this checkout keep their own jars; everywhere else it is target/.
+out=target
+[ "$(uname -s)" = Linux ] && out=target-linux
+jar=$(ls -t "$here/$out"/vexelray-gui-automation-cli-*.jar 2>/dev/null \
         | grep -v -e '-sources\.jar$' -e '-javadoc\.jar$' \
         | head -1)
 

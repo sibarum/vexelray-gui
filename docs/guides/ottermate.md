@@ -352,7 +352,7 @@ ok mode=AUTOMATION console=DEBUG file=TRACE -> C:\...\target\logs\calculator.log
 $ ottermate log gui.frame trace     # one logger and everything beneath it, from now on
 ```
 
-The file is `<app>.log` and the trace is `<app>-probe.csv` beside it (`target/logs` in a checkout, `~/.<app>/logs`
+The file is `<app>.log` and the trace is `<app>-probe.csv` beside it (`target/logs` in a checkout, `target-linux/logs` on Linux, `~/.<app>/logs`
 otherwise). Everything about levels, settings and locations is in `atchung/docs/logging.md`.
 
 ### Asking why a frame was slow

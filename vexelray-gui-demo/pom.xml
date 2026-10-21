@@ -191,7 +191,7 @@
                       %classpath is exec:exec's own token for the runtime classpath. It is substituted after
                       the split, so it stays a single argument even where a path contains a space.
                     -->
-                    <commandlineArgs>--enable-native-access=ALL-UNNAMED -Dautomation=${automation} ${demo.jvmArgs} -classpath %classpath ${demo.mainClass} ${demo.args}</commandlineArgs>
+                    <commandlineArgs>--enable-native-access=ALL-UNNAMED -Dautomation=${automation} "-Dbuild.dir=${project.build.directory}" ${demo.jvmArgs} -classpath %classpath ${demo.mainClass} ${demo.args}</commandlineArgs>
                 </configuration>
             </plugin>
         </plugins>

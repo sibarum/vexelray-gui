@@ -52,10 +52,11 @@ final class Bytecode {
 
     /**
      * The {@code target/classes} directory of a sibling reactor module, resolved from this module's own compiled
-     * test output — so it holds regardless of how Maven resolved the dependency.
+     * test output — so it holds regardless of how Maven resolved the dependency. The build directory is named as this
+     * module's own is: {@code target}, or {@code target-linux} on Linux, the same profile building both.
      */
     static Path classesOf(String module) {
-        Path classes = reactorRoot().resolve(module).resolve("target").resolve("classes");
+        Path classes = reactorRoot().resolve(module).resolve(buildDirectory().getFileName()).resolve("classes");
         if (!Files.isDirectory(classes)) {
             throw new IllegalStateException("no compiled output at " + classes + " — the architecture guard reads "
                     + "freshly compiled sibling modules, so build them in the same reactor invocation "
@@ -109,13 +110,16 @@ final class Bytecode {
 
     /** The reactor root, from this module's own {@code target/test-classes} directory. */
     private static Path reactorRoot() {
-        Path testClasses;
+        // .../vexelray-gui-architecture/target -> vexelray-gui-architecture -> reactor root
+        return buildDirectory().getParent().getParent();
+    }
+
+    /** This module's build directory, the parent of its {@code test-classes}. */
+    private static Path buildDirectory() {
         try {
-            testClasses = Paths.get(Bytecode.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+            return Paths.get(Bytecode.class.getProtectionDomain().getCodeSource().getLocation().toURI()).getParent();
         } catch (URISyntaxException e) {
             throw new IllegalStateException("cannot locate the architecture module's own output", e);
         }
-        // .../vexelray-gui-architecture/target/test-classes -> target -> vexelray-gui-architecture -> reactor root
-        return testClasses.getParent().getParent().getParent();
     }
 }

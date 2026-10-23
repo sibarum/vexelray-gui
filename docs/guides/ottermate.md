@@ -182,6 +182,11 @@ pointable. Those suffixes matter: a rect says where a node was put, and `clipped
 person could hit. A node marked `offscreen hidden` with a `[0,0 0x0]` box is a panel that is closed, not a
 missing one.
 
+`scrolls x` / `scrolls y` / `scrolls x y` marks a scroller: where the wheel goes. Every scroller is listed, named
+or not, so an unexpected scrollbar has a line here. Two lines scrolling along the same axis, the inner one as long
+as the outer, are two scrollbars side by side; [scrolling.md §3](../reference/scrolling.md) says why, and the
+application's log says which two (`vexelray.diag - one scrollbar along y — ...`).
+
 ### Find something, and go to it
 
 ```
@@ -318,6 +323,8 @@ shot zoomed.png
 zoom 1
 resize 24emx16em              # ok 384x256    -- the application's declared minimum, in em, at this zoom
 shot smallest.png
+resize 24emx12em              # below it: a small screen or a saved size does this, and nothing stops it
+shot below-minimum.png        #   the root scrolls here, and never at the minimum itself (scrolling.md §2)
 resize 1600x900               # pixels need no unit
 dpi 2                         # ok dpi=2      -- the framework's density factor, in the same window
 shot dense.png
@@ -665,6 +672,7 @@ slashes (`C:/work/after.png`) work everywhere.
 | `ottermate: the application did not finish answering 'settle' within 120s` | It stopped answering. `--timeout` raises the bound; a hang is usually the finding |
 | `ottermate: the application exited on its own, status 1` | Printed after a `--launch` run where the application died before being shut down |
 | `err did not settle within 2000ms (frame still owed)` | The loop never caught up — a genuine stall, and worth keeping. `(a handler still running)` instead means a click handler has not returned in 2s: blocking work belongs on `Gui.async`, with `await` on a landmark |
+| Two scrollbars side by side, or the whole window scrolling | A scroller inside a scroller along the same axis, usually a `Gui.minSize` taller than the window over a body that scrolls already. `tree` marks both `scrolls y`, and the application's log names them. [scrolling.md](../reference/scrolling.md) §2 and §3 |
 | `err the timeline did not go quiet within 10000ms …` | Something on the clock never ends — a repeating cue. Use `await` on a landmark instead; `KronoGui.whyBusy()` names what is running |
 | Non-ASCII coming back as `?` | Fixed: replies print as UTF-8. If your console still shows boxes, that is its font, not the reply |
 

@@ -39,6 +39,12 @@ halves of one mechanism and are best read together.
 | [layout-read-model.md](reference/layout-read-model.md) | **Landed.** Where a node *is* — rect, content, scroll, overflow, and text metrics rich enough that `TextField` does its own caret arithmetic without ever seeing a measurer |
 | [semantic-read-model.md](reference/semantic-read-model.md) | **Landed.** What a node *is* — role, name, structure, interaction state. The half that readers which are not the renderer actually want |
 
+### Layout
+
+| | |
+| --- | --- |
+| [scrolling.md](reference/scrolling.md) | **Landed.** Where a scrollbar comes from (overflow, never a widget), why the whole window scrolls (the canvas is the window or `Gui.minSize`, whichever is larger), and two scrollbars side by side: the case the layout reports, and how to see it with `ottermate tree` |
+
 ### Input, and what the user does with it
 
 | | |

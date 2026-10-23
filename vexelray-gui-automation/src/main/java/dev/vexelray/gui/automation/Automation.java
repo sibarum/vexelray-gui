@@ -313,9 +313,12 @@ public final class Automation implements Commands {
         }
         // A landmark makes a node interesting on its own. Being named is the strongest possible statement that
         // someone meant this node to be addressed from outside, so a bare box that has been given a name --
-        // a plot canvas, a drop zone -- was the one kind of node this outline would not list.
+        // a plot canvas, a drop zone -- was the one kind of node this outline would not list. A scroller is listed
+        // too: the wheel goes to it, and an unnamed one inside another was a second scrollbar nobody could find
+        // here (docs/reference/scrolling.md §3).
+        NodeLayout scrolls = layout.node(id);
         boolean interesting = !n.role().isEmpty() || !n.name().isEmpty() || n.focusable()
-                || !n.landmark().isEmpty();
+                || !n.landmark().isEmpty() || scrolls.overflowX() || scrolls.overflowY();
         if (interesting) {
             sb.append("  ".repeat(Math.min(depth, 12)))
                     .append(id).append(' ')
@@ -333,7 +336,7 @@ public final class Automation implements Commands {
                 Rect r = box.rect();
                 sb.append(" [").append(round(r.x())).append(',').append(round(r.y()))
                         .append(' ').append(round(r.w())).append('x').append(round(r.h())).append(']');
-                sb.append(clipping(box));
+                sb.append(clipping(box)).append(scrolling(box));
             }
             if (!n.visible()) {
                 // Said explicitly, because a rect is published for a hidden node too and finding one proves
@@ -397,7 +400,7 @@ public final class Automation implements Commands {
                 Rect r = box.rect();
                 sb.append(" [").append(round(r.x())).append(',').append(round(r.y()))
                         .append(' ').append(round(r.w())).append('x').append(round(r.h())).append(']');
-                sb.append(clipping(box));
+                sb.append(clipping(box)).append(scrolling(box));
             }
             if (!n.visible()) {
                 sb.append(" hidden");
@@ -1491,6 +1494,17 @@ public final class Automation implements Commands {
                     + ' ' + round(v.w()) + 'x' + round(v.h()) + ']';
         }
         return "";
+    }
+
+    /**
+     * Which axes this box scrolls along, as a suffix — {@code ""} for none. A scroller is where the wheel goes, and
+     * one scrolling inside another along the same axis is two scrollbars side by side.
+     */
+    private static String scrolling(NodeLayout box) {
+        if (box.overflowX() && box.overflowY()) {
+            return " scrolls x y";
+        }
+        return box.overflowX() ? " scrolls x" : box.overflowY() ? " scrolls y" : "";
     }
 
     private static final String HELP = String.join("\n", List.of(

@@ -635,6 +635,13 @@ public final class Gui implements AutoCloseable {
      * <em>drag</em> is {@code WindowConfig.minSize}, which the window manager enforces — and a window can still
      * arrive under its minimum without any drag (a restore, a display-mode change, a programmatic resize), which
      * is exactly when this one is what saves the layout.
+     *
+     * <p><b>Size it to what cannot scroll, not to the content.</b> Every window under the minimum scrolls as a
+     * whole, so a minimum as tall as content that a growing body already scrolls gives each such window two
+     * scrollbars side by side, the root's and the body's, and scrolls the status bar off the bottom. A window
+     * arrives under it more often than it sounds: a size saved from an earlier run, or a screen shorter than the
+     * first-run size. The layout reports that case through {@code vexelray.diag}
+     * (docs/reference/scrolling.md §2, §3).
      */
     public Gui minSize(Length width, Length height) {
         metrics.minSize(width, height);
@@ -1647,6 +1654,20 @@ public final class Gui implements AutoCloseable {
      */
     public Gui systemReducedMotion(Boolean reduced) {
         reducedMotion.system(reduced);
+        applyMotionKnobs();
+        requestFrame();
+        return this;
+    }
+
+    /**
+     * What the user chose for every VexelRay application — {@code null} for a choice they have not made — over the
+     * OS's word and under anything this application's code or settings ask. {@code GuiApp} reads it from the suite's
+     * store ({@code SuiteGraphics}) and tells every tree it presents; it is also how a trial of simplified graphics
+     * is switched on and, if it did not help, off again, without touching what the application itself asked.
+     */
+    public Gui suiteGraphics(Boolean flat, Boolean reduced) {
+        flatShading.suite(flat);
+        reducedMotion.suite(reduced);
         applyMotionKnobs();
         requestFrame();
         return this;

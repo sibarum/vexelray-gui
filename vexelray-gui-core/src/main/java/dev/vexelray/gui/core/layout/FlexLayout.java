@@ -55,6 +55,9 @@ public final class FlexLayout {
         // Only a canvas larger than the window is a floor. One the window's size would count the strip a scrollbar
         // reserves on the other axis as overflow — content that fitted the window not fitting beside the bar.
         layoutBox(root, ctx, tm, canvasW > root.w ? canvasW : 0f, canvasH > root.h ? canvasH : 0f);
+        // Two scrollers along one axis, one filling the other, are two bars side by side that nobody asked for:
+        // said here, where the window and the canvas that may have caused it are both known.
+        NestedScroll.report(root, root.w, root.h, canvasW, canvasH);
     }
 
     /** Resolve {@code n}'s render scalars and place its children within its content box. Recurses. */
@@ -129,7 +132,8 @@ public final class FlexLayout {
         float neededH = Math.max(floorContentH, row ? need[1] : need[0]);
 
         // Overflow + reserve: a scrollbar on one axis reserves a strip on the other. Recompute once so reserving
-        // vertical space can reveal horizontal overflow and vice versa. Scrollbars appear purely from overflow.
+        // vertical space can reveal horizontal overflow and vice versa. Scrollbars appear purely from overflow
+        // (docs/reference/scrolling.md §1).
         float sb = scrollbarThickness(ctx);
         // A container that never said whether it scrolls scrolls only along an axis long enough to hold a scrollbar
         // worth having: a thumb is at least two thicknesses long, so below SENSIBLE_SCROLL of them it has nowhere to

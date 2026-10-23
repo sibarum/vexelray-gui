@@ -56,6 +56,43 @@ class AutomationTest {
         }
     };
 
+    /**
+     * A scroller is listed, named or not, and says which way it scrolls: an unnamed body scrolling inside a scrolling
+     * root was two scrollbars that the tree had no line for (docs/reference/scrolling.md §3).
+     */
+    @Test
+    void theTreeListsEveryScrollerAndItsAxes() {
+        try (Gui gui = deterministic()) {
+            Node body = gui.column().size(Length.FILL, Length.dp(300))
+                    .children(gui.box().size(Length.dp(100), Length.dp(1000)));
+            Node plain = gui.box().size(Length.FILL, Length.dp(50));
+            gui.root().children(body, plain);
+            gui.frame(W, H, NO_TEXT);
+
+            String tree = new Automation(gui).command("tree");
+            assertTrue(tree.contains("\n" + body.id() + " box [0,0 "), "an unnamed scroller has a line: " + tree);
+            assertTrue(tree.lines().anyMatch(l -> l.startsWith(body.id() + " box") && l.endsWith(" scrolls y")), tree);
+            assertFalse(tree.contains("\n" + plain.id() + " "), "a plain unnamed box still has none: " + tree);
+        }
+    }
+
+    /** Two scrollers along one axis, one filling the other, are two lines that both say so. */
+    @Test
+    void aScrollerInsideAScrollingRootIsTwoScrollingLines() {
+        try (Gui gui = deterministic()) {
+            Node body = gui.column().width(Length.FILL).height(Length.grow(1f))
+                    .children(gui.box().size(Length.dp(700), Length.dp(1500)));
+            gui.root().direction(dev.vexelray.gui.core.layout.LayoutEnums.Direction.COLUMN)
+                    .children(gui.box().size(Length.FILL, Length.dp(32)), body);
+            gui.minSize(Length.rem(40), Length.rem(50));   // 800 tall, under a 600 px window
+            gui.frame(W, H, NO_TEXT);
+
+            String tree = new Automation(gui).command("tree");
+            assertTrue(tree.lines().anyMatch(l -> l.startsWith(gui.root().id() + " box") && l.endsWith(" scrolls y")), tree);
+            assertTrue(tree.lines().anyMatch(l -> l.strip().startsWith(body.id() + " box") && l.endsWith(" scrolls y")), tree);
+        }
+    }
+
     @Test
     void findReportsRoleNameAndTheDurableLandmark() {
         try (Gui gui = deterministic()) {

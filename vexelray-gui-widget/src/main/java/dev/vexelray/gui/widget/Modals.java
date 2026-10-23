@@ -74,6 +74,9 @@ public final class Modals implements AutoCloseable {
     private static final int LINE_HEIGHT = 22;
     private static final int BUTTON_ROW = 60;
     private static final int CHAR_WIDTH = 8;       // rough advance, for guessing where the message wraps
+    private static final int BODY_PADDING = 18;    // the body's padding, left and right
+    private static final int BUTTON_PADDING = 18;  // a button's padding, left and right
+    private static final int BUTTON_GAP = 8;       // between two buttons
 
     private static final AtomicReference<Modals> INSTANCE = new AtomicReference<>();
 
@@ -121,7 +124,7 @@ public final class Modals implements AutoCloseable {
         this.buttonRow = gui.row()
                 .width(Length.FILL).height(Length.AUTO)
                 .justify(Justify.END).alignItems(AlignItems.CENTER)
-                .gap(Length.dp(8))
+                .gap(Length.dp(BUTTON_GAP))
                 .scroll(false, false);
         this.severity = dev.vexelray.gui.icons.IconView.of(gui, null).size(Length.rem(2f));
         severity.node().visible(false);
@@ -135,7 +138,7 @@ public final class Modals implements AutoCloseable {
                 .children(severity.node(), message);
         Node body = gui.column()
                 .width(Length.FILL).height(Length.grow(1))
-                .padding(Length.dp(18)).gap(Length.dp(16))
+                .padding(Length.dp(BODY_PADDING)).gap(Length.dp(16))
                 .scroll(false, false)
                 .children(said, buttonRow);
         gui.root().background(Role.PAGE).children(bar.node(), body);
@@ -345,7 +348,7 @@ public final class Modals implements AutoCloseable {
         Role label = spec.isDefault() ? Role.ON_ACTION : Role.INK;
         Node b = gui.text(spec.label())
                 .height(Length.dp(32))
-                .padding(Length.ZERO, Length.dp(18))
+                .padding(Length.ZERO, Length.dp(BUTTON_PADDING))
                 .background(fill)
                 .corner(Length.rem(0.5f))
                 .border(Length.rem(0.1f), Role.LINE)
@@ -360,9 +363,27 @@ public final class Modals implements AutoCloseable {
         return b;
     }
 
-    /** The dialog's width: what it asked for, or one that reads comfortably for a sentence or two. */
-    private static int width(Modal modal) {
-        return modal.width() > 0 ? modal.width() : WIDTH;
+    /**
+     * The dialog's width: what it asked for; or one that reads comfortably for a sentence or two, widened to its
+     * buttons when they need more. A button row wider than its window runs off the edge, and the button that falls
+     * off is usually the cancel, which is the one the user may most want.
+     */
+    static int width(Modal modal) {
+        return modal.width() > 0 ? modal.width() : Math.max(WIDTH, buttonsWidth(modal));
+    }
+
+    /**
+     * A guess at the width the buttons need, made the way {@link #height} guesses the message, and for the same reason:
+     * nothing is measured before the window exists. Each label at the average advance plus its padding and border, the
+     * gaps between them, and the body's padding either side.
+     */
+    static int buttonsWidth(Modal modal) {
+        java.util.List<Modal.Button> buttons = modal.buttons();
+        int w = 2 * BODY_PADDING + Math.max(0, buttons.size() - 1) * BUTTON_GAP;
+        for (Modal.Button b : buttons) {
+            w += b.label().length() * CHAR_WIDTH + 2 * BUTTON_PADDING + 2;
+        }
+        return w;
     }
 
     /**
@@ -375,7 +396,7 @@ public final class Modals implements AutoCloseable {
         if (modal.height() > 0) {
             return modal.height();
         }
-        int perLine = Math.max(1, (width(modal) - 2 * 18) / CHAR_WIDTH);
+        int perLine = Math.max(1, (width(modal) - 2 * BODY_PADDING) / CHAR_WIDTH);
         int lines = 0;
         for (String paragraph : modal.message().split("\n", -1)) {
             lines += Math.max(1, (paragraph.length() + perLine - 1) / perLine);

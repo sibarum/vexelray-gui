@@ -94,4 +94,24 @@ class ModalTest {
         go.action().run();
         assertEquals(1, runs.get());
     }
+
+    /**
+     * Three long labels used to run off a dialog sized for its message: the last button, usually the cancel, fell off
+     * the right edge. An unsized dialog is now at least as wide as its buttons need; one sized explicitly is not
+     * second-guessed.
+     */
+    @Test
+    void anUnsizedDialogIsWideEnoughForItsButtons() {
+        Modal two = Modal.of("Title", "Message").defaultButton("OK", () -> { }).cancelButton("Cancel", () -> { });
+        assertEquals(460, Modals.width(two), "short buttons leave the comfortable reading width alone");
+
+        Modal three = Modal.of("Title", "Message")
+                .defaultButton("Switch to simplified graphics", () -> { })
+                .button("Don't ask again", () -> { })
+                .cancelButton("Not now", () -> { });
+        assertTrue(Modals.width(three) >= Modals.buttonsWidth(three));
+        assertTrue(Modals.width(three) > 460, "and long ones widen it: " + Modals.width(three));
+
+        assertEquals(300, Modals.width(three.size(300, 200)), "an explicit size is the caller's call");
+    }
 }

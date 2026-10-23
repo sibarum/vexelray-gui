@@ -75,6 +75,11 @@ final class LoopTally implements LoopCounters {
         drew = true;
     }
 
+    /** Whether a window's frame has been emitted in the iteration in progress, not yet tallied. Loop thread. */
+    boolean drewThisIteration() {
+        return drew;
+    }
+
     /** Tally the iteration in progress, if anything in it is not tallied yet. Loop thread; idempotent. */
     void close() {
         if (rendered) {

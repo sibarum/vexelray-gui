@@ -64,6 +64,20 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
     private final NativePlatform platform;
     /** The OS's word on reduced motion, read once at startup and given to every tree ({@link #wireWake}). */
     private final Boolean systemReducedMotion;
+    /** The user's graphics choices for every VexelRay application, given to every tree ({@link #wireWake}). */
+    private SuiteGraphics suite;
+    /** Whether simplified graphics is on as a trial ({@link SlowFrames}), over whatever {@link #suite} says. */
+    private boolean graphicsTrial;
+    /** What asks the user about simplified graphics when frames are slow; null asks nothing. */
+    private volatile SlowFrames.Offer slowFramesOffer;
+    /** Watches what each frame costs, and offers simplified graphics to a machine that cannot keep up. */
+    private final SlowFrames slowFrames = new SlowFrames(new SlowFramesHost());
+    /**
+     * {@code -Dvexelray.debug.slowFrames=<ms>}: add that much to every frame drawn while boxes are shaded, and nothing
+     * once they are flat — a machine whose GPU the shading overwhelms, on one that it does not. How the slow-frames
+     * offer is tried end to end, prompt, trial and save, on hardware that never needs it. Zero (the default) is off.
+     */
+    private static final long DEBUG_SLOW_FRAME_NANOS = Long.getLong("vexelray.debug.slowFrames", 0L) * 1_000_000L;
     /**
      * What makes every OS window this application opens — see {@link #GuiApp(WindowConfig,
      * java.util.function.Function)}. The platform itself for an ordinary application; something else for a
@@ -330,6 +344,7 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
         CoreLooks.table(canvasShader.composition());
         this.platform = NativePlatform.current();
         this.systemReducedMotion = systemReducedMotion(platform);
+        this.suite = SuiteGraphics.read();
         this.windows = windows == null ? platform::createWindow : windows;
         this.instance = new VulkanInstance(config.title(), platform.requiredVulkanInstanceExtensions());
 
@@ -1606,13 +1621,88 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
      * blocks on the loop thread's message queue, and every window on this loop shares it, so one nudge
      * ends the block whichever tree asked for it.
      *
-     * <p>The tree is also told what the OS says about reduced motion, for the same reason and from the same place:
-     * this is where every tree the application drives is first seen, and only the platform can answer.
+     * <p>The tree is also told what the OS says about reduced motion, and what the user chose for every VexelRay
+     * application, for the same reason and from the same place: this is where every tree the application drives is
+     * first seen. A tree that arrives during a trial of simplified graphics joins the trial.
      */
     private void wireWake(Gui gui) {
         if (gui != null && wired.add(gui)) {
             gui.onWork(this::postWake);
             gui.systemReducedMotion(systemReducedMotion);
+            suiteGraphics(gui);
+        }
+    }
+
+    /** {@code gui}'s suite-wide graphics: the trial's while one runs, else what the user saved. */
+    private void suiteGraphics(Gui gui) {
+        if (graphicsTrial) {
+            gui.suiteGraphics(true, true);
+        } else {
+            suite.applyTo(gui);
+        }
+    }
+
+    /**
+     * Install what asks the user, when this application's frames are repeatedly too slow to draw five a second,
+     * whether to switch to simplified graphics ({@link SlowFrames}). The frame loop has no widgets to ask with, so the
+     * layer above installs the prompt; {@code vexelray-framework} does it for every application. Without one, a
+     * struggling machine is reported in the diagnostics and nothing is asked. {@code null} removes it.
+     */
+    public GuiApp slowFramesOffer(SlowFrames.Offer offer) {
+        this.slowFramesOffer = offer;
+        return this;
+    }
+
+    /** {@link SlowFrames}' side effects, on this loop: every tree, the suite's store, the loop's own queue. */
+    private final class SlowFramesHost implements SlowFrames.Host {
+        @Override
+        public boolean worthOffering() {
+            return !suite.offerRefused() && mainGui != null && !mainGui.simplifiedGraphics();
+        }
+
+        @Override
+        public void ask(long typicalFrameNanos) {
+            SlowFrames.Offer offer = slowFramesOffer;
+            if (offer == null) {
+                report("SlowFrames/no-offer", "nothing installed to ask the user",
+                        "an application on vexelray-framework gets the offer; one on GuiApp alone installs it with"
+                                + " slowFramesOffer");
+                return;
+            }
+            // Answered from whatever thread the prompt runs on, and acted on here, where the trees are.
+            offer.ask(mainGui, typicalFrameNanos, answer -> post(() -> slowFrames.answered(answer)));
+        }
+
+        @Override
+        public void trial(boolean on) {
+            graphicsTrial = on;
+            wired.forEach(GuiApp.this::suiteGraphics);
+        }
+
+        @Override
+        public void saveSimplified() {
+            try {
+                suite.saveSimplified();
+            } catch (java.io.UncheckedIOException e) {
+                report("SlowFrames/unsaved", "simplified graphics could not be saved", e.getMessage());
+            }
+            suite = suite.reread();
+            graphicsTrial = false;   // kept now as the saved choice, which says the same thing
+            wired.forEach(GuiApp.this::suiteGraphics);
+        }
+
+        @Override
+        public void refuseOffers() {
+            try {
+                suite.refuseOffers();
+            } catch (java.io.UncheckedIOException e) {
+                report("SlowFrames/unsaved", "the refusal could not be saved", e.getMessage());
+            }
+        }
+
+        @Override
+        public void report(String key, String what, String why) {
+            Diagnostics.dropped(key, what, why);
         }
     }
 
@@ -1763,6 +1853,14 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                 return true;
             });
             frame++;
+            if (tally.drewThisIteration()) {
+                if (DEBUG_SLOW_FRAME_NANOS > 0L && mainGui != null && !mainGui.flatShading()) {
+                    java.util.concurrent.locks.LockSupport.parkNanos(DEBUG_SLOW_FRAME_NANOS);
+                }
+                // What this frame cost the machine, start to presented, before the loop parks: a frame drawn is what
+                // simplified graphics would make cheaper, and an idle park is not slowness.
+                slowFrames.drawn(frameStarted, System.nanoTime() - frameStarted);
+            }
             if (running) {
                 // After presenting, never before: the frame the application just asked for is not the
                 // one to make it wait for. One call covers every window, because the wait is on this

@@ -4,10 +4,11 @@ package dev.vexelray.gui.core;
  * One of the graphics choices a user makes about how a tree is drawn — {@link Gui#flatShading} and
  * {@link Gui#reducedMotion} — and who gets the last word on it.
  *
- * <p>Three voices, in rising order: what the code or the user's settings asked for; the run's preset,
+ * <p>Four voices, in rising order: what the operating system says the user asked for there (for reduced motion; the
+ * OS has no word on shading); what the code or the user's settings asked for; the run's preset,
  * {@code -Dvexelray.simplifiedGraphics}, which speaks for every choice at once; and the run's own property for this
  * choice, {@code -Dvexelray.<key>}, which speaks for this one only. A run's word is final, so it is read once, when
- * the tree is made, and the code cannot talk over it.
+ * the tree is made, and the code cannot talk over it. The OS's word is only a default: anything asked says more.
  */
 final class GraphicsChoice {
 
@@ -16,7 +17,10 @@ final class GraphicsChoice {
 
     private final String key;
     private final Boolean run;
-    private volatile boolean asked;
+    /** What the code or the user's settings asked for; null until either does. */
+    private volatile Boolean asked;
+    /** What the OS says the user asked for; null where it has not been told, or cannot say. */
+    private volatile Boolean system;
 
     /** The choice saved under {@code key}, decided for this run by {@code vexelray.<key>} or the preset's property. */
     GraphicsChoice(String key) {
@@ -34,13 +38,22 @@ final class GraphicsChoice {
         asked = on;
     }
 
-    boolean asked() {
-        return asked;
+    /** What the OS says, the default until something asks; null for "cannot say". */
+    void system(Boolean on) {
+        system = on;
     }
 
-    /** Whether the choice is on: the run's word if it gave one, else what was asked. */
+    /** Whether the choice is on: the run's word if it gave one, else what was asked, else the OS's, else off. */
     boolean on() {
-        return run != null ? run : asked;
+        if (run != null) {
+            return run;
+        }
+        Boolean a = asked;
+        if (a != null) {
+            return a;
+        }
+        Boolean s = system;
+        return s != null && s;
     }
 
     /** The system property a run sets for {@code key}. */

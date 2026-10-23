@@ -62,6 +62,8 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
 
     // Shared engine context — one GPU bring-up serves every window.
     private final NativePlatform platform;
+    /** The OS's word on reduced motion, read once at startup and given to every tree ({@link #wireWake}). */
+    private final Boolean systemReducedMotion;
     /**
      * What makes every OS window this application opens — see {@link #GuiApp(WindowConfig,
      * java.util.function.Function)}. The platform itself for an ordinary application; something else for a
@@ -327,6 +329,7 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
         // to be left behind by the refusal: the look table checks it, and costs nothing to build without a GPU.
         CoreLooks.table(canvasShader.composition());
         this.platform = NativePlatform.current();
+        this.systemReducedMotion = systemReducedMotion(platform);
         this.windows = windows == null ? platform::createWindow : windows;
         this.instance = new VulkanInstance(config.title(), platform.requiredVulkanInstanceExtensions());
 
@@ -1602,10 +1605,23 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
      * <p>All of them wake the <em>main</em> window, which is not a simplification: {@code waitEvents}
      * blocks on the loop thread's message queue, and every window on this loop shares it, so one nudge
      * ends the block whichever tree asked for it.
+     *
+     * <p>The tree is also told what the OS says about reduced motion, for the same reason and from the same place:
+     * this is where every tree the application drives is first seen, and only the platform can answer.
      */
     private void wireWake(Gui gui) {
         if (gui != null && wired.add(gui)) {
             gui.onWork(this::postWake);
+            gui.systemReducedMotion(systemReducedMotion);
+        }
+    }
+
+    /** What the OS said about reduced motion when this application started; null where it cannot say. */
+    private static Boolean systemReducedMotion(NativePlatform platform) {
+        try {
+            return platform.reducedMotion().orElse(null);
+        } catch (RuntimeException e) {
+            return null;   // a platform that failed to answer has not answered: motion stays the application's
         }
     }
 

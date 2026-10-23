@@ -1637,6 +1637,22 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
+     * What the operating system says about reduced motion — Windows' "Animation effects" off, macOS's "Reduce
+     * motion", a Linux desktop's animations disabled — as {@code dev.vexelray.os.NativePlatform#reducedMotion}
+     * reports it; {@code null} where it cannot say. The default {@link #reducedMotion()} has until the code or the
+     * user's settings ask, because a user who needs motion reduced has already said so once, to the OS.
+     *
+     * <p>{@code GuiApp} tells every tree it presents; a tree with no window (a test, a headless capture) is never
+     * told, and keeps motion. Safe from any thread; takes effect from the next frame.
+     */
+    public Gui systemReducedMotion(Boolean reduced) {
+        reducedMotion.system(reduced);
+        applyMotionKnobs();
+        requestFrame();
+        return this;
+    }
+
+    /**
      * Simplified graphics: {@link #flatShading(boolean) flat shading} and {@link #reducedMotion(boolean) reduced
      * motion} together, the setting for a machine that should spend as little as it can on drawing.
      */
@@ -1652,17 +1668,24 @@ public final class Gui implements AutoCloseable {
 
     /**
      * The user's saved graphics choices from {@code settings}: {@link #SIMPLIFIED_GRAPHICS} first, as both, then
-     * {@link #FLAT_SHADING} and {@link #REDUCED_MOTION}, each over it. A key the store does not have leaves its
-     * choice as it is.
+     * {@link #FLAT_SHADING} and {@link #REDUCED_MOTION}, each over it. A key the store does not have asks nothing,
+     * so its choice stays as it was: what the code asked, or else the OS's default.
      */
     public Gui graphics(dev.vexelray.gui.core.app.Settings settings) {
-        boolean flat = flatShading.asked();
-        boolean still = reducedMotion.asked();
         if (settings.has(SIMPLIFIED_GRAPHICS)) {
-            flat = still = settings.getBoolean(SIMPLIFIED_GRAPHICS, false);
+            boolean both = settings.getBoolean(SIMPLIFIED_GRAPHICS, false);
+            flatShading.ask(both);
+            reducedMotion.ask(both);
         }
-        flatShading.ask(settings.getBoolean(FLAT_SHADING, flat));
-        return reducedMotion(settings.getBoolean(REDUCED_MOTION, still));
+        if (settings.has(FLAT_SHADING)) {
+            flatShading.ask(settings.getBoolean(FLAT_SHADING, false));
+        }
+        if (settings.has(REDUCED_MOTION)) {
+            reducedMotion.ask(settings.getBoolean(REDUCED_MOTION, false));
+        }
+        applyMotionKnobs();
+        requestFrame();
+        return this;
     }
 
     /** Hand the dispatcher the motion knobs as they apply now: what was asked for, or none while motion is reduced. */

@@ -103,6 +103,42 @@ class GraphicsChoicesTest {
     }
 
     @Test
+    void theOsSaysWhatReducedMotionIsUntilSomethingAsks(@TempDir Path dir) {
+        try (Gui gui = gui()) {
+            gui.systemReducedMotion(true);
+            assertTrue(gui.reducedMotion(), "the user told the OS, and that is the default");
+            assertFalse(gui.flatShading(), "the OS has no word on shading");
+
+            gui.graphics(Settings.at(dir.resolve("none.properties")));
+            assertTrue(gui.reducedMotion(), "settings without the key ask nothing, so the OS still decides");
+
+            gui.reducedMotion(false);
+            assertFalse(gui.reducedMotion(), "the code asking says more than the OS");
+            gui.systemReducedMotion(true);
+            assertFalse(gui.reducedMotion(), "and once asked, the OS is only a default no longer in use");
+        }
+        try (Gui gui = gui()) {
+            gui.systemReducedMotion(true)
+                    .graphics(Settings.at(dir.resolve("s.properties")).putBoolean(Gui.REDUCED_MOTION, false));
+            assertFalse(gui.reducedMotion(), "the user's own setting says more than the OS");
+        }
+        try (Gui gui = gui()) {
+            gui.systemReducedMotion(null);
+            assertFalse(gui.reducedMotion(), "an OS that cannot say leaves motion on");
+        }
+    }
+
+    @Test
+    void theRunSaysMoreThanTheOs() {
+        withProperties(() -> {
+            System.setProperty(Gui.REDUCED_MOTION_PROPERTY, "false");
+            try (Gui gui = gui()) {
+                assertFalse(gui.systemReducedMotion(true).reducedMotion());
+            }
+        });
+    }
+
+    @Test
     void theFocusRingArrivesWholeWithMotionReducedAndFadesAgainWithout() {
         try (Gui gui = gui()) {
             Node a = gui.box().width(Length.rem(1)).height(Length.rem(1));

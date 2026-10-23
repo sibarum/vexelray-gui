@@ -213,6 +213,10 @@ public final class Gui implements AutoCloseable {
     private final Metrics metrics = new Metrics();
     /** Where nodes are drawn relative to where layout put them; NONE until a motion source is attached. */
     private volatile LayoutMotion motion = LayoutMotion.NONE;
+    /** Whether the last frame's displacement walk left any node displaced, so this one owes a walk to undo it. */
+    private boolean displaced;
+    /** How many displacement walks the frame has made: a test's evidence that a still tree walks nothing. */
+    private long displaceWalks;
     /** The scroll glide's half-life and the focus fade's duration as asked for; applied unless simplified. */
     private volatile long glideNanos;
     private volatile long focusFadeNanos;
@@ -2053,6 +2057,15 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
+     * How many times the frame has walked the tree to displace it ({@link LayoutMotion}). Public, unlike
+     * {@link #presenceWalks}, because the motion sources it measures live in other modules and their tests are the
+     * ones that can say whether a still tree walks nothing.
+     */
+    public long displaceWalks() {
+        return displaceWalks;
+    }
+
+    /**
      * Attach the source that brings an arriving node up from nothing — see {@link EnterMotion}.
      * {@link EnterMotion#NONE} (the default) shows every node fully the frame it is added. One source per tree, last
      * call wins, from the next edit on.
@@ -2222,12 +2235,23 @@ public final class Gui implements AutoCloseable {
             // so a transition starts from the truth; displacing then rewrites them, so publish, the renderer and
             // next frame's hit-testing all see the same drawn position.
             boolean moving = false;
-            if (motion != LayoutMotion.NONE) {
+            LayoutMotion motionNow = motion;
+            if (motionNow != LayoutMotion.NONE) {
                 if (geometryChanged) {
-                    Displacement.settle(r, motion);
+                    // Settle is where moves are detected and reported, so it runs on every layout pass whatever
+                    // the source says; a move it reports makes the source active before it is asked below.
+                    Displacement.settle(r, motionNow);
                 }
-                moving = Displacement.displace(r, motion);
+                // Walked while the source has something in flight, and once more after the frame that last found
+                // anything displaced, which is the walk that writes the resting positions back. Past that every
+                // node already stands at its recorded position, layout or no layout, so the walk would rewrite
+                // each one with itself: hover frames and idle wakes skip it.
+                if (displaced || motionNow.active()) {
+                    displaceWalks++;
+                    moving = Displacement.displace(r, motionNow);
+                }
             }
+            displaced = moving;
             // Arrival and departure, in the same stage and for the same reason: everything after this reads what
             // is drawn. Walked only while something is arriving or leaving — an edit that started one says so, and
             // a walk that found one asks for the next — and the walk that finds everything at rest is the one that

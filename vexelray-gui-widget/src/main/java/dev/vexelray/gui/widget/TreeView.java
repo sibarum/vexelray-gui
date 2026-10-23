@@ -323,6 +323,12 @@ public final class TreeView<T> implements AutoCloseable {
     // one depth align whether or not they can open.
     private static final Icon DISCLOSURE = Icon.CHEVRON_RIGHT;
 
+    /** The row's inset from the tree's edge at each end, which on the left is part of the disclosure's target. */
+    private static final Length ROW_INSET = Length.dp(4);
+
+    /** The gap between a row's parts, in em. The indent carries one more, where it used to sit beside the chevron. */
+    private static final float GAP_EM = 0.25f;
+
     private static final Shortcut CUT = Shortcut.of(Key.X, Modifier.CONTROL);
     private static final Shortcut COPY = Shortcut.of(Key.C, Modifier.CONTROL);
     private static final Shortcut PASTE = Shortcut.of(Key.V, Modifier.CONTROL);
@@ -342,7 +348,7 @@ public final class TreeView<T> implements AutoCloseable {
         final Node spacer;       // the indent, which is depth and therefore changes when the row is reseated
         final Node entry;        // column: [rowNode, kidsBox]
         final Node rowNode;      // the pointer target and the styled strip
-        final Node disclosure;   // the chevron's column, the click target
+        final Node disclosure;   // the row's start, edge to chevron: the click target that opens and shuts
         final IconView chevron;  // the chevron, turned by the subtree's openness
         final Node checkBox;     // the tick box, out of the layout until the tree is checkable
         final IconView checkMark; // what is drawn inside it: a tick for ON, a bar for MIXED
@@ -352,6 +358,9 @@ public final class TreeView<T> implements AutoCloseable {
         final Node kidsBox;     // hidden until expanded; children entries append here, never anywhere else
         boolean expanded;
         boolean materialized;    // whether Source.children has been asked
+        /** The pointer's state on the row as a whole, and whether it is on the disclosure. Guarded by the tree. */
+        InteractionState pointer = InteractionState.NORMAL;
+        boolean onDisclosure;
         final List<Row> children = new ArrayList<>();
 
         /**
@@ -371,17 +380,29 @@ public final class TreeView<T> implements AutoCloseable {
             this.depth = parent == null ? 0 : parent.depth + 1;
             this.canExpand = source.hasChildren(item);
 
-            this.spacer = gui.box().width(Length.rem(depth * INDENT_EM)).scroll(false, false);
+            this.spacer = gui.box().width(indent(depth)).scroll(false, false);
             // Turned, never moved: hit-inert, so a click on the column reaches the column whatever angle it is at.
             this.chevron = IconView.of(gui, canExpand ? DISCLOSURE : null).size(Length.rem(0.8f)).tint(Role.DIM);
             chevron.node().hitInert(true);
-            this.disclosure = gui.row()
+            Node chevronBox = gui.row()
                     .width(Length.rem(1.2f))
                     .height(Length.rem(1.2f))
                     .justify(LayoutEnums.Justify.CENTER)
                     .alignItems(LayoutEnums.AlignItems.CENTER)
                     .scroll(false, false)
+                    .hitInert(true)
                     .children(chevron.node());
+            // The disclosure is everything from the row's edge to the chevron, the full height of the row: the indent
+            // too, because it is empty and a click a pixel short of a chevron should not do something else entirely.
+            // It lights on its own while the pointer is on it, and the row does not, so where one click ends and the
+            // other begins is drawn before either is made.
+            this.disclosure = gui.row()
+                    .height(Length.rem(ROW_EM))
+                    .corner(Length.rem(0.4f))
+                    .alignItems(LayoutEnums.AlignItems.CENTER)
+                    .scroll(false, false)
+                    .children(gui.box().width(ROW_INSET).hitInert(true), spacer, chevronBox);
+            spacer.hitInert(true);
             // The checkbox: a box, with the set's tick or bar drawn in it. The mark is a field, so it is exact at
             // every zoom and greys or recolours by its tint; the box is still a box, centred in the row rather than
             // on a baseline.
@@ -446,14 +467,15 @@ public final class TreeView<T> implements AutoCloseable {
                     .width(Length.FILL)
                     .height(Length.rem(ROW_EM))
                     .corner(Length.rem(0.4f))
-                    .padding(Length.ZERO, Length.dp(4))
-                    .gap(Length.rem(0.25f))
+                    .gap(Length.rem(GAP_EM))
                     // Centred rather than stretched: the disclosure and the label are text and centre
                     // themselves inside whatever height they are given, but a checkbox is a box, and a box
                     // stretched to the row height is not a checkbox.
                     .alignItems(LayoutEnums.AlignItems.CENTER)
                     .scroll(false, false)
-                    .children(spacer, disclosure, checkBox, icon.node(), labelBox);
+                    // No padding: the inset at the left is the disclosure's own, so the target reaches the edge,
+                    // and the one at the right is a box of its own to match.
+                    .children(disclosure, checkBox, icon.node(), labelBox, gui.box().width(ROW_INSET));
             if (rowCursor != null) {
                 gui.cursor(rowNode, rowCursor);
             }
@@ -490,17 +512,21 @@ public final class TreeView<T> implements AutoCloseable {
             // Registered whatever the row is today, and guarded when it runs rather than when it is built: a
             // leaf can gain children (a reconcile after a drop moved one into it), and a handler that was never
             // installed cannot be installed later without rebuilding the row and losing everything else on it.
+            // A leaf's disclosure is only indent, and a click there is a click on the row, as it was before the
+            // indent was part of the disclosure.
             gui.onClick(disclosure, () -> {
-                if (!canExpand) {
-                    return;
-                }
                 select(this, true);
-                toggle(this);
+                if (canExpand) {
+                    toggle(this);
+                } else {
+                    onClick.accept(item);
+                }
             });
             gui.onState(rowNode, state -> {
                 restyle(this, state);
                 hovered(this, state != InteractionState.NORMAL);
             });
+            gui.onState(disclosure, state -> disclosureHovered(this, state != InteractionState.NORMAL));
             // The full name, in place, for a row that cuts it off — and nothing for one that does not. Unclip asks
             // at hover time rather than being kept up to date, so a row costs one state observer until someone
             // rests on it: whether a name is cut depends on the depth, the tree's width and the zoom.
@@ -519,7 +545,7 @@ public final class TreeView<T> implements AutoCloseable {
             int now = newParent == null ? 0 : newParent.depth + 1;
             if (now != depth) {
                 depth = now;
-                spacer.width(Length.rem(depth * INDENT_EM));
+                spacer.width(indent(depth));
             }
         }
 
@@ -2328,20 +2354,42 @@ public final class TreeView<T> implements AutoCloseable {
 
     private void restyle(Row row, InteractionState state) {
         synchronized (this) {
+            row.pointer = state;
             styleLocked(row, state);
         }
     }
 
+    /**
+     * The pointer coming onto or off a row's disclosure. The row's own state arrives separately and in either order,
+     * so each is kept and the row is styled from both.
+     */
+    private void disclosureHovered(Row row, boolean over) {
+        synchronized (this) {
+            row.onDisclosure = over;
+            styleLocked(row, row.pointer);
+        }
+    }
+
     private void styleLocked(Row row, InteractionState state) {
+        // The disclosure lights instead of the row, never with it: one of them is what a click there would do, and
+        // the quiet fill whatever the tree's hover, since opening a branch is cheap even where choosing a row is not.
+        boolean opener = row.onDisclosure && row.canExpand;
+        row.disclosure.background(opener ? Role.PANEL : null);
+        row.chevron.tint(opener ? Role.INK : Role.DIM);
         if (row == selected) {
             row.rowNode.background(Role.SELECTION);
             row.label.textColor(Role.ACCENT);
         } else {
             // Transparent at rest, so an unselected row is the well it sits in rather than a rectangle of its own.
-            boolean over = state != InteractionState.NORMAL;
+            boolean over = state != InteractionState.NORMAL && !opener;
             row.rowNode.background(over ? hoverFill : null);
             row.label.textColor(over ? hoverInk : Role.INK);
         }
+    }
+
+    /** The width of the indent at {@code depth}, with the gap that sets it off from the chevron. */
+    private static Length indent(int depth) {
+        return Length.rem(depth * INDENT_EM + GAP_EM);
     }
 
     /**

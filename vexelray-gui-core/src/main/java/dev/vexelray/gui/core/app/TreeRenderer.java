@@ -1017,9 +1017,26 @@ public final class TreeRenderer {
         float cullHi = clip ? settledViewY(n) + n.viewH : Float.POSITIVE_INFINITY;
         int selLo = Math.min(n.selectStart(), n.selectEnd());
         int selHi = Math.max(n.selectStart(), n.selectEnd());
-        // The face of every character, resolved once for the node — the same resolution the measurer made, so a
-        // bold run is drawn in the face whose advances placed it.
-        int[] faceIds = faces.faceIds(new Styling(n.font(), n.fontWeight(), n.fontSlope(), spans), s);
+        // The chars any surviving line covers. Everything per-character below is resolved over this range only:
+        // the culling bounds what is drawn, and it has to bound what is computed for drawing too, or a long
+        // document costs its whole length every frame for the screenful it shows.
+        int visLo = Integer.MAX_VALUE;
+        int visHi = 0;
+        for (TextMetrics.VisualLine line : m.lines()) {
+            if (line.top() + line.height() < cullLo || line.top() > cullHi) {
+                continue;
+            }
+            visLo = Math.min(visLo, line.start());
+            visHi = Math.max(visHi, line.end());
+        }
+        // One pass over the document's spans for the frame; each line then narrows this, not the whole list. The
+        // lines' own bounds, unclamped, so a line narrows exactly as it did from the full list.
+        java.util.List<Span> visibleSpans = spansOn(spans, visLo, visHi);
+        visLo = Math.max(0, Math.min(visLo, s.length()));
+        visHi = Math.max(visLo, Math.min(visHi, s.length()));
+        // The face of every visible character — the same resolution the measurer made, so a bold run is drawn in
+        // the face whose advances placed it. Indexed from visLo.
+        int[] faceIds = faces.faceIds(new Styling(n.font(), n.fontWeight(), n.fontSlope(), spans), visLo, visHi);
         for (TextMetrics.VisualLine line : m.lines()) {
             if (line.top() + line.height() < cullLo || line.top() > cullHi) {
                 continue;
@@ -1027,7 +1044,7 @@ public final class TreeRenderer {
             // Narrow the span set to this line once: drawLineText consults the spans per character run, so
             // handing it the whole document's spans makes a densely highlighted document O(chars x spans)
             // per frame. Intersecting here keeps that inner loop proportional to what is on the line.
-            java.util.List<Span> lineSpans = spansOn(spans, line);
+            java.util.List<Span> lineSpans = spansOn(visibleSpans, line.start(), line.end());
             for (Span sp : lineSpans) {
                 if (sp.bg() != null) {
                     fillLineRange(line, sp.start(), sp.end(), fade(sp.bg()), canvas);
@@ -1036,7 +1053,7 @@ public final class TreeRenderer {
             if (selHi > selLo) {
                 fillLineRange(line, selLo, selHi, fade(selection), canvas);
             }
-            drawLineText(n, s, line, lineSpans, faceIds, canvas);
+            drawLineText(n, s, line, lineSpans, faceIds, visLo, canvas);
             drawMarks(n, s, line, canvas);
             for (Span sp : lineSpans) {
                 if (sp.underline()) {
@@ -1083,14 +1100,17 @@ public final class TreeRenderer {
         canvas.popClip();
     }
 
-    /** The spans whose range intersects {@code line} — the only ones any per-line drawing can need. */
-    private static java.util.List<Span> spansOn(java.util.List<Span> spans, TextMetrics.VisualLine line) {
+    /**
+     * The spans whose range intersects {@code [start, end)}, in their list order — the order is what decides which
+     * of two overlapping spans paints last, so the filter keeps it.
+     */
+    private static java.util.List<Span> spansOn(java.util.List<Span> spans, int start, int end) {
         if (spans.isEmpty()) {
             return spans;
         }
         java.util.List<Span> out = new java.util.ArrayList<>();
         for (Span sp : spans) {
-            if (sp.start() < line.end() && sp.end() > line.start()) {
+            if (sp.start() < end && sp.end() > start) {
                 out.add(sp);
             }
         }
@@ -1115,16 +1135,16 @@ public final class TreeRenderer {
      * pushes what follows it exactly as far as the metrics said.
      */
     private void drawLineText(RetainedNode n, String s, TextMetrics.VisualLine line,
-                                     java.util.List<Span> spans, int[] faceIds, Canvas canvas) {
+                                     java.util.List<Span> spans, int[] faceIds, int faceFrom, Canvas canvas) {
         int from = Math.max(0, line.start());
         int to = Math.min(s.length(), line.end());
         int i = from;
         Color base = inkOf(n);
         while (i < to) {
             Color fg = fgAt(spans, i, base);
-            int face = faceIds[i];
+            int face = faceIds[i - faceFrom];
             int j = i + 1;
-            while (j < to && faceIds[j] == face && java.util.Objects.equals(fgAt(spans, j, base), fg)) {
+            while (j < to && faceIds[j - faceFrom] == face && java.util.Objects.equals(fgAt(spans, j, base), fg)) {
                 j++;
             }
             TextLayout text = faces.layout(face);

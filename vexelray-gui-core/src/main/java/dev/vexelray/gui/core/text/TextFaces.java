@@ -82,7 +82,16 @@ public final class TextFaces implements TextMeasurer {
      * two chars share one. Unstyled text is the node's face throughout.
      */
     public int[] faceIds(Styling style, String text) {
-        int n = text.length();
+        return faceIds(style, 0, text.length());
+    }
+
+    /**
+     * The face of every char in {@code [from, to)} under {@code style}, by id: element {@code k} is char
+     * {@code from + k}, and the array equals that slice of {@link #faceIds(Styling, String)}. The renderer asks only
+     * for the chars it will draw, so a long document's per-frame cost follows what is on screen, not its length.
+     */
+    public int[] faceIds(Styling style, int from, int to) {
+        int n = Math.max(0, to - from);
         int[] ids = new int[n];
         FontSet.Face base = face(style);
         if (style.uniform()) {
@@ -90,10 +99,22 @@ public final class TextFaces implements TextMeasurer {
             return ids;
         }
         String family = family(style.font());
-        for (int i = 0; i < n; i++) {
-            int w = style.weightAt(i);
-            FontSet.Slope s = style.slopeAt(i);
-            ids[i] = w == style.weight() && s == style.slope() ? base.id() : set.face(family, w, s).id();
+        int[] weights = new int[n];
+        FontSet.Slope[] slopes = new FontSet.Slope[n];
+        style.paint(from, from + n, weights, slopes);
+        // Runs of one style are long, so remember the last style's face rather than asking the set per char.
+        int lastW = style.weight();
+        FontSet.Slope lastS = style.slope();
+        int lastId = base.id();
+        for (int k = 0; k < n; k++) {
+            int w = weights[k];
+            FontSet.Slope s = slopes[k];
+            if (w != lastW || s != lastS) {
+                lastW = w;
+                lastS = s;
+                lastId = w == style.weight() && s == style.slope() ? base.id() : set.face(family, w, s).id();
+            }
+            ids[k] = lastId;
         }
         return ids;
     }

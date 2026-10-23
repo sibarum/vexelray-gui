@@ -68,4 +68,31 @@ public record Styling(Object font, int weight, FontSet.Slope slope, List<Span> s
         }
         return sl;
     }
+
+    /**
+     * The weight and slope of every char in {@code [from, to)}, written to {@code weights[i - from]} and
+     * {@code slopes[i - from]} — {@link #weightAt} and {@link #slopeAt} for the whole range at once.
+     *
+     * <p>Spans are not ordered by offset, and the last one over a char wins, so this paints: the node's own style
+     * first, then each span in list order over its part of the range. The cost is one pass over the spans plus the
+     * chars they paint inside the range — never the range times the spans, which is what asking per char costs.
+     */
+    public void paint(int from, int to, int[] weights, FontSet.Slope[] slopes) {
+        int n = to - from;
+        java.util.Arrays.fill(weights, 0, n, weight);
+        java.util.Arrays.fill(slopes, 0, n, slope);
+        for (Span s : spans) {
+            int lo = Math.max(from, s.start());
+            int hi = Math.min(to, s.end());
+            if (hi <= lo) {
+                continue;
+            }
+            if (s.weight() != 0) {
+                java.util.Arrays.fill(weights, lo - from, hi - from, s.weight());
+            }
+            if (s.slope() != null) {
+                java.util.Arrays.fill(slopes, lo - from, hi - from, s.slope());
+            }
+        }
+    }
 }

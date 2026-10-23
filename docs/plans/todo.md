@@ -1247,13 +1247,13 @@ mouse. Automation could install a `PointerWarp` that moves its own `Cursor` inst
 Both are costs of `3844bff` (EnterMotion, ExitMotion, Presence), found reading it after it landed. Neither changes
 what is drawn; both are frame-loop work the rules say should not be there.
 
-### 10.1 The presence walk allocates a list every frame something arrives or leaves
+### 10.1 ~~The presence walk allocates a list every frame something arrives or leaves~~ — **Done** (2026-10-23): one `gone` list on the `Gui`, cleared per walk
 
 `Gui`'s frame builds `new ArrayList<>()` for `Displacement.present` to collect finished departures into, on every
 frame the walk runs, which is every frame of an arrival or a departure. The frame loop is not to allocate. Keep one
 list on the `Gui` and clear it per walk, as `Reconciler.departed` already is.
 
-### 10.2 An arrival with no enter motion still costs a whole-tree walk
+### 10.2 ~~An arrival with no enter motion still costs a whole-tree walk~~ — **Done** (2026-10-23): `attached` sets the flag only for a motion other than `NONE` or a node coming back; `EnterExitTest` counts the walks
 
 `Reconciler.attached` sets `presenceDirty` for every node that joins a laid-out parent, whatever `enters` is, so
 with `EnterMotion.NONE` attached (the default) each frame that adds a node walks the whole tree once to write

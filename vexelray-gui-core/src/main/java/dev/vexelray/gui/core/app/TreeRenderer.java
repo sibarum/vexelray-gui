@@ -104,6 +104,12 @@ public final class TreeRenderer {
     private final Theme theme;
     /** The colour each node is drawn in on its way to the one it was given. */
     private PaintMotion paint = PaintMotion.NONE;
+    /**
+     * Simplified graphics ({@code Gui.simplifiedGraphics}): every box this frame is drawn flat — a lit fill plain, no
+     * shadow — and letterpressed text once. Decided here, before a look is chosen, so a flat box asks for one of the
+     * looks that already exist and the static cache below needs no mode in its key.
+     */
+    private boolean simplified;
     private final FocusState focus;
     private final LayoutContext ctx;
     /** The tree's top node, which hosts a ring that no clipping ancestor does. */
@@ -176,7 +182,8 @@ public final class TreeRenderer {
         Viewport v = gui.viewport().value();
         LayoutContext ctx = new LayoutContext(gui.rootEmPx(), gui.zoom().value(), gui.dpi().value(),
                 v == null ? 0f : v.width(), v == null ? 0f : v.height());
-        emit(node, canvas, faces, gui.drawnTheme(), gui.focusState(), ctx, gui.paintMotion());
+        emit(node, canvas, faces, gui.drawnTheme(), gui.focusState(), ctx, gui.paintMotion(),
+                gui.simplifiedGraphics());
     }
 
     /**
@@ -192,8 +199,18 @@ public final class TreeRenderer {
     /** As {@link #emit(RetainedNode, Canvas, TextFaces, Theme, FocusState, LayoutContext)}, colours via {@code paint}. */
     public static void emit(RetainedNode node, Canvas canvas, TextFaces faces, Theme theme, FocusState focus,
                             LayoutContext ctx, PaintMotion paint) {
+        emit(node, canvas, faces, theme, focus, ctx, paint, false);
+    }
+
+    /**
+     * As {@link #emit(RetainedNode, Canvas, TextFaces, Theme, FocusState, LayoutContext, PaintMotion)}, flat when
+     * {@code simplified} — see {@code Gui.simplifiedGraphics}: lit fills drawn plain, no shadows, letterpress once.
+     */
+    public static void emit(RetainedNode node, Canvas canvas, TextFaces faces, Theme theme, FocusState focus,
+                            LayoutContext ctx, PaintMotion paint, boolean simplified) {
         TreeRenderer renderer = new TreeRenderer(theme == null ? Theme.DARK : theme, faces, focus, ctx);
         renderer.paint = paint == null ? PaintMotion.NONE : paint;
+        renderer.simplified = simplified;
         renderer.top = node;
         renderer.host = node;
         renderer.walk(node, canvas);
@@ -739,9 +756,9 @@ public final class TreeRenderer {
         canvas.popClip();
     }
 
-    private static final int NO_FILL = 0;
-    private static final int PLAIN_FILL = 1;
-    private static final int LIT_FILL = 2;
+    static final int NO_FILL = 0;
+    static final int PLAIN_FILL = 1;
+    static final int LIT_FILL = 2;
 
     /**
      * The looks a node's box is drawn with, by which of its parts it has: border or not, no fill or a plain or a lit
@@ -749,7 +766,22 @@ public final class TreeRenderer {
      */
     private static final dev.vexelray.canvas.shadelet.Look[] BOX_LOOKS = new dev.vexelray.canvas.shadelet.Look[12];
 
-    private static dev.vexelray.canvas.shadelet.Look boxLook(boolean border, int fill, boolean shadow) {
+    /** {@code fill} as simplified graphics draws it: a lit fill plain, anything else as it is. */
+    static int fillDrawn(int fill, boolean simplified) {
+        return simplified && fill == LIT_FILL ? PLAIN_FILL : fill;
+    }
+
+    /** Whether a box asked to cast a shadow casts one: never in simplified graphics. */
+    static boolean shadowDrawn(boolean shadow, boolean simplified) {
+        return shadow && !simplified;
+    }
+
+    /** Whether letterpressed text is pressed (three passes) or drawn once, as simplified graphics draws it. */
+    static boolean letterpressDrawn(boolean sunken, boolean simplified) {
+        return sunken && !simplified;
+    }
+
+    static dev.vexelray.canvas.shadelet.Look boxLook(boolean border, int fill, boolean shadow) {
         int key = (border ? 1 : 0) + 2 * fill + 6 * (shadow ? 1 : 0);   // 2 x 3 x 2, densely
         dev.vexelray.canvas.shadelet.Look look = BOX_LOOKS[key];
         if (look == null) {
@@ -778,8 +810,8 @@ public final class TreeRenderer {
 
     /** A node's box: {@link #box(Canvas, float, float, float, float, float, float, Color, float, int, Color, float,
      *  float, Color, float)} at its own rect and corners, a lit fill with the node's gentle gradient. */
-    private static void box(Canvas canvas, RetainedNode n, Color border, float width, int fill, Color fillColour,
-                            float bevel, Color shadow, float lift) {
+    private void box(Canvas canvas, RetainedNode n, Color border, float width, int fill, Color fillColour,
+                     float bevel, Color shadow, float lift) {
         box(canvas, n.x, n.y, n.w, n.h, n.cornerPx, n.cornerBottomPx, border, width, fill, fillColour, bevel, 0.05f,
                 shadow, lift);
     }
@@ -789,10 +821,20 @@ public final class TreeRenderer {
      * its colour; a lit fill bevelled {@code bevel} wide with a vertical {@code gradient}), its shadow ({@code shadow}
      * null for none) at {@code lift}, front to back, every value in the element's record in that order. A node's box,
      * and the renderer's own furniture: the plate, the focus ring, a scrollbar's grip.
+     *
+     * <p>Every box passes here, so this is where simplified graphics flattens them: a lit fill drawn plain and the
+     * shadow dropped, before the record is written and the look chosen.
      */
-    private static void box(Canvas canvas, float x, float y, float w, float h, float rTop, float rBottom,
-                            Color border, float width, int fill, Color fillColour, float bevel, float gradient,
-                            Color shadow, float lift) {
+    private void box(Canvas canvas, float x, float y, float w, float h, float rTop, float rBottom,
+                     Color border, float width, int fill, Color fillColour, float bevel, float gradient,
+                     Color shadow, float lift) {
+        fill = fillDrawn(fill, simplified);
+        if (!shadowDrawn(shadow != null, simplified)) {
+            shadow = null;
+        }
+        if (border == null && fill == NO_FILL && shadow == null) {
+            return;   // a shadow was all it had
+        }
         float[] v = new float[16];
         int k = 0;
         if (border != null) {
@@ -1160,7 +1202,7 @@ public final class TreeRenderer {
             // Runs are split on the unfaded colour: the fade is uniform across the line, so it cannot merge or
             // divide a run, and comparing before it keeps the grouping independent of the current opacity.
             Color faded = fade(fg);
-            if (n.textSunken(theme)) {
+            if (letterpressDrawn(n.textSunken(theme), simplified)) {
                 // Letterpress: the press depth scales with the type size, so the effect survives zoom.
                 canvas.textSunken(text, s.substring(i, j), x, line.top(), wRun, line.height(), style, faded,
                         Math.max(1f, n.textSizePx * 0.07f));

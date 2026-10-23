@@ -26,6 +26,9 @@ final class CaretBlink {
 
     private static final Map<Gui, CaretBlink> CLOCKS = new ConcurrentHashMap<>();
 
+    /** Whose carets these are: asked each half-period whether it is in simplified graphics, which shows them steady. */
+    private final Gui gui;
+
     /** One registered caret: the node to drive, and whether its owner currently holds focus. */
     private record Entry(Node node, BooleanSupplier focused) {
     }
@@ -44,7 +47,8 @@ final class CaretBlink {
         void close();
     }
 
-    private CaretBlink() {
+    private CaretBlink(Gui gui) {
+        this.gui = gui;
     }
 
     /**
@@ -52,7 +56,7 @@ final class CaretBlink {
      * only while focused, so an unfocused field publishes no mutations and costs the frame loop nothing.
      */
     static Registration register(Gui gui, Node node, BooleanSupplier focused) {
-        CaretBlink clock = CLOCKS.computeIfAbsent(gui, g -> new CaretBlink());
+        CaretBlink clock = CLOCKS.computeIfAbsent(gui, CaretBlink::new);
         Entry entry = new Entry(node, focused);
         clock.entries.add(entry);
         clock.ensureRunning();
@@ -86,7 +90,8 @@ final class CaretBlink {
             while (!entries.isEmpty()) {
                 Thread.sleep(BLINK_MILLIS);
                 phase = !phase;
-                boolean on = phase;
+                // Simplified graphics turns all motion off, and a blink is motion: the caret stays on.
+                boolean on = phase || gui.simplifiedGraphics();
                 for (Entry e : entries) {
                     if (e.focused().getAsBoolean()) {
                         e.node().caretOn(on);

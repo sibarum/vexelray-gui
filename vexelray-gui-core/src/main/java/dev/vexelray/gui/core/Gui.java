@@ -221,6 +221,10 @@ public final class Gui implements AutoCloseable {
     private volatile ExitMotion exitMotion = ExitMotion.NONE;
     /** Whether the last frame found something arriving or leaving, so this one must walk for presence again. */
     private boolean presencing;
+    /** What a presence walk collects finished departures into: one list, cleared per walk, so the frame allocates none. */
+    private final java.util.List<RetainedNode> gone = new java.util.ArrayList<>();
+    /** How many presence walks the frame has made: a test's evidence that an arrival with no motion walks nothing. */
+    private long presenceWalks;
     /** What a run without a frame loop steps to bring animations to rest; null until a clock registers. */
     private volatile AnimationClock animationClock;
     /**
@@ -1996,6 +2000,11 @@ public final class Gui implements AutoCloseable {
         return this;
     }
 
+    /** How many times the frame has walked the tree for presence (arrival and departure); for tests. */
+    long presenceWalks() {
+        return presenceWalks;
+    }
+
     /** The attached enter motion source, or {@link EnterMotion#NONE}. */
     public EnterMotion enterMotion() {
         return enterMotion;
@@ -2164,7 +2173,8 @@ public final class Gui implements AutoCloseable {
             boolean presenting = false;
             boolean departing = false;
             if (presencing | reconciler.takePresenceDirty()) {
-                java.util.List<RetainedNode> gone = new java.util.ArrayList<>();
+                gone.clear();
+                presenceWalks++;
                 presenting = Displacement.present(r, enterMotion, exitMotion, gone);
                 presencing = presenting;
                 departing = reconciler.depart(gone);

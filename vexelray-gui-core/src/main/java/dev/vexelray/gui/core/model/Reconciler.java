@@ -357,7 +357,12 @@ public final class Reconciler implements Mutation.Sink {
         }
         if (returning || (was == null && p.layoutCtx != null)) {
             enters.entered(ch);
-            presenceDirty = true;
+            // A walk is owed only when presence will be anything but 1: an arrival under EnterMotion.NONE is already
+            // fully present, and walking the whole tree to write that again costs O(n) per added node. A node coming
+            // back from leaving is drawn below 1, so it is owed one whatever the enter motion.
+            if (returning || enters != EnterMotion.NONE) {
+                presenceDirty = true;
+            }
         }
     }
 

@@ -235,6 +235,63 @@ class EnterExitTest {
     }
 
     @Test
+    void anArrivalWithNoEnterMotionWalksNothing() {
+        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+            gui.exitMotion(new Scripted());   // an exit motion alone does not make an arrival owe a walk
+            Node list = gui.column();
+            gui.root().children(list.children(row(gui)));
+            frame(gui);
+            long before = gui.presenceWalks();
+            for (int i = 0; i < 5; i++) {
+                Node added = row(gui);
+                list.append(added);
+                RetainedNode r = find(frame(gui), added.id());
+                assertEquals(1f, r.presence, "fully present the frame it is added");
+            }
+            assertEquals(before, gui.presenceWalks(), "an arrival under EnterMotion.NONE costs no whole-tree walk");
+        }
+    }
+
+    @Test
+    void anArrivalWithAnEnterMotionIsStillPresented() {
+        Scripted s = new Scripted();
+        try (Gui gui = withScripted(s)) {
+            Node list = gui.column();
+            gui.root().children(list);
+            frame(gui);
+            long before = gui.presenceWalks();
+            Node added = row(gui);
+            list.append(added);
+            RetainedNode r = find(frame(gui), added.id());
+            assertTrue(gui.presenceWalks() > before);
+            assertEquals(0f, r.presence);
+        }
+    }
+
+    @Test
+    void aReturningNodeIsPresentedEvenWithNoEnterMotion() {
+        Scripted s = new Scripted();
+        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+            gui.exitMotion(s);
+            Node list = gui.column();
+            Node a = row(gui);
+            gui.root().children(list.children(a));
+            RetainedNode ra = find(frame(gui), a.id());
+
+            s.presence.put(a.id(), 0.4f);
+            a.remove();
+            frame(gui);
+            assertEquals(0.4f, ra.presence);
+            list.append(a);
+            long before = gui.presenceWalks();
+            frame(gui);
+            assertTrue(gui.presenceWalks() > before, "a node back from leaving is owed a walk");
+            assertFalse(ra.leaving);
+            assertEquals(1f, ra.presence, "and the walk brings it back to whole");
+        }
+    }
+
+    @Test
     void withNoSourcesARemovalIsImmediateAndEveryNodeIsFullyPresent() {
         try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
             Node list = gui.column();

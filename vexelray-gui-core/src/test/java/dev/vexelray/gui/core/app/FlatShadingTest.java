@@ -23,11 +23,11 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Simplified graphics draws flat with the looks that already exist: a lit fill plain, no shadow, letterpress once.
+ * Flat shading draws flat with the looks that already exist: a lit fill plain, no shadow, letterpress once.
  * Decided before the look is chosen, so the static look cache is never asked for a lit or shadowed look while the
  * mode is on, and needs no mode in its key.
  */
-class SimplifiedLooksTest {
+class FlatShadingTest {
 
     @Test
     void aLitShadowedBoxAsksForThePlainUnshadowedLook() {
@@ -49,14 +49,14 @@ class SimplifiedLooksTest {
     }
 
     @Test
-    void anElevatedLitNodeWritesAShorterRecordInSimplifiedGraphics() {
+    void anElevatedLitNodeWritesAShorterRecordInFlatShading() {
         // Full: fill colour 4 + bevel + gradient, shadow colour 4 + lift. Flat: the fill colour alone.
         assertEquals(7, records(box(), false) - records(box(), true),
                 "the bevel, the gradient and the whole shadow are left out of the record");
     }
 
     @Test
-    void aShadowOnlyNodeDrawsNothingInSimplifiedGraphics() {
+    void aShadowOnlyNodeDrawsNothingInFlatShading() {
         RetainedNode n = box();
         n.set(PropKey.BACKGROUND, null);
         n.set(PropKey.BORDER_COLOR, Paint.of(Color.rgba(0f, 0f, 1f, 1f)));
@@ -66,7 +66,7 @@ class SimplifiedLooksTest {
     }
 
     @Test
-    void letterpressedTextIsDrawnOnceInSimplifiedGraphics() {
+    void letterpressedTextIsDrawnOnceInFlatShading() {
         int full = vertices(text(), false);
         int flat = vertices(text(), true);
         assertTrue(flat > 0, "the text is still drawn");
@@ -106,18 +106,18 @@ class SimplifiedLooksTest {
         return n;
     }
 
-    private static Canvas emit(RetainedNode n, boolean simplified) {
+    private static Canvas emit(RetainedNode n, boolean flat) {
         Canvas canvas = Canvases.core(400, 200);
         TreeRenderer.emit(n, canvas, TextFaces.standard(), Theme.DARK, FocusState.NONE, LayoutContext.of(400f, 200f),
-                PaintMotion.NONE, simplified);
+                PaintMotion.NONE, flat);
         return canvas;
     }
 
-    private static int records(RetainedNode n, boolean simplified) {
-        return emit(n, simplified).recordCount();
+    private static int records(RetainedNode n, boolean flat) {
+        return emit(n, flat).recordCount();
     }
 
-    private static int vertices(RetainedNode n, boolean simplified) {
-        return emit(n, simplified).toVertexArray().length / CanvasVertex.FLOATS_PER_VERTEX;
+    private static int vertices(RetainedNode n, boolean flat) {
+        return emit(n, flat).toVertexArray().length / CanvasVertex.FLOATS_PER_VERTEX;
     }
 }

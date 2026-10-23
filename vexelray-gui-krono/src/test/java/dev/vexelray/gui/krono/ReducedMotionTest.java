@@ -18,14 +18,15 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static sibarum.kronometer.Dur.ms;
 
-/** In simplified graphics every animation timed here lands on its end state at once, and the clock goes quiet. */
-class SimplifiedMotionTest {
+/** With motion reduced every animation timed here lands on its end state at once, and the clock goes quiet. */
+class ReducedMotionTest {
 
     private static KronoGui still() {
-        return KronoGui.attach(new Gui(Atchung.create()).simplifiedGraphics(true), Kron.driven());
+        return KronoGui.attach(new Gui(Atchung.create()).reducedMotion(true), Kron.driven());
     }
 
     @Test
@@ -99,10 +100,10 @@ class SimplifiedMotionTest {
     }
 
     @Test
-    void turningTheModeOffBringsTheMotionBack() {
+    void turningReducedMotionOffBringsTheMotionBack() {
         List<Double> observed = new ArrayList<>();
         try (KronoGui krono = still()) {
-            krono.gui().simplifiedGraphics(false);
+            krono.gui().reducedMotion(false);
             assertEquals(ms(200), krono.paced(ms(200)));
             krono.ramp(ms(100), Ease.LINEAR, observed::add, () -> { });
             for (int frame = 1; frame <= 6; frame++) {
@@ -112,6 +113,18 @@ class SimplifiedMotionTest {
         assertTrue(observed.size() > 2, "a ramp across frames again: " + observed);
         try (KronoGui krono = still()) {
             assertEquals(Dur.ZERO, krono.paced(ms(200)));
+        }
+    }
+
+    /** Flat shading is the other choice: a tree drawn without depth still moves. */
+    @Test
+    void flatShadingAloneLeavesMotionAlone() {
+        try (KronoGui krono = KronoGui.attach(new Gui(Atchung.create()).flatShading(true), Kron.driven())) {
+            assertFalse(krono.still());
+            assertEquals(ms(200), krono.paced(ms(200)));
+        }
+        try (KronoGui krono = KronoGui.attach(new Gui(Atchung.create()).simplifiedGraphics(true), Kron.driven())) {
+            assertTrue(krono.still(), "and simplified graphics is both");
         }
     }
 }

@@ -80,7 +80,7 @@ public final class Fades implements PaintMotion {
     @Override
     public void repainted(long node, Channel channel, Color from, Color to) {
         Key key = new Key(node, channel);
-        Dur over = krono.paced(this.over);   // none in simplified graphics: the colour is drawn the moment it is set
+        Dur over = krono.paced(this.over);   // none while motion is reduced: the colour is drawn the moment it is set
         if (over.nanos() <= 0L) {
             fades.remove(key);
             return;

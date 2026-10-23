@@ -217,12 +217,12 @@ public final class Gui implements AutoCloseable {
     private boolean displaced;
     /** How many displacement walks the frame has made: a test's evidence that a still tree walks nothing. */
     private long displaceWalks;
-    /** The scroll glide's half-life and the focus fade's duration as asked for; applied unless simplified. */
+    /** The scroll glide's half-life and the focus fade's duration as asked for; applied unless motion is reduced. */
     private volatile long glideNanos;
     private volatile long focusFadeNanos;
-    /** {@link #simplifiedGraphics(boolean)} as the code or the user asked for it, and as the run overrides it. */
-    private volatile boolean simplifiedGraphicsAsked;
-    private final Boolean simplifiedGraphicsRun = simplifiedGraphicsOfRun();
+    /** The two graphics choices, each as asked for and as the run overrules it. */
+    private final GraphicsChoice flatShading = new GraphicsChoice(FLAT_SHADING);
+    private final GraphicsChoice reducedMotion = new GraphicsChoice(REDUCED_MOTION);
     /** What colour nodes are drawn in relative to the colour they were given; NONE until a source is attached. */
     private volatile dev.vexelray.gui.core.style.PaintMotion paintMotion =
             dev.vexelray.gui.core.style.PaintMotion.NONE;
@@ -1562,57 +1562,112 @@ public final class Gui implements AutoCloseable {
         return this;
     }
 
-    /** The settings key a user's choice of {@link #simplifiedGraphics(boolean)} is saved under. */
-    public static final String SIMPLIFIED_GRAPHICS = "simplifiedGraphics";
+    // ------------------------------------------------------------ graphics choices
+    //
+    // Two choices, kept apart because each costs the user something different: flat shading gives up depth cues
+    // (what is raised, what is pressed), reduced motion gives up continuity (where a thing came from). The people who
+    // want one off are mostly not the people who want the other: a weak GPU still wants its transitions, and a user
+    // who needs motion reduced still wants to see what is raised. Simplified graphics is both at once.
+    //
+    // Each is decided by, in rising order: the code or the user's settings; the run's preset,
+    // -Dvexelray.simplifiedGraphics; the run's own property for that choice, -Dvexelray.flatShading or
+    // -Dvexelray.reducedMotion. A run's word is final.
+
+    /** The settings key a user's choice of {@link #flatShading(boolean)} is saved under. */
+    public static final String FLAT_SHADING = "flatShading";
+
+    /** The settings key a user's choice of {@link #reducedMotion(boolean)} is saved under. */
+    public static final String REDUCED_MOTION = "reducedMotion";
+
+    /** The settings key for {@link #simplifiedGraphics(boolean)}, both choices at once. */
+    public static final String SIMPLIFIED_GRAPHICS = GraphicsChoice.PRESET;
+
+    /** {@code -Dvexelray.flatShading=true|false}: decides {@link #flatShading()} for one run. */
+    public static final String FLAT_SHADING_PROPERTY = GraphicsChoice.property(FLAT_SHADING);
+
+    /** {@code -Dvexelray.reducedMotion=true|false}: decides {@link #reducedMotion()} for one run. */
+    public static final String REDUCED_MOTION_PROPERTY = GraphicsChoice.property(REDUCED_MOTION);
 
     /**
-     * The system property that decides {@link #simplifiedGraphics()} for one run, whatever the code or the user's
-     * settings say: {@code -Dvexelray.simplifiedGraphics=true} (or {@code false}). Prefixed like
-     * {@code vexelray.foreground}, the other framework-wide choice a run is launched with.
+     * {@code -Dvexelray.simplifiedGraphics=true|false}: decides both choices for one run, except one its own property
+     * decides. Prefixed like {@code vexelray.foreground}, the other framework-wide choice a run is launched with.
      */
-    public static final String SIMPLIFIED_GRAPHICS_PROPERTY = "vexelray." + SIMPLIFIED_GRAPHICS;
+    public static final String SIMPLIFIED_GRAPHICS_PROPERTY = GraphicsChoice.property(SIMPLIFIED_GRAPHICS);
 
     /**
-     * Simplified graphics: one switch that turns off the expensive shading and all the motion. Lit fills are drawn
-     * plain, shadows are dropped, letterpressed text is drawn once, and every animation lands on its end state at
-     * once — the scroll glide and the focus fade as if set to {@link java.time.Duration#ZERO}, a steady caret, and
-     * whatever a clock attached to this tree (Kronometer's {@code KronoGui}) times. What is drawn is the same
-     * layout in the same colours; only how much the GPU and the frame loop spend on it changes.
+     * Flat shading: every box drawn without depth. Lit fills are drawn plain, shadows are dropped and letterpressed
+     * text is drawn once, so the GPU pays for a box's edge and nothing more. The same layout in the same colours.
      *
      * <p>A user's preference more than the application's, like {@link #dragRelease}: wire it to a setting they can
-     * reach ({@link #simplifiedGraphics(dev.vexelray.gui.core.app.Settings)}). The motion knobs keep what the
-     * application asked for, so turning the mode off again restores them. Safe from any thread; takes effect from
-     * the next frame. {@link #SIMPLIFIED_GRAPHICS_PROPERTY}, when set, wins over this.
+     * reach ({@link #graphics(dev.vexelray.gui.core.app.Settings)}). Safe from any thread; takes effect from the next
+     * frame. {@link #FLAT_SHADING_PROPERTY} or {@link #SIMPLIFIED_GRAPHICS_PROPERTY}, when set, wins over this.
      */
-    public Gui simplifiedGraphics(boolean on) {
-        simplifiedGraphicsAsked = on;
+    public Gui flatShading(boolean on) {
+        flatShading.ask(on);
+        requestFrame();
+        return this;
+    }
+
+    /** Whether boxes are drawn flat — see {@link #flatShading(boolean)}. */
+    public boolean flatShading() {
+        return flatShading.on();
+    }
+
+    /**
+     * Reduced motion: every animation lands on its end state at once. The scroll glide and the focus fade as if set
+     * to {@link java.time.Duration#ZERO}, a steady caret, and whatever a clock attached to this tree (Kronometer's
+     * {@code KronoGui}) times. The motion knobs keep what the application asked for, so turning this off again
+     * restores them.
+     *
+     * <p>A user's preference more than the application's: wire it to a setting they can reach
+     * ({@link #graphics(dev.vexelray.gui.core.app.Settings)}). Safe from any thread; takes effect from the next frame,
+     * and an animation already running finishes as it began. {@link #REDUCED_MOTION_PROPERTY} or
+     * {@link #SIMPLIFIED_GRAPHICS_PROPERTY}, when set, wins over this.
+     */
+    public Gui reducedMotion(boolean on) {
+        reducedMotion.ask(on);
         applyMotionKnobs();
         requestFrame();
         return this;
     }
 
+    /** Whether motion is reduced — see {@link #reducedMotion(boolean)}. */
+    public boolean reducedMotion() {
+        return reducedMotion.on();
+    }
+
     /**
-     * As {@link #simplifiedGraphics(boolean)}, from the user's saved choice under {@link #SIMPLIFIED_GRAPHICS} in
-     * {@code settings}; a store without it leaves the mode as it is.
+     * Simplified graphics: {@link #flatShading(boolean) flat shading} and {@link #reducedMotion(boolean) reduced
+     * motion} together, the setting for a machine that should spend as little as it can on drawing.
      */
-    public Gui simplifiedGraphics(dev.vexelray.gui.core.app.Settings settings) {
-        return simplifiedGraphics(settings.getBoolean(SIMPLIFIED_GRAPHICS, simplifiedGraphicsAsked));
+    public Gui simplifiedGraphics(boolean on) {
+        flatShading.ask(on);
+        return reducedMotion(on);
     }
 
-    /** Whether this tree is drawn in simplified graphics — see {@link #simplifiedGraphics(boolean)}. */
+    /** Whether both choices are on — see {@link #simplifiedGraphics(boolean)}. */
     public boolean simplifiedGraphics() {
-        return simplifiedGraphicsRun != null ? simplifiedGraphicsRun : simplifiedGraphicsAsked;
+        return flatShading() && reducedMotion();
     }
 
-    /** {@link #SIMPLIFIED_GRAPHICS_PROPERTY} as this run was launched with it: null when it was not set. */
-    private static Boolean simplifiedGraphicsOfRun() {
-        String v = System.getProperty(SIMPLIFIED_GRAPHICS_PROPERTY);
-        return v == null || v.isBlank() ? null : Boolean.valueOf(v.trim());
+    /**
+     * The user's saved graphics choices from {@code settings}: {@link #SIMPLIFIED_GRAPHICS} first, as both, then
+     * {@link #FLAT_SHADING} and {@link #REDUCED_MOTION}, each over it. A key the store does not have leaves its
+     * choice as it is.
+     */
+    public Gui graphics(dev.vexelray.gui.core.app.Settings settings) {
+        boolean flat = flatShading.asked();
+        boolean still = reducedMotion.asked();
+        if (settings.has(SIMPLIFIED_GRAPHICS)) {
+            flat = still = settings.getBoolean(SIMPLIFIED_GRAPHICS, false);
+        }
+        flatShading.ask(settings.getBoolean(FLAT_SHADING, flat));
+        return reducedMotion(settings.getBoolean(REDUCED_MOTION, still));
     }
 
-    /** Hand the dispatcher the motion knobs as they apply now: what was asked for, or none in simplified graphics. */
+    /** Hand the dispatcher the motion knobs as they apply now: what was asked for, or none while motion is reduced. */
     private void applyMotionKnobs() {
-        boolean still = simplifiedGraphics();
+        boolean still = reducedMotion();
         input.scrollGlide(still ? 0L : glideNanos);
         input.focusFade(still ? 0L : focusFadeNanos);
     }

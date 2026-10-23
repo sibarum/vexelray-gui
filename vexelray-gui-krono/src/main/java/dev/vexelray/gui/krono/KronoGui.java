@@ -265,17 +265,17 @@ public final class KronoGui implements AutoCloseable {
     // ------------------------------------------------------------ motion off
 
     /**
-     * Whether motion is off for this tree: the GUI's simplified graphics ({@link Gui#simplifiedGraphics()}). Every
-     * animation this class times then lands on its end state at once — {@link #ramp} delivers 1 and arrives,
-     * {@link #retarget} and {@link #animate} write the target — and {@link Transitions} and {@link Fades} time
-     * nothing, through {@link #paced}. Asked at each call, so switching the mode takes effect from the next
-     * animation without a restart; one already running finishes as it began.
+     * Whether motion is off for this tree: the GUI's reduced motion ({@link Gui#reducedMotion()}), on its own or as
+     * part of simplified graphics. Every animation this class times then lands on its end state at once —
+     * {@link #ramp} delivers 1 and arrives, {@link #retarget} and {@link #animate} write the target — and
+     * {@link Transitions} and {@link Fades} time nothing, through {@link #paced}. Asked at each call, so switching it
+     * takes effect from the next animation without a restart; one already running finishes as it began.
      *
      * <p>Timing that is not motion is left alone: {@link #after}, {@link #every} and {@link #spork} are schedules,
      * and a tooltip's delay is a wait, not a movement.
      */
     public boolean still() {
-        return gui.simplifiedGraphics();
+        return gui.reducedMotion();
     }
 
     /**

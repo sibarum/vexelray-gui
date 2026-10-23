@@ -26,7 +26,7 @@ final class CaretBlink {
 
     private static final Map<Gui, CaretBlink> CLOCKS = new ConcurrentHashMap<>();
 
-    /** Whose carets these are: asked each half-period whether it is in simplified graphics, which shows them steady. */
+    /** Whose carets these are: asked each half-period whether its motion is reduced, which shows them steady. */
     private final Gui gui;
 
     /** One registered caret: the node to drive, and whether its owner currently holds focus. */
@@ -90,8 +90,8 @@ final class CaretBlink {
             while (!entries.isEmpty()) {
                 Thread.sleep(BLINK_MILLIS);
                 phase = !phase;
-                // Simplified graphics turns all motion off, and a blink is motion: the caret stays on.
-                boolean on = phase || gui.simplifiedGraphics();
+                // Reduced motion turns all motion off, and a blink is motion: the caret stays on.
+                boolean on = phase || gui.reducedMotion();
                 for (Entry e : entries) {
                     if (e.focused().getAsBoolean()) {
                         e.node().caretOn(on);

@@ -211,6 +211,12 @@ public final class Gui implements AutoCloseable {
     private final Metrics metrics = new Metrics();
     /** Where nodes are drawn relative to where layout put them; NONE until a motion source is attached. */
     private volatile LayoutMotion motion = LayoutMotion.NONE;
+    /** The scroll glide's half-life and the focus fade's duration as asked for; applied unless simplified. */
+    private volatile long glideNanos;
+    private volatile long focusFadeNanos;
+    /** {@link #simplifiedGraphics(boolean)} as the code or the user asked for it, and as the run overrides it. */
+    private volatile boolean simplifiedGraphicsAsked;
+    private final Boolean simplifiedGraphicsRun = simplifiedGraphicsOfRun();
     /** What colour nodes are drawn in relative to the colour they were given; NONE until a source is attached. */
     private volatile dev.vexelray.gui.core.style.PaintMotion paintMotion =
             dev.vexelray.gui.core.style.PaintMotion.NONE;
@@ -1525,7 +1531,8 @@ public final class Gui implements AutoCloseable {
      * See {@code ScrollGlide} for why the curve is a half-life and not a duration.
      */
     public Gui scrollGlide(java.time.Duration halfLife) {
-        input.scrollGlide(halfLife.toNanos());
+        glideNanos = halfLife.toNanos();
+        applyMotionKnobs();
         return this;
     }
 
@@ -1535,8 +1542,64 @@ public final class Gui implements AutoCloseable {
      * {@link #scrollGlide}, because the application decides how its time passes.
      */
     public Gui focusFade(java.time.Duration duration) {
-        input.focusFade(duration.toNanos());
+        focusFadeNanos = duration.toNanos();
+        applyMotionKnobs();
         return this;
+    }
+
+    /** The settings key a user's choice of {@link #simplifiedGraphics(boolean)} is saved under. */
+    public static final String SIMPLIFIED_GRAPHICS = "simplifiedGraphics";
+
+    /**
+     * The system property that decides {@link #simplifiedGraphics()} for one run, whatever the code or the user's
+     * settings say: {@code -Dvexelray.simplifiedGraphics=true} (or {@code false}). Prefixed like
+     * {@code vexelray.foreground}, the other framework-wide choice a run is launched with.
+     */
+    public static final String SIMPLIFIED_GRAPHICS_PROPERTY = "vexelray." + SIMPLIFIED_GRAPHICS;
+
+    /**
+     * Simplified graphics: one switch that turns off the expensive shading and all the motion. Lit fills are drawn
+     * plain, shadows are dropped, letterpressed text is drawn once, and every animation lands on its end state at
+     * once — the scroll glide and the focus fade as if set to {@link java.time.Duration#ZERO}, a steady caret, and
+     * whatever a clock attached to this tree (Kronometer's {@code KronoGui}) times. What is drawn is the same
+     * layout in the same colours; only how much the GPU and the frame loop spend on it changes.
+     *
+     * <p>A user's preference more than the application's, like {@link #dragRelease}: wire it to a setting they can
+     * reach ({@link #simplifiedGraphics(dev.vexelray.gui.core.app.Settings)}). The motion knobs keep what the
+     * application asked for, so turning the mode off again restores them. Safe from any thread; takes effect from
+     * the next frame. {@link #SIMPLIFIED_GRAPHICS_PROPERTY}, when set, wins over this.
+     */
+    public Gui simplifiedGraphics(boolean on) {
+        simplifiedGraphicsAsked = on;
+        applyMotionKnobs();
+        requestFrame();
+        return this;
+    }
+
+    /**
+     * As {@link #simplifiedGraphics(boolean)}, from the user's saved choice under {@link #SIMPLIFIED_GRAPHICS} in
+     * {@code settings}; a store without it leaves the mode as it is.
+     */
+    public Gui simplifiedGraphics(dev.vexelray.gui.core.app.Settings settings) {
+        return simplifiedGraphics(settings.getBoolean(SIMPLIFIED_GRAPHICS, simplifiedGraphicsAsked));
+    }
+
+    /** Whether this tree is drawn in simplified graphics — see {@link #simplifiedGraphics(boolean)}. */
+    public boolean simplifiedGraphics() {
+        return simplifiedGraphicsRun != null ? simplifiedGraphicsRun : simplifiedGraphicsAsked;
+    }
+
+    /** {@link #SIMPLIFIED_GRAPHICS_PROPERTY} as this run was launched with it: null when it was not set. */
+    private static Boolean simplifiedGraphicsOfRun() {
+        String v = System.getProperty(SIMPLIFIED_GRAPHICS_PROPERTY);
+        return v == null || v.isBlank() ? null : Boolean.valueOf(v.trim());
+    }
+
+    /** Hand the dispatcher the motion knobs as they apply now: what was asked for, or none in simplified graphics. */
+    private void applyMotionKnobs() {
+        boolean still = simplifiedGraphics();
+        input.scrollGlide(still ? 0L : glideNanos);
+        input.focusFade(still ? 0L : focusFadeNanos);
     }
 
     /**

@@ -235,6 +235,18 @@ public final class InputDispatcher {
     private final List<Claim> claims = new java.util.concurrent.CopyOnWriteArrayList<>();
     private final Set<Long> focusable = ConcurrentHashMap.newKeySet();
     private final Map<Long, InteractionState> reportedState = new ConcurrentHashMap<>();
+    /**
+     * Bumped whenever the set of observed nodes or what has been reported to them changes outside
+     * {@link #refreshStates} (an {@link #onState} registration, a {@link #clearHandlers}). Part of the key that lets
+     * a refresh whose inputs are unchanged skip the observer loop; registrations may come from any thread.
+     */
+    private final java.util.concurrent.atomic.AtomicLong stateGeneration = new java.util.concurrent.atomic.AtomicLong();
+    // The inputs of the last full refresh (GUI-thread only). Equal inputs give equal states, and every state was
+    // reported when they were computed, so a refresh over them would report nothing.
+    private final Ancestry hoverAncestry = new Ancestry();
+    private final Ancestry pressAncestry = new Ancestry();
+    private long refreshedGeneration = -1;
+    private boolean refreshedLeftDown;
 
     // Keyboard/focus state (GUI-thread only, mutated during dispatch).
     private final EnumSet<Modifier> heldMods = EnumSet.noneOf(Modifier.class);
@@ -429,6 +441,7 @@ public final class InputDispatcher {
     public void onState(long nodeId, Consumer<InteractionState> handler) {
         stateHandlers.computeIfAbsent(nodeId, id -> new java.util.concurrent.CopyOnWriteArrayList<>())
                 .add(handler);
+        stateGeneration.incrementAndGet();
     }
 
     /**
@@ -1057,6 +1070,7 @@ public final class InputDispatcher {
         claims.removeIf(c -> c.nodeId() == nodeId);
         focusable.remove(nodeId);
         reportedState.remove(nodeId);
+        stateGeneration.incrementAndGet();
         if (focusedId == nodeId) {
             setFocus(-1, FocusCause.PROGRAM);
         }
@@ -1751,14 +1765,35 @@ public final class InputDispatcher {
                 : y <= eps;
     }
 
-    /** Recompute each observed node's interaction state and tell every observer on any change. */
+    /**
+     * Recompute each observed node's interaction state and tell every observer on any change.
+     *
+     * <p>A node's state is a function of whether it is on the hover chain, whether it is on the press chain, and
+     * {@link #leftDown}. Each chain is walked once here, then each observed node is asked by membership — so a
+     * refresh costs (observed nodes + depth), not their product. And when neither chain, nor the button, nor the
+     * set of observed nodes has changed since the last refresh, every state is already the one reported, so the
+     * observer loop is skipped outright: the ordinary case of a pointer moving within one leaf.
+     */
     private void refreshStates() {
+        long generation = stateGeneration.get();   // read before the loop: a registration during it forces the next
+        boolean hoverMoved = hoverAncestry.walk(hoverHit);
+        boolean pressMoved = pressAncestry.walk(pressHit);
+        if (hoverMoved || pressMoved || generation != refreshedGeneration || leftDown != refreshedLeftDown) {
+            refreshedGeneration = generation;
+            refreshedLeftDown = leftDown;
+            reportStates();
+        }
+        updateCursor();
+    }
+
+    private void reportStates() {
         for (Map.Entry<Long, java.util.List<Consumer<InteractionState>>> entry : stateHandlers.entrySet()) {
             long id = entry.getKey();
             InteractionState now;
-            if (leftDown && covers(id, pressHit) && covers(id, hoverHit)) {
+            boolean hovered = hoverAncestry.contains(id);
+            if (leftDown && hovered && pressAncestry.contains(id)) {
                 now = InteractionState.PRESSED;
-            } else if (covers(id, hoverHit)) {
+            } else if (hovered) {
                 now = InteractionState.HOVER;
             } else {
                 now = InteractionState.NORMAL;
@@ -1780,7 +1815,6 @@ public final class InputDispatcher {
                 }
             }
         }
-        updateCursor();
     }
 
     /**
@@ -1857,16 +1891,6 @@ public final class InputDispatcher {
     /** Whether {@code n} is a text node that takes the text-placement cursor (editable, or selectable later). */
     private static boolean isTextTarget(RetainedNode n) {
         return n != null && n.editable();
-    }
-
-    /** Whether {@code handlerId} is {@code hit} or one of its ancestors (so a child hit covers its container). */
-    private static boolean covers(long handlerId, RetainedNode hit) {
-        for (RetainedNode n = hit; n != null; n = n.parent) {
-            if (n.id == handlerId) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /**

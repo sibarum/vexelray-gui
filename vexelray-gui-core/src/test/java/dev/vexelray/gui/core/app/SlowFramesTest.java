@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** The slow-frames offer, driven frame by frame through a host that records what it was told to do. */
@@ -31,8 +32,8 @@ class SlowFramesTest {
         }
 
         @Override
-        public void trial(boolean on) {
-            did.add(on ? "trial on" : "trial off");
+        public void switchOn() {
+            did.add("switch");
         }
 
         @Override
@@ -116,7 +117,7 @@ class SlowFramesTest {
         frames.answered(SlowFrames.Answer.SWITCH);
         draw(SlowFrames.TRIAL_SKIP, 400, 400);   // the switch itself redraws everything: not judged
         draw(SlowFrames.TRIAL_FRAMES, 60, 100);
-        assertEquals(List.of("ask", "trial on", "save"), host.did);
+        assertEquals(List.of("ask", "switch", "save"), host.did);
     }
 
     @Test
@@ -125,17 +126,52 @@ class SlowFramesTest {
         draw(SlowFrames.WINDOW, 900, 900);
         frames.answered(SlowFrames.Answer.SWITCH);
         draw(SlowFrames.TRIAL_SKIP + SlowFrames.TRIAL_FRAMES, 400, 400);
-        assertEquals(List.of("ask", "trial on", "save"), host.did);
+        assertEquals(List.of("ask", "switch", "save"), host.did);
     }
 
     @Test
-    void aTrialThatDoesNotHelpIsTakenBack() {
+    void aSwitchThatDoesNotHelpStaysOnForTheSessionAndIsNotSaved() {
         warmUp();
         draw(SlowFrames.WINDOW, 300, 300);
         frames.answered(SlowFrames.Answer.SWITCH);
         draw(SlowFrames.TRIAL_SKIP + SlowFrames.TRIAL_FRAMES, 280, 300);
-        assertEquals(List.of("ask", "trial on", "trial off"), host.did,
-                "the time goes somewhere graphics do not reach, so depth and motion are given back");
+        assertEquals(List.of("ask", "switch"), host.did,
+                "never switched off: that would hand the full load back to a machine shown to be struggling");
+    }
+
+    /**
+     * Reduced motion does not make a frame cheaper, it asks for fewer of them, and on a struggling machine that is as
+     * much help: the same 300 ms frames, now ten times further apart, are a tenth of the load.
+     */
+    @Test
+    void fewerFramesAtTheSameCostIsHelpingToo() {
+        warmUp();
+        draw(SlowFrames.WINDOW, 300, 300);   // drawing all of the time
+        frames.answered(SlowFrames.Answer.SWITCH);
+        draw(SlowFrames.TRIAL_SKIP + SlowFrames.TRIAL_FRAMES, 300, 3000);   // a tenth of it
+        assertEquals(List.of("ask", "switch", "save"), host.did);
+    }
+
+    /** The real check, on a real tree: nothing to offer once both choices are on, or the user said never. */
+    @Test
+    void worthOfferingUntilBothChoicesAreOn(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) {
+        SuiteGraphics none = SuiteGraphics.at(dir.resolve("none.properties"));
+        try (dev.vexelray.gui.core.Gui gui = new dev.vexelray.gui.core.Gui(sibarum.atchung.Atchung.create(),
+                Runnable::run)) {
+            assertTrue(SlowFrames.worthOffering(none, gui), "nothing on: offered");
+            gui.flatShading(true);
+            assertTrue(SlowFrames.worthOffering(none, gui), "flat only: motion still has load to take off");
+            gui.flatShading(false).reducedMotion(true);
+            assertTrue(SlowFrames.worthOffering(none, gui), "motion only: shading still has load to take off");
+            gui.simplifiedGraphics(true);
+            assertFalse(SlowFrames.worthOffering(none, gui), "both on: nothing left to offer");
+
+            gui.simplifiedGraphics(false);
+            Settings.at(dir.resolve("never.properties")).putString(SuiteGraphics.OFFER, "never").save();
+            assertFalse(SlowFrames.worthOffering(SuiteGraphics.at(dir.resolve("never.properties")), gui),
+                    "refused: never offered again");
+        }
+        assertFalse(SlowFrames.worthOffering(none, null), "no tree yet");
     }
 
     @Test

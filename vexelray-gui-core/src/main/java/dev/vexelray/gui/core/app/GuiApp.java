@@ -66,18 +66,25 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
     private final Boolean systemReducedMotion;
     /** The user's graphics choices for every VexelRay application, given to every tree ({@link #wireWake}). */
     private SuiteGraphics suite;
-    /** Whether simplified graphics is on as a trial ({@link SlowFrames}), over whatever {@link #suite} says. */
-    private boolean graphicsTrial;
+    /** Whether the user switched to simplified graphics this session ({@link SlowFrames}), over {@link #suite}. */
+    private boolean simplifiedForSession;
     /** What asks the user about simplified graphics when frames are slow; null asks nothing. */
     private volatile SlowFrames.Offer slowFramesOffer;
     /** Watches what each frame costs, and offers simplified graphics to a machine that cannot keep up. */
     private final SlowFrames slowFrames = new SlowFrames(new SlowFramesHost());
     /**
-     * {@code -Dvexelray.debug.slowFrames=<ms>}: add that much to every frame drawn while boxes are shaded, and nothing
-     * once they are flat — a machine whose GPU the shading overwhelms, on one that it does not. How the slow-frames
-     * offer is tried end to end, prompt, trial and save, on hardware that never needs it. Zero (the default) is off.
+     * {@code -Dvexelray.debug.slowFrames=<ms>}: add that much to every frame drawn while boxes are shaded — a machine
+     * whose GPU the shading overwhelms, on one that it does not. How the slow-frames offer is tried end to end, prompt,
+     * judgement and save, on hardware that never needs it. Zero (the default) is off.
      */
     private static final long DEBUG_SLOW_FRAME_NANOS = Long.getLong("vexelray.debug.slowFrames", 0L) * 1_000_000L;
+    /**
+     * {@code -Dvexelray.debug.slowFramesFlat=<ms>}: the same while boxes are flat. Zero (the default) is a machine that
+     * flat shading rescues; as much as {@code slowFrames} is one slow for some other reason, which is how the offer is
+     * seen to stay quiet when simplified graphics is already on, and to keep a switch that did not help.
+     */
+    private static final long DEBUG_SLOW_FLAT_FRAME_NANOS =
+            Long.getLong("vexelray.debug.slowFramesFlat", 0L) * 1_000_000L;
     /**
      * What makes every OS window this application opens — see {@link #GuiApp(WindowConfig,
      * java.util.function.Function)}. The platform itself for an ordinary application; something else for a
@@ -1623,7 +1630,7 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
      *
      * <p>The tree is also told what the OS says about reduced motion, and what the user chose for every VexelRay
      * application, for the same reason and from the same place: this is where every tree the application drives is
-     * first seen. A tree that arrives during a trial of simplified graphics joins the trial.
+     * first seen. A tree that arrives after the user switched to simplified graphics this session has it too.
      */
     private void wireWake(Gui gui) {
         if (gui != null && wired.add(gui)) {
@@ -1633,9 +1640,9 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
         }
     }
 
-    /** {@code gui}'s suite-wide graphics: the trial's while one runs, else what the user saved. */
+    /** {@code gui}'s suite-wide graphics: simplified if the user switched to it this session, else what they saved. */
     private void suiteGraphics(Gui gui) {
-        if (graphicsTrial) {
+        if (simplifiedForSession) {
             gui.suiteGraphics(true, true);
         } else {
             suite.applyTo(gui);
@@ -1657,7 +1664,7 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
     private final class SlowFramesHost implements SlowFrames.Host {
         @Override
         public boolean worthOffering() {
-            return !suite.offerRefused() && mainGui != null && !mainGui.simplifiedGraphics();
+            return SlowFrames.worthOffering(suite, mainGui);
         }
 
         @Override
@@ -1674,8 +1681,8 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
         }
 
         @Override
-        public void trial(boolean on) {
-            graphicsTrial = on;
+        public void switchOn() {
+            simplifiedForSession = true;   // for the rest of the session, saved or not
             wired.forEach(GuiApp.this::suiteGraphics);
         }
 
@@ -1687,7 +1694,7 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                 report("SlowFrames/unsaved", "simplified graphics could not be saved", e.getMessage());
             }
             suite = suite.reread();
-            graphicsTrial = false;   // kept now as the saved choice, which says the same thing
+            simplifiedForSession = false;   // kept now as the saved choice, which says the same thing
             wired.forEach(GuiApp.this::suiteGraphics);
         }
 
@@ -1854,8 +1861,10 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
             });
             frame++;
             if (tally.drewThisIteration()) {
-                if (DEBUG_SLOW_FRAME_NANOS > 0L && mainGui != null && !mainGui.flatShading()) {
-                    java.util.concurrent.locks.LockSupport.parkNanos(DEBUG_SLOW_FRAME_NANOS);
+                long debugSlow = mainGui == null ? 0L
+                        : mainGui.flatShading() ? DEBUG_SLOW_FLAT_FRAME_NANOS : DEBUG_SLOW_FRAME_NANOS;
+                if (debugSlow > 0L) {
+                    java.util.concurrent.locks.LockSupport.parkNanos(debugSlow);
                 }
                 // What this frame cost the machine, start to presented, before the loop parks: a frame drawn is what
                 // simplified graphics would make cheaper, and an idle park is not slowness.

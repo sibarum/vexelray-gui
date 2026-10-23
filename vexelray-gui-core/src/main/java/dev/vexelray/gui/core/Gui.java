@@ -1662,8 +1662,8 @@ public final class Gui implements AutoCloseable {
     /**
      * What the user chose for every VexelRay application — {@code null} for a choice they have not made — over the
      * OS's word and under anything this application's code or settings ask. {@code GuiApp} reads it from the suite's
-     * store ({@code SuiteGraphics}) and tells every tree it presents; it is also how a trial of simplified graphics
-     * is switched on and, if it did not help, off again, without touching what the application itself asked.
+     * store ({@code SuiteGraphics}) and tells every tree it presents; it is also how simplified graphics is switched on
+     * when a struggling machine is offered it, without touching what the application itself asked.
      */
     public Gui suiteGraphics(Boolean flat, Boolean reduced) {
         flatShading.suite(flat);

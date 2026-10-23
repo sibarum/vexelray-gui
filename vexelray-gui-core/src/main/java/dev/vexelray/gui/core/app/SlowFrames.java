@@ -6,9 +6,9 @@ import java.util.Arrays;
 import java.util.function.Consumer;
 
 /**
- * Notices a machine that cannot draw this application at a usable rate, offers the user simplified graphics, and keeps
- * it only if it helped: the frame loop's side of the offer, with no window, clock or widget of its own, so every turn
- * of it can be driven by a test.
+ * Notices a machine that cannot draw this application at a usable rate, offers the user simplified graphics, and saves
+ * it for every application if it helped: the frame loop's side of the offer, with no window, clock or widget of its
+ * own, so every turn of it can be driven by a test.
  *
  * <h2>What counts as slow</h2>
  *
@@ -21,16 +21,27 @@ import java.util.function.Consumer;
  * and uploads, once), at least {@link #SLOW_NEEDED} of the last {@link #WINDOW} frames drawn were slow, and they span
  * at least {@link #SPAN_NANOS}: repeatedly, not one hitch.
  *
+ * <h2>What helping means</h2>
+ *
+ * <p>Two things, and either is enough. A frame can get cheaper, which is flat shading's work; or the machine can be
+ * asked for fewer frames, which is reduced motion's: an animation at the refresh rate is a frame every few
+ * milliseconds, and without it a frame comes when something changes. On a machine already at its limit the second
+ * matters as much as the first. The work it is spared is heat, fan noise and a machine that slows itself further, and
+ * the cost of using the software must never come to exceed the cost of switching to something else. So the trial is
+ * judged on <em>load</em>, the share of the time the loop spends drawing, as well as on what a frame costs.
+ *
  * <h2>What happens then</h2>
  *
  * <ol>
- *   <li>The user is asked ({@link Offer}), once a session. "Not now" ends it for the session; "Never" is saved for
- *       every application ({@link SuiteGraphics#refuseOffers}).</li>
- *   <li>"Switch" turns simplified graphics on at once, for every tree, as a trial: live, so nothing open is lost.</li>
- *   <li>After {@link #TRIAL_FRAMES} frames drawn with it, it is judged by the median cost: helped if back under
- *       {@link #SLOW_NANOS}, or at least halved. Helped, it is saved for every application
- *       ({@link SuiteGraphics#saveSimplified}). Not helped, the machine is slow for some other reason, and the trial is
- *       taken back: the user would be giving up depth and motion for nothing.</li>
+ *   <li>The user is asked ({@link Offer}), once a session, unless both simplified graphics' choices are already on or
+ *       the offer was refused ({@link #worthOffering}). "Not now" ends it for the session; "Never" is saved for every
+ *       application ({@link SuiteGraphics#refuseOffers}).</li>
+ *   <li>"Switch" turns simplified graphics on at once, for every tree: live, so nothing open is lost.</li>
+ *   <li>After {@link #TRIAL_FRAMES} frames drawn with it, it is judged: helped if the median frame is back under
+ *       {@link #SLOW_NANOS}, or at least twice as cheap, or the load at least halved. Helped, it is saved for every
+ *       application ({@link SuiteGraphics#saveSimplified}). Not helped, it stays on for the rest of the session and is
+ *       not saved: switching it off would hand back the full load to a machine already shown to be struggling, and
+ *       the next launch decides afresh.</li>
  * </ol>
  *
  * <p>Loop thread only. {@link #drawn} runs every frame, so it does not allocate; deciding does, once.
@@ -60,7 +71,7 @@ public final class SlowFrames {
 
     /** The user's answer to the offer. */
     public enum Answer {
-        /** Try simplified graphics now, and keep it if it helps. */
+        /** Switch to simplified graphics now, and save it if it helps. */
         SWITCH,
         /** Not this session. */
         NOT_NOW,
@@ -85,14 +96,14 @@ public final class SlowFrames {
 
     /** What the offer does to the world: the frame loop's side, behind an interface so a test can stand in for it. */
     interface Host {
-        /** Whether there is anything to offer: simplified graphics not already on, and the offer not refused. */
+        /** Whether there is anything to offer: {@link SlowFrames#worthOffering}, for this application's trees. */
         boolean worthOffering();
 
         /** Put the offer to the user, with the slow frames' median cost; the answer comes back to {@link #answered}. */
         void ask(long typicalFrameNanos);
 
-        /** Turn the trial on for every tree, or off again, back to whatever the trees had before it. */
-        void trial(boolean on);
+        /** Turn simplified graphics on for every tree, for the rest of the session. */
+        void switchOn();
 
         /** Save simplified graphics for every application. */
         void saveSimplified();
@@ -102,6 +113,16 @@ public final class SlowFrames {
 
         /** One line for the diagnostics, deduplicated by {@code key}. */
         void report(String key, String what, String why);
+    }
+
+    /**
+     * Whether a machine struggling to draw {@code main} has anything to be offered. It does until <em>both</em> of
+     * simplified graphics' choices are on: flat shading makes a frame cheaper, and reduced motion asks for fewer of
+     * them, so a tree with only one still has load the other would take off it. Nothing is offered once the user has
+     * refused it ({@code suite}), or to a tree that does not exist yet.
+     */
+    static boolean worthOffering(SuiteGraphics suite, Gui main) {
+        return main != null && !suite.offerRefused() && !main.simplifiedGraphics();
     }
 
     private enum State { WATCHING, ASKED, TRIAL, DONE }
@@ -115,9 +136,11 @@ public final class SlowFrames {
     private int count;                // frames in the ring, up to WINDOW
     private int next;                 // where the next goes
     private long before;              // the slow frames' median cost, once asked
+    private double loadBefore;        // and the share of their time spent drawing
 
     private int skip;
-    private final long[] trial = new long[TRIAL_FRAMES];
+    private final long[] trialStarts = new long[TRIAL_FRAMES];
+    private final long[] trialCosts = new long[TRIAL_FRAMES];
     private int trialCount;
 
     SlowFrames(Host host) {
@@ -129,7 +152,7 @@ public final class SlowFrames {
         if (state == State.WATCHING) {
             watch(startNanos, costNanos);
         } else if (state == State.TRIAL) {
-            judge(costNanos);
+            judge(startNanos, costNanos);
         }
     }
 
@@ -142,7 +165,7 @@ public final class SlowFrames {
             state = State.TRIAL;
             skip = TRIAL_SKIP;
             trialCount = 0;
-            host.trial(true);
+            host.switchOn();
         } else {
             state = State.DONE;
             if (answer == Answer.NEVER) {
@@ -177,8 +200,12 @@ public final class SlowFrames {
         }
         state = State.ASKED;
         before = median(costs);
+        loadBefore = load(starts, costs, next);
         if (!host.worthOffering()) {
             state = State.DONE;
+            host.report("SlowFrames/struggling", "frames are costing " + millis(before) + " ms",
+                    "fewer than five a second, and there is nothing to offer: simplified graphics is on, or the user"
+                            + " asked never to be offered it");
             return;
         }
         host.report("SlowFrames/struggling", "frames are costing " + millis(before) + " ms",
@@ -186,26 +213,47 @@ public final class SlowFrames {
         host.ask(before);
     }
 
-    private void judge(long cost) {
+    private void judge(long start, long cost) {
         if (skip > 0) {
             skip--;
             return;
         }
-        trial[trialCount++] = cost;
+        trialStarts[trialCount] = start;
+        trialCosts[trialCount] = cost;
+        trialCount++;
         if (trialCount < TRIAL_FRAMES) {
             return;
         }
         state = State.DONE;
-        long after = median(trial);
-        if (after < SLOW_NANOS || after * 2L <= before) {
+        long after = median(trialCosts);
+        double loadAfter = load(trialStarts, trialCosts, 0);
+        String measured = "frames from " + millis(before) + " ms to " + millis(after) + " ms, drawing from "
+                + percent(loadBefore) + " to " + percent(loadAfter) + " of the time";
+        if (after < SLOW_NANOS || after * 2L <= before || loadAfter * 2.0 <= loadBefore) {
             host.saveSimplified();
-            host.report("SlowFrames/kept", "simplified graphics brought frames from " + millis(before) + " ms to "
-                    + millis(after) + " ms", "saved for every VexelRay application");
+            host.report("SlowFrames/kept", "simplified graphics took " + measured,
+                    "saved for every VexelRay application");
         } else {
-            host.trial(false);
-            host.report("SlowFrames/undone", "simplified graphics left frames at " + millis(after) + " ms (from "
-                    + millis(before) + " ms)", "the time goes somewhere else, so it was turned off again");
+            // Left on: it is still less work than what it replaced, on a machine shown to be struggling. Not saved,
+            // because it did not show that it helped, so the next launch decides afresh.
+            host.report("SlowFrames/unproven", "simplified graphics took " + measured,
+                    "kept for this session, not saved: the time goes somewhere graphics do not reach");
         }
+    }
+
+    /**
+     * The share of the time the frames in {@code starts}/{@code costs} spent drawing: their costs over the span from
+     * the first one's start to the last one's end. {@code oldest} is where the first is, for a ring.
+     */
+    private static double load(long[] starts, long[] costs, int oldest) {
+        int n = starts.length;
+        int newest = (oldest + n - 1) % n;
+        long span = starts[newest] + costs[newest] - starts[oldest];
+        long busy = 0L;
+        for (long c : costs) {
+            busy += c;
+        }
+        return span <= 0L ? 1.0 : Math.min(1.0, (double) busy / span);
     }
 
     private static long median(long[] values) {
@@ -216,5 +264,9 @@ public final class SlowFrames {
 
     private static long millis(long nanos) {
         return nanos / 1_000_000L;
+    }
+
+    private static String percent(double share) {
+        return Math.round(share * 100.0) + "%";
     }
 }

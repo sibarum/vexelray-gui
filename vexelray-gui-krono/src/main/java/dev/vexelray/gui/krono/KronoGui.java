@@ -262,6 +262,31 @@ public final class KronoGui implements AutoCloseable {
         return kron.ticks();
     }
 
+    // ------------------------------------------------------------ motion off
+
+    /**
+     * Whether motion is off for this tree: the GUI's simplified graphics ({@link Gui#simplifiedGraphics()}). Every
+     * animation this class times then lands on its end state at once — {@link #ramp} delivers 1 and arrives,
+     * {@link #retarget} and {@link #animate} write the target — and {@link Transitions} and {@link Fades} time
+     * nothing, through {@link #paced}. Asked at each call, so switching the mode takes effect from the next
+     * animation without a restart; one already running finishes as it began.
+     *
+     * <p>Timing that is not motion is left alone: {@link #after}, {@link #every} and {@link #spork} are schedules,
+     * and a tooltip's delay is a wait, not a movement.
+     */
+    public boolean still() {
+        return gui.simplifiedGraphics();
+    }
+
+    /**
+     * {@code over}, or {@link Dur#ZERO} while {@link #still()}: the duration a motion should take now. For a
+     * consumer that already treats zero as "arrive at once" — {@code Dur.ZERO} is the honest reduced-motion
+     * setting throughout this module — so it decides before it has written a start it would have to take back.
+     */
+    public Dur paced(Dur over) {
+        return still() ? Dur.ZERO : over;
+    }
+
     // ------------------------------------------------------------ scheduling
 
     /**
@@ -351,6 +376,11 @@ public final class KronoGui implements AutoCloseable {
      * and the result is still a curve, so it stays precomputable. Safe from a handler thread.
      */
     public <T> void retarget(Cell<T> cell, T target, Dur over, Ease ease, Interp<T> interp) {
+        if (still()) {
+            Objects.requireNonNull(cell, "cell");
+            onTimeline(() -> cell.set(target));   // no curve: the cell is at its target from this moment
+            return;
+        }
         onTimeline(() -> animator.retarget(cell, target, over, ease, interp));
     }
 
@@ -399,6 +429,15 @@ public final class KronoGui implements AutoCloseable {
             // Refused here, to the caller, as Tween would have: deferred, it would surface on the timeline instead.
             throw new IllegalArgumentException("extent must be positive: " + over);
         }
+        if (still()) {
+            // Motion off: the end state, then arrival, in one step on the timeline where the consumer expects
+            // both. No frames are held for it, so a still tree goes quiet at the next tick.
+            onTimeline(() -> {
+                progress.accept(1d);
+                done.run();
+            });
+            return;
+        }
         // Through onTimeline rather than straight to Tween, which would post to the kernel itself: this is the
         // seam every widget crossfade arrives by, so it is the post quiescentAtLastTick most needs to count. On
         // the timeline, rampOn begins at once, so nothing else about it changes.
@@ -415,6 +454,12 @@ public final class KronoGui implements AutoCloseable {
     public <T> void animate(
             Node node, BiConsumer<Node, T> setter, T from, T to, Dur over, Ease ease, Interp<T> interp) {
 
+        if (still()) {
+            Objects.requireNonNull(node, "node");
+            Objects.requireNonNull(setter, "setter");
+            onTimeline(() -> setter.accept(node, to));
+            return;
+        }
         Curve<T> curve = Tween.curve(from, to, over, ease, interp);
         onTimeline(() -> {
             Cell<T> cell = kron.cell("animate", from);

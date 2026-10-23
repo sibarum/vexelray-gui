@@ -178,14 +178,17 @@ public final class Transitions implements LayoutMotion {
         float startX = fromX + lag.dx - toX;
         float startY = fromY + lag.dy - toY;
         int epoch = ++lag.epoch;   // GUI thread is the only writer, so this needs no atomic
-        if (terms.over().nanos() <= 0L || (startX == 0f && startY == 0f)) {
+        // Paced here, before the lag is written: in simplified graphics the node is drawn where layout put it from
+        // this frame, rather than at its old place for the one frame a snapping ramp would take to arrive.
+        Dur over = krono.paced(terms.over());
+        if (over.nanos() <= 0L || (startX == 0f && startY == 0f)) {
             lag.dx = 0f;
             lag.dy = 0f;
             return;
         }
         lag.dx = startX;
         lag.dy = startY;
-        krono.ramp(terms.over(), terms.ease(),
+        krono.ramp(over, terms.ease(),
                 progress -> {
                     if (lag.epoch != epoch) {
                         return;   // superseded by a later move; this ramp no longer speaks for this node

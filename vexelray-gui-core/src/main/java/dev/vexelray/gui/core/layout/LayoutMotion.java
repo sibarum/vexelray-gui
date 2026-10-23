@@ -71,6 +71,11 @@ public interface LayoutMotion {
         }
 
         @Override
+        public boolean active() {
+            return false;
+        }
+
+        @Override
         public String toString() {
             return "LayoutMotion.NONE";
         }
@@ -93,4 +98,20 @@ public interface LayoutMotion {
     /** How far below where layout put it this node is drawn, px (negative is above); 0 when it has caught up.
      * Added to the layout position, and inherited by the subtree. */
     float displacementY(RetainedNode node);
+
+    /**
+     * Whether any node might currently be displaced: false only when every {@link #displacementX} and
+     * {@link #displacementY} would answer zero. Read once per frame, after {@link #moved} has been told this frame's
+     * moves, so a transition started by a move is already in flight when it is asked.
+     *
+     * <p>It lets the frame skip the whole-tree displacement walk while nothing is moving — hover-only frames, idle
+     * wakes — which is the common case for a source that is installed for the occasional reorder. The frame still
+     * walks once more after a source goes quiet, to write the resting positions back. Moves are not detected by the
+     * walk this skips: {@link Displacement#settle} reports them on every layout pass regardless.
+     *
+     * <p>The default says "maybe", which is always correct and never skips anything.
+     */
+    default boolean active() {
+        return true;
+    }
 }

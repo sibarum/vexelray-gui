@@ -184,6 +184,9 @@ public final class Transitions implements LayoutMotion {
         if (over.nanos() <= 0L || (startX == 0f && startY == 0f)) {
             lag.dx = 0f;
             lag.dy = 0f;
+            // Nothing in flight for this node, and the epoch bump above has silenced any ramp that was: forget it,
+            // so the lags map holds only what is moving and active() stays a scan of the few that are.
+            lags.remove(node.id, lag);
             return;
         }
         lag.dx = startX;
@@ -211,6 +214,17 @@ public final class Transitions implements LayoutMotion {
                     lag.dy = 0f;
                     lags.computeIfPresent(node.id, (k, v) -> v == lag && v.epoch == epoch ? null : v);
                 });
+    }
+
+    /**
+     * Active while some node carries a non-zero lag. A running ramp holds its node's lag away from zero until its
+     * last sample, and the framework walks once more after the frame that last found anything displaced, so
+     * answering from the lags alone loses nothing. A move is reported through {@link #moved} before this is asked,
+     * so a transition it starts counts from the same frame.
+     */
+    @Override
+    public boolean active() {
+        return !settled();
     }
 
     @Override

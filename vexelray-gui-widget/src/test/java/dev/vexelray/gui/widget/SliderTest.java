@@ -192,4 +192,23 @@ class SliderTest {
             assertNull(h.retained(s.node()).raw(dev.vexelray.gui.core.model.PropKey.PICTURE));
         }
     }
+
+    /**
+     * A shown value moves the thumb by a translate and not by the layout: a video's seek bar is shown a new value
+     * every frame, and re-weighting the spacers relaid the whole tree each time.
+     */
+    @Test
+    void showingAValueMovesTheThumbWithoutLayingItOut() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Slider s = mount(h, Lattice.none());
+            h.frame();
+            dev.vexelray.gui.core.model.RetainedNode thumb = h.retained(s.node()).children.get(1);
+            float laidX = thumb.x;
+            s.show(0.75f);
+            h.frame().frame();
+            assertEquals(laidX, thumb.x, 1e-3f, "the layout leaves the thumb where it was");
+            float drawnCentre = thumb.x + thumb.translateX() * thumb.emPx + thumb.w / 2f;
+            assertEquals(xAt(s, 0.75f), drawnCentre, 0.5f, "and it is drawn where the value puts it");
+        }
+    }
 }

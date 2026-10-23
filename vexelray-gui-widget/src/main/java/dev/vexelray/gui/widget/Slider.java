@@ -20,9 +20,11 @@ import java.util.function.DoubleConsumer;
 /**
  * A horizontal slider: a track with a thumb positioned by a 0..1 value. Dragging the track (anywhere on it) sets
  * the value from the pointer's place along the track, with pointer capture so the drag continues off the track
- * — built entirely on {@code Gui.onDrag}. The thumb is placed between two grow-weighted spacers ({@code grow(at)}
- * and {@code grow(1-at)}) that split the free space (track minus thumb), so the thumb lands exactly at the right
- * edge at 100% with no pixel math and no overflow.
+ * — built entirely on {@code Gui.onDrag}. The thumb rests between two grow-weighted spacers ({@code grow(base)}
+ * and {@code grow(1-base)}) that split the free space (track minus thumb), where {@code base} is the value it was
+ * built with; from there it is <em>translated</em> to where it is drawn. A translate is a visual prop, so a thumb
+ * that moves every frame — a video's seek bar — lays nothing out, where re-weighting the spacers relaid the whole
+ * tree each time.
  *
  * <h2>Where it may rest is the slider's to know</h2>
  *
@@ -60,7 +62,8 @@ public final class Slider {
      * which a drag event carries. So the pointer can be put under the thumb's centre, and a pixel turned into a
      * fraction, without the handler measuring the thumb.
      */
-    private static final Length THICKNESS = Length.rem(1.1f);
+    private static final float THICKNESS_REM = 1.1f;
+    private static final Length THICKNESS = Length.rem(THICKNESS_REM);
     /** How much of each gap, at either end, its point holds the thumb for. */
     static final float HOLD = 0.2f;
     /** Ticks closer than this fraction of the thumb's width are thinned. */
@@ -72,8 +75,11 @@ public final class Slider {
 
     private final Gui gui;
     private final Node track;
-    private final Node leftSpacer;
-    private final Node rightSpacer;
+    private final Node thumb;
+    /** Where the spacers rest the thumb, 0..1: the value it was built with, for good. */
+    private final float base;
+    /** How far the thumb's centre travels, in the thumb's em (a rem); 0 until the track is laid out. Guarded by this. */
+    private float travelEm;
     private volatile Lattice lattice = Lattice.none();
     private volatile Ramp ramp;
     private volatile float value;
@@ -93,16 +99,19 @@ public final class Slider {
         this.gui = gui;
         this.value = clamp01(initial);
         this.at = this.value;
-        // The two spacers grow in proportion at : (1-at), splitting the space left over by the thumb, so the
-        // thumb's centre tracks the value and never pushes past the track edge.
-        this.leftSpacer = gui.box().width(Length.grow(this.at)).height(Length.percent(100));
-        this.rightSpacer = gui.box().width(Length.grow(1f - this.at)).height(Length.percent(100));
+        this.base = this.value;
+        // The two spacers grow in proportion base : (1-base), splitting the space left over by the thumb, so the
+        // thumb is where it belongs on its very first frame, before anything has been measured to translate by.
+        Node leftSpacer = gui.box().width(Length.grow(base)).height(Length.percent(100));
+        Node rightSpacer = gui.box().width(Length.grow(1f - base)).height(Length.percent(100));
         // The thumb is the grabbable thing, so it gets the physicality: a lit fill and a small drop shadow lift
         // it off the sunken track. Both are SDF transfer functions — no extra geometry, still one draw.
         Theme theme = gui.theme();
-        Node thumb = gui.box().width(THICKNESS).height(Length.percent(100))
+        // Its em is pinned to the rem, so the track's height says what its translate is measured in. Inert, since
+        // a translated node is still hit where the layout put it; the track takes the drag either way.
+        this.thumb = gui.box().width(THICKNESS).height(Length.percent(100)).textSize(Length.rem(1f))
                 .background(Role.ACCENT).corner(Length.rem(0.55f))
-                .lit(Finish.LIT).elevation(theme.elevation(Relief.CONTROL));
+                .lit(Finish.LIT).elevation(theme.elevation(Relief.CONTROL)).hitInert(true);
         this.track = gui.row().role("slider").height(THICKNESS)
                 .background(Role.TRACK).corner(Length.rem(0.55f))
                 .alignItems(AlignItems.CENTER).scroll(false, false) // a slider never scrolls
@@ -127,7 +136,10 @@ public final class Slider {
         }, true);
         // A picture resolves no units of its own, so the ticks are re-authored against the box the layout
         // settled on — which is also what carries them through a zoom or a DPI change.
-        gui.onResize(track, computed -> paintTicks(computed.rect()));
+        gui.onResize(track, computed -> {
+            paintTicks(computed.rect());
+            measure(computed.rect());
+        });
         // The one thing the framework cannot infer here: a drag handler alone does not mean "grabbable" -- a text
         // field registers one too, for click-to-caret, and wants the I-beam. So the slider says so.
         gui.cursor(track, CursorShape.GRAB);
@@ -349,8 +361,17 @@ public final class Slider {
             return;
         }
         this.at = t;
-        leftSpacer.width(Length.grow(t));
-        rightSpacer.width(Length.grow(1f - t));
+        thumb.translate((t - base) * travelEm, 0f);
+    }
+
+    /**
+     * Take the thumb's travel from the track's laid-out {@code box}, and put the thumb back where it is drawn at it.
+     * The spacers keep {@code base}'s share of whatever the travel is, so only the difference is translated.
+     */
+    private synchronized void measure(Rect box) {
+        float h = box.h();
+        travelEm = h <= 0f ? 0f : Math.max(0f, box.w() - h) / (h / THICKNESS_REM);
+        thumb.translate((at - base) * travelEm, 0f);
     }
 
     // --- ticks ----------------------------------------------------------------------------------------------

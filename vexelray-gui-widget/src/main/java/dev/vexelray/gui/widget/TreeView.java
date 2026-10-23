@@ -2371,10 +2371,11 @@ public final class TreeView<T> implements AutoCloseable {
     }
 
     private void styleLocked(Row row, InteractionState state) {
-        // The disclosure lights instead of the row, never with it: one of them is what a click there would do, and
-        // the quiet fill whatever the tree's hover, since opening a branch is cheap even where choosing a row is not.
+        // The disclosure lights instead of the row, never with it: one of them is what a click there would do. EDGE
+        // rather than the panel level, which is the level a card already is and so lit nothing, and neutral whatever
+        // the tree's hover, so it does not borrow the look of a pick where choosing a row is loud.
         boolean opener = row.onDisclosure && row.canExpand;
-        row.disclosure.background(opener ? Role.PANEL : null);
+        row.disclosure.background(opener ? Role.EDGE : null);
         row.chevron.tint(opener ? Role.INK : Role.DIM);
         if (row == selected) {
             row.rowNode.background(Role.SELECTION);

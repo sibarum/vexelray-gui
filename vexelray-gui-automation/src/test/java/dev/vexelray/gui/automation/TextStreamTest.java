@@ -205,7 +205,7 @@ class TextStreamTest {
         try (AutomationServer server = AutomationServer.start(new Ring(ring), 0, 4);
              Client c = new Client(server)) {
             assertEquals(List.of("err there is no lane 'paint'; the lanes are bus,state,time,anim,input,frame,layout,"
-                    + "draw,gpu,shader,app"), c.ask("stream paint"));
+                    + "draw,gpu,shader,app,trace"), c.ask("stream paint"));
             assertEquals(List.of("err for takes 1 to 600000 ms, not 0"), c.ask("stream for 0"));
             assertEquals(List.of("err 'soon' is not a seq"), c.ask("stream from soon"));
             assertEquals(List.of("err stream takes [lanes|all] [from <seq>] [for <ms>], not 'gpu'"),

@@ -419,7 +419,7 @@ A real run against the gui demo (`-Dprobe=all -Dprobe.format=csv`), with a `mark
 
 ```
 $ ottermate recorder
-ok rows=10687 capacity_rows=262144 over=+1.412s..+8.966s lost=0 lost_total=0 rate_rows_per_s=4 frames=1..97 frame_stamp=yes ring_mb=12.0 sink_failures=0 lanes=bus,state,time,anim,input,frame,layout,draw,gpu,shader,app
+ok rows=10687 capacity_rows=262144 over=+1.412s..+8.966s lost=0 lost_total=0 rate_rows_per_s=4 frames=1..97 frame_stamp=yes ring_mb=12.0 sink_failures=0 lanes=bus,state,time,anim,input,frame,layout,draw,gpu,shader,app,trace
 
 $ ottermate frames worst 5
 ok frames=5 order=worst held=1..97 over=+1.412s..+9.154s lost=0 more=92

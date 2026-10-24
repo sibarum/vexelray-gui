@@ -3,10 +3,11 @@
 Read this when a window scrolls where you did not expect it to, or shows two scrollbars side by side. The short
 answers: an application never asks for a scrollbar, so searching its code for one finds nothing (§1); the whole
 window scrolls when it is smaller than `Gui.minSize` (§2); and two bars along one edge are two containers each
-doing §1, one inside the other, which the layout now reports (§3). §4 is how to see all of it from outside.
+doing §1, one inside the other, which the layout now reports (§3). §4 is how to see all of it from outside. A box
+scrolling sideways that never declared it is reported too (§5).
 
 Code: `FlexLayout.layoutBox` decides, `TreeRenderer.drawScrollbars` draws, `Metrics.measure` sets the canvas,
-`NestedScroll` reports.
+`NestedScroll` and `UnaskedScroll` report.
 
 ## 1. A scrollbar is overflow, not a widget
 
@@ -90,3 +91,37 @@ shot at-minimum.png
 resize 51emx30em      # below it: what a small screen or a saved size gives
 shot below-minimum.png
 ```
+
+## 5. A sideways scrollbar nobody asked for
+
+Down is how a page longer than its window is read, so a box that scrolls vertically without saying so is ordinary.
+Sideways is not. A page is laid out to its width, and content wider than that is nearly always one thing that could
+not be narrower: a label told not to wrap, a row of buttons, a fixed width. By §1 the box scrolls, the bar is drawn
+like any other, and it reads as a style. The framework's About window shipped one: its build line said
+`d920925cfa80 + uncommitted changes` on a `wordWrap(false)` label 3 px wider than the room, and only a person
+looking at it noticed.
+
+So the layout reports a box that scrolls along x without having declared that axis (`Node.scroll`), once per run,
+through `Diagnostics` on `vexelray.diag`, naming the innermost part that reaches past the box:
+
+```
+WARN vexelray.diag - a horizontal scrollbar nobody asked for — box 8 scrolls sideways, and nothing declared that it
+should: its content is 460px wide in a 392px view. What does not fit is text 7 ("12.345.6789-SNAPSHOT-with-a-qualifi…"),
+reaching 460px into it: a label told not to wrap (wordWrap(false)). Let it wrap, or give it only the room there is
+(Length.FILL, Length.grow); if box 8 is meant to scroll sideways, declare it with scroll(true, ...), and this is not
+said again. (ids are ottermate tree's; docs/reference/scrolling.md §5)
+```
+
+- **Let it wrap.** A label wraps by default; `wordWrap(false)` is a decision to be cut off or to widen. A label as
+  wide as its parent (`Length.FILL`, or `Length.grow` beside a fixed one) wraps inside it.
+- **Give it only the room there is.** A row whose parts have widths of their own is as wide as their sum. Something
+  that cannot wrap (a button) stacks rather than sitting beside another.
+- **Or say it scrolls.** A table, a code view or a timeline is meant to scroll sideways: `scroll(true, ...)` on the
+  box says so, and the warning is for the boxes that did not.
+
+Not reported: a text leaf (it has its own rules, and a wrapped one never scrolls sideways), and the root laid out on
+a canvas wider than the window, which is `Gui.minSize` doing what it was asked (§2).
+
+`vexelray-framework`'s acceptance run fails on this warning in its run's log, after opening the About window at its
+size, zoomed and narrowed; its `AboutTest` lays the window out with a bill longer than any real one, so a long name or
+version is caught before a build ever makes one.

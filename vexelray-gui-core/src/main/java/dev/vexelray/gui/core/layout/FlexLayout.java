@@ -58,6 +58,8 @@ public final class FlexLayout {
         // Two scrollers along one axis, one filling the other, are two bars side by side that nobody asked for:
         // said here, where the window and the canvas that may have caused it are both known.
         NestedScroll.report(root, root.w, root.h, canvasW, canvasH);
+        // And a box scrolling sideways that never said it should: one thing that could not be narrower.
+        UnaskedScroll.report(root, root.w, canvasW);
     }
 
     /** Resolve {@code n}'s render scalars and place its children within its content box. Recurses. */

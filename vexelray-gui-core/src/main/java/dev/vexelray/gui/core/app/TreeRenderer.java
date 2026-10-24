@@ -937,7 +937,8 @@ public final class TreeRenderer {
                         field.side(), field.spread(), field.margin(), fade(field.tint()));
             } else {
                 canvas.field(n.x, n.y, n.w, n.h, field.texture(), cell.u0(), cell.v0(), cell.u1(), cell.v1(),
-                        field.side(), field.spread(), field.margin(), fade(field.tint()), field.look());
+                        field.side(), field.spread(), field.margin(), fade(field.tint()), field.look(),
+                        field.instance());
             }
         }
         // A drawing goes over the image and under the border: an application's own marks belong inside the frame

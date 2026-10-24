@@ -20,13 +20,26 @@ import java.util.List;
  * front to back (an outline, the core {@code fieldFill} in {@code tint}, a {@code glow}, a {@code dropShadow}). A look
  * naming an effect the application's canvas shader was not composed with draws without that effect, said once. Null
  * draws the shape alone in {@code tint}.
+ *
+ * <p>{@code instance} is what the look carries per element, in its shadelets' order: a reveal's progress, a light's
+ * position. A field that animates is a new one each frame with new values, which costs a prop write and nothing else;
+ * the texture and the look stay as they are. Empty for a look with none, and for none.
  */
-public record ImageField(ImageHandle texture, ImageRegion region, int side, int spread, Color tint, Look look) {
+public record ImageField(ImageHandle texture, ImageRegion region, int side, int spread, Color tint, Look look,
+                         float[] instance) {
+
+    private static final float[] NONE = new float[0];
 
     public ImageField {
         if (texture == null || region == null || tint == null || side <= 2 * spread || spread < 0) {
             throw new IllegalArgumentException("a field " + side + " texels across with " + spread + " round it");
         }
+        instance = instance == null || instance.length == 0 ? NONE : instance.clone();
+    }
+
+    /** Drawn by {@code look}, which carries no per-element values. */
+    public ImageField(ImageHandle texture, ImageRegion region, int side, int spread, Color tint, Look look) {
+        this(texture, region, side, spread, tint, look, NONE);
     }
 
     /** The shape alone, in {@code tint}. */
@@ -51,12 +64,26 @@ public record ImageField(ImageHandle texture, ImageRegion region, int side, int 
 
     /** This field in another colour: what a state change often is, since the texture stays as it is. */
     public ImageField tint(Color tint) {
+        return new ImageField(texture, region, side, spread, tint, look, instance);
+    }
+
+    /** This field drawn by {@code look}, which carries no per-element values; null for the shape alone. */
+    public ImageField look(Look look) {
         return new ImageField(texture, region, side, spread, tint, look);
     }
 
-    /** This field drawn by {@code look}; null for the shape alone. */
-    public ImageField look(Look look) {
-        return new ImageField(texture, region, side, spread, tint, look);
+    /**
+     * This field drawn by {@code look} with {@code instance}, the values its shadelets carry per element: one frame's
+     * worth of an animated look. The canvas refuses a count that is not the look's.
+     */
+    public ImageField look(Look look, float... instance) {
+        return new ImageField(texture, region, side, spread, tint, look, instance);
+    }
+
+    /** The per-element values, a copy. */
+    @Override
+    public float[] instance() {
+        return instance.clone();
     }
 
     /**

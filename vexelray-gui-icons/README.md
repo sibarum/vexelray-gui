@@ -111,3 +111,42 @@ named for it is named outright:
 
 A drawing at one size only stands in at the other. A name the suite's set already holds fails the build, naming the
 `Icon` constant to use instead.
+
+## Art pairs: a mark to condense
+
+A **mark** shown large, the way the About window shows an application's and the framework's, is baked as an **art
+pair** rather than an icon: its shape as a distance field and its colour, the drawing itself, side by side in one atlas
+per size it is shown at, so a look reads both from the texture it has bound. The plugin's `pair` goal bakes them; the
+run time reads them with `ArtPair`, by the name they were baked under, beside a class.
+
+```xml
+<execution>
+  <id>about-art</id>
+  <goals><goal>pair</goal></goals>
+  <configuration>
+    <pairs>
+      <pair>
+        <art>src/main/rc/pix.svg</art>     <!-- a square SVG -->
+        <name>pix</name>                   <!-- pix.pair and pix-<size>.vxpx at the class path's root -->
+        <sizes>104,208,312,416</sizes>     <!-- the colour at 1x to 4x of the size it is shown at -->
+        <field>160</field>                 <!-- the field's square, texels: fields scale, so one serves every size -->
+        <margin>0.6</margin>               <!-- room round the shape, a share of its square, for effects to reach -->
+        <lift>orb</lift>                   <!-- optional: a top-level element left out of the shape -->
+      </pair>
+    </pairs>
+  </configuration>
+</execution>
+```
+
+- **The field is in the MTSDF layout at two ranges.** Alpha is the true distance across the whole margin; red, green
+  and blue are the same distance over an eighth of that range, eight times as precise at the edge, where precision
+  shows. One byte cannot be both: sixty pixels of margin in 255 steps is a visible staircase in a contour drawn from
+  it. The three near channels are equal for now (the median of three equal values is the value), so a true
+  multi-channel field drawn from outlines drops in later without a reader changing. `Condense.MTSDF` in
+  vexelray-shadelets reads it.
+- **The colour is premultiplied**, so a bilinear read never darkens toward a transparent neighbour.
+- **A lifted part** is kept in the colour and left out of the shape, and where it sits is recorded (`ArtPair.lift`):
+  for a part the application draws live and lands where the drawing has it. The VexelRay mark's orb is one.
+
+An application's About window finds its pair by its icon's name: `@VexelApp(icon = "/pix.ico")` looks for `/pix.pair`.
+Without one, the window shows the icon instead.

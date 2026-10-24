@@ -8,6 +8,7 @@ import dev.vexelray.gui.core.input.CursorShape;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
+import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.style.IconEffects;
@@ -43,6 +44,7 @@ public final class IconButton {
     private volatile boolean enabled = true;
     private volatile boolean toggle;
     private volatile boolean on;
+    private volatile boolean tile;
     private volatile Role hover = Role.SELECTION;
     private volatile Role ink = Role.DIM;
     private volatile InteractionState state = InteractionState.NORMAL;
@@ -96,6 +98,21 @@ public final class IconButton {
     public IconButton size(Length side, Length icon) {
         node.size(side, side);
         glyph.size(icon);
+        return this;
+    }
+
+    /**
+     * Make it a tile: {@code side} square, the icon {@code icon} across with its name shown under it, on a raised
+     * fill with a hairline edge, so a row of them reads as a set of equal choices rather than a toolbar. For a few
+     * actions a window is about, where a word is worth its room. The name is still the accessible name.
+     */
+    public IconButton tile(Length side, Length icon) {
+        this.tile = true;
+        node.direction(Direction.COLUMN).size(side, side).gap(Length.rem(0.45f))
+                .corner(Length.rem(0.8f)).border(Length.dp(1), Role.LINE);
+        glyph.size(icon);
+        label.visible(true).textSize(Length.rem(0.6875f)).wordWrap(false);
+        paint();
         return this;
     }
 
@@ -169,7 +186,10 @@ public final class IconButton {
         boolean lit = toggle && on;
         // What the icon does under the pointer and when on is the theme's, as the hover fill is.
         IconEffects icons = gui.theme().icons();
-        node.background(s == InteractionState.NORMAL ? null : hover);
+        node.background(s == InteractionState.NORMAL ? (tile ? Role.RAISED : null) : hover);
+        if (tile) {
+            label.textColor(!enabled ? Role.FAINT : s == InteractionState.NORMAL ? Role.DIM : Role.INK);
+        }
         if (!enabled) {
             glyph.tint(Role.FAINT).glow(0f).weight(0f);
         } else if (lit) {

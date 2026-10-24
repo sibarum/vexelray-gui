@@ -441,6 +441,11 @@ Wanted eventually, deliberately not now.
   msdf plugin already runs it for fonts, and raster art keeps the true SDF in all four channels. Worth checking
   first that msdfgen's handling of strokes and clips matches imagelib's on the suite's actual drawings.
 
+  The layout is in use already (2026-10-24), for the About window's art pairs (the icon plugin's `pair` goal, read by
+  `Condense.MTSDF` in vexelray-shadelets): alpha the true distance across a wide margin, red, green and blue the same
+  distance over an eighth of that range. The near channels are one true distance for now, not a multi-channel field,
+  so the corners round as today's do; MSDF from outlines would drop in there without a reader changing.
+
   Considered for the font atlases and left out (2026-10-24): body text is never drawn past its edge, the font
   atlases' range (`pxRange = 4`) is too narrow for effects anyway, and widening it pays padding round 3,000-odd
   glyphs a face, where an icon set pays it round a few dozen.

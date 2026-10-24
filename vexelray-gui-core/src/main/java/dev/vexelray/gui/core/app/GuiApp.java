@@ -12,6 +12,7 @@ import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
 import dev.vexelray.gui.core.layout.TextMeasurer;
 import dev.vexelray.gui.core.model.RetainedNode;
 import dev.vexelray.os.NativePlatform;
+import sibarum.probe.Cause;
 import sibarum.probe.Lane;
 import sibarum.probe.Probe;
 import sibarum.probe.Zone;
@@ -133,8 +134,16 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
 
     // Work that must happen on the main thread at the top of a frame: opening a window, showing, hiding or
     // closing one. Every thread-safe command on this class is one of these — enqueued here, performed there.
-    private final java.util.concurrent.ConcurrentLinkedQueue<Runnable> tasks =
+    // Each with the cause it was posted in, to be run in (atchung's docs/correlation.md).
+    private final java.util.concurrent.ConcurrentLinkedQueue<Posted> tasks =
             new java.util.concurrent.ConcurrentLinkedQueue<>();
+
+    /** A posted task and the cause it was posted in. Beside it rather than wrapped round it, so a stall names it. */
+    private record Posted(Runnable task, long cause) {
+    }
+
+    /** The loop's own clock: each pass of {@link #run} is a new cause of it, for what a frame does unasked. */
+    private static final Cause.Source FRAME = Cause.source("gui.frame", Cause.Kind.TIMER);
 
     /** Windows the application refers to by name, so asking twice raises one window instead of making two. */
     private final java.util.concurrent.ConcurrentHashMap<String, AppWindow> named =
@@ -1200,7 +1209,7 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
      * hold up what was posted ({@link #iterationTop}).
      */
     public void post(Runnable task) {
-        tasks.add(task);
+        tasks.add(new Posted(task, Cause.current()));
         postWake();
     }
 
@@ -1823,13 +1832,22 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
         tally.begin(System.nanoTime());
         // Window creation, showing, hiding and closing all land here: posted from wherever they were asked
         // for, performed on the thread that is allowed to perform them.
-        for (Runnable task; (task = tasks.poll()) != null; ) {
+        for (Posted posted; (posted = tasks.poll()) != null; ) {
             long taskStarted = stallNanos > 0 ? System.nanoTime() : 0L;
-            task.run();
+            if (posted.cause() == Cause.NONE) {
+                posted.task().run();
+            } else {
+                long previous = Cause.enter(posted.cause());
+                try {
+                    posted.task().run();
+                } finally {
+                    Cause.exit(previous);
+                }
+            }
             if (stallNanos > 0) {
                 long took = System.nanoTime() - taskStarted;
                 if (took > stallNanos) {
-                    reportStall(task, took);
+                    reportStall(posted.task(), took);
                 }
             }
         }
@@ -1869,114 +1887,123 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
         int frame = 0;
         boolean running = true;
         main.liveStep(() -> iterationTop(false));
-        while (running && (maxFrames <= 0 || frame < maxFrames)) {
-            iterationTop(true);
-            // One span per loop iteration, and it is the root of the whole report: every other span in every
-            // other lane nests inside this one, so its self time is the loop's own overhead and its children
-            // are where a frame actually went. The wait below is deliberately outside it - a loop parked on an
-            // empty event queue is idle, not slow, and counting the park as frame time would make a perfectly
-            // healthy render-on-demand application look like the worst offender in the table.
-            if (ceilingFollowsDisplay) {
-                followDisplay();
-            }
-            wakePosted.set(false);   // a wake from here on was posted during this frame, so it is pending for the next
-            long frameStarted = System.nanoTime();   // the gap the ceiling holds is frame start to frame start
-            try (Zone frameZone = Probe.zone(Lane.FRAME, "frame")) {
-                running = main.frame(beforeFrame) || mainGate.keepAlive(main.window, gui.handlers());
-            }
-            open.removeIf(w -> {
-                // Each window pumps its own input before its own frame: two OS windows, one loop, one GUI.
-                if (w.window.frame(w.input::pump) || w.gate.keepAlive(w.window.window, w.spec.gui().handlers())) {
-                    return false;
+        // Each pass in a new cause of the loop's clock, which the posted tasks, the input and the mailboxes it runs
+        // each step out of for their own and back into: what is left in it is what a frame did on its own account,
+        // an animation's step or a layout. The thread's own cause is put back when the loop ends.
+        long outside = Cause.current();
+        try {
+            while (running && (maxFrames <= 0 || frame < maxFrames)) {
+                Cause.enter(FRAME.next());
+                iterationTop(true);
+                // One span per loop iteration, and it is the root of the whole report: every other span in every
+                // other lane nests inside this one, so its self time is the loop's own overhead and its children
+                // are where a frame actually went. The wait below is deliberately outside it - a loop parked on an
+                // empty event queue is idle, not slow, and counting the park as frame time would make a perfectly
+                // healthy render-on-demand application look like the worst offender in the table.
+                if (ceilingFollowsDisplay) {
+                    followDisplay();
                 }
-                if (w.window.window == modal) {
-                    // Directly, not posted: the application must be usable again in the same frame the dialog
-                    // leaves, or it spends one frame with every window disabled and nothing modal to explain it.
-                    applyModal(null);
+                wakePosted.set(false);   // a wake from here on was posted during this frame, so it is pending for the next
+                long frameStarted = System.nanoTime();   // the gap the ceiling holds is frame start to frame start
+                try (Zone frameZone = Probe.zone(Lane.FRAME, "frame")) {
+                    running = main.frame(beforeFrame) || mainGate.keepAlive(main.window, gui.handlers());
                 }
-                listed.remove(w.view);
-                w.release();   // this window's own resources only; the device and loop keep running
-                return true;
-            });
-            frame++;
-            if (tally.drewThisIteration()) {
-                long debugSlow = mainGui == null ? 0L
-                        : mainGui.flatShading() ? DEBUG_SLOW_FLAT_FRAME_NANOS : DEBUG_SLOW_FRAME_NANOS;
-                if (debugSlow > 0L) {
-                    java.util.concurrent.locks.LockSupport.parkNanos(debugSlow);
+                open.removeIf(w -> {
+                    // Each window pumps its own input before its own frame: two OS windows, one loop, one GUI.
+                    if (w.window.frame(w.input::pump) || w.gate.keepAlive(w.window.window, w.spec.gui().handlers())) {
+                        return false;
+                    }
+                    if (w.window.window == modal) {
+                        // Directly, not posted: the application must be usable again in the same frame the dialog
+                        // leaves, or it spends one frame with every window disabled and nothing modal to explain it.
+                        applyModal(null);
+                    }
+                    listed.remove(w.view);
+                    w.release();   // this window's own resources only; the device and loop keep running
+                    return true;
+                });
+                frame++;
+                if (tally.drewThisIteration()) {
+                    long debugSlow = mainGui == null ? 0L
+                            : mainGui.flatShading() ? DEBUG_SLOW_FLAT_FRAME_NANOS : DEBUG_SLOW_FRAME_NANOS;
+                    if (debugSlow > 0L) {
+                        java.util.concurrent.locks.LockSupport.parkNanos(debugSlow);
+                    }
+                    // What this frame cost the machine, start to presented, before the loop parks: a frame drawn is what
+                    // simplified graphics would make cheaper, and an idle park is not slowness.
+                    slowFrames.drawn(frameStarted, System.nanoTime() - frameStarted);
                 }
-                // What this frame cost the machine, start to presented, before the loop parks: a frame drawn is what
-                // simplified graphics would make cheaper, and an idle park is not slowness.
-                slowFrames.drawn(frameStarted, System.nanoTime() - frameStarted);
-            }
-            if (running) {
-                // After presenting, never before: the frame the application just asked for is not the
-                // one to make it wait for. One call covers every window, because the wait is on this
-                // thread's message queue rather than on any one window, and every window on this loop
-                // shares that queue.
-                // Never park on a queue that is already holding something: a window operation posted
-                // after this iteration's drain is owed the next frame, and it is the only one here that
-                // can say so.
-                // A texture waiting out its iteration (see release) is the same: parked, it is never closed.
-                // And so is a wake posted during this iteration. Its message is not to be trusted to still be
-                // there: every window's pump empties this thread's queue, so with two windows a wake posted
-                // after the main tree was drained is taken by the next window's pump, and the park would wait
-                // for a message already gone -- forever, when nobody is looking, with every later wake
-                // suppressed because a frame is already owed. Found by vexelray-framework's two-window
-                // witness; TwoWindowsWakeTest in vexelray-gui-harness.
-                long paced = tasks.isEmpty() && !retireDue() && !wakePosted.get() ? pacing.getAsLong() : 0L;
-                long budget = paced;
-                // Then the two bounds. The floor applies only while someone is looking: an unfocused
-                // window parks on whatever the application asked for, up to forever.
-                boolean focused = isFocused();
-                if (focused) {
-                    budget = Math.min(budget, maxIdleNanos);
-                }
-                long floored = budget;
-                // The ceiling applies always. A zero budget means "immediately", which on a presenter
-                // that does not block is as fast as the machine goes; this is what stops that.
-                budget = Math.max(budget, minFrameNanos - (System.nanoTime() - frameStarted));
-                // Counted by whichever bound decided it, the last to move it first (LoopCounters.Park).
-                tally.close();
-                tally.park(budget <= 0L ? LoopCounters.Park.ZERO
-                        : budget > floored ? LoopCounters.Park.CEILING
-                        : floored < paced ? LoopCounters.Park.FLOOR
-                        : budget == Long.MAX_VALUE ? LoopCounters.Park.FOREVER
-                        : LoopCounters.Park.DEADLINE, focused);
-                // The heartbeat, and the thing that makes a gap in the log readable (docs/reference/automation.md §4).
-                //
-                // A run is read by sorting on time and looking for long stretches with no frame in them. That
-                // only distinguishes a stall from a nap if two things are recorded unconditionally: that a frame
-                // happened, and that the loop then parked *and for how long it was allowed to*. This loop parks
-                // indefinitely on an unfocused window by design, so without the budget a thirty-second doze and
-                // a thirty-second hang are the same silence. With it the rule is mechanical: a gap covered by
-                // the preceding park is expected, and a gap that is not is a stall whose suspect is the row
-                // above it.
-                if (Probe.ON) {
-                    Probe.mark(Lane.FRAME, "frame.present", "#" + frame);
-                    Probe.mark(Lane.FRAME, "loop.park",
-                            budget == Long.MAX_VALUE ? "forever" : budget / 1_000_000 + "ms");
-                }
-                if (budget > 0) {
-                    // Timed separately from the frame, and worth timing: this is where a well-behaved
-                    // application spends most of its life, and a wait total that is small next to the run
-                    // time is the signature of a loop that is spinning rather than sleeping.
-                    try (Zone waitZone = Probe.idleZone(Lane.FRAME, "wait for events")) {
-                        main.window.waitEvents(budget);
-                        // A wake ends the park like OS input does, so the ceiling would not hold for it.
-                        // Sleep out what is left of the gap when a wake was posted; it stays pending, so the
-                        // next iteration draws it. A plain timed sleep and not waitEvents, which returns at
-                        // once while the wake's message is unread, so OS input does not end this one: it waits,
-                        // at most one gap.
-                        long gapEnds = frameStarted + minFrameNanos;
-                        long left;
-                        while (minFrameNanos > 0 && wakePosted.getAndSet(false)
-                                && (left = gapEnds - System.nanoTime()) > 0) {
-                            java.util.concurrent.locks.LockSupport.parkNanos(left);
+                if (running) {
+                    // After presenting, never before: the frame the application just asked for is not the
+                    // one to make it wait for. One call covers every window, because the wait is on this
+                    // thread's message queue rather than on any one window, and every window on this loop
+                    // shares that queue.
+                    // Never park on a queue that is already holding something: a window operation posted
+                    // after this iteration's drain is owed the next frame, and it is the only one here that
+                    // can say so.
+                    // A texture waiting out its iteration (see release) is the same: parked, it is never closed.
+                    // And so is a wake posted during this iteration. Its message is not to be trusted to still be
+                    // there: every window's pump empties this thread's queue, so with two windows a wake posted
+                    // after the main tree was drained is taken by the next window's pump, and the park would wait
+                    // for a message already gone -- forever, when nobody is looking, with every later wake
+                    // suppressed because a frame is already owed. Found by vexelray-framework's two-window
+                    // witness; TwoWindowsWakeTest in vexelray-gui-harness.
+                    long paced = tasks.isEmpty() && !retireDue() && !wakePosted.get() ? pacing.getAsLong() : 0L;
+                    long budget = paced;
+                    // Then the two bounds. The floor applies only while someone is looking: an unfocused
+                    // window parks on whatever the application asked for, up to forever.
+                    boolean focused = isFocused();
+                    if (focused) {
+                        budget = Math.min(budget, maxIdleNanos);
+                    }
+                    long floored = budget;
+                    // The ceiling applies always. A zero budget means "immediately", which on a presenter
+                    // that does not block is as fast as the machine goes; this is what stops that.
+                    budget = Math.max(budget, minFrameNanos - (System.nanoTime() - frameStarted));
+                    // Counted by whichever bound decided it, the last to move it first (LoopCounters.Park).
+                    tally.close();
+                    tally.park(budget <= 0L ? LoopCounters.Park.ZERO
+                            : budget > floored ? LoopCounters.Park.CEILING
+                            : floored < paced ? LoopCounters.Park.FLOOR
+                            : budget == Long.MAX_VALUE ? LoopCounters.Park.FOREVER
+                            : LoopCounters.Park.DEADLINE, focused);
+                    // The heartbeat, and the thing that makes a gap in the log readable (docs/reference/automation.md §4).
+                    //
+                    // A run is read by sorting on time and looking for long stretches with no frame in them. That
+                    // only distinguishes a stall from a nap if two things are recorded unconditionally: that a frame
+                    // happened, and that the loop then parked *and for how long it was allowed to*. This loop parks
+                    // indefinitely on an unfocused window by design, so without the budget a thirty-second doze and
+                    // a thirty-second hang are the same silence. With it the rule is mechanical: a gap covered by
+                    // the preceding park is expected, and a gap that is not is a stall whose suspect is the row
+                    // above it.
+                    if (Probe.ON) {
+                        Probe.mark(Lane.FRAME, "frame.present", "#" + frame);
+                        Probe.mark(Lane.FRAME, "loop.park",
+                                budget == Long.MAX_VALUE ? "forever" : budget / 1_000_000 + "ms");
+                    }
+                    if (budget > 0) {
+                        // Timed separately from the frame, and worth timing: this is where a well-behaved
+                        // application spends most of its life, and a wait total that is small next to the run
+                        // time is the signature of a loop that is spinning rather than sleeping.
+                        try (Zone waitZone = Probe.idleZone(Lane.FRAME, "wait for events")) {
+                            main.window.waitEvents(budget);
+                            // A wake ends the park like OS input does, so the ceiling would not hold for it.
+                            // Sleep out what is left of the gap when a wake was posted; it stays pending, so the
+                            // next iteration draws it. A plain timed sleep and not waitEvents, which returns at
+                            // once while the wake's message is unread, so OS input does not end this one: it waits,
+                            // at most one gap.
+                            long gapEnds = frameStarted + minFrameNanos;
+                            long left;
+                            while (minFrameNanos > 0 && wakePosted.getAndSet(false)
+                                    && (left = gapEnds - System.nanoTime()) > 0) {
+                                java.util.concurrent.locks.LockSupport.parkNanos(left);
+                            }
                         }
                     }
                 }
             }
+        } finally {
+            Cause.exit(outside);
         }
         device.waitIdle();
         // Main window gone (or frame cap hit): the other windows' loop is gone with it, so close them too.

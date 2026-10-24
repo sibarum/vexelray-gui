@@ -33,6 +33,8 @@ class AutomationServerTest {
     /** The verbs, as far as the server can tell: real classification, recorded execution. */
     private static final class Recorder implements Commands {
         final List<String> ran = new CopyOnWriteArrayList<>();
+        /** The cause each line ran in, beside {@link #ran}. */
+        final List<Long> causes = new CopyOnWriteArrayList<>();
         final AtomicInteger letGo = new AtomicInteger();
         /** Counted down when a {@code move} starts; the move then waits for {@link #finish}. */
         volatile CountDownLatch moving = new CountDownLatch(1);
@@ -42,6 +44,7 @@ class AutomationServerTest {
         @Override
         public String command(String line) {
             ran.add(line);
+            causes.add(sibarum.probe.Cause.current());
             if (line.startsWith("move") && holdMoves) {
                 moving.countDown();
                 try {
@@ -93,6 +96,28 @@ class AutomationServerTest {
         public void close() throws IOException {
             socket.close();
         }
+    }
+
+    /**
+     * Each command line runs in a cause of its own, so the command and everything it sets off share an ID; and the
+     * connection's thread is left in none between commands.
+     */
+    @Test
+    void eachCommandIsACauseOfItsOwn() throws Exception {
+        Recorder verbs = new Recorder();
+        try (AutomationServer server = AutomationServer.start(verbs, 0, 4);
+             Client a = new Client(server)) {
+            a.ask("click 10,10");
+            a.ask("type hi");
+        }
+        assertEquals(2, verbs.causes.size(), verbs.ran.toString());
+        long first = verbs.causes.get(0);
+        long second = verbs.causes.get(1);
+        assertEquals(sibarum.probe.Cause.Kind.COMMAND, sibarum.probe.Cause.kindOf(first));
+        assertEquals(sibarum.probe.Cause.sourceOf(first), sibarum.probe.Cause.sourceOf(second),
+                "one source, the server's");
+        assertEquals(sibarum.probe.Cause.sequenceOf(first) + 1, sibarum.probe.Cause.sequenceOf(second),
+                "and the next command is the next cause");
     }
 
     @Test

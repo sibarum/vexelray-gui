@@ -1,5 +1,6 @@
 package dev.vexelray.gui.automation;
 
+import sibarum.probe.Cause;
 import sibarum.probe.Lane;
 import sibarum.probe.Probe;
 
@@ -48,6 +49,8 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class AutomationServer implements AutoCloseable {
 
     private static final sibarum.probe.Log LOG = sibarum.probe.Log.of("automation.server");
+    /** The source of every command's cause (atchung's docs/correlation.md). */
+    private static final Cause.Source COMMAND = Cause.source("automation.command", Cause.Kind.COMMAND);
 
     /** The port, when nobody says otherwise. Arbitrary, high, and unregistered. */
     public static final int DEFAULT_PORT = 7654;
@@ -299,38 +302,18 @@ public final class AutomationServer implements AutoCloseable {
                 if (line.trim().equalsIgnoreCase("quit")) {
                     return;
                 }
-                // The agent's own commands, in the same file and the same order as their effects — which is what
-                // lets a run be read back without the conversation that produced it. The number says whose.
-                mark("agent.command", c, line);
-                LOG.debug("command #{}: {}", c.number, line);
-                Commands.Streaming streaming = c.session.streaming(line);
-                String unserved = streaming == null ? null : unserved(c, line);
-                if (unserved != null) {
-                    out.println(unserved);
-                    out.println(".");
-                    out.flush();
-                    continue;
+                // Each command its own cause, so the command and everything it set off in the application share an
+                // ID: its row, its log lines, the input it injected and the writes that input made.
+                boolean more;
+                long previous = Cause.enter(COMMAND.next());
+                try {
+                    more = command(c, line, in, out);
+                } finally {
+                    Cause.exit(previous);
                 }
-                if (streaming != null) {
-                    // Written as it happens, on this connection's thread: the connection is its sender. It reads,
-                    // so it needs no hand, and the others carry on meanwhile.
-                    streaming.run(in, out);
-                    out.println(".");
-                    out.flush();
-                    if (out.checkError()) {
-                        return;     // the reader went away mid-stream; nothing more to say to it
-                    }
-                    continue;
+                if (!more) {
+                    return;
                 }
-                String reply = answer(c, line);
-                if (LOG.isDebug()) {
-                    int end = reply.indexOf('\n');
-                    LOG.debug("reply #{}: {}", c.number,
-                            end < 0 ? reply : reply.substring(0, end) + " ... (" + reply.lines().count() + " lines)");
-                }
-                out.println(reply);
-                out.println(".");
-                out.flush();     // per reply: the other end is waiting on this one before it sends the next
             }
         } catch (IOException e) {
             if (running) {
@@ -344,6 +327,40 @@ public final class AutomationServer implements AutoCloseable {
             LOG.debug("connection {} closed", c.number);
             connectionsChanged();
         }
+    }
+
+    /** Answer one command line, inside its cause. False when the connection is done: its reader went away mid-stream. */
+    private boolean command(Connection c, String line, BufferedReader in, PrintWriter out) throws IOException {
+        // The agent's own commands, in the same file and the same order as their effects — which is what
+        // lets a run be read back without the conversation that produced it. The number says whose.
+        mark("agent.command", c, line);
+        LOG.debug("command #{}: {}", c.number, line);
+        Commands.Streaming streaming = c.session.streaming(line);
+        String unserved = streaming == null ? null : unserved(c, line);
+        if (unserved != null) {
+            out.println(unserved);
+            out.println(".");
+            out.flush();
+            return true;
+        }
+        if (streaming != null) {
+            // Written as it happens, on this connection's thread: the connection is its sender. It reads,
+            // so it needs no hand, and the others carry on meanwhile.
+            streaming.run(in, out);
+            out.println(".");
+            out.flush();
+            return !out.checkError();     // false: the reader went away mid-stream; nothing more to say to it
+        }
+        String reply = answer(c, line);
+        if (LOG.isDebug()) {
+            int end = reply.indexOf('\n');
+            LOG.debug("reply #{}: {}", c.number,
+                    end < 0 ? reply : reply.substring(0, end) + " ... (" + reply.lines().count() + " lines)");
+        }
+        out.println(reply);
+        out.println(".");
+        out.flush();     // per reply: the other end is waiting on this one before it sends the next
+        return true;
     }
 
     private String answer(Connection c, String line) {

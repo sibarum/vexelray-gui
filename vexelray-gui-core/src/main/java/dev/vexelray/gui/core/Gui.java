@@ -51,6 +51,7 @@ import dev.vexelray.gui.core.nav.Reveal;
 import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.gui.core.text.TextMetrics;
 import dev.vexelray.diag.Diagnostics;
+import sibarum.probe.Cause;
 import sibarum.probe.Lane;
 import sibarum.probe.Probe;
 import sibarum.probe.Zone;
@@ -282,6 +283,8 @@ public final class Gui implements AutoCloseable {
      * and an offloaded task is a file read, a decode or a network call that may outlast any number of frames.
      */
     private final Executor offload;
+    /** {@link #offload}, carrying each task's submitter's cause to the lane's thread: what {@link #offload()} hands out. */
+    private final Executor offloadCarrying;
     /**
      * The lanes this {@code Gui} built because nobody handed it one, and the only ones {@link #close} may shut
      * down. Empty when both were supplied, which is deliberate: a lane its embedder owns outlives the tree
@@ -424,14 +427,18 @@ public final class Gui implements AutoCloseable {
         // costs one frame per input event that finds nothing left to do.
         Executor base = handlerExecutor != null ? handlerExecutor : own(handlerLane());
         this.offload = offloadExecutor != null ? offloadExecutor : own(offloadLane());
+        this.offloadCarrying = Cause.carrying(offload);
         // Owed from submission to return, and the wake comes before the payment: a handler is still the frame's
         // work while it runs, and a settle that cannot see it answers before the click has done anything (Owed).
+        // Run in the cause it was submitted in, the click's or the key's, so what the handler does is charged to
+        // the input that asked for it (atchung's docs/correlation.md).
         this.handlers = task -> {
             owed.oweHandler();
+            Runnable carried = Cause.carry(task);
             try {
                 base.execute(() -> {
                     try {
-                        task.run();
+                        carried.run();
                     } finally {
                         wake("handler returned");
                         owed.payHandler();
@@ -1919,7 +1926,7 @@ public final class Gui implements AutoCloseable {
      */
     public void async(Runnable work) {
         try {
-            offload.execute(work);
+            offload.execute(Cause.carry(work));
         } catch (RejectedExecutionException e) {
             dropIfStopped(offload, e, "Gui.async/stopped", "offloaded work");
         }
@@ -1962,10 +1969,11 @@ public final class Gui implements AutoCloseable {
 
     /**
      * The lane {@link #async} submits to, exposed so a widget that does its own blocking work puts it in the
-     * same place rather than on the handler lane beside click dispatch.
+     * same place rather than on the handler lane beside click dispatch. Work submitted to it runs in its submitter's
+     * cause, as {@link #async} does.
      */
     public Executor offload() {
-        return offload;
+        return offloadCarrying;
     }
 
     /**

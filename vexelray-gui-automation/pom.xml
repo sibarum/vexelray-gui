@@ -44,6 +44,7 @@
                     </systemPropertyVariables>
                     <excludes>
                         <exclude>**/HoverPathDiagnosisTest.java</exclude>
+                        <exclude>**/CauseChainTest.java</exclude>
                     </excludes>
                 </configuration>
                 <executions>
@@ -64,6 +65,7 @@
                             <excludes combine.self="override"/>
                             <includes>
                                 <include>**/HoverPathDiagnosisTest.java</include>
+                                <include>**/CauseChainTest.java</include>
                             </includes>
                         </configuration>
                     </execution>

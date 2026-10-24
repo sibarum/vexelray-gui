@@ -40,6 +40,10 @@ public final class Tooltip implements AutoCloseable {
     private volatile boolean attachedToRoot;
     private volatile boolean shown;
 
+    /** The source of the causes the delay's firings begin. */
+    private static final sibarum.probe.Cause.Source TIMER =
+            sibarum.probe.Cause.source("tooltip.delay", sibarum.probe.Cause.Kind.TIMER);
+
     /** The timer is created on first use and shared by every arm/disarm; daemon, so it never holds the JVM. */
     private Timer timer;
     private TimerTask pending;
@@ -153,7 +157,8 @@ public final class Tooltip implements AutoCloseable {
         pending = new TimerTask() {
             @Override
             public void run() {
-                show.run();
+                // A timer firing: a cause of its own, not the hover's (atchung's docs/correlation.md).
+                sibarum.probe.Cause.begin(TIMER, show);
             }
         };
         timer.schedule(pending, delayMillis);

@@ -22,6 +22,7 @@ import sibarum.kronometer.Time;
 import sibarum.kronometer.anim.Animator;
 import sibarum.kronometer.anim.Ease;
 import sibarum.kronometer.anim.Tween;
+import sibarum.probe.Cause;
 
 import java.util.Objects;
 import java.util.function.BiConsumer;
@@ -301,7 +302,8 @@ public final class KronoGui implements AutoCloseable {
             // Counted before it is posted, so no tick can take a sample that has placed it and not counted it.
             posted.incrementAndGet();
         }
-        kron.onTimeline(work);
+        // In the cause it was posted in: a click's handler that starts an animation hands the click on with it.
+        kron.onTimeline(Cause.carry(work));
     }
 
     /** A shred: ordinary code that can advance time. Safe to call from a handler. */
@@ -312,12 +314,18 @@ public final class KronoGui implements AutoCloseable {
         return handle;
     }
 
-    /** Run {@code body} once, {@code delay} from now. */
+    /** The source of {@link #after}'s causes. */
+    private static final Cause.Source AFTER = Cause.source("krono.after", Cause.Kind.TIMER);
+
+    /**
+     * Run {@code body} once, {@code delay} from now, in a new cause of its own: a timer firing is something that
+     * happened, not the tail of whatever set it (atchung's {@code docs/correlation.md}).
+     */
     public Scheduled after(Dur delay, Runnable body) {
         Objects.requireNonNull(body, "body");
         return spork("after", () -> {
             Time.advance(delay);
-            body.run();
+            Cause.begin(AFTER, body);
         });
     }
 
@@ -334,15 +342,17 @@ public final class KronoGui implements AutoCloseable {
     /**
      * {@link #every(Dur, Runnable)} under a name — the one {@link #whyBusy()} gives when this is what keeps the
      * timeline from going quiet, and so the one an automation {@code settle} reports. A loop runs forever, so it
-     * is the reason that most wants a name.
+     * is the reason that most wants a name. Each run is a new cause of the source {@code krono.<name>}, so a loop's
+     * runs are told apart and still grouped by the loop.
      */
     public Scheduled every(String name, Dur period, Runnable body) {
         Objects.requireNonNull(body, "body");
-        return spork(Objects.requireNonNull(name, "name"), () -> {
+        Cause.Source source = Cause.source("krono." + Objects.requireNonNull(name, "name"), Cause.Kind.TIMER);
+        return spork(name, () -> {
             Metro metro = Metro.of(period);
             while (true) {
                 metro.tick();
-                body.run();
+                Cause.begin(source, body);
             }
         });
     }

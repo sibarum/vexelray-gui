@@ -156,7 +156,10 @@ public final class ListView<T> implements AutoCloseable {
         this.rowRem = rowRem;
 
         this.root = gui.column().role(containerRole).width(Length.FILL).height(Length.FILL).scroll(false, true)
-                .background(Role.WELL);
+                .background(Role.WELL)
+                // Rows are realized and dropped as the user scrolls, and the spacers shift the rest: none of it may
+                // fade or slide under a window-wide motion.
+                .recycles(true);
         this.spacerTop = gui.box().width(Length.FILL).height(Length.ZERO);
         this.spacerBottom = gui.box().width(Length.FILL).height(Length.ZERO);
         root.children(spacerTop, spacerBottom);

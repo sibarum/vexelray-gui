@@ -114,6 +114,22 @@ gui.enterMotion(presence).exitMotion(presence);
 row.remove();        // fades out in place, then leaves; list.append(row) before then brings it back up
 ```
 
+#### What is not motion, so a whole window can be enrolled
+
+`vexelray-framework` enrols every window's root in both, so the frame keeps out what must never animate:
+
+- **A resize, a zoom or a density change.** On a frame whose `Metrics` moved, `Displacement.settle` records every node
+  and reports none. A genuine move landing on the same frame jumps; that is the cost.
+- **A node moved on every frame**, by a pointer dragging a split or by a ramp growing a sibling's height. Its first
+  `Displacement.CHASED_FRAMES` (2) frames of a run are reported, and after that it is followed: drawn where layout puts
+  it, less whatever lag it already carried. A frame with no move ends the run, and so does the loop having been
+  parked for longer than a frame could take (the frame number skips), so two clicks a moment apart each animate.
+- **A recycling container's children** (`Node.recycles`, `PropKey.RECYCLES`): a virtualised list's rows are realized,
+  dropped and shifted as the user scrolls. None of them arrives, leaves or slides. `ListView` says it of itself.
+
+And per node, for paint: `Node.paintCuts` (`PropKey.PAINT_CUTS`) keeps a colour that is data, not state, out of the
+`PaintMotion`. A theme change still fades it.
+
 #### Keyed children: `Node.arrange`, `Node.keyed`
 
 Motion is keyed on node identity, so "rebuild the list from state" — new nodes every time — defeats all of it:

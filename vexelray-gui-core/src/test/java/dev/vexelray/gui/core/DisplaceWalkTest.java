@@ -123,10 +123,29 @@ class DisplaceWalkTest {
             frame(gui);
             long before = gui.displaceWalks();
 
-            list.children(b, a);
+            list.arrange(b, a);
             frame(gui);
             assertTrue(s.moves > 0, "settle still reports the reorder");
             assertEquals(before, gui.displaceWalks(), "a source that started nothing is still not walked");
+        }
+    }
+
+    /** The window moving under the user's hand is not a node going somewhere: a whole window may be enrolled. */
+    @Test
+    void aResizeMovesNothing() {
+        Scripted s = new Scripted();
+        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+            gui.motion(s);
+            Node half = gui.box().width(Length.percent(50)).height(Length.dp(20));
+            Node after = row(gui);
+            gui.root().children(gui.row().children(half, after));
+            frame(gui);
+            float x = find(frame(gui), after.id()).x;
+
+            RetainedNode wider = gui.frame(600f, 300f, DisplaceWalkTest::noText);
+
+            assertTrue(find(wider, after.id()).x > x, "the resize did move it");
+            assertEquals(0, s.moves, "and nothing was told it moved");
         }
     }
 

@@ -305,4 +305,24 @@ class EnterExitTest {
             assertNull(find(frame(gui), a.id()));
         }
     }
+
+    /** A virtualised list realizing a row as it scrolls is showing what was always there, not adding it. */
+    @Test
+    void aRecyclingContainersChildrenNeitherArriveNorLeave() {
+        Scripted s = new Scripted();
+        try (Gui gui = withScripted(s)) {
+            Node list = gui.column().recycles(true);
+            Node first = row(gui);
+            gui.root().children(list.children(first));
+            frame(gui);
+
+            list.append(row(gui));
+            frame(gui);
+            first.remove();
+            RetainedNode root = frame(gui);
+
+            assertEquals(List.of(), s.entered, "a realized row does not arrive");
+            assertNull(find(root, first.id()), "a row scrolled away is gone at once, not left to fade");
+        }
+    }
 }

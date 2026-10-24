@@ -172,9 +172,100 @@ public final class Metrics {
         return zoom;
     }
 
-    /** Set the zoom factor, clamped to the configured range. Safe from any thread. */
+    /**
+     * Set the zoom factor, clamped to the configured range, at once. Safe from any thread. A glide on its way stops
+     * here: whoever set the zoom directly (a restore, a slider, a reset) owns it now.
+     */
     public void zoom(float factor) {
+        zoomTarget = Float.NaN;
+        commitZoom(factor);
+    }
+
+    private void commitZoom(float factor) {
         zoom.commit(setZoom, Math.max(minZoom, Math.min(maxZoom, factor)));
+    }
+
+    // --- the zoom glide -------------------------------------------------------------------------------------
+    //
+    // A zoom key re-lays the whole window, and doing it in one frame is the largest jump a window can make: every
+    // glyph and box changes size at once and the eye has to find its place again (the scheduler's FN-6). So a step
+    // moves a target and the zoom closes half the remaining distance every half-life, as the wheel's ScrollGlide
+    // does, for the same three reasons: presses add up, it is honest about time, and there is no end to jump at.
+
+    /** Below this fraction of the target the zoom is put on it: a twentieth of a percent is not a size anyone sees. */
+    private static final float ZOOM_ARRIVED = 0.0005f;
+
+    /** The most time one step accounts for, so a frame after a long stall catches up rather than teleporting. */
+    private static final long ZOOM_MAX_STEP_NANOS = 50_000_000L;
+
+    /** How much time the first step of a new glide accounts for: one frame at 120 Hz. */
+    private static final long ZOOM_FIRST_STEP_NANOS = 8_333_333L;
+
+    private volatile long zoomHalfLifeNanos;
+    /** Where a zoom step is heading, or NaN while nothing glides. Written from any thread by a step. */
+    private volatile float zoomTarget = Float.NaN;
+    /** GUI thread: when the glide last stepped, or 0 before the first step of a glide. */
+    private long zoomLastStep;
+
+    /**
+     * How long a zoom step takes to close half the distance to where it is heading; zero (the default) steps at once,
+     * which is the reduced-motion setting. Safe from any thread.
+     */
+    public void zoomGlide(long halfLifeNanos) {
+        this.zoomHalfLifeNanos = Math.max(0L, halfLifeNanos);
+        if (halfLifeNanos <= 0L) {
+            float target = zoomTarget;
+            if (!Float.isNaN(target)) {
+                zoom(target);   // motion went off mid-glide: land where it was heading, now
+            }
+        }
+    }
+
+    /** Whether a zoom step is still on its way, so the frame after this one is owed. */
+    public boolean zoomGliding() {
+        return !Float.isNaN(zoomTarget);
+    }
+
+    /**
+     * Move the zoom one frame toward where a step sent it. GUI thread, at the top of a frame and before
+     * {@link #measure}, so this frame is laid out at the zoom it is drawn at. Returns whether it wrote one.
+     */
+    public boolean stepZoomGlide(long now) {
+        float target = zoomTarget;
+        if (Float.isNaN(target)) {
+            zoomLastStep = 0L;
+            return false;
+        }
+        long half = zoomHalfLifeNanos;
+        float from = zoom.value();
+        long dt = zoomLastStep == 0L ? ZOOM_FIRST_STEP_NANOS : Math.min(ZOOM_MAX_STEP_NANOS, Math.max(0L, now - zoomLastStep));
+        zoomLastStep = now;
+        float next = half <= 0L ? target : target + (from - target) * (float) Math.pow(0.5, (double) dt / half);
+        if (Math.abs(target - next) <= target * ZOOM_ARRIVED) {
+            next = target;
+            // Only if no step moved it meanwhile; one that did keeps gliding to its own target.
+            if (zoomTarget == target) {
+                zoomTarget = Float.NaN;
+            }
+        }
+        commitZoom(next);
+        return true;
+    }
+
+    /** Send the zoom to {@code factor}: gliding there if a glide is set, at once if not. */
+    private void zoomToward(float factor) {
+        float clamped = Math.max(minZoom, Math.min(maxZoom, factor));
+        if (zoomHalfLifeNanos <= 0L) {
+            zoom(clamped);
+        } else {
+            zoomTarget = clamped;
+        }
+    }
+
+    /** Where the zoom is heading: a glide's target, or the zoom itself while nothing glides. */
+    private float zoomHeading() {
+        float target = zoomTarget;
+        return Float.isNaN(target) ? zoom.value() : target;
     }
 
     /**
@@ -190,19 +281,22 @@ public final class Metrics {
         zoom(zoom.value());
     }
 
-    /** Zoom in one step, clamped to the configured maximum. */
+    /**
+     * Zoom in one step, clamped to the configured maximum: from where the zoom is heading, so three presses mid-glide
+     * are three steps. Glides if {@link #zoomGlide} is set.
+     */
     public void zoomIn() {
-        zoom(zoom.value() * zoomStep);
+        zoomToward(zoomHeading() * zoomStep);
     }
 
-    /** Zoom out one step, clamped to the configured minimum. */
+    /** Zoom out one step, clamped to the configured minimum, as {@link #zoomIn} does. */
     public void zoomOut() {
-        zoom(zoom.value() / zoomStep);
+        zoomToward(zoomHeading() / zoomStep);
     }
 
-    /** Back to 1.0 — unscaled. */
+    /** Back to 1.0 — unscaled, gliding as a step does. */
     public void resetZoom() {
-        zoom(1f);
+        zoomToward(1f);
     }
 
     /** The display density as a bus {@code State} — the points-to-pixels ratio of the surface drawn to. */

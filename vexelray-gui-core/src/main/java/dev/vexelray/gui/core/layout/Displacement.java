@@ -54,7 +54,32 @@ public final class Displacement {
      * the top-left corner.
      */
     public static void settle(RetainedNode node, LayoutMotion motion) {
-        settle(node, motion, 0f, 0f);
+        settle(node, motion, NO_FRAME, 0f, 0f);
+    }
+
+    /** No frame number: every pass is judged on its own, and nothing is taken for continuous. */
+    private static final long NO_FRAME = Long.MIN_VALUE;
+
+    /**
+     * How many frames running a node may be moved and still be reported. The first two moves of a run are chased, so a
+     * drag or a growing sibling starts as smoothly as anything else; from the third the node is being moved
+     * continuously and is followed instead.
+     */
+    static final int CHASED_FRAMES = 2;
+
+    /**
+     * {@link #settle(RetainedNode, LayoutMotion)} on frame {@code frame} of a loop that numbers its frames one apart.
+     *
+     * <p><b>A node moved on every frame is followed, not chased.</b> A pointer dragging a split, a ramp growing a tree's
+     * subtree, a column being resized: each moves something by a little on every frame, and the motion is already
+     * smooth because its own clock makes it so. A transition chasing each step would put a second clock on the same
+     * position and leave the node trailing behind the hand that moves it, which is the one thing a drag must never
+     * do. So a node moved on more than {@link #CHASED_FRAMES} frames running is recorded and not reported: it is drawn
+     * where layout puts it, less whatever lag it was already carrying, which keeps decaying. A move on a frame after a
+     * frame with none starts a new run, so two clicks a moment apart each animate.
+     */
+    public static void settle(RetainedNode node, LayoutMotion motion, long frame) {
+        settle(node, motion, frame, 0f, 0f);
     }
 
     /**
@@ -62,14 +87,24 @@ public final class Displacement {
      *                 movement and their scrolling together, which is exactly the part of any change in its
      *                 absolute position that is not a move of its own
      */
-    private static void settle(RetainedNode node, LayoutMotion motion, float carriedX, float carriedY) {
+    private static void settle(RetainedNode node, LayoutMotion motion, long frame, float carriedX, float carriedY) {
         // Where the node would be now if it had merely been carried. Comparing against this rather than against
         // the recorded position is the whole of it, and reporting `from` in the same frame is what keeps a
         // genuine move that happens *while* the node is being carried reporting its true distance.
         float fromX = node.layoutX + carriedX;
         float fromY = node.layoutY + carriedY;
         if (node.layoutRectKnown && (node.x != fromX || node.y != fromY)) {
-            motion.moved(node, fromX, fromY, node.x, node.y);
+            boolean continuous = false;
+            if (frame != NO_FRAME) {
+                node.moveStreak = node.movedFrame == frame - 1 ? node.moveStreak + 1 : 1;
+                node.movedFrame = frame;
+                continuous = node.moveStreak > CHASED_FRAMES;
+            }
+            // A recycling container's child shifting is the view moving over the data (PropKey.RECYCLES): recorded,
+            // not reported. Its subtree is still carried by the shift exactly once, below, as for any other node.
+            if (!continuous && (node.parent == null || !node.parent.recycles())) {
+                motion.moved(node, fromX, fromY, node.x, node.y);
+            }
         }
 
         // What this node's children have been carried by: everything that moved this node's box, less any
@@ -90,7 +125,7 @@ public final class Displacement {
         node.layoutRectKnown = true;
 
         for (RetainedNode child : node.children) {
-            settle(child, motion, childCarriedX, childCarriedY);
+            settle(child, motion, frame, childCarriedX, childCarriedY);
         }
     }
 

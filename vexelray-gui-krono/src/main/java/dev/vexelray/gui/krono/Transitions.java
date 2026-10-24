@@ -43,9 +43,11 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <h2>Enrolment is opt-in, per node</h2>
  *
- * <p>Nothing transitions unless it was enrolled, because most layout changes should not be animated: a window
- * resize moves everything, and a UI that slides its entire contents on every drag of the window edge is seasick
- * rather than smooth. {@link #follow} enrols one node, {@link #followChildren} enrols a container's direct
+ * <p>Nothing transitions unless it was enrolled. The frame already keeps out the layout changes that should never
+ * animate, so a whole window can be enrolled ({@code vexelray-framework} does): a resize or a zoom moves everything
+ * and is reported as moving nothing, since a UI that slid its contents on every drag of the window edge would be
+ * seasick; a node moved on every frame by a drag or another ramp is followed rather than chased; and a recycling
+ * container's rows are a view, not a move (see {@code Displacement.settle}). {@link #follow} enrols one node, {@link #followChildren} enrols a container's direct
  * children — what a list or tree wants, since its rows come and go and enrolling each one as it appeared would
  * be bookkeeping the container already does — and {@link #followSubtree} enrols everything under a node at any
  * depth, which is what a whole page wants.

@@ -568,6 +568,25 @@ public final class Node {
     }
 
     /**
+     * Say that this container's children are a view over data that it recycles as the user scrolls (a virtualised
+     * list's rows), so adding, dropping or shifting one is never animated: no arrival, no departure, no slide. A
+     * window's motion may cover everything under it, and this is the container that must not take part. Its
+     * children's own subtrees move as usual. See {@link PropKey#RECYCLES}.
+     */
+    public Node recycles(boolean recycles) {
+        return prop(PropKey.RECYCLES, recycles ? Boolean.TRUE : null);
+    }
+
+    /**
+     * Say that this node's colours are data rather than state (a cell coloured by its value, a pooled marker
+     * coloured by what it now stands for), so a colour written to it is drawn at once instead of fading from the
+     * last one. A theme change still fades it. See {@link PropKey#PAINT_CUTS}.
+     */
+    public Node paintCuts(boolean cuts) {
+        return prop(PropKey.PAINT_CUTS, cuts ? Boolean.TRUE : null);
+    }
+
+    /**
      * Close this node and its subtree to the user, or open it again: no focus, no press, no click, no drag or
      * drop, out of the Tab order, and focus taken away if it was held inside — while it still lays out, draws
      * and scrolls exactly as before. How it <em>looks</em> disabled is the widget's to draw; see
@@ -729,10 +748,28 @@ public final class Node {
         return this;
     }
 
-    public Node children(Node... kids) {
+    /** Append {@code kids}, in order: {@link #append(Node)} for each. */
+    public Node append(Node... kids) {
         for (Node k : kids) {
             append(k);
         }
+        return this;
+    }
+
+    /**
+     * <b>Append</b> {@code kids}, in order, for building a node that has none yet:
+     * {@code gui.column().children(title, body)}.
+     *
+     * <p>It does not replace. On a node that already has children it adds these after them, so a row "rebuilt" with it
+     * holds the old children and the new, and the tree says so once in the log. To replace them, {@link #arrange}
+     * (by node) or {@link #keyed} (a list drawn from data, by key); to add to them on purpose, {@link #append}.
+     */
+    public Node children(Node... kids) {
+        long[] ids = new long[kids.length];
+        for (int i = 0; i < ids.length; i++) {
+            ids[i] = kids[i].id;
+        }
+        sink.post(new Mutation.Children(id, ids));
         return this;
     }
 

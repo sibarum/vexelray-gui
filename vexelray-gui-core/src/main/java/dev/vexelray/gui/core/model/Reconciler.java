@@ -282,6 +282,36 @@ public final class Reconciler implements Mutation.Sink {
     }
 
     /**
+     * Append {@code children} to {@code parent}, in order: exactly as an insert at the end of each. On a parent that
+     * already had children it also says, once in the process, that this added rather than replaced, because
+     * {@code Node.children(...)} reads like a setter. A row rebuilt by it shows everything twice, and looks right in any
+     * test that builds it only once (Maistro's FN-6).
+     */
+    @Override
+    public void children(long parent, long[] children) {
+        RetainedNode p = index.get(parent);
+        int had = 0;
+        if (p != null) {
+            for (RetainedNode c : p.children) {
+                if (!c.leaving) {
+                    had++;
+                }
+            }
+        }
+        for (long child : children) {
+            insert(parent, child, Mutation.Insert.END);
+        }
+        if (had > 0 && p != null) {
+            dev.vexelray.diag.Diagnostics.dropped("Node/children-appends",
+                    "children(...) replacing what was there",
+                    "it appends: " + p.kind().name().toLowerCase(java.util.Locale.ROOT) + " " + p.id + " had " + had + (had == 1 ? " child" : " children")
+                            + " and was given " + children.length + " more, so it holds both. To replace its children,"
+                            + " call arrange(...), or keyed(...) for a list drawn from data; to add to them, append(...)."
+                            + " (ids are ottermate tree's)");
+        }
+    }
+
+    /**
      * Make {@code children} {@code parent}'s children, in order. A child not named is removed — through the exit
      * motion, like any removal — and one already leaving that is not named keeps its place, after whatever preceded it
      * that is still there, rather than jumping about as its neighbours reorder while it fades. A named node is moved
@@ -360,7 +390,8 @@ public final class Reconciler implements Mutation.Sink {
         if (was == null) {
             departed.remove(ch);
         }
-        if (returning || (was == null && p.layoutCtx != null)) {
+        // Into a recycling container nothing arrives: its children are a view the user scrolled, not an addition.
+        if (returning || (was == null && p.layoutCtx != null && !p.recycles())) {
             enters.entered(ch);
             // A walk is owed only when presence will be anything but 1: an arrival under EnterMotion.NONE is already
             // fully present, and walking the whole tree to write that again costs O(n) per added node. A node coming
@@ -377,7 +408,9 @@ public final class Reconciler implements Mutation.Sink {
         if (n != null) {
             // Offered to the exit motion first, if it is on screen to be seen going: one that takes it keeps it in
             // place, drawn leaving, until the frame detaches it (depart). A second remove of a leaving node is "now".
-            if (!n.leaving && n.parent != null && n.layoutCtx != null && n.visible() && exits.leave(n)) {
+            // A recycling container's child is not offered: it is a row scrolled away, not one taken out.
+            if (!n.leaving && n.parent != null && n.layoutCtx != null && n.visible() && !n.parent.recycles()
+                    && exits.leave(n)) {
                 n.leaving = true;
                 presenceDirty = true;
                 drawDirty = true;
@@ -408,7 +441,7 @@ public final class Reconciler implements Mutation.Sink {
             drawDirty = true;
             // A paint is reported as the colours it is in the theme being drawn: a hover from ACTION to ACTION-at-HOVER
             // is a change of colour, and a write of another role that happens to resolve the same is not.
-            if (before instanceof Paint from && value instanceof Paint to) {
+            if (before instanceof Paint from && value instanceof Paint to && !n.paintCuts()) {
                 if (key == PropKey.BACKGROUND) {
                     report(id, PaintMotion.Channel.BACKGROUND, from.in(theme), to.in(theme));
                 } else if (key == PropKey.BORDER_COLOR) {
@@ -604,6 +637,16 @@ public final class Reconciler implements Mutation.Sink {
                 Reconciler.this.arrange(parent, children);
             } finally {
                 end("Arrange node=" + parent + " children=" + children.length);
+            }
+        }
+
+        @Override
+        public void children(long parent, long[] children) {
+            begin(parent);
+            try {
+                Reconciler.this.children(parent, children);
+            } finally {
+                end("Children node=" + parent + " children=" + children.length);
             }
         }
 

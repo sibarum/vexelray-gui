@@ -266,6 +266,22 @@ public enum PropKey {
      */
     HIT_INERT(false),
     /**
+     * A container whose children are a <b>view over data</b>, not the data: a virtualised list's realized rows, which
+     * it adds, drops and shifts as the user scrolls. None of that is a change the user made, so no motion source
+     * hears of it: a child added here does not arrive ({@link dev.vexelray.gui.core.layout.EnterMotion}), one removed
+     * does not leave ({@link dev.vexelray.gui.core.layout.ExitMotion}), and one laid out somewhere new does not slide
+     * ({@link dev.vexelray.gui.core.layout.LayoutMotion}). It is what lets a whole window be enrolled in motion without
+     * every scroll of a long list fading its rows in. Direct children only; their own subtrees move as usual.
+     */
+    RECYCLES(false),
+    /**
+     * The node's colours are <b>data</b>, not state: a bead coloured by the thread that sent it, a cell coloured by its
+     * value. A colour written to it is drawn at once rather than handed to the
+     * {@link dev.vexelray.gui.core.style.PaintMotion}, which would show a pooled node passing through its previous
+     * owner's colour. A theme change still fades it, because that is the window changing, not the datum.
+     */
+    PAINT_CUTS(false),
+    /**
      * Closed to the user: the node and its whole subtree take no focus, no press, no click, no drag and no drop,
      * drop out of the Tab order, and lose focus if they held it. Claims held by a node in the subtree stop
      * applying. Unlike {@link #HIT_INERT} it is <b>opaque</b>, not transparent: a press on a disabled button does

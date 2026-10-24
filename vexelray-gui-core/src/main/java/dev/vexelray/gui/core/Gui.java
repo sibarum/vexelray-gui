@@ -217,9 +217,20 @@ public final class Gui implements AutoCloseable {
     private boolean displaced;
     /** How many displacement walks the frame has made: a test's evidence that a still tree walks nothing. */
     private long displaceWalks;
+    /**
+     * The frame's number for telling a continuous move from a discrete one (Displacement.settle). One apart per frame,
+     * and two apart after the loop has been parked, so a move on the first frame after a pause starts a new run
+     * rather than continuing one that ended before it: a parked loop draws no frames to count the gap in.
+     */
+    private long motionFrame;
+    private long motionFrameNanos;
+    /** Longer than any frame a drag or a ramp is drawn at, and shorter than a person's pause between two changes. */
+    private static final long MOTION_FRAME_GAP_NANOS = 150_000_000L;
     /** The scroll glide's half-life and the focus fade's duration as asked for; applied unless motion is reduced. */
     private volatile long glideNanos;
     private volatile long focusFadeNanos;
+    /** The zoom glide's half-life as asked for; applied unless motion is reduced. */
+    private volatile long zoomGlideNanos;
     /** The two graphics choices, each as asked for and as the run overrules it. */
     private final GraphicsChoice flatShading = new GraphicsChoice(FLAT_SHADING);
     private final GraphicsChoice reducedMotion = new GraphicsChoice(REDUCED_MOTION);
@@ -595,21 +606,27 @@ public final class Gui implements AutoCloseable {
         return this;
     }
 
-    /** Zoom in one step, clamped to the configured maximum. */
+    /**
+     * Zoom in one step, clamped to the configured maximum: gliding there if {@link #zoomGlide} is set, and from where a
+     * glide is already heading, so three presses are three steps. {@link #zoom(float)} is always at once.
+     */
     public Gui zoomIn() {
         metrics.zoomIn();
+        requestFrame();
         return this;
     }
 
-    /** Zoom out one step, clamped to the configured minimum. */
+    /** Zoom out one step, clamped to the configured minimum, as {@link #zoomIn} does. */
     public Gui zoomOut() {
         metrics.zoomOut();
+        requestFrame();
         return this;
     }
 
-    /** Back to 1.0 — unscaled. */
+    /** Back to 1.0 — unscaled, gliding as a step does. */
     public Gui resetZoom() {
         metrics.resetZoom();
+        requestFrame();
         return this;
     }
 
@@ -1569,6 +1586,18 @@ public final class Gui implements AutoCloseable {
         return this;
     }
 
+    /**
+     * Glide the zoom steps ({@link #zoomIn}, {@link #zoomOut}, {@link #resetZoom}): each moves where the zoom is
+     * heading, and the zoom closes half the remaining distance every {@code halfLife}, as the wheel does under
+     * {@link #scrollGlide}. {@link java.time.Duration#ZERO} (the default) steps at once, which is the reduced-motion
+     * setting. {@link #zoom(float)} is always at once: a restore or a slider says exactly where it wants to be.
+     */
+    public Gui zoomGlide(java.time.Duration halfLife) {
+        zoomGlideNanos = halfLife.toNanos();
+        applyMotionKnobs();
+        return this;
+    }
+
     // ------------------------------------------------------------ graphics choices
     //
     // Two choices, kept apart because each costs the user something different: flat shading gives up depth cues
@@ -1714,6 +1743,7 @@ public final class Gui implements AutoCloseable {
         boolean still = reducedMotion();
         input.scrollGlide(still ? 0L : glideNanos);
         input.focusFade(still ? 0L : focusFadeNanos);
+        metrics.zoomGlide(still ? 0L : zoomGlideNanos);
     }
 
     /**
@@ -2286,6 +2316,11 @@ public final class Gui implements AutoCloseable {
         // after. One step per frame is not a delay, it is the only honest cadence — see Navigation.
         stepNavigations();
         RetainedNode r = reconciler.root();
+        // A zoom step on its way moves one frame's worth before the size and scale are asked, so this frame is laid
+        // out at the zoom it is drawn at; while it is still on its way, the next frame is owed.
+        if (metrics.stepZoomGlide(System.nanoTime()) && metrics.zoomGliding()) {
+            requestFrame();
+        }
         // Size and scale, asked once. Metrics reads zoom and density rather than being pushed them: a worker's
         // shortcut commits to the State from its own thread and the frame notices, so nothing outside this
         // thread ever writes the reconciler's dirty flags. It also publishes the window size if it moved, before
@@ -2335,11 +2370,21 @@ public final class Gui implements AutoCloseable {
             // next frame's hit-testing all see the same drawn position.
             boolean moving = false;
             LayoutMotion motionNow = motion;
+            long now = System.nanoTime();
+            motionFrame += now - motionFrameNanos > MOTION_FRAME_GAP_NANOS ? 2 : 1;
+            motionFrameNanos = now;
             if (motionNow != LayoutMotion.NONE) {
                 if (geometryChanged) {
                     // Settle is where moves are detected and reported, so it runs on every layout pass whatever
                     // the source says; a move it reports makes the source active before it is asked below.
-                    Displacement.settle(r, motionNow);
+                    // On a frame whose window size, zoom or density changed, every node is recorded where it now
+                    // is and none is reported: the whole window moving under the user's hand is not something
+                    // arriving somewhere, and a page that slid its contents on every drag of the edge would be
+                    // seasick. That is what lets a whole window be enrolled. The cost: a genuine move landing in
+                    // the same frame as a resize jumps.
+                    // A node moved on every frame (a drag, a ramp driving a size) is followed, not chased: see
+                    // Displacement.settle.
+                    Displacement.settle(r, m.moved() ? LayoutMotion.NONE : motionNow, motionFrame);
                 }
                 // Walked while the source has something in flight, and once more after the frame that last found
                 // anything displaced, which is the walk that writes the resting positions back. Past that every

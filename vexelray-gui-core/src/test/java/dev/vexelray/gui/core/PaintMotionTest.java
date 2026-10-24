@@ -85,4 +85,22 @@ class PaintMotionTest {
             assertTrue(gui.takeDrawNeeded(), "a fade on its way draws a different frame next");
         }
     }
+
+    /** A node whose colour is data is repainted at once, so a pooled marker never shows its last owner's colour. */
+    @Test
+    void aNodeWhoseColoursAreDataIsNotReported() {
+        try (Gui gui = new Gui(Atchung.create(), SAME_THREAD)) {
+            Recording paint = new Recording();
+            gui.paintMotion(paint);
+            Node n = gui.text("x").width(Length.dp(40)).height(Length.dp(20)).paintCuts(true);
+            gui.root().children(n);
+            n.background(A).textColor(A);
+            gui.frame(400f, 300f, PaintMotionTest::noText);
+
+            n.background(B).textColor(B);
+            gui.frame(400f, 300f, PaintMotionTest::noText);
+
+            assertTrue(paint.told.isEmpty(), "nothing to fade: " + paint.told);
+        }
+    }
 }

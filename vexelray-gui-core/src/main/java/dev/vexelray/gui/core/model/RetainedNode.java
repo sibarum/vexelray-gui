@@ -62,6 +62,11 @@ public final class RetainedNode {
     // and a motion source told that would animate the whole subtree lagging behind the scroll it is inside of.
     public float layoutScrollX;
     public float layoutScrollY;
+    // The last frame layout moved this node, and on how many frames running it has. A node moved on every frame is
+    // being moved continuously, by a pointer drag or by a ramp driving a size, and a LayoutMotion must follow it
+    // rather than chase it (Displacement.settle).
+    public long movedFrame = Long.MIN_VALUE;
+    public int moveStreak;
 
     // Arrival and departure (EnterMotion, ExitMotion). `leaving` is the reconciler's: set when a remove was taken by
     // the exit motion, so the node stays where it is, drawn going, until its presence reaches zero. The other two
@@ -584,6 +589,16 @@ public final class RetainedNode {
      */
     public boolean hitInert() {
         return leaving || Boolean.TRUE.equals(props.get(PropKey.HIT_INERT));
+    }
+
+    /** Whether this node's children are a view over data, which no motion source hears of (see {@link PropKey#RECYCLES}). */
+    public boolean recycles() {
+        return Boolean.TRUE.equals(props.get(PropKey.RECYCLES));
+    }
+
+    /** Whether a colour written to this node is drawn at once (see {@link PropKey#PAINT_CUTS}). */
+    public boolean paintCuts() {
+        return Boolean.TRUE.equals(props.get(PropKey.PAINT_CUTS));
     }
 
     /** Whether this node floats out of its parent's flow (see {@link PropKey#FLOAT_X}). */

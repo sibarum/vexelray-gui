@@ -349,4 +349,62 @@ class DisplacementTest {
         assertEquals(List.of(card.id + ":0.0,0.0->0.0,100.0", row.id + ":0.0,140.0->0.0,165.0"),
                 motion.moves, "the row travels 25, not 125");
     }
+
+    // --- what is not a move ---------------------------------------------------------------------------------
+
+    /**
+     * A split dragged by the pointer moves the pane after it a little on every frame. Chasing each step would leave
+     * the pane trailing the hand, so after the first two frames of a run it is followed instead.
+     */
+    @Test
+    void aNodeMovedOnEveryFrameIsFollowedAfterTheFirstTwo() {
+        Recording motion = new Recording();
+        RetainedNode root = node(0f, 0f);
+        RetainedNode pane = child(root, 100f, 0f);
+        Displacement.settle(root, motion, 10);
+
+        for (int f = 11; f <= 15; f++) {
+            layOut(pane, pane.x + 4f, 0f);
+            Displacement.settle(root, motion, f);
+        }
+
+        assertEquals(Displacement.CHASED_FRAMES, motion.moves.size(),
+                "the first two steps of a drag are chased, the rest followed: " + motion.moves);
+        assertEquals(120f, pane.layoutX, "a followed move is still recorded");
+    }
+
+    /** Two changes a moment apart are two runs, each animated, however many there are. */
+    @Test
+    void aFrameWithNoMoveEndsTheRun() {
+        Recording motion = new Recording();
+        RetainedNode root = node(0f, 0f);
+        RetainedNode row = child(root, 0f, 40f);
+        Displacement.settle(root, motion, 0);
+
+        for (int f = 1; f <= 9; f += 2) {     // a move on every other frame
+            layOut(row, 0f, row.y + 10f);
+            Displacement.settle(root, motion, f);
+        }
+
+        assertEquals(5, motion.moves.size(), "no two moves were on consecutive frames: " + motion.moves);
+    }
+
+    /** A virtualised list's rows come and shift as the user scrolls: that is a view moving, not a row. */
+    @Test
+    void aRecyclingContainersChildrenAreRecordedAndNotReported() {
+        Recording motion = new Recording();
+        RetainedNode root = node(0f, 0f);
+        RetainedNode list = child(root, 0f, 0f);
+        list.set(dev.vexelray.gui.core.model.PropKey.RECYCLES, Boolean.TRUE);
+        RetainedNode row = child(list, 0f, 40f);
+        RetainedNode label = child(row, 4f, 44f);
+        Displacement.settle(root, motion);
+
+        layOut(row, 0f, 80f);         // the top spacer grew
+        layOut(label, 4f, 84f);       // and the label went with its row
+        Displacement.settle(root, motion);
+
+        assertTrue(motion.moves.isEmpty(), "the shift is not reported, and carries the label once: " + motion.moves);
+        assertEquals(80f, row.layoutY);
+    }
 }

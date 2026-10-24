@@ -53,6 +53,13 @@ public interface Mutation {
          */
         void arrange(long parent, long[] children);
 
+        /**
+         * Append {@code children} to the parent, in that order, as {@code Node.children(...)} asks: the same as an
+         * {@link #insert} at the end for each. Its own edit, and not a run of inserts, so the tree can tell a node being
+         * built from one already built that is being added to by a call that reads like a replace. See {@link Children}.
+         */
+        void children(long parent, long[] children);
+
         /** Write one property. */
         void setProp(long id, PropKey key, Object value);
 
@@ -138,6 +145,27 @@ public interface Mutation {
         @Override
         public void emitTo(Sink sink) {
             sink.remove(id);
+        }
+    }
+
+    /**
+     * {@code Node.children(...)}: children appended, in order. Structure, so not a cell. Kept apart from {@link Insert}
+     * for one reason, which is that the call reads like a setter and is not one, so the tree says so the first time it
+     * lands on a node that already had children (Maistro's FN-6: a row "rebuilt" this way showed every chip twice).
+     */
+    record Children(long parent, long[] children) implements Mutation {
+        public Children {
+            children = children.clone();
+        }
+
+        @Override
+        public long targetId() {
+            return parent;
+        }
+
+        @Override
+        public void emitTo(Sink sink) {
+            sink.children(parent, children.clone());
         }
     }
 

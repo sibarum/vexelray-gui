@@ -1,10 +1,11 @@
 # Capture and export: what just happened, in one file
 
-Status: **proposed 2026-10-23; step 1 (the mutation lane) done 2026-10-23.** Ctrl+Shift+E in a debug run captures the last stretch of time:
-its probe rows, the tree as it was at that moment, and optionally a video of it, joined by frame number. The
-Inspector, or the application's own debug menu, exports what was captured as one zip that a person or an agent can
-read cold. Spans this repo (the recorder, the reconciler, the keymap), `vexelray-framework` (the debug menu),
-`vexelray-inspector` (its M8 save) and `ffmpeg-wrapper` (the video).
+Status: **proposed 2026-10-23; step 1 (the mutation lane) done 2026-10-23. Revised 2026-10-24: M2 is correlation
+IDs (atchung's [correlation.md](../../../atchung/docs/correlation.md)), and video is out.** Ctrl+Shift+E in a debug
+run captures the last stretch of time: its probe rows, the log lines of the same span and the tree as it was at
+that moment. The Inspector, or the application's own debug menu, exports what was captured as one zip that a person
+or an agent can read cold. Spans this repo (the recorder, the reconciler, the keymap), `atchung` (the causes and the
+log), `vexelray` (`@Trace`), `vexelray-framework` (the debug menu) and `vexelray-inspector` (its M8 save).
 
 ## Why
 
@@ -49,9 +50,6 @@ the same frames carrying the same mutations as one that is not, so only the timi
 - **The Inspector's tape and Pause.** The tape keeps every row's header (not its detail) for a reach of 5 s to
   5 min. Pause freezes show time while the target runs on. The tape keeps no detail, so it cannot be the export's
   source: a mutation's content is all detail.
-- **Video.** `ffmpeg-wrapper` records AV1 in real time from frames as they are made
-  (`Ffmpeg.record(path, w, h, settings)`, `rec.frame(rgba, w, h, presentedMicros)`), and `GuiWindow` reads a
-  frame back for `shot`.
 - **The keymap.** `Keymap.action(name, label, shortcut)` declares a rebindable action, stores only what the user
   changed, and refuses two defaults on one chord in one place when they are declared.
 
@@ -89,26 +87,36 @@ shows. The detail is built only while the probe is tracing (`Probe.tracing`, add
 that only rolls up pays for the counter. Tested by `MutationLaneTest`, in a surefire execution of its own that
 starts tracing.
 
-### M2. Where a write came from, sampled
+### M2. What caused each write
 
-When a mutation is posted (`Node.prop`, `Node.text` and the structural verbs, through `MutationSink`), walk the
-stack to the first frame outside the GUI's own packages (`dev.vexelray.gui.core`, `.widget`, `.keymap`, …) and
-carry it to the row as `from=PictureViewer.showTransport:1591`. A stack walk costs microseconds, so only one post
-in N is walked (N = 16 to start, `-Dprobe.origins=N`, 1 for every post), and the posting thread is recorded every
-time. Sixteen is plenty to rank where writes come from. It is not enough to attribute a single write, and the
-export says which rows carry an origin.
+**Revised 2026-10-24: correlation IDs, not stack walks.** The first draft sampled the stack at each post and
+carried the first frame outside the GUI to the row. A stack says where a write was sent from, not why that code
+ran, and it ends at the thread's run loop, so a write posted from a decoder thread or a bus handler has lost its
+cause. The design is now atchung's [correlation.md](../../../atchung/docs/correlation.md):
 
-Open: when a widget calls `node.prop` for its caller (Tile.paint for `loop.on`), the first frame outside the GUI
-is the caller's. That is the useful answer. A widget in `vex-suite-common` is outside the GUI's packages, so the
-skip list is a setting, not a constant.
+- **Every write carries the cause it was made in**, a `long` written `3f2a1.t07.4f2`: the process, the source
+  that began it (a timer, an input backend, an agent's command, …) and that source's sequence number. Causes begin where the outside world comes
+  in and pass through the bus by themselves, so a write posted from a handler three mailboxes away from a playback
+  tick carries that tick's cause. The mutation rows get it from the probe's new `cause` column, with no change to
+  `Traced` or to anything that posts.
+- **Methods annotated `@Trace` write a row naming themselves** (`vexelray`'s
+  [trace.md](../../../vexelray/docs/trace.md)) in whatever cause they run in, by a site id that
+  resolves to their fully qualified line: `dev.sibarum.suite.view.PictureViewer.showTransport(PictureViewer.java:1584)`.
+  So a cause's rows say which traced code it passed through on its way to its writes.
+- **The log carries the cause too.** The recorder stays light because it holds IDs, and the story of a cause is
+  its rows joined with its log lines, which is why the export ships both.
+
+For the Pix run: the transport's writes and `showTransport`'s site rows would share the playback clock's causes,
+and the resize's writes would carry input causes, so "which cause grows when the window is small" is one table.
 
 ### M3. Why layout ran
 
-The first mutation in a frame that set `layoutDirty` is kept, with its origin if it carries one, and reported by
-`why <frame>` on its `layout` line:
+The first mutation in a frame that set `layoutDirty` is kept, with its cause, and reported by `why <frame>` on its
+`layout` line, with the traced sites that cause passed through:
 
 ```
-layout  1 pass: full, first dirtied by SetText node 4502 (@transport.position) from PictureViewer.showTransport
+layout  1 pass: full, first dirtied by SetText node 4502 (@transport.position), cause 3f2a1.t07.4f2 (timer)
+        via dev.sibarum.suite.view.PictureViewer.showTransport(PictureViewer.java:1584)
 ```
 
 That line alone would have found the clock's relayout. (The cure for that relayout is
@@ -117,15 +125,14 @@ That line alone would have found the clock's relayout. (The cure for that relayo
 ### M4. Dilation and what could not slow
 
 A `time` row per frame: the application's clock advance against the wall's, and the recorder's own share (the
-probe's sink, the stack walks, the video's readback and encode). Next to it, a counter for each exception in the
+probe's sink and the `@Trace` rows). Next to it, a counter for each exception in the
 principle above. `Playback` reports a dropped frame with its reason (behind the sound), the loop reports a missed
 vblank, and input rows already carry their device timestamps.
 
 ## Capture: Ctrl+Shift+E
 
 **One chord VexelRay reserves, and only in a debug run.** It is `debug.capture`, declared through the keymap like
-any action, so an application can rebind it and the keymap editor lists it. It is the same chord whatever is
-being captured: rows always, video when it is on. Outside a debug run it is not declared, so it takes nothing from
+any action, so an application can rebind it and the keymap editor lists it. Outside a debug run it is not declared, so it takes nothing from
 the application.
 
 **Pressing it, in the application, with the application focused.** That is why the chord lives in the
@@ -137,8 +144,10 @@ the span, and at a short reach the problem would already be scrolling away. The 
    copying column slices with nothing encoded, so nothing written afterwards can lap them. If the ring had already
    lost part of the reach, the capture says how much rather than starting later without saying so;
 3. takes the `tree` snapshot at that moment, so a node id in the span resolves against the tree as it was, not as
-   it is at export time;
-4. freezes the video segments that cover the span, if video is on.
+   it is at export time.
+
+The span's log lines need nothing of their own: every log record is already a row on the `app` lane, with its
+cause, so freezing the rows freezes the log.
 
 The application keeps running. A second press replaces the capture, and the menu says so.
 
@@ -161,58 +170,48 @@ computed from those rows alone.
 
 | File | What |
 |---|---|
-| `summary.md` | Read first. The build (the source stamps history-by-build already reads), OS, GPU, presenter and scale. The span, rows lost, and the dilation. Frame time p50/p95/p99, stalls, `diagnose`'s findings. Then four tables: **writes by origin** (writes/s, % unchanged, % that laid out), **layout causes**, **topics by rate**, and **what could not slow** |
-| `rows.csv` | The span in the probe CSV format with the frame column, so the Inspector replays an export as it replays any recording |
+| `summary.md` | Read first. The build (the source stamps history-by-build already reads), OS, GPU, presenter and scale. The span, rows lost, and the dilation. Frame time p50/p95/p99, stalls, `diagnose`'s findings. Then four tables: **writes by cause** (the cause's kind, the traced sites it passed through, writes/s, % unchanged, % that laid out), **layout causes**, **topics by rate**, and **what could not slow**. Last, the writes with no cause (`0`), by thread: the boundaries nobody wrapped |
+| `rows.csv` | The span in the probe CSV format with the frame and cause columns, so the Inspector replays an export as it replays any recording |
+| `log.txt` | The span's log records, rendered from its `app` rows as the log file renders them, each with its cause |
+| `sites.txt` | The `@Trace` sites the span's rows name: site id, fully qualified method with file and line, and label |
 | `tree.txt` | `tree` as it was at the mark: ids, roles, landmarks, sizes |
 | `frames.txt` | `frames worst 20`, then `why` for the worst five |
-| `video.mkv` | When video was on: the span, trimmed, each frame stamped with its frame number |
 
 For the Pix run, `summary.md`'s first table would have read:
 
 ```
-origin                                  writes/s  unchanged  laid out
-PictureViewer.showTransport                  540        82%        8%
-ImageView$Layer.showing                       48         0%        0%
+cause kind   via                                                                     writes/s  unchanged  laid out
+timer        dev.sibarum.suite.view.PictureViewer.showTransport(PictureViewer.java:1584)      540        82%        8%
 ```
 
 **Text in the tree.** `tree.txt` holds what the interface showed: file names, document text. By default each text
 is replaced by its length and only landmarks and roles are kept. A checkbox in the export dialog includes the
 text, and `summary.md` says which was chosen.
 
-## Video, and the frames joined by number
-
-Opt-in per debug run, because readback and encoding are the most expensive thing the recorder does, on exactly the
-machines worth recording.
-
-- **A rolling ring of segments.** Each segment is a few seconds of AV1, starts on a keyframe, and is written to
-  the debug run's temp directory. Enough segments are kept to cover the reach. A capture freezes the segments that
-  overlap the span, and the export trims them to it. To be checked: whether `Recording` can roll segments itself,
-  or a new `Recording` per segment is the way.
-- **Smaller by default.** Half the window's size and at most 30 fps, both settings. Frames are sampled by frame
-  number, so a skipped one is a known gap, not a smear.
-- **Joined by frame number, not by time.** Each video frame carries the number of its `frame.present` row, so
-  `summary.md` can say "frame 18342, 21.7 ms, over budget: video at 4.80 s". The Inspector can then play the video
-  in step with the tape.
-- **Its cost is on the record** (M4), so a slow frame caused by the recorder shows as the recorder's.
-
 ## Steps
 
 Each step lands, and is useful, on its own.
 
 1. **M1, the mutation lane. Done 2026-10-23** (`MutationLaneTest`).
-2. **M2, origins.** Verified by a test that posts from a known method and finds it in `from=`, with every post
-   walked and with one in N.
+2. **M2, causes.** atchung's [correlation.md](../../../atchung/docs/correlation.md) steps 1–3 (the ID, the bus, the
+   log, elektro-Q's envelope) and `vexelray`'s [trace.md](../../../vexelray/docs/trace.md), then correlation.md's
+   step 4 here and in the siblings: causes begun at the input
+   backends, the frame clock and timers, the automation server and the offload pool. Verified by a test that posts
+   a write from a handler two mailboxes downstream of a timer and finds the timer's cause on its mutation row.
 3. **M3, the layout cause in `why`.** Verified by a test whose frame lays out because of one known text change.
 4. **The capture.** `debug.capture` in the keymap of a debug run, the mark, the frozen span and the tree. Verified
    by a test that captures, keeps writing past the ring's size, and still reads the whole span.
-5. **The export verb and the zip** (no video). Verified by a test that exports a capture and reads `summary.md`
-   back, and by the Inspector replaying `rows.csv`.
+5. **The export verb and the zip.** Verified by a test that exports a capture and reads `summary.md` back, and by
+   the Inspector replaying `rows.csv`.
 6. **The Inspector:** pausing at the mark, narrowing with Shift+drag, *Export…*. This is the start of its M8.
 7. **M4, dilation and what could not slow.**
-8. **Video:** the segment ring, the frame stamps, the trimmed `video.mkv`, and its cost on the record.
 
-The acceptance test for the whole plan: play a video in Pix built at the commit before `4110c71`, press
-Ctrl+Shift+E, export, and read `PictureViewer.showTransport` off the top of the first table in `summary.md`.
+Video was step 8 until 2026-10-24, and is out: the rows, the log and the tree say what happened, and recording
+the screen was the most expensive thing the recorder would have done.
+
+The acceptance test for the whole plan: play a video in Pix built at the commit before `4110c71`, with
+`showTransport` annotated `@Trace`, press Ctrl+Shift+E, export, and read a timer cause through
+`PictureViewer.showTransport` off the top of the first table in `summary.md`.
 
 ## Follow-ups outside this plan
 

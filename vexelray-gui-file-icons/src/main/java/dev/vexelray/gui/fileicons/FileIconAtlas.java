@@ -40,7 +40,7 @@ final class FileIconAtlas implements Pixels {
                     + " and FileFamily was generated for " + AtlasLayout.WIDTH + " x " + AtlasLayout.HEIGHT
                     + ": bake again, so the two are made together");
         }
-        return pixels.rgba();
+        return pixels.texels();
     }
 
     static AtlasPixels read() {

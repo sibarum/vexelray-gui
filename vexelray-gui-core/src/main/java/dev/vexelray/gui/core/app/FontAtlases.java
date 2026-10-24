@@ -33,7 +33,7 @@ final class FontAtlases implements AutoCloseable {
         try {
             for (FontSet.Face f : faces.set().faces()) {
                 AtlasPixels p = faces.set().pixels(f);
-                made.add(new AtlasTexture(device, p.width(), p.height(), p.rgba()));
+                made.add(new AtlasTexture(device, p.width(), p.height(), p.channels(), p.texels()));
             }
         } catch (RuntimeException e) {
             made.forEach(AtlasTexture::close);   // a half-uploaded set is closed, not leaked

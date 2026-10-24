@@ -69,7 +69,7 @@ public abstract class BakedAtlas implements Pixels {
                     + " and its icons were generated for " + width + " x " + height
                     + ": build again, so the two are made together");
         }
-        return pixels.rgba();
+        return pixels.texels();
     }
 
     /** The atlas's pixels as they are on the class path. */

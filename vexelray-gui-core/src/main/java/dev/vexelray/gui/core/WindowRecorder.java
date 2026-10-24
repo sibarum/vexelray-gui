@@ -9,7 +9,7 @@ import java.util.ServiceLoader;
 
 /**
  * What records a window to a video file, when a module on the class path offers one: the camera's <i>Record video to
- * file…</i> (docs/reference/automation.md §7). {@code vexelray-codec-video} is the one that does, in AV1.
+ * file…</i> (docs/reference/automation.md §7). {@code vexelray-codec-record} is the one that does, in AV1.
  *
  * <p><b>A seam, so the GUI never links an encoder.</b> {@code vexelray-codec} depends on this stack and never the
  * other way, so a binary that records nothing carries no encoder. The GUI finds a recorder with {@link #find}, through

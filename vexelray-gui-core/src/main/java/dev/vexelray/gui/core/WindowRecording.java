@@ -120,7 +120,7 @@ public final class WindowRecording {
     public static int[] start(WindowControls controls, Path file) throws IOException {
         WindowRecorder recorder = WindowRecorder.find()
                 .orElseThrow(() -> new IOException("nothing here records video: no WindowRecorder on the class path"
-                        + " (vexelray-codec-video is the module that offers one)"));
+                        + " (vexelray-codec-record is the module that offers one)"));
         if (controls.osHandle() == 0L) {
             throw new IOException("there is no window to record");
         }

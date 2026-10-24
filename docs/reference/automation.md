@@ -646,7 +646,7 @@ whether the run succeeded.
 | `await <landmark> <text>` | Wait until that landmark's name contains the text — how an application's own readiness is waited on. |
 | `await <landmark>` | Wait until a node with that landmark exists (hidden counts), and answer `ok <ref> "<name>" @<landmark>`. The first wait of a scene, where `settle` straight after launch can answer before the tree is built. Same 30 s bound and refusal as the form with text. |
 | `shot [path]` | PNG of the window this driver is attached to: its tree presented, then that frame read back from the presenter's image, so it is the screen's pixels, not a second drawing. Not the desktop compositor's: the window border and anything the compositor does are outside it. Clears the target, waits for the file, `err` if none arrives. |
-| `record <path.mkv>` / `record stop` / `record` | A video of the window this driver is attached to, from its presenter's frames as they are shown: the camera's *Record video to file…*, told where instead of asking (`WindowRecording`). `record <path>` answers once frames flow, with the canvas every frame is drawn on (the monitor's usable area); `record stop` answers once the file is whole, with its size; `record` alone says what is recording. One recording per process, so a person can stop from the camera what a script started. `err` when no module records video (`vexelray-codec-video` is the one that does). |
+| `record <path.mkv>` / `record stop` / `record` | A video of the window this driver is attached to, from its presenter's frames as they are shown: the camera's *Record video to file…*, told where instead of asking (`WindowRecording`). `record <path>` answers once frames flow, with the canvas every frame is drawn on (the monitor's usable area); `record stop` answers once the file is whole, with its size; `record` alone says what is recording. One recording per process, so a person can stop from the camera what a script started. `err` when no module records video (`vexelray-codec-record` is the one that does). |
 | `size` | The window's pixels, zoom, dpi and em, in one line. |
 | `zoom [factor]`, `dpi [factor]` | Read, or set and wait for layout. Answer with the value the window *became*, and say when a clamp changed it. |
 | `resize <w>x<h>` | Size the drawable area — pixels, or em with a unit (`46emx30em`), which an em resolves at the zoom and density in force. Answers with the size reached. |
@@ -786,7 +786,7 @@ items are landmarks by what they say (`menu.restart-in-debug-mode`), so a script
 handed the window's own `WindowControls`, as an action is, so what it does is to the window it was opened in.
 
 **The camera records, where something can.** `SaveScreenshot.instrument()` is the plain screenshot button, unless a
-`WindowRecorder` is on the class path (`vexelray-codec-video` puts one there). Then it is `WindowInstrument.camera`,
+`WindowRecorder` is on the class path (`vexelray-codec-record` puts one there). Then it is `WindowInstrument.camera`,
 the same role, opening a menu: `menu.take-screenshot`, and `menu.record-video-to-file` (a save dialog, then
 `WindowRecording.start`) or, while a recording runs in any window, `menu.stop-recording` first. The lens is filled
 while recording, a shape and not a colour, in every window's bar, through `WindowRecording.LIVE`. Frames reach the

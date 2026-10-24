@@ -73,7 +73,8 @@ the engine's `Surface`, and renders as enclosure boxes for the reasons in
 
 Siblings install in dependency order, then this repo. `vexelray-framework/bootstrap.sh` does it: it clones what is
 missing beside it, builds `imagelib-wrapper`'s native library (`imagelib-wrapper-<os>/native/build.sh`, which needs
-a Rust toolchain), and installs `vexelray-build` through `vexelray-framework` in order. `--from <repo>` reinstalls
+a Rust toolchain) and `ffmpeg-wrapper`'s video encoder (`ffmpeg-wrapper-record-<os>/native/build.sh`, which needs
+MSYS2 on Windows), and installs `vexelray-build` through `vexelray-framework` and `vexelray-codec` in order. `--from <repo>` reinstalls
 from that repo onward. `vexelray-framework/docs/getting-started.md` §2 is the full walk-through:
 
 ```bash

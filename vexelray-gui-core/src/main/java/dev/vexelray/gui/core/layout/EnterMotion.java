@@ -74,4 +74,12 @@ public interface EnterMotion {
      * only, like {@code Node.translate}: the node is laid out and hit where it belongs.
      */
     float rise(RetainedNode node);
+
+    /**
+     * {@code node}, already {@link #entered}, arrives in place of what its parent held, which is fading out where it
+     * stood ({@link ExitMotion#replaced}). Two pages seen through each other are a smear, so a source may hold the
+     * arrival until the departure has gone. GUI thread, in the frame it arrived. Nothing by default.
+     */
+    default void replacing(RetainedNode node) {
+    }
 }

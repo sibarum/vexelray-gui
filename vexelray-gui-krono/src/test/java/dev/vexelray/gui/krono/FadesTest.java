@@ -115,4 +115,19 @@ class FadesTest {
             assertFalse(fades.moving());
         }
     }
+
+    @Test
+    @DisplayName("a colour written on every frame by someone else's ramp is followed, not faded behind")
+    void aDrivenColourIsDrawnAtOnce() {
+        try (KronoGui krono = headless()) {
+            Fades fades = Fades.on(krono, OVER, Ease.LINEAR);
+            Color[] steps = {GREY, Color.rgb(0.4f, 0.4f, 0.4f), Color.rgb(0.6f, 0.6f, 0.6f), LIGHT};
+            for (int i = 1; i < steps.length; i++) {
+                fades.repainted(7L, Channel.BACKGROUND, steps[i - 1], steps[i]);   // the app's ramp, frame by frame
+            }
+            assertEquals(LIGHT, fades.drawn(7L, Channel.BACKGROUND, LIGHT),
+                    "the third write running is drawn where the ramp put it");
+            assertFalse(fades.moving());
+        }
+    }
 }

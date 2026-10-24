@@ -91,6 +91,109 @@ public final class Reconciler implements Mutation.Sink {
      */
     private final List<RetainedNode> departed = new java.util.ArrayList<>();
 
+    /** Nodes that began to leave since {@link #liftReplaced} last ran, and the parents that gained an arrival. */
+    private final List<RetainedNode> beganLeaving = new java.util.ArrayList<>();
+    private final java.util.Set<RetainedNode> gainedArrival =
+            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+
+    /**
+     * Lift every node that began to leave a parent that also gained an arrival in the same drain: that is a
+     * replacement, not a removal, so the leaving node lets go of its place and fades out where it stood, over what
+     * replaces it, rather than holding its place and pushing the newcomer aside. GUI thread, once per frame, after the
+     * drain and before the layout.
+     *
+     * <p><b>Why it is decided here and not left to the application.</b> Rebuilding a panel by removing everything and
+     * appending new nodes is the most common shape in every application on the stack, and in vexelray-gui's own
+     * {@code Breadcrumb}. Under an exit motion that keeps a leaving node's place, it doubles: the old rows hold their
+     * space while the new ones arrive below or beside them (MainFrame's Open dialog, the Inspector's picker,
+     * Vexplore's rail, dock and breadcrumb, 2026-10-24). {@code Node.keyed} is the better shape for a list, and this is
+     * what makes the common one right anyway. Only a parent that kept nothing (every child leaving or new) counts as
+     * replaced; a single removal, or a keyed list's edit, is untouched: what leaves keeps its place, and then the gap
+     * closes.
+     */
+    public void liftReplaced() {
+        if (!lifted.isEmpty()) {
+            lifted.removeIf(n -> !n.leaving || n.parent == null);   // gone, or put back: nothing left to let go of
+        }
+        if (beganLeaving.isEmpty()) {
+            gainedArrival.clear();
+            arrivedNow.clear();
+            return;
+        }
+        for (RetainedNode n : beganLeaving) {
+            RetainedNode p = n.parent;
+            if (n.leaving && !n.lifted && p != null && gainedArrival.contains(p) && n.layoutCtx != null
+                    && keptNothing(p)) {
+                n.lifted = true;
+                n.liftedX = n.x - p.x;
+                n.liftedY = n.y - p.y;
+                n.liftedW = n.w;
+                n.liftedH = n.h;
+                lifted.add(n);
+                layoutDirty = true;
+                exits.replaced(n);
+                replacedParents.add(p);
+            }
+        }
+        // What arrived in a replaced parent waits on what it replaces, so the two are never seen through each other.
+        for (RetainedNode a : arrivedNow) {
+            if (a.parent != null && replacedParents.contains(a.parent)) {
+                enters.replacing(a);
+            }
+        }
+        replacedParents.clear();
+        beganLeaving.clear();
+        gainedArrival.clear();
+        arrivedNow.clear();
+    }
+
+    /** Parents found replaced in this {@link #liftReplaced}; scratch, empty between calls. */
+    private final java.util.Set<RetainedNode> replacedParents =
+            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+
+    /** Lifted nodes still fading, which a change of size or scale lets go of at once (see {@link #dropLifted}). */
+    private final List<RetainedNode> lifted = new java.util.ArrayList<>();
+
+    /**
+     * Let go of every lifted node at once: the window's size or scale changed, and the rectangle each was lifted at,
+     * in px, no longer describes anything (Vexplore's rail, rebuilt on a zoom step, faded out as a ghost at its
+     * pre-zoom size over the zoomed one). A frame that re-lays the whole window is already a change everywhere, so
+     * a fading leftover going with it is not seen as a jump of its own. GUI thread, before the layout.
+     */
+    public void dropLifted() {
+        if (lifted.isEmpty()) {
+            return;
+        }
+        for (RetainedNode n : lifted) {
+            if (n.leaving && n.parent != null) {
+                n.parent.children.remove(n);
+                n.parent = null;
+                departed.add(n);
+                layoutDirty = true;
+                drawDirty = true;
+            }
+        }
+        lifted.clear();
+    }
+
+    /** Nodes that arrived since {@link #liftReplaced} last ran. */
+    private final java.util.Set<RetainedNode> arrivedNow =
+            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+
+    /**
+     * Whether everything {@code p} now holds either is leaving or has just arrived: it was rebuilt, not edited. A keyed
+     * list that drops one row and adds another keeps the rest, and its dropped row keeps its place while the gap
+     * closes, as any single removal does.
+     */
+    private boolean keptNothing(RetainedNode p) {
+        for (RetainedNode c : p.children) {
+            if (!c.leaving && !arrivedNow.contains(c)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     /**
      * Report arrivals to {@code enter} and offer removals to {@code exit} from the next edit on — see
      * {@link EnterMotion} and {@link ExitMotion}. Null is {@code NONE}.
@@ -386,13 +489,18 @@ public final class Reconciler implements Mutation.Sink {
         boolean returning = ch.leaving;
         if (returning) {
             ch.leaving = false;
+            ch.lifted = false;   // back in the flow, wherever it was put
         }
         if (was == null) {
             departed.remove(ch);
         }
-        // Into a recycling container nothing arrives: its children are a view the user scrolled, not an addition.
-        if (returning || (was == null && p.layoutCtx != null && !p.recycles())) {
+        // Into a container that owns its children's motion nothing arrives (PropKey.OWN_CHILD_MOTION).
+        if (returning || (was == null && p.layoutCtx != null && !p.ownsChildMotion())) {
             enters.entered(ch);
+            if (!returning) {
+                gainedArrival.add(p);
+                arrivedNow.add(ch);
+            }
             // A walk is owed only when presence will be anything but 1: an arrival under EnterMotion.NONE is already
             // fully present, and walking the whole tree to write that again costs O(n) per added node. A node coming
             // back from leaving is drawn below 1, so it is owed one whatever the enter motion.
@@ -408,10 +516,13 @@ public final class Reconciler implements Mutation.Sink {
         if (n != null) {
             // Offered to the exit motion first, if it is on screen to be seen going: one that takes it keeps it in
             // place, drawn leaving, until the frame detaches it (depart). A second remove of a leaving node is "now".
-            // A recycling container's child is not offered: it is a row scrolled away, not one taken out.
-            if (!n.leaving && n.parent != null && n.layoutCtx != null && n.visible() && !n.parent.recycles()
-                    && exits.leave(n)) {
+            // A child of a container that owns its children's motion is not offered (PropKey.OWN_CHILD_MOTION). Nor
+            // is a node already faded to nothing by the application's own hand: it has gone, and holding its place for one more
+            // fade is a dead pause before its neighbours close up (the Scheduler's Motion.leave, under Presence).
+            if (!n.leaving && n.parent != null && n.layoutCtx != null && n.visible() && !n.parent.ownsChildMotion()
+                    && n.opacity() > 0f && exits.leave(n)) {
                 n.leaving = true;
+                beganLeaving.add(n);
                 presenceDirty = true;
                 drawDirty = true;
                 return;

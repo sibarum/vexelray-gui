@@ -506,6 +506,16 @@ public final class FlexLayout {
 
     /** Size and place one floating child {@code c} against {@code n}'s border box, then lay out its subtree. */
     private static void placeFloat(RetainedNode n, RetainedNode c, LayoutContext ctx, TextMeasurer tm) {
+        if (c.lifted) {
+            // Replaced, and fading out where it stood: the rectangle it had, unclamped, since its parent may already
+            // be the size of what replaced it (Reconciler.liftReplaced).
+            c.w = c.liftedW;
+            c.h = c.liftedH;
+            c.x = n.x + c.liftedX;
+            c.y = n.y + c.liftedY;
+            layoutBox(c, ctx, tm);
+            return;
+        }
         LayoutContext own = own(c, ctx);
         float w = c.width().resolve(own, n.w);
         if (w < 0f) {

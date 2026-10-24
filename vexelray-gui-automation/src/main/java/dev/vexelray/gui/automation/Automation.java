@@ -452,8 +452,42 @@ public final class Automation implements Commands {
         // The centre of what is *on screen*, not of where the node was put. For an unclipped node the two are
         // the same point; for a row scrolled half out of its list they are not, and the difference is a click
         // that lands on the row against one that lands on whatever the clip put there instead.
-        Rect r = gui.layoutSnapshot().node(id).visibleRect();
+        Rect r = atRest(id);
         return new int[]{Math.round(r.centreX()), Math.round(r.centreY())};
+    }
+
+    /** How long a target may take to come to rest before a hand aims at wherever it then is. */
+    private static final long AT_REST_TIMEOUT_MS = 600;
+
+    /** How often a target's drawn place is read while it moves: about a frame. */
+    private static final long AT_REST_POLL_MS = 20;
+
+    /**
+     * {@code id}'s visible rectangle once it has stopped moving: read until two reads a frame apart agree, bounded.
+     *
+     * <p>Every window slides what layout moves and fades in what arrives, so a node named by a script straight after
+     * the change that moved it is still on its way, and its drawn place is where it was a frame ago. A hand aimed
+     * there lands beside it (Maistro's stock {@code branch.txt}: {@code click branch.abandon} straight after
+     * {@code click strand.b1} missed the button it named). A person aims at a thing that has stopped, and so does
+     * this. A target that never rests, a live readout say, is aimed at wherever it is when the bound runs out.
+     */
+    private Rect atRest(long id) {
+        Rect last = gui.layoutSnapshot().node(id).visibleRect();
+        long deadline = System.nanoTime() + AT_REST_TIMEOUT_MS * 1_000_000L;
+        while (System.nanoTime() < deadline) {
+            try {
+                Thread.sleep(AT_REST_POLL_MS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return last;
+            }
+            Rect now = gui.layoutSnapshot().node(id).visibleRect();
+            if (now.equals(last)) {
+                return now;
+            }
+            last = now;
+        }
+        return last;
     }
 
     /**

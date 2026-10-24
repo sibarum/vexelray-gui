@@ -2308,6 +2308,9 @@ public final class Gui implements AutoCloseable {
         // Drain the mutation pump on the GUI thread: the subscriber applies each Mutation to the reconciler in
         // FIFO order (single writer). The tree is up to date afterward.
         pump.drain();
+        // A panel rebuilt by removing what it held and appending new nodes is a replacement: what leaves lets go of its
+        // place and fades out over what arrives, rather than doubling the panel (Reconciler.liftReplaced).
+        reconciler.liftReplaced();
         // Undo is judged here, against the tree the drain just brought up to date, and before navigation steps,
         // so a reveal it asks for takes its first step this frame.
         undoing.step();
@@ -2328,6 +2331,10 @@ public final class Gui implements AutoCloseable {
         Metrics.Frame m = metrics.measure(viewportW, viewportH);
         float layoutW = m.layoutW();
         float layoutH = m.layoutH();
+        if (m.moved()) {
+            // A replaced panel's leftovers were lifted at a rectangle in px, which a new size or scale makes meaningless.
+            reconciler.dropLifted();
+        }
         if (r != null) {
             boolean layoutRan = reconciler.layoutDirty() || m.moved();
             if (layoutRan) {

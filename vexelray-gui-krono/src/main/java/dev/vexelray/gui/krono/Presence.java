@@ -227,6 +227,70 @@ public final class Presence implements EnterMotion, ExitMotion {
         return true;
     }
 
+    /**
+     * Replaced: go in half the time, so what replaces it can follow. Two pages seen through each other are a smear (the
+     * Scheduler's {@code Motion.Stage} fades one out and then the other in for that reason), so a replacement is one
+     * after the other, the whole of it no longer than an arrival and a half.
+     */
+    @Override
+    public void replaced(RetainedNode node) {
+        Terms terms = termsFor(node);
+        Fade fade = fades.get(node.id);
+        if (terms == null || fade == null || fade.value <= 0f) {
+            return;
+        }
+        float from = fade.value;
+        int epoch = ++fade.epoch;
+        krono.ramp(half(terms.over()), Ease.LINEAR,
+                progress -> {
+                    if (fade.epoch == epoch) {
+                        fade.value = (float) (from * (1d - progress)) + 0f;
+                    }
+                },
+                () -> {
+                    if (fade.epoch == epoch) {
+                        fade.value = 0f;
+                    }
+                });
+    }
+
+    /** Arriving in place of what is going: held at nothing while it goes, then arriving as any node does. */
+    @Override
+    public void replacing(RetainedNode node) {
+        Terms terms = termsFor(node);
+        Fade fade = fades.get(node.id);
+        if (terms == null || fade == null) {
+            return;
+        }
+        int epoch = ++fade.epoch;   // the arrival entered() began is put off, not run alongside
+        fade.value = 0f;
+        fade.riseEm = rise;
+        krono.ramp(half(terms.over()), Ease.LINEAR, progress -> { }, () -> {
+            if (fade.epoch != epoch) {
+                return;             // interrupted while it waited: whoever interrupted it owns it now
+            }
+            int arriving = ++fade.epoch;
+            krono.ramp(terms.over(), terms.ease(),
+                    progress -> {
+                        if (fade.epoch == arriving) {
+                            fade.value = (float) progress;
+                            fade.riseEm = (float) (rise * (1d - progress)) + 0f;
+                        }
+                    },
+                    () -> {
+                        if (fade.epoch == arriving) {
+                            fade.value = 1f;
+                            fade.riseEm = 0f;
+                            fades.remove(node.id, fade);
+                        }
+                    });
+        });
+    }
+
+    private static Dur half(Dur over) {
+        return Dur.ns(over.nanos() / 2);
+    }
+
     @Override
     public void left(RetainedNode node) {
         Fade fade = fades.remove(node.id);

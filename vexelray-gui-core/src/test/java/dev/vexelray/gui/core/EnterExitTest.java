@@ -306,12 +306,77 @@ class EnterExitTest {
         }
     }
 
+    /**
+     * A panel rebuilt by removing everything and appending new nodes is a replacement: what leaves lets go of its place
+     * and fades where it stood, so what arrives takes its own place at once and the panel never doubles (MainFrame's
+     * Open dialog, the Inspector's picker, Vexplore's rail).
+     */
+    @Test
+    void aPanelRebuiltWholeIsReplacedInPlaceNotDoubled() {
+        Scripted s = new Scripted();
+        try (Gui gui = withScripted(s)) {
+            Node panel = gui.column();
+            Node old = row(gui);
+            gui.root().children(panel.children(old));
+            RetainedNode was = find(frame(gui), old.id());
+            float oldY = was.y;
+
+            old.remove();
+            Node fresh = row(gui);
+            panel.append(fresh);
+            RetainedNode root = frame(gui);
+
+            RetainedNode r = find(root, fresh.id());
+            assertEquals(oldY, r.y, "the newcomer takes the place, not the place after the old row");
+            assertTrue(was.leaving && was.lifted, "the old row is lifted out of the flow, fading");
+            assertEquals(oldY, was.y, "where it stood");
+        }
+    }
+
+    /** A keyed list that drops one row and adds another kept the rest: the dropped row keeps its place, as ever. */
+    @Test
+    void anEditThatKeepsSomethingIsNotAReplacement() {
+        Scripted s = new Scripted();
+        try (Gui gui = withScripted(s)) {
+            Node list = gui.column();
+            Node kept = row(gui);
+            Node dropped = row(gui);
+            gui.root().children(list.children(kept, dropped));
+            RetainedNode d = find(frame(gui), dropped.id());
+
+            dropped.remove();
+            list.append(row(gui));
+            frame(gui);
+
+            assertTrue(d.leaving);
+            assertFalse(d.lifted, "something was kept, so this is a removal, and it holds its place");
+        }
+    }
+
+    /** A node the application already faded to nothing has gone: it leaves at once, not after one more fade. */
+    @Test
+    void aNodeFadedOutByHandLeavesAtOnce() {
+        Scripted s = new Scripted();
+        try (Gui gui = withScripted(s)) {
+            Node list = gui.column();
+            Node gone = row(gui);
+            gui.root().children(list.children(gone, row(gui)));
+            frame(gui);
+
+            gone.opacity(0f);
+            frame(gui);
+            gone.remove();
+
+            assertNull(find(frame(gui), gone.id()), "no dead pause before its neighbours close up");
+        }
+    }
+
     /** A virtualised list realizing a row as it scrolls is showing what was always there, not adding it. */
     @Test
     void aRecyclingContainersChildrenNeitherArriveNorLeave() {
         Scripted s = new Scripted();
         try (Gui gui = withScripted(s)) {
-            Node list = gui.column().recycles(true);
+            Node list = gui.column().childMotion(false);
             Node first = row(gui);
             gui.root().children(list.children(first));
             frame(gui);

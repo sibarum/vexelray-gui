@@ -74,6 +74,14 @@ public final class RetainedNode {
     // a displacement is: how much of the node is drawn (multiplying its own opacity, never replacing it), and how
     // far below its laid-out place it is drawn on the way in, px.
     public boolean leaving;
+    // A leaving node whose parent gained an arrival in the same edit: what was there is being replaced, so it lets go
+    // of its place in the flow and fades out where it stood, over what replaces it (Reconciler.liftReplaced). Laid out
+    // as a float at the rectangle it last had, as offsets from its parent's border box.
+    public boolean lifted;
+    public float liftedX;
+    public float liftedY;
+    public float liftedW;
+    public float liftedH;
     public float presence = 1f;
     public float presenceRise;
 
@@ -591,9 +599,9 @@ public final class RetainedNode {
         return leaving || Boolean.TRUE.equals(props.get(PropKey.HIT_INERT));
     }
 
-    /** Whether this node's children are a view over data, which no motion source hears of (see {@link PropKey#RECYCLES}). */
-    public boolean recycles() {
-        return Boolean.TRUE.equals(props.get(PropKey.RECYCLES));
+    /** Whether no motion source hears of this node's children, whose motion it owns ({@link PropKey#OWN_CHILD_MOTION}). */
+    public boolean ownsChildMotion() {
+        return Boolean.TRUE.equals(props.get(PropKey.OWN_CHILD_MOTION));
     }
 
     /** Whether a colour written to this node is drawn at once (see {@link PropKey#PAINT_CUTS}). */
@@ -603,7 +611,8 @@ public final class RetainedNode {
 
     /** Whether this node floats out of its parent's flow (see {@link PropKey#FLOAT_X}). */
     public boolean floating() {
-        return props.get(PropKey.FLOAT_X) instanceof Length && props.get(PropKey.FLOAT_Y) instanceof Length;
+        return lifted
+                || props.get(PropKey.FLOAT_X) instanceof Length && props.get(PropKey.FLOAT_Y) instanceof Length;
     }
 
     /** Whether this node floats and keeps its parent's viewport out from under it (see {@link PropKey#DOCK}). */

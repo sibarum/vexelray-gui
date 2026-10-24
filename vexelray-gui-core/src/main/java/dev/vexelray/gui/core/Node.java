@@ -568,13 +568,15 @@ public final class Node {
     }
 
     /**
-     * Say that this container's children are a view over data that it recycles as the user scrolls (a virtualised
-     * list's rows), so adding, dropping or shifting one is never animated: no arrival, no departure, no slide. A
-     * window's motion may cover everything under it, and this is the container that must not take part. Its
-     * children's own subtrees move as usual. See {@link PropKey#RECYCLES}.
+     * Whether the window's motion animates this container's children: on by default. {@code childMotion(false)} says
+     * their arrivals, departures and moves are not changes to animate, and they are drawn at once. Three containers say it:
+     * one whose children are a view over data it recycles as the user scrolls (a virtualised list's rows), one that
+     * animates its own children ({@code Board}'s cards, a tab strip with its own slide), and one whose children track
+     * something drawn (click regions over a {@code Picture}). Their own subtrees move as usual. See
+     * {@link PropKey#OWN_CHILD_MOTION}.
      */
-    public Node recycles(boolean recycles) {
-        return prop(PropKey.RECYCLES, recycles ? Boolean.TRUE : null);
+    public Node childMotion(boolean motion) {
+        return prop(PropKey.OWN_CHILD_MOTION, motion ? null : Boolean.TRUE);
     }
 
     /**

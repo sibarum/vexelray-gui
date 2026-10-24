@@ -71,4 +71,13 @@ public interface ExitMotion {
 
     /** {@code node} has left the tree for good — released, not merely detached. Forget anything kept for it. */
     void left(RetainedNode node);
+
+    /**
+     * {@code node}, already taken by {@link #leave}, is being replaced: its parent kept nothing and gained new children
+     * in the same edit, so it has been lifted out of the flow and fades where it stood, over what replaces it
+     * ({@link EnterMotion#replacing}). A source may go quicker here, since what arrives waits on it. GUI thread.
+     * Nothing by default.
+     */
+    default void replaced(RetainedNode node) {
+    }
 }

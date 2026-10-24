@@ -64,7 +64,9 @@ public final class Deck<T> {
 
     Deck(Board<T> board, Gui gui) {
         this.board = board;
-        this.inner = gui.column().width(Length.FILL).height(Length.AUTO);
+        // The board opens and closes the gaps here and carries the cards itself, so the window's motion keeps out of it
+        // (Node.childMotion): two clocks on one card put it in two places (MainFrame's Workspaces editor).
+        this.inner = gui.column().width(Length.FILL).height(Length.AUTO).childMotion(false);
         this.node = gui.column().width(Length.FILL).height(Length.FILL).scroll(false, true).children(inner);
     }
 

@@ -88,6 +88,13 @@ public final class Displacement {
      *                 absolute position that is not a move of its own
      */
     private static void settle(RetainedNode node, LayoutMotion motion, long frame, float carriedX, float carriedY) {
+        // A hidden node is not laid out, so what it last recorded goes stale while it is away. Shown again, it has
+        // not moved from there; it has appeared (MainFrame's settings: a page's controls, hidden at a tab switch,
+        // slid in from where they stood two pages ago). So it forgets, and is recorded afresh when next seen.
+        if (!node.visible()) {
+            node.layoutRectKnown = false;
+            return;
+        }
         // Where the node would be now if it had merely been carried. Comparing against this rather than against
         // the recorded position is the whole of it, and reporting `from` in the same frame is what keeps a
         // genuine move that happens *while* the node is being carried reporting its true distance.
@@ -100,9 +107,9 @@ public final class Displacement {
                 node.movedFrame = frame;
                 continuous = node.moveStreak > CHASED_FRAMES;
             }
-            // A recycling container's child shifting is the view moving over the data (PropKey.RECYCLES): recorded,
+            // A child of a container that owns its children's motion (PropKey.OWN_CHILD_MOTION) is recorded,
             // not reported. Its subtree is still carried by the shift exactly once, below, as for any other node.
-            if (!continuous && (node.parent == null || !node.parent.recycles())) {
+            if (!continuous && (node.parent == null || !node.parent.ownsChildMotion())) {
                 motion.moved(node, fromX, fromY, node.x, node.y);
             }
         }
@@ -122,9 +129,15 @@ public final class Displacement {
         node.layoutViewY = node.viewY;
         node.layoutScrollX = node.scrollX;
         node.layoutScrollY = node.scrollY;
+        boolean appeared = !node.layoutRectKnown;
         node.layoutRectKnown = true;
 
         for (RetainedNode child : node.children) {
+            // Everything under a node that has just appeared appears with it: its records are as stale as the
+            // node's own was (it was hidden, or it is new), and none of it travelled from there.
+            if (appeared) {
+                child.layoutRectKnown = false;
+            }
             settle(child, motion, frame, childCarriedX, childCarriedY);
         }
     }

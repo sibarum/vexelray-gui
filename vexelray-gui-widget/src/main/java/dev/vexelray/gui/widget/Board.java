@@ -823,7 +823,7 @@ public final class Board<T> {
 
     private Slot<T> newSlot(Deck<T> deck, int at) {
         Node pad = gui.box().width(Length.FILL).height(Length.FILL).hitInert(true).visible(false);
-        Node box = gui.column().width(Length.FILL).height(Length.ZERO).clip(true).children(pad);
+        Node box = gui.column().width(Length.FILL).height(Length.ZERO).clip(true).childMotion(false).children(pad);
         Slot<T> slot = new Slot<>(this, deck, box, pad, 0f);
         deck.slots.add(at, slot);
         deck.orderDirty = true;

@@ -124,7 +124,7 @@ row.remove();        // fades out in place, then leaves; list.append(row) before
   `Displacement.CHASED_FRAMES` (2) frames of a run are reported, and after that it is followed: drawn where layout puts
   it, less whatever lag it already carried. A frame with no move ends the run, and so does the loop having been
   parked for longer than a frame could take (the frame number skips), so two clicks a moment apart each animate.
-- **A recycling container's children** (`Node.recycles`, `PropKey.RECYCLES`): a virtualised list's rows are realized,
+- **A recycling container's children** (`Node.recycles`, `PropKey.OWN_CHILD_MOTION`): a virtualised list's rows are realized,
   dropped and shifted as the user scrolls. None of them arrives, leaves or slides. `ListView` says it of itself.
 
 And per node, for paint: `Node.paintCuts` (`PropKey.PAINT_CUTS`) keeps a colour that is data, not state, out of the

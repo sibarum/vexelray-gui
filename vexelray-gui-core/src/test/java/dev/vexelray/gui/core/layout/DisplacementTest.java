@@ -389,13 +389,39 @@ class DisplacementTest {
         assertEquals(5, motion.moves.size(), "no two moves were on consecutive frames: " + motion.moves);
     }
 
+    /**
+     * A page hidden at a tab switch and shown again has not travelled from where it stood two pages ago: it appears,
+     * and so does everything in it (MainFrame's settings, whose controls slid in from stale places).
+     */
+    @Test
+    void aNodeShownAgainAppearsAndDoesNotSlideFromWhereItWasHidden() {
+        Recording motion = new Recording();
+        RetainedNode root = node(0f, 0f);
+        RetainedNode page = child(root, 0f, 0f);
+        RetainedNode button = child(page, 10f, 300f);
+        Displacement.settle(root, motion);
+
+        page.set(dev.vexelray.gui.core.model.PropKey.VISIBLE, Boolean.FALSE);
+        Displacement.settle(root, motion);
+        page.set(dev.vexelray.gui.core.model.PropKey.VISIBLE, Boolean.TRUE);
+        layOut(page, 0f, 40f);          // laid out somewhere else while it was away
+        layOut(button, 10f, 80f);
+        Displacement.settle(root, motion);
+
+        assertTrue(motion.moves.isEmpty(), "shown again is an appearance: " + motion.moves);
+
+        layOut(button, 10f, 120f);      // and from now on it moves as anything does
+        Displacement.settle(root, motion);
+        assertEquals(List.of(button.id + ":10.0,80.0->10.0,120.0"), motion.moves);
+    }
+
     /** A virtualised list's rows come and shift as the user scrolls: that is a view moving, not a row. */
     @Test
     void aRecyclingContainersChildrenAreRecordedAndNotReported() {
         Recording motion = new Recording();
         RetainedNode root = node(0f, 0f);
         RetainedNode list = child(root, 0f, 0f);
-        list.set(dev.vexelray.gui.core.model.PropKey.RECYCLES, Boolean.TRUE);
+        list.set(dev.vexelray.gui.core.model.PropKey.OWN_CHILD_MOTION, Boolean.TRUE);
         RetainedNode row = child(list, 0f, 40f);
         RetainedNode label = child(row, 4f, 44f);
         Displacement.settle(root, motion);

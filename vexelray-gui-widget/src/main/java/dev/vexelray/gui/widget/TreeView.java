@@ -479,7 +479,9 @@ public final class TreeView<T> implements AutoCloseable {
             if (rowCursor != null) {
                 gui.cursor(rowNode, rowCursor);
             }
-            this.kidsBox = gui.column().width(Length.FILL).visible(false).scroll(false, false);
+            // Its rows are this tree's to move: it grows the box frame by frame as a branch opens, and a window-wide
+            // motion chasing each step would leave the rows below trailing the opening (Node.childMotion).
+            this.kidsBox = gui.column().width(Length.FILL).visible(false).scroll(false, false).childMotion(false);
             this.entry = gui.column().width(Length.FILL).scroll(false, false).children(rowNode, kidsBox);
             // How a collapsed branch un-hides something inside it, for navigation (Gui.reveals). Only a branch
             // that has been open once has rows in here at all — a branch never expanded has no nodes under it,
@@ -718,7 +720,7 @@ public final class TreeView<T> implements AutoCloseable {
                 .border(Length.rem(0.1f), Role.LINE)
                 .padding(Length.dp(4))
                 .scroll(false, false);
-        this.rows = gui.column().width(Length.FILL).height(Length.FILL);
+        this.rows = gui.column().width(Length.FILL).height(Length.FILL).childMotion(false);   // see kidsBox
         this.dropIndicator = DropIndicator.of(gui.theme().color(Role.ACCENT));
         // The window's reveal, so it fades as every other one does. Before any row: each attaches as it is built.
         this.unclip = Unclip.of(gui);

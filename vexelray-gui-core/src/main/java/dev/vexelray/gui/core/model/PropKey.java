@@ -266,14 +266,16 @@ public enum PropKey {
      */
     HIT_INERT(false),
     /**
-     * A container whose children are a <b>view over data</b>, not the data: a virtualised list's realized rows, which
-     * it adds, drops and shifts as the user scrolls. None of that is a change the user made, so no motion source
-     * hears of it: a child added here does not arrive ({@link dev.vexelray.gui.core.layout.EnterMotion}), one removed
+     * A container that the window's motion leaves alone ({@code Node.childMotion(false)}): no motion source hears of its
+     * children, so a child added here does not arrive ({@link dev.vexelray.gui.core.layout.EnterMotion}), one removed
      * does not leave ({@link dev.vexelray.gui.core.layout.ExitMotion}), and one laid out somewhere new does not slide
-     * ({@link dev.vexelray.gui.core.layout.LayoutMotion}). It is what lets a whole window be enrolled in motion without
-     * every scroll of a long list fading its rows in. Direct children only; their own subtrees move as usual.
+     * ({@link dev.vexelray.gui.core.layout.LayoutMotion}). For children that are a <b>view over data</b> (a virtualised
+     * list's rows, added and dropped as the user scrolls), children the container <b>animates itself</b> ({@code Board}'s
+     * cards, {@code TreeView}'s rows as a subtree grows), and children that <b>track something drawn</b> (click regions
+     * over a picture). It is what lets a whole window be enrolled in motion without each of those fighting it. Direct
+     * children only; their own subtrees move as usual.
      */
-    RECYCLES(false),
+    OWN_CHILD_MOTION(false),
     /**
      * The node's colours are <b>data</b>, not state: a bead coloured by the thread that sent it, a cell coloured by its
      * value. A colour written to it is drawn at once rather than handed to the

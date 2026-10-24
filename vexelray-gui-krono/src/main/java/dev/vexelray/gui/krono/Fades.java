@@ -77,11 +77,26 @@ public final class Fades implements PaintMotion {
         return new Fades(krono, over, ease);
     }
 
+    /**
+     * How many repaints running a colour may have and still be faded. A colour written again within
+     * {@link #DRIVEN_GAP_NANOS} of the last, on more than this many writes running, is being driven by a clock of its
+     * own (an application ramping a wash by hand, a colour that follows a value), and a fade started on each step would
+     * trail behind it: the calculator's tape wash came up in twice its own time. So from the third such write it is
+     * drawn at once, as a node moved on every frame is followed rather than chased.
+     */
+    static final int FADED_WRITES = 2;
+
+    /** Longer than any frame a ramp writes at, shorter than a pointer crossing a control and coming back. */
+    static final long DRIVEN_GAP_NANOS = 40_000_000L;
+
+    /** When a cell was last repainted, and on how many writes running: {@code [nanos, streak]}. GUI thread. */
+    private final Map<Key, long[]> recent = new java.util.HashMap<>();
+
     @Override
     public void repainted(long node, Channel channel, Color from, Color to) {
         Key key = new Key(node, channel);
         Dur over = krono.paced(this.over);   // none while motion is reduced: the colour is drawn the moment it is set
-        if (over.nanos() <= 0L) {
+        if (over.nanos() <= 0L || driven(key, System.nanoTime())) {
             fades.remove(key);
             return;
         }
@@ -99,6 +114,17 @@ public final class Fades implements PaintMotion {
         krono.ramp(over, ease,
                 progress -> fade.t = (float) progress,
                 () -> fades.remove(key, fade));   // only if nothing has replaced it since
+    }
+
+    /** Whether {@code key}'s colour is being written on every frame by someone else's clock (see {@link #FADED_WRITES}). */
+    private boolean driven(Key key, long now) {
+        if (recent.size() > 1024) {
+            recent.values().removeIf(r -> now - r[0] > DRIVEN_GAP_NANOS);   // nothing left in a run: forget it
+        }
+        long[] r = recent.computeIfAbsent(key, k -> new long[] {Long.MIN_VALUE / 2, 0L});
+        r[1] = now - r[0] <= DRIVEN_GAP_NANOS ? r[1] + 1 : 1;
+        r[0] = now;
+        return r[1] > FADED_WRITES;
     }
 
     @Override

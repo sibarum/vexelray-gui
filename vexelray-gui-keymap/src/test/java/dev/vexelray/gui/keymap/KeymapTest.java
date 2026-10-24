@@ -88,6 +88,24 @@ class KeymapTest {
     }
 
     @Test
+    void pausedLetsGoOfEveryChordAndResumingTakesThemBackUnchanged() {
+        try (Headless h = new Headless()) {
+            List<String> log = new ArrayList<>();
+            Keymap keys = new Keymap(h.gui);
+            Action save = keys.action("file.save", "Save", CTRL_S).on(() -> log.add("save"));
+
+            keys.paused(true);
+            h.frame().chord(Key.S, Key.LEFT_CONTROL);
+            keys.paused(false);
+            h.frame().chord(Key.S, Key.LEFT_CONTROL);
+
+            assertEquals(List.of("save"), log, "only the chord pressed after resuming reached the action");
+            assertEquals(List.of(CTRL_S), save.chords());
+            assertEquals("", keys.text(), "pausing saves nothing");
+        }
+    }
+
+    @Test
     void resetTakesTheDefaultsBack() {
         try (Headless h = new Headless()) {
             Keymap keys = new Keymap(h.gui);

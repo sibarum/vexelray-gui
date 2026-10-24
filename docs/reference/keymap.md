@@ -69,6 +69,9 @@ Reading is lenient line by line, as `Settings` is about a file. Entries for acti
   if another part of the application holds a `Settings` over the same file: each writes back everything it
   holds.
 
+- `paused(true)` / `paused(false)` — let go of every chord for a while, so each reaches whatever has the
+  keyboard as if nothing held it (a terminal handing every key to its shell). Nothing is unbound or saved.
+
 ### 1.3 Windows
 
 Keys are focal — a chord reaches only the focused window's `Gui` — so a command meant from every window is

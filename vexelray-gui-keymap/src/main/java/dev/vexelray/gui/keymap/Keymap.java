@@ -106,6 +106,7 @@ public final class Keymap {
     private final Committer<Overrides, Overrides> replace;
     private Set<Claimed> claimed = Set.of();
     private Subscription persisting;
+    private volatile boolean paused;
 
     /** A keymap whose application-wide actions apply in {@code gui}. {@link #attach} adds more windows. */
     public Keymap(Gui gui) {
@@ -168,6 +169,24 @@ public final class Keymap {
             sync();
         }
         return this;
+    }
+
+    /**
+     * Let go of every chord while {@code on}, so each reaches whatever has the keyboard as if no action held it — a
+     * terminal passing every key to its shell, say. Nothing is unbound: the chords are the same when it resumes,
+     * and nothing is saved. A key map starts resumed.
+     */
+    public synchronized Keymap paused(boolean on) {
+        if (paused != on) {
+            paused = on;
+            sync();
+        }
+        return this;
+    }
+
+    /** Whether {@link #paused} has every chord let go. */
+    public boolean paused() {
+        return paused;
     }
 
     synchronized void relocate(Action a, Context context) {
@@ -370,7 +389,7 @@ public final class Keymap {
         Map<Action, List<Trigger>> now = effective(overrides.value());
         Set<Claimed> want = new LinkedHashSet<>();
         for (Action a : actions) {
-            if (!a.handled()) {
+            if (!a.handled() || paused) {
                 continue;
             }
             Context c = a.context();

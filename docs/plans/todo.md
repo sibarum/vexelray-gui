@@ -427,6 +427,23 @@ Wanted eventually, deliberately not now.
   signature is not the `Theme.elevation(base, state)` this note guessed: a base *length* cannot be stepped without
   arithmetic on `Length`, and adding a scale operator would have meant a third switch over the sealed type §1.1
   exists to remove. Depth is a ladder of rungs instead, so the response is a move rather than a sum.
+- **An MTSDF option for the icon atlases.** Every field `DistanceField` makes is a true SDF: one distance in R, G and
+  B alike, alpha opaque, with a generous spread (64 + 16 and 48 + 12 for the suite's set, 12 for the file families),
+  so glows and soft shadows already work. What it cannot hold is a sharp corner: one interpolated distance rounds
+  every corner once an icon is drawn well above its cell size. MTSDF puts a multi-channel field in RGB, whose median
+  gives the corner back, and keeps today's true distance in alpha. Alpha is opaque padding now, so it costs no VRAM;
+  `Canvas#field` would cut at `median(rgb)` and take effects from alpha, and an atlas would have to say which kind it
+  is (in `SetManifest` and the generated enum) so one pipeline draws both.
+
+  The obstacle is the input. MSDF assigns *edges* to channels, so it needs outlines, and `DistanceField` works from
+  rasterised pixels on purpose (the rasteriser's knockouts, clips and strokes come out as it means them, and nothing
+  here parses a shape). The likely shape: SVG art goes through msdf-atlas-gen with `-type mtsdf`, as `vexelray`'s
+  msdf plugin already runs it for fonts, and raster art keeps the true SDF in all four channels. Worth checking
+  first that msdfgen's handling of strokes and clips matches imagelib's on the suite's actual drawings.
+
+  Considered for the font atlases and left out (2026-10-24): body text is never drawn past its edge, the font
+  atlases' range (`pxRange = 4`) is too narrow for effects anyway, and widening it pays padding round 3,000-odd
+  glyphs a face, where an icon set pays it round a few dozen.
 
 ---
 

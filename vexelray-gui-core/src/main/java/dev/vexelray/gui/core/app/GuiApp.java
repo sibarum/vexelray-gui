@@ -4,6 +4,7 @@ import dev.vexelray.canvas.Canvas;
 import dev.vexelray.canvas.CanvasShader;
 import dev.vexelray.canvas.CanvasVertex;
 import dev.vexelray.canvas.shadelet.CoreLooks;
+import dev.vexelray.canvas.shadelet.CoreShadelets;
 import dev.vexelray.canvas.shadelet.LookTable;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.WindowControls;
@@ -18,6 +19,7 @@ import dev.vexelray.os.NativeWindow;
 import dev.vexelray.os.WindowConfig;
 import dev.vexelray.shader.ComposedShader;
 import dev.vexelray.gui.core.text.TextFaces;
+import dev.vexelray.text.FieldType;
 import dev.vexelray.text.FontSet;
 import dev.vexelray.vulkan.present.AtlasTexture;
 import dev.vexelray.vulkan.present.StreamTexture;
@@ -42,6 +44,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /**
  * The GUI application host and frame loop — the seam between the framework and VexelRay. It owns the window and
@@ -215,13 +218,15 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
 
     /**
      * As {@link #GuiApp(WindowConfig, FontSet)}, drawing every canvas with {@code canvasShader}: the shadelets the
-     * application composed, as {@code CoreShadelets.composition().with(...)} in a {@link CanvasShader.Composed} its
-     * own build pre-compiles. Chosen here, once, because it is the shader of every window's pipeline and of every
-     * capture, and those are built against it; the other constructors draw with the core set,
-     * {@link CanvasShader.Fragment}. The looks the application draws are written into {@link #looks()}.
+     * application composed, as {@code CoreShadelets.composition(type).with(...)} in a {@link CanvasShader.Composed}
+     * its own build pre-compiles, {@code type} being its fonts' {@link FieldType}. Chosen here, once, because it is
+     * the shader of every window's pipeline and of every capture, and those are built against it; the other
+     * constructors draw with the core set for the fonts, {@link CanvasShader#core}. The looks the application draws
+     * are written into {@link #looks()}.
      *
      * @throws IllegalArgumentException if the composition lacks some of the core set, which the canvas's own kinds
-     *         draw with
+     *         draw with; if its text source is for another type of font than {@code fonts}; or if {@code fonts}
+     *         mixes types, which no one shader draws
      */
     public GuiApp(WindowConfig config, FontSet fonts, CanvasShader.Composed canvasShader) {
         this(config, null, null, new TextFaces(fonts), Compute.SHARED, canvasShader);
@@ -272,7 +277,7 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
      * what the other constructors pass, so a factory that adds nothing is an ordinary application.
      */
     public GuiApp(WindowConfig config, java.util.function.Function<WindowConfig, NativeWindow> windows) {
-        this(config, null, windows, TextFaces.standard(), Compute.SHARED, new CanvasShader.Fragment());
+        this(config, null, windows, TextFaces.standard(), Compute.SHARED, null);
     }
 
     /**
@@ -282,7 +287,7 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
      */
     public GuiApp(WindowConfig config, java.util.function.Function<WindowConfig, NativeWindow> windows,
                   Compute compute) {
-        this(config, null, windows, TextFaces.standard(), compute, new CanvasShader.Fragment());
+        this(config, null, windows, TextFaces.standard(), compute, null);
     }
 
     /**
@@ -293,15 +298,16 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
      */
     public GuiApp(WindowConfig config, java.util.function.Function<WindowConfig, NativeWindow> windows,
                   Compute compute, FontSet fonts) {
-        this(config, windows, compute, fonts, new CanvasShader.Fragment());
+        this(config, windows, compute, fonts, null);
     }
 
     /**
      * As {@link #GuiApp(WindowConfig, java.util.function.Function, Compute, FontSet)}, drawing every canvas with
      * {@code canvasShader}, as {@link #GuiApp(WindowConfig, FontSet, CanvasShader.Composed)} does. The overload a
-     * framework passes its own composition through, since it is the one that also hands over the windows.
+     * framework passes its own composition through, since it is the one that also hands over the windows. A null
+     * {@code canvasShader} is the core set for the fonts.
      *
-     * @throws IllegalArgumentException if the composition lacks some of the core set
+     * @throws IllegalArgumentException as {@link #GuiApp(WindowConfig, FontSet, CanvasShader.Composed)} does
      */
     public GuiApp(WindowConfig config, java.util.function.Function<WindowConfig, NativeWindow> windows,
                   Compute compute, FontSet fonts, CanvasShader.Composed canvasShader) {
@@ -309,10 +315,36 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                 canvasShader);
     }
 
+    /**
+     * The canvas shader that draws {@code faces}: {@code asked}, or the core set for their type when it is null.
+     *
+     * <p>A shader holds one text source, MSDF or SDF ({@code CoreShadelets.text}), so every face has to be of the type
+     * it draws: a set that mixes types is refused, and so is a shader composed for the other type, rather than drawing
+     * one type's atlases as the other's.
+     */
+    static CanvasShader.Composed canvasShader(TextFaces faces, CanvasShader.Composed asked) {
+        Set<FieldType> types = faces.set().types();
+        if (types.size() != 1) {
+            throw new IllegalArgumentException("the fonts mix atlas types " + types + ", and a canvas shader draws "
+                    + "one: bake every family with the same <type>");
+        }
+        FieldType type = types.iterator().next();
+        if (asked == null) {
+            return CanvasShader.core(type);
+        }
+        FieldType drawn = CoreShadelets.textType(asked.composition().manifest());
+        if (drawn != type) {
+            throw new IllegalArgumentException("the canvas shader " + asked.getClass().getName() + " draws "
+                    + drawn + " text and the fonts are " + type + ": compose it from CoreShadelets.composition("
+                    + "FieldType." + type + ")");
+        }
+        return asked;
+    }
+
     /** As the one that builds it, below, with compute sharing the queue that draws. */
     private GuiApp(WindowConfig config, NativeWindow adopted,
                    java.util.function.Function<WindowConfig, NativeWindow> windows, TextFaces faces) {
-        this(config, adopted, windows, faces, Compute.SHARED, new CanvasShader.Fragment());
+        this(config, adopted, windows, faces, Compute.SHARED, null);
     }
 
     /**
@@ -341,13 +373,14 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
      * The one that builds it: {@code adopted} is a main window the host already made (or null to make one), and
      * {@code windows} makes every window from here on (or null for the platform's own), {@code faces} is the
      * application's fonts, {@code compute} what its compute gets of the device's queues, and {@code canvasShader}
-     * the canvas fragment stage every window and capture draws with.
+     * the canvas fragment stage every window and capture draws with (null for the core set for the fonts).
      */
     private GuiApp(WindowConfig config, NativeWindow adopted,
                    java.util.function.Function<WindowConfig, NativeWindow> windows, TextFaces faces,
                    Compute compute, CanvasShader.Composed canvasShader) {
-        // A composition that cannot draw the canvas's own kinds is refused here, before a device or a window exists
-        // to be left behind by the refusal: the look table checks it, and costs nothing to build without a GPU.
+        // A composition that cannot draw the canvas's own kinds, or this application's fonts, is refused here, before
+        // a device or a window exists to be left behind by the refusal: neither check needs a GPU.
+        canvasShader = canvasShader(faces, canvasShader);
         CoreLooks.table(canvasShader.composition());
         this.platform = NativePlatform.current();
         this.systemReducedMotion = systemReducedMotion(platform);
@@ -2008,13 +2041,13 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
      */
     public static void capture(Gui gui, int width, int height, float bgR, float bgG, float bgB, String path)
             throws IOException {
-        capture(gui, TextFaces.standard(), new CanvasShader.Fragment(), width, height, bgR, bgG, bgB, path);
+        capture(gui, TextFaces.standard(), null, width, height, bgR, bgG, bgB, path);
     }
 
     /** As {@link #capture(Gui, int, int, float, float, float, String)}, in an application's own fonts. */
     public static void capture(Gui gui, FontSet fonts, int width, int height, float bgR, float bgG, float bgB,
                                String path) throws IOException {
-        capture(gui, new TextFaces(fonts), new CanvasShader.Fragment(), width, height, bgR, bgG, bgB, path);
+        capture(gui, new TextFaces(fonts), null, width, height, bgR, bgG, bgB, path);
     }
 
     /**
@@ -2050,8 +2083,9 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
      * of {@link #capture}. The canvas is emitted once the device is up, because it names its looks in that device's
      * table. Package-private so a test can draw a canvas no widget draws yet.
      */
-    static byte[] render(TextFaces faces, CanvasShader.Composed canvasShader, int width, int height,
+    static byte[] render(TextFaces faces, CanvasShader.Composed asked, int width, int height,
                          float bgR, float bgG, float bgB, java.util.function.Consumer<Canvas> emit) {
+        CanvasShader.Composed canvasShader = canvasShader(faces, asked);
         NativePlatform platform = NativePlatform.current();
         try (VulkanInstance instance = new VulkanInstance("vexelray-gui",
                 platform.requiredVulkanInstanceExtensions())) {

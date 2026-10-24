@@ -76,6 +76,8 @@ public final class TitleBar {
             g.line(-4.75, 4.75, 4.75, -4.75, ink));
     /** The mark's side: the native caption's small icon, 16px at 100%. */
     private static final int ICON_DP = 16;
+    /** The landmark the mark is reached by, so a script can {@code click titlebar-mark}. */
+    public static final String MARK = "titlebar-mark";
 
     private final Gui gui;
     /**
@@ -100,6 +102,12 @@ public final class TitleBar {
     private final Node leading;
     /** The application's mark, first in {@link #leading}; null until given one. */
     private Node icon;
+    /** What a click on the mark does ({@link #onMark}), read at click time; null while the mark is caption. */
+    private volatile Runnable markAction;
+    /** What the mark says under the pointer while it does something; null or blank for nothing. */
+    private volatile String markTip;
+    /** The mark's tooltip, built with the first mark. */
+    private Tooltip markTips;
     private final Node titleText;
     /** The hairline between the instruments and the window controls; shown while there are instruments. */
     private final Node divider;
@@ -356,7 +364,8 @@ public final class TitleBar {
      * <p>Replacing rather than appending, like {@link #instruments}: a window wears one mark, and {@code null}
      * takes it off. The node is the caller's to build — a drawn {@link dev.vexelray.gui.draw.Picture}, an image,
      * anything — and it stays caption unless it declares otherwise, so the window can be dragged by its mark as by
-     * the native one. {@link #icon(GuiApp, Icon)} builds it from the {@link Icon} the window itself wears.
+     * the native one. {@link #icon(GuiApp, Icon)} builds it from the {@link Icon} the window itself wears. Once the
+     * bar has an {@link #onMark} action, any mark it wears does that instead.
      */
     public TitleBar icon(Node node) {
         if (icon != null) {
@@ -365,8 +374,52 @@ public final class TitleBar {
         icon = node;
         if (node != null) {
             leading.insert(node, 0);
+            // Wired once per mark, resolving the action at click time, so a mark given before the action (or the
+            // other way round) is the same mark. While there is no action the region below leaves it caption, the
+            // window manager takes the pointer, and neither of these ever hears from it.
+            gui.onClick(node, () -> {
+                Runnable action = markAction;
+                if (action != null) {
+                    action.run();
+                }
+            });
+            gui.landmark(MARK, node);
+            if (markTips == null) {
+                markTips = new Tooltip(gui);
+            }
+            markTips.attach(node, () -> markAction == null ? null : markTip);
+            // Only ever made a hole here: a mark given with no action keeps whatever region it declared itself.
+            if (markAction != null) {
+                node.windowRegion(WindowRegion.INTERACTIVE);
+            }
         }
         return this;
+    }
+
+    /**
+     * Have a click on the mark do {@code action} — the About window, as the framework uses it — saying {@code tooltip}
+     * under the pointer. {@code null} puts the mark back to caption.
+     *
+     * <p><b>The mark stops being caption</b> while it has an action: it declares {@link WindowRegion#INTERACTIVE}, as
+     * a caption button does, so the click reaches it rather than starting a drag. That is the trade the native caption
+     * makes too, where a click on a window's icon opens its system menu rather than moving it. The rest of the strip
+     * still drags.
+     *
+     * <p>Replacing rather than accumulating, like {@link #instruments}, and any time, before the mark or after.
+     */
+    public TitleBar onMark(String tooltip, Runnable action) {
+        this.markTip = tooltip;
+        this.markAction = action;
+        markRegion();
+        return this;
+    }
+
+    /** The mark's region for whether it has an action: a hole in the caption, or the caption itself. */
+    private void markRegion() {
+        Node mark = icon;
+        if (mark != null) {
+            mark.windowRegion(markAction == null ? null : WindowRegion.INTERACTIVE);
+        }
     }
 
     /**

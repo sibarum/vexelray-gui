@@ -765,7 +765,10 @@ from one window to the next. "Screenshot this window" is only free if the framew
 [ identity | caption (flex, DRAG) | instruments | window controls ]
 ```
 
-- **identity** — application-supplied, declarative, no handlers.
+- **identity** — application-supplied, declarative, no handlers of the application's. The one handler there is the
+  framework's: `TitleBar.onMark`, which `vexelray-framework` uses to open the application's About window from the
+  mark. The mark is `WindowRegion.INTERACTIVE` only while it has one, and a script reaches it as the landmark
+  `titlebar-mark`.
 - **caption** — the flexing drag region, still `WindowRegion.DRAG`.
 - **instruments** — framework-owned, each `WindowRegion.INTERACTIVE`, with the gaps between them left draggable
   exactly as the caption buttons already manage.

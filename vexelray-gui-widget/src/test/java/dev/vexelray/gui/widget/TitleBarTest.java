@@ -268,6 +268,46 @@ class TitleBarTest {
         }
     }
 
+    /**
+     * The mark is caption until it is given something to do, and then a hole in the caption that does it: given
+     * before the mark or after, and taken back with {@code null}.
+     */
+    @Test
+    void theMarkIsCaptionUntilItHasAnAction() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TitleBar bar = bar(h, WindowControls.NONE);
+            dev.vexelray.gui.core.Node first = mark(h);
+            bar.icon(first);
+            h.frame();
+            assertNull(h.retained(first).windowRegion(), "with nothing to do it drags the window, as the bar around it does");
+
+            List<String> clicks = new java.util.ArrayList<>();
+            bar.onMark("About Test", () -> clicks.add("about"));
+            h.frame();
+            assertEquals(dev.vexelray.gui.core.WindowRegion.INTERACTIVE, h.retained(first).windowRegion(),
+                    "a hole in the caption, so the click reaches it");
+            clickOn(h, first);
+            assertEquals(List.of("about"), clicks);
+
+            // A mark given after the action wears it too.
+            dev.vexelray.gui.core.Node second = mark(h);
+            bar.icon(second);
+            h.frame();
+            assertEquals(dev.vexelray.gui.core.WindowRegion.INTERACTIVE, h.retained(second).windowRegion());
+            clickOn(h, second);
+            assertEquals(List.of("about", "about"), clicks);
+
+            bar.onMark(null, null);
+            h.frame();
+            assertNull(h.retained(second).windowRegion(), "null puts it back to caption");
+        }
+    }
+
+    private static void clickOn(HeadlessGui h, dev.vexelray.gui.core.Node node) {
+        dev.vexelray.gui.core.layout.Rect r = h.gui.layoutSnapshot().node(h.retained(node).id).rect();
+        h.click(r.x() + r.w() / 2f, r.y() + r.h() / 2f);
+    }
+
     /** An icon's straight ARGB, as the straight RGBA a texture takes: channels moved, nothing premultiplied. */
     @Test
     void anIconsPixelsReachTheTextureInRgbaOrder() {

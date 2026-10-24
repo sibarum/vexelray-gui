@@ -15,7 +15,7 @@ import java.util.function.Consumer;
  * <p>A frame's <em>cost</em>: from the top of a loop iteration that drew to the end of its present, which is what the
  * machine spent producing that frame. Not the gap between frames, which is mostly the loop parked on nothing to do (a
  * render-on-demand application idles at a frame a minute and is not slow), and not a posted task, which the loop times
- * and reports as a stall of its own. A frame costing {@link #SLOW_NANOS} or more cannot be drawn five times a second.
+ * and reports as a stall of its own. A frame costing {@link #SLOW_NANOS} or more cannot be drawn fifteen times a second.
  *
  * <p>The machine is struggling when, after {@link #WARM_UP_NANOS} of drawing (the first frames pay for shaders, atlases
  * and uploads, once), at least {@link #SLOW_NEEDED} of the last {@link #WINDOW} frames drawn were slow, and they span
@@ -48,17 +48,17 @@ import java.util.function.Consumer;
  */
 public final class SlowFrames {
 
-    /** A frame that costs this much cannot be drawn five times a second. */
-    public static final long SLOW_NANOS = 200_000_000L;
+    /** A frame that costs this much cannot be drawn fifteen times a second. */
+    public static final long SLOW_NANOS = 1_000_000_000L / 15;
 
     /** How long after the first frame drawn the watch starts counting: startup pays for things once. */
     public static final long WARM_UP_NANOS = 10_000_000_000L;
 
-    /** How many of the most recent frames drawn the watch looks at. */
-    public static final int WINDOW = 12;
+    /** How many of the most recent frames drawn the watch looks at: {@link #SPAN_NANOS} of them at the slow rate. */
+    public static final int WINDOW = 48;
 
-    /** How many of those must be slow. */
-    public static final int SLOW_NEEDED = 10;
+    /** How many of those must be slow: five in six. */
+    public static final int SLOW_NEEDED = 40;
 
     /** How far apart the first and last of them must start, so a burst of hitches is not a slow machine. */
     public static final long SPAN_NANOS = 3_000_000_000L;
@@ -204,12 +204,12 @@ public final class SlowFrames {
         if (!host.worthOffering()) {
             state = State.DONE;
             host.report("SlowFrames/struggling", "frames are costing " + millis(before) + " ms",
-                    "fewer than five a second, and there is nothing to offer: simplified graphics is on, or the user"
+                    "fewer than fifteen a second, and there is nothing to offer: simplified graphics is on, or the user"
                             + " asked never to be offered it");
             return;
         }
         host.report("SlowFrames/struggling", "frames are costing " + millis(before) + " ms",
-                "fewer than five a second; offering simplified graphics");
+                "fewer than fifteen a second; offering simplified graphics");
         host.ask(before);
     }
 

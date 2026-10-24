@@ -81,14 +81,14 @@ class SlowFramesTest {
 
     @Test
     void slowFramesDuringTheWarmUpAreStartupNotAMachine() {
-        draw(SlowFrames.WINDOW * 3, 300, 300);   // 10.8 s, nearly all inside the warm-up
+        draw(110, 300, 100);   // 11 s, more than a window of slow frames, nearly all inside the warm-up
         assertTrue(host.did.isEmpty(), "the first ten seconds pay for shaders and uploads: " + host.did);
     }
 
     @Test
     void aBurstOfHitchesIsNotASlowMachine() {
         warmUp();
-        draw(SlowFrames.WINDOW, 210, 100);   // twelve slow frames, but crammed into 1.2 s
+        draw(SlowFrames.WINDOW, 210, 50);   // a window of slow frames, but crammed into 2.4 s
         assertTrue(host.did.isEmpty(), "they have to span three seconds: " + host.did);
     }
 

@@ -1698,7 +1698,7 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
     }
 
     /**
-     * Install what asks the user, when this application's frames are repeatedly too slow to draw five a second,
+     * Install what asks the user, when this application's frames are repeatedly too slow to draw fifteen a second,
      * whether to switch to simplified graphics ({@link SlowFrames}). The frame loop has no widgets to ask with, so the
      * layer above installs the prompt; {@code vexelray-framework} does it for every application. Without one, a
      * struggling machine is reported in the diagnostics and nothing is asked. {@code null} removes it.

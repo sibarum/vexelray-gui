@@ -66,6 +66,42 @@
         </dependency>
     </dependencies>
 
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>**/MutationLaneTest.java</exclude>
+                    </excludes>
+                </configuration>
+                <executions>
+                    <!-- The mutation lane is read back from the probe's own rows, and whether the probe is on is
+                         decided once in a static initialiser, so it needs a JVM that was started tracing. The same
+                         shape as vexelray-gui-automation's correlation run. -->
+                    <execution>
+                        <id>mutation-lane</id>
+                        <goals>
+                            <goal>test</goal>
+                        </goals>
+                        <configuration>
+                            <systemPropertyVariables>
+                                <probe>layout</probe>
+                                <probe.format>csv</probe.format>
+                                <probe.out>target/mutation-lane.csv</probe.out>
+                            </systemPropertyVariables>
+                            <excludes combine.self="override"/>
+                            <includes>
+                                <include>**/MutationLaneTest.java</include>
+                            </includes>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
     <profiles>
         <!-- VexelRay on Windows presents through DXGI, with no fall-back to a Vulkan swapchain (GuiApp's
              constructor says why). Carried here, so that every application on GuiApp has it the way it has

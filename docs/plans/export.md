@@ -1,6 +1,6 @@
 # Capture and export: what just happened, in one file
 
-Status: **proposed 2026-10-23, not started.** Ctrl+Shift+E in a debug run captures the last stretch of time:
+Status: **proposed 2026-10-23; step 1 (the mutation lane) done 2026-10-23.** Ctrl+Shift+E in a debug run captures the last stretch of time:
 its probe rows, the tree as it was at that moment, and optionally a video of it, joined by frame number. The
 Inspector, or the application's own debug menu, exports what was captured as one zip that a person or an agent can
 read cold. Spans this repo (the recorder, the reconciler, the keymap), `vexelray-framework` (the debug menu),
@@ -59,19 +59,35 @@ the same frames carrying the same mutations as one that is not, so only the timi
 
 ### M1. A mutation lane, recorded where each write is judged
 
-`Reconciler` already decides each write's fate: `setProp` and `setText` drop a write of the value already there,
-and set `drawDirty`, `geometryDirty` or `layoutDirty` otherwise. A `mutation` probe lane records that decision,
-one row per applied mutation, on the GUI thread as it drains:
+**Done 2026-10-23.** `Reconciler` already decides each write's fate: `setProp` and `setText` drop a write of the
+value already there, and set `drawDirty`, `geometryDirty` or `layoutDirty` otherwise. While the layout lane is
+traced, `Reconciler.apply` hands each mutation to a sink nested in it (`Traced`), which clears the three flags
+around each sink call, reads what the call set, and puts them back. Every edit is therefore judged on its own,
+even after an earlier edit in the same frame has set the flags. One row per sink call, so a `Batch` is reported
+edit by edit:
 
 ```
-mutation  SetProp  node=4411 VISIBLE      unchanged
-mutation  SetText  node=4502 TEXT         layout
-mutation  SetProp  node=4398 TRANSLATE_X  draw
-mutation  Insert   node=4100 child=4502   layout
+layout,mutation draw,SetProp node=2 TRANSLATE_X=1.0
+layout,mutation unchanged,SetProp node=2 TRANSLATE_X=1.0
+layout,mutation geometry,SetProp node=2 CARET=3
+layout,mutation layout,SetText node=2 chars=5
+layout,mutation missing,SetProp node=99 TRANSLATE_X=1.0
+layout,mutation queued,Reveal node=2
 ```
 
-The outcome is one of `unchanged`, `draw`, `geometry` or `layout`. The lane is off unless the probe is armed, like
-every lane (`Probe.ON` stays a static final). At Pix's 600 writes a second, it is a small part of a full trace.
+As built, it differs from the first draft of this section in two ways:
+
+- **It is the `layout` lane, not a lane of its own.** `Lane` is atchung's, kept small and named after layers, and
+  its `LAYOUT` is already "reconcile, measure, arrange". `-Dprobe=layout` turns it on.
+- **The outcome is in the row's kind, not its detail.** The rollup then counts each outcome with nothing added,
+  and `rows --kind "mutation unchanged"` filters on it. The outcomes are `layout`, `geometry`, `draw`, `queued` (a
+  reveal, answered after the layout), `missing` (the node is not in the tree) and `unchanged`.
+
+The detail names the edit. A boolean, number or enum value is written out, and anything larger is named by its key
+alone. Text is reported by its length (`chars=5`), never its content, so the rows carry none of what the interface
+shows. The detail is built only while the probe is tracing (`Probe.tracing`, added to atchung for this), so a run
+that only rolls up pays for the counter. Tested by `MutationLaneTest`, in a surefire execution of its own that
+starts tracing.
 
 ### M2. Where a write came from, sampled
 
@@ -183,8 +199,7 @@ machines worth recording.
 
 Each step lands, and is useful, on its own.
 
-1. **M1, the mutation lane.** Verified by a headless test that applies a set, a set of the same value and a
-   text change, and reads `unchanged`, `draw` and `layout` from the rows.
+1. **M1, the mutation lane. Done 2026-10-23** (`MutationLaneTest`).
 2. **M2, origins.** Verified by a test that posts from a known method and finds it in `from=`, with every post
    walked and with one in N.
 3. **M3, the layout cause in `why`.** Verified by a test whose frame lays out because of one known text change.

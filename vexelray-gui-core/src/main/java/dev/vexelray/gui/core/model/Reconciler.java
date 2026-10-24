@@ -7,6 +7,8 @@ import dev.vexelray.gui.core.style.Paint;
 import dev.vexelray.gui.core.style.PaintMotion;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
+import sibarum.probe.Lane;
+import sibarum.probe.Probe;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -228,8 +230,11 @@ public final class Reconciler implements Mutation.Sink {
      * the edit, and kept {@link Mutation} sealed because the switch would not have had a case for anything else.
      */
     public void apply(Mutation m) {
-        m.emitTo(this);
+        m.emitTo(Probe.ON && Probe.tracing(Lane.LAYOUT) ? traced : this);
     }
+
+    /** The sink {@link #apply} hands a mutation while the layout lane is traced: this one, saying what each did. */
+    private final Traced traced = new Traced();
 
     // --- Mutation.Sink: the only place a RetainedNode field is written ------------------------------------
 
@@ -512,6 +517,157 @@ public final class Reconciler implements Mutation.Sink {
     private void report(long id, PaintMotion.Channel channel, Color from, Color to) {
         if (from != null && to != null && !from.equals(to)) {
             repaints.repainted(id, channel, from, to);
+        }
+    }
+
+    /**
+     * This reconciler, with a row for every edit: what it was, and what it did to the frame. One row per sink call,
+     * so a {@link Mutation.Batch} is reported edit by edit.
+     *
+     * <p>What an edit did is read off the dirty flags. They are cleared before it, read after it and put back as they
+     * were, so each edit is judged on its own even when an earlier one this frame already set them: a frame that
+     * lays out once may have had one edit that asked for it and twenty that would not have. The outcome is the
+     * strongest flag set ({@code layout}, {@code geometry}, {@code draw}); a reveal is {@code queued}, being answered
+     * after the layout; an edit naming a node not in the tree is {@code missing}; anything else is {@code unchanged},
+     * which is nearly always a write of the value already there. The outcome is in the row's kind, so the rollup
+     * counts each, and the detail names the edit. Text is reported by its length, never its content.
+     */
+    private final class Traced implements Mutation.Sink {
+
+        private static final long NONE = Long.MIN_VALUE;
+
+        private boolean wasLayout;
+        private boolean wasGeometry;
+        private boolean wasDraw;
+        private int wasReveals;
+        private boolean present;
+
+        private void begin(long target) {
+            wasLayout = layoutDirty;
+            wasGeometry = geometryDirty;
+            wasDraw = drawDirty;
+            wasReveals = reveals.size();
+            present = target == NONE || index.containsKey(target);
+            layoutDirty = false;
+            geometryDirty = false;
+            drawDirty = false;
+        }
+
+        private void end(String detail) {
+            String outcome = layoutDirty ? "mutation layout"
+                    : geometryDirty ? "mutation geometry"
+                    : drawDirty ? "mutation draw"
+                    : reveals.size() > wasReveals ? "mutation queued"
+                    : !present ? "mutation missing"
+                    : "mutation unchanged";
+            layoutDirty |= wasLayout;
+            geometryDirty |= wasGeometry;
+            drawDirty |= wasDraw;
+            Probe.mark(Lane.LAYOUT, outcome, detail);
+        }
+
+        @Override
+        public void create(long id, Map<PropKey, Object> initial) {
+            begin(NONE);
+            try {
+                Reconciler.this.create(id, initial);
+            } finally {
+                end("Create node=" + id + " props=" + initial.size());
+            }
+        }
+
+        @Override
+        public void insert(long parent, long child, int at) {
+            begin(parent);
+            present &= index.containsKey(child);
+            try {
+                Reconciler.this.insert(parent, child, at);
+            } finally {
+                end("Insert node=" + parent + " child=" + child + " at=" + at);
+            }
+        }
+
+        @Override
+        public void remove(long id) {
+            begin(id);
+            try {
+                Reconciler.this.remove(id);
+            } finally {
+                end("Remove node=" + id);
+            }
+        }
+
+        @Override
+        public void arrange(long parent, long[] children) {
+            begin(parent);
+            try {
+                Reconciler.this.arrange(parent, children);
+            } finally {
+                end("Arrange node=" + parent + " children=" + children.length);
+            }
+        }
+
+        @Override
+        public void setProp(long id, PropKey key, Object value) {
+            begin(id);
+            try {
+                Reconciler.this.setProp(id, key, value);
+            } finally {
+                // A flag, a number or a choice says itself in a word; anything bigger (a paint, a length, a
+                // picture) is named by its key alone.
+                boolean small = value instanceof Boolean || value instanceof Number || value instanceof Enum<?>;
+                end("SetProp node=" + id + " " + key + (small ? "=" + value : value == null ? "=null" : ""));
+            }
+        }
+
+        @Override
+        public void setText(long id, String text) {
+            begin(id);
+            try {
+                Reconciler.this.setText(id, text);
+            } finally {
+                end("SetText node=" + id + " chars=" + (text == null ? 0 : text.length()));
+            }
+        }
+
+        @Override
+        public void scrollToEdge(long id) {
+            begin(id);
+            try {
+                Reconciler.this.scrollToEdge(id);
+            } finally {
+                end("ScrollToEdge node=" + id);
+            }
+        }
+
+        @Override
+        public void scrollTo(long id, float x, float y) {
+            begin(id);
+            try {
+                Reconciler.this.scrollTo(id, x, y);
+            } finally {
+                end("ScrollTo node=" + id);
+            }
+        }
+
+        @Override
+        public void reveal(long id) {
+            begin(id);
+            try {
+                Reconciler.this.reveal(id);
+            } finally {
+                end("Reveal node=" + id);
+            }
+        }
+
+        @Override
+        public void retheme(Theme next) {
+            begin(NONE);
+            try {
+                Reconciler.this.retheme(next);
+            } finally {
+                end("Retheme");
+            }
         }
     }
 

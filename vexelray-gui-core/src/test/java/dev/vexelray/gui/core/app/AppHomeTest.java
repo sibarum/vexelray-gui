@@ -121,4 +121,25 @@ class AppHomeTest {
                 Settings.open("vexelray-test-app").path(),
                 "Settings.open(name) and AppHome.of(name).settings() are one file");
     }
+
+    @Test
+    void aRenamedApplicationAdoptsItsFormerHomeOnce(@TempDir Path dir) throws Exception {
+        System.setProperty("vexelray-old-name.home", dir.resolve(".old").toString());
+        System.setProperty("vexelray-new-name.home", dir.resolve(".new").toString());
+        try {
+            AppHome renamed = AppHome.of("vexelray-new-name");
+            assertFalse(renamed.adopt("vexelray-old-name"), "nothing to adopt");
+            AppHome.of("vexelray-old-name").settings().putString("k", "v").save();
+            assertTrue(renamed.adopt("vexelray-old-name"));
+            assertEquals("v", renamed.settings().getString("k", null), "its settings came along");
+            assertFalse(Files.exists(dir.resolve(".old")), "moved, not copied");
+
+            AppHome.of("vexelray-old-name").settings().putString("k", "stale").save();
+            assertFalse(renamed.adopt("vexelray-old-name"), "never over a home that is already there");
+            assertEquals("v", renamed.settings().getString("k", null));
+        } finally {
+            System.clearProperty("vexelray-old-name.home");
+            System.clearProperty("vexelray-new-name.home");
+        }
+    }
 }

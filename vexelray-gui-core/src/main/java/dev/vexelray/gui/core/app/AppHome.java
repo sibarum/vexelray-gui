@@ -86,6 +86,33 @@ public final class AppHome {
         return Files.isDirectory(dir);
     }
 
+    /**
+     * Move the home of {@code formerName} here, for an application that was renamed: what it kept under its old name
+     * (settings, key bindings, recent files) carries over to the new one. Only when this home does not exist yet and
+     * the former one does, so it happens once, on the first launch under the new name, and never merges two homes or
+     * overwrites anything. The former home is found as {@link #of(String)} finds one, its {@code .home} property
+     * included.
+     *
+     * @return whether it moved
+     * @throws UncheckedIOException if it is there to move and could not be (another file system, say)
+     */
+    public boolean adopt(String formerName) {
+        AppHome former = of(formerName);
+        if (exists() || !former.exists() || former.dir.equals(dir)) {
+            return false;
+        }
+        try {
+            Path parent = dir.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            Files.move(former.dir, dir);
+            return true;
+        } catch (IOException e) {
+            throw new UncheckedIOException("could not move " + former.dir + " to " + dir, e);
+        }
+    }
+
     /** Create the directory, and any missing parents, if it is not already there; returns {@link #dir()}. */
     public Path create() {
         try {

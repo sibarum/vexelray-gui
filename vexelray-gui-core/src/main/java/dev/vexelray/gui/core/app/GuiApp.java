@@ -616,8 +616,9 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
 
     /**
      * A texture whose pixels change: {@code slots} images of {@code width x height}, each frame written into one that
-     * nothing shows and the node then pointed at it ({@link StreamTexture}), so a picture that plays costs neither a
-     * texture per frame nor a device wait. With {@code picture}, sRGB with a mip chain per slot, as {@link #picture}
+     * nothing shows and then shown ({@link StreamTexture}), so a picture that plays costs neither a texture per frame
+     * nor a device wait. A node pointed once at its {@link StreamTexture#live} image shows every frame after, and each
+     * one shown asks for a frame here, so a playing picture costs no edit to the tree either. With {@code picture}, sRGB with a mip chain per slot, as {@link #picture}
      * uploads; the writer makes each frame's chain, off this thread.
      *
      * <p>This is the answer to {@link #texture}'s "uploaded once": the promise that a texture a frame samples is never
@@ -628,12 +629,15 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
         streams.removeIf(StreamTexture::isClosed);
         StreamTexture s = new StreamTexture(device, width, height, slots, picture);
         streams.add(s);
+        // A node shows the stream by its live image, whose pixels change with each frame shown and no edit to the
+        // tree, so each one asks the trees for a frame, as a viewport's render does.
+        s.onShown(this::requestFrames);
         return s;
     }
 
     /**
-     * Give back a stream made by {@link #stream}, once no node shows any of its slots: closed when no frame can still
-     * sample one, as {@link #release(AtlasTexture)} closes a texture and with the same rules.
+     * Give back a stream made by {@link #stream}, once no node shows it or any of its slots: closed when no frame can
+     * still sample one, as {@link #release(AtlasTexture)} closes a texture and with the same rules.
      */
     public void release(StreamTexture stream) {
         if (stream == null) {
@@ -646,11 +650,13 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
             throw new IllegalArgumentException("only a stream made by this application's stream() can be released "
                     + "here; " + stream + " was not");
         }
-        SampledImage[] slots = new SampledImage[stream.slots()];
-        for (int i = 0; i < slots.length; i++) {
-            slots[i] = stream.slot(i);
+        // A node names the stream by its live image, or by a slot.
+        SampledImage[] images = new SampledImage[stream.slots() + 1];
+        for (int i = 0; i < stream.slots(); i++) {
+            images[i] = stream.slot(i);
         }
-        retire(stream, slots);
+        images[stream.slots()] = stream.live();
+        retire(stream, images);
     }
 
     private void retire(AutoCloseable thing, SampledImage[] images) {

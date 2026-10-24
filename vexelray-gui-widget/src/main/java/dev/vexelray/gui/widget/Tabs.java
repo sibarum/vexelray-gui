@@ -287,7 +287,10 @@ public final class Tabs {
                 // And it is where the content area ends, which a page sliding through it has to be told. A
                 // translated child adds no overflow, so the automatic clipping that comes with scrolling would
                 // never notice one leaving.
-                .clip(true);
+                .clip(true)
+                // How a page arrives, goes and trades places is this panel's TabTransition, NONE included: a window's
+                // own motion fading a new page in as well made "no tab animation" still animate (MainFrame's setting).
+                .childMotion(false);
         this.root = gui.column().role("tabs").width(Length.FILL).height(Length.FILL).children(bar, pages);
     }
 

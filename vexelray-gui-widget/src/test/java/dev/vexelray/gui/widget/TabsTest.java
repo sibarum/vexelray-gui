@@ -468,4 +468,42 @@ class TabsTest {
             assertEquals(0, tabs.selected(), "and it is the one showing");
         }
     }
+
+    /**
+     * How a page arrives is the panel's transition, and NONE means none: a window's enter motion is never told of a
+     * page added to an open panel (MainFrame's "Tab animation: None" faded new pages in until this).
+     */
+    @Test
+    void aPageAddedToAnOpenPanelIsTheTransitionsAndNotTheWindowsToAnimate() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            List<Long> entered = new ArrayList<>();
+            h.gui.enterMotion(new dev.vexelray.gui.core.layout.EnterMotion() {
+                @Override
+                public void entered(dev.vexelray.gui.core.model.RetainedNode node) {
+                    entered.add(node.id);
+                }
+
+                @Override
+                public float presence(dev.vexelray.gui.core.model.RetainedNode node) {
+                    return 1f;
+                }
+
+                @Override
+                public float rise(dev.vexelray.gui.core.model.RetainedNode node) {
+                    return 0f;
+                }
+            });
+            Tabs tabs = new Tabs(h.gui);
+            tabs.add("One", page(h, "one"));
+            h.gui.root().children(tabs.node());
+            h.frame();
+
+            Node second = page(h, "two");
+            tabs.add("Two", second);
+            h.frame();
+
+            assertFalse(entered.contains(second.id()), "the page arrived under the window's motion: " + entered);
+            assertFalse(entered.isEmpty(), "its header is the window's to bring in, as any addition is");
+        }
+    }
 }

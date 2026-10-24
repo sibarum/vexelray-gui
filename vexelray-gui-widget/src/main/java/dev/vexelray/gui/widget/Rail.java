@@ -265,7 +265,9 @@ public final class Rail {
                 .children(panelTitle, panelHint, close);
         Node headRule = gui.box().width(Length.percent(100)).height(Length.dp(1))
                 .background(Role.LINE);
-        this.panelBody = gui.column().width(Length.grow(1f)).height(Length.grow(1f)).scroll(false, true);
+        // Its pages arrive and trade places by this rail's PanelTransition, so the window's motion keeps out of them.
+        this.panelBody = gui.column().width(Length.grow(1f)).height(Length.grow(1f)).scroll(false, true)
+                .childMotion(false);
         this.panel = gui.column().role("rail-panel")
                 .corner(Length.rem(0.5f))
                 .background(Role.PANEL)

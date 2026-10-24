@@ -653,4 +653,18 @@ class AutomationTest {
             assertEquals("ok released LEFT_SHIFT", driver.command("keyup"), "keyup alone releases everything");
         }
     }
+
+    /** A picture with nowhere to go is refused at once, naming the folder, rather than waited for and missed. */
+    @Test
+    void aShotIntoAFolderThatIsNotThereIsRefusedAtOnceAndSaysWhere(@org.junit.jupiter.api.io.TempDir java.nio.file.Path tmp) {
+        java.io.File into = tmp.resolve("absent/shot.png").toFile();
+        String said = Automation.noFolderFor(into);
+        assertTrue(said != null && said.startsWith("err no folder ") && said.contains(into.getParentFile().getAbsolutePath()),
+                said);
+        assertEquals(null, Automation.noFolderFor(tmp.resolve("shot.png").toFile()), "a folder that is there is fine");
+        if (java.io.File.separatorChar == '\\') {
+            String bash = Automation.noFolderFor(new java.io.File("/tmp/nowhere-" + System.nanoTime() + "/shot.png"));
+            assertTrue(bash != null && bash.contains("Git Bash path"), "a Git Bash path is named as one: " + bash);
+        }
+    }
 }

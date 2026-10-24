@@ -1395,6 +1395,10 @@ public final class Automation implements Commands {
     private String shot(String path) {
         String file = path.isBlank() ? "shot.png" : path.trim();
         java.io.File target = new java.io.File(file);
+        String nowhere = noFolderFor(target);
+        if (nowhere != null) {
+            return nowhere;
+        }
         if (target.exists() && !target.delete()) {
             // Said rather than photographed over. A stale picture returned as a fresh one is the failure this
             // whole method is about, so being unable to rule it out is a refusal.
@@ -1415,6 +1419,28 @@ public final class Automation implements Commands {
         }
         return "err no picture appeared at " + target.getAbsolutePath()
                 + " within " + SHOT_TIMEOUT_MS + "ms";
+    }
+
+    /**
+     * Why a picture cannot be written to {@code target}, said at once, or {@code null} when its folder is there.
+     *
+     * <p>Before this, a missing folder cost {@link #SHOT_TIMEOUT_MS} of waiting and then "no picture appeared", while
+     * the application's own log said exactly why. The commonest cause by far is a path written in Git Bash's
+     * notation, {@code /tmp/...} or {@code /c/Users/...}: this process is a Windows one and reads it as {@code C:\tmp}
+     * or {@code C:\c\Users}, which do not exist (every agent on 2026-10-24 lost time to it). So the reply names the
+     * folder as resolved here, and says so when the path looks like that.
+     */
+    static String noFolderFor(java.io.File target) {
+        java.io.File folder = target.getAbsoluteFile().getParentFile();
+        if (folder == null || folder.isDirectory()) {
+            return null;
+        }
+        String asked = target.getPath().replace('\\', '/');
+        boolean posix = java.io.File.separatorChar == '\\' && asked.startsWith("/") && !asked.startsWith("//");
+        return "err no folder " + folder.getAbsolutePath() + " to write the picture into"
+                + (posix ? "; " + asked + " is read here as " + target.getAbsolutePath() + ", so a Git Bash path"
+                        + " (/tmp/..., /c/...) needs writing as a Windows one (cygpath -m turns one into the other)"
+                        : "; make the folder first, or name one that exists");
     }
 
     /**

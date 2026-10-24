@@ -62,6 +62,12 @@ public final class RetainedNode {
     // and a motion source told that would animate the whole subtree lagging behind the scroll it is inside of.
     public float layoutScrollX;
     public float layoutScrollY;
+    // And the size the last layout pass gave it, border box and content viewport, which a LayoutMotion's size
+    // displacement is drawn from the same way the position is.
+    public float layoutW;
+    public float layoutH;
+    public float layoutViewW;
+    public float layoutViewH;
     // The last frame layout moved this node, and on how many frames running it has. A node moved on every frame is
     // being moved continuously, by a pointer drag or by a ramp driving a size, and a LayoutMotion must follow it
     // rather than chase it (Displacement.settle).

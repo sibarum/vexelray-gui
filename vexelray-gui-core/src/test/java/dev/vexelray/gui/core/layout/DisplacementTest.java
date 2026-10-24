@@ -40,6 +40,76 @@ class DisplacementTest {
             float[] o = offsets.get(node.id);
             return o == null ? 0f : o[1];
         }
+
+        final List<String> resizes = new ArrayList<>();
+        final Map<Long, float[]> grown = new HashMap<>();
+
+        @Override
+        public void resized(RetainedNode node, float fromW, float fromH, float toW, float toH) {
+            resizes.add(node.id + ":" + fromW + "x" + fromH + "->" + toW + "x" + toH);
+        }
+
+        @Override
+        public float displacementW(RetainedNode node) {
+            float[] g = grown.get(node.id);
+            return g == null ? 0f : g[0];
+        }
+
+        @Override
+        public float displacementH(RetainedNode node) {
+            float[] g = grown.get(node.id);
+            return g == null ? 0f : g[1];
+        }
+    }
+
+    // --- sizes ------------------------------------------------------------------------------------------------
+
+    /** A panel fitted to its rows shrinks when one goes: reported, so it can be drawn at the size it had. */
+    @Test
+    void aSizeChangeIsReportedAndDrawnFromTheSizeItHad() {
+        Recording motion = new Recording();
+        RetainedNode root = node(0f, 0f);
+        RetainedNode panel = child(root, 0f, 0f);
+        panel.w = 200f;
+        panel.h = 120f;
+        panel.viewW = 200f;
+        panel.viewH = 120f;
+        Displacement.settle(root, motion);
+
+        panel.h = 80f;
+        panel.viewH = 80f;
+        Displacement.settle(root, motion);
+        assertEquals(List.of(panel.id + ":200.0x120.0->200.0x80.0"), motion.resizes);
+
+        motion.grown.put(panel.id, new float[] {0f, 40f});   // still 40 px taller than layout made it
+        assertTrue(Displacement.displace(root, motion));
+        assertEquals(120f, panel.h, "drawn at the size it had");
+        assertEquals(120f, panel.viewH, "and its viewport with it, so what it clips is what it is drawn as");
+
+        motion.grown.remove(panel.id);
+        Displacement.displace(root, motion);
+        assertEquals(80f, panel.h, "and at rest, the size layout gave it");
+    }
+
+    /** What a container animates itself, and what changes on every frame, are not resized as far as motion goes. */
+    @Test
+    void aSizeChangeFollowsTheMoveRules() {
+        Recording motion = new Recording();
+        RetainedNode root = node(0f, 0f);
+        RetainedNode owner = child(root, 0f, 0f);
+        owner.set(dev.vexelray.gui.core.model.PropKey.OWN_CHILD_MOTION, Boolean.TRUE);
+        RetainedNode card = child(owner, 0f, 0f);
+        RetainedNode growing = child(root, 0f, 100f);
+        Displacement.settle(root, motion, 10);
+
+        card.h = 50f;
+        for (int f = 11; f <= 15; f++) {
+            growing.h += 5f;    // a ramp growing it, a step a frame
+            Displacement.settle(root, motion, f);
+        }
+
+        assertEquals(Displacement.CHASED_FRAMES, motion.resizes.size(),
+                "the owned card is never reported, the growing one only for the first frames: " + motion.resizes);
     }
 
     private static long nextId = 1;

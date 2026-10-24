@@ -92,6 +92,8 @@ public final class Transitions implements LayoutMotion {
     private final Map<Long, Terms> followedChildren = new ConcurrentHashMap<>();
     private final Map<Long, Terms> followedSubtree = new ConcurrentHashMap<>();
     private final Map<Long, Lag> lags = new ConcurrentHashMap<>();
+    /** Each node's outstanding size lag, {@code dx} the width and {@code dy} the height, as {@link #lags} is a position. */
+    private final Map<Long, Lag> sizes = new ConcurrentHashMap<>();
 
     private Transitions(KronoGui krono) {
         this.krono = Objects.requireNonNull(krono, "krono");
@@ -148,11 +150,13 @@ public final class Transitions implements LayoutMotion {
         followed.remove(id);
         followedChildren.remove(id);
         followedSubtree.remove(id);
-        Lag lag = lags.remove(id);
-        if (lag != null) {
-            lag.epoch++;        // whatever ramp is still running has lost; its writes go nowhere
-            lag.dx = 0f;
-            lag.dy = 0f;
+        for (Map<Long, Lag> map : java.util.List.of(lags, sizes)) {
+            Lag lag = map.remove(id);
+            if (lag != null) {
+                lag.epoch++;        // whatever ramp is still running has lost; its writes go nowhere
+                lag.dx = 0f;
+                lag.dy = 0f;
+            }
         }
         return this;
     }
@@ -161,6 +165,11 @@ public final class Transitions implements LayoutMotion {
      * picture has settled. */
     public boolean settled() {
         for (Lag lag : lags.values()) {
+            if (lag.dx != 0f || lag.dy != 0f) {
+                return false;
+            }
+        }
+        for (Lag lag : sizes.values()) {
             if (lag.dx != 0f || lag.dy != 0f) {
                 return false;
             }
@@ -174,11 +183,30 @@ public final class Transitions implements LayoutMotion {
         if (terms == null) {
             return;
         }
-        Lag lag = lags.computeIfAbsent(node.id, k -> new Lag());
+        Lag lag = lags.get(node.id);
         // Measure from where the node is drawn, not from where layout last put it: mid-flight, those differ by
         // exactly the lag it is still carrying, and ignoring it is what makes an interrupted transition jump.
-        float startX = fromX + lag.dx - toX;
-        float startY = fromY + lag.dy - toY;
+        start(lags, node.id, terms, fromX + (lag == null ? 0f : lag.dx) - toX, fromY + (lag == null ? 0f : lag.dy) - toY);
+    }
+
+    /**
+     * Grown or shrunk: drawn at the size it had, catching up with the one it has, as a move is drawn from where it was.
+     * A box fitted to its rows otherwise changes size in one frame while they slide, and they hang outside it for the
+     * slide (the Inspector's picker, 2026-10-24). Measured from the size it is drawn at, for the reason a move is.
+     */
+    @Override
+    public void resized(RetainedNode node, float fromW, float fromH, float toW, float toH) {
+        Terms terms = termsFor(node);
+        if (terms == null) {
+            return;
+        }
+        Lag lag = sizes.get(node.id);
+        start(sizes, node.id, terms, fromW + (lag == null ? 0f : lag.dx) - toW, fromH + (lag == null ? 0f : lag.dy) - toH);
+    }
+
+    /** Start {@code id}'s lag in {@code map} at {@code (startX, startY)} and decay it to zero over {@code terms}. */
+    private void start(Map<Long, Lag> map, long id, Terms terms, float startX, float startY) {
+        Lag lag = map.computeIfAbsent(id, k -> new Lag());
         int epoch = ++lag.epoch;   // GUI thread is the only writer, so this needs no atomic
         // Paced here, before the lag is written: while motion is reduced the node is drawn where layout put it from
         // this frame, rather than at its old place for the one frame a snapping ramp would take to arrive.
@@ -187,8 +215,8 @@ public final class Transitions implements LayoutMotion {
             lag.dx = 0f;
             lag.dy = 0f;
             // Nothing in flight for this node, and the epoch bump above has silenced any ramp that was: forget it,
-            // so the lags map holds only what is moving and active() stays a scan of the few that are.
-            lags.remove(node.id, lag);
+            // so the map holds only what is moving and active() stays a scan of the few that are.
+            map.remove(id, lag);
             return;
         }
         lag.dx = startX;
@@ -196,7 +224,7 @@ public final class Transitions implements LayoutMotion {
         krono.ramp(over, terms.ease(),
                 progress -> {
                     if (lag.epoch != epoch) {
-                        return;   // superseded by a later move; this ramp no longer speaks for this node
+                        return;   // superseded by a later change; this ramp no longer speaks for this node
                     }
                     float remaining = (float) (1d - progress);
                     // Adding zero normalises the negative zero that a negative start times a zero remainder
@@ -214,7 +242,7 @@ public final class Transitions implements LayoutMotion {
                     // is a value, not a neighbourhood, and Displacement reports motion on any non-zero at all.
                     lag.dx = 0f;
                     lag.dy = 0f;
-                    lags.computeIfPresent(node.id, (k, v) -> v == lag && v.epoch == epoch ? null : v);
+                    map.computeIfPresent(id, (k, v) -> v == lag && v.epoch == epoch ? null : v);
                 });
     }
 
@@ -238,6 +266,18 @@ public final class Transitions implements LayoutMotion {
     @Override
     public float displacementY(RetainedNode node) {
         Lag lag = lags.get(node.id);
+        return lag == null ? 0f : lag.dy;
+    }
+
+    @Override
+    public float displacementW(RetainedNode node) {
+        Lag lag = sizes.get(node.id);
+        return lag == null ? 0f : lag.dx;
+    }
+
+    @Override
+    public float displacementH(RetainedNode node) {
+        Lag lag = sizes.get(node.id);
         return lag == null ? 0f : lag.dy;
     }
 

@@ -2389,7 +2389,11 @@ public final class Gui implements AutoCloseable {
             motionFrame += now - motionFrameNanos > MOTION_FRAME_GAP_NANOS ? 2 : 1;
             motionFrameNanos = now;
             if (motionNow != LayoutMotion.NONE) {
-                if (geometryChanged) {
+                // On a layout pass only, not on every frame whose geometry changed: on a frame with no layout (a caret
+                // moved, say) every node still holds where and how big it was *drawn*, and settling that would record
+                // a node mid-flight as where it belongs and leave it there until the next layout. Only layout moves
+                // or resizes anything, so only a frame that laid out has anything to report.
+                if (layoutRan) {
                     // Settle is where moves are detected and reported, so it runs on every layout pass whatever
                     // the source says; a move it reports makes the source active before it is asked below.
                     // On a frame whose window size, zoom or density changed, every node is recorded where it now

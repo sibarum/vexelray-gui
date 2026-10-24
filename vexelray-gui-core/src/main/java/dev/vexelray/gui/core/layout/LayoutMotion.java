@@ -100,6 +100,28 @@ public interface LayoutMotion {
     float displacementY(RetainedNode node);
 
     /**
+     * Layout gave {@code node} a new size, {@code fromW}×{@code fromH} to {@code toW}×{@code toH}, px, under the same
+     * rules a move is reported under (not on a resize or zoom, not on every frame of a run, not inside a container
+     * that owns its children's motion). A box fitted to its children otherwise changes size in one frame while they
+     * slide, so they hang outside it for the slide (the Inspector's picker). Nothing by default.
+     */
+    default void resized(RetainedNode node, float fromW, float fromH, float toW, float toH) {
+    }
+
+    /**
+     * How much wider than layout made it this node is drawn, px (negative is narrower); 0 when it has caught up.
+     * Drawn only, like the position: what the node holds was laid out at its settled size and is not laid out again.
+     */
+    default float displacementW(RetainedNode node) {
+        return 0f;
+    }
+
+    /** How much taller than layout made it this node is drawn, px; see {@link #displacementW}. */
+    default float displacementH(RetainedNode node) {
+        return 0f;
+    }
+
+    /**
      * Whether any node might currently be displaced: false only when every {@link #displacementX} and
      * {@link #displacementY} would answer zero. Read once per frame, after {@link #moved} has been told this frame's
      * moves, so a transition started by a move is already in flight when it is asked.

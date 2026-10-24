@@ -60,6 +60,34 @@ class TransitionsTest {
     }
 
     @Test
+    @DisplayName("a box that shrank is drawn at the size it had, and catches up as a move does")
+    void aResizedNodeDecaysToItsNewSize() {
+        try (KronoGui krono = headless()) {
+            Transitions moves = Transitions.on(krono);
+            Node handle = krono.gui().box();
+            moves.follow(handle, OVER, Ease.LINEAR);
+            RetainedNode panel = retained(handle);
+
+            moves.resized(panel, 200f, 120f, 200f, 80f);
+            assertEquals(40f, moves.displacementH(panel), "drawn 40px taller than layout made it: the size it had");
+            assertEquals(0f, moves.displacementW(panel));
+            assertEquals(0f, moves.displacementY(panel), "a size is not a position");
+            assertFalse(moves.settled());
+
+            krono.tick(ms(100));
+            assertEquals(20f, moves.displacementH(panel), 0.5f, "half the time, half the difference");
+
+            moves.resized(panel, 200f, 80f, 200f, 100f);   // grew again mid-shrink
+            assertEquals(0f, moves.displacementH(panel), 0.5f,
+                    "measured from the size it is drawn at, 100, which is where it is heading now");
+
+            krono.tick(ms(400));
+            assertEquals(0f, moves.displacementH(panel));
+            assertTrue(moves.settled());
+        }
+    }
+
+    @Test
     @DisplayName("an enrolled node starts a full step behind and arrives exactly")
     void anEnrolledNodeDecaysToZero() {
         try (KronoGui krono = headless()) {

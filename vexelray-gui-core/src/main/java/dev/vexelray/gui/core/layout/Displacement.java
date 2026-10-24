@@ -100,7 +100,10 @@ public final class Displacement {
         // genuine move that happens *while* the node is being carried reporting its true distance.
         float fromX = node.layoutX + carriedX;
         float fromY = node.layoutY + carriedY;
-        if (node.layoutRectKnown && (node.x != fromX || node.y != fromY)) {
+        boolean moved = node.layoutRectKnown && (node.x != fromX || node.y != fromY);
+        // A size is its own: nothing carries it, so it is compared with the recorded one directly.
+        boolean resized = node.layoutRectKnown && (node.w != node.layoutW || node.h != node.layoutH);
+        if (moved || resized) {
             boolean continuous = false;
             if (frame != NO_FRAME) {
                 node.moveStreak = node.movedFrame == frame - 1 ? node.moveStreak + 1 : 1;
@@ -110,7 +113,12 @@ public final class Displacement {
             // A child of a container that owns its children's motion (PropKey.OWN_CHILD_MOTION) is recorded,
             // not reported. Its subtree is still carried by the shift exactly once, below, as for any other node.
             if (!continuous && (node.parent == null || !node.parent.ownsChildMotion())) {
-                motion.moved(node, fromX, fromY, node.x, node.y);
+                if (moved) {
+                    motion.moved(node, fromX, fromY, node.x, node.y);
+                }
+                if (resized) {
+                    motion.resized(node, node.layoutW, node.layoutH, node.w, node.h);
+                }
             }
         }
 
@@ -129,6 +137,10 @@ public final class Displacement {
         node.layoutViewY = node.viewY;
         node.layoutScrollX = node.scrollX;
         node.layoutScrollY = node.scrollY;
+        node.layoutW = node.w;
+        node.layoutH = node.h;
+        node.layoutViewW = node.viewW;
+        node.layoutViewH = node.viewH;
         boolean appeared = !node.layoutRectKnown;
         node.layoutRectKnown = true;
 
@@ -169,7 +181,14 @@ public final class Displacement {
         node.y = node.layoutY + dy;
         node.viewX = node.layoutViewX + dx;
         node.viewY = node.layoutViewY + dy;
-        boolean moving = dx != 0f || dy != 0f;
+        // The size, from the recorded one, and the content viewport with it. Not inherited: a child's size is its own.
+        float dw = motion.displacementW(node);
+        float dh = motion.displacementH(node);
+        node.w = node.layoutW + dw;
+        node.h = node.layoutH + dh;
+        node.viewW = Math.max(0f, node.layoutViewW + dw);
+        node.viewH = Math.max(0f, node.layoutViewH + dh);
+        boolean moving = dx != 0f || dy != 0f || dw != 0f || dh != 0f;
         return displaceChildren(node, motion, dx, dy) || moving;
     }
 

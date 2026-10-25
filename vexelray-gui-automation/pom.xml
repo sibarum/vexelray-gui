@@ -7,7 +7,7 @@
     <parent>
         <groupId>dev.vexelray.gui</groupId>
         <artifactId>vexelray-gui</artifactId>
-        <version>0.1.2-SNAPSHOT</version>
+        <version>0.1.2</version>
     </parent>
 
     <artifactId>vexelray-gui-automation</artifactId>

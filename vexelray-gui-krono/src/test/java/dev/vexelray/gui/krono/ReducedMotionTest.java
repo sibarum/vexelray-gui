@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static sibarum.kronometer.Dur.ms;
 
-/** With motion reduced every animation timed here lands on its end state at once, and the clock goes quiet. */
+/** With motion reduced every animation timed here takes one frame, and then the clock goes quiet. */
 class ReducedMotionTest {
 
     private static KronoGui still() {
@@ -30,18 +30,41 @@ class ReducedMotionTest {
     }
 
     @Test
-    void aRampDeliversOneAndArrivesInTheFirstTick() {
+    void aRampTakesOneFrame() {
         List<Double> observed = new ArrayList<>();
         AtomicInteger done = new AtomicInteger();
         try (KronoGui krono = still()) {
             krono.ramp(ms(200), Ease.LINEAR, observed::add, done::incrementAndGet);
             krono.tick(ms(16));
-            assertEquals(List.of(1d), observed, "the end state, and nothing on the way to it");
+            assertEquals(List.of(0d, 1d), observed, "its start, then its end on the next frame");
+            assertEquals(0, done.get(), "arrival is the frame after the one that carried 1");
+            krono.tick(ms(32));
             assertEquals(1, done.get());
-            assertTrue(krono.isQuiescent(), "no frames are held for a ramp that has already arrived");
+            krono.tick(ms(48));
+            assertTrue(krono.isQuiescent(), "no frames are held for a ramp that has arrived");
             krono.tick(ms(400));
+            assertEquals(List.of(0d, 1d), observed);
             assertEquals(1, done.get(), "and arrival is reported once");
         }
+    }
+
+    /** The Inspector's show clock: the next ramp starts from the last one's arrival. */
+    @Test
+    void aRampStartedFromArrivalWaitsForTheNextFrame() {
+        AtomicInteger arrivals = new AtomicInteger();
+        try (KronoGui krono = still()) {
+            Runnable[] again = new Runnable[1];
+            again[0] = () -> {
+                if (arrivals.incrementAndGet() < 1000) {
+                    krono.ramp(ms(250), Ease.LINEAR, p -> { }, again[0]);
+                }
+            };
+            krono.ramp(ms(250), Ease.LINEAR, p -> { }, again[0]);
+            for (int frame = 1; frame <= 6; frame++) {
+                krono.tick(ms(16).times(frame));
+            }
+        }
+        assertEquals(3, arrivals.get(), "one arrival every other frame, not a thousand inside one");
     }
 
     @Test

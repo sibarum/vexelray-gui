@@ -6,7 +6,7 @@
 
     <groupId>dev.vexelray.gui</groupId>
     <artifactId>vexelray-gui</artifactId>
-    <version>0.1.2-SNAPSHOT</version>
+    <version>0.1.3-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>vexelray-gui</name>
@@ -93,26 +93,26 @@
 
         <!-- VexelRay: the Vulkan engine we build on. Installed to the local .m2 by `mvn install` in the
              sibling vexelray repo (which in turn requires SupirVast installed first). -->
-        <vexelray.version>0.1.2-SNAPSHOT</vexelray.version>
+        <vexelray.version>0.1.3-SNAPSHOT</vexelray.version>
         <!-- SupirVast: transitive via VexelRay; pinned for any incidental direct use. Must match vexelray's own
              supirvast.version: this pin is in dependencyManagement, so it wins over the transitive one here. -->
-        <supirvast.version>0.2.2-SNAPSHOT</supirvast.version>
+        <supirvast.version>0.2.3-SNAPSHOT</supirvast.version>
         <!-- Atchung: the message bus the model + threading are built on (core to -core). -->
-        <atchung.version>1.2-SNAPSHOT</atchung.version>
+        <atchung.version>1.3-SNAPSHOT</atchung.version>
         <!-- elektro-Q and intrabuf: the Inspector link's wire (vexelray-gui-inspector-link only). elektro-Q lives in
              the atchung checkout, under elektroq/. -->
-        <elektroq.version>1.2-SNAPSHOT</elektroq.version>
-        <intrabuf.version>0.1.2-SNAPSHOT</intrabuf.version>
+        <elektroq.version>1.3-SNAPSHOT</elektroq.version>
+        <intrabuf.version>0.1.3-SNAPSHOT</intrabuf.version>
         <!-- Tactroller: keyboard/mouse/pointer/clipboard input, delivered as Atchung traffic. Enters at
              the application edge (the demo), not in -core. -->
-        <tactroller.version>1.2-SNAPSHOT</tactroller.version>
+        <tactroller.version>1.3-SNAPSHOT</tactroller.version>
         <!-- Kronometer: logical time, rate domains, the signal graph. Application edge only. -->
-        <kronometer.version>1.2-SNAPSHOT</kronometer.version>
+        <kronometer.version>1.3-SNAPSHOT</kronometer.version>
         <!-- imagelib: Panama bindings over one C ABI for every image format (PNG/JPEG/GIF/WebP/... and SVG).
              Application edge only, and deliberately: decoding is not this framework's business, and no module
              here names a format at run time. The demo depends on it to show what GuiApp.texture is for, and the
              icon plugin reads art with it at build time. -->
-        <imagelib.version>0.1.2-SNAPSHOT</imagelib.version>
+        <imagelib.version>0.1.3-SNAPSHOT</imagelib.version>
         <joml.version>1.10.7</joml.version>
         <junit.version>5.11.4</junit.version>
         <!-- ASM: bytecode reading for the architecture guard (test scope), and the icon plugin's descriptor scan. -->
@@ -128,7 +128,7 @@
             <dependency>
                 <groupId>sibarum.atchung</groupId>
                 <artifactId>atchung-probe</artifactId>
-                <version>1.2-SNAPSHOT</version>
+                <version>1.3-SNAPSHOT</version>
             </dependency>
             <!-- Reactor-internal modules: children reference these without a version. -->
             <dependency>
@@ -368,7 +368,7 @@
             <plugin>
                 <groupId>dev.vexelray.build</groupId>
                 <artifactId>vexelray-build-maven-plugin</artifactId>
-                <version>0.1.2-SNAPSHOT</version>
+                <version>0.1.3-SNAPSHOT</version>
                 <executions>
                     <execution>
                         <goals>

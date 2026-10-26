@@ -37,6 +37,12 @@ the frame rate and the animation's clock agree**, and it is not a power saver. T
 - **The earlier draft's premise was wrong, and this entry's own *Status* paragraph (below) says why**: a re-park that
   calls `waitEvents` again returns at once, because `MsgWaitForInput` returns while the wake's `WM_NULL` is unread.
   A timed sleep does not have that property, which is what makes it work, and it has a cost.
+- **Later (2026-10-25): the ceiling holds against OS input too, and stops at 60 Hz.** Input ended the park and was let
+  through, so a pointer sweeping a window on a ~240 Hz panel ran a frame (a hit-test and a `PointerMoved`) per mouse
+  message, about 250 a second, focused or not. The loop now sleeps out the rest of the gap whatever ended the park; the
+  messages wait in the queue and the next pump takes them, motion summed. `maxFrameRateToDisplay(fastestNanos)` follows
+  the display only down: its argument is the shortest gap it will set, and the framework passes 60 Hz. A GUI has nothing
+  to show faster.
 
 **The cost, stated plainly: OS input that arrives during that sleep waits for it.** At most one refresh interval, 6.9 ms
 at 144 Hz and 16.7 at 60, and only when a wake (not input) ended the park, so a click on an idle window is unaffected and

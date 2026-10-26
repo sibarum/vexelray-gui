@@ -34,7 +34,8 @@ Verified in the code on 2026-10-04; the event-storm survey of the same day measu
   `Reconciler.setProp` applies it without comparing, so writing the value a prop already has still dirties.
 - **What is already bounded:** tactroller samples pointer and wheel once per frame (at most one `PointerMoved`
   and one `Scrolled` per frame); `SetProp`/`SetText` fold per (node, key) in the mutation mailbox; the frame
-  ceiling (`maxFrameRateToDisplay`) caps frames at the display rate; the 200 ms idle floor bounds a missed wake.
+  ceiling (`maxFrameRateToDisplay`) caps frames at the display rate or 60 Hz, whichever is slower, against OS input
+  as well as wakes; the 200 ms idle floor bounds a missed wake.
 - **During a drag**, the Win32 modal loop's 8 ms timer pulls a full frame through the frame sink on every tick,
   changed or not.
 

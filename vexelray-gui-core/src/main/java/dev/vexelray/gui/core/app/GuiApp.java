@@ -174,6 +174,8 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
     private long minFrameNanos = 0L;                 // uncapped
     /** Whether {@link #minFrameNanos} follows the display. See {@link #maxFrameRateToDisplay}. */
     private boolean ceilingFollowsDisplay;
+    /** The shortest gap the display may set the ceiling to. See {@link #maxFrameRateToDisplay}. */
+    private long fastestFrameNanos;
     /** When the display's interval was last read, so it is read about once a second and never per frame. */
     private long displayReadAt;
     /** Set by {@link #postWake}, consumed by the park: how a wake is told apart from OS input. */
@@ -1564,10 +1566,10 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
      * sooner than this gap after the previous frame <em>began</em>. A wake that lands together with OS input
      * is held to the same gap.
      *
-     * <p>Costs nothing in input latency while the loop is parked: the wait ends early on OS input. The
-     * exception is the remainder of a gap after a wake, which is a timed sleep and so is not ended by input
-     * ({@code waitEvents} cannot be repeated: it returns at once while the wake's message is unread). Input that
-     * lands there waits for it, at most this gap.
+     * <p>It bounds the frames OS input earns the same way. Input after a quiet spell costs nothing in latency, since
+     * the gap has long run out by then; input arriving faster than the ceiling (a pointer sweeping the window) is
+     * held to it, each frame taking whatever arrived in the gap. It waits at most this gap, and a timed sleep is what
+     * makes it wait ({@code waitEvents} cannot be repeated: it returns at once while a message is unread).
      */
     public GuiApp maxFrameRate(long minFrameNanos) {
         this.minFrameNanos = Math.max(0L, minFrameNanos);
@@ -1575,27 +1577,35 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
     }
 
     /**
-     * {@link #maxFrameRate} set to one refresh of the display the main window is on, read from the window and read
-     * again about once a second, so a window dragged to a display of another rate follows it.
+     * {@link #maxFrameRate} set to one refresh of the display the main window is on, but never shorter than
+     * {@code fastestNanos}: read from the window and read again about once a second, so a window dragged to a display
+     * of another rate follows it.
      *
-     * <p>The value to hold the loop to: a ceiling above the display draws frames that are not shown, and one below it
-     * (a constant 60 Hz on a 144 Hz panel) caps the animation for nothing. {@code fallbackNanos} stands until the
-     * window can say, and for good where it cannot (a platform whose window reports no interval).
+     * <p>A ceiling above the display draws frames that are not shown. A ceiling above {@code fastestNanos} is one
+     * this application has said it does not need: a GUI on a 240 Hz panel has nothing to show at 240 fps that it
+     * cannot show at 60, and every frame it runs is a hit-test, a layout and maybe a draw the machine pays for.
+     * {@code fastestNanos} stands until the window can say, and for good where it cannot (a platform whose window
+     * reports no interval).
      */
-    public GuiApp maxFrameRateToDisplay(long fallbackNanos) {
-        this.minFrameNanos = Math.max(0L, fallbackNanos);
+    public GuiApp maxFrameRateToDisplay(long fastestNanos) {
+        this.minFrameNanos = Math.max(0L, fastestNanos);
+        this.fastestFrameNanos = this.minFrameNanos;
         this.ceilingFollowsDisplay = true;
         return this;
     }
 
-    /** Re-read the display's refresh interval if it is time to, and make it the ceiling. Main thread, outside the frame. */
+    /**
+     * Re-read the display's refresh interval if it is time to, and make it the ceiling, no faster than
+     * {@link #fastestFrameNanos}. Main thread, outside the frame.
+     */
     private void followDisplay() {
         long now = System.nanoTime();
         if (displayReadAt != 0L && now - displayReadAt < 1_000_000_000L) {
             return;
         }
         displayReadAt = now;
-        long interval = main.window.refreshIntervalNanos();
+        long refresh = main.window.refreshIntervalNanos();
+        long interval = refresh > 0L ? Math.max(refresh, fastestFrameNanos) : 0L;
         if (interval > 0L && interval != minFrameNanos) {
             LOG.debug("frame ceiling follows the display: {} us a frame ({} Hz)", interval / 1_000L,
                     Math.round(1e9 / interval));
@@ -1987,15 +1997,18 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                         // time is the signature of a loop that is spinning rather than sleeping.
                         try (Zone waitZone = Probe.idleZone(Lane.FRAME, "wait for events")) {
                             main.window.waitEvents(budget);
-                            // A wake ends the park like OS input does, so the ceiling would not hold for it.
-                            // Sleep out what is left of the gap when a wake was posted; it stays pending, so the
-                            // next iteration draws it. A plain timed sleep and not waitEvents, which returns at
-                            // once while the wake's message is unread, so OS input does not end this one: it waits,
-                            // at most one gap.
+                            // OS input and a posted wake both end the park early, so the ceiling would hold for
+                            // neither: a pointer moving over the window ran a frame per mouse message, about 250 a
+                            // second on a 240 Hz panel. Sleep out what is left of the gap whatever ended it. Nothing
+                            // is lost: the messages stay queued for the next pump, which reads pointer position and
+                            // queued button and key edges, so the motion of a held-back frame arrives summed in the
+                            // next. A plain timed sleep and not waitEvents, which returns at once while a message is
+                            // unread. A loop that parked longer than a gap has none left, so input after a quiet
+                            // spell is answered at once; only input arriving faster than the ceiling waits, at most
+                            // one gap.
                             long gapEnds = frameStarted + minFrameNanos;
                             long left;
-                            while (minFrameNanos > 0 && wakePosted.getAndSet(false)
-                                    && (left = gapEnds - System.nanoTime()) > 0) {
+                            while (minFrameNanos > 0 && (left = gapEnds - System.nanoTime()) > 0) {
                                 java.util.concurrent.locks.LockSupport.parkNanos(left);
                             }
                         }

@@ -1,6 +1,6 @@
 # Where a scrollbar's room comes from
 
-**Status: investigated 2026-10-26, proposed, not started.** This plan answers one question: when a box overflows,
+**Status: investigated 2026-10-26; step 1 of four done (2026-10-26), the strip in `FlexLayout.measure`.** This plan answers one question: when a box overflows,
 whose room does its scrollbar take? Today the bar always takes it from the box's own content. Drawing it in the
 margin instead takes it from the neighbour. Neither is safe by default. What follows is one rule that fixes every
 content-sized scroller, and two categories that the rule cannot fix and that have to be handled differently.
@@ -116,8 +116,9 @@ it. It is the same kind of measure as height-for-width:
 This cannot oscillate. Growing a box across the bar does not change its length along the bar, so the overflow that
 caused the growth is still there afterwards. Wrapped text is not affected, because the content box keeps its width.
 
-Predicted, and step 1 measures it: the `AUTO` groups in the sweep lose nothing, in both orientations, and nothing is
-obscured, because the sibling after the scroller is a `grow` body and gives up the strip. A parent that is itself
+Measured after step 1: all 3,072 `AUTO` layouts in the sweep, which all lost content before, lose none, in both
+orientations. Not one layout outside those groups changed. Nothing is obscured, because the sibling after the
+scroller is a `grow` body and gives up the strip. A parent that is itself
 fixed and already full overflows by the strip instead. That case is real and visible, and it goes to the parent's
 own bar or diagnostic. The rule also closes the gap in §1: a short, undeclared row that overflows becomes taller
 instead of being squashed.
@@ -206,7 +207,11 @@ One alternative was considered and not recommended: treat a declared cross size 
 
 ## 6. Order of work
 
-1. **The rule in `FlexLayout.measure`.** Tests: an `AUTO` row with overflowing content is `content + sb` tall, and
+1. **Done 2026-10-26.** As built: `measure` adds the strip through `strip()`, which decides overflow the way
+   `layoutBox` does. A row passes the height it holds each child to (`heldHeight`) so a vertical bar can be
+   predicted. Where a size the decision needs is not known, it adds nothing, which is how every box measured before.
+   Text leaves are left out: they have their own scrolling rules. `ScrollbarRoomTest` covers it, and the full
+   reactor (1,851 tests) passes. **The rule in `FlexLayout.measure`.** Tests: an `AUTO` row with overflowing content is `content + sb` tall, and
    its items keep their natural height. An `AUTO` column is `content + sb` wide. A `grow` sibling gives up the
    strip. The existing `SensibleScrollTest`, `NestedScrollTest` and `UnaskedScrollTest` pass unchanged.
    `ScrollbarRoomSweep` re-run shows 0 losses in every `AUTO` group.

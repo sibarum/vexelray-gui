@@ -1,6 +1,6 @@
 # Where a scrollbar's room comes from
 
-**Status: investigated 2026-10-26; step 1 of four done (2026-10-26), the strip in `FlexLayout.measure`.** This plan answers one question: when a box overflows,
+**Status: superseded 2026-10-26 by [scrolling.md](scrolling.md), which makes the scrollbar an element and reverts step 1 below (the strip in `FlexLayout.measure`). Kept as the record of the measurements, and of why a bar drawn in the margin was rejected (§3.1).** This plan answers one question: when a box overflows,
 whose room does its scrollbar take? Today the bar always takes it from the box's own content. Drawing it in the
 margin instead takes it from the neighbour. Neither is safe by default. What follows is one rule that fixes every
 content-sized scroller, and two categories that the rule cannot fix and that have to be handled differently.

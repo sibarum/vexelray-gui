@@ -95,7 +95,8 @@ final class Output {
         private static String plugin() {
             Stamp s = new Stamp(false);
             for (Class<?> c : new Class<?>[]{Output.class, Sources.class, Mask.class, Atlas.class, Gather.class,
-                    SetManifest.class, BakeMojo.class, FileFamiliesMojo.class, ArtPair.class, PairMojo.class}) {
+                    SetManifest.class, BakeMojo.class, FileFamiliesMojo.class, ArtPair.class, PairMojo.class,
+                    SvgLayers.class, LayeredMojo.class}) {
                 try (InputStream in = c.getResourceAsStream(c.getSimpleName() + ".class")) {
                     s.add(c.getName());
                     if (in != null) {

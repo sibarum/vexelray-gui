@@ -112,6 +112,31 @@ named for it is named outright:
 A drawing at one size only stands in at the other. A name the suite's set already holds fails the build, naming the
 `Icon` constant to use instead.
 
+## Icons in colours of their own
+
+An icon drawn in several colours, as `vexelray-icons`' Java and Maven icons are, is baked by the plugin's `layered`
+goal into a `LayeredIcon` (gui-core): each run of one colour in the drawing its own distance field, drawn one over the
+other in its colour, with a row of colours for dark themes and one for light. `IconView` draws one as its layers, so
+it goes into a tree row, a tab or a button as any icon does; anything that draws in one colour gets its silhouette,
+baked as a cell of its own. The file-type families (`vexelray-gui-file-icons`) are layered icons too.
+
+```xml
+<execution>
+  <id>java-icons</id>
+  <goals><goal>layered</goal></goals>
+  <configuration>
+    <packageName>com.example.editor</packageName>
+    <enumName>JavaIcon</enumName>
+    <directory>src/main/icons/java</directory>   <!-- dark/<name>.svg and light/<name>.svg -->
+  </configuration>
+</execution>
+```
+
+The light drawing must be the dark one's shapes in other colours, or the build fails naming it. Paints are solid
+`fill` and `stroke` attributes; gradients, opacity and `style` are refused, and text is left out, being a smear of
+pixels at icon sizes. Layers bake at the small grid (48 + 12) unless `<inner>` and `<spread>` say otherwise; the
+atlas's picture, at `target/vexelray-icons/<enum>.png`, shows each silhouette followed by its layers.
+
 ## Art pairs: a mark to condense
 
 A **mark** shown large, the way the About window shows an application's and the framework's, is baked as an **art

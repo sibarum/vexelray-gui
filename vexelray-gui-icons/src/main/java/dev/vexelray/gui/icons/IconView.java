@@ -5,6 +5,7 @@ import dev.vexelray.canvas.shadelet.Look;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.IconSource;
 import dev.vexelray.gui.core.ImageField;
+import dev.vexelray.gui.core.LayeredIcon;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.style.Role;
@@ -14,6 +15,7 @@ import dev.vexelray.shadelets.OutlineStyleLayout;
 import dev.vexelray.shadelets.WeightStyle;
 import dev.vexelray.shadelets.WeightStyleLayout;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -29,6 +31,10 @@ import java.util.List;
  * on a 200% display is the large drawing at 32 px and the small one again at 100%. A glow and a shadow are given as
  * shares of the drawn size, so they scale with it. Changing the icon, the colour or an effect rewrites one prop;
  * the atlas is uploaded once per device by the renderer, and nothing here holds a texture.
+ *
+ * <p><b>An icon in colours of its own</b> (a {@link LayeredIcon}) is drawn as its layers, one over the other in the
+ * box, in the theme's row of its colours; the tint is for an icon of one colour and leaves it alone. Its effects are
+ * the bottom layer's.
  *
  * <p><b>Decorative by default.</b> An icon beside a word adds nothing for a screen reader, so the node has no role.
  * An icon that is the whole of a control is named by that control (its button's label, hidden if need be), not here.
@@ -50,6 +56,9 @@ public final class IconView {
     private volatile float outline;
     private volatile IconSize forced;
     private volatile float px;
+    private volatile Length side = Length.rem(1f);
+    /** The layers above the first of a {@link LayeredIcon}, floated over the node; kept, and emptied, between icons. */
+    private final List<Node> above = new ArrayList<>();
 
     private IconView(Gui gui, IconSource icon) {
         this.gui = gui;
@@ -89,7 +98,13 @@ public final class IconView {
 
     /** The box's side. The icon fills it; its glow and shadow spill past it, into the margin the field carries. */
     public IconView size(Length side) {
+        this.side = side;
         node.size(side, side);
+        synchronized (above) {
+            for (Node layer : above) {
+                layer.size(side, side);
+            }
+        }
         return this;
     }
 
@@ -169,11 +184,34 @@ public final class IconView {
         float side = px;
         if (i == null || side <= 0f) {
             node.field(null);
+            layers(List.of());
             return;
         }
+        if (i instanceof LayeredIcon layered) {
+            List<ImageField> fields = layered.layers(side, LayeredIcon.dark(gui.theme()));
+            node.field(fields.isEmpty() ? null : fields.getFirst().look(look(side)));
+            layers(fields.isEmpty() ? List.of() : fields.subList(1, fields.size()));
+            return;
+        }
+        layers(List.of());
         Color c = color != null ? color : gui.theme().color(role);
         ImageField field = forced != null && i instanceof BakedIcon set ? set.field(forced, c) : i.field(side, c);
         node.field(field.look(look(side)));
+    }
+
+    /** {@code fields} on the nodes over this one, in order, making what is missing and emptying what is left over. */
+    private void layers(List<ImageField> fields) {
+        synchronized (above) {
+            while (above.size() < fields.size()) {
+                Node layer = gui.box().size(side, side).scroll(false, false)
+                        .floatAt(Length.ZERO, Length.ZERO).hitInert(true);
+                node.append(layer);
+                above.add(layer);
+            }
+            for (int k = 0; k < above.size(); k++) {
+                above.get(k).field(k < fields.size() ? fields.get(k) : null);
+            }
+        }
     }
 
     /**

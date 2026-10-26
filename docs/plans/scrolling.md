@@ -1,6 +1,6 @@
 # Scrolling as elements: `Overflow`, `ScrollRange`, `Scrollbar`
 
-**Status: proposed 2026-10-26; nothing built.** This replaces automatic scrolling, and it supersedes
+**Status: proposed 2026-10-26; step 0 done (scrollbar-room.md step 1 reverted).** This replaces automatic scrolling, and it supersedes
 [scrollbar-room.md](scrollbar-room.md), whose step 1 this plan reverts.
 
 Today any box scrolls when its content is longer than it is. The layout decides that after sizing the box, the

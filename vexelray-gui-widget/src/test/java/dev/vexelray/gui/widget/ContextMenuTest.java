@@ -170,10 +170,67 @@ class ContextMenuTest {
             var plain = itemRect(menu, 0);
             h.hover(plain.x() + plain.w() / 2f, plain.y() + plain.h() / 2f);
             h.frame();
-            assertEquals(0, menu.openSubmenus(), "pointing at a command beside it closes the submenu");
+            assertEquals(1, menu.openSubmenus(), "a pointer crossing a command does not close the submenu at once");
+            rest();
+            h.frame();
+            assertEquals(0, menu.openSubmenus(), "resting on a command beside it does");
             assertTrue(menu.isOpen(), "and leaves the menu open");
             assertFalse(fired[0]);
             menu.close();
+        }
+    }
+
+    /**
+     * A hand going from a submenu's line to one of the submenu's own lines goes diagonally, across the lines below the
+     * one it left. Crossing them is not choosing them: the submenu is still there when the hand arrives, and the
+     * command at the end of the way runs.
+     */
+    @Test
+    void aSubmenuSurvivesThePointerCrossingTheLinesBelowOnItsWay() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            boolean[] fired = {false};
+            Node target = page(h);
+            ContextMenu menu = new ContextMenu(h.gui);
+            h.gui.onContextMenu(target, m -> m
+                    .submenu("More", sub -> sub
+                            .item("One", () -> { })
+                            .item("Two", () -> { })
+                            .separator()
+                            .item("Last", () -> fired[0] = true))
+                    .item("Below", () -> { }));
+            h.gui.root().children(target);
+            h.frame();
+            h.rightClick(200f, 150f);
+            h.frame();
+            var more = itemRect(menu, 0);
+            h.hover(more.x() + more.w() / 2f, more.y() + more.h() / 2f);
+            h.frame();
+            rest();
+            h.frame();
+            assertEquals(1, menu.openSubmenus(), "resting on it opened it");
+
+            var below = itemRect(menu, 1);
+            h.hover(below.x() + below.w() / 2f, below.y() + below.h() / 2f);   // on the way down and across
+            h.frame();
+            var sub = menu.submenuNode(0).layout().rect();
+            float lastY = sub.y() + sub.h() - 4f - more.h() / 2f;
+            h.hover(sub.x() + sub.w() / 2f, lastY);
+            h.frame();
+            rest();
+            h.frame();
+            assertEquals(1, menu.openSubmenus(), "still open when the hand arrives");
+            h.click(sub.x() + sub.w() / 2f, lastY);
+            assertTrue(fired[0], "and the command at the end of the way runs");
+            menu.close();
+        }
+    }
+
+    /** Wait out the pointer's rest, after which what pointing does is done. */
+    private static void rest() {
+        try {
+            Thread.sleep(ContextMenu.HOVER_MILLIS + 150L);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 

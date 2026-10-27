@@ -22,6 +22,8 @@ import sibarum.tactroller.api.MouseButton;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -209,6 +211,7 @@ public final class ContextMenu implements MenuPresenter {
         }
         shown = false;
         synchronized (this) {
+            settle();
             closeSubmenus(0);
         }
         menu.visible(false);
@@ -227,6 +230,10 @@ public final class ContextMenu implements MenuPresenter {
             level.panel.remove();
         }
         levels.clear();
+        if (timer != null) {
+            timer.cancel();
+            timer = null;
+        }
         gui.releaseNode(menu);
         if (attached) {
             menu.remove();
@@ -285,6 +292,56 @@ public final class ContextMenu implements MenuPresenter {
         level.panel.visible(true);
         row.background(Role.SELECTION);   // the way to what is open stays lit while it is
         depth = at + 1;
+    }
+
+    /**
+     * How long the pointer rests on a line before pointing at it does anything to the submenus. A hand on its way from
+     * a submenu's line to one of the submenu's own goes diagonally, across the lines below the one it left; acting at
+     * once on each of them would close the submenu before the hand arrived. Long enough for the crossing, short enough
+     * not to be waited for.
+     */
+    static final long HOVER_MILLIS = 250L;
+
+    /** The source of the causes the hover delay's firings begin. */
+    private static final sibarum.probe.Cause.Source HOVER =
+            sibarum.probe.Cause.source("menu.hover", sibarum.probe.Cause.Kind.TIMER);
+
+    /** The hover delay's timer, made on first use, and what it will do. Guarded by {@code this}. */
+    private Timer timer;
+    private TimerTask pending;
+
+    /**
+     * What pointing at a line does, done once the pointer has rested there for {@link #HOVER_MILLIS}: the last line
+     * pointed at wins, and a line pointed at on the way to it does nothing.
+     */
+    private synchronized void hovered(Runnable effect) {
+        settle();
+        if (timer == null) {
+            timer = new Timer("vexelray-menu", true);
+        }
+        pending = new TimerTask() {
+            @Override
+            public void run() {
+                // A timer firing: a cause of its own, not the hover's (atchung's docs/correlation.md).
+                sibarum.probe.Cause.begin(HOVER, () -> {
+                    synchronized (ContextMenu.this) {
+                        if (pending == this) {
+                            pending = null;
+                            effect.run();
+                        }
+                    }
+                });
+            }
+        };
+        timer.schedule(pending, HOVER_MILLIS);
+    }
+
+    /** Drop what a hover was about to do: a click, or the menu closing, has said what is wanted. */
+    private synchronized void settle() {
+        if (pending != null) {
+            pending.cancel();
+            pending = null;
+        }
     }
 
     /** Close every submenu at {@code from} and deeper. */
@@ -417,26 +474,29 @@ public final class ContextMenu implements MenuPresenter {
             return row;   // no handlers at all: nothing to hover, nothing to choose
         }
         if (item.submenu()) {
-            // Opened by pointing at it, as a desktop's submenus are, and by a click for a hand that does not hover (a
-            // touch, a script). It stays lit while what it opened is open.
+            // Opened by pointing at it, as a desktop's submenus are, once the pointer rests there (see hovered), and
+            // at once by a click, for a hand that does not hover (a touch, a script). It stays lit while what it
+            // opened is open.
             gui.onState(row, state -> {
                 if (state != InteractionState.NORMAL) {
-                    openSubmenu(at, row, item);
+                    row.background(Role.SELECTION);
+                    hovered(() -> openSubmenu(at, row, item));
                 } else if (!opens(row)) {
                     row.background((Role) null);
                 }
             });
-            gui.onClick(row, () -> openSubmenu(at, row, item));
+            gui.onClick(row, () -> {
+                settle();
+                openSubmenu(at, row, item);
+            });
         } else {
             // Transparent at rest so the menu's own surface shows through, and the hover fill is the theme's, not a
             // constant of this widget's: an item is a panel the pointer is on. Pointing at a command closes any
-            // submenu opened beside a row at its own depth: the pointer has moved on from it.
+            // submenu opened beside a row at its own depth, once the pointer rests there: it has moved on from it.
             gui.onState(row, state -> {
                 row.background(state == InteractionState.NORMAL ? null : Role.SELECTION);
                 if (state != InteractionState.NORMAL) {
-                    synchronized (this) {
-                        closeSubmenus(at);
-                    }
+                    hovered(() -> closeSubmenus(at));
                 }
             });
             gui.onClick(row, () -> {

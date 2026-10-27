@@ -241,6 +241,12 @@ public enum PropKey {
     // Scroll-edge lock (LayoutEnums.ScrollLock): pins the offset to top/bottom while attached (log tailing).
     SCROLL_LOCK(true),
     /**
+     * This node is a {@code dev.vexelray.gui.core.scroll.Scroller} (Boolean, absent for not): a box that masks and
+     * scrolls its one child, reserves no scrollbar strip, and gives way to the room its parent has
+     * (docs/plans/scrolling.md §2). Set once, at creation, by {@code Trees.scroller}; nothing else writes it.
+     */
+    SCROLLER(true),
+    /**
      * Out-of-flow placement (both Lengths, or absent for a normal in-flow child). A floating node does not take
      * part in its parent's flex distribution, measurement or overflow — it is sized to its own props/content and
      * placed at these offsets from the parent's border-box origin, clamped so it stays inside the parent. It is

@@ -152,6 +152,22 @@ public final class Trees {
         return new Node(id, sink, reads);
     }
 
+    /**
+     * The node a {@link Scroller} is: a column marked {@link PropKey#SCROLLER}, scrolling both axes, and clipped
+     * whether or not anything overflows, so a translated child is masked as well as a scrolled one.
+     */
+    Node scroller() {
+        long id = ids.getAndIncrement();
+        Map<PropKey, Object> init = new EnumMap<>(PropKey.class);
+        init.put(PropKey.DIRECTION, Direction.COLUMN);
+        init.put(PropKey.SCROLLER, Boolean.TRUE);
+        init.put(PropKey.SCROLL_X, Boolean.TRUE);
+        init.put(PropKey.SCROLL_Y, Boolean.TRUE);
+        init.put(PropKey.CLIP, Boolean.TRUE);
+        sink.post(new Mutation.Create(id, init));
+        return new Node(id, sink, reads);
+    }
+
     private Node create(Direction dir) {
         long id = ids.getAndIncrement();
         Map<PropKey, Object> init = new EnumMap<>(PropKey.class);

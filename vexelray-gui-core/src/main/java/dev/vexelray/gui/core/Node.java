@@ -694,6 +694,8 @@ public final class Node {
      *
      * <p>A container with a scroll lock is detached by this, as by the user's own scroll; brought back to the edge,
      * it re-attaches the same way.
+     *
+     * <p>{@link Float#NaN} for an axis leaves that axis where it is.
      */
     public Node scrollTo(float x, float y) {
         sink.post(new Mutation.ScrollTo(id, x, y));

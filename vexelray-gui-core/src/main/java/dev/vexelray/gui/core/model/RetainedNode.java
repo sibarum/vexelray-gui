@@ -691,6 +691,11 @@ public final class RetainedNode {
         return v instanceof dev.vexelray.gui.core.WindowRegion r ? r : null;
     }
 
+    /** Whether this node is a {@code Scroller} ({@link PropKey#SCROLLER}). */
+    public boolean scroller() {
+        return Boolean.TRUE.equals(props.get(PropKey.SCROLLER));
+    }
+
     /** The scroll-edge lock for this container (default {@link ScrollLock#NONE}). */
     public ScrollLock scrollLock() {
         Object v = props.get(PropKey.SCROLL_LOCK);

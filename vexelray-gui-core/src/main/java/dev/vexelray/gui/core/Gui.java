@@ -1843,6 +1843,20 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
+     * A {@link Scroller} around {@code content}: a box that masks it and scrolls it along both axes, with no bar.
+     * Place {@link Scroller#node()}; put a bar beside it, bound to {@link Scroller#x()} or {@link Scroller#y()}
+     * (docs/plans/scrolling.md).
+     */
+    public Scroller scroller(Node content) {
+        return new Scroller(this, trees.scroller(), content);
+    }
+
+    /** A Scroller's own watch on its node's scroll: the range it publishes (ReadModels.onScroll). */
+    void onScroll(Node node, java.util.function.Consumer<NodeLayout> handler) {
+        readModels.onScroll(node.id(), handler);
+    }
+
+    /**
      * A node carrying {@code s} — which is the whole of what makes it a text node.
      *
      * <p><b>Sugar, not a second kind.</b> This is exactly {@code box().text(s)}, and the two are

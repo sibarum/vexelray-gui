@@ -614,12 +614,19 @@ public final class Reconciler implements Mutation.Sink {
             return;
         }
         // Written as asked; the layout pass clamps it to what the content allows, against the content measured
-        // in the same pass rather than the one before.
-        n.scrollX = Math.max(0f, x);
-        n.scrollY = Math.max(0f, y);
+        // in the same pass rather than the one before. A NaN axis was not asked about, and stays.
+        if (!Float.isNaN(x)) {
+            n.scrollX = Math.max(0f, x);
+        }
+        if (!Float.isNaN(y)) {
+            n.scrollY = Math.max(0f, y);
+        }
         // An offset chosen by the application is a position away from a locked edge, and the lock would otherwise
-        // pin it straight back. Put at the edge, the next scroll re-attaches it as the user's own would.
-        n.scrollAttached = false;
+        // pin it straight back. Put at the edge, the next scroll re-attaches it as the user's own would. The lock is
+        // vertical, so only a vertical offset detaches it.
+        if (!Float.isNaN(y)) {
+            n.scrollAttached = false;
+        }
         layoutDirty = true;
         drawDirty = true;
     }

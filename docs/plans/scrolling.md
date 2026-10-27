@@ -1,6 +1,6 @@
 # Scrolling as elements: `Scroller`, `ScrollRange`, `Scrollbar`
 
-**Status: proposed 2026-10-26; step 0 done (scrollbar-room.md step 1 reverted); names settled (§8).** This replaces automatic scrolling, and it supersedes
+**Status: proposed 2026-10-26; steps 0 and 1 done (the revert; `ScrollRange`, `ScrollSource` and `Scroller` in core); names settled (§8).** This replaces automatic scrolling, and it supersedes
 [scrollbar-room.md](scrollbar-room.md), whose step 1 this plan reverts.
 
 Today any box scrolls when its content is longer than it is. The layout decides that after sizing the box, the
@@ -55,17 +55,17 @@ choice.
 Each axis can be turned off: `scroller(content).axes(false, true)` scrolls only vertically, and along x it lets
 the child overflow, which §1 reports. A table that scrolls sideways asks for x. A page asks for y.
 
-### 2.1 How big an `Scroller` is
+### 2.1 How big a `Scroller` is
 
 This is the one sizing rule the plan adds, and only `Scroller` uses it:
 
-> **An `Scroller` measures as its content and gives way to the room it is given, down to nothing.** Across an axis
+> **A `Scroller` measures as its content and gives way to the room it is given, down to nothing.** Across an axis
 > its parent sizes, it fills, like `alignItems(STRETCH)`. Along the parent's main axis, its basis is its content's
 > size, and where the parent has less room than its children ask for, the `Scroller` gives up the difference
 > first.
 
 That is CSS's `flex-shrink` with `min-size: 0`. It's needed because no child in `FlexLayout` shrinks today, and
-shrinking is exactly what an `Scroller` exists to do. Where two `Scroller`s share a main axis, they give way in
+shrinking is exactly what a `Scroller` exists to do. Where two `Scroller`s share a main axis, they give way in
 proportion to their content.
 
 With that rule, the push and shrink behaviour from scrollbar-room.md comes from ordinary layout. The bar is a
@@ -96,7 +96,7 @@ content. The alternative would be to exempt bars from the offset, which is a spe
 removes. So the bar lives **outside the box it scrolls**: beside it, or anywhere else in the tree. It finds its
 range by reference (§4), not by searching ancestors.
 
-"A scrollbar inside an overflow container", as first proposed, becomes "a scrollbar next to an `Scroller`, both
+"A scrollbar inside an overflow container", as first proposed, becomes "a scrollbar next to a `Scroller`, both
 inside an ordinary box". The usual pairing has a helper (§4.2), so placing them by hand is the exception.
 
 ## 3. `ScrollRange`: what can be scrolled
@@ -117,14 +117,14 @@ interface ScrollSource {
 }
 ```
 
-- **An `Scroller` is a source**, one per axis. Its writes are the `Mutation.ScrollTo` that `Node.scrollTo` posts
+- **A `Scroller` is a source**, one per axis. Its writes are the `Mutation.ScrollTo` that `Node.scrollTo` posts
   today, so a bar drag, the wheel and `scrollIntoView` resolve in the same frame as the layout, as they do now.
 - **Anything else can be a source.** That covers the first use that doesn't involve layout:
   - a 3D viewport publishes how far it can orbit or pan, and moves its camera when asked;
   - MainFrame's terminal publishes its scrollback;
   - a multi-line text leaf publishes its lines.
 
-  A bar shows and drives each of these exactly as it does an `Scroller`.
+  A bar shows and drives each of these exactly as it does a `Scroller`.
 
 `ScrollLock` moves onto the source: `overflow.lock(BOTTOM)`. Detach on scrolling away and re-attach on return work
 as they do today.
@@ -176,9 +176,10 @@ composition, not a new kind of node.
 
 Following the separate-module rule:
 
-- **`vexelray-gui-core`**: `ScrollRange`, `ScrollSource` and `Scroller`. Masking, the offset and the sizing rule
-  are layout, `Clip` and `HitTest` work, and core is where those live. This is the one part that cannot be its own
-  module.
+- **`vexelray-gui-core`**: `ScrollRange`, `ScrollSource` and `Scroller`, in `dev.vexelray.gui.core` beside
+  `Node`, so `Scroller`'s constructor and its scroll watch stay package-private. Masking, the offset and the sizing
+  rule are layout, `Clip` and `HitTest` work, and core is where those live. This is the one part that cannot be
+  its own module.
 - **`vexelray-gui-scroll`** (new): `Scrollbar` and `Scrollbars`. It depends on core and `vexelray-gui-draw`
   only, and `vexelray-gui-widget` depends on it.
 
@@ -191,15 +192,43 @@ until step 5.
    and the doc lines. The investigation tests from 4b4ce1b (`ScrollbarRoomSweep`, `TabsOverflowProbe`) stay until
    step 5, because they measure the model being replaced. scrollbar-room.md is marked superseded. Its findings
    stay as the record of why: the margin result (§3.1) is why the bar is in layout and not in a margin.
-1. **Core: `ScrollRange`, `ScrollSource`, `Scroller`.**
+1. **Core: `ScrollRange`, `ScrollSource`, `Scroller`.** *Done 2026-10-26.*
    - The sizing rule (§2.1).
    - Masking and the offset.
    - Wheel routing: the nearest `Scroller` under the pointer whose range can move on that axis.
    - `scrollIntoView`, `scrollTo`, `scrollToEdge` and `lock` on `Scroller`. `Scrolling`'s nested solve is
-     unchanged, except that "a scrolling ancestor" now means an `Scroller`.
-   - An `Scroller` turns the old implicit scrolling off for itself and its child, so the two models never stack.
+     unchanged, except that "a scrolling ancestor" now means a `Scroller`.
+   - A `Scroller` turns the old implicit scrolling off for itself and its child, so the two models never stack.
    - Tests: the two §2.1 cases with no bar; the shrink split between two `Scroller`s; reveal through nested
      `Scroller`s.
+
+   **As built.** A `Scroller` is a node with one prop the layout reads, `PropKey.SCROLLER`, made by
+   `gui.scroller(content)`. It is a clipped column that declares both axes, so it reuses the old model's offsets,
+   clip, wheel routing, reveal and lock unchanged; what differs is in `FlexLayout`, and nowhere else:
+   - its strip is zero, so `layoutBox` reserves nothing and `TreeRenderer` and `InputDispatcher` find no bar to
+     draw or grab;
+   - `mainSizes` lets an `AUTO` `Scroller` give way, in proportion to its content, and `crossSize` and `place`
+     clamp a non-stretched one to the cross room;
+   - along an axis a `Scroller` scrolls, its child's basis is its content even when it is `grow`, and a stretched
+     child is at least its content's width;
+   - its child never scrolls without declaring it.
+
+   Ranges are published from `ReadModels.onScroll`, a per-node watch like `onResize` that also fires when only the
+   offset moves; each axis commits to its own `State<ScrollRange>` inside the publish. Offsets are
+   `Mutation.ScrollTo` with NaN for the axis left alone, and the two axes no longer share a coalescing cell, so
+   moving x and y in one frame keeps both. Only a vertical offset detaches a bottom lock.
+
+   `ScrollerTest` has eleven tests: the three layouts of §2.1 (a content-sized box growing by its bar, a page giving
+   way between two bars, a vertical bar beside the `Scroller` in a row), the proportional split, room to spare, a
+   filling child, no nested scroller in the child, both ranges and per-axis moves, a disabled axis, reveal
+   through nested `Scroller`s, and the wheel with no bar. With give-way off, four fail; with the strip back on,
+   three do.
+
+   **Known limit.** Only the `Scroller` gives way, not a content-sized box around it. A `Scroller` inside an `AUTO`
+   column inside a row makes the column as wide as the content, and the overflow lands on the row instead. CSS has
+   the same trap (`min-width: auto`). Place the `Scroller` directly in the box that has the constraint, or give its
+   wrapper `grow`. If step 3 or 4 meets this often, letting a box give way by what its `Scroller`s can give is the
+   general fix.
 2. **`vexelray-gui-scroll`: `Scrollbar`, `Scrollbars`.**
    - Tests:
      - the tab-bar case grows by the bar's height and moves its neighbour;
@@ -208,7 +237,7 @@ until step 5.
      - a bar bound to a plain `ScrollSource` with no layout behind it.
 
      The first two are ScrollbarRoomTest's cases again, now passing with no measure change.
-   - A demo chapter: an `Scroller` with each kind of bar, and a bar driving a source that is not an `Scroller`.
+   - A demo chapter: a `Scroller` with each kind of bar, and a bar driving a source that is not a `Scroller`.
 3. **Framework widgets move** (§7.1), with `Tabs` first and checked with `TabsOverflowProbe`. Then the demo.
 4. **Sibling apps move** (§7.2), in dependency order. Each is installed and shot with ottermate. MainFrame with 30
    tabs at zoom 1, 1.5 and 2 is the acceptance shot: every title whole and every header clickable.
@@ -235,7 +264,7 @@ until step 5.
 | `Deck`, `Inspector`, `Rail` panel body, `KeymapEditor` | `scroll(false, true)` | `Scrollbars.vertical` |
 | `TextField`, multi-line | a text leaf with its own bar and `viewH` | a `ScrollSource` over its lines, with no bar of its own. The text area composes a `Scrollbar` beside it. A single-line field keeps scrolling with its caret and has no bar |
 | Window root, under `Gui.minSize` | the root scrolls on a canvas larger than the window (scrolling.md §2) | the root never scrolls. An app that wants a small window to scroll wraps its content in `Scrollbars.both`. Otherwise the overflow is reported |
-| `Automation` / `ottermate tree` | `scrolls x/y` from `overflowX/Y` | an `Scroller` line with its ranges, and a `Scrollbar` line naming its source |
+| `Automation` / `ottermate tree` | `scrolls x/y` from `overflowX/Y` | a `Scroller` line with its ranges, and a `Scrollbar` line naming its source |
 | Demo | 7 opt-ins (Drag, Focus, Icons, Image, Motion, Window chapters, `Shell`), `Console`'s bottom lock | `Scrollbars.vertical`. `Console` gets `lock(BOTTOM)` |
 | 101 `scroll(false, false)` here (66 more in the siblings) | opting out | deleted in step 5 |
 
@@ -249,7 +278,7 @@ until step 5.
 | text-editor-vexel-demo (Vex) | `Formatted`, `Preview`; `Navigator` `scrollIntoView` | |
 | calculator-vexel-demo | `SettingsWindow`, the tape (`lock(BOTTOM)` with `scrollToEdge`) | |
 | vexelray-sim-fluid | `ControlPanel`, `Sidebar` | |
-| pontif-framework | `BoxWalker`'s `Scrolls` atom | the atom becomes an `Scroller` with an optional bar. This is a change to its schema |
+| pontif-framework | `BoxWalker`'s `Scrolls` atom | the atom becomes a `Scroller` with an optional bar. This is a change to its schema |
 
 Any box in those apps that scrolls today *without* declaring it will overflow after step 5. The §1 report names
 each one on the first run that reaches it. Step 4 runs each app through its acceptance path for exactly that

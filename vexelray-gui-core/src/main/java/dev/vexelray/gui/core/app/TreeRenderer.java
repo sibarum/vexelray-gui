@@ -702,6 +702,9 @@ public final class TreeRenderer {
     /** Draw the reserved-space scrollbars (outlined track + pill thumb) for an overflowing container — chrome. */
     private void drawScrollbars(RetainedNode n, Canvas canvas) {
         float sb = n.scrollbarPx;
+        if (sb <= 0f) {
+            return;   // no strip reserved (a Scroller): its bar, if any, is an element that draws itself
+        }
         if (n.overflowY) {
             track(canvas, n.viewX + n.viewW, n.viewY, sb, n.viewH);
             thumb(canvas, n.vThumbRect(), sb);

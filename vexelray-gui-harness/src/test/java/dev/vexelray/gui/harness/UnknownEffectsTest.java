@@ -182,7 +182,7 @@ class UnknownEffectsTest {
 
     private static Hovered hoveredButton() {
         Atchung bus = Atchung.create();
-        Gui gui = new Gui(bus, Runnable::run);
+        Gui gui = new Gui(bus);
         IconButton button = new IconButton(gui, Icon.SAVE, "Save").size(Length.dp(96), Length.dp(64));
         gui.root().append(gui.row().padding(Length.dp(24)).children(button.node()));
         return new Hovered(gui, bus, button.node());

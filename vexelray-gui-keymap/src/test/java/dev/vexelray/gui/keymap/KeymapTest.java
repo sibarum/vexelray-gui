@@ -273,26 +273,26 @@ class KeymapTest {
         }
     }
 
+    /**
+     * Every action runs in the frame that dispatched its chord, in the order the chords arrived. In 0.1 only an
+     * {@code ordered()} action did and the rest waited for a worker; 0.2 has no worker (vexelray-framework's
+     * {@code docs/threading.md}, T1.1), and {@code ordered()} goes when actions become messages.
+     */
     @Test
-    void anOrderedActionRunsOnTheGuiThreadAndTheRestOnAWorker() {
-        List<Runnable> held = new ArrayList<>();
-        try (Headless h = new Headless(held::add)) {
+    void everyActionRunsInTheFrameThatDispatchedIt() {
+        try (Headless h = new Headless()) {
             List<String> log = new ArrayList<>();
             Keymap keys = new Keymap(h.gui);
             keys.action("file.save", "Save", CTRL_S).on(() -> log.add("save"));
             Action paste = keys.action("edit.paste", "Paste", CTRL_K).on(() -> log.add("paste")).ordered();
 
             h.frame().chord(Key.S, Key.LEFT_CONTROL).chord(Key.K, Key.LEFT_CONTROL);
-            assertEquals(List.of("paste"), log, "run inline, in the frame that dispatched it");
-
-            List.copyOf(held).forEach(Runnable::run);
-            assertTrue(log.contains("save"), "the other waited for a worker");
+            assertEquals(List.of("save", "paste"), log, "both, inline, in the order their chords arrived");
 
             log.clear();
-            held.clear();
             keys.bind(paste, List.of(CTRL_O));
             h.frame().chord(Key.O, Key.LEFT_CONTROL);
-            assertEquals(List.of("paste"), log, "still ordered on its new chord");
+            assertEquals(List.of("paste"), log, "and on its new chord");
         }
     }
 }

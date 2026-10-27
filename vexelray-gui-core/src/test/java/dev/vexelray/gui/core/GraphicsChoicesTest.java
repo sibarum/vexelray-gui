@@ -25,7 +25,7 @@ class GraphicsChoicesTest {
     }
 
     private static Gui gui() {
-        return new Gui(Atchung.create(), Runnable::run);
+        return new Gui(Atchung.create());
     }
 
     @Test

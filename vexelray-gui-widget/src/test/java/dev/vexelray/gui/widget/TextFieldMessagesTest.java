@@ -34,17 +34,16 @@ class TextFieldMessagesTest {
 
     @Test
     void typingStaysInTheFieldAndOnlyTheFramesLastTextCrosses() {
-        try (HeadlessGui h = HeadlessGui.manual()) {
+        try (HeadlessGui h = new HeadlessGui()) {
             TextField f = named(h, "path", "");
             Tick tick = h.bus.tick(null);
             List<String> heard = new ArrayList<>();
             tick.inbox("editor").subscribe(TextField.CHANGED, c -> heard.add(c.text()), 1);
 
             "hello".codePoints().forEach(cp -> h.bus.publish(InputTopics.INPUT, new InputEvent.CharTyped(cp, 0)));
-            h.dispatchOnly();
+            h.frame();
 
             assertEquals("hello", f.text(), "the edit is the widget's, applied in the frame, with no round trip");
-            assertEquals(0, h.tasks.pending(), "and nothing was handed to the handler lane to say so");
 
             tick.run(LATER);
             assertEquals(List.of("hello"), heard,

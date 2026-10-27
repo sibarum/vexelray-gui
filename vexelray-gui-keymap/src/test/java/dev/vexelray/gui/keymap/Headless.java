@@ -30,12 +30,7 @@ final class Headless implements AutoCloseable {
     private RetainedNode last;
 
     Headless() {
-        this(Runnable::run);
-    }
-
-    /** Handlers on {@code workers}: one that holds them back shows which commands ran on the GUI thread instead. */
-    Headless(java.util.concurrent.Executor workers) {
-        this.gui = new Gui(bus, workers);
+        this.gui = new Gui(bus);
     }
 
     private final TextMeasurer measurer = new TextMeasurer() {

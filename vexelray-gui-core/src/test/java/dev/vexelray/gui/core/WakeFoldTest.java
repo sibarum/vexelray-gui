@@ -27,7 +27,7 @@ class WakeFoldTest {
 
     @Test
     void aBurstOfEditsWakesTheLoopOnce() {
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             AtomicInteger wakes = new AtomicInteger();
             Node box = gui.box().width(Length.rem(1)).height(Length.rem(1));
             gui.root().append(box);
@@ -45,7 +45,7 @@ class WakeFoldTest {
 
     @Test
     void theNextEditAfterAFrameWakesAgain() {
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             AtomicInteger wakes = new AtomicInteger();
             Node box = gui.box().width(Length.rem(1)).height(Length.rem(1));
             gui.root().append(box);
@@ -65,7 +65,7 @@ class WakeFoldTest {
 
     @Test
     void anEditDuringAFrameStillGetsItsOwnFrame() {
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Node box = gui.box().width(Length.rem(1)).height(Length.rem(1));
             gui.root().append(box);
 
@@ -85,7 +85,7 @@ class WakeFoldTest {
 
     @Test
     void aWakeWhileNothingWasListeningDoesNotSuppressTheFirstRealOne() {
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             // A tree built before it is presented — a palette, a preferences window — edits freely with no
             // listener wired. Those wakes reached nothing.
             Node box = gui.box().width(Length.rem(1)).height(Length.rem(1));

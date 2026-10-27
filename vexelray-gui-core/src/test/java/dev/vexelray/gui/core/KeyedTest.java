@@ -68,7 +68,7 @@ class KeyedTest {
 
     @Test
     void aKeyStillPresentKeepsItsNodeAndTheRestFollowTheItemsOrder() {
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Node list = gui.column();
             gui.root().children(list);
             List<Integer> built = new ArrayList<>();
@@ -91,7 +91,7 @@ class KeyedTest {
 
     @Test
     void updateChangesKeptNodesInPlace() {
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Node list = gui.column();
             gui.root().children(list);
             Keyed<Item> rows = list.keyed(Item::id, item -> gui.text(""));
@@ -107,7 +107,7 @@ class KeyedTest {
 
     @Test
     void aReorderedRowIsMovedSoALayoutMotionSeesItTravel() {
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             List<Long> moved = new ArrayList<>();
             gui.motion(new LayoutMotion() {
                 @Override
@@ -169,7 +169,7 @@ class KeyedTest {
             }
         }
         Leaving motion = new Leaving();
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             gui.enterMotion(motion).exitMotion(motion);
             Node list = gui.column();
             gui.root().children(list);
@@ -194,7 +194,7 @@ class KeyedTest {
 
     @Test
     void twoItemsWithOneKeyAreRefused() {
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Node list = gui.column();
             Keyed<Item> rows = rows(gui, list, new ArrayList<>());
             assertThrows(IllegalArgumentException.class,

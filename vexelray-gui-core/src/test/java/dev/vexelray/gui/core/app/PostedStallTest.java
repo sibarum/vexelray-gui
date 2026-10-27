@@ -49,7 +49,7 @@ final class PostedStallTest {
         assertTrue(message.contains("400 ms"), message);
         // Ends in a fix rather than a diagnosis. This is the line that makes the difference between a warning
         // somebody acts on and one they read twice and scroll past.
-        assertTrue(message.contains("offload"), message);
+        assertTrue(message.contains("job"), message);   // the fix it names: blocking work is a job's
     }
 
     @Test

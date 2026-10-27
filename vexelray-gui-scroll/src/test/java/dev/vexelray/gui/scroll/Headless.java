@@ -23,7 +23,7 @@ final class Headless implements AutoCloseable {
     static final float H = 300f;
 
     final Atchung bus = Atchung.create();
-    final Gui gui = new Gui(bus, Runnable::run);
+    final Gui gui = new Gui(bus);
     private RetainedNode root;
 
     private static float noText(RetainedNode n, Axis axis, float px) {

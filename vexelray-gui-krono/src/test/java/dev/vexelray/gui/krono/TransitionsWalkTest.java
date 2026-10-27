@@ -53,7 +53,7 @@ class TransitionsWalkTest {
 
     @Test
     void stillFramesWalkNothingAndAReorderStillSlides() {
-        Gui gui = new Gui(Atchung.create(), Runnable::run);
+        Gui gui = new Gui(Atchung.create());
         try (KronoGui krono = KronoGui.attach(gui, Kron.driven())) {
             Transitions moves = Transitions.on(krono);
             gui.motion(moves);

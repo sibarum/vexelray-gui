@@ -35,7 +35,7 @@ class AutomationTest {
     private static final float H = 600f;
 
     private static Gui deterministic() {
-        return new Gui(sibarum.atchung.Atchung.create(), Runnable::run);
+        return new Gui(sibarum.atchung.Atchung.create());
     }
 
     private static final TextMeasurer NO_TEXT = new TextMeasurer() {

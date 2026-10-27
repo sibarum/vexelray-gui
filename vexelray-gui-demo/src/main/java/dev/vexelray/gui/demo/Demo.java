@@ -137,7 +137,6 @@ public final class Demo {
         }
 
         int maxFrames = args.length > 0 ? Integer.parseInt(args[0]) : 0;
-        startWorker(gui, shell.console());
 
         // Placement is read before the window exists, so the gallery is *created* where it was left rather than
         // appearing and then moving — and clamped on the way, because the desk may have changed shape since.
@@ -449,26 +448,6 @@ public final class Demo {
         } catch (BackendException e) {
             // Transient poll failure — drop this frame's input rather than tear down the loop.
         }
-    }
-
-    /**
-     * Application logic off the GUI thread, mutating the tree through handles exactly as a click handler does.
-     *
-     * <p>It says something once and then stops, which is the honest version of this demonstration: a worker that
-     * chattered forever would keep the render-on-demand loop awake for no reason, and a gallery whose activity
-     * rail is always moving cannot show you that something you did moved it.
-     */
-    private static void startWorker(Gui gui, Console console) {
-        gui.async(() -> {
-            try {
-                Thread.sleep(600);
-                console.note("worker thread reporting in — this line was appended from off the GUI thread");
-                Thread.sleep(900);
-                console.note("every handle is thread-safe: a mutation is a message, reconciled next frame");
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        });
     }
 
     private Demo() {

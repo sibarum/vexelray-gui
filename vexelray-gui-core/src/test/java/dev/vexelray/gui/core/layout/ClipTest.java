@@ -53,7 +53,7 @@ class ClipTest {
     };
 
     private static Gui deterministic() {
-        return new Gui(sibarum.atchung.Atchung.create(), Runnable::run);
+        return new Gui(sibarum.atchung.Atchung.create());
     }
 
     /**

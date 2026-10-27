@@ -75,47 +75,19 @@ class TreeRevealTest {
         }
     }
 
-    /**
-     * The reason this is a walk and not three {@link TreeView#expand} calls, against a harness that defers
-     * handlers the way a live application's worker pool does: expand is a no-op on an item whose row does not
-     * exist yet, and nothing below the first level exists until its parent's fetch has landed. Asked for in a
-     * row, the three calls reach exactly one level down and the other two find nothing to open.
-     */
-    @Test
-    void expandingTheLevelsInsteadWouldNeverReachTheBottom() {
-        try (HeadlessGui h = HeadlessGui.manual()) {
-            MapSource source = new MapSource();
-            TreeView<String> tree = new TreeView<>(h.gui, source);
-            h.gui.root().children(tree.node());
-            h.frame();
-
-            tree.expand("src");
-            tree.expand("main");
-            tree.expand("java");
-            h.tasks.drain();
-            h.frame();
-
-            assertNotNull(tree.rowNode("main"), "the one level whose row existed when it was asked for");
-            assertNull(tree.rowNode("App.java"), "expand cannot reach past the level it opened");
-            tree.close();
-        }
-    }
-
-    /** The same three levels, as one walk: it blocks on each fetch, so the deepest row is there when it ends. */
+    /** Three levels, as one walk that waits for each fetch, so the deepest row is there when it ends. */
     @Test
     void theWalkIsOneTaskThatWaitsForEachLevelItOpens() {
-        try (HeadlessGui h = HeadlessGui.manual()) {
+        try (HeadlessGui h = new HeadlessGui()) {
             MapSource source = new MapSource();
             TreeView<String> tree = new TreeView<>(h.gui, source);
             h.gui.root().children(tree.node());
             h.frame();
 
             tree.revealPath(List.of("src", "main", "java", "App.java"), null);
-            assertNull(tree.rowNode("main"), "nothing has run yet: the walk is a handler like any other");
-            h.tasks.drain();
             h.frame();
 
-            assertNotNull(tree.rowNode("App.java"), "three levels deep, off one queued task");
+            assertNotNull(tree.rowNode("App.java"), "three levels deep, in one walk");
             assertEquals("App.java", tree.selected());
             tree.close();
         }

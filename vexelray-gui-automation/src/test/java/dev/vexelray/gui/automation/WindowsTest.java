@@ -94,7 +94,7 @@ class WindowsTest {
 
     /** A tree registered under {@code key}, as {@code GuiApp} registers it, with one button landmarked home. */
     private static Gui window(String key, String label, AtomicInteger clicks) {
-        Gui gui = new Gui(sibarum.atchung.Atchung.create(), Runnable::run).windowKey(key);
+        Gui gui = new Gui(sibarum.atchung.Atchung.create()).windowKey(key);
         Node home = gui.box().role("button").size(Length.dp(100), Length.dp(40)).children(gui.text(label));
         gui.landmark("home", home);
         gui.onClick(home, clicks::incrementAndGet);

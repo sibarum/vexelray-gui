@@ -30,7 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class UndoingTest {
 
-    private final Gui gui = new Gui(Atchung.create(), Runnable::run);
+    private final Gui gui = new Gui(Atchung.create());
     private final Node page = gui.box().width(Length.dp(200)).height(Length.dp(40)).visible(false);
     private final Node field = gui.box().width(Length.dp(100)).height(Length.dp(20));
     private final Node elsewhere = gui.box().width(Length.dp(100)).height(Length.dp(20));

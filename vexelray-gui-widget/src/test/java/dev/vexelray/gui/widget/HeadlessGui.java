@@ -53,42 +53,6 @@ final class HeadlessGui implements AutoCloseable {
     static final float FIELD_PAD_X = PAD_X + FIELD_BORDER;
     static final float FIELD_PAD_Y = PAD_Y + FIELD_BORDER;
 
-    /**
-     * An {@link Executor} that queues tasks instead of running them, so a test can release input handlers one at
-     * a time and interleave them with other work — reproducing a specific ordering / race deterministically.
-     */
-    static final class ManualExecutor implements Executor {
-        private final Deque<Runnable> queue = new ArrayDeque<>();
-
-        @Override
-        public void execute(Runnable r) {
-            queue.add(r);
-        }
-
-        /** Run the next queued task; @return false if the queue was empty. */
-        boolean runOne() {
-            Runnable r = queue.poll();
-            if (r == null) {
-                return false;
-            }
-            r.run();
-            return true;
-        }
-
-        /** Run all queued tasks (including any they enqueue); @return how many ran. */
-        int drain() {
-            int n = 0;
-            while (runOne()) {
-                n++;
-            }
-            return n;
-        }
-
-        int pending() {
-            return queue.size();
-        }
-    }
-
     static {
         // A test that publishes more input than a frame drains would otherwise hit Fatal.HALT and take the
         // surefire JVM down mid-suite, which surfaces as "the VM crashed" and names nothing. Under test the
@@ -98,43 +62,11 @@ final class HeadlessGui implements AutoCloseable {
     }
 
     final Atchung bus = Atchung.create();
-    /** Non-null only in manual mode ({@link #manual()}); the queue of deferred input handlers. */
-    final ManualExecutor tasks;
-    final Gui gui;
-
-    HeadlessGui() {
-        this(Mode.SYNCHRONOUS);
-    }
-
-    /** How input handlers reach their widget — the property under test in {@link HandlerOrderingTest}. */
-    private enum Mode { SYNCHRONOUS, MANUAL, THREADED }
-
-    private HeadlessGui(Mode mode) {
-        this.tasks = mode == Mode.MANUAL ? new ManualExecutor() : null;
-        // Synchronous mode runs handlers inline during dispatch; manual mode queues them for the test to release;
-        // threaded mode uses Gui's own worker pool — the production path, and the only one that can expose an
-        // ordering defect in the handoff (see HandlerOrderingTest).
-        this.gui = switch (mode) {
-            case MANUAL -> new Gui(bus, tasks);
-            case SYNCHRONOUS -> new Gui(bus, Runnable::run);
-            case THREADED -> new Gui(bus);
-        };
-    }
-
-    /** A harness whose input handlers are queued, not run — for deterministic interleaving via {@link #tasks}. */
-    static HeadlessGui manual() {
-        return new HeadlessGui(Mode.MANUAL);
-    }
-
     /**
-     * A harness that dispatches input handlers on {@link Gui}'s <b>real worker pool</b>, exactly as an application
-     * does. Every other mode collapses the handoff onto one thread, which is what makes them deterministic — and
-     * also what makes them structurally unable to observe whether delivery order survives it. A widget whose state
-     * transitions depend on arrival order has to be tested here or not at all.
+     * The tree under test. Its input handlers run on this thread, in {@link #frame}, as they do in an application:
+     * 0.2 has no handler pool, so the harness and production run handlers the same way and there is no mode to pick.
      */
-    static HeadlessGui threaded() {
-        return new HeadlessGui(Mode.THREADED);
-    }
+    final Gui gui = new Gui(bus);
 
     /** The default text size in px, at which one cell is exactly {@link #CELL} wide. */
     private static final float BASE_TEXT_PX = 16f;
@@ -205,22 +137,8 @@ final class HeadlessGui implements AutoCloseable {
         }
     };
 
-    /**
-     * Drain the bus + dispatch input + lay out — one GUI frame. In synchronous mode handlers ran inline during
-     * dispatch; in manual mode this also drains the queued handlers (so the fluent helpers still work). For
-     * interleaving control in manual mode, use {@link #dispatchOnly()} + {@link #tasks} instead.
-     */
+    /** Drain the bus, dispatch input (handlers run here, inline) and lay out: one GUI frame. */
     HeadlessGui frame() {
-        lastRoot = gui.frame(W, H, measurer);
-        if (tasks != null) {
-            tasks.drain();
-        }
-        return this;
-    }
-
-    /** Manual mode: dispatch a frame but leave the input handlers <em>queued</em> in {@link #tasks} for the test
-     *  to release in a chosen order. */
-    HeadlessGui dispatchOnly() {
         lastRoot = gui.frame(W, H, measurer);
         return this;
     }

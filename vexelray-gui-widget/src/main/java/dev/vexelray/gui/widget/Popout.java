@@ -227,7 +227,7 @@ public final class Popout {
             root.children(rule, panel);
         }
 
-        this.away = new Gui(Atchung.create(), host.handlers(), host.offload());
+        this.away = new Gui(Atchung.create());
         bridgeNavigation();
 
         // The one thing a container that conceals has to declare. Popped out, the docked copy is hidden and the

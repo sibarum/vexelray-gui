@@ -59,7 +59,7 @@ class PresenceTest {
     }
 
     private static Scene scene() {
-        Gui gui = new Gui(Atchung.create(), Runnable::run);
+        Gui gui = new Gui(Atchung.create());
         KronoGui krono = KronoGui.attach(gui, Kron.driven());
         Presence presence = Presence.on(krono);
         gui.enterMotion(presence).exitMotion(presence);

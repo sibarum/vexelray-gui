@@ -36,7 +36,7 @@ class CursorTest {
 
     /** A GUI whose handlers run on the calling thread, so a published edge is handled inside the next frame. */
     private static Gui deterministic() {
-        return new Gui(sibarum.atchung.Atchung.create(), Runnable::run);
+        return new Gui(sibarum.atchung.Atchung.create());
     }
 
     /** Text metrics are irrelevant here; nothing in these trees has text. */

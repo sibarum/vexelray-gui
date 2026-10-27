@@ -35,7 +35,7 @@ class ResizeObserverTest {
 
     @Test
     void theFirstBoxIsAChangeAndIsAnnounced() {
-        try (Gui gui = new Gui(Atchung.create(), SAME_THREAD)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Node canvas = gui.box().width(Length.FILL).height(Length.FILL);
             gui.root().children(canvas);
             List<NodeLayout> seen = new ArrayList<>();
@@ -53,7 +53,7 @@ class ResizeObserverTest {
 
     @Test
     void aWindowResizeIsAnnouncedToo() {
-        try (Gui gui = new Gui(Atchung.create(), SAME_THREAD)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Node canvas = gui.box().width(Length.FILL).height(Length.FILL);
             gui.root().children(canvas);
             List<NodeLayout> seen = new ArrayList<>();
@@ -73,7 +73,7 @@ class ResizeObserverTest {
      */
     @Test
     void aFrameThatChangedNothingIsSilent() {
-        try (Gui gui = new Gui(Atchung.create(), SAME_THREAD)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Node canvas = gui.box().width(Length.FILL).height(Length.FILL);
             gui.root().children(canvas);
             List<NodeLayout> seen = new ArrayList<>();
@@ -90,7 +90,7 @@ class ResizeObserverTest {
     /** Zoom is not a resize of the window, but it is a resize of everything sized in em. */
     @Test
     void aZoomChangeReachesANodeSizedInEm() {
-        try (Gui gui = new Gui(Atchung.create(), SAME_THREAD)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Node card = gui.box().width(Length.rem(4)).height(Length.rem(2));
             gui.root().children(card);
             List<NodeLayout> seen = new ArrayList<>();
@@ -112,7 +112,7 @@ class ResizeObserverTest {
      */
     @Test
     void scrollingAContainerIsNotAResize() {
-        try (Gui gui = new Gui(Atchung.create(), SAME_THREAD)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Node list = gui.column().width(Length.FILL).height(Length.rem(4)).scroll(false, true);
             list.children(gui.box().width(Length.FILL).height(Length.rem(20)));
             gui.root().children(list);
@@ -130,36 +130,32 @@ class ResizeObserverTest {
         }
     }
 
-    /** Two lanes, the same split the input seams already have: worker by default, GUI thread on demand. */
+    /**
+     * Both variants run inside the frame, on the thread that calls it. In 0.1 the ordinary one went to a worker
+     * pool and only the ordered one stayed on the GUI thread; in 0.2 there is no pool (docs/threading.md, T1.1).
+     */
     @Test
-    void theOrderedVariantRunsInsideTheFrameAndTheOrdinaryOneDoesNot() {
-        List<String> lanes = new ArrayList<>();
-        Executor recording = command -> {
-            lanes.add("worker");
-            command.run();
-        };
-        try (Gui gui = new Gui(Atchung.create(), recording)) {
+    void bothVariantsRunInsideTheFrameOnItsThread() {
+        List<String> ran = new ArrayList<>();
+        Thread frame = Thread.currentThread();
+        try (Gui gui = new Gui(Atchung.create())) {
             Node a = gui.box().width(Length.FILL).height(Length.rem(1));
             Node b = gui.box().width(Length.FILL).height(Length.rem(1));
             gui.root().children(a, b);
-            gui.onResize(a, layout -> lanes.add("onResize"));
-            gui.onResizeUi(b, layout -> lanes.add("onResizeUi"));
+            gui.onResize(a, layout -> ran.add("onResize on " + (Thread.currentThread() == frame ? "frame" : "other")));
+            gui.onResizeUi(b, layout -> ran.add("onResizeUi on " + (Thread.currentThread() == frame ? "frame" : "other")));
 
             gui.frame(400f, 300f, ResizeObserverTest::noText);
 
-            assertTrue(lanes.contains("onResizeUi"), "the ordered handler ran");
-            assertTrue(lanes.contains("onResize"), "and so did the worker one");
-            assertTrue(lanes.indexOf("worker") < lanes.indexOf("onResize"),
-                    "the ordinary lane goes through the handler executor, the ordered one does not: " + lanes);
-            assertEquals(1, lanes.stream().filter("worker"::equals).count(),
-                    "and only the ordinary one does: " + lanes);
+            assertTrue(ran.contains("onResize on frame"), "the ordinary handler ran in the frame: " + ran);
+            assertTrue(ran.contains("onResizeUi on frame"), "and so did the ordered one: " + ran);
         }
     }
 
     /** An observer is a registration like any other, and goes when the node's registrations go. */
     @Test
     void releasingANodeDropsItsObserver() {
-        try (Gui gui = new Gui(Atchung.create(), SAME_THREAD)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Node canvas = gui.box().width(Length.FILL).height(Length.FILL);
             gui.root().children(canvas);
             List<NodeLayout> seen = new ArrayList<>();
@@ -178,7 +174,7 @@ class ResizeObserverTest {
     /** Removing a node from the tree does it too, through the reconciler's own removal seam. */
     @Test
     void removingANodeDropsItsObserver() {
-        try (Gui gui = new Gui(Atchung.create(), SAME_THREAD)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Node canvas = gui.box().width(Length.FILL).height(Length.FILL);
             gui.root().children(canvas);
             List<NodeLayout> seen = new ArrayList<>();
@@ -199,7 +195,7 @@ class ResizeObserverTest {
      */
     @Test
     void aBoxOfZeroIsStillAnAnswer() {
-        try (Gui gui = new Gui(Atchung.create(), SAME_THREAD)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Node hidden = gui.box().width(Length.FILL).height(Length.FILL).visible(false);
             gui.root().children(hidden);
             List<NodeLayout> seen = new ArrayList<>();
@@ -217,7 +213,7 @@ class ResizeObserverTest {
     /** Re-registering replaces rather than adding, so a handler cannot be installed twice by accident. */
     @Test
     void registeringAgainReplaces() {
-        try (Gui gui = new Gui(Atchung.create(), SAME_THREAD)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Node canvas = gui.box().width(Length.FILL).height(Length.FILL);
             gui.root().children(canvas);
             List<String> seen = new ArrayList<>();
@@ -232,7 +228,7 @@ class ResizeObserverTest {
 
     @Test
     void aNullHandlerRemovesTheObserver() {
-        try (Gui gui = new Gui(Atchung.create(), SAME_THREAD)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Node canvas = gui.box().width(Length.FILL).height(Length.FILL);
             gui.root().children(canvas);
             List<NodeLayout> seen = new ArrayList<>();

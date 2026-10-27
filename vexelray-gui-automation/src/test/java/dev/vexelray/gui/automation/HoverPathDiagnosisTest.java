@@ -151,7 +151,7 @@ class HoverPathDiagnosisTest {
         // The control, and the point of the whole module. Publishing the click as a single edge — what a
         // teleporting driver does — produces a log in which nothing was ever hovered, so a reader would
         // correctly conclude that nothing crossed anything. The bug would still be there, and invisible.
-        try (Gui gui = new Gui(sibarum.atchung.Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(sibarum.atchung.Atchung.create())) {
             Node offender = gui.box().role("button").size(Length.dp(100), Length.dp(100));
             AtomicInteger hovers = new AtomicInteger();
             gui.onState(offender, state -> {

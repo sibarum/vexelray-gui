@@ -48,7 +48,7 @@ class SuiteGraphicsTest {
     void theSuitesVoiceIsOverTheOsAndUnderTheApplication(@TempDir Path dir) {
         Path file = dir.resolve("settings.properties");
         Settings.at(file).putBoolean(Gui.SIMPLIFIED_GRAPHICS, true).save();
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             gui.systemReducedMotion(false);
             SuiteGraphics.at(file).applyTo(gui);
             assertTrue(gui.simplifiedGraphics(), "the user's suite-wide choice over the OS's word");

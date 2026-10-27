@@ -285,23 +285,16 @@ public final class Gui implements AutoCloseable {
     /** The focus state and theme the read-models were last published against; see the frame's publish step. */
     private dev.vexelray.gui.core.input.FocusState publishedFocus = dev.vexelray.gui.core.input.FocusState.NONE;
     private Theme publishedTheme;
+    /**
+     * Where an input handler runs: here, on the GUI thread, during the frame's dispatch, followed by a wake.
+     *
+     * <p>0.1 ran handlers on a pool of their own, so a click was answered on whichever worker took it. In 0.2 the
+     * tree's handlers are the GUI's own components answering their input, which is the GUI thread's work, and an
+     * application's logic hears a widget by a message instead (vexelray-framework's {@code docs/threading.md},
+     * T1.1, T3.8). Nothing that blocks belongs in one: blocking work is a job's.
+     */
     private final Executor handlers;
-    /**
-     * Where {@link #async} puts work — a different lane from {@link #handlers}, and the split is the point.
-     * "Worker thread" used to mean both, which is one name for two lanes with different rules in the
-     * documentation applications read: a handler is short, ordinary application code answering an input event,
-     * and an offloaded task is a file read, a decode or a network call that may outlast any number of frames.
-     */
-    private final Executor offload;
-    /** {@link #offload}, carrying each task's submitter's cause to the lane's thread: what {@link #offload()} hands out. */
-    private final Executor offloadCarrying;
-    /**
-     * The lanes this {@code Gui} built because nobody handed it one, and the only ones {@link #close} may shut
-     * down. Empty when both were supplied, which is deliberate: a lane its embedder owns outlives the tree
-     * presented on it, so closing one window must not take the application's threads with it.
-     */
-    private final List<ExecutorService> ownedLanes = new ArrayList<>(2);
-    /** Set by {@link #close}; a lane rejecting after it is a stopped lane, whatever kind of executor it is. */
+    /** Set by {@link #close}. */
     private volatile boolean closed;
 
     /** Create a GUI on its own private Atchung bus. */
@@ -326,45 +319,6 @@ public final class Gui implements AutoCloseable {
      * would have to be per instance rather than per class — and it is not this constructor.
      */
     public Gui(Atchung bus) {
-        this(bus, null, null);
-    }
-
-    /**
-     * Create a GUI on a shared bus with an explicit executor for input handlers (clicks, keys, chars, drags,
-     * state). Pass a same-thread executor ({@code Runnable::run}) for a <b>deterministic, headless</b> GUI —
-     * input published on the bus is handled synchronously inside {@link #frame}, so a test (or any embedder) has
-     * exact control over what fires and when, with no worker-thread races. {@code null} uses the default handler
-     * lane (handlers run off the GUI thread), which is what a live application wants.
-     *
-     * <p>Leaves the offload lane to this class, so {@link #async} still lands on a pool of this {@code Gui}'s
-     * own. An embedder that means to own the application's threads wants
-     * {@link #Gui(Atchung, Executor, Executor)} instead — passing a handler executor alone redirects handlers
-     * and leaves the pool, which is not the same thing.
-     */
-    public Gui(Atchung bus, java.util.concurrent.Executor handlerExecutor) {
-        this(bus, handlerExecutor, null);
-    }
-
-    /**
-     * Create a GUI on a shared bus with both lanes supplied — the constructor for an embedder that owns the
-     * application's threads rather than inheriting one set per tree.
-     *
-     * <p><b>The two lanes are not interchangeable.</b> {@code handlerExecutor} runs input handlers: clicks,
-     * keys, chars, drags and state, each followed by a wake. {@code offloadExecutor} is where {@link #async}
-     * puts work that is genuinely unbounded — file I/O, network, image decode — which is a different lane
-     * because it has different rules, not because two pools are tidier than one. Putting a blocking read on the
-     * handler lane is how click dispatch ends up waiting behind a wedged network mount.
-     *
-     * <p>Either may be {@code null}, and {@code null} means <em>this class builds that one and closes it</em>.
-     * A lane that was passed in is never shut down by {@link #close}: its lifetime is the embedder's, and a
-     * second window closing must not take the first one's threads with it.
-     *
-     * @param handlerExecutor the lane input handlers run on, or {@code null} for one of this {@code Gui}'s own
-     * @param offloadExecutor the lane {@link #async} submits to, or {@code null} for one of this {@code Gui}'s
-     *                        own
-     */
-    public Gui(Atchung bus, java.util.concurrent.Executor handlerExecutor,
-               java.util.concurrent.Executor offloadExecutor) {
         this.bus = bus;
         this.pump = bus.pump();
         // One inbox for every widget, so commands to two widgets are applied in the order they were sent.
@@ -422,45 +376,24 @@ public final class Gui implements AutoCloseable {
             }
         }, bus, this::wake);
         this.navSub = pump.subscribe(NavTopics.GO, navigator::accept, MUTATION_MAILBOX, Backpressure.BLOCK);
-        // Framework input dispatch on the same bus; click handlers run on the worker executor (off the GUI thread).
-        // Wheel scrolling mutates scroll offsets on the GUI thread and asks for a relayout next frame.
-        // Every handler is followed by a wake, whatever it did.
+        // Framework input dispatch on the same bus. Every handler runs here, on the GUI thread, during dispatch, and
+        // is followed by a wake, whatever it did.
         //
-        // Mutating a node wakes the loop already, because the publish does it. But a handler is ordinary
-        // application code and its effect is very often *neither* a mutation nor a clock operation: it
-        // drops a request on one of the application's own queues — a history to restore, a file to open,
-        // a preview to render — each drained once per frame from the host's beforeFrame hook. Nothing
-        // about that is visible from here, and to a loop that parks it does not exist: the handler runs,
-        // the queue fills, no frame is asked for, and the request is executed on whatever frame some
-        // unrelated event eventually causes. The tell is that the *effect* is what arrives late, so an
-        // animation the handler queued starts from the beginning whenever the frame finally comes,
-        // rather than being found already in progress.
-        //
-        // So the wake is hung on the one thing every such path has in common: a handler ran. Waking after
-        // it finishes covers all of them, including the ones an application has not written yet, and
-        // costs one frame per input event that finds nothing left to do.
-        Executor base = handlerExecutor != null ? handlerExecutor : own(handlerLane());
-        this.offload = offloadExecutor != null ? offloadExecutor : own(offloadLane());
-        this.offloadCarrying = Cause.carrying(offload);
-        // Owed from submission to return, and the wake comes before the payment: a handler is still the frame's
-        // work while it runs, and a settle that cannot see it answers before the click has done anything (Owed).
-        // Run in the cause it was submitted in, the click's or the key's, so what the handler does is charged to
-        // the input that asked for it (atchung's docs/correlation.md).
+        // Mutating a node wakes the loop already, because the publish does it. But a handler's effect is not always
+        // a mutation: it may publish a message, or start a motion, and to a loop that parks, an effect nothing asked
+        // a frame for does not exist until some unrelated event causes one. So the wake is hung on the one thing every
+        // such path has in common, a handler ran, at the cost of one frame per input event that finds nothing to do.
+        // Owed from start to return, and the wake comes before the payment: a handler is the frame's work while it
+        // runs, and a settle that cannot see it answers before the click has done anything (Owed). Run in the cause
+        // it was given in, the click's or the key's, so what it does is charged to the input that asked for it
+        // (atchung's docs/correlation.md).
         this.handlers = task -> {
             owed.oweHandler();
-            Runnable carried = Cause.carry(task);
             try {
-                base.execute(() -> {
-                    try {
-                        carried.run();
-                    } finally {
-                        wake("handler returned");
-                        owed.payHandler();
-                    }
-                });
-            } catch (RejectedExecutionException e) {
+                Cause.carry(task).run();
+            } finally {
+                wake("handler returned");
                 owed.payHandler();
-                dropIfStopped(base, e, "Gui.handlers/stopped", "an input handler or change notification");
             }
         };
         // Dirtying layout is a change like any other, and it is the one that publishes no Mutation: a
@@ -1898,127 +1831,9 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
-     * Threads on the default offload lane. Bounded, because a pool that answers a full queue by growing has
-     * chosen the one policy the rest of this stack refuses. This was a {@code newCachedThreadPool}, which
-     * answers a wedged filesystem mount by making one more thread per blocked call — so the lane that exists to
-     * absorb a stall was the thing that multiplied it.
-     *
-     * <p>Bounded in <em>threads</em>, not in queue. A full lane makes work wait behind the work already on it,
-     * which is backpressure; a bounded queue would make it fail instead, and a caller of {@link #async} has
-     * nowhere to put a rejection. Choosing loss is a decision taken per channel, by whoever knows what the
-     * channel carries, and it is not this pool's to take on their behalf.
-     */
-    private static final int OFFLOAD_THREADS = Math.max(4, Runtime.getRuntime().availableProcessors());
-
-    /**
-     * The handler lane's default: unbounded in threads, as it has always been.
-     *
-     * <p>Deliberately <em>not</em> bounded yet. While {@link #async} is merely the documented place for blocking
-     * work rather than the only one, a handler that blocks — {@code text-editor-vexel-demo} reads and writes
-     * files straight from one — would fill a bounded handler lane and stop click dispatch dead. Bounding this
-     * one is a change that arrives after the blocking handlers move, not before it.
-     */
-    private static ExecutorService handlerLane() {
-        return Executors.newCachedThreadPool(named("vexelray-gui-handler"));
-    }
-
-    /** The offload lane's default — {@link #OFFLOAD_THREADS} is why it is bounded, and in what. */
-    private static ExecutorService offloadLane() {
-        ThreadPoolExecutor pool = new ThreadPoolExecutor(OFFLOAD_THREADS, OFFLOAD_THREADS, 30L, TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(), named("vexelray-gui-offload"));
-        // An idle application should not sit on threads it is not using, and letting the core time out makes the
-        // bound a ceiling rather than a floor.
-        pool.allowCoreThreadTimeOut(true);
-        return pool;
-    }
-
-    /**
-     * Daemon platform threads, named for their lane — never virtual ones, and that is measured rather than
-     * stylistic. An application following Kronometer's advice sets
-     * {@code -Djdk.virtualThreadScheduler.parallelism=1}, worth 3x on the baton handoff. That is a global JVM
-     * property with no per-thread override in JDK 25, so a virtual lane would land on the one carrier the baton
-     * needs and deadlock against the serialization that makes it fast, rather than merely running slowly. The
-     * flag is the application's to set and correctness may not depend on it, so the default here has to be the
-     * one that is still right when it <em>is</em> set.
-     */
-    private static ThreadFactory named(String lane) {
-        AtomicInteger n = new AtomicInteger();
-        return r -> {
-            Thread t = new Thread(r, lane + "-" + n.incrementAndGet());
-            t.setDaemon(true);
-            return t;
-        };
-    }
-
-    /** Record {@code lane} as this {@code Gui}'s own to shut down, and return it. See {@link #ownedLanes}. */
-    private ExecutorService own(ExecutorService lane) {
-        ownedLanes.add(lane);
-        return lane;
-    }
-
-    /**
-     * Run {@code work} on the offload lane — file I/O, network, a decode: work that may outlast a frame, and
-     * which is on a different lane from input handlers for that reason.
-     *
-     * <p>What lands there must not touch the tree or the timeline in place. A result comes back by publishing
-     * on a topic, or through a node mutation, which is the same door a worker building UI already uses.
-     */
-    public void async(Runnable work) {
-        try {
-            offload.execute(Cause.carry(work));
-        } catch (RejectedExecutionException e) {
-            dropIfStopped(offload, e, "Gui.async/stopped", "offloaded work");
-        }
-    }
-
-    /**
-     * Answer a lane's rejection: dropped when the lane has been shut down, rethrown when it has not.
-     *
-     * <p>Work arriving at a stopped lane is not the caller's mistake, it is shutdown's ordinary race. Offloaded
-     * work outlives frames by design, so a highlight or a file read in flight when the application quits
-     * finishes after the handler lane has stopped, and what it hands on — a widget's change notification, a
-     * follow-up {@code async} — has nowhere to go. The caller cannot see the shutdown coming and has nowhere to
-     * put the exception, so it surfaced as an uncaught error on an offload thread in any teardown that caught a
-     * task mid-flight. The work was for a tree that is going away, and dropping it is the trade {@link #close}
-     * (or whoever owns the lane) already made by stopping the lane at all.
-     *
-     * <p>A lane counts as stopped when it is an {@link ExecutorService} that has been shut down, or when this
-     * {@code Gui} has been {@linkplain #close closed}. The second is the signal this {@code Gui} controls itself,
-     * and the only one it can see through an embedder's lane that forwards to a pool ({@code r -> pool.execute(r)},
-     * a toolkit's executor): that lane rejects after its pool stops exactly as a refusing one does, and is not an
-     * {@code ExecutorService} to ask.
-     *
-     * <p>Only a <em>stopped</em> lane is answered this way. A lane that rejects while running — a bounded queue an
-     * embedder chose — has made a decision about loss that belongs to whoever chose it, and it still throws.
-     *
-     * <p>A drop is reported through {@link Diagnostics}, once per lane. The race is ordinary, but the same drop is
-     * also what a real lifecycle bug looks like — a timer still calling {@code async} after {@code close} — and
-     * that used to surface as an exception pointing at the leak. Once per key keeps a teardown from repeating in
-     * the log while still leaving a line, and a record a test can assert on.
-     */
-    private void dropIfStopped(Executor lane, RejectedExecutionException e, String key, String what) {
-        boolean shut = lane instanceof ExecutorService s && s.isShutdown();
-        if (closed || shut) {
-            Diagnostics.dropped(key, what + " reached a stopped lane and was dropped",
-                    closed ? "its Gui was closed" : "the lane was shut down before the work arrived");
-            return;
-        }
-        throw e;
-    }
-
-    /**
-     * The lane {@link #async} submits to, exposed so a widget that does its own blocking work puts it in the
-     * same place rather than on the handler lane beside click dispatch. Work submitted to it runs in its submitter's
-     * cause, as {@link #async} does.
-     */
-    public Executor offload() {
-        return offloadCarrying;
-    }
-
-    /**
-     * The executor application handlers run on — the same lane clicks, keys and drags are delivered through, so a
-     * widget dispatching its own app-facing callbacks here gives them identical semantics (and identical
-     * determinism under a test harness that injected a same-thread executor).
+     * Runs a task as an input handler runs: here, on the GUI thread, then wakes the loop. <b>Transitional, for 0.2's
+     * phase 3:</b> it is what a widget's remaining callbacks are still delivered through while they become messages,
+     * and it goes when the last one does (vexelray-framework's {@code docs/threading.md}, T7.2).
      */
     public Executor handlers() {
         return handlers;
@@ -2561,16 +2376,9 @@ public final class Gui implements AutoCloseable {
 
     @Override
     public void close() {
-        // First, so a rejection from a lane stopped by what follows (or by its owner, concurrently) reads as the
-        // teardown it is. See dropIfStopped.
         closed = true;
         input.close();
         mutationSub.close();
         navSub.close();
-        // Only what this Gui built. A lane handed in belongs to whoever handed it over, and shutting one of
-        // those down here is how closing a dialog takes the application's threads with it.
-        for (ExecutorService lane : ownedLanes) {
-            lane.shutdownNow();
-        }
     }
 }

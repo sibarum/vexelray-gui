@@ -57,7 +57,7 @@ class RethemeTest {
 
     @Test
     void aRoleWrittenBeforeTheSwapIsDrawnInTheThemeAfterIt() {
-        try (Gui gui = new Gui(Atchung.create(), SAME_THREAD)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Node n = gui.box().width(Length.dp(40)).height(Length.dp(20))
                     .background(Role.PANEL).border(Length.dp(1), Role.LINE).lit(Finish.LIT);
             gui.root().children(n);
@@ -77,7 +77,7 @@ class RethemeTest {
 
     @Test
     void aStateIsShadedByTheThemeThatDrawsIt() {
-        try (Gui gui = new Gui(Atchung.create(), SAME_THREAD)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Node n = gui.box().width(Length.dp(40)).height(Length.dp(20))
                     .background(Role.ACTION.at(InteractionState.HOVER));
             gui.root().children(n);
@@ -90,7 +90,7 @@ class RethemeTest {
 
     @Test
     void theSwapIsReportedAsTheColourChangesItMakes() {
-        try (Gui gui = new Gui(Atchung.create(), SAME_THREAD)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Recording paint = new Recording();
             gui.paintMotion(paint);
             Node themed = gui.text("x").width(Length.dp(40)).height(Length.dp(20)).background(Role.PANEL);
@@ -117,7 +117,7 @@ class RethemeTest {
 
     @Test
     void writingTheSamePaintAgainChangesNothing() {
-        try (Gui gui = new Gui(Atchung.create(), SAME_THREAD)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Node n = gui.box().width(Length.dp(40)).height(Length.dp(20)).background(Role.ACTION.at(InteractionState.HOVER));
             gui.root().children(n);
             gui.frame(400f, 300f, RethemeTest::noText);

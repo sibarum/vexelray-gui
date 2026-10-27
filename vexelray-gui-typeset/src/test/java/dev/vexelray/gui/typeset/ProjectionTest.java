@@ -226,7 +226,7 @@ class ProjectionTest {
         static final float H = 600f;
 
         final Atchung bus = Atchung.create();
-        final Gui gui = new Gui(bus, Runnable::run);
+        final Gui gui = new Gui(bus);
         private final List<TypesetBlock> blocks = new ArrayList<>();
 
         TypesetBlock show(Box content) {

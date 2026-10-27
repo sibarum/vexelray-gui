@@ -330,13 +330,13 @@ public final class Modals implements AutoCloseable {
     }
 
     /**
-     * Run a chosen button's action, off the GUI thread like every other application callback here — and after
-     * the dialog's close has been asked for, so an action that puts up the next dialog does not race its own
-     * window's teardown.
+     * Run a chosen button's action as an input handler runs, on the GUI thread, after the dialog's close has been
+     * asked for, so an action that puts up the next dialog does not race its own window's teardown. Transitional:
+     * a dialog's buttons become messages later in 0.2's phase 3.
      */
     private void run(Modal.Button chosen) {
         if (chosen != null) {
-            gui.async(chosen.action());
+            gui.handlers().execute(chosen.action());
         }
     }
 

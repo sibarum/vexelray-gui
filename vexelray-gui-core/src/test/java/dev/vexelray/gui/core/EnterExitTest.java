@@ -89,7 +89,7 @@ class EnterExitTest {
     }
 
     private static Gui withScripted(Scripted s) {
-        Gui gui = new Gui(Atchung.create(), Runnable::run);
+        Gui gui = new Gui(Atchung.create());
         gui.enterMotion(s).exitMotion(s);
         return gui;
     }
@@ -236,7 +236,7 @@ class EnterExitTest {
 
     @Test
     void anArrivalWithNoEnterMotionWalksNothing() {
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             gui.exitMotion(new Scripted());   // an exit motion alone does not make an arrival owe a walk
             Node list = gui.column();
             gui.root().children(list.children(row(gui)));
@@ -271,7 +271,7 @@ class EnterExitTest {
     @Test
     void aReturningNodeIsPresentedEvenWithNoEnterMotion() {
         Scripted s = new Scripted();
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             gui.exitMotion(s);
             Node list = gui.column();
             Node a = row(gui);
@@ -293,7 +293,7 @@ class EnterExitTest {
 
     @Test
     void withNoSourcesARemovalIsImmediateAndEveryNodeIsFullyPresent() {
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Node list = gui.column();
             Node a = row(gui);
             gui.root().children(list);

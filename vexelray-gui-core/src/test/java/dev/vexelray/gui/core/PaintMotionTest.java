@@ -52,7 +52,7 @@ class PaintMotionTest {
 
     @Test
     void aColourChangedIsReportedAndAFirstColourIsNot() {
-        try (Gui gui = new Gui(Atchung.create(), SAME_THREAD)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Recording paint = new Recording();
             gui.paintMotion(paint);
             Node n = gui.text("x").width(Length.dp(40)).height(Length.dp(20));
@@ -74,7 +74,7 @@ class PaintMotionTest {
 
     @Test
     void aMotionInProgressAsksForTheNextFrame() {
-        try (Gui gui = new Gui(Atchung.create(), SAME_THREAD)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Recording paint = new Recording();
             gui.paintMotion(paint);
             gui.frame(400f, 300f, PaintMotionTest::noText);
@@ -89,7 +89,7 @@ class PaintMotionTest {
     /** A node whose colour is data is repainted at once, so a pooled marker never shows its last owner's colour. */
     @Test
     void aNodeWhoseColoursAreDataIsNotReported() {
-        try (Gui gui = new Gui(Atchung.create(), SAME_THREAD)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Recording paint = new Recording();
             gui.paintMotion(paint);
             Node n = gui.text("x").width(Length.dp(40)).height(Length.dp(20)).paintCuts(true);

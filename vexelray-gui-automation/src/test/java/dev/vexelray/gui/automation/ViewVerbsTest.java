@@ -125,7 +125,7 @@ class ViewVerbsTest {
     }
 
     private static Gui deterministic() {
-        return new Gui(sibarum.atchung.Atchung.create(), Runnable::run);
+        return new Gui(sibarum.atchung.Atchung.create());
     }
 
     /** Runs {@code work} on a driver thread while this one lays out frames, as a real loop would. */

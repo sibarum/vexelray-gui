@@ -72,7 +72,7 @@ class DisplaceWalkTest {
     @Test
     void aStillTreeWithAQuietSourceWalksNothing() {
         Scripted s = new Scripted();
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             gui.motion(s);
             gui.root().children(gui.column().children(row(gui), row(gui)));
             frame(gui);
@@ -87,7 +87,7 @@ class DisplaceWalkTest {
     @Test
     void anActiveSourceIsWalkedAndTheFrameAfterItWritesTheRestBack() {
         Scripted s = new Scripted();
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             gui.motion(s);
             Node a = row(gui);
             gui.root().children(gui.column().children(a));
@@ -113,7 +113,7 @@ class DisplaceWalkTest {
     @Test
     void aMoveIsReportedWhileTheWalkIsSkipped() {
         Scripted s = new Scripted();
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             gui.motion(s);
             Node a = row(gui);
             Node b = row(gui);
@@ -134,7 +134,7 @@ class DisplaceWalkTest {
     @Test
     void aResizeMovesNothing() {
         Scripted s = new Scripted();
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             gui.motion(s);
             Node half = gui.box().width(Length.percent(50)).height(Length.dp(20));
             Node after = row(gui);
@@ -166,7 +166,7 @@ class DisplaceWalkTest {
                 return 0f;
             }
         };
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             gui.motion(silent);
             gui.root().children(row(gui));
             frame(gui);

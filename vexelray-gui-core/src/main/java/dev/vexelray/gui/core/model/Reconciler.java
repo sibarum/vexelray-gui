@@ -510,6 +510,16 @@ public final class Reconciler implements Mutation.Sink {
         }
     }
 
+    /** Whether {@code n} and everything above it are visible: whether it is on screen to be seen at all. */
+    private static boolean shown(RetainedNode n) {
+        for (RetainedNode a = n; a != null; a = a.parent) {
+            if (!a.visible()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     @Override
     public void remove(long id) {
         RetainedNode n = index.get(id);
@@ -518,8 +528,10 @@ public final class Reconciler implements Mutation.Sink {
             // place, drawn leaving, until the frame detaches it (depart). A second remove of a leaving node is "now".
             // A child of a container that owns its children's motion is not offered (PropKey.OWN_CHILD_MOTION). Nor
             // is a node already faded to nothing by the application's own hand: it has gone, and holding its place for one more
-            // fade is a dead pause before its neighbours close up (the Scheduler's Motion.leave, under Presence).
-            if (!n.leaving && n.parent != null && n.layoutCtx != null && n.visible() && !n.parent.ownsChildMotion()
+            // fade is a dead pause before its neighbours close up (the Scheduler's Motion.leave, under Presence). Nor is
+            // one inside something hidden: nobody sees it go, and a panel rebuilt while hidden (a context menu between
+            // openings) would otherwise show its last contents fading out, lifted at a stale place, over the new.
+            if (!n.leaving && n.parent != null && n.layoutCtx != null && shown(n) && !n.parent.ownsChildMotion()
                     && n.opacity() > 0f && exits.leave(n)) {
                 n.leaving = true;
                 beganLeaving.add(n);

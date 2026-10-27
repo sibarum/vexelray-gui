@@ -98,10 +98,10 @@
              supirvast.version: this pin is in dependencyManagement, so it wins over the transitive one here. -->
         <supirvast.version>0.2.3-SNAPSHOT</supirvast.version>
         <!-- Atchung: the message bus the model + threading are built on (core to -core). -->
-        <atchung.version>1.3-SNAPSHOT</atchung.version>
+        <atchung.version>1.4-SNAPSHOT</atchung.version>
         <!-- elektro-Q and intrabuf: the Inspector link's wire (vexelray-gui-inspector-link only). elektro-Q lives in
              the atchung checkout, under elektroq/. -->
-        <elektroq.version>1.3-SNAPSHOT</elektroq.version>
+        <elektroq.version>1.4-SNAPSHOT</elektroq.version>
         <intrabuf.version>0.1.3-SNAPSHOT</intrabuf.version>
         <!-- Tactroller: keyboard/mouse/pointer/clipboard input, delivered as Atchung traffic. Enters at
              the application edge (the demo), not in -core. -->
@@ -128,7 +128,7 @@
             <dependency>
                 <groupId>sibarum.atchung</groupId>
                 <artifactId>atchung-probe</artifactId>
-                <version>1.3-SNAPSHOT</version>
+                <version>${atchung.version}</version>
             </dependency>
             <!-- Reactor-internal modules: children reference these without a version. -->
             <dependency>

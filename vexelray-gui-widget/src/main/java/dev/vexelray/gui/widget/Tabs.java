@@ -1,5 +1,7 @@
 package dev.vexelray.gui.widget;
 
+import sibarum.atchung.Topic;
+import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
@@ -36,8 +38,42 @@ import java.util.function.IntConsumer;
  * pointer cursor by inference (§8.3); they are focusable, so Tab reaches them; and each claims Left/Right at
  * {@link ClaimScope#FOCUSED} while it holds focus, so the arrow keys walk the bar without core knowing what a tab
  * is. Nothing here reaches past a {@link Node} handle.
+ *
+ * <p>What changes is a message carrying the panel's {@link #address() address}: the tab selected on {@link #SELECTED}
+ * and a tab removed on {@link #REMOVED} (vexelray-framework's {@code docs/threading.md}, T3.8).
  */
 public final class Tabs {
+
+    /** The tab selected, including the first. The last in a frame. */
+    public static final Topic<Selected> SELECTED =
+            Topic.state("vexelray.gui.tabs.selected", Selected.class, Selected::tabs);
+
+    /**
+     * A tab removed, whoever removed it — the application's own {@link #remove} call, or the <b>Close</b> item the bar
+     * puts on every header's context menu without being asked. That second source is the reason it exists: an
+     * application that keeps anything alongside the bar (a parallel list of documents) is otherwise never told, and
+     * every index it computes afterwards points a tab off. Every one, in order.
+     *
+     * <p>The index is the tab's when it was removed. Tabs are only ever appended, so a view that drops its own entry
+     * for each of these in the order they arrive, and adds one for each tab it adds, stays in step with the bar.
+     */
+    public static final Topic<Removed> REMOVED = Topic.edge("vexelray.gui.tabs.removed", Removed.class);
+
+    /** The panel at {@code tabs} now shows tab {@code index}. */
+    public record Selected(String tabs, int index) implements Addressed {
+        @Override
+        public Object address() {
+            return tabs;
+        }
+    }
+
+    /** Tab {@code index} of the panel at {@code tabs} was removed. */
+    public record Removed(String tabs, int index) implements Addressed {
+        @Override
+        public Object address() {
+            return tabs;
+        }
+    }
 
     private final Gui gui;
     private final Node root;
@@ -60,8 +96,7 @@ public final class Tabs {
     private volatile int selected = -1;
     private volatile boolean closable = true;
     private volatile HeaderSkin skin = this::themeSkin;
-    private volatile IntConsumer onSelect = i -> { };
-    private volatile IntConsumer onRemove = i -> { };
+    private final WidgetName name;
     private volatile TabMenu contextMenu = (index, menu) -> { };
     private volatile TabTransition transition = TabTransition.NONE;
 
@@ -90,7 +125,7 @@ public final class Tabs {
      */
     @FunctionalInterface
     public interface TabMenu {
-        /** Add to the menu for tab {@code index}. Runs on a worker thread, at the moment of the click. */
+        /** Add to the menu for tab {@code index}. Runs on the GUI thread, at the moment of the click. */
         void build(int index, MenuSink menu);
     }
 
@@ -299,6 +334,7 @@ public final class Tabs {
                 // own motion fading a new page in as well made "no tab animation" still animate (MainFrame's setting).
                 .childMotion(false);
         this.root = gui.column().role("tabs").width(Length.FILL).height(Length.FILL).children(strip, pages);
+        this.name = new WidgetName(gui, "tabs", root);
     }
 
     /** The node to place in a layout. */
@@ -316,36 +352,15 @@ public final class Tabs {
         return headers.size();
     }
 
-    /** React to selection changes (including the first one). Runs on the handler executor. */
-    public Tabs onSelect(IntConsumer handler) {
-        this.onSelect = handler == null ? i -> { } : handler;
+    /** Call this panel {@code name} in its tree ("documents"): its {@link #address()} is the tree's name and this. */
+    public Tabs name(String name) {
+        this.name.name(name);
         return this;
     }
 
-    /**
-     * React to a tab being removed, whoever removed it — the application's own {@link #remove} call, or the
-     * <b>Close</b> item the bar puts on every header's context menu without being asked.
-     *
-     * <p>That second source is the reason this exists. {@link #remove} is an owner's operation: it releases the
-     * page's registrations but cannot close the widgets on it, and an application that keeps anything alongside
-     * the bar — a parallel list of documents, a map from tab to model — owns that too. Close reaches
-     * {@code remove} directly from a right click, so without this the owner is never told, its structure keeps a
-     * tab the bar has lost, and every index it computes afterwards points one or more tabs off. Nothing throws
-     * and nothing looks wrong; the panel simply starts acting on the wrong page.
-     *
-     * <p><b>Runs inline, not on the handler executor</b>, unlike {@link #onSelect}. A parallel structure has to
-     * shrink in the same instant the bar's does or there is a window where the two disagree, and that window is
-     * exactly the bug this is here to close. It runs after both internal lists have lost the tab and before the
-     * selection moves to a survivor, so the handler sees the panel already consistent, and any {@code onSelect}
-     * that follows is delivered against indices the owner has already agreed with.
-     *
-     * <p>The handler may add a tab (an editor that refuses to be left with none does exactly that): the panel is
-     * unselected at that moment, so {@link #add} selects what it adds and the reselection below finds nothing
-     * left to do. It must not call {@link #remove} again.
-     */
-    public Tabs onRemove(IntConsumer handler) {
-        this.onRemove = handler == null ? i -> { } : handler;
-        return this;
+    /** Where this panel is on the bus: what its messages carry. */
+    public String address() {
+        return name.address();
     }
 
     /**
@@ -382,7 +397,7 @@ public final class Tabs {
         });
         // The one thing every tab bar's menu has, and the same index-at-event-time rule as the handlers above:
         // Close aims at wherever this header sits when the item is chosen, not where it sat when it was built.
-        // It is also the only structural change an application does not itself call for, which is what onRemove
+        // It is also the only structural change an application does not itself call for, which is what REMOVED
         // is for -- an owner that keeps anything per tab hears about this one exactly as it hears about its own.
         gui.onContextMenu(header, menu -> {
             int at = headers.indexOf(header);
@@ -594,8 +609,7 @@ public final class Tabs {
             return this;
         }
         gui.batch(() -> change(next));
-        int delivered = next;
-        gui.handlers().execute(() -> onSelect.accept(delivered));
+        gui.bus().publish(SELECTED, new Selected(name.address(), next));
         return this;
     }
 
@@ -681,7 +695,7 @@ public final class Tabs {
      * page's widgets come back dead, not dormant — the caller closes them, it cannot re-home them. Selection
      * moves to the nearest surviving tab.
      *
-     * <p>{@link #onRemove} is told, whichever way the removal was asked for — including the header menu's own
+     * <p>{@link #REMOVED} is published, whichever way the removal was asked for — including the header menu's own
      * <b>Close</b>, which is a caller the application never wrote and so is the one it will otherwise miss.
      */
     public synchronized Tabs remove(int index) {
@@ -698,8 +712,8 @@ public final class Tabs {
         int previous = selected;
         selected = -1;   // force select() to restyle: surviving indices shifted under the old value
         // Here, and not a line later: whatever the owner keeps alongside the bar loses the tab at the same
-        // moment the bar does, so no index can be resolved against a pair of lists that disagree. See onRemove.
-        onRemove.accept(index);
+        // moment the bar does, so no index can be resolved against a pair of lists that disagree. See REMOVED.
+        gui.bus().publish(REMOVED, new Removed(name.address(), index));
         if (!headers.isEmpty()) {
             select(Math.min(previous > index ? previous - 1 : previous, headers.size() - 1));
         }

@@ -89,17 +89,16 @@ public final class UndoChapter implements Chapter {
         // The popup opens on a handler thread, a moment after the click that asked for it; a scene waits for
         // "(open)" before it presses the keys the popup claims, rather than racing it.
         gui.onResize(select.popupNode(), computed -> readOut.run());
-        // And the live preview, so a scene sees the cursor land before it presses Enter: both keys are claims, run
-        // on handler threads, and two of those are not ordered against each other.
-        select.selection().onChange(chosen -> readOut.run());
+        // And the live preview, so a scene sees the cursor land before it presses Enter.
+        gui.mailbox(Select.CHANGED, select.address(), m -> readOut.run());
 
-        toggle.onChange(v -> readOut.run());
-        slider.onChange(v -> readOut.run());
-        number.onChange(v -> readOut.run());
-        segment.onChange(v -> readOut.run());
-        select.onCommit(v -> readOut.run());
-        text.onChange(v -> readOut.run());
-        chip.onToggle(v -> readOut.run());
+        gui.mailbox(Toggle.CHANGED, toggle.address(), m -> readOut.run());
+        gui.mailbox(Slider.CHANGED, slider.address(), m -> readOut.run());
+        gui.mailbox(NumberField.CHANGED, number.address(), m -> readOut.run());
+        gui.mailbox(Segment.CHANGED, segment.address(), m -> readOut.run());
+        gui.mailbox(Select.COMMITTED, select.address(), m -> readOut.run());
+        gui.mailbox(TextField.CHANGED, text.address(), m -> readOut.run());
+        gui.mailbox(Button.TOGGLED, chip.address(), m -> readOut.run());
         history.status().onCommit(s -> {
             readOut.run();   // a command's change has no handler of its own to say so
             status.text(depths(s.value()) + "  ·  last: " + last);
@@ -108,12 +107,14 @@ public final class UndoChapter implements Chapter {
         // ---- the three refusals ----------------------------------------------------------------------------
 
         Toggle locked = new Toggle(gui, false).undoable(false);   // locking is not an edit
-        locked.onChange(on -> toggle.node().disabled(on));
+        gui.mailbox(Toggle.CHANGED, locked.address(), m -> toggle.node().disabled(m.on()));
         TextField scratch = new TextField(gui, "");
         scratch.node().width(Length.rem(12));
         Node scratchRow = gui.row().width(Length.FILL).gap(Ui.GAP).scroll(false, false).children(scratch.node());
-        Button remove = new Button(gui, "Remove the scratch field").onPress(scratch.node()::remove);
-        Button underneath = new Button(gui, "Set the number to 99 underneath").onPress(() -> {
+        Button remove = new Button(gui, "Remove the scratch field");
+        gui.mailbox(Button.PRESSED, remove.address(), p -> scratch.node().remove());
+        Button underneath = new Button(gui, "Set the number to 99 underneath");
+        gui.mailbox(Button.PRESSED, underneath.address(), p -> {
             number.show(99);   // a sync: the model changed, nobody edited the field
             readOut.run();
         });

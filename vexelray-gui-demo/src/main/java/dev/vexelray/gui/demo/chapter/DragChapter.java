@@ -129,7 +129,7 @@ public final class DragChapter implements Chapter {
         // behind a disk answers on a thread of its own (the Trees chapter). Subscribed before the tree is built,
         // because building it is what asks for the columns.
         gui.bus().subscribe(TreeView.CHILDREN_WANTED, wanted -> {
-            if (!wanted.tree().equals(BOARD)) {
+            if (!wanted.tree().equals(gui.address(BOARD))) {
                 return;
             }
             Task parent = (Task) wanted.parent();
@@ -140,7 +140,7 @@ public final class DragChapter implements Chapter {
                 // has children is what makes the last card out of a column the last card ever to go into it.
                 level.add(new TreeView.Entry(task, task.name, null, !task.kids.isEmpty(), true));
             }
-            gui.bus().publish(TreeView.CHILDREN, new TreeView.Children(BOARD, parent, level));
+            gui.bus().publish(TreeView.CHILDREN, new TreeView.Children(wanted.tree(), parent, level));
         });
         board = new TreeView<>(gui, BOARD);
         board.node().width(Length.FILL).height(Length.FILL);

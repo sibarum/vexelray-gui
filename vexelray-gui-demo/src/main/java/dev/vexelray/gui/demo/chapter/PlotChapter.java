@@ -106,7 +106,9 @@ public final class PlotChapter implements Chapter {
             }));
         }
 
-        Slider zoom = new Slider(gui, 0.35f).onChange(v -> {
+        Slider zoom = new Slider(gui, 0.35f);
+        gui.mailbox(Slider.CHANGED, zoom.address(), c -> {
+            double v = c.value();
             half.set(new double[]{MIN_HALF + v * (MAX_HALF - MIN_HALF)});
             redraw();
         });

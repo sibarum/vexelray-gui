@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import sibarum.atchung.Sender;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.WindowControls;
@@ -57,7 +58,7 @@ import java.util.function.Consumer;
  * closes. Nothing is dropped and nothing is stacked.
  *
  * <p><b>No class per question.</b> A dialog is a {@link Modal} value — title, message, buttons with actions —
- * so asking costs an expression, not a type. Actions run on the dialog's own handler executor after its window
+ * so asking costs an expression, not a type. Actions run after its window
  * has been asked to close, so an action may put up the next dialog immediately.
  *
  * <p>The dialog needs input to be clickable, which means the application must have supplied
@@ -225,6 +226,17 @@ public final class Modals implements AutoCloseable {
                 .severity(Modal.Severity.QUESTION)
                 .defaultButton(confirmLabel, onConfirm)
                 .cancelButton("Cancel", onCancel));
+    }
+
+    /**
+     * A yes/no question answered by message: {@code yes} is sent through {@code to} if the user takes the affirmative
+     * button, {@code no} if they take Cancel, press Escape, or close the dialog. The form for an application.
+     */
+    public static <T> void confirm(String title, String message, String confirmLabel, Sender<T> to, T yes, T no) {
+        show(Modal.of(title, message)
+                .severity(Modal.Severity.QUESTION)
+                .defaultButton(confirmLabel, to, yes)
+                .cancelButton("Cancel", to, no));
     }
 
     /** Show {@code modal} on this instance, or queue it. Callable from any thread. */

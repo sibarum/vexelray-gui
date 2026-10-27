@@ -1,5 +1,7 @@
 package dev.vexelray.gui.widget;
 
+import sibarum.atchung.Topic;
+import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.Length;
@@ -33,6 +35,22 @@ import java.util.function.DoubleConsumer;
  */
 public final class NumberField {
 
+    /**
+     * An agreed number — committed, stepped, or set acting as the user — carrying the field's {@link #address()
+     * address}. Never what the characters say mid-typing. The last in a frame (vexelray-framework's
+     * {@code docs/threading.md}, T3.8).
+     */
+    public static final Topic<Changed> CHANGED =
+            Topic.state("vexelray.gui.numberfield.changed", Changed.class, Changed::field);
+
+    /** The number field at {@code field} now holds {@code value}. */
+    public record Changed(String field, double value) implements Addressed {
+        @Override
+        public Object address() {
+            return field;
+        }
+    }
+
     private static final MathContext MC = new MathContext(17, RoundingMode.HALF_EVEN);
 
     private final TextField field;
@@ -42,6 +60,8 @@ public final class NumberField {
     private final Subscription focusSub;
     private volatile BigDecimal value;
     private volatile DoubleConsumer onChange = v -> { };
+    private final Gui gui;
+    private final WidgetName name;
     /** The way back from each agreed number, into the tree's history; arrow steps fold into one run. */
     private final ValueUndo<BigDecimal> undo;
 
@@ -57,6 +77,8 @@ public final class NumberField {
         this.max = max;
         this.value = clamp(BigDecimal.valueOf(initial));
         this.field = new TextField(gui, plain(this.value));
+        this.gui = gui;
+        this.name = new WidgetName(gui, "numberfield", field.node());
         field.node().width(Length.rem(4f)).align(
                 dev.vexelray.text.TextLayout.HAlign.RIGHT, dev.vexelray.text.TextLayout.VAlign.MIDDLE);
         field.onSubmit(s -> commit());
@@ -111,14 +133,25 @@ public final class NumberField {
         return value.doubleValue();
     }
 
-    /** Set the number programmatically; also notifies {@link #onChange}. */
+    /** Call this field {@code name} in its tree ("width"): its {@link #address()} is the tree's name and this. */
+    public NumberField name(String name) {
+        this.name.name(name);
+        return this;
+    }
+
+    /** Where this field is on the bus: what its {@link Changed} carries. */
+    public String address() {
+        return name.address();
+    }
+
+    /** Set the number programmatically, as the user would: publishes {@link #CHANGED}. */
     public NumberField value(double v) {
         edit(clamp(BigDecimal.valueOf(v)));
         return this;
     }
 
     /**
-     * Show a number the field did not take, <b>without</b> notifying {@link #onChange}.
+     * Show a number the field did not take, <b>without</b> publishing {@link #CHANGED}.
      *
      * <p>A sync is not an edit. Where a panel re-reads its model and writes what it finds back into its rows,
      * {@link #value(double)} tells the application the user just typed this — so it writes to the model, the
@@ -129,8 +162,12 @@ public final class NumberField {
         return this;
     }
 
-    /** React to agreed numbers only — on commit and on {@link #value(double)}. Runs on a worker thread. */
-    public NumberField onChange(DoubleConsumer handler) {
+    /**
+     * The widget library's hook on an agreed number, for a widget built from number fields (a colour picker): run as
+     * it is agreed, and as well as {@link #CHANGED} rather than instead. Package-private, because an application
+     * hears a field by its message.
+     */
+    NumberField onChange(DoubleConsumer handler) {
         this.onChange = handler == null ? v -> { } : handler;
         return this;
     }
@@ -164,6 +201,7 @@ public final class NumberField {
     private void put(BigDecimal v) {
         write(v);
         onChange.accept(v.doubleValue());
+        gui.bus().publish(CHANGED, new Changed(name.address(), v.doubleValue()));
     }
 
     /** Take the number and show it, telling nobody. */

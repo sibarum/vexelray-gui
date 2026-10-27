@@ -55,7 +55,7 @@ class SplitPaneTest {
             Mounted m = mount(h, SplitPane.Orientation.SIDE_BY_SIDE);
             Rect r = m.first().layout().rect();
             List<Float> ended = new ArrayList<>();
-            m.pane().onResize(ended::add);
+            h.gui.mailbox(SplitPane.RESIZED, m.pane().address(), e -> ended.add(e.dp()));
 
             drag(h, r.x() + r.w() + 2f, r.y() + 50f, 40f, 0f);
 

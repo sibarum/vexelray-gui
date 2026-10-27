@@ -125,7 +125,7 @@ public final class Shell {
             int index = i;
             gui.shortcut(digits[i], () -> select(index), Modifier.CONTROL);
         }
-        pages.onSelect(this::showChapter);
+        gui.mailbox(Tabs.SELECTED, pages.address(), selected -> showChapter(selected.index()));
         showChapter(0);
         // The zoom readout, live. Every length in this window resolves through zoom, so the status line saying
         // what it is is the one place the number itself appears.

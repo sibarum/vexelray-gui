@@ -121,6 +121,59 @@ public final class TreeView<T> implements AutoCloseable {
     /** A level, listed for the tree that asked: applied on the GUI thread, in the frame it arrives. */
     public static final Topic<Children> CHILDREN = Topic.edge("vexelray.gui.tree.children", Children.class);
 
+    /** The selection landing on an item, by a click or the keyboard. The last in a frame. */
+    public static final Topic<Selected> SELECTED =
+            Topic.state("vexelray.gui.tree.selected", Selected.class, Selected::tree);
+
+    /**
+     * A row clicked: after it is selected, and whether or not it already was. Not the disclosure, which opens and
+     * closes. {@link #SELECTED} cannot stand in for this: an arrow key lands the selection too, so a tree where a click
+     * <em>does</em> something (makes a folder the root, say) would do it at every step of a walk with the keyboard.
+     * Here the click is the command and the keys only move; Enter is {@link #ACTIVATED}. Every one, in order.
+     */
+    public static final Topic<Clicked> CLICKED = Topic.edge("vexelray.gui.tree.clicked", Clicked.class);
+
+    /** The selected item activated, by Enter. Every one, in order. */
+    public static final Topic<Activated> ACTIVATED = Topic.edge("vexelray.gui.tree.activated", Activated.class);
+
+    /**
+     * The row the pointer is on, or none when it leaves the rows altogether: for a tree whose rows are previewed before
+     * they are chosen. The last in a frame, so moving from one row to the next is heard as the next.
+     */
+    public static final Topic<Hovered> HOVERED = Topic.state("vexelray.gui.tree.hovered", Hovered.class, Hovered::tree);
+
+    /** The tree at {@code tree} has {@code item} selected. */
+    public record Selected(String tree, Object item) implements Addressed {
+        @Override
+        public Object address() {
+            return tree;
+        }
+    }
+
+    /** {@code item}'s row in the tree at {@code tree} was clicked. */
+    public record Clicked(String tree, Object item) implements Addressed {
+        @Override
+        public Object address() {
+            return tree;
+        }
+    }
+
+    /** {@code item} in the tree at {@code tree} was activated. */
+    public record Activated(String tree, Object item) implements Addressed {
+        @Override
+        public Object address() {
+            return tree;
+        }
+    }
+
+    /** The pointer is on {@code item}'s row in the tree at {@code tree}, or on none of its rows when null. */
+    public record Hovered(String tree, Object item) implements Addressed {
+        @Override
+        public Object address() {
+            return tree;
+        }
+    }
+
     /**
      * {@code tree} wants what is under {@code parent} — its roots when {@code parent} is null. Asked once per item, the
      * first time it is opened or a walk (expand-all, find, a reveal) has to go through it, and again for every level
@@ -243,7 +296,8 @@ public final class TreeView<T> implements AutoCloseable {
          * re-reads {@link #state} for every visible row immediately afterwards, so a change that touches other
          * rows — a cascade, a parent turning MIXED — shows without being announced separately.
          *
-         * <p>Runs on the handler executor, like every other handler here.
+         * <p>Runs on the GUI thread, in the dispatch: one of the function-valued seams owed with vexelray-framework's
+         * T7.2 walk.
          */
         void toggled(T item);
     }
@@ -264,9 +318,9 @@ public final class TreeView<T> implements AutoCloseable {
     }
 
     /**
-     * What an {@link Action} does: told which item it was invoked on, and which job it is running as. Runs on the
-     * handler executor, so it is free to touch a disk or a network — and to take long enough that consulting
-     * {@code job} matters.
+     * What an {@link Action} does: told which item it was invoked on, and which job it is running as. Runs on the GUI
+     * thread when the item is chosen, so it must not block; work that does belongs to the application's logic, sent
+     * a message from here. One of the function-valued seams owed with vexelray-framework's T7.2 walk.
      */
     @FunctionalInterface
     public interface Command<T> {
@@ -285,7 +339,7 @@ public final class TreeView<T> implements AutoCloseable {
      * greyed line would be furniture that never lights up.
      *
      * <p>Built and tuned before the tree is shown; the predicates are asked at the moment of each right click, on
-     * a worker thread, and may read whatever application state they like.
+     * the GUI thread, so they must be cheap.
      */
     public static final class Action<T> {
 
@@ -548,7 +602,7 @@ public final class TreeView<T> implements AutoCloseable {
             // but never tear the state.
             gui.onClick(rowNode, () -> {
                 select(this, true);
-                onClick.accept(item);
+                gui.bus().publish(CLICKED, new Clicked(address, item));
             });
             // A context click selects first — the convention every explorer follows — and that is true whether or
             // not anything ends up on the menu, so it stays a click handler rather than a side effect of building
@@ -569,7 +623,7 @@ public final class TreeView<T> implements AutoCloseable {
                 if (canExpand) {
                     toggle(this);
                 } else {
-                    onClick.accept(item);
+                    gui.bus().publish(CLICKED, new Clicked(address, item));
                 }
             });
             gui.onState(rowNode, state -> {
@@ -654,9 +708,11 @@ public final class TreeView<T> implements AutoCloseable {
     }
 
     private final Gui gui;
-    /** What this tree is called on the bus: every {@link ChildrenWanted} it sends, and the reply's address. */
+    /** What this tree is called in its GUI ("files"). */
     private final String name;
-    /** The tree's mailbox for {@link #CHILDREN}, routed by {@link #name}. */
+    /** Where it is on the bus, the GUI's name and {@link #name}: what every message to or from it carries. */
+    private final String address;
+    /** The tree's mailbox for {@link #CHILDREN}, routed by {@link #address}. */
     private final Subscription childrenSub;
     private final Node root;
 
@@ -671,8 +727,8 @@ public final class TreeView<T> implements AutoCloseable {
     /** The Scroller and its bar. */
     private final Scrollbars scrolling;
 
-    /** All state below is guarded by {@code this}. The GUI-thread stages and the handler executor both mutate
-     *  it; the monitor makes their transitions atomic, and every callback leaves the monitor before dispatch. */
+    /** All state below is guarded by {@code this}. It is the GUI thread's in 0.2, and the monitor is what 0.1 needed
+     *  when a handler pool shared it; taking it out is a refactor owed with the widget library's T7.2 walk. */
     /** How expand and collapse are timed, or null for the instant flip. See {@link #motion}. */
     private volatile Ramp motion;
 
@@ -715,10 +771,10 @@ public final class TreeView<T> implements AutoCloseable {
     /** What the carried label last showed, and where: written only when it changes. Guarded by this. */
     private Object carriedAs;
 
-    private volatile Consumer<T> onSelect = t -> { };
-    private volatile Consumer<T> onActivate = t -> { };
-    private volatile Consumer<T> onClick = t -> { };
-    private volatile Consumer<T> onHover = t -> { };
+
+
+
+
     private volatile Role hoverFill = Role.PANEL;
     private volatile Role hoverInk = Role.INK;
     private volatile CursorShape rowCursor;
@@ -764,8 +820,8 @@ public final class TreeView<T> implements AutoCloseable {
     /**
      * Build a tree called {@code name} and ask for its roots. On the GUI thread, where every widget is built.
      *
-     * <p>The name is the tree's address: its {@link ChildrenWanted} carry it and its {@link Children} are routed by it,
-     * so it is unique among a GUI's trees and chosen by whoever builds the view ("files", "outline"). It is given here
+     * <p>The name, qualified by the GUI's, is the tree's {@link #address()}: every message to or from it carries that,
+     * so the name is unique among a GUI's trees and chosen by whoever builds the view ("files", "outline"). It is given here
      * rather than set afterwards because the roots are asked for here, and whoever answers has to know which tree is
      * asking. Items are compared by {@code equals}, and the items of a tree are its own type: what arrives in a
      * {@link Children} is taken to be a {@code T}.
@@ -775,7 +831,8 @@ public final class TreeView<T> implements AutoCloseable {
     public TreeView(Gui gui, String name) {
         this.gui = gui;
         this.name = java.util.Objects.requireNonNull(name, "name");
-        this.childrenSub = gui.mailbox(CHILDREN, name, this::listed);
+        this.address = gui.address(name);
+        this.childrenSub = gui.mailbox(CHILDREN, address, this::listed);
         ContextMenu.presentOn(gui);   // rows carry whatever menu the application declares; this shows it
         // Marked plus and minus, the set's own for "open everything under it" and "shut it": the row's chevron
         // opens one level, and these walk the whole subtree, so they are told apart from it on purpose. Enabled by
@@ -842,14 +899,19 @@ public final class TreeView<T> implements AutoCloseable {
         return root;
     }
 
-    /** What this tree is called on the bus: the {@code tree} of its {@link ChildrenWanted} and {@link Children}. */
+    /** What this tree is called in its GUI. */
     public String name() {
         return name;
     }
 
+    /** Where this tree is on the bus ({@code "main.files"}): the {@code tree} of every message to or from it. */
+    public String address() {
+        return address;
+    }
+
     /** Ask for what is under {@code parent}, or for the roots when it is null. */
     private void ask(T parent) {
-        gui.bus().publish(CHILDREN_WANTED, new ChildrenWanted(name, parent));
+        gui.bus().publish(CHILDREN_WANTED, new ChildrenWanted(address, parent));
     }
 
     /**
@@ -1485,38 +1547,6 @@ public final class TreeView<T> implements AutoCloseable {
         return selected == null ? null : selected.item;
     }
 
-    /** React to the selection landing on an item (click or keyboard). Runs on the handler executor. */
-    public TreeView<T> onSelect(Consumer<T> handler) {
-        this.onSelect = handler == null ? t -> { } : handler;
-        return this;
-    }
-
-    /**
-     * React to a row being clicked: after it is selected, and whether or not it already was. Not the disclosure,
-     * which opens and closes. Runs on the handler executor.
-     *
-     * <p>{@link #onSelect} cannot stand in for this. It is the selection landing, and an arrow key lands it too, so
-     * a tree where a click <em>does</em> something (makes a folder the root, say) would do it at every step of a
-     * walk with the keyboard. Here the click is the command and the keys only move; Enter is {@link #onActivate}.
-     */
-    public TreeView<T> onClick(Consumer<T> handler) {
-        this.onClick = handler == null ? t -> { } : handler;
-        return this;
-    }
-
-    /**
-     * React to the pointer coming onto a row ({@code item}) and leaving the rows altogether ({@code null}). Moving
-     * from one row to the next reports the next one; a null between them is dropped when the next row has already
-     * said so by the time it would go out. Runs on the handler executor.
-     *
-     * <p>For a tree whose rows are previewed before they are chosen: what is under the pointer is what a click
-     * would act on, so showing it there makes the click's consequence visible before it is made.
-     */
-    public TreeView<T> onHover(Consumer<T> handler) {
-        this.onHover = handler == null ? t -> { } : handler;
-        return this;
-    }
-
     /**
      * The fill and ink of a row under the pointer, where they are {@code PANEL} and {@code INK} by default: a quiet
      * hover suits a tree whose click is cheap, and a tree whose click changes a great deal wants a loud one.
@@ -1533,18 +1563,12 @@ public final class TreeView<T> implements AutoCloseable {
         return this;
     }
 
-    /** React to an item being activated (Enter). Runs on the handler executor. */
-    public TreeView<T> onActivate(Consumer<T> handler) {
-        this.onActivate = handler == null ? t -> { } : handler;
-        return this;
-    }
-
     /**
      * Give every row a context menu. The row is selected first — the menu that opens is about the row under the
      * pointer, so that row must visibly become the subject — and then this is asked what should be on it, with the
      * item in hand. That is the context a tree can add that the framework cannot: which <em>thing</em> was clicked.
      *
-     * <p>Runs on a worker thread at the moment of the click. Contributing nothing still leaves the tree's own
+     * <p>Runs on the GUI thread at the moment of the click. Contributing nothing still leaves the tree's own
      * items on the menu; what this adds lands after them.
      *
      * <p>This is the free-form door — anything a {@link MenuSink} can express, decided at click time. An
@@ -1818,8 +1842,7 @@ public final class TreeView<T> implements AutoCloseable {
             }
             item = selected.item;
         }
-        Consumer<T> handler = onActivate;
-        gui.handlers().execute(() -> handler.accept(item));
+        gui.bus().publish(ACTIVATED, new Activated(address, item));
     }
 
     /**
@@ -2467,8 +2490,7 @@ public final class TreeView<T> implements AutoCloseable {
         // view would align the top of a folder's contents rather than the folder.
         row.rowNode.scrollIntoView();
         if (notify) {
-            Consumer<T> handler = onSelect;
-            gui.handlers().execute(() -> handler.accept(item));
+            gui.bus().publish(SELECTED, new Selected(address, item));
         }
     }
 
@@ -2514,8 +2536,7 @@ public final class TreeView<T> implements AutoCloseable {
         open(row, row.expanded ? 1f : 0f);
         refreshVisible();
         if (!row.expanded && selected != null && isUnder(selected, row)) {
-            Row landed = row;
-            gui.handlers().execute(() -> select(landed, true));
+            select(row, true);
         }
     }
 
@@ -2777,8 +2798,9 @@ public final class TreeView<T> implements AutoCloseable {
 
     /**
      * Track which row the pointer is on and report changes. The leave of one row and the enter of the next can
-     * arrive in either order, so a leave only clears the row that is still the hovered one, and the null goes out
-     * after a beat in which the next enter may land: off the rows altogether is the one null anyone hears.
+     * arrive in either order, so a leave only clears the row that is still the hovered one; and {@link #HOVERED} is
+     * state, so a leave and the next enter in one frame are heard as the enter: off the rows altogether is the one
+     * null anyone hears.
      */
     private void hovered(Row row, boolean over) {
         synchronized (this) {
@@ -2794,17 +2816,6 @@ public final class TreeView<T> implements AutoCloseable {
                 hoveredRow = null;
             }
         }
-        if (over) {
-            onHover.accept(row.item);
-            return;
-        }
-        gui.handlers().execute(() -> {
-            synchronized (this) {
-                if (hoveredRow != null) {
-                    return;   // the pointer went straight onto another row, which has said so
-                }
-            }
-            onHover.accept(null);
-        });
+        gui.bus().publish(HOVERED, new Hovered(address, over ? row.item : null));
     }
 }

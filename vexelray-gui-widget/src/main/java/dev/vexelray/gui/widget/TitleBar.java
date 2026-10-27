@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import sibarum.atchung.Sender;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.CaptionGrid;
 import dev.vexelray.gui.core.Gui;
@@ -406,12 +407,25 @@ public final class TitleBar {
      * still drags.
      *
      * <p>Replacing rather than accumulating, like {@link #instruments}, and any time, before the mark or after.
+     *
+     * <p>The {@code Runnable} is the host's form (the framework opening About); an application's is
+     * {@link #onMark(String, Sender, Object)}. Moving this one out of an application's reach is owed with T7.2's walk.
      */
     public TitleBar onMark(String tooltip, Runnable action) {
         this.markTip = tooltip;
         this.markAction = action;
         markRegion();
         return this;
+    }
+
+    /**
+     * Have a click on the mark send {@code message} through {@code to}, saying {@code tooltip} under the pointer: the
+     * form for an application, as a menu item's is (vexelray-framework's {@code docs/threading.md}, T7.5).
+     */
+    public <T> TitleBar onMark(String tooltip, Sender<T> to, T message) {
+        java.util.Objects.requireNonNull(to, "to");
+        java.util.Objects.requireNonNull(message, "message");
+        return onMark(tooltip, () -> to.send(message));
     }
 
     /** The mark's region for whether it has an action: a hole in the caption, or the caption itself. */

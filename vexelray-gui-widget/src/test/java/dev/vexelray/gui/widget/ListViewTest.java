@@ -150,7 +150,7 @@ class ListViewTest {
         try (HeadlessGui h = new HeadlessGui()) {
             ListView<String> list = mount(h, 100);
             List<String> activated = new ArrayList<>();
-            list.onActivate(activated::add);
+            h.gui.mailbox(ListView.ACTIVATED, list.address(), a -> activated.add((String) a.item()));
             Rect r = list.rowNode("item00002").layout().rect();
             h.clicks(r.x() + r.w() / 2f, r.y() + r.h() / 2f, 2);
             h.frame();

@@ -154,6 +154,17 @@ final class HeadlessGui implements AutoCloseable {
         return this;
     }
 
+    /**
+     * What a widget at {@code address} says on {@code topic}, as a view would hear it: collected in the widget tick of
+     * each {@link #frame}, in the frame it was said.
+     */
+    <T extends dev.vexelray.gui.core.Addressed> java.util.List<T> heard(sibarum.atchung.Topic<T> topic,
+                                                                     String address) {
+        java.util.List<T> out = new java.util.ArrayList<>();
+        gui.mailbox(topic, address, out::add);
+        return out;
+    }
+
     /** The retained tree the last frame laid out — the thing the renderer would walk. */
     private RetainedNode lastRoot;
 

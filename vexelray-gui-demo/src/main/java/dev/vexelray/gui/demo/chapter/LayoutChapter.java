@@ -74,9 +74,11 @@ public final class LayoutChapter implements Chapter {
                 JUSTIFY[justify.get()], ALIGN[align.get()]));
         state.run();
 
-        Slider gap = new Slider(gui, 0.2f).onChange(v -> arena.gap(Length.rem((float) v * 3f)));
+        Slider gap = new Slider(gui, 0.2f);
+        gui.mailbox(Slider.CHANGED, gap.address(), m -> arena.gap(Length.rem((float) m.value() * 3f)));
         gap.node().width(Length.rem(10));
-        Slider pad = new Slider(gui, 0.25f).onChange(v -> arena.padding(Length.dp((float) v * 48f)));
+        Slider pad = new Slider(gui, 0.25f);
+        gui.mailbox(Slider.CHANGED, pad.address(), m -> arena.padding(Length.dp((float) m.value() * 48f)));
         pad.node().width(Length.rem(10));
 
         Node controls = Ui.strip(gui,

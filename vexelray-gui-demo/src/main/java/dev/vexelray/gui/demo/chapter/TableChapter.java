@@ -91,11 +91,11 @@ public final class TableChapter implements Chapter {
             }
         });
 
-        table.selection().onChange(selected -> {
+        gui.mailbox(Table.SELECTED, table.address(), selected -> {
             Item one = table.selection().one();
-            console.note(selected.size() == 1 && one != null
+            console.note(selected.chosen().size() == 1 && one != null
                     ? "selected " + one.name()
-                    : selected.size() + " rows selected");
+                    : selected.chosen().size() + " rows selected");
         });
 
         Node tools = Ui.strip(gui,

@@ -30,7 +30,9 @@ import sibarum.tactroller.api.Key;
  * the icon in the accent with a glow, the field's own, so a live state (running, recording, pinned) is seen at a
  * glance without a second drawing.
  *
- * <p>Handlers run on a worker thread, like every other widget's.
+ * <p>A press is published on {@link Button#PRESSED}, carrying this button's {@link #address() address}, as a
+ * {@link Button}'s is: a press is a press, whichever button drew it (vexelray-framework's {@code docs/threading.md},
+ * T3.8).
  */
 public final class IconButton {
 
@@ -49,6 +51,7 @@ public final class IconButton {
     private volatile Role ink = Role.DIM;
     private volatile InteractionState state = InteractionState.NORMAL;
     private volatile Runnable onPress = () -> { };
+    private final WidgetName address;
     private Tooltip tooltip;
     private volatile String tipText;
 
@@ -65,6 +68,7 @@ public final class IconButton {
                 .alignItems(AlignItems.CENTER)
                 .scroll(false, false)
                 .children(glyph.node(), label);
+        this.address = new WidgetName(gui, "iconbutton", node);
         gui.focusable(node, true);
         gui.cursor(node, CursorShape.POINTER);
         gui.onClick(node, this::activate);
@@ -88,8 +92,8 @@ public final class IconButton {
         return this;
     }
 
-    /** Rename it: the accessible name. A tooltip keeps its own words ({@link #tip}). */
-    public IconButton name(String name) {
+    /** Relabel it: the accessible name, as a {@link Button}'s label is. A tooltip keeps its own words ({@link #tip}). */
+    public IconButton label(String name) {
         label.text(name == null ? "" : name);
         return this;
     }
@@ -140,13 +144,31 @@ public final class IconButton {
         return this;
     }
 
-    /** What pressing it does. */
-    public IconButton onPress(Runnable handler) {
+    /**
+     * Call this button {@code name} on the bus ("play"): its {@link #address()} is the tree's name and this. Not
+     * {@link #label(String)}, which is what it is called to the user.
+     */
+    public IconButton name(String name) {
+        this.address.name(name);
+        return this;
+    }
+
+    /** Where this button is on the bus: what its {@link Button.Pressed} carries. */
+    public String address() {
+        return address.address();
+    }
+
+    /**
+     * The widget library's hook on a press, for a widget built from icon buttons: run in the dispatch, and as well as
+     * {@link Button#PRESSED} rather than instead. Package-private, because an application hears a button by its
+     * message.
+     */
+    IconButton onPress(Runnable handler) {
         this.onPress = handler == null ? () -> { } : handler;
         return this;
     }
 
-    /** Make this a toggle: it holds on or off, announced as such, and on glows. Pressing it still only runs the handler. */
+    /** Make this a toggle: it holds on or off, announced as such, and on glows. Pressing it still only publishes the press. */
     public IconButton toggle(boolean toggle) {
         this.toggle = toggle;
         node.role(toggle ? "togglebutton" : "button");
@@ -154,7 +176,7 @@ public final class IconButton {
         return this;
     }
 
-    /** Show it on or off. Silent: the handler decides what a press means and calls this. */
+    /** Show it on or off. Silent: whoever hears the press decides what it means and calls this. */
     public IconButton on(boolean on) {
         this.on = on;
         paint();
@@ -178,6 +200,7 @@ public final class IconButton {
     private void activate() {
         if (enabled) {
             onPress.run();
+            gui.bus().publish(Button.PRESSED, new Button.Pressed(address()));
         }
     }
 

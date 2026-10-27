@@ -2,6 +2,7 @@ package dev.vexelray.gui.widget;
 
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.icons.Icon;
+import sibarum.atchung.Sender;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -13,9 +14,9 @@ import java.util.List;
  *
  * {@snippet :
  * Modals.show(Modal.of("Unsaved changes", "Save before closing?")
- *         .defaultButton("Save", this::save)
- *         .button("Discard", this::discard)
- *         .cancelButton("Cancel", request::cancel));
+ *         .defaultButton("Save", closing, Closing.SAVE)
+ *         .button("Discard", closing, Closing.DISCARD)
+ *         .cancelButton("Cancel", closing, Closing.STAY));
  * }
  *
  * <p>Two buttons are special, and only by what dismisses them: the <b>default</b> button is the one Enter
@@ -26,8 +27,13 @@ import java.util.List;
  * dialog, not a misconfiguration.
  *
  * <p>Immutable-ish by convention: each builder call returns {@code this}, and a spec is meant to be built and
- * handed straight to {@link Modals}. Actions run on the dialog's handler executor, off the GUI thread, after the
- * dialog has closed — so an action may itself put up the next dialog without waiting for anything.
+ * handed straight to {@link Modals}. Actions run after the dialog has closed, so an action may itself put up the
+ * next dialog without waiting for anything.
+ *
+ * <p><b>An application's button sends a message</b> ({@link #button(String, Sender, Object)} and its two siblings),
+ * as a menu item does (vexelray-framework's {@code docs/threading.md}, T7.5). The {@code Runnable} forms are the
+ * widget library's and the host's (a close request's {@code proceed}); moving them out of an application's reach is
+ * owed with T7.2's API walk.
  */
 public final class Modal {
 
@@ -102,6 +108,27 @@ public final class Modal {
     public Modal button(String label, Runnable action) {
         buttons.add(new Button(label, action, false, false));
         return this;
+    }
+
+    /** Add an ordinary button that sends {@code message} through {@code to}: the form for an application. */
+    public <T> Modal button(String label, Sender<T> to, T message) {
+        return button(label, sends(to, message));
+    }
+
+    /** Add the button Enter presses, sending {@code message} through {@code to}: the form for an application. */
+    public <T> Modal defaultButton(String label, Sender<T> to, T message) {
+        return defaultButton(label, sends(to, message));
+    }
+
+    /** Add the button Escape presses, sending {@code message} through {@code to}: the form for an application. */
+    public <T> Modal cancelButton(String label, Sender<T> to, T message) {
+        return cancelButton(label, sends(to, message));
+    }
+
+    private static <T> Runnable sends(Sender<T> to, T message) {
+        java.util.Objects.requireNonNull(to, "to");
+        java.util.Objects.requireNonNull(message, "message");
+        return () -> to.send(message);
     }
 
     /** Add the button Enter presses — the affirmative one, drawn accented. At most one; the last one wins. */

@@ -64,7 +64,7 @@ class TextFieldMessagesTest {
             h.tap(Key.ENTER);
             tick.run(LATER);
 
-            assertEquals(List.of("path C:/a", "path C:/ab"), submitted);
+            assertEquals(List.of(h.gui.address("path") + " C:/a", h.gui.address("path") + " C:/ab"), submitted);
         }
     }
 
@@ -130,8 +130,8 @@ class TextFieldMessagesTest {
             Inbox form = tick.inbox("form");
             Sender<TextField.Command> fields = form.sender(TextField.COMMANDS);
             form.subscribe(TextField.SUBMITTED, s -> {
-                fields.send(new TextField.SetText("first", "Ada"));
-                fields.send(new TextField.SetText("last", "Lovelace"));
+                fields.send(new TextField.SetText(h.gui.address("first"), "Ada"));
+                fields.send(new TextField.SetText(h.gui.address("last"), "Lovelace"));
             }, 16);
 
             h.bus.publish(TextField.SUBMITTED, new TextField.Submitted("name", "Ada Lovelace"));
@@ -153,7 +153,7 @@ class TextFieldMessagesTest {
             h.gui.root().children(path.node(), search.node());
             h.frame();
 
-            h.bus.publish(TextField.COMMANDS, new TextField.SetText("search", "found"));
+            h.bus.publish(TextField.COMMANDS, new TextField.SetText(h.gui.address("search"), "found"));
             h.frame();
 
             assertEquals("a", path.text());

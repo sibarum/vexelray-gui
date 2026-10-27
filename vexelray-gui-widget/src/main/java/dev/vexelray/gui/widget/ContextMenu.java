@@ -501,7 +501,7 @@ public final class ContextMenu implements MenuPresenter {
             });
             gui.onClick(row, () -> {
                 hide();
-                item.action().run();   // already on the handler executor — the lane app callbacks run on
+                item.action().run();   // on the GUI thread, in the dispatch: an item sends its message from here
             });
         }
         // Addressable by what it says, so a script can choose it: menu.restart-in-debug-mode. Released with the row.

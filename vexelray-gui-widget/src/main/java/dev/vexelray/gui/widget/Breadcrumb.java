@@ -1,5 +1,7 @@
 package dev.vexelray.gui.widget;
 
+import sibarum.atchung.Topic;
+import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
@@ -28,11 +30,21 @@ import java.util.function.Function;
  * them. The rule is a count and not a measurement, on purpose: a bar that measured its own width would re-decide
  * what it shows as the window moved, and a path whose leading segments come and go under a resizing pointer is
  * the movement the standing rule forbids. The item type is the caller's — a {@code Path}, a record, a string — and
- * comes back untouched through {@link #onNavigate}.
- *
- * <p>Handlers run on a worker thread, like every other widget's.
+ * comes back untouched in {@link #NAVIGATED}, which carries the bar's {@link #address() address}
+ * (vexelray-framework's {@code docs/threading.md}, T3.8).
  */
 public final class Breadcrumb<T> {
+
+    /** A click on an ancestor, or Enter on a focused one: where to go. Every one, in order. */
+    public static final Topic<Navigated> NAVIGATED = Topic.edge("vexelray.gui.breadcrumb.navigated", Navigated.class);
+
+    /** The bar at {@code breadcrumb} asked to go to {@code item}. */
+    public record Navigated(String breadcrumb, Object item) implements Addressed {
+        @Override
+        public Object address() {
+            return breadcrumb;
+        }
+    }
 
 
     private final Gui gui;
@@ -41,7 +53,7 @@ public final class Breadcrumb<T> {
     private final List<Node> built = new ArrayList<>();
     private final List<Button> buttons = new ArrayList<>();
     private IconButton overflow;
-    private volatile Consumer<T> onNavigate = t -> { };
+    private final WidgetName name;
     private volatile int maxSegments = 6;
     private volatile int face = 0;
     private List<T> chain = List.of();
@@ -54,6 +66,7 @@ public final class Breadcrumb<T> {
                 .alignItems(AlignItems.CENTER)
                 .gap(Length.rem(0.15f))
                 .scroll(false, false);
+        this.name = new WidgetName(gui, "breadcrumb", bar);
     }
 
     /** The node to place in a layout. */
@@ -74,10 +87,19 @@ public final class Breadcrumb<T> {
         return this;
     }
 
-    /** React to a click on an ancestor, or Enter on a focused one. Runs on a worker thread. */
-    public Breadcrumb<T> onNavigate(Consumer<T> handler) {
-        this.onNavigate = handler == null ? t -> { } : handler;
+    /** Call this bar {@code name} in its tree ("path"): its {@link #address()} is the tree's name and this. */
+    public Breadcrumb<T> name(String name) {
+        this.name.name(name);
         return this;
+    }
+
+    /** Where this bar is on the bus: what its {@link Navigated} carries. */
+    public String address() {
+        return name.address();
+    }
+
+    private void navigated(T item) {
+        gui.bus().publish(NAVIGATED, new Navigated(name.address(), item));
     }
 
     /** Show the chain from the root to the current place. The last item is the current place. */
@@ -119,7 +141,7 @@ public final class Breadcrumb<T> {
             // children are the first segment still on show.
             T nearest = chain.get(hidden - 1);
             overflow = new IconButton(gui, Icon.MORE, "Up to " + label.apply(nearest)).ink(Role.FAINT)
-                    .onPress(() -> onNavigate.accept(nearest));
+                    .onPress(() -> navigated(nearest));
             add(overflow.node());
             add(separator());
         }
@@ -139,7 +161,7 @@ public final class Breadcrumb<T> {
     }
 
     private Node button(String text, T target) {
-        Button b = new Button(gui, text).kind(Button.Kind.GHOST).onPress(() -> onNavigate.accept(target));
+        Button b = new Button(gui, text).kind(Button.Kind.GHOST).onPress(() -> navigated(target));
         b.node().font(face);
         buttons.add(b);
         return b.node();

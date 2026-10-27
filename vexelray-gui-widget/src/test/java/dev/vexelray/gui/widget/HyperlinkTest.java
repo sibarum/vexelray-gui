@@ -84,7 +84,7 @@ class HyperlinkTest {
             TextField f = field(h, "see the accent swatch");
             AtomicReference<String> followed = new AtomicReference<>();
             f.links(List.of(new Link(8, 14, "prefs/theme.accent")));
-            f.onLinkActivate(link -> followed.set(link.target()));
+            h.gui.mailbox(TextField.LINK_FOLLOWED, f.address(), l -> followed.set(l.target()));
             f.caret(0);
             h.frame();
 
@@ -112,7 +112,7 @@ class HyperlinkTest {
             TextField f = field(h, "see the accent swatch");
             AtomicReference<String> followed = new AtomicReference<>();
             f.links(List.of(new Link(8, 14, "prefs/theme.accent")));
-            f.onLinkActivate(link -> followed.set(link.target()));
+            h.gui.mailbox(TextField.LINK_FOLLOWED, f.address(), l -> followed.set(l.target()));
 
             h.focus(f.node());
             f.caret(0);

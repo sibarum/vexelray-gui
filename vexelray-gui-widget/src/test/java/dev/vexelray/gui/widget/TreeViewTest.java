@@ -224,7 +224,8 @@ class TreeViewTest {
         try (HeadlessGui h = new HeadlessGui()) {
             MapSource source = new MapSource();
             String[] activated = {null};
-            TreeView<String> tree = Listing.tree(h, source).onActivate(item -> activated[0] = item);
+            TreeView<String> tree = Listing.tree(h, source);
+            h.gui.mailbox(TreeView.ACTIVATED, tree.address(), a -> activated[0] = (String) a.item());
             h.gui.root().children(tree.node());
             h.frame();
             tree.focus();
@@ -242,7 +243,8 @@ class TreeViewTest {
         try (HeadlessGui h = new HeadlessGui()) {
             MapSource source = new MapSource();
             String[] selectedSeen = {null};
-            TreeView<String> tree = Listing.tree(h, source).onSelect(item -> selectedSeen[0] = item);
+            TreeView<String> tree = Listing.tree(h, source);
+            h.gui.mailbox(TreeView.SELECTED, tree.address(), s -> selectedSeen[0] = (String) s.item());
             h.gui.root().children(tree.node());
             h.frame();
 
@@ -268,7 +270,8 @@ class TreeViewTest {
         try (HeadlessGui h = new HeadlessGui()) {
             MapSource source = new MapSource();
             List<String> clicked = new java.util.concurrent.CopyOnWriteArrayList<>();
-            TreeView<String> tree = Listing.tree(h, source).onClick(clicked::add);
+            TreeView<String> tree = Listing.tree(h, source);
+            h.gui.mailbox(TreeView.CLICKED, tree.address(), c -> clicked.add((String) c.item()));
             h.gui.root().children(tree.node());
             h.frame();
             h.frame();
@@ -299,7 +302,8 @@ class TreeViewTest {
         try (HeadlessGui h = new HeadlessGui()) {
             MapSource source = new MapSource();
             List<String> heard = new java.util.concurrent.CopyOnWriteArrayList<>();
-            TreeView<String> tree = Listing.tree(h, source).onHover(heard::add);
+            TreeView<String> tree = Listing.tree(h, source);
+            h.gui.mailbox(TreeView.HOVERED, tree.address(), v -> heard.add((String) v.item()));
             h.gui.root().children(tree.node());
             h.frame();
             h.frame();

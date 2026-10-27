@@ -46,9 +46,9 @@ final class FindBar implements AutoCloseable {
     private static final Shortcut STEP_BACK = Shortcut.of(Key.ENTER, Modifier.SHIFT);
 
     /**
-     * What the thing being searched has to be able to do. All four run on the handler executor, because a search
-     * is an application-sized piece of work — the tree's walks the filesystem — and none of them may assume it
-     * is the only one in flight: a bar that supersedes searches is a bar whose owner can be asked twice.
+     * What the thing being searched has to be able to do. All four run on the GUI thread, and none may block: a
+     * search that needs more than a frame walks a step at a time (the tree's waits on each level). None of them may
+     * assume it is the only one in flight: a bar that supersedes searches is a bar whose owner can be asked twice.
      */
     interface Search {
 

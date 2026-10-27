@@ -147,7 +147,8 @@ class ValueWidgetUndoTest {
     void aSliderDragIsOneStepAndOneCommit() {
         try (Window w = new Window()) {
             List<Double> commits = new CopyOnWriteArrayList<>();
-            Slider s = new Slider(w.h.gui, 0f).lattice(Lattice.intervals(10)).onCommit(commits::add);
+            Slider s = new Slider(w.h.gui, 0f).lattice(Lattice.intervals(10));
+            w.h.gui.mailbox(Slider.COMMITTED, s.address(), c -> commits.add(c.value()));
             w.mount(s.node());
             Rect r = s.node().layout().rect();
             int y = (int) (r.y() + r.h() / 2f);
@@ -296,7 +297,8 @@ class ValueWidgetUndoTest {
     void aChipUndoesAsASwitchDoes() {
         try (Window w = new Window()) {
             List<Boolean> heard = new CopyOnWriteArrayList<>();
-            Button chip = new Button(w.h.gui, "Bold").toggle(true).onToggle(heard::add);
+            Button chip = new Button(w.h.gui, "Bold").toggle(true);
+            w.h.gui.mailbox(Button.TOGGLED, chip.address(), t -> heard.add(t.pressed()));
             w.mount(chip.node());
             w.click(chip.node());
             assertTrue(chip.pressed());
@@ -309,8 +311,9 @@ class ValueWidgetUndoTest {
     @Test
     void aSelectChoiceUndoesButBrowsingTheListDoesNot() {
         try (Window w = new Window()) {
-            List<Set<String>> commits = new CopyOnWriteArrayList<>();
-            Select<String> s = new Select<String>(w.h.gui).options(List.of("x", "y", "z")).onCommit(commits::add);
+            List<Set<Object>> commits = new CopyOnWriteArrayList<>();
+            Select<String> s = new Select<String>(w.h.gui).options(List.of("x", "y", "z"));
+            w.h.gui.mailbox(Select.COMMITTED, s.address(), c -> commits.add(c.chosen()));
             w.mount(s.node());
             s.show("x");
             w.h.focus(s.node());

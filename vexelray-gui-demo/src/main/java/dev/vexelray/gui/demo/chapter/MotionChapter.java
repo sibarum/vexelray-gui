@@ -166,12 +166,15 @@ public final class MotionChapter implements Chapter {
         // --- feedback -----------------------------------------------------------------------------------
         // Ripples get their own player: longer than the house cue, so the spread is seen before it has finished.
         Cues ripples = new Cues((progress, done) -> krono.ramp(Dur.ms(450), Ease.LINEAR, progress, done));
-        Button primary = new Button(gui, "Primary").kind(Button.Kind.PRIMARY).ripple(ripples)
-                .onPress(() -> console.note("primary: the ink spread from where it was pressed"));
-        Button secondary = new Button(gui, "Secondary").kind(Button.Kind.SECONDARY).ripple(ripples)
-                .onPress(() -> console.note("secondary: press Enter on it and the ink comes from the middle"));
-        Button ghost = new Button(gui, "Ghost").kind(Button.Kind.GHOST).ripple(ripples)
-                .onPress(() -> console.note("ghost: its fill fades up from nothing, not from black"));
+        Button primary = new Button(gui, "Primary").kind(Button.Kind.PRIMARY).ripple(ripples);
+        Button secondary = new Button(gui, "Secondary").kind(Button.Kind.SECONDARY).ripple(ripples);
+        Button ghost = new Button(gui, "Ghost").kind(Button.Kind.GHOST).ripple(ripples);
+        gui.mailbox(Button.PRESSED, primary.address(),
+                p -> console.note("primary: the ink spread from where it was pressed"));
+        gui.mailbox(Button.PRESSED, secondary.address(),
+                p -> console.note("secondary: press Enter on it and the ink comes from the middle"));
+        gui.mailbox(Button.PRESSED, ghost.address(),
+                p -> console.note("ghost: its fill fades up from nothing, not from black"));
         Tabs strip = new Tabs(gui).closable(false)
                 .indicator((progress, done) -> krono.ramp(Dur.ms(220), Ease.OUT_CUBIC, progress, done));
         strip.add("Overview", note(gui, "The underline is one mark, and it travels."));

@@ -111,7 +111,8 @@ public final class TextChapter implements Chapter {
                 Span.foreground(0, 4, theme.color(Role.ACCENT)),        // "type"
                 Span.background(5, 9, theme.color(Role.LINE)),          // "here"
                 Span.underline(11, 16)));                               // "Enter"
-        line.onSubmit(s -> {
+        gui.mailbox(TextField.SUBMITTED, line.address(), submitted -> {
+            String s = submitted.text();
             if (s.isBlank()) {
                 cues.play(line.node(), rejected, insistent);
                 console.refused("nothing to submit");

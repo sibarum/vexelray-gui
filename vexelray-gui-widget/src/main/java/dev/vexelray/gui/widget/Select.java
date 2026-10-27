@@ -1,5 +1,7 @@
 package dev.vexelray.gui.widget;
 
+import sibarum.atchung.Topic;
+import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.ClaimScope;
@@ -64,9 +66,10 @@ import java.util.stream.Collectors;
  *
  * <h2>Committing, and taking it back</h2>
  *
- * Moving through the options is not choosing: the selection changes as the cursor moves (watch
- * {@code selection().onChange} for the live preview), and {@link #onCommit} fires once, when the popup closes on
- * a choice. Escape restores the selection the popup opened with. This is the pair {@link ColorPicker} settled on
+ * Moving through the options is not choosing: the selection changes as the cursor moves, published on
+ * {@link #CHANGED} (the live preview, the last in a frame), and {@link #COMMITTED} is published once, when the popup
+ * closes on a choice. Both carry the select's {@link #address() address} (vexelray-framework's
+ * {@code docs/threading.md}, T3.8). Escape restores the selection the popup opened with. This is the pair {@link ColorPicker} settled on
  * and for the same reason — collapsing them makes either every arrow key an undo entry or the control impossible
  * to preview.
  *
@@ -85,6 +88,40 @@ import java.util.stream.Collectors;
  * @param <T> the value type — anything with equality; the label is a function of it, never a parallel list
  */
 public final class Select<T> implements AutoCloseable {
+
+    /** What is chosen as the cursor moves through the options, and as Escape puts it back: the live preview. */
+    public static final Topic<Changed> CHANGED =
+            Topic.state("vexelray.gui.select.changed", Changed.class, Changed::select);
+
+    /**
+     * A choice <b>made</b> — click on a row, or a click away — and an undo or redo. Not
+     * published by {@link #value(Object)} or {@link #show}. Every one, in order.
+     */
+    public static final Topic<Committed> COMMITTED = Topic.edge("vexelray.gui.select.committed", Committed.class);
+
+    /** The select at {@code select} has {@code chosen} chosen, as the cursor stands. */
+    public record Changed(String select, Set<Object> chosen) implements Addressed {
+        public Changed {
+            chosen = Set.copyOf(chosen);
+        }
+
+        @Override
+        public Object address() {
+            return select;
+        }
+    }
+
+    /** The select at {@code select} was set to {@code chosen}. */
+    public record Committed(String select, Set<Object> chosen) implements Addressed {
+        public Committed {
+            chosen = Set.copyOf(chosen);
+        }
+
+        @Override
+        public Object address() {
+            return select;
+        }
+    }
 
     /** How many rows the popup shows before it scrolls. Beyond this the list virtualises, so the cost is flat. */
     private static final int VISIBLE_ROWS = 8;
@@ -118,7 +155,7 @@ public final class Select<T> implements AutoCloseable {
 
     private volatile String placeholder = "";
     private volatile Function<Set<T>, String> summary;
-    private volatile Consumer<Set<T>> onCommit = chosen -> { };
+    private final WidgetName name;
 
     private volatile boolean attached;
     private volatile boolean open;
@@ -168,6 +205,7 @@ public final class Select<T> implements AutoCloseable {
                 .alignItems(AlignItems.CENTER)
                 .scroll(false, false)
                 .children(valueText, chevron());
+        this.name = new WidgetName(gui, "select", control);
         gui.focusable(control, true);
         gui.cursor(control, CursorShape.POINTER);
         gui.onClick(control, this::toggleOpen);
@@ -198,7 +236,10 @@ public final class Select<T> implements AutoCloseable {
                         commit();
                     }
                 });
-        list.selection().onChange(chosen -> readOut());
+        list.selection().onChange(chosen -> {
+            readOut();
+            gui.bus().publish(CHANGED, new Changed(name.address(), Set.copyOf(chosen)));
+        });
         list.selection().onLeadChange(lead -> readOut());
 
         this.popup = gui.column()
@@ -219,11 +260,11 @@ public final class Select<T> implements AutoCloseable {
 
         armClosed();
         readOut();
-        // A choice is a step; moving through the options is not, which is the onCommit/selection split again.
+        // A choice is a step; moving through the options is not, which is the COMMITTED/CHANGED split again.
         this.undo = new ValueUndo<>(gui, control, () -> Set.copyOf(selection.selection()), chosen -> {
             selection.set(chosen);
             readOut();
-            onCommit.accept(Set.copyOf(chosen));
+            committed(Set.copyOf(chosen));
         }, false);
     }
 
@@ -295,7 +336,7 @@ public final class Select<T> implements AutoCloseable {
     }
 
     /**
-     * Show {@code value} as the application rather than the user: no {@link #onCommit}, because nobody chose.
+     * Show {@code value} as the application rather than the user: no {@link #COMMITTED}, because nobody chose.
      *
      * <p>A sync is not an edit, and this is the sync — the name every control here uses for it. See
      * {@link Toggle#show} for what goes wrong when one is reported as the other. It is not a question about
@@ -307,14 +348,20 @@ public final class Select<T> implements AutoCloseable {
         return this;
     }
 
-    /**
-     * React to a choice being <b>made</b> — the popup closing on Enter, a click on a row, or a click away — with
-     * what is chosen. Not fired while the cursor moves through the options (watch {@code selection().onChange} for
-     * that), and not fired by {@link #value(Object)}. Runs on a worker thread.
-     */
-    public Select<T> onCommit(Consumer<Set<T>> handler) {
-        this.onCommit = handler == null ? chosen -> { } : handler;
+    /** Call this select {@code name} in its tree ("size"): its {@link #address()} is the tree's name and this. */
+    public Select<T> name(String name) {
+        this.name.name(name);
         return this;
+    }
+
+    /** Where this select is on the bus: what its messages carry. */
+    public String address() {
+        return name.address();
+    }
+
+    /** A choice made. */
+    private void committed(Set<T> chosen) {
+        gui.bus().publish(COMMITTED, new Committed(name.address(), Set.copyOf(chosen)));
     }
 
     // ------------------------------------------------------------------ opening and shutting
@@ -349,13 +396,13 @@ public final class Select<T> implements AutoCloseable {
         }
         shut();
         Set<T> chosen = Set.copyOf(selection.selection());
-        onCommit.accept(chosen);
+        committed(chosen);
         undo.edited(opened, chosen);
     }
 
     /**
      * Shut the popup and put back the selection it opened with — Escape. Nothing is announced, because taking a
-     * choice back is not making one; the live preview reverts through {@code selection().onChange} like any other
+     * choice back is not making one; the live preview reverts through {@link #CHANGED} like any other
      * change, which is what makes the preview honest rather than something the application has to undo.
      */
     public void cancel() {

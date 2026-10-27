@@ -1,5 +1,7 @@
 package dev.vexelray.gui.widget;
 
+import sibarum.atchung.Topic;
+import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.drop.DragState;
@@ -69,13 +71,56 @@ import java.util.function.Predicate;
  * {@snippet :
  * ListView<String> list = new ListView<>(gui, 2.0f, (g, item) -> g.text(item));
  * list.items(names);
- * list.selection().onChange(sel -> status.text(sel.size() + " selected"));
+ * list.name("names");
  * panel.append(list.node());
+ * gui.mailbox(ListView.SELECTED, list.address(), sel -> status.text(sel.chosen().size() + " selected"));
  * }
+ *
+ * <p>What the user does is a message carrying the list's {@link #address() address}: the selection on
+ * {@link #SELECTED}, a row clicked on {@link #CLICKED} (after the click has been applied to the selection), and a row
+ * activated on {@link #ACTIVATED} (vexelray-framework's {@code docs/threading.md}, T3.8).
  *
  * @param <T> the item type
  */
 public final class ListView<T> implements AutoCloseable {
+
+    /** What is selected, whenever it changes. The last in a frame. */
+    public static final Topic<Selected> SELECTED =
+            Topic.state("vexelray.gui.list.selected", Selected.class, Selected::list);
+
+    /** A row clicked, after the click has changed the selection. Every one, in order. */
+    public static final Topic<Clicked> CLICKED = Topic.edge("vexelray.gui.list.clicked", Clicked.class);
+
+    /** A row activated: double-clicked, or Enter on a selection of one. Every one, in order. */
+    public static final Topic<Activated> ACTIVATED = Topic.edge("vexelray.gui.list.activated", Activated.class);
+
+    /** The list at {@code list} has {@code chosen} selected. */
+    public record Selected(String list, Set<Object> chosen) implements Addressed {
+        public Selected {
+            chosen = Set.copyOf(chosen);
+        }
+
+        @Override
+        public Object address() {
+            return list;
+        }
+    }
+
+    /** A row of the list at {@code list}, showing {@code item}, was clicked. */
+    public record Clicked(String list, Object item) implements Addressed {
+        @Override
+        public Object address() {
+            return list;
+        }
+    }
+
+    /** A row of the list at {@code list}, showing {@code item}, was activated. */
+    public record Activated(String list, Object item) implements Addressed {
+        @Override
+        public Object address() {
+            return list;
+        }
+    }
 
     /** Builds the contents of one row. The row's box, its height and its selected look are the list's business. */
     @FunctionalInterface
@@ -118,8 +163,8 @@ public final class ListView<T> implements AutoCloseable {
     /** The row box currently showing an item, for restyling on selection change without rebuilding. */
     private final Map<T, Node> shown = new HashMap<>();
 
-    private volatile Consumer<T> onActivate = t -> { };
     private volatile Consumer<T> onRowClicked = t -> { };
+    private final WidgetName name;
     private volatile BiConsumer<T, MenuSink> contextMenu = (item, menu) -> { };
     /** Whether rows have a menu, and so whether a right click selects. A list with none ignores it, as before. */
     private volatile boolean hasMenu;
@@ -182,7 +227,11 @@ public final class ListView<T> implements AutoCloseable {
         // The window follows the scroll offset, which the read-model republishes on every changed frame. This is
         // the whole of the virtualisation trigger: no polling, and no frame callback of our own.
         subs.add(gui.layout().onCommit(snapshot -> update()));
-        selection.onChange(sel -> restyleAll());
+        this.name = new WidgetName(gui, "list", box);
+        selection.onChange(sel -> {
+            restyleAll();
+            gui.bus().publish(SELECTED, new Selected(name.address(), Set.copyOf(sel)));
+        });
         selection.onLeadChange(lead -> restyleAll());
 
         // One tab stop for the whole list, as a tree is: registering the key stage is what makes the root
@@ -348,21 +397,34 @@ public final class ListView<T> implements AutoCloseable {
         return Set.copyOf(shown.keySet());
     }
 
-    /** React to a row being activated: double-clicked, or Enter on a selection of one. */
-    public ListView<T> onActivate(Consumer<T> handler) {
-        this.onActivate = handler == null ? t -> { } : handler;
+    /** Call this list {@code name} in its tree ("files"): its {@link #address()} is the tree's name and this. */
+    public ListView<T> name(String name) {
+        this.name.name(name);
         return this;
     }
 
+    /** Where this list is on the bus: what its messages carry. */
+    public String address() {
+        return name.address();
+    }
+
+    /** A row activated. */
+    private void activated(T item) {
+        gui.bus().publish(ACTIVATED, new Activated(name.address(), item));
+    }
+
+    /** A row clicked: the hook, then the message. */
+    private void clicked(T item) {
+        onRowClicked.accept(item);
+        gui.bus().publish(CLICKED, new Clicked(name.address(), item));
+    }
+
     /**
-     * React to a row being clicked, <b>after</b> the click has been applied to the selection.
-     *
-     * <p>This is the only place that ordering holds. The click topic is a separate delivery on a separate thread,
-     * so a subscriber there may run before the row's handler has changed anything — and a drop-down that shut on
-     * the topic committed the old value about half the time. Anything that acts on "the user picked a row" hangs
-     * off this, not off the topic.
+     * The widget library's hook on a row clicked, for a widget built from a list (a drop-down): run <b>after</b> the
+     * click has been applied to the selection, and as well as {@link #CLICKED} rather than instead. Package-private,
+     * because an application hears a list by its messages.
      */
-    public ListView<T> onRowClicked(Consumer<T> handler) {
+    ListView<T> onRowClicked(Consumer<T> handler) {
         this.onRowClicked = handler == null ? t -> { } : handler;
         return this;
     }
@@ -375,7 +437,7 @@ public final class ListView<T> implements AutoCloseable {
      * <p><b>The right click selects first</b>, the convention every explorer follows, so the menu's commands visibly
      * have a subject: an unselected row becomes the selection, as a plain click would make it. A row that is already
      * selected leaves the selection alone, so a menu opened on one of several selected rows is about all of them. A
-     * source wanting to know which case it is in asks {@link #selection()}; it runs on a worker thread.
+     * source wanting to know which case it is in asks {@link #selection()}; it runs on the GUI thread.
      *
      * <p>Rows are rebuilt as they scroll in, so the source is held by the list and asked by each row, not attached
      * to rows by the caller. Installs a menu presenter on the tree if there is none, so the menu is actually shown.
@@ -431,7 +493,7 @@ public final class ListView<T> implements AutoCloseable {
             }
             if (!selection.isSelected(from)) {
                 selection.at(from);
-                onRowClicked.accept(from);
+                clicked(from);
                 return Payload.of(type, List.of(from));
             }
             List<T> held = new ArrayList<>();
@@ -738,7 +800,7 @@ public final class ListView<T> implements AutoCloseable {
         row.append(builder.build(gui, item).role(itemRole));
         gui.onClick(row, e -> onRowClick(item, e));
         // The second click has already selected the row, so this activates what a click just chose.
-        gui.onDoubleClick(row, () -> onActivate.accept(item));
+        gui.onDoubleClick(row, () -> activated(item));
         gui.onContextClick(row, e -> onRowContextClick(item));
         gui.onContextMenu(row, menu -> contextMenu.accept(item, menu));
         gui.onState(row, state -> row.background(look(item).at(state)));
@@ -780,7 +842,7 @@ public final class ListView<T> implements AutoCloseable {
         } else {
             selection.at(item);
         }
-        onRowClicked.accept(item);
+        clicked(item);
     }
 
     /**
@@ -790,7 +852,7 @@ public final class ListView<T> implements AutoCloseable {
     private void onRowContextClick(T item) {
         if (hasMenu && !selection.isSelected(item)) {
             selection.at(item);
-            onRowClicked.accept(item);
+            clicked(item);
         }
     }
 
@@ -848,7 +910,7 @@ public final class ListView<T> implements AutoCloseable {
     private void activate() {
         T one = selection.one();
         if (one != null) {
-            onActivate.accept(one);
+            activated(one);
         }
     }
 

@@ -220,7 +220,7 @@ class DefaultMenuTest {
         try (HeadlessGui h = new HeadlessGui()) {
             List<String> documents = new ArrayList<>(List.of("Editor", "Files", "Log"));
             Tabs tabs = new Tabs(h.gui);
-            tabs.onRemove(documents::remove);
+            h.gui.mailbox(Tabs.REMOVED, tabs.address(), r -> documents.remove(r.index()));
             documents.forEach(title -> tabs.add(title, h.gui.box()));
             h.gui.root().children(tabs.node());
             h.frame();

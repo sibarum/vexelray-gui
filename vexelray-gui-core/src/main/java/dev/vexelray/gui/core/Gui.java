@@ -151,10 +151,10 @@ public final class Gui implements AutoCloseable {
     private final sibarum.atchung.Inbox widgetInbox;
     /** The widgets' addressed mailboxes, routed by address: see {@link #mailbox(Topic, Object, sibarum.atchung.Subscriber)}. */
     private final Routes routes;
-    /** How many trees this process has made: what names each one's node-event topics apart. */
+    /** How many unnamed trees this process has made: what names each one apart from the others. */
     private static final java.util.concurrent.atomic.AtomicInteger TREES = new java.util.concurrent.atomic.AtomicInteger();
-    /** This tree's name among the others on a bus, for the topics that are per tree. */
-    private final String treeName = "tree" + TREES.incrementAndGet();
+    /** This tree's name among the others on a bus: see {@link #name()}. */
+    private final String treeName;
     /** This tree's node-event topics ({@link #hear}), one per kind heard so far. GUI thread only. */
     private final Map<NodeEvent<?>, Topic<?>> nodeTopics = new java.util.HashMap<>();
 
@@ -324,8 +324,26 @@ public final class Gui implements AutoCloseable {
      * <p>Two windows means two buses today, and the cost is that a message cannot travel between them without
      * something bridging it. Making one bus carry every tree is a real goal and a real change — the topics
      * would have to be per instance rather than per class — and it is not this constructor.
+     *
+     * <p>The tree is named {@code tree<n>}, numbered in the order this process made them; see {@link #name()}.
      */
     public Gui(Atchung bus) {
+        this(bus, "tree" + TREES.incrementAndGet());
+    }
+
+    /**
+     * Create a GUI called {@code name} on a shared Atchung bus: as {@link #Gui(Atchung)}, with a name chosen by whoever
+     * makes the window ("main", "settings", "editor-2" for the second of a kind).
+     *
+     * @throws IllegalArgumentException when {@code name} is empty or holds a {@code '.'}, which separates it from a
+     *                                  widget's name in an {@link #address}
+     */
+    public Gui(Atchung bus, String name) {
+        java.util.Objects.requireNonNull(name, "name");
+        if (name.isEmpty() || name.indexOf('.') >= 0) {
+            throw new IllegalArgumentException("a GUI's name is not empty and holds no '.': \"" + name + "\"");
+        }
+        this.treeName = name;
         this.bus = bus;
         this.pump = bus.pump();
         // One inbox for every widget, so commands to two widgets are applied in the order they were sent.
@@ -482,6 +500,24 @@ public final class Gui implements AutoCloseable {
     /** The Atchung bus this GUI publishes mutations, events, and (via a bridge) input on. */
     public Atchung bus() {
         return bus;
+    }
+
+    /**
+     * This tree's name among the others on a bus: what its node-event topics are named by, and the first part of every
+     * one of its widgets' {@link #address addresses}.
+     */
+    public String name() {
+        return treeName;
+    }
+
+    /**
+     * Where a widget of this tree called {@code widget} is on the bus: {@code "<tree>.<widget>"}, such as
+     * {@code "main.path"}. Every message a widget publishes carries its address, and every command for it is routed by
+     * it, so a widget's name need only be unique in its own tree: the "path" field of two windows sharing a bus are
+     * {@code "main.path"} and {@code "editor-2.path"}, and a reply to either goes to the one that spoke.
+     */
+    public String address(String widget) {
+        return treeName + "." + widget;
     }
 
     /**

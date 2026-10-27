@@ -52,7 +52,7 @@ interface Listing<T> {
     static <T> TreeView<T> tree(HeadlessGui h, Listing<T> listing) {
         String name = "tree-" + TREES.incrementAndGet();
         h.bus.subscribe(TreeView.CHILDREN_WANTED, wanted -> {
-            if (!wanted.tree().equals(name)) {
+            if (!wanted.tree().equals(h.gui.address(name))) {
                 return;
             }
             @SuppressWarnings("unchecked")
@@ -61,7 +61,7 @@ interface Listing<T> {
             for (T item : parent == null ? listing.roots() : listing.children(parent)) {
                 level.add(listing.entry(item));
             }
-            h.bus.publish(TreeView.CHILDREN, new TreeView.Children(name, parent, level));
+            h.bus.publish(TreeView.CHILDREN, new TreeView.Children(wanted.tree(), parent, level));
         });
         TreeView<T> tree = new TreeView<>(h.gui, name);
         h.frame();

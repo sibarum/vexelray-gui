@@ -90,6 +90,9 @@ public final class KeymapEditor implements AutoCloseable {
     private final Subscription mapSub;
     private final Subscription heldSub;
     private final Subscription focusSub;
+    /** The editor's mailboxes for its own controls, and for the rows' (replaced with the rows on every render). */
+    private final List<Subscription> widgetSubs = new ArrayList<>();
+    private final List<Subscription> rowSubs = new ArrayList<>();
 
     private volatile String query = "";
     /** What {@link #cancel} goes back to: the bindings as they were at the last {@link #checkpoint}. */
@@ -103,15 +106,18 @@ public final class KeymapEditor implements AutoCloseable {
     public KeymapEditor(Gui gui, Keymap keymap) {
         this.gui = gui;
         this.keymap = keymap;
-        this.filter = new TextField(gui).onChange(text -> {
-            query = text.strip().toLowerCase(Locale.ROOT);
+        this.filter = new TextField(gui);
+        // The editor hears its own controls as any view does, by their messages, in the frame they happened.
+        widgetSubs.add(gui.mailbox(TextField.CHANGED, filter.address(), changed -> {
+            query = changed.text().strip().toLowerCase(Locale.ROOT);
             render();
-        });
+        }));
         filter.node().role("keymap-filter").width(Length.FILL);
-        Button resetAll = new Button(gui, "Reset all").onPress(() -> {
+        Button resetAll = new Button(gui, "Reset all");
+        widgetSubs.add(gui.mailbox(Button.PRESSED, resetAll.address(), pressed -> {
             keymap.resetAll();
             say("Every action is back on its default chords.");
-        });
+        }));
         Node header = gui.row().width(Length.FILL).gap(Length.rem(0.5f)).alignItems(AlignItems.CENTER)
                 .children(gui.text("Filter").textSize(TEXT).wordWrap(false).textColor(Role.DIM),
                         filter.node(), resetAll.node());
@@ -124,10 +130,11 @@ public final class KeymapEditor implements AutoCloseable {
                 .textSize(Length.rem(0.75f)).textColor(Role.DIM);
         // Always present and only enabled once something has changed, like each row's reset.
         this.opened = keymap.overrides().value();
-        this.cancel = new Button(gui, "Cancel").enabled(false).onPress(() -> {
+        this.cancel = new Button(gui, "Cancel").enabled(false);
+        widgetSubs.add(gui.mailbox(Button.PRESSED, cancel.address(), pressed -> {
             cancel();
             onCancel.run();
-        });
+        }));
         cancel.node().role("keymap-cancel");
         Node footer = gui.row().width(Length.FILL).gap(Length.rem(0.5f)).alignItems(AlignItems.CENTER)
                 .children(status, cancel.node());
@@ -195,6 +202,8 @@ public final class KeymapEditor implements AutoCloseable {
         mapSub.close();
         heldSub.close();
         focusSub.close();
+        widgetSubs.forEach(Subscription::close);
+        rowSubs.forEach(Subscription::close);
         filter.close();
         synchronized (this) {
             disarm();
@@ -207,6 +216,8 @@ public final class KeymapEditor implements AutoCloseable {
         for (Node row : rows) {
             row.remove();
         }
+        rowSubs.forEach(Subscription::close);
+        rowSubs.clear();
         rows.clear();
         chips.clear();
         capture = null;
@@ -278,13 +289,13 @@ public final class KeymapEditor implements AutoCloseable {
         // actions are changed and changed back.
         IconButton reset = new IconButton(gui, Icon.RESET, "Reset " + a.label())
                 .tip("Back to " + (a.defaults().isEmpty() ? "unbound" : texts(a.defaults())))
-                .enabled(a.customized())
-                .onPress(() -> {
-                    Keymap.Bound b = keymap.reset(a);
-                    say(a.label() + " is back on " + (a.defaults().isEmpty() ? "no chord" : texts(a.defaults()))
-                            + "." + moved(b));
-                    renderFocusing(new Slot(a, -1));
-                });
+                .enabled(a.customized());
+        rowSubs.add(gui.mailbox(Button.PRESSED, reset.address(), pressed -> {
+            Keymap.Bound b = keymap.reset(a);
+            say(a.label() + " is back on " + (a.defaults().isEmpty() ? "no chord" : texts(a.defaults()))
+                    + "." + moved(b));
+            renderFocusing(new Slot(a, -1));
+        }));
         return gui.row().role("keymap-row").width(Length.FILL).alignItems(AlignItems.CENTER)
                 .gap(Length.rem(0.5f)).padding(Length.rem(0.2f), Length.rem(0.3f))
                 .children(name, chords, reset.node());

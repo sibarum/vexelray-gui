@@ -55,21 +55,21 @@ public final class ColorChapter implements Chapter {
         Node fillSample = sample(gui, "Fill", Color.rgb(0x4C9AFF));
         Node strokeSample = sample(gui, "Stroke", Color.rgb(0xFF8B00));
 
-        ColorPicker fill = new ColorPicker(gui, Color.rgb(0x4C9AFF), shared)
-                .onChange(fillSample::background)
-                .onCommit(c -> {
-                    fillSample.background(c);
-                    console.good("fill chosen: " + Hex.format(c));
-                });
+        ColorPicker fill = new ColorPicker(gui, Color.rgb(0x4C9AFF), shared);
+        gui.mailbox(ColorPicker.CHANGED, fill.address(), c -> fillSample.background(c.color()));
+        gui.mailbox(ColorPicker.COMMITTED, fill.address(), c -> {
+            fillSample.background(c.color());
+            console.good("fill chosen: " + Hex.format(c.color()));
+        });
 
         // The second picker is the whole point of the history being a parameter: it shares one, and it shows
         // alpha off, because plenty of things an application colours cannot be transparent.
-        ColorPicker stroke = new ColorPicker(gui, Color.rgb(0xFF8B00), shared)
-                .onChange(strokeSample::background)
-                .onCommit(c -> {
-                    strokeSample.background(c);
-                    console.good("stroke chosen: " + Hex.format(c));
-                });
+        ColorPicker stroke = new ColorPicker(gui, Color.rgb(0xFF8B00), shared);
+        gui.mailbox(ColorPicker.CHANGED, stroke.address(), c -> strokeSample.background(c.color()));
+        gui.mailbox(ColorPicker.COMMITTED, stroke.address(), c -> {
+            strokeSample.background(c.color());
+            console.good("stroke chosen: " + Hex.format(c.color()));
+        });
         stroke.alpha(false);
 
         Node pickers = gui.row().width(Length.FILL).height(Length.AUTO).gap(Ui.GAP)
@@ -83,7 +83,7 @@ public final class ColorChapter implements Chapter {
 
         Node notes = Ui.strip(gui,
                 Ui.prose(gui, "Drag the square, the hue ramp or the alpha ramp and watch the samples follow — "
-                        + "that is onChange, once per pointer move. Let go and the console says a colour was "
+                        + "that is CHANGED, once per pointer move. Let go and the console says a colour was "
                         + "chosen, once, and it appears at the front of both strips. Type a hex and press Enter "
                         + "for the same thing without a drag; type something that is not a colour and the box "
                         + "puts the colour back rather than complaining."),

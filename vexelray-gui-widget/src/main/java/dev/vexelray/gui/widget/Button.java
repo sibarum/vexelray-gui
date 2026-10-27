@@ -1,6 +1,7 @@
 package dev.vexelray.gui.widget;
 
 import dev.vexelray.canvas.Color;
+import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.edit.Change;
@@ -13,6 +14,7 @@ import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.NodeLayout;
 import dev.vexelray.gui.core.style.Role;
+import sibarum.atchung.Topic;
 import sibarum.tactroller.api.Key;
 
 import java.util.function.Consumer;
@@ -39,16 +41,42 @@ import java.util.function.Supplier;
  *
  * <h2>A chip is a button that holds a value</h2>
  * {@link #toggle(boolean)} makes the button remember whether it is pressed. {@link #pressed(boolean)} acts as the
- * user would and tells {@link #onToggle}; {@link #show(boolean)} displays a value the model chose and tells
+ * user would and publishes {@link #TOGGLED}; {@link #show(boolean)} displays a value the model chose and tells
  * nobody, for the reason {@link Toggle#show} gives — a panel re-reading its model must not report the sync as an
  * edit.
  *
  * <p>Nothing here changes size on hover or press. The label, padding and border width are the same in every
  * state; only colours move.
  *
- * <p>Handlers run on a worker thread, like every other widget's.
+ * <p><b>What it does is a message.</b> A press is published on {@link #PRESSED} and a chip's state on {@link #TOGGLED},
+ * each carrying the button's {@link #address() address}; a view hears them in the frame they happened
+ * ({@code gui.mailbox(Button.PRESSED, save.address(), p -> ...)}), and logic hears them like any other message
+ * (vexelray-framework's {@code docs/threading.md}, T3.8).
  */
 public final class Button {
+
+    /** A plain button pressed, by a click, Enter or Space: every press, in order. An {@link IconButton}'s too. */
+    public static final Topic<Pressed> PRESSED = Topic.edge("vexelray.gui.button.pressed", Pressed.class);
+
+    /** Whether a chip is pressed, when the user (or {@link #pressed(boolean)}) changes it. The last in a frame. */
+    public static final Topic<Toggled> TOGGLED =
+            Topic.state("vexelray.gui.button.toggled", Toggled.class, Toggled::button);
+
+    /** The button at {@code button} was pressed. */
+    public record Pressed(String button) implements Addressed {
+        @Override
+        public Object address() {
+            return button;
+        }
+    }
+
+    /** The chip at {@code button} is now {@code pressed}, or not. */
+    public record Toggled(String button, boolean pressed) implements Addressed {
+        @Override
+        public Object address() {
+            return button;
+        }
+    }
 
     /** How much a button is asking for. */
     public enum Kind {
@@ -70,8 +98,9 @@ public final class Button {
     private volatile boolean toggle;
     private volatile boolean pressed;
     private volatile InteractionState state = InteractionState.NORMAL;
+    private final WidgetName name;
+    /** The widget library's own hook on a press, for a widget built from buttons; see {@link #onPress}. */
     private volatile Runnable onPress = () -> { };
-    private volatile Consumer<Boolean> onToggle = v -> { };
     /** What plays a ripple on each press, or null for none. */
     private volatile Cues ripples;
     /** The label's colour as last painted: a ripple is drawn in it, so it reads on whatever the fill is. */
@@ -91,6 +120,7 @@ public final class Button {
                 .wordWrap(false)
                 .padding(Length.rem(0.35f), Length.rem(0.8f))
                 .corner(Length.rem(0.4f));
+        this.name = new WidgetName(gui, "button", node);
         gui.focusable(node, true);
         gui.cursor(node, CursorShape.POINTER);
         gui.onClick(node, (ClickEvent e) -> {
@@ -113,6 +143,17 @@ public final class Button {
     /** The node to place in a layout. */
     public Node node() {
         return node;
+    }
+
+    /** Call this button {@code name} in its tree ("save"): its {@link #address()} is the tree's name and this. */
+    public Button name(String name) {
+        this.name.name(name);
+        return this;
+    }
+
+    /** Where this button is on the bus: what its {@link Pressed} and {@link Toggled} carry. */
+    public String address() {
+        return name.address();
     }
 
     /** Set how much this button asks for. */
@@ -157,7 +198,7 @@ public final class Button {
         return this;
     }
 
-    /** Make this a chip: a button that stays pressed, and reports through {@link #onToggle}. */
+    /** Make this a chip: a button that stays pressed, and says so on {@link #TOGGLED}. */
     public Button toggle(boolean toggle) {
         this.toggle = toggle;
         node.role(toggle ? "togglebutton" : "button");
@@ -170,7 +211,7 @@ public final class Button {
         return pressed;
     }
 
-    /** Press or release a chip as the user would, telling {@link #onToggle}. No effect on a plain button. */
+    /** Press or release a chip as the user would, publishing {@link #TOGGLED}. No effect on a plain button. */
     public Button pressed(boolean value) {
         if (toggle && enabled) {
             flip(value);
@@ -179,7 +220,7 @@ public final class Button {
     }
 
     /**
-     * Show a pressed state the model chose, <b>without</b> notifying {@link #onToggle}. A sync is not an edit —
+     * Show a pressed state the model chose, <b>without</b> publishing {@link #TOGGLED}. A sync is not an edit —
      * see {@link Toggle#show}.
      */
     public Button show(boolean value) {
@@ -188,15 +229,13 @@ public final class Button {
         return this;
     }
 
-    /** React to a click, Enter or Space. Runs on a worker thread. Not called for a chip; see {@link #onToggle}. */
-    public Button onPress(Runnable handler) {
+    /**
+     * The widget library's hook on a press, for a widget built from buttons: run in the dispatch, in order with the
+     * input around it, and as well as {@link #PRESSED} rather than instead. Not called for a chip, whose
+     * state is {@link #TOGGLED}. Package-private, because an application hears a button by its message.
+     */
+    Button onPress(Runnable handler) {
         this.onPress = handler == null ? () -> { } : handler;
-        return this;
-    }
-
-    /** React to a chip flipping. Runs on a worker thread. */
-    public Button onToggle(Consumer<Boolean> handler) {
-        this.onToggle = handler == null ? v -> { } : handler;
         return this;
     }
 
@@ -206,11 +245,12 @@ public final class Button {
      * tree binds above the button, so Ctrl+Z takes it back (docs/plans/undo.md, step 7). A null answer does nothing:
      * the command has nothing to do this time.
      *
-     * <p>Replaces {@link #onPress}, and is the form to reach for whenever the press changes the user's data. The
-     * framework cannot invert a {@link Runnable}, so a command written as one is a command that cannot be undone;
-     * written as a change, it states the doing and the undoing once, and they cannot disagree. {@code onPress} stays
-     * for what is not an edit — opening a window, starting a search. The change applies on the handler thread,
-     * under the history's lock, so keep it to model work, as {@link Change} asks.
+     * <p>The form to reach for whenever the press changes the user's data: a command heard as a message cannot be
+     * inverted, so it cannot be undone; written as a change, it states the doing and the undoing once, and they
+     * cannot disagree. A press that is not an edit — opening a window, starting a search — is heard on
+     * {@link #PRESSED}, which this still publishes. The change applies on the GUI thread, in the dispatch, under the
+     * history's lock, so keep it to model work, as {@link Change} asks. It is one of the function-valued seams owed
+     * with vexelray-framework's T7.2 walk, with undo's own design.
      */
     public Button perform(Supplier<? extends Change> command) {
         java.util.Objects.requireNonNull(command, "command");
@@ -261,6 +301,7 @@ public final class Button {
             flip(!pressed);
         } else {
             onPress.run();
+            gui.bus().publish(PRESSED, new Pressed(address()));
         }
     }
 
@@ -274,7 +315,7 @@ public final class Button {
     private void set(boolean value) {
         this.pressed = value;
         paint();
-        onToggle.accept(value);
+        gui.bus().publish(TOGGLED, new Toggled(address(), value));
     }
 
     private void paint() {

@@ -356,10 +356,12 @@ public final class SelectionModel<T> {
     // ------------------------------------------------------------------ notification
 
     /**
-     * React to the selection changing. Called with the new selection, on whatever thread made the change, and only
-     * when the selection actually differs — a click on an already-selected row announces nothing.
+     * The widget library's hook on the selection changing, for the widget that shows this model: called with the new
+     * selection, on the thread that made the change, and only when the selection actually differs — a click on an
+     * already-selected row announces nothing. Package-private, because an application hears a selection by the
+     * message of the widget showing it ({@link ListView#SELECTED}, {@link Table#SELECTED}, {@link Select#CHANGED}).
      */
-    public SelectionModel<T> onChange(Consumer<Set<T>> listener) {
+    SelectionModel<T> onChange(Consumer<Set<T>> listener) {
         listeners.add(Objects.requireNonNull(listener, "listener"));
         return this;
     }
@@ -374,7 +376,7 @@ public final class SelectionModel<T> {
      * operation that moves the lead announces here, so "where the keyboard is" has one source whichever gesture
      * put it there.
      */
-    public SelectionModel<T> onLeadChange(Consumer<T> listener) {
+    SelectionModel<T> onLeadChange(Consumer<T> listener) {
         leadListeners.add(Objects.requireNonNull(listener, "listener"));
         return this;
     }

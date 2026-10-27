@@ -56,7 +56,8 @@ class ButtonTest {
     void aChipFlipsAndReportsEachFlipOnce() {
         try (HeadlessGui h = new HeadlessGui()) {
             List<Boolean> seen = new ArrayList<>();
-            Button chip = new Button(h.gui, "All videos").toggle(true).onToggle(seen::add);
+            Button chip = new Button(h.gui, "All videos").toggle(true);
+            h.gui.mailbox(Button.TOGGLED, chip.address(), t -> seen.add(t.pressed()));
             h.gui.root().children(chip.node());
             h.frame().focus(chip.node());
 
@@ -71,13 +72,16 @@ class ButtonTest {
     void showingAValueIsNotReportedAsAnEdit() {
         try (HeadlessGui h = new HeadlessGui()) {
             List<Boolean> seen = new ArrayList<>();
-            Button chip = new Button(h.gui, "Today").toggle(true).onToggle(seen::add);
+            Button chip = new Button(h.gui, "Today").toggle(true);
+            h.gui.mailbox(Button.TOGGLED, chip.address(), t -> seen.add(t.pressed()));
 
             chip.show(true);
+            h.frame();
             assertTrue(chip.pressed(), "the chip shows what the model chose");
             assertEquals(List.of(), seen, "and tells nobody, or the panel and the model loop");
 
             chip.pressed(false);
+            h.frame();
             assertEquals(List.of(false), seen, "acting as the user would does tell");
         }
     }

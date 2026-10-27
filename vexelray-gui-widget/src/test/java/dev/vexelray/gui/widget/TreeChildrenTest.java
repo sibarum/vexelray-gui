@@ -30,13 +30,13 @@ class TreeChildrenTest {
             h.bus.subscribe(TreeView.CHILDREN_WANTED, wanted::add);
         }
 
-        /** Answer for {@code parent} (null for the roots): a branch for each name ending in '/', a leaf for the rest. */
+        /** Answer the tree called {@code tree} for {@code parent} (null for the roots): a branch for each name ending in '/', a leaf for the rest. */
         void answer(String tree, String parent, String... names) {
             List<TreeView.Entry> level = new ArrayList<>();
             for (String name : names) {
                 level.add(name.endsWith("/") ? TreeView.Entry.branch(name, name) : TreeView.Entry.leaf(name, name));
             }
-            h.bus.publish(TreeView.CHILDREN, new TreeView.Children(tree, parent, level));
+            h.bus.publish(TreeView.CHILDREN, new TreeView.Children(h.gui.address(tree), parent, level));
         }
 
         List<Object> parents() {
@@ -55,7 +55,8 @@ class TreeChildrenTest {
             TreeView<String> tree = new TreeView<>(h.gui, "files");
             h.gui.root().children(tree.node());
 
-            assertEquals(List.of(new TreeView.ChildrenWanted("files", null)), asked.wanted, "asked when built");
+            assertEquals(List.of(new TreeView.ChildrenWanted(h.gui.address("files"), null)), asked.wanted,
+                    "asked when built");
             h.frame();
             assertNull(tree.rowNode("src/"), "and shows nothing it has not been told");
 

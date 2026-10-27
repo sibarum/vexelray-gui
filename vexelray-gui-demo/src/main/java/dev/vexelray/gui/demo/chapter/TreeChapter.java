@@ -81,12 +81,12 @@ public final class TreeChapter implements Chapter {
         // because building it is what asks for the roots. Whether a row opens comes from the directory bit, in the
         // answer, so a folder gets a disclosure control without anything under it being listed.
         gui.bus().subscribeAsync(TreeView.CHILDREN_WANTED, wanted -> {
-            if (!wanted.tree().equals(FILES)) {
+            if (!wanted.tree().equals(gui.address(FILES))) {
                 return;
             }
             Path parent = (Path) wanted.parent();
             List<Path> level = parent == null ? List.of(Path.of(".").toAbsolutePath().normalize()) : list(parent);
-            gui.bus().publish(TreeView.CHILDREN, new TreeView.Children(FILES, parent,
+            gui.bus().publish(TreeView.CHILDREN, new TreeView.Children(wanted.tree(), parent,
                     level.stream().map(TreeChapter::entry).toList()));
         }, LISTING);
         TreeView<Path> files = new TreeView<>(gui, FILES);
@@ -111,11 +111,11 @@ public final class TreeChapter implements Chapter {
         // long name on hover is drawn over.
         Node selected = Ui.prose(gui, "Select a row. The tree is narrow on purpose: rest on a name it cuts "
                 + "off and the whole of it is drawn over this pane, where it was, until the pointer leaves the row.");
-        files.onSelect(path -> {
-            console.note("selected " + path);
-            selected.text(String.valueOf(path));
+        gui.mailbox(TreeView.SELECTED, files.address(), s -> {
+            console.note("selected " + s.item());
+            selected.text(String.valueOf(s.item()));
         });
-        files.onActivate(path -> console.good("activated " + path));
+        gui.mailbox(TreeView.ACTIVATED, files.address(), a -> console.good("activated " + a.item()));
 
         // A command that belongs to the row rather than to the menu: marked from the set like the tree's own, and
         // offered only on a row it applies to, and cancellable. It is a walk on purpose — counting a

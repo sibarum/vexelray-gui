@@ -145,9 +145,9 @@ class SelectTest {
     @Test
     void choosingInASingleSelectShutsThePopupAndCommitsOnce() {
         try (HeadlessGui h = new HeadlessGui()) {
-            List<Set<String>> commits = new ArrayList<>();
+            List<Set<Object>> commits = new ArrayList<>();
             Select<String> select = single(h);
-            select.onCommit(commits::add);
+            h.gui.mailbox(Select.COMMITTED, select.address(), m -> commits.add(m.chosen()));
 
             clickControl(h, select);
             h.frame();
@@ -164,9 +164,9 @@ class SelectTest {
     @Test
     void choosingInAMultiSelectLeavesThePopupUpAndCommitsWhenItCloses() {
         try (HeadlessGui h = new HeadlessGui()) {
-            List<Set<String>> commits = new ArrayList<>();
+            List<Set<Object>> commits = new ArrayList<>();
             Select<String> select = mount(h, SelectionModel.range(), SIZES);
-            select.onCommit(commits::add);
+            h.gui.mailbox(Select.COMMITTED, select.address(), m -> commits.add(m.chosen()));
 
             clickControl(h, select);
             h.frame();
@@ -289,9 +289,9 @@ class SelectTest {
     @Test
     void escapeRestoresTheSelectionThePopupOpenedWith() {
         try (HeadlessGui h = new HeadlessGui()) {
-            List<Set<String>> commits = new ArrayList<>();
+            List<Set<Object>> commits = new ArrayList<>();
             Select<String> select = single(h);
-            select.onCommit(commits::add);
+            h.gui.mailbox(Select.COMMITTED, select.address(), m -> commits.add(m.chosen()));
             select.show("Medium");
             h.frame();
             h.focus(select.node());
@@ -315,9 +315,9 @@ class SelectTest {
     @Test
     void clickingAwayShutsThePopupAndKeepsTheChoice() {
         try (HeadlessGui h = new HeadlessGui()) {
-            List<Set<String>> commits = new ArrayList<>();
+            List<Set<Object>> commits = new ArrayList<>();
             Select<String> select = mount(h, SelectionModel.range(), SIZES);
-            select.onCommit(commits::add);
+            h.gui.mailbox(Select.COMMITTED, select.address(), m -> commits.add(m.chosen()));
 
             clickControl(h, select);
             h.frame();

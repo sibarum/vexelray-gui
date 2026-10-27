@@ -1,5 +1,8 @@
 package dev.vexelray.gui.widget;
 
+import sibarum.atchung.Sender;
+import sibarum.atchung.Topic;
+import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.CursorShape;
@@ -48,14 +51,30 @@ import java.util.function.Consumer;
  * A panel on its way out has to still be there while it goes, so <b>hiding it cannot be the first thing that
  * happens</b> — which is a problem a rail has and a tab bar never does, because a tab bar has no way to end up
  * showing nothing. {@link #transition} installs the motion: for its duration the panel is on show and the rail is
- * mid-transaction, and the panel is put away only when the motion reports that it is done. {@link #onSelect} is
- * told at the moment the selection changes rather than after the panel has gone, so a handler with something of
- * its own to move is told while the thing it is moving away from is still on screen.
+ * mid-transaction, and the panel is put away only when the motion reports that it is done. {@link #SELECTED} is
+ * published at the moment the selection changes rather than after the panel has gone, so a view with something of
+ * its own to move hears it while the thing it is moving away from is still on screen.
  *
  * <p>With nothing installed the panel appears and goes in one step, which is what a rail did before there was any
  * motion here and is the whole of the reduced-motion path.
  */
 public final class Rail {
+
+    /**
+     * The panel on show, by its key, or null when the panel shuts: published at the moment the selection changes, while
+     * the panel is <b>still on show</b>, whether it is arriving or leaving, because the motion has not started yet. A
+     * view told after the panel had already been hidden could not have animated a close at all. The last in a frame,
+     * carrying the rail's {@link #address() address} (vexelray-framework's {@code docs/threading.md}, T3.8).
+     */
+    public static final Topic<Selected> SELECTED = Topic.state("vexelray.gui.rail.selected", Selected.class, Selected::rail);
+
+    /** The rail at {@code rail} shows the panel {@code key}, or none when null. */
+    public record Selected(String rail, String key) implements Addressed {
+        @Override
+        public Object address() {
+            return rail;
+        }
+    }
 
     private static final Length TILE = Length.rem(1.9f);
 
@@ -227,7 +246,7 @@ public final class Rail {
     private final Node panelBody;
     private final List<Item> items = new ArrayList<>();
     private volatile String selected;
-    private volatile Consumer<String> onSelect = k -> { };
+    private final WidgetName name;
     private volatile PanelTransition transition = PanelTransition.NONE;
     /** The pages a transition has hold of, null where the change it is running has only one. Guarded by {@code this}. */
     private Node fadingOut;
@@ -249,6 +268,7 @@ public final class Rail {
                 .lit(Finish.LIT).elevation(theme.elevation(Relief.FLOATING))
                 .alignItems(AlignItems.CENTER)
                 .scroll(false, false);
+        this.name = new WidgetName(gui, "rail", bar);
 
         this.panelTitle = gui.text("").width(Length.grow(1f))
                 .textSize(Length.rem(0.62f)).wordWrap(false).textColor(Role.DIM);
@@ -283,7 +303,7 @@ public final class Rail {
     /**
      * Add a panel.
      *
-     * @param key   how the application names this panel — what {@link #select} takes and {@link #onSelect} hands back
+     * @param key   how the application names this panel — what {@link #select} takes and {@link #SELECTED} carries
      * @param icon  the tile's contents; the application's, because this module has no icon set and should not grow one
      * @param title shown in the panel's heading
      * @param page  builds the panel's contents, the first time it is shown
@@ -311,7 +331,19 @@ public final class Rail {
 
     /**
      * Add a divider, and below it an icon that runs an action rather than opening a panel — a reset, a fit, a
-     * home. It never becomes the selection, so opening it does not put away whatever panel is on show.
+     * home. It never becomes the selection, so opening it does not put away whatever panel is on show. A press sends
+     * {@code message} through {@code to}: the form for an application, as a menu item's is (vexelray-framework's
+     * {@code docs/threading.md}, T7.5).
+     */
+    public <T> Rail action(Node icon, Sender<T> to, T message) {
+        java.util.Objects.requireNonNull(to, "to");
+        java.util.Objects.requireNonNull(message, "message");
+        return action(icon, () -> to.send(message));
+    }
+
+    /**
+     * {@link #action(Node, Sender, Object)} running {@code act}: the widget library's form, owed out of an
+     * application's reach with T7.2's API walk.
      */
     public Rail action(Node icon, Runnable act) {
         Node rule = gui.box().width(Length.percent(70)).height(Length.dp(1))
@@ -372,7 +404,7 @@ public final class Rail {
      * only page an in-flight transition can still be holding is one this call is about to take charge of anyway.
      *
      * <p>What is <em>not</em> deferred is the selection itself: {@link #selected()} reports the new answer and
-     * {@link #onSelect} has been told before the motion starts. Only what is on screen is ever mid-flight.
+     * {@link #SELECTED} has been published before the motion starts. Only what is on screen is ever mid-flight.
      */
     public synchronized Rail select(String key) {
         Item found = item(key);
@@ -385,7 +417,7 @@ public final class Rail {
             for (Item i : items) {
                 paintTile(i, false);
             }
-            onSelect.accept(selected);
+            selected(selected);
             return this;
         }
 
@@ -421,7 +453,7 @@ public final class Rail {
             panel.hitInert(true);
         }
         // Told before the motion starts, and so while the panel it is being told about is still on show.
-        onSelect.accept(this.selected);
+        selected(this.selected);
         transition.run(new Change(panel, outgoing, incoming), this::settle);
         return this;
     }
@@ -448,17 +480,19 @@ public final class Rail {
         return this;
     }
 
-    /**
-     * React to the selection, including to null when the panel shuts. Runs on a worker thread.
-     *
-     * <p>Called at the moment the selection changes: {@link #selected()} already reports the new answer and the
-     * panel is <b>still on show</b>, whether it is arriving or leaving, because the motion has not started yet.
-     * That ordering is what a handler with something of its own to move needs — a handler told after the panel
-     * had already been hidden could not have animated a close at all.
-     */
-    public Rail onSelect(Consumer<String> handler) {
-        this.onSelect = handler == null ? k -> { } : handler;
+    /** Call this rail {@code name} in its tree ("tools"): its {@link #address()} is the tree's name and this. */
+    public Rail name(String name) {
+        this.name.name(name);
         return this;
+    }
+
+    /** Where this rail is on the bus: what its {@link Selected} carries. */
+    public String address() {
+        return name.address();
+    }
+
+    private void selected(String key) {
+        gui.bus().publish(SELECTED, new Selected(name.address(), key));
     }
 
     /** Attach hover titles for every item added so far. */

@@ -308,9 +308,9 @@ class ColorPickerTest {
     }
 
     private static ColorPicker mount(HeadlessGui h, Color initial, ColorHistory history, Recorder rec) {
-        ColorPicker picker = new ColorPicker(h.gui, initial, history)
-                .onChange(rec.changed::add)
-                .onCommit(rec.committed::add);
+        ColorPicker picker = new ColorPicker(h.gui, initial, history);
+        h.gui.mailbox(ColorPicker.CHANGED, picker.address(), m -> rec.changed.add(m.color()));
+        h.gui.mailbox(ColorPicker.COMMITTED, picker.address(), m -> rec.committed.add(m.color()));
         h.gui.root().append(picker.node());
         h.frame();          // first layout
         h.frame();          // the resize handlers' pictures land in the next one

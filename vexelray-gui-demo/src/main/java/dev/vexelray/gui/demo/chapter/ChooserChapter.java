@@ -83,14 +83,15 @@ public final class ChooserChapter implements Chapter {
         for (Shading s : Shading.values()) {
             shading.option(word(s.name()), s);
         }
-        shading.onChange(s -> console.good("shading: " + word(s.name())));
+        gui.mailbox(Segment.CHANGED, shading.address(),
+                s -> console.good("shading: " + word(((Shading) s.value()).name())));
 
         // ---- one of a handful, behind a chevron -------------------------------------------------------------
 
         Select<String> size = new Select<>(gui, s -> s);
         size.options(SIZES).placeholder("Pick a size").show("Medium");
-        size.selection().onChange(chosen -> console.note("size preview: " + oneOf(chosen)));
-        size.onCommit(chosen -> console.good("size chosen: " + oneOf(chosen)));
+        gui.mailbox(Select.CHANGED, size.address(), c -> console.note("size preview: " + oneOf(c.chosen())));
+        gui.mailbox(Select.COMMITTED, size.address(), c -> console.good("size chosen: " + oneOf(c.chosen())));
 
         // ---- one of ten thousand, at the same cost ----------------------------------------------------------
 
@@ -100,7 +101,7 @@ public final class ChooserChapter implements Chapter {
         }
         Select<String> deep = new Select<>(gui, s -> s);
         deep.options(many).placeholder("Pick a swatch").show("swatch-06000");
-        deep.onCommit(chosen -> console.good("swatch chosen: " + oneOf(chosen)));
+        gui.mailbox(Select.COMMITTED, deep.address(), c -> console.good("swatch chosen: " + oneOf(c.chosen())));
 
         Node counter = gui.text("").width(Length.FILL).height(Length.rem(1.5f))
                 .textSize(Length.rem(0.9375f)).textColor(Role.DIM)
@@ -125,9 +126,9 @@ public final class ChooserChapter implements Chapter {
         tags.summary(chosen -> chosen.size() <= 2
                 ? String.join(", ", chosen)
                 : chosen.size() + " tags");
-        tags.selection().onChange(chosen -> console.note("tags now: " + (chosen.isEmpty() ? "none"
-                : String.join(", ", chosen))));
-        tags.onCommit(chosen -> console.good("tags committed: " + chosen.size()));
+        gui.mailbox(Select.CHANGED, tags.address(), c -> console.note("tags now: " + (c.chosen().isEmpty() ? "none"
+                : String.join(", ", c.chosen().stream().map(String::valueOf).toList()))));
+        gui.mailbox(Select.COMMITTED, tags.address(), c -> console.good("tags committed: " + c.chosen().size()));
 
         Node choosers = gui.row().width(Length.FILL).height(Length.AUTO).gap(Ui.GAP)
                 .alignItems(AlignItems.START).scroll(false, false)
@@ -212,7 +213,8 @@ public final class ChooserChapter implements Chapter {
                 .align(TextLayout.HAlign.RIGHT, TextLayout.VAlign.MIDDLE);
         Slider slider = new Slider(gui, initial).lattice(lattice).transition(settle);
         readout.text(text.apply(slider.value()));
-        slider.onChange(f -> {
+        gui.mailbox(Slider.CHANGED, slider.address(), c -> {
+            float f = (float) c.value();
             readout.text(text.apply(f));
             console.note(caption.toLowerCase(java.util.Locale.ROOT) + ": " + text.apply(f));
         });
@@ -251,8 +253,8 @@ public final class ChooserChapter implements Chapter {
     }
 
     /** The one thing in a set, or a word for none — the read-out a single-choice console line wants. */
-    private static String oneOf(Set<String> chosen) {
-        return chosen.isEmpty() ? "nothing" : chosen.iterator().next();
+    private static String oneOf(Set<?> chosen) {
+        return chosen.isEmpty() ? "nothing" : String.valueOf(chosen.iterator().next());
     }
 
     /** {@code EXTRA_LARGE} as {@code Extra large}: an enum constant is not a label until somebody says so. */

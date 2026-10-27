@@ -82,9 +82,9 @@ public final class NumberField {
         field.node().width(Length.rem(4f)).align(
                 dev.vexelray.text.TextLayout.HAlign.RIGHT, dev.vexelray.text.TextLayout.VAlign.MIDDLE);
         field.onSubmit(s -> commit());
-        // Arrow keys step. They are claimed on the field rather than globally: an up-arrow anywhere else in the
+        // Arrow keys step. They are heard on the field rather than claimed globally: an up-arrow anywhere else in the
         // window is still whatever that place already meant.
-        gui.onKey(field.node(), e -> {
+        field.keys(e -> {
             if (e.key() == Key.UP) {
                 nudge(1);
             } else if (e.key() == Key.DOWN) {

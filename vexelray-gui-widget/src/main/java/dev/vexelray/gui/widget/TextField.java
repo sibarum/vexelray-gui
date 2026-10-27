@@ -47,8 +47,8 @@ import java.util.function.Consumer;
  *
  * <p><b>Edits are committed in the dispatch; the application is told by message.</b> Those are two different
  * requirements and the field treats them as such. Applying a keystroke to a document depends on arrival order and is
- * bounded model work, so it runs as an ordered stage ({@link Gui#onCharUi}, {@link Gui#onKeyUi},
- * {@link Gui#onDragUi}, {@link Gui#claimUi}) where a total order already exists. Telling the application what changed
+ * bounded model work, so it runs as an ordered stage ({@link Gui#onChar}, {@link Gui#onKey},
+ * {@link Gui#onDrag}, {@link Gui#claim}) where a total order already exists. Telling the application what changed
  * is a message ({@link #CHANGED}) carrying the document's version, so a reply computed from an older text is
  * detectably stale rather than silently out of sequence. Handing each input event to
  * a worker pool separately, as this widget used to, orders the invocations but not their effects: a typed burst
@@ -282,6 +282,7 @@ public final class TextField implements AutoCloseable {
     private static final Consumer<String> NONE = s -> { };
     private volatile Consumer<String> onChange = NONE;
     private volatile Consumer<String> onSubmit = NONE;
+    private volatile Consumer<KeyEvent> keys = e -> { };
 
     /** What this field is called on the bus: see {@link #name(String)}. */
     private final WidgetName name;
@@ -316,9 +317,12 @@ public final class TextField implements AutoCloseable {
 
         // The edit path, all of it ordered: typed text, edit commands, and pointer caret placement are the three
         // ways this document changes from input, and all three must sequence against each other.
-        gui.onCharUi(node, this::onCodePoint);
-        gui.onKeyUi(node, this::onKey);
-        gui.onDragUi(node, this::onPointer);
+        gui.onChar(node, this::onCodePoint);
+        gui.onKey(node, e -> {
+            onKey(e);
+            keys.accept(e);   // a node has one key handler, so a widget built on the field hears its keys here
+        });
+        gui.onDrag(node, this::onPointer);
         // Undo is claimed, not heard as a key: the window's history holds Ctrl+Z as a claim, and a claim outranks
         // delivery, so a field that only listened for the key would have its own Ctrl+Z taken by the window's.
         // FOCUSED outranks it in turn, and routes to whichever history this field records into.
@@ -578,6 +582,16 @@ public final class TextField implements AutoCloseable {
     }
 
     /**
+     * The widget library's hook on every key the field hears, after the field has done what it does with it: for a
+     * widget built on a field that adds keys of its own (a number field's arrows). A node has one key handler, and
+     * this field's is the field's.
+     */
+    TextField keys(Consumer<KeyEvent> handler) {
+        this.keys = handler == null ? e -> { } : handler;
+        return this;
+    }
+
+    /**
      * Let the field hold multiple lines: Enter inserts a newline instead of submitting, pasted newlines survive,
      * and the field scrolls vertically to keep the caret in view. Size it with {@code node().height(...)} — a
      * multiline field does not grow to fit its content.
@@ -605,7 +619,7 @@ public final class TextField implements AutoCloseable {
         // Ordered, because indenting edits the same document typing does.
         Shortcut tab = Shortcut.of(Key.TAB);
         if (multiline) {
-            gui.claimUi(node, tab, ClaimScope.FOCUSED, this::insertSoftTab);
+            gui.claim(node, tab, ClaimScope.FOCUSED, this::insertSoftTab);
         } else {
             gui.releaseClaim(node, tab);
         }

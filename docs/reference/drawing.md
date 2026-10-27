@@ -105,11 +105,10 @@ resolved by the layout pass — and a picture cannot be scaled in the renderer w
 that does. So a picture is authored for the box that was measured, exactly as a typeset block re-projects when its
 basis changes, and a consumer rebuilds it from `onResize`.
 
-Which lane is a real choice. A picture is clipped to its box, so a figure a frame behind its panel visibly does
-not fit while a window is being dragged — that is the misalignment flicker, and it is the thing a drawing must not
-do. `onResizeUi` lands in the same frame as the layout it reacts to and is the right lane whenever the rebuild is
-cheap (the demo's chart is a hundred marks and ninety-six sines). Reach for `onResize` when it genuinely is not,
-and accept the frame.
+A picture is clipped to its box, so a figure a frame behind its panel visibly does not fit while a window is being
+dragged — that is the misalignment flicker, and it is the thing a drawing must not do. `onResize` lands in the same
+frame as the layout it reacts to, so the rebuild has to be cheap (the demo's chart is a hundred marks and ninety-six
+sines). One that genuinely is not is the application's logic's, sent a message, and accepts the frame.
 
 ## 5. In a file: the same picture, not a redrawing of it
 

@@ -236,7 +236,7 @@ public final class ListView<T> implements AutoCloseable {
 
         // One tab stop for the whole list, as a tree is: registering the key stage is what makes the root
         // focusable, and rows are pointer targets rather than tab stops.
-        gui.onKeyUi(box, this::onKey);
+        gui.onKey(box, this::onKey);
         gui.claim(box, SELECT_ALL, ClaimScope.FOCUSED, () -> selection.all(order()));
     }
 

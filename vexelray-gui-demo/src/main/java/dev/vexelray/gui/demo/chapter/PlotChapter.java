@@ -89,7 +89,7 @@ public final class PlotChapter implements Chapter {
         this.console = stage.console();
 
         figure = gui.box().width(Length.FILL).height(Length.grow(1));
-        gui.onResizeUi(figure, layout -> {
+        gui.onResize(figure, layout -> {
             size.set(new float[]{layout.rect().w(), layout.rect().h()});
             redraw();
         });

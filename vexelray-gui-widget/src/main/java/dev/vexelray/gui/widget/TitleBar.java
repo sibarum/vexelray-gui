@@ -464,7 +464,7 @@ public final class TitleBar {
 
         Node node = gui.box().size(Length.dp(ICON_DP), Length.dp(ICON_DP)).scroll(false, false);
         // Chosen against the box the layout settled on, which is in pixels and so already carries the scale.
-        gui.onResizeUi(node, computed -> node.image(sizes.get(uploaded.bestFor(
+        gui.onResize(node, computed -> node.image(sizes.get(uploaded.bestFor(
                 Math.round(Math.max(computed.rect().w(), computed.rect().h()))))));
         return icon(node);
     }
@@ -585,7 +585,7 @@ public final class TitleBar {
             this.node = node;
             this.danger = danger;
             this.glyph = glyph;
-            gui.onResizeUi(node, computed -> {
+            gui.onResize(node, computed -> {
                 box = computed.rect();
                 paint();
             });

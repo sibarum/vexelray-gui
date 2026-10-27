@@ -881,7 +881,7 @@ public final class TreeView<T> implements AutoCloseable {
         // Navigation is an ordered stage: moving a cursor is order-dependent under key repeat, and it is pure
         // lookups on the visible list — exactly what the GUI-thread lane is for. Registering it also makes the
         // tree focusable, which is the single tab stop.
-        gui.onKeyUi(this.root, this::onKey);
+        gui.onKey(this.root, this::onKey);
         // Cut, copy and paste, claimed FOCUSED so they belong to the tree only while it holds focus -- a text
         // field in the same window keeps its own, and neither has to know about the other.
         gui.claim(this.root, CUT, ClaimScope.FOCUSED, () -> take(selectedItem(), DropEffect.MOVE));

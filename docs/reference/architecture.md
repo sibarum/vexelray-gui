@@ -902,10 +902,10 @@ exists as siblings, so those steps are *integration*, not construction.
     only three places to put one are the delivery, a reorder buffer at the consumer, or the transition
     itself. The first two are the same queue — and building it inside the dispatcher would re-implement the
     bus's own delivery machinery (§0) while spending exactly the asynchrony §5 exists to provide. So the
-    transition moves to the stage that is *already* a total order. `onCharUi`/`onKeyUi`/`onDragUi`/`claimUi`
-    are that seam; a stage must be bounded model work, never application logic. Everything without an
-    ordering requirement — `onChange`, app handlers, anything slow — stays on the worker executor, where it
-    still cannot stall rendering. Landed after a text field applied a 64-character burst scrambled: each
+    transition moves to the stage that is *already* a total order. In 0.1 `onCharUi`/`onKeyUi`/`onDragUi`/
+    `claimUi` were that seam, beside worker-pool twins for everything without an ordering requirement. In 0.2
+    every handler runs in the dispatch, so the twins merged into `onChar`/`onKey`/`onDrag`/`claim`: one
+    registration per node and kind, bounded model work, never application logic, which hears a widget by message. Landed after a text field applied a 64-character burst scrambled: each
     edit was individually coherent, so the result read as a dropped keystroke rather than a race
     (`HandlerOrderingTest`, the module's only test that runs handlers on a real pool).
 11. **Widget state is a `State<T>`, not a private buffer behind a lock (§4).** A widget holding its own

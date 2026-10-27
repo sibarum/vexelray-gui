@@ -194,36 +194,19 @@ public final class InputDispatcher {
     private final Map<Long, IntConsumer> charHandlers = new ConcurrentHashMap<>();
 
     /**
-     * Handlers registered as an <b>ordered stage</b> rather than as application logic: they run inline on the GUI
-     * thread during {@link #dispatch}, in arrival order. Every handler does in 0.2; the two registrations are 0.1's
-     * split between the GUI thread and a worker pool, kept until the widget library's registrations are merged.
-     *
-     * <p>The distinction is what the handler <em>is</em>. An observer reacts to an event and has no ordering
-     * requirement, so it belongs off-thread where a slow one cannot stall rendering. A command performs a state
-     * transition that depends on arrival order — and handing each event to a pool separately orders the
-     * invocations but not the effects, so a burst of typed characters can apply scrambled. Serialising delivery
-     * would fix it by rebuilding the bus's own delivery machinery inside the dispatcher (architecture.md §0), and
-     * would spend exactly the asynchrony the design went to some trouble to get. Running the transition here
-     * instead costs nothing: the drain is already a total order, and applying an edit to a document is bounded
-     * model work, not application logic — the same reason the reconciler runs here.
-     */
-    private final Map<Long, IntConsumer> charStages = new ConcurrentHashMap<>();
-    private final Map<Long, Consumer<KeyEvent>> keyStages = new ConcurrentHashMap<>();
-    private final Map<Long, Consumer<DragEvent>> dragStages = new ConcurrentHashMap<>();
-    /**
      * Declared preemption (see {@link ClaimScope}). Ordered only by scope precedence, never by registration, so
-     * a focused element always outranks a global default. {@code inline} marks the framework's own claims, whose
-     * commands mutate GUI-thread state (focus). Every claim runs on the GUI thread in 0.2, so the flag is 0.1's.
+     * a focused element always outranks a global default. A claim's command runs in the dispatch, as every handler
+     * does.
      *
      * <p>A claim is on a {@link Trigger}: a chord, or a touchpad {@link Gesture} (a swipe, a tap), which resolve
      * the same way. A {@code null} chord is a claim on <em>every</em> trigger ({@link #claimAny}), and its command
      * hears which one it got. At the same scope a claim that named its trigger outranks it: the wildcard is the
      * floor of its scope, never a way of shadowing a key somebody asked for by name.
      */
-    private record Claim(Trigger chord, ClaimScope scope, long nodeId, Consumer<Trigger> command, boolean inline) {
+    private record Claim(Trigger chord, ClaimScope scope, long nodeId, Consumer<Trigger> command) {
 
-        static Claim of(Trigger chord, ClaimScope scope, long nodeId, Runnable command, boolean inline) {
-            return new Claim(chord, scope, nodeId, pressed -> command.run(), inline);
+        static Claim of(Trigger chord, ClaimScope scope, long nodeId, Runnable command) {
+            return new Claim(chord, scope, nodeId, pressed -> command.run());
         }
 
         boolean any() {
@@ -611,11 +594,7 @@ public final class InputDispatcher {
                 if (claimed == null) {
                     continue;
                 }
-                if (claimed.inline()) {
-                    claimed.command().accept(t);
-                } else {
-                    handled(() -> claimed.command().accept(t));
-                }
+                handled(() -> claimed.command().accept(t));
             }
         }
     }
@@ -812,7 +791,7 @@ public final class InputDispatcher {
      * answers clicks keeps a drag handler above it from capturing its press.
      */
     private boolean ownsPointerDrag(RetainedNode n) {
-        return dragHandlers.containsKey(n.id) || dragStages.containsKey(n.id);
+        return dragHandlers.containsKey(n.id);
     }
 
     /**
@@ -890,9 +869,9 @@ public final class InputDispatcher {
         return contextHandlers.containsKey(nodeId);
     }
 
-    /** True if {@code nodeId} has a drag handler or drag stage. */
+    /** True if {@code nodeId} has a drag handler. */
     public boolean hasDrag(long nodeId) {
-        return dragHandlers.containsKey(nodeId) || dragStages.containsKey(nodeId);
+        return dragHandlers.containsKey(nodeId);
     }
 
     /** True if {@code nodeId} takes the wheel. */
@@ -900,14 +879,14 @@ public final class InputDispatcher {
         return wheelHandlers.containsKey(nodeId);
     }
 
-    /** True if {@code nodeId} has a key handler or key stage. */
+    /** True if {@code nodeId} has a key handler. */
     public boolean hasKey(long nodeId) {
-        return keyHandlers.containsKey(nodeId) || keyStages.containsKey(nodeId);
+        return keyHandlers.containsKey(nodeId);
     }
 
-    /** True if {@code nodeId} has a typed-text handler or stage. */
+    /** True if {@code nodeId} has a typed-text handler. */
     public boolean hasChar(long nodeId) {
-        return charHandlers.containsKey(nodeId) || charStages.containsKey(nodeId);
+        return charHandlers.containsKey(nodeId);
     }
 
     /** Explicitly mark a node focusable (e.g. a button) even without a key handler. */
@@ -926,34 +905,6 @@ public final class InputDispatcher {
         focusable.add(nodeId);
     }
 
-    // --- ordered stages: run on the GUI thread during dispatch, in arrival order (see charStages) ---
-
-    /** Register {@code nodeId}'s typed-text stage, run in arrival order on the GUI thread. */
-    public void onCharUi(long nodeId, IntConsumer stage) {
-        charStages.put(nodeId, stage);
-        focusable.add(nodeId);
-    }
-
-    /** Register {@code nodeId}'s key-command stage, run in arrival order on the GUI thread. */
-    public void onKeyUi(long nodeId, Consumer<KeyEvent> stage) {
-        keyStages.put(nodeId, stage);
-        focusable.add(nodeId);
-    }
-
-    /** Register {@code nodeId}'s drag stage, run in arrival order on the GUI thread. */
-    public void onDragUi(long nodeId, Consumer<DragEvent> stage) {
-        dragStages.put(nodeId, stage);
-    }
-
-    /**
-     * Claim {@code chord} for {@code nodeId}, running the command on the GUI thread in arrival order — the
-     * variant a claim that performs an edit needs, so it sequences against typed text rather than racing it.
-     */
-    public void claimUi(long nodeId, Trigger chord, ClaimScope scope, Runnable command) {
-        claims.removeIf(c -> c.nodeId() == nodeId && c.scope() == scope && chord.equals(c.chord()));
-        claims.add(Claim.of(chord, scope, nodeId, command, true));
-    }
-
     /** Register a global shortcut command — a {@link ClaimScope#GLOBAL} claim owned by no node. */
     public void registerShortcut(Shortcut shortcut, Runnable command) {
         claim(-1L, shortcut, ClaimScope.GLOBAL, command);
@@ -962,7 +913,7 @@ public final class InputDispatcher {
     /** Claim {@code chord} for {@code nodeId} at {@code scope}; replaces any identical claim by the same node. */
     public void claim(long nodeId, Trigger chord, ClaimScope scope, Runnable command) {
         claims.removeIf(c -> c.nodeId() == nodeId && c.scope() == scope && chord.equals(c.chord()));
-        claims.add(Claim.of(chord, scope, nodeId, command, false));
+        claims.add(Claim.of(chord, scope, nodeId, command));
     }
 
     /**
@@ -972,7 +923,7 @@ public final class InputDispatcher {
      */
     public void claimAny(long nodeId, ClaimScope scope, Consumer<Trigger> command) {
         claims.removeIf(c -> c.nodeId() == nodeId && c.any());
-        claims.add(new Claim(null, scope, nodeId, command, false));
+        claims.add(new Claim(null, scope, nodeId, command));
     }
 
     /** Drop the wildcard claim {@code nodeId} holds, if any; its claims on named chords stay. */
@@ -987,7 +938,7 @@ public final class InputDispatcher {
 
     /** A framework default, run on the GUI thread because it mutates dispatch state. */
     private void claimInternal(Shortcut chord, Runnable command) {
-        claims.add(Claim.of(chord, ClaimScope.GLOBAL, -1L, command, true));
+        claims.add(Claim.of(chord, ClaimScope.GLOBAL, -1L, command));
     }
 
     /** The topic every routed key press is reported on (set by Gui). */
@@ -1154,10 +1105,7 @@ public final class InputDispatcher {
         dragWatches.removeIf(w -> w.nodeId() == nodeId);
         keyHandlers.remove(nodeId);
         charHandlers.remove(nodeId);
-        charStages.remove(nodeId);
         nodeCursors.remove(nodeId);
-        keyStages.remove(nodeId);
-        dragStages.remove(nodeId);
         claims.removeIf(c -> c.nodeId() == nodeId);
         focusable.remove(nodeId);
         reportedState.remove(nodeId);
@@ -1444,12 +1392,6 @@ public final class InputDispatcher {
                 // Typed text goes only to the focused, editable node — never conflated with the key command.
                 if (focusedId != -1) {
                     int cp = c.codepoint();
-                    // The ordered stage runs here, on the drain thread, so a burst of characters applies in the
-                    // order it was typed. An async handler is still offered the code point afterwards.
-                    IntConsumer stage = charStages.get(focusedId);
-                    if (stage != null) {
-                        stage.accept(cp);
-                    }
                     IntConsumer handler = charHandlers.get(focusedId);
                     if (handler != null) {
                         handled(() -> handler.accept(cp));
@@ -1508,11 +1450,7 @@ public final class InputDispatcher {
         Shortcut pressed = new Shortcut(heldMods, key);
         Claim claimed = resolveClaim(pressed);
         if (claimed != null) {
-            if (claimed.inline()) {
-                claimed.command().accept(pressed);
-            } else {
-                handled(() -> claimed.command().accept(pressed));
-            }
+            handled(() -> claimed.command().accept(pressed));
             report(e, true);
             return;
         }
@@ -1520,10 +1458,6 @@ public final class InputDispatcher {
         // 2. Otherwise the focused node's key handler (caret motion, backspace, ...). Core takes nothing for
         //    itself here — if nobody claimed the chord, the focused element hears it.
         if (focusedId != -1) {
-            Consumer<KeyEvent> stage = keyStages.get(focusedId);
-            if (stage != null) {
-                stage.accept(e);   // ordered: a caret move must sequence against the typing around it
-            }
             Consumer<KeyEvent> handler = keyHandlers.get(focusedId);
             if (handler != null) {
                 handled(() -> handler.accept(e));
@@ -1632,10 +1566,6 @@ public final class InputDispatcher {
         }
         // Use the live modifier set so pressing Ctrl mid-hold upgrades e.g. arrow-repeat to word-jump.
         KeyEvent e = new KeyEvent(repeatKey, Set.copyOf(heldMods));
-        Consumer<KeyEvent> stage = keyStages.get(focusedId);
-        if (stage != null) {
-            stage.accept(e);
-        }
         Consumer<KeyEvent> handler = keyHandlers.get(focusedId);
         if (handler != null) {
             handled(() -> handler.accept(e));
@@ -2029,7 +1959,7 @@ public final class InputDispatcher {
      */
     private RetainedNode ancestorWithDragHandler(RetainedNode hit) {
         for (RetainedNode n = hit; n != null; n = n.parent) {
-            if (dragHandlers.containsKey(n.id) || dragStages.containsKey(n.id)) {
+            if (dragHandlers.containsKey(n.id)) {
                 return n;
             }
             if (answersClicks(n.id)) {
@@ -2073,11 +2003,6 @@ public final class InputDispatcher {
     private void fireDrag(DragEvent.Phase phase, float x, float y, float dx, float dy) {
         RetainedNode n = dragCapture;
         DragEvent e = new DragEvent(phase, x, y, dx, dy, n.x, n.y, n.w, n.h, pressCount, heldMods);
-        // Ordered first: click-to-caret moves the same document typing does, so it has to sequence with it.
-        Consumer<DragEvent> stage = dragStages.get(n.id);
-        if (stage != null) {
-            stage.accept(e);
-        }
         Consumer<DragEvent> handler = dragHandlers.get(n.id);
         if (handler != null) {
             handled(() -> handler.accept(e));

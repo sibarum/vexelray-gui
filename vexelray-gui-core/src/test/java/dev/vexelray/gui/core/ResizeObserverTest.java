@@ -131,24 +131,21 @@ class ResizeObserverTest {
     }
 
     /**
-     * Both variants run inside the frame, on the thread that calls it. In 0.1 the ordinary one went to a worker
-     * pool and only the ordered one stayed on the GUI thread; in 0.2 there is no pool (docs/threading.md, T1.1).
+     * An observer runs inside the frame, on the thread that calls it. In 0.1 there were two, one on a worker pool and
+     * one on the GUI thread; in 0.2 there is no pool (docs/threading.md, T1.1), and so one.
      */
     @Test
-    void bothVariantsRunInsideTheFrameOnItsThread() {
+    void anObserverRunsInsideTheFrameOnItsThread() {
         List<String> ran = new ArrayList<>();
         Thread frame = Thread.currentThread();
         try (Gui gui = new Gui(Atchung.create())) {
             Node a = gui.box().width(Length.FILL).height(Length.rem(1));
-            Node b = gui.box().width(Length.FILL).height(Length.rem(1));
-            gui.root().children(a, b);
-            gui.onResize(a, layout -> ran.add("onResize on " + (Thread.currentThread() == frame ? "frame" : "other")));
-            gui.onResizeUi(b, layout -> ran.add("onResizeUi on " + (Thread.currentThread() == frame ? "frame" : "other")));
+            gui.root().children(a);
+            gui.onResize(a, layout -> ran.add(Thread.currentThread() == frame ? "frame" : "other"));
 
             gui.frame(400f, 300f, ResizeObserverTest::noText);
 
-            assertTrue(ran.contains("onResize on frame"), "the ordinary handler ran in the frame: " + ran);
-            assertTrue(ran.contains("onResizeUi on frame"), "and so did the ordered one: " + ran);
+            assertEquals(List.of("frame"), ran);
         }
     }
 

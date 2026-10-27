@@ -356,9 +356,9 @@ gui.semanticSnapshot();                              // what each node *is*: rol
 `onResize` is the seam that closes a silent failure mode: geometry used to be observable only by
 polling or by diffing the snapshot, so code that ran too early read `NodeLayout.ABSENT`, did nothing,
 reported nothing, and was never asked again. It is an observer rather than a one-shot, so the same
-registration covers every later resize, zoom and DPI change. `onResizeUi` is the same thing delivered
-inside the layout pass that produced it, for work that has to land in the same frame — measure, mutate
-a handle, return; anything that computes belongs on the plain one. Only a change of *box* fires it, so
+registration covers every later resize, zoom and DPI change. It is delivered inside the publish after the
+layout that produced it, so the work lands in the same frame and must be short: measure, mutate a handle,
+return. Only a change of *box* fires it, so
 scrolling a container does not. See [docs/reference/layout-read-model.md](docs/reference/layout-read-model.md) and
 [docs/reference/semantic-read-model.md](docs/reference/semantic-read-model.md).
 

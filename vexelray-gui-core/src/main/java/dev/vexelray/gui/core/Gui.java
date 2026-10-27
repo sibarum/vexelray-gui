@@ -1083,7 +1083,8 @@ public final class Gui implements AutoCloseable {
 
     /**
      * Observe {@code node}'s computed geometry: the handler is called with its {@link NodeLayout} whenever the
-     * node's box changes, <b>including the first time it has one</b>. Runs on the GUI thread, in the dispatch.
+     * node's box changes, <b>including the first time it has one</b>. Runs on the GUI thread, in the publish after the
+     * layout that changed it, so it must be short: measure, mutate a handle, return.
      *
      * <p><b>This is the seam for "my geometry is real now".</b> Everything else a node can be told about is
      * input; geometry was observable only by polling {@link Node#layout} or by subscribing to {@link #layout()}
@@ -1104,16 +1105,6 @@ public final class Gui implements AutoCloseable {
      * that size checks and waits for the next call.
      */
     public Gui onResize(Node node, java.util.function.Consumer<NodeLayout> handler) {
-        return watchResize(node, handler);
-    }
-
-    /**
-     * As {@link #onResize}, delivered on the GUI thread inside the layout pass that produced the change, in the
-     * ordered lane the {@code *Ui} seams share — for a handler whose work has to land in the same frame as the
-     * layout it reacts to. It runs while the framework holds the frame, so it must be short: measure, mutate a
-     * handle, return. Anything that computes belongs on {@link #onResize}.
-     */
-    public Gui onResizeUi(Node node, java.util.function.Consumer<NodeLayout> handler) {
         return watchResize(node, handler);
     }
 
@@ -1142,55 +1133,8 @@ public final class Gui implements AutoCloseable {
         return this;
     }
 
-    // --- ordered stages (§5): the GUI-thread variants of the seams above ---
-
     /**
-     * Register {@code node}'s typed-text <b>stage</b>: like {@link #onChar}, but run on the GUI thread during the
-     * frame's input drain, <b>in arrival order</b>.
-     *
-     * <p>Use this — not {@link #onChar} — when the handler performs a state transition that depends on the order
-     * events arrived in. In 0.1 a worker executor ordered the invocations but not their effects: a burst of typed
-     * characters handed to a pool one task at a time can apply scrambled, and because each individual edit is
-     * coherent, the result reads as a dropped keystroke rather than a race. Everything without an ordering
-     * requirement — application logic, notifications, anything slow — belongs on {@link #onChar}, where it still
-     * cannot stall rendering.
-     *
-     * <p>A stage runs inline on the frame loop, so it must be bounded model work (splice a document, move a
-     * caret) and never application logic or I/O. That is the same contract the reconciler runs under.
-     */
-    public Gui onCharUi(Node node, java.util.function.IntConsumer stage) {
-        input.onCharUi(node.id(), stage);
-        return this;
-    }
-
-    /** Register {@code node}'s key-command stage — the ordered counterpart of {@link #onKey}. */
-    public Gui onKeyUi(Node node, java.util.function.Consumer<KeyEvent> stage) {
-        input.onKeyUi(node.id(), stage);
-        return this;
-    }
-
-    /** Register {@code node}'s drag stage — the ordered counterpart of {@link #onDrag}. */
-    public Gui onDragUi(Node node, java.util.function.Consumer<DragEvent> stage) {
-        input.onDragUi(node.id(), stage);
-        return this;
-    }
-
-    /**
-     * Claim {@code chord} for {@code node}, running the command on the GUI thread in arrival order — the ordered
-     * counterpart of {@link #claim}, for a claim whose command edits state that typing also edits.
-     */
-    public Gui claimUi(Node node, Trigger chord, ClaimScope scope, Runnable command) {
-        input.claimUi(node.id(), chord, scope, command);
-        return this;
-    }
-
-    /** {@link #claimUi(Node, Trigger, ClaimScope, Runnable)}, kept so code compiled against it before still links. */
-    public Gui claimUi(Node node, Shortcut chord, ClaimScope scope, Runnable command) {
-        return claimUi(node, (Trigger) chord, scope, command);
-    }
-
-    /**
-     * Drop every registration {@code node} holds — input handlers, ordered stages, claims, focusability, and its
+     * Drop every registration {@code node} holds — input handlers, claims, focusability, and its
      * geometry observer — and clear focus if it held it. Removing a node does this automatically; this is for
      * releasing a node's registrations while keeping the node.
      */

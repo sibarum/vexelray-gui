@@ -65,7 +65,7 @@ public final class IconView {
         this.icon = icon;
         this.node = gui.box().size(Length.rem(1f), Length.rem(1f)).scroll(false, false);
         // Chosen against the box the layout settled on, which is in pixels and so already carries the scale.
-        gui.onResizeUi(node, computed -> {
+        gui.onResize(node, computed -> {
             float side = Math.min(computed.rect().w(), computed.rect().h());
             if (side != px) {
                 px = side;

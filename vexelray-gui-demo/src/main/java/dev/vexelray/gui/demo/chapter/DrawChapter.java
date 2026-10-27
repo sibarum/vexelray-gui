@@ -61,7 +61,7 @@ public final class DrawChapter implements Chapter {
         // is being dragged. The lane's caveat ("anything that computes belongs on onResize") is about heavy
         // work; this is a hundred marks and ninety-six sines, and paying it per resize frame is cheaper than
         // looking wrong.
-        gui.onResizeUi(figure, layout -> {
+        gui.onResize(figure, layout -> {
             float w = layout.rect().w();
             float h = layout.rect().h();
             Picture p = Chart.of(w, h, gui.theme());

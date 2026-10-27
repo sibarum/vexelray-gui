@@ -74,7 +74,7 @@ class WakeFoldTest {
             // A resize observer that edits in response to a layout is the ordinary way this happens: the box
             // gets its first computed rect during this frame, the observer hears about it, and its edit is
             // published from inside frame() — after the wake flag was cleared at the top of it.
-            gui.onResizeUi(box, layout -> box.height(Length.rem(2)));
+            gui.onResize(box, layout -> box.height(Length.rem(2)));
             gui.frame(400f, 100f, WakeFoldTest::noText);
 
             assertTrue(wakes.get() >= 1,

@@ -49,13 +49,24 @@ class OverhangTest {
 
         @Override
         public List<TextLayout.LineSpan> lineSpans(String text, float wrapWidth, float px) {
-            int len = text == null ? 0 : text.length();
-            int per = wrapWidth <= 0f ? Math.max(1, len) : Math.max(1, (int) (wrapWidth / CELL));
+            String s = text == null ? "" : text;
             List<TextLayout.LineSpan> spans = new ArrayList<>();
-            for (int start = 0; start < Math.max(1, len); start += per) {
-                spans.add(new TextLayout.LineSpan(start, Math.min(len, start + per), start + per >= len));
+            int hard = 0;
+            // Hard lines at each newline, then each wrapped at whole characters when a width is given.
+            for (int nl = s.indexOf('\n'); ; nl = s.indexOf('\n', hard)) {
+                int end = nl < 0 ? s.length() : nl;
+                int per = wrapWidth <= 0f ? Math.max(1, end - hard) : Math.max(1, (int) (wrapWidth / CELL));
+                int start = hard;
+                do {
+                    int stop = Math.min(end, start + per);
+                    spans.add(new TextLayout.LineSpan(start, stop, stop >= end));
+                    start = stop;
+                } while (start < end);
+                if (nl < 0) {
+                    return spans;
+                }
+                hard = nl + 1;
             }
-            return spans;
         }
     };
 
@@ -107,6 +118,19 @@ class OverhangTest {
             assertEquals(3 * LINE, f.rect().h(), 0.5f, "and grows to its lines");
             assertEquals(60f, neighbours[1].layout().rect().y(), 0.5f, "over the box below, which did not move");
             assertSame(field.id(), HitTest.at(root, 50f, 70f).id, "the pointer over the box below finds the field");
+        }
+    }
+
+    /** Many short lines that do not wrap: as wide as the longest of them, not as all of them end to end. */
+    @Test
+    void unwrappedLinesGrowToTheWidestOfThem() {
+        try (Gui gui = new Gui(Atchung.create())) {
+            Node field = gui.text("aa\n" + "b".repeat(15) + "\ncc").wordWrap(false)
+                    .width(px(100)).height(px(LINE)).overhang(true);
+            around(gui, field);
+            frame(gui);
+            assertEquals(150f, field.layout().rect().w(), 0.5f, "the fifteen-character line, and no more");
+            assertEquals(3 * LINE, field.layout().rect().h(), 0.5f, "and its three lines");
         }
     }
 

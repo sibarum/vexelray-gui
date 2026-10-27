@@ -263,10 +263,10 @@ public enum PropKey {
     FLOAT_X(true),
     FLOAT_Y(true),
     /**
-     * Whether a floating node keeps its parent's content out from under it: the parent's viewport — where its
-     * content is placed and its scrollbars are drawn — starts below the docked node's bottom edge. Meaningless on
-     * an in-flow node, which already takes its own space. What a find bar over a field is: chrome that floats,
-     * so it reflows no wrapped text and needs no wrapper, but that does not cover the first line either.
+     * Which edge a floating node keeps its parent's content away from ({@code layout.Dock}, absent for none): the
+     * parent's viewport stops short of the band between the docked node and that edge. Meaningless on an in-flow
+     * node, which already takes its own space. What a find bar over a field is (the top), and a field's scrollbar
+     * (the right): chrome that floats, so it needs no wrapper, but that does not cover the text either.
      */
     DOCK(true),
     /**

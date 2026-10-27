@@ -2,6 +2,7 @@ package dev.vexelray.gui.widget;
 
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
+import dev.vexelray.gui.core.ScrollAxes;
 import dev.vexelray.gui.core.edit.Change;
 import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.edit.Target;
@@ -14,7 +15,9 @@ import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.input.KeyEvent;
 import dev.vexelray.gui.core.input.MenuSink;
 import dev.vexelray.gui.core.input.Shortcut;
+import dev.vexelray.gui.core.layout.Dock;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.scroll.Scrollbar;
 import dev.vexelray.gui.core.nav.Address;
 import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
@@ -155,6 +158,12 @@ public final class TextField implements AutoCloseable {
     private volatile boolean overhang = true;
     /** Whether a press that focused the field is waiting for its release to grow it. See {@link #onFocus}. */
     private volatile boolean growOnRelease;
+    /** Whether the text wraps; with {@link #multiline}, what decides which bars the field carries. See {@link #bars}. */
+    private volatile boolean wrap = false;   // an editable field wraps only when told to (RetainedNode.wrapsText)
+    /** The text node's own scroll, and the bars bound to it, while the field is multi-line. Guarded by this. */
+    private ScrollAxes axes;
+    private Scrollbar vbar;
+    private Scrollbar hbar;
     private volatile boolean autoIndent;
     private volatile boolean readOnly;
     private volatile boolean focused;
@@ -436,6 +445,7 @@ public final class TextField implements AutoCloseable {
         } else {
             gui.releaseClaim(node, tab);
         }
+        bars();
         return this;
     }
 
@@ -467,8 +477,47 @@ public final class TextField implements AutoCloseable {
      * with {@link #multiline}; a wrapped field never scrolls horizontally.
      */
     public TextField wordWrap(boolean wrap) {
+        this.wrap = wrap;
         node.wordWrap(wrap);
+        bars();
         return this;
+    }
+
+    /**
+     * Give a multi-line field the scrollbars its text can need, and take them away from one that is not: a vertical
+     * bar docked inside its right edge, and a horizontal one along its bottom when it does not wrap. Each is a real
+     * {@link Scrollbar} bound to the text node's own scroll ({@link Gui#scrollAxes}), floating, so {@link #node()}
+     * stays the text node, and docked, so the text stops short of it. They take no room until the text overflows
+     * (collapsing): a field still growing over its neighbours (overhang) has nothing to scroll, and one stopped at
+     * the room's edge has (docs/plans/scrolling.md §7.3). A single-line field never has a bar.
+     */
+    private synchronized void bars() {
+        boolean wantY = multiline;
+        boolean wantX = multiline && !wrap;
+        if ((wantY || wantX) && axes == null) {
+            axes = gui.scrollAxes(node);
+        }
+        vbar = bar(vbar, wantY, true);
+        hbar = bar(hbar, wantX, false);
+    }
+
+    /** {@code bar} as {@code want} says: built, docked and attached, or detached and closed. */
+    private Scrollbar bar(Scrollbar bar, boolean want, boolean vertical) {
+        if (want && bar == null) {
+            Scrollbar made = (vertical ? Scrollbar.vertical(gui, axes.y()) : Scrollbar.horizontal(gui, axes.x()))
+                    .collapsing();
+            made.node().floatAt(vertical ? Length.percent(100) : Length.ZERO,
+                            vertical ? Length.ZERO : Length.percent(100))
+                    .dock(vertical ? Dock.RIGHT : Dock.BOTTOM);
+            node.append(made.node());
+            return made;
+        }
+        if (!want && bar != null) {
+            bar.close();
+            bar.node().remove();
+            return null;
+        }
+        return bar;
     }
 
     /**
@@ -504,6 +553,13 @@ public final class TextField implements AutoCloseable {
         FindBar bar = find;
         if (bar != null) {
             bar.close();   // takes its query field's claims with it; the strip goes with this node below
+        }
+        synchronized (this) {
+            for (Scrollbar s : new Scrollbar[]{vbar, hbar}) {
+                if (s != null) {
+                    s.close();   // stops following the text's scroll; the node goes with this one below
+                }
+            }
         }
         gui.releaseNode(node);
     }

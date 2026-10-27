@@ -628,7 +628,13 @@ public final class RetainedNode {
 
     /** Whether this node floats and keeps its parent's viewport out from under it (see {@link PropKey#DOCK}). */
     public boolean docked() {
-        return floating() && Boolean.TRUE.equals(props.get(PropKey.DOCK));
+        return floating() && props.get(PropKey.DOCK) instanceof dev.vexelray.gui.core.layout.Dock;
+    }
+
+    /** The edge this docked float keeps its parent's content away from; {@code TOP} when it is not docked. */
+    public dev.vexelray.gui.core.layout.Dock dockEdge() {
+        return props.get(PropKey.DOCK) instanceof dev.vexelray.gui.core.layout.Dock d
+                ? d : dev.vexelray.gui.core.layout.Dock.TOP;
     }
 
     /** The floating x offset from the parent's border-box origin (only meaningful when {@link #floating()}). */

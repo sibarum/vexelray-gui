@@ -1862,7 +1862,15 @@ public final class Gui implements AutoCloseable {
         return new Scroller(this, trees.scroller(), content);
     }
 
-    /** A Scroller's own watch on its node's scroll: the range it publishes (ReadModels.onScroll). */
+    /**
+     * {@code node}'s own scroll as a {@link ScrollSource} per axis — for a node that scrolls itself, such as a
+     * multi-line text field, so a {@code Scrollbar} can show and move it. One per node: it is the node's scroll watch.
+     */
+    public ScrollAxes scrollAxes(Node node) {
+        return new ScrollAxes(this, node);
+    }
+
+    /** A node's scroll watch: the ranges its ScrollAxes publishes (ReadModels.onScroll). */
     void onScroll(Node node, java.util.function.Consumer<NodeLayout> handler) {
         readModels.onScroll(node.id(), handler);
     }

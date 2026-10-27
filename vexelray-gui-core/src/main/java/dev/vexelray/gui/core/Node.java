@@ -549,7 +549,16 @@ public final class Node {
      * A hidden docked node reserves nothing. Only meaningful together with {@link #floatAt}.
      */
     public Node dock(boolean dock) {
-        return prop(PropKey.DOCK, dock ? Boolean.TRUE : null);
+        return dock(dock ? dev.vexelray.gui.core.layout.Dock.TOP : null);
+    }
+
+    /**
+     * Keep the parent's content out from under this floating node, along {@code edge}: the parent's viewport stops
+     * short of the band between this node and that edge while it is visible — below a find bar at the top, left of a
+     * scrollbar at the right of a field. {@code null} stops reserving. Only meaningful together with {@link #floatAt}.
+     */
+    public Node dock(dev.vexelray.gui.core.layout.Dock edge) {
+        return prop(PropKey.DOCK, edge);
     }
 
     /** Return this node to normal flow. */

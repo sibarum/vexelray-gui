@@ -67,7 +67,13 @@ public final class ScrollChapter implements Chapter {
         TextField path = new TextField(gui,
                 "C:/Users/someone/Documents/GitHub/vexelray-gui/docs/plans/scrolling.md");
         path.node().width(Length.rem(14));
-        TextField note = new TextField(gui, "One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight").multiline(true);
+        // Forty lines: more than the room the chapter's page gives it, so focused it grows to that room and scrolls
+        // the rest, with its bar.
+        StringBuilder forty = new StringBuilder("Line 1");
+        for (int i = 2; i <= 40; i++) {
+            forty.append('\n').append("Line ").append(i);
+        }
+        TextField note = new TextField(gui, forty.toString()).multiline(true);
         note.node().width(Length.rem(14)).height(Length.rem(4));
         Node neighbour = Ui.prose(gui, "A neighbour the fields grow over while they have focus; it does not move.");
         gui.landmark("scroll.path", path.node());

@@ -1,9 +1,6 @@
 package dev.vexelray.gui.core;
 
 import dev.vexelray.gui.core.layout.LayoutEnums.ScrollLock;
-import dev.vexelray.gui.core.layout.NodeLayout;
-import sibarum.atchung.Committer;
-import sibarum.atchung.State;
 
 /**
  * A box that masks one child and scrolls it: the whole of scrolling, with no scrollbar in it
@@ -31,17 +28,13 @@ public final class Scroller {
 
     private final Node node;
     private final Node content;
-    private final Axis x = new Axis(true);
-    private final Axis y = new Axis(false);
+    private final ScrollAxes axes;
 
     Scroller(Gui gui, Node node, Node content) {
         this.node = node;
         this.content = content;
         node.children(content);
-        gui.onScroll(node, layout -> {
-            x.publish(layout);
-            y.publish(layout);
-        });
+        this.axes = gui.scrollAxes(node);
     }
 
     /** The node to place in a layout. */
@@ -56,8 +49,7 @@ public final class Scroller {
 
     /** Which axes scroll. An axis that does not publishes a range with nothing to scroll and ignores offsets. */
     public Scroller axes(boolean scrollsX, boolean scrollsY) {
-        x.enabled = scrollsX;
-        y.enabled = scrollsY;
+        axes.enable(scrollsX, scrollsY);
         node.scroll(scrollsX, scrollsY);
         return this;
     }
@@ -85,48 +77,12 @@ public final class Scroller {
 
     /** The horizontal axis, for a bar or anything else that shows and moves it. */
     public ScrollSource x() {
-        return x;
+        return axes.x();
     }
 
     /** The vertical axis. */
     public ScrollSource y() {
-        return y;
+        return axes.y();
     }
 
-    /** One axis as a source: the range read off this node's published layout, and offsets asked of the node. */
-    private final class Axis implements ScrollSource {
-
-        private final boolean horizontal;
-        private final State<ScrollRange> range;
-        private final Committer<ScrollRange, ScrollRange> set;
-        private volatile boolean enabled = true;
-
-        Axis(boolean horizontal) {
-            this.horizontal = horizontal;
-            State.Builder<ScrollRange> builder = State.of(ScrollRange.NONE);
-            this.set = builder.mutation("set", (current, next) -> next);
-            this.range = builder.build();
-        }
-
-        @Override
-        public State<ScrollRange> range() {
-            return range;
-        }
-
-        @Override
-        public void scrollTo(float offset) {
-            if (enabled) {
-                node.scrollTo(horizontal ? offset : Float.NaN, horizontal ? Float.NaN : offset);
-            }
-        }
-
-        /** Read this axis off a published layout. On the GUI thread, inside the publish (ReadModels.onScroll). */
-        void publish(NodeLayout layout) {
-            float view = horizontal ? layout.viewW() : layout.viewH();
-            ScrollRange next = !enabled ? new ScrollRange(view, view, 0f)
-                    : new ScrollRange(Math.max(view, horizontal ? layout.contentW() : layout.contentH()), view,
-                            horizontal ? layout.scrollX() : layout.scrollY());
-            range.commitIfChanged(set, next);
-        }
-    }
 }

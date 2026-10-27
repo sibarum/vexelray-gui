@@ -106,9 +106,10 @@ public final class FlexLayout {
             n.viewH = n.h;
             n.contentW = 0f;
             n.contentH = 0f;
-            float band = dockBand(n, ctx, tm);
-            n.viewY = n.y + band;
-            n.viewH = Math.max(0f, n.h - band);
+            Dock.Bands bands = docks(n, ctx, tm);
+            n.viewY = n.y + bands.top;
+            n.viewH = Math.max(0f, n.h - bands.top - bands.bottom);
+            n.viewW = Math.max(0f, n.w - bands.right);
             placeFloating(n, ctx, tm);   // a box whose only children float is empty *flow*, not empty
             return;
         }
@@ -118,10 +119,11 @@ public final class FlexLayout {
         float gap = n.gap().scalarPx(own, n.w);
         boolean row = n.direction() == Direction.ROW;
 
+        Dock.Bands bands = docks(n, ctx, tm);
         float baseX = n.x + insetX;
-        float baseY = n.y + Math.max(insetY, dockBand(n, ctx, tm));
-        float baseW = Math.max(0f, n.w - 2f * insetX);
-        float baseH = Math.max(0f, n.y + n.h - insetY - baseY);
+        float baseY = n.y + Math.max(insetY, bands.top);
+        float baseW = Math.max(0f, n.w - insetX - Math.max(insetX, bands.right));
+        float baseH = Math.max(0f, n.y + n.h - Math.max(insetY, bands.bottom) - baseY);
         // The floor's content box, inset the same way. A docked band counts against it, so a floor is the whole
         // box's minimum and not the minimum of what is left below the band.
         float floorContentW = Math.max(0f, floorW - 2f * insetX);
@@ -431,7 +433,8 @@ public final class FlexLayout {
 
         float w = n.w;
         if (fitted(n, Axis.HORIZONTAL, ctx) && !(n.hasText() && n.wrapsText())) {
-            w = Math.max(n.w, Math.min(roomW, natural(n, Axis.HORIZONTAL, ctx, tm, -1f, false)));
+            float across = n.hasText() ? widestLine(n, ctx, tm) : natural(n, Axis.HORIZONTAL, ctx, tm, -1f, false);
+            w = Math.max(n.w, Math.min(roomW, across));
         }
         float h = n.h;
         if (fitted(n, Axis.VERTICAL, ctx)) {
@@ -448,6 +451,17 @@ public final class FlexLayout {
         if (!root.overhangs().contains(n)) {
             root.overhangs().add(n);   // a scrolling parent places its children twice: once to measure, once offset
         }
+    }
+
+    /**
+     * How wide an unwrapped text node is at its widest line, with its insets and its line-number gutter: what it grows
+     * to across. Broken into lines by the same {@code lineSpans} the layout and the renderer use, so a field of many
+     * short lines is as wide as the longest of them, not as all of them laid end to end.
+     */
+    private static float widestLine(RetainedNode n, LayoutContext ctx, TextMeasurer tm) {
+        LayoutContext own = own(n, ctx);
+        float widest = measureLines(n, 0f, own.emPx(), tm)[0];
+        return widest + 2f * TextMetrics.resolveInsetX(own, n, n.w) + gutterWidth(n, own.emPx(), tm);
     }
 
     /**
@@ -495,12 +509,11 @@ public final class FlexLayout {
      * container, for the one leaf kind that has content of its own.
      *
      * <p>Only <b>unwrapped</b> text can overflow horizontally: wrapping means there is nothing to the right of a
-     * line to scroll to, so {@code scrollXAllowed} is already false there. Vertical text scrolling remains
-     * caret-follow only — {@code contentH} stays 0 until text leaves become vertical scroll citizens too.
+     * line to scroll to, so {@code scrollXAllowed} is already false there. The view and content it records are what a
+     * field's {@code ScrollSource} publishes, so a bar docked inside the field shows the text's own scroll.
      */
     private static void layoutTextLeaf(RetainedNode n, LayoutContext ctx, TextMeasurer tm) {
         float px = n.textSizePx;
-        float sb = scrollbarThickness(ctx);
         float lineH = tm.intrinsic(n, Axis.VERTICAL, px);
         float pad = n.textPadXPx;      // resolved in layoutBox, just above
         float padY = TextMetrics.padY(n);
@@ -509,36 +522,29 @@ public final class FlexLayout {
         // count, which wrapping cannot change — so that is a dependency, not a cycle.
         float gutter = gutterWidth(n, n.textSizePx, tm);
         n.gutterPx = gutter;
-        float boxW = Math.max(1f, TextMetrics.contentWidth(n) - gutter);
-        float top = Math.max(padY, dockBand(n, ctx, tm));   // a docked find bar moves the first line down
-        float boxH = Math.max(0f, n.h - padY - top);
+        // A text node reserves no strip for a scrollbar: a field's bar is a float docked inside its edge, and the text
+        // stops short of the band it keeps clear (Dock), like a find bar's at the top (docs/plans/scrolling.md §7.3).
+        // A bar that comes and goes with the overflow (Scrollbar.collapsing) re-wraps the text a frame later, and only
+        // ever taller, so it settles.
+        Dock.Bands bands = docks(n, ctx, tm);
+        float boxW = Math.max(1f, TextMetrics.contentWidth(n) - gutter - Math.max(0f, bands.right - pad));
+        float top = Math.max(padY, bands.top);
+        float boxH = Math.max(0f, n.h - top - Math.max(padY, bands.bottom));
 
-        // Pass 1 at the full text width.
         float[] lines = measureLines(n, boxW, px, tm);
         boolean overY = n.scrollYAllowed() && n.multiline() && lines[1] * lineH > boxH + EPS;
-        float viewW = boxW - (overY ? sb : 0f);
-        // A vertical bar narrows the text, and wrapped text is taller when narrower, so re-measure once at the
-        // reserved width. Monotone — narrowing never shortens the block — so the bar it just reserved cannot
-        // un-appear, and one extra pass is enough.
-        if (overY && viewW < boxW - EPS) {
-            lines = measureLines(n, viewW, px, tm);
-        }
-        // Decided against boxH, *not* against a viewH already shortened by an h-scrollbar: an h-bar must never be
-        // what makes a v-bar appear. The one remaining interaction is real rather than spurious — a v-bar narrows
-        // the text, which can genuinely push unwrapped text into horizontal overflow — and it cannot recur,
-        // because the h-bar takes nothing from the width.
-        boolean overX = n.scrollXAllowed() && lines[0] > viewW + EPS;
+        boolean overX = n.scrollXAllowed() && lines[0] > boxW + EPS;
 
         n.overflowX = overX;
         n.overflowY = overY;
-        n.scrollbarPx = sb;
-        // The viewport is the *text area*: inset by the padding the metrics use, less whatever the bars reserve.
-        // Keeping it in that space is what lets scrollX/scrollY, the thumb geometry and the caret metrics all be
+        n.scrollbarPx = 0f;
+        // The viewport is the *text area*: inset by the padding the metrics use, less the bands docked floats keep
+        // clear. Keeping it in that space is what lets scrollX/scrollY, a bar's range and the caret metrics all be
         // expressed against the same rectangle.
         n.viewX = n.x + pad + gutter;
         n.viewY = n.y + top;
-        n.viewW = Math.max(0f, viewW);
-        n.viewH = Math.max(0f, boxH - (overX ? sb : 0f));
+        n.viewW = Math.max(0f, boxW);
+        n.viewH = Math.max(0f, boxH);
         n.contentW = lines[0];
         n.contentH = lines[1] * lineH;
 
@@ -642,19 +648,19 @@ public final class FlexLayout {
     }
 
     /**
-     * Place {@code n}'s visible docked floats, and answer how far below {@code n}'s top edge the lowest of them
-     * reaches — the band its viewport starts below. Placed before the flow rather than after it, because the flow
-     * is what the band moves; a float's size and place depend only on the parent's box, so nothing is lost.
+     * Place {@code n}'s visible docked floats, and answer how far in from each edge they reach — the bands its
+     * content stops short of ({@link Dock}). Placed before the flow rather than after it, because the flow is what
+     * the bands move; a float's size and place depend only on the parent's box, so nothing is lost.
      */
-    private static float dockBand(RetainedNode n, LayoutContext ctx, TextMeasurer tm) {
-        float band = 0f;
+    private static Dock.Bands docks(RetainedNode n, LayoutContext ctx, TextMeasurer tm) {
+        Dock.Bands bands = new Dock.Bands();
         for (RetainedNode c : n.children) {
             if (c.visible() && c.docked()) {
                 placeFloat(n, c, ctx, tm);
-                band = Math.max(band, c.y + c.h - n.y);
+                c.dockEdge().reserve(bands, n, c);
             }
         }
-        return Math.min(band, n.h);
+        return bands.clampTo(n);
     }
 
     /** Size and place one floating child {@code c} against {@code n}'s border box, then lay out its subtree. */

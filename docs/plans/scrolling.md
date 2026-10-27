@@ -1,6 +1,6 @@
 # Scrolling as elements: `Scroller`, `ScrollRange`, `Scrollbar`
 
-**Status: proposed 2026-10-26; steps 0–3 and 6 done (the revert; `Scroller` in core; `vexelray-gui-scroll`; the framework widgets and the demo moved, all but the multi-line `TextField`; `collapsing()`); names settled (§8); text fields (§7.3): the overhang done, the docked bar not yet.** This replaces automatic scrolling, and it supersedes
+**Status: proposed 2026-10-26; steps 0–3 and 6 done (the revert; `Scroller` in core; `vexelray-gui-scroll`; the framework widgets and the demo moved, all but the multi-line `TextField`; `collapsing()`); names settled (§8); text fields (§7.3) done: the overhang, and the docked bar that ends the text strip.** This replaces automatic scrolling, and it supersedes
 [scrollbar-room.md](scrollbar-room.md), whose step 1 this plan reverts.
 
 Today any box scrolls when its content is longer than it is. The layout decides that after sizing the box, the
@@ -278,7 +278,7 @@ until step 5.
    own page is `Scrollbars.vertical`. It was shot with ottermate: the tabs keep their height with the bar under
    them, the wheel scrolls the page and the grid, and a track press and the wheel pan the panorama.
 3. **Framework widgets move** (§7.1), with `Tabs` first and checked with `TabsOverflowProbe`. Then the demo.
-   *Done 2026-10-26, except the multi-line `TextField`.*
+   *Done 2026-10-26; the multi-line `TextField` followed on 2026-10-27 (§7.3).*
 
    **As built.**
    - **`Tabs`.** The header row is in a `Scrollbars.horizontal` whose bar is `collapsing()`. Headers are a fixed
@@ -320,9 +320,9 @@ until step 5.
    - a 480 px window. There the Tables chapter's table card, which is `height(FILL)`, so `grow` with a basis of 0,
      gets no height. That was so before this step, and `grow` children are outside the give-way rule.
 
-   **Not moved: the multi-line `TextField`.** It is a text leaf with its own scrolling in `layoutTextLeaf` and the
-   renderer's strip, reading `viewH` for lines per page. Making it a `ScrollSource` over its lines with a bar
-   composed beside it is its own piece of work, and has to land before step 5 deletes the strip.
+   **The multi-line `TextField` was not moved in this step.** It became its own piece of work, done the next day:
+   §7.3. Fields grow over their neighbours while focused, and past their room they scroll with a bar docked inside
+   them.
 4. **Sibling apps move** (§7.2), in dependency order. Each is installed and shot with ottermate. MainFrame with 30
    tabs at zoom 1, 1.5 and 2 is the acceptance shot: every title whole and every header clickable.
 5. **Flip the default.** Delete:
@@ -421,6 +421,29 @@ strip (row three).
 - **A grown node is repainted whole.** Unclip's pass draws only the part outside the mask a node was seen in, which
   is right for a node spilling out of its clip. A grown node is also over later siblings inside that mask, so the
   pass draws all of it.
+
+**The docked bar, as built (2026-10-27).** The third row:
+- **`Dock`** (`TOP`, `RIGHT`, `BOTTOM`) replaces the boolean dock. Each edge reserves its own band, so the layout
+  asks the dock rather than switching on it. `dock(true)` is still `TOP`. Boxes and text nodes both stop their
+  content short of every band.
+- **`gui.scrollAxes(node)`** gives any node's own scroll as a `ScrollSource` per axis. `Scroller` is now built on
+  it.
+- **A text node reserves no strip** (`scrollbarPx` is 0), so the renderer draws none and nothing grabs one. Its
+  overflow, caret-follow, wheel and culling are unchanged.
+- **A multi-line `TextField` carries its bars:** a `collapsing()` `Scrollbar` docked inside its right edge, and
+  one along its bottom when it does not wrap. An editable field wraps only when told to, so by default it has
+  both. They float, so `field.node()` is still the text node.
+- **Growing across uses the widest line**, broken by the same `lineSpans` as the layout. The measurer's intrinsic
+  width for many lines is all of them end to end, which spread a forty-line note across the whole room.
+
+Tests: `DockEdgeTest` (3), `TextFieldBarTest` (5: a bar when the text is longer than the room, with the text short
+of it; none when it fits; the wheel over the bar; a bottom bar for an unwrapped field and none for a single-line one;
+a fitted field growing first and showing no bar). `OverhangTest` gains the widest-line case. Shot with ottermate: the
+Scrolling chapter's note now holds forty lines; focused, it keeps its 14rem width, grows to the edge of the
+chapter's scroll view, and scrolls the rest with its bar.
+
+With this, nothing in this repository draws the old strip except an old-model box that scrolls implicitly, which is
+what step 5 removes.
 
 `TextField.overhang(false)` keeps a field scrolling inside its box. The tests of scrolling inside a box use it.
 `OverhangTest` (8) and `TextFieldOverhangTest` (4) cover it. The Scrolling chapter has a cut-off path field and a

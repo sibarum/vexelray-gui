@@ -139,6 +139,10 @@ public final class InputDispatcher {
     // that share one menu. Which node's sources run is a leaf→root question (see openMenu), so it is dispatch's
     // to answer -- the same walk as a click, with the same "the nearest one that has something wins" rule.
     private final Map<Long, java.util.List<Consumer<MenuSink>>> menuSources = new ConcurrentHashMap<>();
+    // Menus an application declared (T7.5): one per node, replaced rather than accumulated, because a declaration is
+    // the node's menu as of now and the next one says what it is instead. Added after the sources, so a widget's
+    // defaults come first.
+    private final Map<Long, Menu> declaredMenus = new ConcurrentHashMap<>();
     private volatile MenuPresenter menuPresenter;
     // Interaction state has *observers*, plural: a widget restyling itself and a tooltip watching the same node
     // are independent concerns, and neither should have to know the other exists. Every other handler map here
@@ -425,6 +429,18 @@ public final class InputDispatcher {
                 .add(source);
     }
 
+    /**
+     * Declare {@code nodeId}'s menu, replacing what was declared before; {@link Menu#NONE} takes it away. Read at the
+     * moment of the right click, so a declaration made any time before it is the one shown.
+     */
+    public void menu(long nodeId, Menu menu) {
+        if (menu.isEmpty()) {
+            declaredMenus.remove(nodeId);
+        } else {
+            declaredMenus.put(nodeId, menu);
+        }
+    }
+
     /** Install what shows a context menu, replacing any prior one; {@code null} means no menus are shown. */
     public void menuPresenter(MenuPresenter presenter) {
         this.menuPresenter = presenter;
@@ -483,6 +499,11 @@ public final class InputDispatcher {
     /** Register what {@code nodeId} offers up when a drag begins on it — see {@link DragSource}. */
     public void onDragSource(long nodeId, DragSource source) {
         dragSources.put(nodeId, source);
+    }
+
+    /** Make {@code nodeId} no longer something a drag begins on. */
+    public void dropDragSource(long nodeId) {
+        dragSources.remove(nodeId);
     }
 
     /** One {@link DragWatch}, and the node whose removal ends it. */
@@ -1071,6 +1092,7 @@ public final class InputDispatcher {
         doubleClickHandlers.remove(nodeId);
         contextHandlers.remove(nodeId);
         menuSources.remove(nodeId);
+        declaredMenus.remove(nodeId);
         stateHandlers.remove(nodeId);
         dragHandlers.remove(nodeId);
         wheelHandlers.remove(nodeId);
@@ -2041,8 +2063,7 @@ public final class InputDispatcher {
         MenuPresenter presenter = menuPresenter;
         if (presenter == null) {
             for (RetainedNode n = target; n != null; n = n.parent) {
-                java.util.List<Consumer<MenuSink>> sources = menuSources.get(n.id);
-                if (sources != null && !sources.isEmpty()) {
+                if (hasMenu(n.id)) {
                     dev.vexelray.diag.Diagnostics.dropped("context-menu-presenter",
                             "the context menu of node " + n.id,
                             "no MenuPresenter is installed on this tree and none is registered as a "
@@ -2054,14 +2075,21 @@ public final class InputDispatcher {
             return;
         }
         for (RetainedNode n = target; n != null; n = n.parent) {
-            java.util.List<Consumer<MenuSink>> sources = menuSources.get(n.id);
-            if (sources == null || sources.isEmpty()) {
+            if (!hasMenu(n.id)) {
                 continue;
             }
+            java.util.List<Consumer<MenuSink>> sources = menuSources.getOrDefault(n.id, java.util.List.of());
+            Menu declared = declaredMenus.getOrDefault(n.id, Menu.NONE);
             handlerExecutor.execute(() -> {
                 MenuCollector collector = new MenuCollector(e, menuHistory.apply(e.nodeId()));
                 for (Consumer<MenuSink> source : sources) {
                     source.accept(collector);
+                }
+                if (!declared.isEmpty() && !sources.isEmpty()) {
+                    collector.separator();
+                }
+                for (MenuItem item : declared.items()) {
+                    collector.item(item);
                 }
                 java.util.List<MenuItem> items = collector.build();
                 if (!items.isEmpty()) {
@@ -2070,6 +2098,12 @@ public final class InputDispatcher {
             });
             return;   // consumed; the walk stops at the first node that has a menu
         }
+    }
+
+    /** True if {@code nodeId} has a menu of either kind: a source in code, or a declared one. */
+    private boolean hasMenu(long nodeId) {
+        java.util.List<Consumer<MenuSink>> sources = menuSources.get(nodeId);
+        return (sources != null && !sources.isEmpty()) || declaredMenus.containsKey(nodeId);
     }
 
     /**

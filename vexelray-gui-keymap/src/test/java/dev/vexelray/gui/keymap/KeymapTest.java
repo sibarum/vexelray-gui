@@ -40,6 +40,24 @@ class KeymapTest {
         }
     }
 
+    record Save() { }
+
+    @Test
+    void anActionThatSendsAMessageSendsItOnItsChord() {
+        try (Headless h = new Headless()) {
+            sibarum.atchung.Topic<Save> saves = sibarum.atchung.Topic.edge("test.keymap.save", Save.class);
+            List<Save> heard = new ArrayList<>();
+            h.bus.subscribe(saves, heard::add);
+            sibarum.atchung.Sender<Save> save = h.bus.tick(() -> { }).inbox("view").sender(saves);
+            Keymap keys = new Keymap(h.gui);
+            keys.action("file.save", "Save", CTRL_S).sends(save, new Save());
+
+            h.frame().chord(Key.S, Key.LEFT_CONTROL);
+
+            assertEquals(List.of(new Save()), heard, "the chord sent the message the action names (T7.5)");
+        }
+    }
+
     @Test
     void rebindingMovesTheClaimAndTheHandlerNeverHears() {
         try (Headless h = new Headless()) {

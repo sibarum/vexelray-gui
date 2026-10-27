@@ -36,6 +36,7 @@ import dev.vexelray.gui.core.input.FocusEvent;
 import dev.vexelray.gui.core.input.InputDispatcher;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.input.KeyEvent;
+import dev.vexelray.gui.core.input.Menu;
 import dev.vexelray.gui.core.input.MenuPresenter;
 import dev.vexelray.gui.core.input.MenuSink;
 import dev.vexelray.gui.core.input.Gesture;
@@ -829,6 +830,31 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
+     * Declare {@code node}'s context menu: what is on it and the message each item sends, set before the right click
+     * rather than worked out during it (vexelray-framework's {@code docs/threading.md}, T7.5). The form for an
+     * application's menus; {@link #onContextMenu} is the widget library's.
+     *
+     * {@snippet :
+     * gui.menu(row, Menu.builder()
+     *         .item("Open", open, new Open(file))
+     *         .item("Delete", !file.readOnly(), delete, new Delete(file))
+     *         .build());
+     * }
+     *
+     * <p><b>A declaration replaces the last one</b>, unlike sources, which accumulate: it is the node's menu as of now,
+     * so when what the menu should hold changes, declare it again. {@link Menu#NONE} takes it away. It follows the
+     * same nearest-node rule as a source, and on a node that has both, the sources' items come first, so a widget's
+     * defaults lead and the application's follow.
+     */
+    public Gui menu(Node node, Menu menu) {
+        input.menu(node.id(), java.util.Objects.requireNonNull(menu, "menu"));
+        if (!menu.isEmpty() && input.menuPresenter() == null) {
+            presentMenus();
+        }
+        return this;
+    }
+
+    /**
      * Show the menu {@code source} builds at {@code at}, now: for a control whose plain click opens a menu, as a
      * title-bar instrument's does. Built and shown as a right click's would be, by the installed presenter (the
      * default one, if this tree has none yet).
@@ -1252,6 +1278,15 @@ public final class Gui implements AutoCloseable {
         return this;
     }
 
+    /**
+     * Bind {@code shortcut} to a message: pressing it sends {@code message} through {@code to}. The form for an
+     * application's shortcuts (vexelray-framework's {@code docs/threading.md}, T7.5): the binding is declared, the
+     * dispatcher decides on the GUI thread who the chord reaches, and what leaves is the message.
+     */
+    public <T> Gui shortcut(Shortcut shortcut, sibarum.atchung.Sender<T> to, T message) {
+        return shortcut(shortcut, sends(to, message));
+    }
+
     /** Convenience: {@code gui.shortcut(Key.S, save, Modifier.CONTROL)}. */
     public Gui shortcut(Key key, Runnable command, Modifier... mods) {
         return shortcut(Shortcut.of(key, mods), command);
@@ -1273,6 +1308,37 @@ public final class Gui implements AutoCloseable {
     public Gui claim(Node node, Trigger chord, ClaimScope scope, Runnable command) {
         input.claim(node.id(), chord, scope, command);
         return this;
+    }
+
+    /**
+     * Claim {@code chord} for {@code node} at {@code scope}, and send {@code message} through {@code to} when it is
+     * pressed: {@link #claim(Node, Trigger, ClaimScope, Runnable)}'s preemption, with a message where the command was.
+     * The form for an application's claims (vexelray-framework's {@code docs/threading.md}, T7.5).
+     */
+    public <T> Gui claim(Node node, Trigger chord, ClaimScope scope, sibarum.atchung.Sender<T> to, T message) {
+        return claim(node, chord, scope, sends(to, message));
+    }
+
+    /**
+     * Make {@code node} something a drag can begin on, carrying {@code payload}: the declared form of
+     * {@link #onDragSource}, for an application (vexelray-framework's {@code docs/threading.md}, T7.5). The payload is
+     * the node's, set ahead of time, so the dispatcher needs no answer when the press turns into a drag; declare it
+     * again when what the node stands for changes. {@code null} makes the node not draggable.
+     */
+    public Gui draggable(Node node, dev.vexelray.gui.core.drop.Payload payload) {
+        if (payload == null) {
+            input.dropDragSource(node.id());
+        } else {
+            input.onDragSource(node.id(), (x, y) -> payload);
+        }
+        return this;
+    }
+
+    /** What a declared binding runs: the send it names, and nothing else. */
+    private static <T> Runnable sends(sibarum.atchung.Sender<T> to, T message) {
+        java.util.Objects.requireNonNull(to, "to");
+        java.util.Objects.requireNonNull(message, "message");
+        return () -> to.send(message);
     }
 
     /** Drop every claim {@code node} holds on {@code chord}. */

@@ -64,8 +64,20 @@ public final class Action {
     }
 
     /**
-     * What it does. Runs on a worker thread, like every claim. Until an action has a handler its chords are not
-     * claimed at all, so a declared but unimplemented action never swallows a key.
+     * What it does, as a message: pressing one of its chords sends {@code message} through {@code to}. The form for an
+     * application's actions (vexelray-framework's {@code docs/threading.md}, T7.5): the chords are declared, the
+     * dispatcher decides who a chord reaches, and what leaves is the message. Until an action says what it does its
+     * chords are not claimed at all, so a declared but unimplemented action never swallows a key.
+     */
+    public <T> Action sends(sibarum.atchung.Sender<T> to, T message) {
+        java.util.Objects.requireNonNull(to, "to");
+        java.util.Objects.requireNonNull(message, "message");
+        return on(() -> to.send(message));
+    }
+
+    /**
+     * What it does, in code: the widget library's form. Runs during the frame, like every claim. Until an action has
+     * a handler its chords are not claimed at all, so a declared but unimplemented action never swallows a key.
      */
     public Action on(Runnable handler) {
         this.handler = handler;

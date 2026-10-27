@@ -1856,8 +1856,8 @@ public final class TreeView<T> implements AutoCloseable {
 
         @Override
         public MenuSink item(MenuItem item) {
-            Runnable action = item.action();
-            delegate.item(action == null ? item : item.withAction(() -> {
+            // Every command at any depth: a submenu's lines are the tree's too.
+            delegate.item(item.wrapActions(action -> () -> {
                 begin();
                 action.run();
             }));

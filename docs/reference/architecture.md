@@ -770,6 +770,9 @@ vexelray-gui           parent (pom), groupId dev.vexelray.gui, Java 25
 │                      shows one at any size, colour, glow and shadow.    -> -core, vexelray-shadelets
 ├─ vexelray-gui-file-icons  the file-type families' sheets and emblems in an atlas of their own, and
 │                      FileIconView; apart from -icons because only a file browser draws them. -> -core, -icons
+├─ vexelray-gui-scroll scrollbars as elements: Scrollbar shows and moves one axis of a core ScrollSource (a
+│                      Scroller, or anything with a range), and Scrollbars pairs one with a Scroller. The layout
+│                      knows nothing of either. See docs/plans/scrolling.md.              -> -core, -draw
 ├─ vexelray-gui-widget interaction protocols on core: tabs, tree, text field, slider, menus, … -> -core, -icons
 ├─ vexelray-gui-keymap rebindable key bindings, opt-in: named actions with default chords the user can
 │                      change, persisted through Settings; KeymapEditor and KeymapWindow. -> -core, -widget, -icons

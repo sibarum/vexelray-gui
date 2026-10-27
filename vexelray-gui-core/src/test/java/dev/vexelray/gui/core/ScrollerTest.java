@@ -154,6 +154,54 @@ class ScrollerTest {
         }
     }
 
+    /**
+     * A Scroller wrapped in a box sized to its content, with something fixed beside it: the box gives way by what
+     * its Scroller can give, and no more. Here the wrapper is a row of a Scroller and a fixed-width strip, the shape
+     * a bar beside a Scroller has, and it sits between a title and a status bar.
+     */
+    @Test
+    void aBoxHoldingAScrollerGivesWayByWhatTheScrollerCanGive() {
+        try (Gui gui = new Gui(Atchung.create())) {
+            Scroller scroller = gui.scroller(rows(gui, 20, 100, 40)).axes(false, true);
+            Node strip = gui.box().width(px(BAR)).height(px(60));   // fixed: it cannot give
+            Node wrapper = gui.row().width(Length.FILL).children(scroller.node(), strip);
+            Node title = gui.box().width(Length.FILL).height(px(30));
+            Node status = gui.box().width(Length.FILL).height(px(30));
+            Node page = page(gui).children(title, wrapper, status);
+            frame(gui);
+
+            assertEquals(H - 60f, at(wrapper).rect().h(), 0.5f, "the wrapper gave way to what the bars leave");
+            assertEquals(H - 60f, at(scroller.node()).rect().h(), 0.5f, "and the Scroller in it is that tall");
+            assertEquals(H - 30f, at(status).rect().y(), 0.5f);
+            assertFalse(at(page).overflowY(), "nothing overflows the page");
+
+            // Less room than the strip beside it needs (20px left): the wrapper stops at what cannot give.
+            title.height(px(250));
+            frame(gui);
+            assertEquals(60f, at(wrapper).rect().h(), 0.5f, "never below the fixed strip");
+        }
+    }
+
+    /**
+     * Inside a box that declared it scrolls, nothing gives way along that axis: its room there is unbounded, and what
+     * does not fit is what it scrolls. Without this an old-model scroller squeezes what it holds to fit its view and
+     * never scrolls at all — what the demo's own page did to a chapter of Scrollers before it was caught.
+     */
+    @Test
+    void nothingGivesWayInsideABoxThatScrolls() {
+        try (Gui gui = new Gui(Atchung.create())) {
+            Scroller scroller = gui.scroller(rows(gui, 20, 100, 40)).axes(false, true);
+            Node wrapper = gui.column().width(Length.FILL).children(scroller.node());
+            Node outer = gui.column().width(Length.FILL).height(px(200)).scroll(false, true).children(wrapper);
+            page(gui).children(outer);
+            frame(gui);
+
+            assertEquals(800f, at(scroller.node()).rect().h(), 0.5f,
+                    "the Scroller is its content: nothing asked it to give");
+            assertTrue(at(outer).overflowY(), "the box that declared it scrolls is the one that scrolls");
+        }
+    }
+
     /** A Scroller with less content than room is its content's size: nothing to give, nothing given. */
     @Test
     void aScrollerWithRoomToSpareIsItsContent() {

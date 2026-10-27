@@ -1,6 +1,6 @@
 # Scrolling as elements: `Scroller`, `ScrollRange`, `Scrollbar`
 
-**Status: proposed 2026-10-26; steps 0 and 1 done (the revert; `ScrollRange`, `ScrollSource` and `Scroller` in core); names settled (§8).** This replaces automatic scrolling, and it supersedes
+**Status: proposed 2026-10-26; steps 0–2 done (the revert; `Scroller` and its ranges in core; `vexelray-gui-scroll` with `Scrollbar` and `Scrollbars`, and a demo chapter); names settled (§8).** This replaces automatic scrolling, and it supersedes
 [scrollbar-room.md](scrollbar-room.md), whose step 1 this plan reverts.
 
 Today any box scrolls when its content is longer than it is. The layout decides that after sizing the box, the
@@ -57,7 +57,7 @@ the child overflow, which §1 reports. A table that scrolls sideways asks for x.
 
 ### 2.1 How big a `Scroller` is
 
-This is the one sizing rule the plan adds, and only `Scroller` uses it:
+This is the one sizing rule the plan adds:
 
 > **A `Scroller` measures as its content and gives way to the room it is given, down to nothing.** Across an axis
 > its parent sizes, it fills, like `alignItems(STRETCH)`. Along the parent's main axis, its basis is its content's
@@ -67,6 +67,14 @@ This is the one sizing rule the plan adds, and only `Scroller` uses it:
 That is CSS's `flex-shrink` with `min-size: 0`. It's needed because no child in `FlexLayout` shrinks today, and
 shrinking is exactly what a `Scroller` exists to do. Where two `Scroller`s share a main axis, they give way in
 proportion to their content.
+
+**As built (step 2), it reaches through the boxes around a `Scroller`.** Each `AUTO` box has a *least* size: its
+measure with every `Scroller` in it counted as nothing along the axes it scrolls. Short of room, every `AUTO`
+child gives up the same share of what it can (its measure less its least), so a `Scroller` wrapped in a
+content-sized box gives way through it, and `Scrollbars`' own wrapper works in any parent. That is CSS's
+min-content floor. A box with no `Scroller` in it has least == measure, so nothing that existed before moves. Inside
+a box that scrolls along the axis (a `Scroller`, or an old-model box that *declared* `scroll` there), nothing gives
+way: its room is unbounded, and what does not fit is what it scrolls.
 
 With that rule, the push and shrink behaviour from scrollbar-room.md comes from ordinary layout. The bar is a
 sibling with a size:
@@ -224,12 +232,10 @@ until step 5.
    through nested `Scroller`s, and the wheel with no bar. With give-way off, four fail; with the strip back on,
    three do.
 
-   **Known limit.** Only the `Scroller` gives way, not a content-sized box around it. A `Scroller` inside an `AUTO`
-   column inside a row makes the column as wide as the content, and the overflow lands on the row instead. CSS has
-   the same trap (`min-width: auto`). Place the `Scroller` directly in the box that has the constraint, or give its
-   wrapper `grow`. If step 3 or 4 meets this often, letting a box give way by what its `Scroller`s can give is the
-   general fix.
-2. **`vexelray-gui-scroll`: `Scrollbar`, `Scrollbars`.**
+   **Known limit, lifted in step 2.** As first built, only the `Scroller` gave way, not a content-sized box around
+   it, which is CSS's `min-width: auto` trap. `Scrollbars` hit it at once, since its wrapper is exactly such a box;
+   §2.1's "as built" note is the general fix.
+2. **`vexelray-gui-scroll`: `Scrollbar`, `Scrollbars`.** *Done 2026-10-26.*
    - Tests:
      - the tab-bar case grows by the bar's height and moves its neighbour;
      - the page case gives the bar's width up from the `Scroller`;
@@ -238,6 +244,34 @@ until step 5.
 
      The first two are ScrollbarRoomTest's cases again, now passing with no measure change.
    - A demo chapter: a `Scroller` with each kind of bar, and a bar driving a source that is not a `Scroller`.
+
+   **As built.** The module is `dev.vexelray.gui.scroll`, on core and draw only:
+   - `Scrollbar.horizontal/vertical(gui, source)` is a box `THICKNESS` (0.85rem) across and `FILL` along, with
+     role `scrollbar`. It draws an outlined track and a thumb as a `Picture`, in the old strip's colours and
+     proportions (`Thumb` holds the arithmetic), redrawn when the range or the box changes. It keeps its room
+     with nothing to scroll. A press on the thumb takes hold where it was pressed, a press on the track pages
+     once toward it, and the wheel over the bar scrolls its source. `close()` stops following the source.
+   - `Scrollbars.vertical/horizontal/both(gui, content)` is a handle with `node()`, `scroller()` and the bars as
+     `Optional`s. `both` puts a plain square where the bars meet.
+
+   Three changes in core came with it:
+   - **The least size** (§2.1), which lifts step 1's known limit.
+   - **Declared scrolling holds.** A box that declared `scroll` along an axis is a scroller there, so nothing in
+     it gives way. The demo found this: its stage squeezed a chapter of `Scroller`s to fit instead of scrolling.
+   - **`Gui.onWheel(node, handler)`**, with `WheelEvent(dx, dy)` in px. The wheel over a node that asked for it
+     goes to that node instead of the nearest overflowing ancestor. It is fed from tactroller's input topic, like
+     `onDrag`. A bar is not inside what it scrolls, so it needs this, and so does any other source: the demo's
+     panorama takes the wheel over its own drawing.
+
+   Tests: `ScrollbarTest` (7: both §2.1 cases with the real bar, a thumb drag that keeps the grab under the
+   pointer, track paging both ways, the wheel over the bar, no thumb with nothing to scroll, and a bar driving a
+   source with no layout behind it) and `ThumbTest` (4). `ScrollerTest` gains two: a wrapper giving way through its
+   `Scroller`, and nothing giving way inside a box that declared `scroll`.
+
+   The demo's **Scrolling** chapter (`ScrollChapter`) shows a strip of tabs, a page, a grid that scrolls both
+   ways, and a bar driving a panorama that pans by redrawing, with no layout or `Scroller` behind it. The chapter's
+   own page is `Scrollbars.vertical`. It was shot with ottermate: the tabs keep their height with the bar under
+   them, the wheel scrolls the page and the grid, and a track press and the wheel pan the panorama.
 3. **Framework widgets move** (§7.1), with `Tabs` first and checked with `TabsOverflowProbe`. Then the demo.
 4. **Sibling apps move** (§7.2), in dependency order. Each is installed and shot with ottermate. MainFrame with 30
    tabs at zoom 1, 1.5 and 2 is the acceptance shot: every title whole and every header clickable.

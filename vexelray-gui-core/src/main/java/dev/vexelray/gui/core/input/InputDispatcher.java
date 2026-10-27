@@ -146,6 +146,8 @@ public final class InputDispatcher {
     // channel with a single owner.
     private final Map<Long, java.util.List<Consumer<InteractionState>>> stateHandlers = new ConcurrentHashMap<>();
     private final Map<Long, Consumer<DragEvent>> dragHandlers = new ConcurrentHashMap<>();
+    /** Nodes that take the wheel themselves rather than letting it scroll what they are in. See onWheel. */
+    private final Map<Long, Consumer<WheelEvent>> wheelHandlers = new ConcurrentHashMap<>();
     /** What each node would do with a drag released on it. Unrelated to dragHandlers -- see onDrop. */
     private final Map<Long, DropTarget> dropTargets = new ConcurrentHashMap<>();
     /** What each node offers up when a drag starts on it. */
@@ -451,6 +453,19 @@ public final class InputDispatcher {
      */
     public void onDrag(long nodeId, Consumer<DragEvent> handler) {
         dragHandlers.put(nodeId, handler);
+    }
+
+    /**
+     * Register a wheel handler for {@code nodeId}: the wheel turned over the node (or a descendant) goes to it as a
+     * {@link WheelEvent}, on the handler executor, instead of scrolling the nearest overflowing ancestor. The nearest
+     * such node on the pointer's path wins. Replaces any prior handler for that node; {@code null} removes it.
+     */
+    public void onWheel(long nodeId, Consumer<WheelEvent> handler) {
+        if (handler == null) {
+            wheelHandlers.remove(nodeId);
+        } else {
+            wheelHandlers.put(nodeId, handler);
+        }
     }
 
     /**
@@ -1058,6 +1073,7 @@ public final class InputDispatcher {
         menuSources.remove(nodeId);
         stateHandlers.remove(nodeId);
         dragHandlers.remove(nodeId);
+        wheelHandlers.remove(nodeId);
         dropTargets.remove(nodeId);
         dragSources.remove(nodeId);
         dragWatches.removeIf(w -> w.nodeId() == nodeId);
@@ -1301,6 +1317,17 @@ public final class InputDispatcher {
             }
             case InputEvent.Scrolled s -> {
                 RetainedNode hit = HitTest.at(currentRoot, s.x(), s.y());
+                // A node that takes the wheel itself is asked first: a bar beside what it scrolls is not inside it.
+                RetainedNode taker = wheelTaker(hit);
+                if (taker != null) {
+                    Consumer<WheelEvent> handler = wheelHandlers.get(taker.id);
+                    float step = WHEEL_STEP_EM * em(taker);
+                    WheelEvent w = new WheelEvent((float) s.xOffset() * step, -(float) s.yOffset() * step);
+                    if (handler != null) {
+                        handlerExecutor.execute(() -> handler.accept(w));
+                    }
+                    break;
+                }
                 boolean changed = false;
                 long now = System.nanoTime();
                 // A notch is a fixed distance — position control, and reversible — delivered as a glide when the
@@ -1728,6 +1755,19 @@ public final class InputDispatcher {
 
     private static boolean inRect(float[] r, float x, float y) {
         return x >= r[0] && x < r[0] + r[2] && y >= r[1] && y < r[1] + r[3];
+    }
+
+    /** Nearest ancestor-or-self of {@code hit} with a wheel handler, or null. */
+    private RetainedNode wheelTaker(RetainedNode hit) {
+        if (wheelHandlers.isEmpty()) {
+            return null;
+        }
+        for (RetainedNode n = hit; n != null; n = n.parent) {
+            if (wheelHandlers.containsKey(n.id)) {
+                return n;
+            }
+        }
+        return null;
     }
 
     /** Nearest ancestor-or-self of {@code hit} that overflows on the given axis. */

@@ -56,6 +56,11 @@
             <groupId>dev.vexelray.gui</groupId>
             <artifactId>vexelray-gui-widget</artifactId>
         </dependency>
+        <!-- The Scrolling chapter: Scrollbar and Scrollbars beside core's Scroller. -->
+        <dependency>
+            <groupId>dev.vexelray.gui</groupId>
+            <artifactId>vexelray-gui-scroll</artifactId>
+        </dependency>
         <dependency>
             <groupId>dev.vexelray.gui</groupId>
             <artifactId>vexelray-gui-nfd</artifactId>

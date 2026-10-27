@@ -11,6 +11,7 @@ import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.icons.Icon;
+import dev.vexelray.gui.scroll.Scrollbars;
 import dev.vexelray.gui.widget.Button;
 import dev.vexelray.gui.widget.IconButton;
 import dev.vexelray.gui.widget.TextField;
@@ -114,8 +115,9 @@ public final class KeymapEditor implements AutoCloseable {
         Node header = gui.row().width(Length.FILL).gap(Length.rem(0.5f)).alignItems(AlignItems.CENTER)
                 .children(gui.text("Filter").textSize(TEXT).wordWrap(false).textColor(Role.DIM),
                         filter.node(), resetAll.node());
-        this.list = gui.column().role("keymap-actions").width(Length.FILL).height(Length.FILL)
-                .gap(Length.rem(0.15f)).scroll(false, true);
+        this.list = gui.column().role("keymap-actions").width(Length.FILL).gap(Length.rem(0.15f));
+        // The actions scroll in a Scroller with a bar beside it, taking the height the header and footer leave.
+        Node actions = Scrollbars.vertical(gui, list).node().width(Length.FILL).height(Length.FILL);
         // The status line has its height reserved whether or not it has anything to say, so a message arriving
         // never moves the list above it.
         this.status = gui.text(HINT).role("keymap-status").width(Length.FILL).height(Length.rem(1.5f))
@@ -131,7 +133,7 @@ public final class KeymapEditor implements AutoCloseable {
                 .children(status, cancel.node());
         this.node = gui.column().role("keymap-editor").width(Length.FILL).height(Length.FILL)
                 .padding(Length.rem(0.75f)).gap(Length.rem(0.5f))
-                .children(header, list, footer);
+                .children(header, actions, footer);
         this.mapSub = keymap.overrides().onCommitLatest(committed -> render());
         this.heldSub = gui.modifiers().onCommit(committed -> showHeld(committed.value()));
         this.focusSub = gui.bus().subscribe(gui.focusEvents(), this::focusMoved);

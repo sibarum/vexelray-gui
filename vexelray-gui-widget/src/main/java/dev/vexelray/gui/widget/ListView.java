@@ -19,6 +19,8 @@ import dev.vexelray.gui.core.layout.Rect;
 import dev.vexelray.gui.core.style.Finish;
 import dev.vexelray.gui.core.style.Paint;
 import dev.vexelray.gui.core.style.Relief;
+import dev.vexelray.gui.scroll.Scrollbar;
+import dev.vexelray.gui.scroll.Scrollbars;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.text.TextLayout;
 import sibarum.atchung.Subscription;
@@ -95,7 +97,14 @@ public final class ListView<T> implements AutoCloseable {
     private final float rowRem;
     private final SelectionModel<T> selection;
 
+    /** The Scroller's node: the list's box, view and offset, and where drags start and land. */
     private final Node root;
+    /** What the Scroller moves: the spacers and the realized rows between them. */
+    private final Node content;
+    /** The Scroller and its bar. */
+    private final Scrollbars scrolling;
+    /** What is placed in a layout: the list and its bar. */
+    private final Node box;
     private final Node spacerTop;
     private final Node spacerBottom;
     private final List<Subscription> subs = new ArrayList<>();
@@ -155,14 +164,20 @@ public final class ListView<T> implements AutoCloseable {
         }
         this.rowRem = rowRem;
 
-        this.root = gui.column().role(containerRole).width(Length.FILL).height(Length.FILL).scroll(false, true)
-                .background(Role.WELL)
-                // Rows are realized and dropped as the user scrolls, and the spacers shift the rest: none of it may
-                // fade or slide under a window-wide motion.
-                .childMotion(false);
+        // Rows are realized and dropped as the user scrolls, and the spacers shift the rest: none of it may fade or
+        // slide under a window-wide motion.
+        this.content = gui.column().width(Length.FILL).childMotion(false);
+        // The rows scroll in a Scroller with a bar beside it. The Scroller's node is the list's geometry — the box
+        // that stays put, its view and offset, where a drag starts and lands, the drop overlay — which is what the
+        // old scrolling column was; the rows go in the content it moves. The list's identity — its role, its keys,
+        // its focus — is what an application places and focuses: the box with the bar.
+        this.scrolling = Scrollbars.vertical(gui, content);
+        this.root = scrolling.scroller().node();
+        this.box = scrolling.node().role(containerRole).width(Length.FILL).height(Length.FILL)
+                .background(Role.WELL);
         this.spacerTop = gui.box().width(Length.FILL).height(Length.ZERO);
         this.spacerBottom = gui.box().width(Length.FILL).height(Length.ZERO);
-        root.children(spacerTop, spacerBottom);
+        content.children(spacerTop, spacerBottom);
 
         // The window follows the scroll offset, which the read-model republishes on every changed frame. This is
         // the whole of the virtualisation trigger: no polling, and no frame callback of our own.
@@ -172,12 +187,17 @@ public final class ListView<T> implements AutoCloseable {
 
         // One tab stop for the whole list, as a tree is: registering the key stage is what makes the root
         // focusable, and rows are pointer targets rather than tab stops.
-        gui.onKeyUi(root, this::onKey);
-        gui.claim(root, SELECT_ALL, ClaimScope.FOCUSED, () -> selection.all(order()));
+        gui.onKeyUi(box, this::onKey);
+        gui.claim(box, SELECT_ALL, ClaimScope.FOCUSED, () -> selection.all(order()));
     }
 
-    /** The node to place in a layout. */
+    /** The node to place in a layout: the list, with its scrollbar beside it. */
     public Node node() {
+        return box;
+    }
+
+    /** The box the rows are seen through: the Scroller's node, narrower than {@link #node()} by the bar. */
+    Node view() {
         return root;
     }
 
@@ -197,7 +217,7 @@ public final class ListView<T> implements AutoCloseable {
     public ListView<T> roles(String container, String item) {
         this.containerRole = Objects.requireNonNull(container, "container");
         this.itemRole = Objects.requireNonNull(item, "item");
-        root.role(container);
+        box.role(container);
         synchronized (this) {
             clearWindow();
         }
@@ -703,7 +723,7 @@ public final class ListView<T> implements AutoCloseable {
         sizeSpacers();
     }
 
-    /** Build the row for {@code index} and put it at {@code at} among the root's children. */
+    /** Build the row for {@code index} and put it at {@code at} among the content's children. */
     private Node buildRow(int index, int at) {
         T item = items.get(index);
         // Not a scroller: overflow scrolling is on by default, and a row that scrolled would draw a scrollbar
@@ -722,7 +742,7 @@ public final class ListView<T> implements AutoCloseable {
         gui.onContextClick(row, e -> onRowContextClick(item));
         gui.onContextMenu(row, menu -> contextMenu.accept(item, menu));
         gui.onState(row, state -> row.background(look(item).at(state)));
-        root.insert(row, at);
+        content.insert(row, at);
         shown.put(item, row);
         return row;
     }
@@ -868,6 +888,7 @@ public final class ListView<T> implements AutoCloseable {
         synchronized (this) {
             clearWindow();
         }
+        scrolling.verticalBar().ifPresent(Scrollbar::close);
         gui.releaseNode(root);
     }
 }

@@ -34,7 +34,7 @@ class TableTest {
     private static final float TABLE_W = 800f;
 
     private static float bodyWidth(Table<Person> table) {
-        return table.rows().node().layout().viewW();
+        return table.rows().view().layout().viewW();
     }
 
     // ------------------------------------------------------------------ the solve
@@ -133,7 +133,7 @@ class TableTest {
             }
             h.frame();
 
-            assertTrue(table.rows().node().layout().scrollY() > 0f, "the body really scrolled");
+            assertTrue(table.rows().view().layout().scrollY() > 0f, "the body really scrolled");
             assertEquals(sized, table.columnWidth(0), 0.5f, "and the column stayed exactly where it was");
             table.close();
         }
@@ -148,9 +148,9 @@ class TableTest {
     void theColumnsAreSolvedAgainstTheBodyRatherThanTheTable() {
         try (HeadlessGui h = new HeadlessGui()) {
             Table<Person> table = mount(h, 1_000);   // long enough that the body really has a scrollbar
-            assertTrue(table.rows().node().layout().overflowY(), "the body is scrolling");
+            assertTrue(table.rows().view().layout().overflowY(), "the body is scrolling");
 
-            float body = table.rows().node().layout().viewW();
+            float body = table.rows().view().layout().viewW();
             float total = table.columnWidth(0) + table.columnWidth(1) + table.columnWidth(2);
             assertEquals(body, total, 1f, "the columns fill the body exactly");
             assertTrue(total < table.node().layout().viewW() - 1f,
@@ -172,7 +172,7 @@ class TableTest {
             Person first = personNamed(table, "aa00");
             assertNoScrolling(h, table.cell(first, 1), "a body cell");
             assertNoScrolling(h, table.rows().rowNode(first), "a row");
-            assertTrue(h.retained(table.rows().node()).scrollYAllowed(), "but the body still scrolls");
+            assertTrue(h.retained(table.rows().view()).scrollYAllowed(), "but the body still scrolls");
         }
     }
 
@@ -366,7 +366,7 @@ class TableTest {
             }
             h.frame();
 
-            assertTrue(table.rows().node().layout().scrollY() > 0f, "the body scrolled");
+            assertTrue(table.rows().view().layout().scrollY() > 0f, "the body scrolled");
             assertEquals(headerY, headerCellRect(table).y(), 0.5f, "and the header did not move");
             assertEquals(before.y(), table.node().layout().rect().y(), 0.5f);
         }

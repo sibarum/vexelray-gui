@@ -13,6 +13,8 @@ import dev.vexelray.gui.core.style.Finish;
 import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.draw.Picture;
+import dev.vexelray.gui.scroll.Scrollbar;
+import dev.vexelray.gui.scroll.Scrollbars;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.text.TextLayout;
 import sibarum.tactroller.api.Key;
@@ -40,6 +42,8 @@ public final class Tabs {
     private final Gui gui;
     private final Node root;
     private final Node bar;
+    /** The bar with its scrollbar under it: everything above the pages. */
+    private final Node strip;
     private final Node pages;
     private final List<Node> headers = new ArrayList<>();
     private final List<Node> bodies = new ArrayList<>();
@@ -199,6 +203,9 @@ public final class Tabs {
         };
     }
 
+    /** How tall a header is, and so how tall the bar is. */
+    private static final Length HEADER_HEIGHT = Length.rem(2.25f);
+
     /** How far the arriving page travels, in multiples of the root em. */
     private static final float TRAVEL = 1.25f;
 
@@ -258,18 +265,18 @@ public final class Tabs {
     public Tabs(Gui gui) {
         this.gui = gui;
         ContextMenu.presentOn(gui);   // every header gets a Close menu; something has to be able to show it
-        this.bar = gui.row().width(Length.FILL).height(Length.rem(2.25f)).background(Role.CHROME)
-                .gap(Length.dp(2)).alignItems(AlignItems.STRETCH)
-                // A horizontal scroller, so a bar with more headers than width still has every header somewhere
-                // it can be brought to: select() reveals the one it lands on, and the scrollbar that overflow
-                // shows is the pointer's way to the rest. Never vertical -- the bar is one row tall by design.
-                .scroll(true, false)
-                // And an edge whether or not it overflows. A scroller clips only while its content overflows, so a
-                // bar of a few short headers clipped nothing, and a focused header's ring was judged against the
-                // window instead: outset over the title bar and the page for a header in the middle, inside for one
-                // against the window's edge. Clipped, every header's ring is judged against the bar the headers
-                // fill, and comes inside the same way for all of them, overflowing or not.
-                .clip(true);
+        // The row the headers sit in, as tall as they are (HEADER_HEIGHT), in a Scroller along x so a bar with more
+        // headers than width still has every header somewhere it can be brought to: select() reveals the one it
+        // lands on, and the scrollbar under the row is the pointer's way to the rest. Never vertical -- the bar is
+        // one row tall by design. The Scroller clips whether or not it overflows, so every header's focus ring is
+        // judged against the strip, and comes inside the same way for all of them.
+        this.bar = gui.row().gap(Length.dp(2)).alignItems(AlignItems.STRETCH);
+        Scrollbars scrolling = Scrollbars.horizontal(gui, bar);
+        // The scrollbar takes no room until the headers overflow, and then the strip grows by it and the pages move
+        // down: the headers keep their whole height. A declared bar height used to give the scrollbar 38% of it,
+        // over the titles and taking their clicks (docs/plans/scrollbar-room.md §2).
+        scrolling.horizontalBar().ifPresent(Scrollbar::collapsing);
+        this.strip = scrolling.node().width(Length.FILL).background(Role.CHROME);
         // The content area is a surface, not a hole. Two reasons, and they arrived independently.
         //
         // It looks right: the bar and the area under it are one piece of chrome framing the content, so a page
@@ -291,7 +298,7 @@ public final class Tabs {
                 // How a page arrives, goes and trades places is this panel's TabTransition, NONE included: a window's
                 // own motion fading a new page in as well made "no tab animation" still animate (MainFrame's setting).
                 .childMotion(false);
-        this.root = gui.column().role("tabs").width(Length.FILL).height(Length.FILL).children(bar, pages);
+        this.root = gui.column().role("tabs").width(Length.FILL).height(Length.FILL).children(strip, pages);
     }
 
     /** The node to place in a layout. */
@@ -347,9 +354,10 @@ public final class Tabs {
      */
     public Tabs add(String title, Node body) {
         int index = headers.size();
-        // Only the height is the panel's: a header fills the bar. Everything else a header looks like is the
-        // skin's, so that one function is the whole answer to "what does a tab look like here".
-        Node header = gui.text(title).role("tab").height(Length.FILL);
+        // Only the height is the panel's: every header is HEADER_HEIGHT, and the bar is as tall as they are. Not FILL,
+        // which in a bar sized to its headers sizes nothing. Everything else a header looks like is the skin's, so
+        // that one function is the whole answer to "what does a tab look like here".
+        Node header = gui.text(title).role("tab").height(HEADER_HEIGHT);
 
         // Handlers resolve the header to its index at event time, not add time: tabs can be removed, so a
         // baked-in index would aim every surviving closure one tab off. The node's identity is the stable key.
@@ -763,7 +771,7 @@ public final class Tabs {
      * from their own handler leaves a tab selected under the pointer showing the wrong colour until the pointer
      * moves away.
      *
-     * <p>Only {@code height} is the panel's own, so that a header fills the bar. Everything else is yours.
+     * <p>Only {@code height} is the panel's own: the bar is as tall as its headers. Everything else is yours.
      */
     @FunctionalInterface
     public interface HeaderSkin {
@@ -790,15 +798,23 @@ public final class Tabs {
     }
 
     /**
-     * The bar the headers sit in — to <b>style</b>, not to restructure: its surface, its gap, its padding, how
-     * tall it is. A bar of documents wants the chrome slab it has by default; a bar sitting among an
-     * application's own controls may want no surface at all and the gap those controls are spaced by.
+     * The row the headers sit in — to <b>style</b>, not to restructure: its gap, its padding. It is as tall as its
+     * headers, and it scrolls sideways inside {@link #strip()}, which is where the surface is.
      *
      * <p>Do not add or remove children. The panel's bookkeeping is by index over exactly the headers it made,
      * and a stranger among them puts every index one out.
      */
     public Node bar() {
         return bar;
+    }
+
+    /**
+     * Everything above the pages: the {@link #bar()} and the scrollbar that appears under it when the headers
+     * overflow. Its surface is the bar's; a bar sitting among an application's own controls may want none. Hide
+     * this, not the bar, to show the pages alone — hiding the row would leave its scrollbar behind.
+     */
+    public Node strip() {
+        return strip;
     }
 
     /**

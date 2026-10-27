@@ -683,18 +683,18 @@ class BoardTest {
             h.frame();
             hand.finish();
             h.wheel(0, -5, 100, 300);   // the lane scrolls under the carried card
-            float scrolled = deck.node().layout().scrollY();
+            float scrolled = deck.view().layout().scrollY();
             assertTrue(scrolled > 0f, "the wheel works while carrying");
 
             h.bus.publish(InputTopics.INPUT, new InputEvent.KeyPressed(Key.ESCAPE, 0));
             h.frame();
             hand.at(0.5);
             h.frame();
-            float midway = deck.node().layout().scrollY();
+            float midway = deck.view().layout().scrollY();
             assertTrue(midway > 0f && midway < scrolled, "the lane glides back with the card: " + midway);
             rest(h);
 
-            assertEquals(0f, deck.node().layout().scrollY(), 0.01f, "where it was looking when the card came loose");
+            assertEquals(0f, deck.view().layout().scrollY(), 0.01f, "where it was looking when the card came loose");
             assertEquals(5f, rectOf(board, "c0").y(), 0.01f, "and the card is home");
             assertTrue(board.settled());
         }

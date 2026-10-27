@@ -60,9 +60,9 @@ class ListViewTest {
     void theScrollerIsAsTallAsTheWholeListFromTheFirstFrame() {
         try (HeadlessGui h = new HeadlessGui()) {
             ListView<String> list = mount(h, 1_000);
-            assertEquals(1_000 * ROW_PX, list.node().layout().contentH(), 1f,
+            assertEquals(1_000 * ROW_PX, list.view().layout().contentH(), 1f,
                     "the content is every row's worth of height, realized or not");
-            assertTrue(list.node().layout().overflowY());
+            assertTrue(list.view().layout().overflowY());
         }
     }
 
@@ -206,7 +206,7 @@ class ListViewTest {
                 h.tap(Key.DOWN).frame();
             }
             assertEquals(Set.of("item00011"), list.selection().selection());
-            assertTrue(list.node().layout().scrollY() > 0f, "the list scrolled rather than selecting off-screen");
+            assertTrue(list.view().layout().scrollY() > 0f, "the list scrolled rather than selecting off-screen");
             assertInView(list, list.rowNode("item00011"));
         }
     }
@@ -341,11 +341,11 @@ class ListViewTest {
 
     /** Scroll the list by {@code px} with the wheel, in whole rows — the harness's notch is not our business. */
     private static void scrollBy(HeadlessGui h, ListView<String> list, float px) {
-        Rect box = list.node().layout().rect();
+        Rect box = list.view().layout().rect();
         float x = box.x() + box.w() / 2f;
         float y = box.y() + box.h() / 2f;
-        float target = list.node().layout().scrollY() + px;
-        for (int i = 0; i < 400 && list.node().layout().scrollY() < target - 0.5f; i++) {
+        float target = list.view().layout().scrollY() + px;
+        for (int i = 0; i < 400 && list.view().layout().scrollY() < target - 0.5f; i++) {
             h.wheel(0, -1, x, y);
         }
         h.frame();
@@ -368,7 +368,7 @@ class ListViewTest {
 
     private static void assertInView(ListView<String> list, Node row) {
         assertNotNull(row);
-        Rect box = list.node().layout().rect();
+        Rect box = list.view().layout().rect();
         Rect r = row.layout().rect();
         assertTrue(r.y() >= box.y() - 0.5f && r.y() + r.h() <= box.y() + box.h() + 0.5f,
                 "the row sits inside the list's box: row " + r + " in " + box);

@@ -463,10 +463,11 @@ public final class Table<T> implements AutoCloseable {
     private void solve() {
         List<Runnable> writes = new ArrayList<>();
         synchronized (this) {
-            // The BODY's viewport, not the table's: the body is a scroller, so it is narrower than the table by
-            // its scrollbar, and solving against the table would push the last column under the bar and clip it.
-            // The header is not in the scroller, so its cells stop short of the bar -- which is where they belong.
-            NodeLayout viewport = body.node().layout();
+            // The BODY's viewport, not the table's: the body's rows are seen through a Scroller with its bar beside
+            // it, so the view is narrower than the table by the bar, and solving against the table would push the
+            // last column under the bar and clip it. The header is not in the Scroller, so its cells stop short of
+            // the bar -- which is where they belong.
+            NodeLayout viewport = body.view().layout();
             if (!viewport.present() || viewport.viewW() <= 0f) {
                 return;
             }

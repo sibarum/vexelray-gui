@@ -4,6 +4,7 @@ import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.LayoutEnums;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.scroll.Scrollbars;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.text.TextLayout;
 
@@ -35,17 +36,21 @@ public final class Console {
 
     private final Gui gui;
     private final Node lines;
+    private final Node box;
     private final Deque<Node> shown = new ArrayDeque<>();
 
     Console(Gui gui) {
         this.gui = gui;
-        this.lines = gui.column().width(Length.FILL).height(Length.FILL).gap(Length.rem(0.25f))
-                .scrollLock(LayoutEnums.ScrollLock.BOTTOM);
+        this.lines = gui.column().width(Length.FILL).gap(Length.rem(0.25f));
+        // A log: a Scroller locked to its bottom, so each line that arrives is in view, with a bar beside it.
+        Scrollbars scrolling = Scrollbars.vertical(gui, lines);
+        scrolling.scroller().lock(LayoutEnums.ScrollLock.BOTTOM);
+        this.box = scrolling.node().width(Length.FILL).height(Length.FILL);
     }
 
-    /** The scrolling column of lines, to be placed in whatever holds it. */
+    /** The scrolling column of lines, with its bar, to be placed in whatever holds it. */
     public Node node() {
-        return lines;
+        return box;
     }
 
     /** An ordinary line: something happened, and it was expected. */

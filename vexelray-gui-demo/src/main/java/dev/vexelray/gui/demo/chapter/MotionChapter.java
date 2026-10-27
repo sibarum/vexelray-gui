@@ -4,6 +4,7 @@ import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.scroll.Scrollbars;
 import dev.vexelray.gui.core.style.Paint;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
@@ -191,7 +192,7 @@ public final class MotionChapter implements Chapter {
                         + "application. The press ripple is eased out in its spread and linear in its fade; the "
                         + "tab indicator is eased out, because it is arriving somewhere."));
 
-        Node page = gui.column().width(Length.FILL).height(Length.FILL).gap(Ui.GAP).scroll(false, true)
+        Node page = gui.column().width(Length.FILL).gap(Ui.GAP)
                 .children(feedback, cues, transitions, animation);
         // The whole page, at any depth -- not just the stack whose rows move. A layout change does not stop at
         // the container it happened in: opening the panel moves the rows below it, and the card below them, and
@@ -203,7 +204,7 @@ public final class MotionChapter implements Chapter {
         // and it is why the framework does not make it for you.
         moves.followSubtree(page, Dur.ms(220), Ease.OUT_CUBIC);
         gui.motion(moves);
-        return page;
+        return Scrollbars.vertical(gui, page).node();
     }
 
     private static Node note(Gui gui, String text) {

@@ -1,6 +1,6 @@
 # Scrolling as elements: `Scroller`, `ScrollRange`, `Scrollbar`
 
-**Status: proposed 2026-10-26; steps 0–2 done (the revert; `Scroller` and its ranges in core; `vexelray-gui-scroll` with `Scrollbar` and `Scrollbars`, and a demo chapter); names settled (§8).** This replaces automatic scrolling, and it supersedes
+**Status: proposed 2026-10-26; steps 0–3 and 6 done (the revert; `Scroller` in core; `vexelray-gui-scroll`; the framework widgets and the demo moved, all but the multi-line `TextField`; `collapsing()`); names settled (§8).** This replaces automatic scrolling, and it supersedes
 [scrollbar-room.md](scrollbar-room.md), whose step 1 this plan reverts.
 
 Today any box scrolls when its content is longer than it is. The layout decides that after sizing the box, the
@@ -158,16 +158,21 @@ There's nothing in `HitTest`, `InputDispatcher` or `TreeRenderer` that knows it 
 
 ### 4.1 When there is nothing to scroll
 
-The bar **keeps its room**, drawing a track with no thumb. That is the default, for three reasons:
+The bar **keeps its room**, and draws nothing in it. That is the default, for three reasons:
 
-- it is the no-hover rule's reasoning: reserved space, nothing that comes and goes;
+- it is the no-hover rule's reasoning: reserve the space, and show the bar on overflow;
 - the layout never depends on its own result;
 - an app that wants the bar gone says so.
 
-`Scrollbar.collapsing()` hides the bar while the range fits. That means the bar's visibility depends on a range
-the layout produces, so the layout runs twice in that one case: once with the bar collapsed and, if the range
-then overflows, once with it shown, never more. That's today's "measured again in what is left", made local to
-the one node that asked for it. It is step 6, not the first cut.
+(As first built in step 2 it drew an empty track. Step 3 made that nothing, because every list and lane in the
+framework would otherwise have grown a permanent empty track that old-model scrollers never had.)
+
+`Scrollbar.collapsing()` takes no room while the range fits: the bar is hidden, and shown once its range scrolls,
+**a frame after** the layout that produced the range, rather than by laying out twice. It settles in one step for a
+bar across the axis it shows (a horizontal bar's height cannot change a row's width), and for a vertical bar beside
+content that only grows taller as it narrows, which is what wrapped text does; content that would fit only once
+narrowed could flip, and such a box should keep the room. `Tabs` uses it (step 3), which is what this redesign was
+first asked for: the overflowing bar grows by its scrollbar and the pages move down.
 
 ### 4.2 The usual pairing
 
@@ -273,6 +278,51 @@ until step 5.
    own page is `Scrollbars.vertical`. It was shot with ottermate: the tabs keep their height with the bar under
    them, the wheel scrolls the page and the grid, and a track press and the wheel pan the panorama.
 3. **Framework widgets move** (§7.1), with `Tabs` first and checked with `TabsOverflowProbe`. Then the demo.
+   *Done 2026-10-26, except the multi-line `TextField`.*
+
+   **As built.**
+   - **`Tabs`.** The header row is in a `Scrollbars.horizontal` whose bar is `collapsing()`. Headers are a fixed
+     `2.25rem`, and the strip is as tall as they are. `bar()` is still the header row (MainFrame appends its `+`,
+     passthrough switch and rename field there). The new `strip()` is the row with its scrollbar, and is what to
+     hide. `TabsOverflowProbe` with 30 tabs:
+
+     | Zoom | Header height | Text box (line needs) | Bar | Page starts |
+     | --- | --- | --- | --- | --- |
+     | 1 | 36 (was 22.4) | 24 (20; was 10.4) | at 36, 13.6 tall | at 49.6 (was 36, under the bar) |
+     | 1.5 | 54 | 42 (30) | at 54, 20.4 tall | at 74.4 |
+     | 2 | 72 | 60 (40) | at 72, 27.2 tall | at 99.2 |
+
+   - **`ListView` (and so `Table`'s body), `TreeView`, `Deck`.** Each keeps its old scroller's role inside, now
+     the `Scroller`'s node: its box, view and offset (virtualisation and paging still read them from its layout,
+     which is the same frame as the range), where drags start and land, and its drop overlay. Rows go in the
+     content the `Scroller` moves. What the application places is the `Scrollbars` wrapper:
+     - `ListView.node()` carries the list's role, keys and focus;
+     - `TreeView` keeps them on its framed root, and `scroller()` is still "the box the rows scroll in";
+     - `Table` solves its columns against `ListView.view()`, the body less its bar;
+     - `Deck.node()` is the wrapper, and `Board` works in the `Scroller`'s box.
+   - **`Inspector`, `Rail`'s panel body, `KeymapEditor`'s list** became a `Scrollbars.vertical` each.
+   - **Demo.**
+     - The seven opt-ins are `Scrollbars.vertical`: the Icons, Image, Motion and Window pages, the Drag
+       chapter's archive, the Focus chapter's scroll viewport, and the gallery's chapter rail. The Scrolling
+       chapter's own page already was.
+     - The console is a `Scroller` locked to its bottom.
+     - `Shell` hides `pages.strip()`.
+     - The Scrolling chapter's first section is now a real `Tabs`, starting with four tabs and an "Add ten tabs"
+       button.
+
+   No `scroll(..., true)` or `scrollLock` is left in this repository outside core.
+
+   Shot with ottermate:
+   - the real `Tabs` with four tabs (no bar, no room for one) and with fourteen (bar under the headers, page
+     moved down, every header whole);
+   - the Trees, Cards and Tables chapters (a lane that overflows shows its bar, and the others keep the room
+     empty);
+   - a 480 px window. There the Tables chapter's table card, which is `height(FILL)`, so `grow` with a basis of 0,
+     gets no height. That was so before this step, and `grow` children are outside the give-way rule.
+
+   **Not moved: the multi-line `TextField`.** It is a text leaf with its own scrolling in `layoutTextLeaf` and the
+   renderer's strip, reading `viewH` for lines per page. Making it a `ScrollSource` over its lines with a bar
+   composed beside it is its own piece of work, and has to land before step 5 deletes the strip.
 4. **Sibling apps move** (§7.2), in dependency order. Each is installed and shot with ottermate. MainFrame with 30
    tabs at zoom 1, 1.5 and 2 is the acceptance shot: every title whole and every header clickable.
 5. **Flip the default.** Delete:
@@ -285,7 +335,7 @@ until step 5.
 
    Rewrite [reference/scrolling.md](../reference/scrolling.md) from scratch. Done when a repo-wide search for
    `scroll(` finds only `Scroller`, `ScrollSource` and the bar.
-6. **`Scrollbar.collapsing()`** (§4.1), if an app turns out to want it.
+6. **`Scrollbar.collapsing()`** (§4.1). *Done early, in step 3, for `Tabs`: shown a frame late rather than by laying out twice.*
 
 ## 7. What moves
 

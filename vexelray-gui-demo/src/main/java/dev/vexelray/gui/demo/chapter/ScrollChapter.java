@@ -14,6 +14,7 @@ import dev.vexelray.gui.demo.Ui;
 import dev.vexelray.gui.draw.Sketch;
 import dev.vexelray.gui.scroll.Scrollbar;
 import dev.vexelray.gui.scroll.Scrollbars;
+import dev.vexelray.gui.widget.Tabs;
 import dev.vexelray.text.TextLayout;
 import sibarum.atchung.Committer;
 import sibarum.atchung.State;
@@ -40,17 +41,25 @@ public final class ScrollChapter implements Chapter {
     public Node build(Stage stage) {
         Gui gui = stage.gui();
 
-        // ---- a strip of tabs: the box is sized to its content, so the bar adds to it -----------------------------
+        // ---- a tab bar: sized to its headers, so the bar adds to it when they overflow ------------------------
 
-        Node headers = gui.row().gap(Length.dp(2));
-        for (int i = 1; i <= 24; i++) {
-            headers.append(gui.text("Tab " + i).height(Length.rem(2.25f)).padding(Length.dp(6), Length.dp(14))
-                    .background(Role.PANEL).corner(Length.rem(0.5f), Length.ZERO)
-                    .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE));
+        Tabs tabs = new Tabs(gui);
+        int[] count = {0};
+        Runnable addTab = () -> {
+            count[0]++;
+            tabs.add("Tab " + count[0], Ui.prose(gui, "Page " + count[0] + "."));
+        };
+        for (int i = 0; i < 4; i++) {
+            addTab.run();
         }
-        Scrollbars tabs = Scrollbars.horizontal(gui, headers);
-        tabs.node().width(Length.FILL).background(Role.CHROME);
+        tabs.node().height(Length.rem(7));
+        Node addTen = Ui.button(gui, "Add ten tabs", () -> {
+            for (int i = 0; i < 10; i++) {
+                addTab.run();
+            }
+        });
         gui.landmark("scroll.tabs", tabs.node());
+        gui.landmark("scroll.addtabs", addTen);
 
         // ---- a page: a fixed height, so the bar's width comes out of the text --------------------------------
 
@@ -90,11 +99,12 @@ public final class ScrollChapter implements Chapter {
         // chapter the whole content area, and what is longer than that is the chapter's to scroll.
         Node sections = gui.column().width(Length.FILL).gap(Ui.GAP).alignItems(AlignItems.STRETCH).children(
                         Ui.strip(gui,
-                                Ui.heading(gui, "A strip of tabs"),
-                                Ui.prose(gui, "The strip is sized to its content, so the bar under the tabs adds to "
-                                        + "it and what follows moves down. The tabs keep all of their height."),
-                                tabs.node(),
-                                Ui.prose(gui, "This line is below the bar, not under it.")),
+                                Ui.heading(gui, "A tab bar"),
+                                Ui.prose(gui, "The bar is as tall as its headers. Add tabs until they do not fit: "
+                                        + "a scrollbar appears under them, the bar grows by it and the page moves "
+                                        + "down. The headers keep all of their height, and every title stays whole "
+                                        + "and clickable."),
+                                addTen, tabs.node()),
                         Ui.strip(gui,
                                 Ui.heading(gui, "A page"),
                                 Ui.prose(gui, "Here the box has a fixed height, so the content gives way to it, "

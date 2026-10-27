@@ -5,6 +5,7 @@ import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.app.AppWindow;
 import dev.vexelray.gui.core.app.WindowSpec;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.scroll.Scrollbars;
 import dev.vexelray.gui.core.style.Finish;
 import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
@@ -153,8 +154,8 @@ public final class WindowChapter implements Chapter {
                         + "goes into the frame budget beside every other one the application holds, so a loop "
                         + "that parks when nothing is happening still wakes up to keep the promise."));
 
-        return gui.column().width(Length.FILL).height(Length.FILL).gap(Ui.GAP).scroll(false, true)
-                .children(windows, dialogs, files, closing);
+        return Scrollbars.vertical(gui, gui.column().width(Length.FILL).gap(Ui.GAP)
+                .children(windows, dialogs, files, closing)).node();
     }
 
     private void pick(Stage stage, Console console, boolean folder) {

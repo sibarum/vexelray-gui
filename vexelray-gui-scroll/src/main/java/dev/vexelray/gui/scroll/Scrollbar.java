@@ -26,8 +26,9 @@ import sibarum.atchung.Subscription;
  * bar all ask the source to move, and the bar draws what the source publishes back. So it drives a
  * {@code Scroller}, a 3D view's camera or a terminal's scrollback the same way, and never disagrees with them.
  *
- * <p><b>It keeps its room when there is nothing to scroll</b>, drawing the track without a thumb: nothing appears
- * or goes, and the layout never depends on what the layout produced (§4.1).
+ * <p><b>It keeps its room when there is nothing to scroll</b>, and draws nothing in it: the space is reserved, so
+ * nothing moves when the content grows past its box, and the bar shows only on overflow (§4.1). {@link #collapsing}
+ * is the other choice — no room until there is something to scroll, and then the box the bar is in grows by it.
  *
  * <p>Place it anywhere — beside what it scrolls is usual, and {@link Scrollbars} builds that — but never inside
  * a {@code Scroller}'s content, which the offset moves.
@@ -45,6 +46,9 @@ public final class Scrollbar implements AutoCloseable {
 
     /** Where on the thumb a drag took hold, along the axis; NaN while not dragging the thumb. Guarded by this. */
     private float grab = Float.NaN;
+
+    /** Whether the bar takes no room while there is nothing to scroll. See {@link #collapsing}. */
+    private volatile boolean collapsing;
 
     /** A bar along x, showing and moving {@code source}. */
     public static Scrollbar horizontal(Gui gui, ScrollSource source) {
@@ -64,7 +68,12 @@ public final class Scrollbar implements AutoCloseable {
                 .width(vertical ? THICKNESS : Length.FILL)
                 .height(vertical ? Length.FILL : THICKNESS);
         // The range and the box are the two things a drawing depends on, and either can change without the other.
-        this.watching = source.range().onCommitLatest(v -> paint());
+        this.watching = source.range().onCommitLatest(v -> {
+            if (collapsing) {
+                node.visible(v.value().scrolls());
+            }
+            paint();
+        });
         gui.onResize(node, layout -> paint());
         gui.onDrag(node, this::pointer);
         gui.onWheel(node, this::wheel);
@@ -83,6 +92,22 @@ public final class Scrollbar implements AutoCloseable {
     /** Whether it runs along y. */
     public boolean isVertical() {
         return vertical;
+    }
+
+    /**
+     * Take no room while there is nothing to scroll: the bar is hidden until its range scrolls, and then the box it is
+     * in grows by it and what follows moves — a strip of tabs that overflows gets taller, rather than giving its
+     * headers' height to the bar. Shown or hidden a frame after the range changes, since the range is what the
+     * layout produced.
+     *
+     * <p>Settles in one step for a bar across the axis it shows (a horizontal bar under a row: its height cannot
+     * change the row's width), and for a vertical bar beside content that only grows taller as it narrows, which is
+     * what wrapped text does. Content that could fit only once narrowed would flip; give such a box room for its bar.
+     */
+    public Scrollbar collapsing() {
+        collapsing = true;
+        node.visible(source.range().value().scrolls());
+        return this;
     }
 
     /** Stop following the source. The node stays where it is; remove it as any other. */
@@ -148,6 +173,10 @@ public final class Scrollbar implements AutoCloseable {
         float track = vertical ? h : w;
         float thickness = vertical ? w : h;
         Thumb thumb = Thumb.of(source.range().value(), track, thickness);
+        if (thumb.length() <= 0f) {
+            node.picture(null);   // nothing to scroll: the room is kept, and nothing is shown in it
+            return;
+        }
 
         Color edge = gui.theme().color(Role.EDGE);
         Color trough = gui.theme().color(Role.CHROME);
@@ -157,15 +186,13 @@ public final class Scrollbar implements AutoCloseable {
         Sketch s = new Sketch()
                 .fill(0, 0, w, h, r, edge)
                 .fill(1.5, 1.5, Math.max(0f, w - 3f), Math.max(0f, h - 3f), Math.max(0f, r - 1.5f), trough);
-        if (thumb.length() > 0f) {
-            float across = 0.6f * thickness;
-            float side = 0.2f * thickness;
-            float round = across * 0.5f;
-            if (vertical) {
-                s.fill(side, thumb.start(), across, thumb.length(), round, grip);
-            } else {
-                s.fill(thumb.start(), side, thumb.length(), across, round, grip);
-            }
+        float across = 0.6f * thickness;
+        float side = 0.2f * thickness;
+        float round = across * 0.5f;
+        if (vertical) {
+            s.fill(side, thumb.start(), across, thumb.length(), round, grip);
+        } else {
+            s.fill(thumb.start(), side, thumb.length(), across, round, grip);
         }
         node.picture(s.picture());
     }

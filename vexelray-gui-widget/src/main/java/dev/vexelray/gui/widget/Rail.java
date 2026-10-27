@@ -9,6 +9,7 @@ import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.style.Finish;
 import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
+import dev.vexelray.gui.scroll.Scrollbars;
 import dev.vexelray.gui.core.style.Theme;
 
 import java.util.ArrayList;
@@ -266,8 +267,9 @@ public final class Rail {
         Node headRule = gui.box().width(Length.percent(100)).height(Length.dp(1))
                 .background(Role.LINE);
         // Its pages arrive and trade places by this rail's PanelTransition, so the window's motion keeps out of them.
-        this.panelBody = gui.column().width(Length.grow(1f)).height(Length.grow(1f)).scroll(false, true)
-                .childMotion(false);
+        this.panelBody = gui.column().width(Length.FILL).childMotion(false);
+        // The pages scroll in a Scroller with a bar beside it, taking the panel's height below its heading.
+        Node scrolling = Scrollbars.vertical(gui, panelBody).node().width(Length.grow(1f)).height(Length.grow(1f));
         this.panel = gui.column().role("rail-panel")
                 .corner(Length.rem(0.5f))
                 .background(Role.PANEL)
@@ -275,7 +277,7 @@ public final class Rail {
                 .lit(Finish.LIT).elevation(theme.elevation(Relief.FLOATING))
                 .clip(true)
                 .visible(false)
-                .children(head, headRule, panelBody);
+                .children(head, headRule, scrolling);
     }
 
     /**

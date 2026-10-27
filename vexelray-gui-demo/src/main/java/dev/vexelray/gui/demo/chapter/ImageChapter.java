@@ -7,6 +7,7 @@ import dev.vexelray.gui.core.app.GuiApp;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.style.Role;
+import dev.vexelray.gui.scroll.Scrollbars;
 import dev.vexelray.gui.demo.Chapter;
 import dev.vexelray.gui.demo.Console;
 import dev.vexelray.gui.demo.Stage;
@@ -107,7 +108,7 @@ public final class ImageChapter implements Chapter {
 
         stage.onApp(app -> load(app, stage, whole, cells, player, caption, vectors));
 
-        return gui.column().width(Length.FILL).height(Length.FILL).scroll(false, true).gap(Ui.GAP)
+        return Scrollbars.vertical(gui, gui.column().width(Length.FILL).gap(Ui.GAP)
                 .children(
                         Ui.strip(gui,
                                 Ui.heading(gui, "Decoded, then uploaded once"),
@@ -134,7 +135,7 @@ public final class ImageChapter implements Chapter {
                                 Ui.prose(gui, "Three rasterisations of one SVG at three sizes — not one "
                                         + "raster scaled three ways. Look at the thin strokes: they are the "
                                         + "same weight in each, which is the thing a scaled bitmap cannot do."),
-                                row(gui, vectors)));
+                                row(gui, vectors)))).node();
     }
 
     /** A well to draw a picture in, so an image that is transparent still reads as a thing on the page. */

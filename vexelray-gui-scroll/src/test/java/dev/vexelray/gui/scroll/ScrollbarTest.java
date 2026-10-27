@@ -154,7 +154,37 @@ class ScrollbarTest {
             h.frame().frame();
             Node bar = sb.verticalBar().orElseThrow().node();
             assertEquals(BAR, at(bar).rect().w(), 0.5f, "its room is kept: nothing appears or goes");
-            assertEquals(2, marks(h, bar), "a rim and a trough, and no thumb");
+            assertEquals(0, marks(h, bar), "and nothing is shown in it until there is something to scroll");
+        }
+    }
+
+    /**
+     * A collapsing bar takes no room until there is something to scroll; then the strip it is in grows by it and the
+     * body moves down — the strip of tabs this whole redesign started from.
+     */
+    @Test
+    void aCollapsingBarTakesRoomOnlyOnceThereIsSomethingToScroll() {
+        try (Headless h = new Headless()) {
+            Node headers = h.gui.row();
+            for (int i = 0; i < 2; i++) {
+                headers.append(h.gui.box().width(px(100)).height(px(32)));
+            }
+            Scrollbars strip = Scrollbars.horizontal(h.gui, headers);
+            Scrollbar bar = strip.horizontalBar().orElseThrow().collapsing();
+            Node body = h.gui.box().width(Length.FILL).height(Length.grow(1f));
+            page(h).children(strip.node(), body);
+            h.frame().frame();
+            assertEquals(32f, at(strip.node()).rect().h(), 0.5f, "two headers fit: no bar, no room for one");
+            assertEquals(32f, at(body).rect().y(), 0.5f);
+
+            for (int i = 0; i < 8; i++) {
+                headers.append(h.gui.box().width(px(100)).height(px(32)));
+            }
+            h.frame().frame().frame();
+            assertTrue(at(bar.node()).present() && at(bar.node()).rect().h() > 0f, "ten do not: the bar is shown");
+            assertEquals(32f + BAR, at(strip.node()).rect().h(), 0.5f, "the strip grew by it");
+            assertEquals(32f + BAR, at(body).rect().y(), 0.5f, "and the body moved down");
+            assertEquals(32f, at(strip.scroller().node()).rect().h(), 0.5f, "the headers kept their height");
         }
     }
 
@@ -177,7 +207,7 @@ class ScrollbarTest {
 
             camera.publish(new ScrollRange(1000f, 1000f, 0f));
             h.frame();
-            assertEquals(2, marks(h, bar.node()), "and when it has nothing to show, the thumb goes");
+            assertEquals(0, marks(h, bar.node()), "and when it has nothing to show, nothing is drawn");
         }
     }
 

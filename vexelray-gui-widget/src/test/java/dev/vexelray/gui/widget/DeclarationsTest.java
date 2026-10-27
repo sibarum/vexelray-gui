@@ -189,8 +189,8 @@ class DeclarationsTest {
             assertNotNull(h.gui.dragSession(), "a press that travelled became a drag");
             assertEquals("a.txt", h.gui.dragSession().payload().as(FILE).orElseThrow(),
                     "carrying what the node declared, with nothing asked when it began");
-            h.bus.publish(InputTopics.INPUT, new InputEvent.KeyPressed(Key.ESCAPE, 0));
-            h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, 20, 80, 0));
+            h.bus.publish(h.gui.input(), new InputEvent.KeyPressed(Key.ESCAPE, 0));
+            h.bus.publish(h.gui.input(), new InputEvent.ButtonReleased(MouseButton.LEFT, 20, 80, 0));
             h.frame();
             assertNull(h.gui.dragSession());
 
@@ -202,8 +202,8 @@ class DeclarationsTest {
 
     /** Press at one point and travel to another, timestamps zero so the frame's own tick supplies the hold. */
     private static void drag(HeadlessGui h, int x0, int y0, int x1, int y1) {
-        h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, x0, y0, 0));
-        h.bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(x1, y1, x1 - x0, y1 - y0, 0));
+        h.bus.publish(h.gui.input(), new InputEvent.ButtonPressed(MouseButton.LEFT, x0, y0, 0));
+        h.bus.publish(h.gui.input(), new InputEvent.PointerMoved(x1, y1, x1 - x0, y1 - y0, 0));
         h.frame();
     }
 }

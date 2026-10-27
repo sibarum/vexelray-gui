@@ -37,7 +37,7 @@ class DropGestureTest {
     private static final PayloadType<String> ROW = PayloadType.of("row");
 
     private final Atchung bus = Atchung.create();
-    private final InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS);
+    private final InputDispatcher dispatcher = new InputDispatcher(bus, "test", CLICKS);
     private final List<String> applied = new ArrayList<>();
     private final History history = new History();
     private RetainedNode root;
@@ -76,19 +76,19 @@ class DropGestureTest {
     }
 
     private void press(int x, int y) {
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, x, y, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonPressed(MouseButton.LEFT, x, y, 0));
     }
 
     private void move(int x, int y, int dx, int dy) {
-        bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(x, y, dx, dy, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.PointerMoved(x, y, dx, dy, 0));
     }
 
     private void release(int x, int y) {
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, x, y, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonReleased(MouseButton.LEFT, x, y, 0));
     }
 
     private void escape() {
-        bus.publish(InputTopics.INPUT, new InputEvent.KeyPressed(Key.ESCAPE, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.KeyPressed(Key.ESCAPE, 0));
     }
 
     private void frame() {

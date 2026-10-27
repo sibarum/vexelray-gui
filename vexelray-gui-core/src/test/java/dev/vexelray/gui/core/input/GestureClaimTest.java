@@ -37,23 +37,23 @@ class GestureClaimTest {
 
     /** Three fingers in a row at {@code x} mm, at {@code atMs}. */
     private static void three(Atchung bus, double x, long atMs) {
-        bus.publish(InputTopics.INPUT, new InputEvent.TouchpadChanged(List.of(
+        bus.publish(InputTopics.input("test"), new InputEvent.TouchpadChanged(List.of(
                 new TouchpadContact(1, x, 30, 0, 0), new TouchpadContact(2, x + 15, 30, 0, 0),
                 new TouchpadContact(3, x + 30, 30, 0, 0)), atMs * 1_000_000L));
     }
 
     private static void lift(Atchung bus, long atMs) {
-        bus.publish(InputTopics.INPUT, new InputEvent.TouchpadChanged(List.of(), atMs * 1_000_000L));
+        bus.publish(InputTopics.input("test"), new InputEvent.TouchpadChanged(List.of(), atMs * 1_000_000L));
     }
 
     @Test
     void aThreeFingerSwipeRunsItsClaimAndThePanIsPublished() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS);
+        InputDispatcher d = new InputDispatcher(bus, "test", CLICKS);
         RetainedNode root = tree();
         List<String> log = Collections.synchronizedList(new ArrayList<>());
         List<GestureEvent> seen = Collections.synchronizedList(new ArrayList<>());
-        bus.subscribe(InputTopics.GESTURE, seen::add);
+        bus.subscribe(InputTopics.gestures("test"), seen::add);
         d.claim(-1L, Gesture.swipe(3, Gesture.Motion.SWIPE_LEFT), ClaimScope.GLOBAL, () -> log.add("previous"));
         d.claim(-1L, Gesture.swipe(3, Gesture.Motion.SWIPE_RIGHT), ClaimScope.GLOBAL, () -> log.add("next"));
 
@@ -73,7 +73,7 @@ class GestureClaimTest {
     @Test
     void aGestureClaimRanksAsAChordDoes() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS);
+        InputDispatcher d = new InputDispatcher(bus, "test", CLICKS);
         RetainedNode root = tree();
         d.setFocusable(1, true);
         d.focus(1);

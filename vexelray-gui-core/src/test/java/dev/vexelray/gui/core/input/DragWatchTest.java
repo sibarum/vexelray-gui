@@ -37,7 +37,7 @@ class DragWatchTest {
     private static final PayloadType<String> ROW = PayloadType.of("row");
 
     private final Atchung bus = Atchung.create();
-    private final InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS);
+    private final InputDispatcher dispatcher = new InputDispatcher(bus, "test", CLICKS);
     private final History history = new History();
     private final List<String> heard = new ArrayList<>();
     private RetainedNode root;
@@ -89,20 +89,20 @@ class DragWatchTest {
     private void press(int x, int y) {
         lastX = x;
         lastY = y;
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, x, y, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonPressed(MouseButton.LEFT, x, y, 0));
     }
 
     private int lastX = 20;
     private int lastY = 20;
 
     private void move(int x, int y) {
-        bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(x, y, x - lastX, y - lastY, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.PointerMoved(x, y, x - lastX, y - lastY, 0));
         lastX = x;
         lastY = y;
     }
 
     private void release(int x, int y) {
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, x, y, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonReleased(MouseButton.LEFT, x, y, 0));
     }
 
     private void frame() {
@@ -157,7 +157,7 @@ class DragWatchTest {
         press(20, 20);
         move(20, 60);
         frame();
-        bus.publish(InputTopics.INPUT, new InputEvent.KeyPressed(Key.ESCAPE, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.KeyPressed(Key.ESCAPE, 0));
         frame();
 
         assertEquals("w:ended 60 MOVE -> NONE", heard.getLast(),
@@ -229,8 +229,8 @@ class DragWatchTest {
         release(20, 60);
         frame();
 
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.RIGHT, 20, 60, 0));
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.RIGHT, 20, 60, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonPressed(MouseButton.RIGHT, 20, 60, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonReleased(MouseButton.RIGHT, 20, 60, 0));
         frame();
 
         assertEquals("w:ended 60 MOVE -> NONE", heard.getLast());

@@ -25,7 +25,7 @@ class MultiClickTest {
     private static final long MS = 1_000_000L;
 
     private final Atchung bus = Atchung.create();
-    private final InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS);
+    private final InputDispatcher dispatcher = new InputDispatcher(bus, "test", CLICKS);
     private final RetainedNode root = node(0, 0, 0, 300, 100);
     private final List<DragEvent> starts = new ArrayList<>();
 
@@ -50,8 +50,8 @@ class MultiClickTest {
     }
 
     private void click(int x, int y, long atMs) {
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, x, y, atMs * MS));
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, x, y, atMs * MS));
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonPressed(MouseButton.LEFT, x, y, atMs * MS));
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonReleased(MouseButton.LEFT, x, y, atMs * MS));
         dispatcher.dispatch(root);
     }
 
@@ -95,9 +95,9 @@ class MultiClickTest {
         List<DragEvent> all = new ArrayList<>();
         dispatcher.onDrag(7, all::add);
         click(50, 20, 1000);
-        bus.publish(InputTopics.INPUT, new InputEvent.KeyPressed(Key.LEFT_SHIFT, 1050 * MS));
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, 50, 20, 1100 * MS));
-        bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(120, 20, 70, 0, 1150 * MS));
+        bus.publish(InputTopics.input("test"), new InputEvent.KeyPressed(Key.LEFT_SHIFT, 1050 * MS));
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonPressed(MouseButton.LEFT, 50, 20, 1100 * MS));
+        bus.publish(InputTopics.input("test"), new InputEvent.PointerMoved(120, 20, 70, 0, 1150 * MS));
         dispatcher.dispatch(root);
 
         DragEvent move = all.get(all.size() - 1);

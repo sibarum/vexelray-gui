@@ -1,6 +1,6 @@
 package dev.vexelray.gui.krono;
 
-import dev.vexelray.gui.core.input.InputTopics;
+import dev.vexelray.gui.core.Gui;
 import sibarum.atchung.Atchung;
 import sibarum.atchung.Backpressure;
 import sibarum.kronometer.Cell;
@@ -23,7 +23,7 @@ import java.util.Objects;
  * same events — which turns input from a callback into something a shred can wait for.
  *
  * <pre>{@code
- * KronoInput input = KronoInput.on(krono, bus);
+ * KronoInput input = KronoInput.on(krono, gui);
  * input.drainOn(krono.frames());
  *
  * krono.spork("gesture", () -> {
@@ -58,24 +58,24 @@ public final class KronoInput implements AutoCloseable {
     private final Cell<InputEvent> latest;
     private final Trigger any;
 
-    private KronoInput(KronoGui krono, Atchung bus) {
-        this.bridge = new KronBridge(krono.kron(), bus);
+    private KronoInput(KronoGui krono, Gui gui) {
+        this.bridge = new KronBridge(krono.kron(), gui.bus());
         // COALESCE_LATEST for the cell: a queue of stale pointer positions is worse than none, because
         // only the newest is the truth.
-        this.latest = bridge.cell(InputTopics.INPUT, null, 1, Backpressure.COALESCE_LATEST);
+        this.latest = bridge.cell(gui.input(), null, 1, Backpressure.COALESCE_LATEST);
         // And for the trigger too, which is not the same reason. This fires "some device event arrived" —
         // a yield point, not a delivery. Its payload is its own existence, so five pending fires say exactly
         // what one says, and coalescing them loses nothing that could have been acted on. The events
         // themselves are not lost by this: they are on the dispatcher's own FAIL mailbox, which is where
         // anything that reads their content reads them. This queue only ever answered "yes, something".
-        this.any = bridge.trigger(InputTopics.INPUT, 1, Backpressure.COALESCE_LATEST);
+        this.any = bridge.trigger(gui.input(), 1, Backpressure.COALESCE_LATEST);
     }
 
-    /** Watch the input topic on {@code bus} — the same bus the GUI was constructed with. */
-    public static KronoInput on(KronoGui krono, Atchung bus) {
+    /** Watch {@code gui}'s input topic, on its bus. */
+    public static KronoInput on(KronoGui krono, Gui gui) {
         Objects.requireNonNull(krono, "krono");
-        Objects.requireNonNull(bus, "bus");
-        return new KronoInput(krono, bus);
+        Objects.requireNonNull(gui, "gui");
+        return new KronoInput(krono, gui);
     }
 
     /**

@@ -354,7 +354,7 @@ class ScrollerTest {
             page(gui).children(scroller.node());
             frame(gui);
 
-            bus.publish(InputTopics.INPUT, new InputEvent.Scrolled(0, -1, 50, 50, 0));
+            bus.publish(gui.input(), new InputEvent.Scrolled(0, -1, 50, 50, 0));
             frame(gui);
             frame(gui);
             assertTrue(scroller.y().range().value().offset() > 0f, "a notch down moved the view down");

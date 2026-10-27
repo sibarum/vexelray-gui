@@ -85,7 +85,7 @@ class CursorTest {
 
             // Start left of everything, finish on the right box. The middle box is not the start, not the
             // target, and is never named — it is simply in the way, which is the whole point.
-            Cursor cursor = new Cursor(gui.bus(), 10, 50);
+            Cursor cursor = new Cursor(gui, 10, 50);
             cursor.moveTo(250, 50);
             gui.frame(W, H, NO_TEXT);
 
@@ -107,7 +107,7 @@ class CursorTest {
             // The control for the test above: the same start and target, published as one edge the way a
             // teleporting driver would. If this ever starts reporting a hover, the test above has stopped
             // proving anything and something else is generating the transitions.
-            gui.bus().publish(dev.vexelray.gui.core.input.InputTopics.INPUT,
+            gui.bus().publish(gui.input(),
                     new sibarum.tactroller.api.InputEvent.PointerMoved(250, 50, 240, 0, 0));
             gui.frame(W, H, NO_TEXT);
 
@@ -119,7 +119,7 @@ class CursorTest {
     @Test
     void theCursorKnowsWhereItIsAndArrivesExactly() {
         try (Gui gui = deterministic()) {
-            Cursor cursor = new Cursor(gui.bus(), 10, 20);
+            Cursor cursor = new Cursor(gui, 10, 20);
             assertEquals(10, cursor.x());
             assertEquals(20, cursor.y());
 
@@ -137,8 +137,8 @@ class CursorTest {
     @Test
     void theSamePathTwiceIsTheSameEvents() {
         try (Gui gui = deterministic()) {
-            List<String> first = record(gui, () -> new Cursor(gui.bus(), 5, 5).moveTo(300, 200));
-            List<String> second = record(gui, () -> new Cursor(gui.bus(), 5, 5).moveTo(300, 200));
+            List<String> first = record(gui, () -> new Cursor(gui, 5, 5).moveTo(300, 200));
+            List<String> second = record(gui, () -> new Cursor(gui, 5, 5).moveTo(300, 200));
 
             // An instrument that is not reproducible cannot be used to bisect anything, which is why there is
             // no jitter here however human it might look.
@@ -150,7 +150,7 @@ class CursorTest {
     @Test
     void aClickIsAJourneyThatEndsInAPressAndRelease() {
         try (Gui gui = deterministic()) {
-            List<String> events = record(gui, () -> new Cursor(gui.bus(), 0, 0).click(120, 60));
+            List<String> events = record(gui, () -> new Cursor(gui, 0, 0).click(120, 60));
 
             assertEquals("ButtonReleased", kind(events.get(events.size() - 1)));
             assertEquals("ButtonPressed", kind(events.get(events.size() - 2)));
@@ -164,7 +164,7 @@ class CursorTest {
     @Test
     void aDragHoldsTheButtonForTheWholePath() {
         try (Gui gui = deterministic()) {
-            Cursor cursor = new Cursor(gui.bus(), 40, 40);
+            Cursor cursor = new Cursor(gui, 40, 40);
             List<String> events = record(gui, () -> cursor.drag(300, 40, MouseButton.LEFT));
 
             assertEquals("ButtonPressed", kind(events.get(0)), "press first, where the pointer already was");
@@ -179,7 +179,7 @@ class CursorTest {
     /** Collect the input events {@code action} publishes, in order, as their simple class names plus position. */
     private static List<String> record(Gui gui, Runnable action) {
         List<String> seen = new ArrayList<>();
-        try (var sub = gui.bus().subscribe(dev.vexelray.gui.core.input.InputTopics.INPUT,
+        try (var sub = gui.bus().subscribe(gui.input(),
                 e -> seen.add(e.getClass().getSimpleName() + " " + e))) {
             action.run();
         }

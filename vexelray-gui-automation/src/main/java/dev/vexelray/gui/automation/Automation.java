@@ -2,7 +2,6 @@ package dev.vexelray.gui.automation;
 
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.WindowControls;
-import dev.vexelray.gui.core.input.InputTopics;
 import dev.vexelray.gui.core.layout.LayoutSnapshot;
 import dev.vexelray.gui.core.layout.NodeLayout;
 import dev.vexelray.gui.core.layout.Rect;
@@ -146,7 +145,7 @@ public final class Automation implements Commands {
         // Waking, because this host loop is entitled to be parked: injected input is neither a mutation nor an
         // OS event, so it is the one reason a frame can be owed that nothing else reports. See
         // Gui.wakeForInput, and §6's promise that this module has no interesting failure modes of its own.
-        this.cursor = new Cursor(gui.bus(), gui::wakeForInput);
+        this.cursor = new Cursor(gui, gui::wakeForInput);
     }
 
     private static java.util.function.Supplier<WindowControls> constant(WindowControls controls) {
@@ -731,7 +730,7 @@ public final class Automation implements Commands {
     }
 
     private void touchpad(List<TouchpadContact> contacts) {
-        gui.bus().publish(InputTopics.INPUT, new InputEvent.TouchpadChanged(contacts, System.nanoTime()));
+        gui.bus().publish(gui.input(), new InputEvent.TouchpadChanged(contacts, System.nanoTime()));
         gui.wakeForInput();
     }
 
@@ -752,7 +751,7 @@ public final class Automation implements Commands {
      */
     private String type(String text) {
         text.codePoints().forEach(cp -> {
-            gui.bus().publish(InputTopics.INPUT, new InputEvent.CharTyped(cp, 0));
+            gui.bus().publish(gui.input(), new InputEvent.CharTyped(cp, 0));
             gui.wakeForInput();
             if (Probe.ON) {
                 Probe.mark(Lane.INPUT, "type", new String(Character.toChars(cp)));
@@ -968,12 +967,12 @@ public final class Automation implements Commands {
     }
 
     private void press(Key k) {
-        gui.bus().publish(InputTopics.INPUT, new InputEvent.KeyPressed(k, 0));
+        gui.bus().publish(gui.input(), new InputEvent.KeyPressed(k, 0));
         gui.wakeForInput();
     }
 
     private void release(Key k) {
-        gui.bus().publish(InputTopics.INPUT, new InputEvent.KeyReleased(k, 0));
+        gui.bus().publish(gui.input(), new InputEvent.KeyReleased(k, 0));
         gui.wakeForInput();
     }
 

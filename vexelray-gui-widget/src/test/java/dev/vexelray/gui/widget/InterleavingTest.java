@@ -34,7 +34,7 @@ class InterleavingTest {
     }
 
     private static void type(HeadlessGui h, char c) {
-        h.bus.publish(dev.vexelray.gui.core.input.InputTopics.INPUT, new InputEvent.CharTyped(c, 0));
+        h.bus.publish(h.gui.input(), new InputEvent.CharTyped(c, 0));
     }
 
     @Test

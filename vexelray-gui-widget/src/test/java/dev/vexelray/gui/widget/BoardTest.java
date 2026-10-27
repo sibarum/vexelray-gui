@@ -153,18 +153,18 @@ class BoardTest {
     private void press(HeadlessGui h, float x, float y) {
         lastX = (int) x;
         lastY = (int) y;
-        h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, (int) x, (int) y, 0));
+        h.bus.publish(h.gui.input(), new InputEvent.ButtonPressed(MouseButton.LEFT, (int) x, (int) y, 0));
     }
 
     private void move(HeadlessGui h, float x, float y) {
-        h.bus.publish(InputTopics.INPUT,
+        h.bus.publish(h.gui.input(),
                 new InputEvent.PointerMoved((int) x, (int) y, (int) x - lastX, (int) y - lastY, 0));
         lastX = (int) x;
         lastY = (int) y;
     }
 
     private void release(HeadlessGui h, float x, float y) {
-        h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, (int) x, (int) y, 0));
+        h.bus.publish(h.gui.input(), new InputEvent.ButtonReleased(MouseButton.LEFT, (int) x, (int) y, 0));
     }
 
     /**
@@ -173,8 +173,8 @@ class BoardTest {
      */
     private void putDown(HeadlessGui h) {
         h.frame();
-        h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, lastX, lastY, 0));
-        h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, lastX, lastY, 0));
+        h.bus.publish(h.gui.input(), new InputEvent.ButtonPressed(MouseButton.LEFT, lastX, lastY, 0));
+        h.bus.publish(h.gui.input(), new InputEvent.ButtonReleased(MouseButton.LEFT, lastX, lastY, 0));
     }
 
     /** Finish every motion and let the frames that follow lay the result out. */
@@ -321,7 +321,7 @@ class BoardTest {
             hand.finish();
             h.frame();
 
-            h.bus.publish(InputTopics.INPUT, new InputEvent.KeyPressed(Key.ESCAPE, 0));
+            h.bus.publish(h.gui.input(), new InputEvent.KeyPressed(Key.ESCAPE, 0));
             h.frame();
             rest(h);
 
@@ -686,7 +686,7 @@ class BoardTest {
             float scrolled = deck.view().layout().scrollY();
             assertTrue(scrolled > 0f, "the wheel works while carrying");
 
-            h.bus.publish(InputTopics.INPUT, new InputEvent.KeyPressed(Key.ESCAPE, 0));
+            h.bus.publish(h.gui.input(), new InputEvent.KeyPressed(Key.ESCAPE, 0));
             h.frame();
             hand.at(0.5);
             h.frame();

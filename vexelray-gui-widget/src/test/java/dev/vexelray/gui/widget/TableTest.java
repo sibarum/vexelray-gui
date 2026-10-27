@@ -472,15 +472,15 @@ class TableTest {
         float x = cell.x() + cell.w() - 2f;
         float y = cell.y() + cell.h() / 2f;
 
-        h.bus.publish(dev.vexelray.gui.core.input.InputTopics.INPUT,
+        h.bus.publish(h.gui.input(),
                 new sibarum.tactroller.api.InputEvent.ButtonPressed(
                         sibarum.tactroller.api.MouseButton.LEFT, (int) x, (int) y, 0));
         h.frame();
-        h.bus.publish(dev.vexelray.gui.core.input.InputTopics.INPUT,
+        h.bus.publish(h.gui.input(),
                 new sibarum.tactroller.api.InputEvent.PointerMoved(
                         (int) (x + dx), (int) y, (int) dx, 0, 0));
         h.frame();
-        h.bus.publish(dev.vexelray.gui.core.input.InputTopics.INPUT,
+        h.bus.publish(h.gui.input(),
                 new sibarum.tactroller.api.InputEvent.ButtonReleased(
                         sibarum.tactroller.api.MouseButton.LEFT, (int) (x + dx), (int) y, 0));
         h.frame().frame();

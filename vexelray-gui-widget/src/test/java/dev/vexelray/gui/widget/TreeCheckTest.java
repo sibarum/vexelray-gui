@@ -81,8 +81,8 @@ class TreeCheckTest {
     }
 
     private static void click(HeadlessGui h, float x, float y) {
-        h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, (int) x, (int) y, 0));
-        h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, (int) x, (int) y, 0));
+        h.bus.publish(h.gui.input(), new InputEvent.ButtonPressed(MouseButton.LEFT, (int) x, (int) y, 0));
+        h.bus.publish(h.gui.input(), new InputEvent.ButtonReleased(MouseButton.LEFT, (int) x, (int) y, 0));
     }
 
     /** The middle of {@code item}'s checkbox — the target a user aims at. */
@@ -162,7 +162,7 @@ class TreeCheckTest {
             tree.focus();
             h.frame();
 
-            h.bus.publish(InputTopics.INPUT, new InputEvent.KeyPressed(Key.SPACE, 0));
+            h.bus.publish(h.gui.input(), new InputEvent.KeyPressed(Key.SPACE, 0));
             h.frame();
 
             assertEquals(List.of("docs"), ticks.clicks, "the chord acts on the selection, which is the tree's");

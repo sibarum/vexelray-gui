@@ -68,12 +68,12 @@ final class Headless implements AutoCloseable {
     }
 
     Headless down(Key k) {
-        bus.publish(InputTopics.INPUT, new InputEvent.KeyPressed(k, 0));
+        bus.publish(gui.input(), new InputEvent.KeyPressed(k, 0));
         return this;
     }
 
     Headless up(Key k) {
-        bus.publish(InputTopics.INPUT, new InputEvent.KeyReleased(k, 0));
+        bus.publish(gui.input(), new InputEvent.KeyReleased(k, 0));
         return this;
     }
 

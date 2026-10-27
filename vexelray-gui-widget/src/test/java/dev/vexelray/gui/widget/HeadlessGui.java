@@ -214,13 +214,13 @@ final class HeadlessGui implements AutoCloseable {
 
     /** Publish a key-down edge (no frame). */
     HeadlessGui down(Key k) {
-        bus.publish(InputTopics.INPUT, new InputEvent.KeyPressed(k, 0));
+        bus.publish(gui.input(), new InputEvent.KeyPressed(k, 0));
         return this;
     }
 
     /** Publish a key-up edge (no frame). */
     HeadlessGui up(Key k) {
-        bus.publish(InputTopics.INPUT, new InputEvent.KeyReleased(k, 0));
+        bus.publish(gui.input(), new InputEvent.KeyReleased(k, 0));
         return this;
     }
 
@@ -245,21 +245,21 @@ final class HeadlessGui implements AutoCloseable {
 
     /** Type a string as CharTyped events (one frame dispatches them all). */
     HeadlessGui type(String s) {
-        s.codePoints().forEach(cp -> bus.publish(InputTopics.INPUT, new InputEvent.CharTyped(cp, 0)));
+        s.codePoints().forEach(cp -> bus.publish(gui.input(), new InputEvent.CharTyped(cp, 0)));
         return frame();
     }
 
     /** Publish a wheel scroll of {@code (dx, dy)} notches with the pointer at (x, y), then step a frame. */
     HeadlessGui wheel(double dx, double dy, float x, float y) {
-        bus.publish(InputTopics.INPUT, new InputEvent.Scrolled(dx, dy, (int) x, (int) y, 0));
+        bus.publish(gui.input(), new InputEvent.Scrolled(dx, dy, (int) x, (int) y, 0));
         return frame();
     }
 
     /** Left-click at absolute (x, y): press + release, dispatched over a frame. */
     HeadlessGui click(float x, float y) {
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, (int) x, (int) y, 0));
+        bus.publish(gui.input(), new InputEvent.ButtonPressed(MouseButton.LEFT, (int) x, (int) y, 0));
         frame();
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, (int) x, (int) y, 0));
+        bus.publish(gui.input(), new InputEvent.ButtonReleased(MouseButton.LEFT, (int) x, (int) y, 0));
         return frame();
     }
 
@@ -291,13 +291,13 @@ final class HeadlessGui implements AutoCloseable {
     /** A left press at (x, y), stamped on the pointer clock, dispatched. */
     HeadlessGui press(float x, float y) {
         pointerNanos += 100_000_000L;
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, (int) x, (int) y, pointerNanos));
+        bus.publish(gui.input(), new InputEvent.ButtonPressed(MouseButton.LEFT, (int) x, (int) y, pointerNanos));
         return frame();
     }
 
     /** A left release at (x, y), dispatched. */
     HeadlessGui release(float x, float y) {
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, (int) x, (int) y, pointerNanos));
+        bus.publish(gui.input(), new InputEvent.ButtonReleased(MouseButton.LEFT, (int) x, (int) y, pointerNanos));
         return frame();
     }
 
@@ -309,15 +309,15 @@ final class HeadlessGui implements AutoCloseable {
 
     /** Move the pointer to absolute (x, y) and dispatch — drives hover and interaction state. */
     HeadlessGui hover(float x, float y) {
-        bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved((int) x, (int) y, 0, 0, 0));
+        bus.publish(gui.input(), new InputEvent.PointerMoved((int) x, (int) y, 0, 0, 0));
         return frame();
     }
 
     /** Right-click at absolute (x, y): press + release, dispatched over a frame — the context-click gesture. */
     HeadlessGui rightClick(float x, float y) {
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.RIGHT, (int) x, (int) y, 0));
+        bus.publish(gui.input(), new InputEvent.ButtonPressed(MouseButton.RIGHT, (int) x, (int) y, 0));
         frame();
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.RIGHT, (int) x, (int) y, 0));
+        bus.publish(gui.input(), new InputEvent.ButtonReleased(MouseButton.RIGHT, (int) x, (int) y, 0));
         return frame();
     }
 

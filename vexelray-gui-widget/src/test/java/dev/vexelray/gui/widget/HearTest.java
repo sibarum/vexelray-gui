@@ -84,9 +84,9 @@ class HearTest {
             heard.clear();
 
             // Out, in and out again within one frame: three transitions the dispatcher saw, one that was ever drawn.
-            h.bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(300, 300, 0, 0, 0));
-            h.bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(20, 20, 0, 0, 0));
-            h.bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(300, 300, 0, 0, 0));
+            h.bus.publish(h.gui.input(), new InputEvent.PointerMoved(300, 300, 0, 0, 0));
+            h.bus.publish(h.gui.input(), new InputEvent.PointerMoved(20, 20, 0, 0, 0));
+            h.bus.publish(h.gui.input(), new InputEvent.PointerMoved(300, 300, 0, 0, 0));
             h.frame();
             assertEquals(List.of(InteractionState.NORMAL), heard,
                     "the dispatcher reported three crossings; the row was told where the pointer ended");

@@ -41,23 +41,23 @@ final class Headless implements AutoCloseable {
     }
 
     Headless press(float x, float y) {
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, (int) x, (int) y, 0));
+        bus.publish(gui.input(), new InputEvent.ButtonPressed(MouseButton.LEFT, (int) x, (int) y, 0));
         return settle();
     }
 
     Headless move(float x, float y) {
-        bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved((int) x, (int) y, 0, 0, 0));
+        bus.publish(gui.input(), new InputEvent.PointerMoved((int) x, (int) y, 0, 0, 0));
         return settle();
     }
 
     Headless release(float x, float y) {
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, (int) x, (int) y, 0));
+        bus.publish(gui.input(), new InputEvent.ButtonReleased(MouseButton.LEFT, (int) x, (int) y, 0));
         return settle();
     }
 
     /** {@code notches} of the wheel with the pointer at (x, y); negative is down, as the OS reports it. */
     Headless wheel(double notches, float x, float y) {
-        bus.publish(InputTopics.INPUT, new InputEvent.Scrolled(0, notches, (int) x, (int) y, 0));
+        bus.publish(gui.input(), new InputEvent.Scrolled(0, notches, (int) x, (int) y, 0));
         return settle();
     }
 

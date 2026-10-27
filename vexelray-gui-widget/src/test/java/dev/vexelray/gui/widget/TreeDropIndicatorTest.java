@@ -72,11 +72,11 @@ class TreeDropIndicatorTest {
     }
 
     private static void press(HeadlessGui h, float y) {
-        h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, 40, (int) y, 0));
+        h.bus.publish(h.gui.input(), new InputEvent.ButtonPressed(MouseButton.LEFT, 40, (int) y, 0));
     }
 
     private static void move(HeadlessGui h, float y) {
-        h.bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(40, (int) y, 0, 40, 0));
+        h.bus.publish(h.gui.input(), new InputEvent.PointerMoved(40, (int) y, 0, 40, 0));
     }
 
     @Test
@@ -163,7 +163,7 @@ class TreeDropIndicatorTest {
             assertFalse(painted.isEmpty());
 
             int before = painted.size();
-            h.bus.publish(InputTopics.INPUT, new InputEvent.KeyPressed(Key.ESCAPE, 0));
+            h.bus.publish(h.gui.input(), new InputEvent.KeyPressed(Key.ESCAPE, 0));
             h.frame();
             h.frame();
 

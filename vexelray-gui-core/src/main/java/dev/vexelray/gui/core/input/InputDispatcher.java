@@ -35,7 +35,7 @@ import java.util.function.LongConsumer;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Framework-owned input dispatch (architecture.md §8). Subscribes a {@link Pump} to the {@link InputTopics#INPUT}
+ * Framework-owned input dispatch (architecture.md §8). Subscribes a {@link Pump} to its tree's {@link #input()} topic
  * topic and, once per frame, drains it on the GUI thread and routes each edge against the current laid-out tree.
  *
  * <p>Scope so far:
@@ -127,6 +127,9 @@ public final class InputDispatcher {
 
     private final Atchung bus;
     private final Topic<ClickEvent> clicks;
+    /** This tree's device input, and the gestures recognised from it: see {@link InputTopics}. */
+    private final Topic<sibarum.tactroller.api.InputEvent> input;
+    private final Topic<sibarum.tactroller.api.GestureEvent> gestures;
     /** Whether a handler has run since {@link #dispatch} last asked: what the frame owes the next one a look for. */
     private boolean ranHandler;
     private final Runnable requestLayout;
@@ -166,7 +169,7 @@ public final class InputDispatcher {
             new sibarum.tactroller.api.DragGesture(DRAG_DISTANCE_PX, DRAG_HOLD_MS, Set.of(MouseButton.LEFT));
     /**
      * Recognises the touchpad's gestures in its contacts: one recogniser per window, fed the whole stream, so the
-     * pans and pinches published on {@link InputTopics#GESTURE} and the swipes and taps that reach claims are one
+     * pans and pinches published on {@link #gestures()} and the swipes and taps that reach claims are one
      * reading of the same fingers. GUI thread only.
      */
     private final sibarum.tactroller.api.TouchpadGesture touchpad = new sibarum.tactroller.api.TouchpadGesture();
@@ -360,16 +363,28 @@ public final class InputDispatcher {
     private Consumer<Boolean> pointerLockSink = locked -> { };
     private boolean lockRequested;
 
-    public InputDispatcher(Atchung bus, Topic<ClickEvent> clicks) {
-        this(bus, clicks, () -> { });
+    /** The topic this dispatcher hears device input on: its tree's ({@link InputTopics#input}). */
+    public Topic<sibarum.tactroller.api.InputEvent> input() {
+        return input;
     }
 
-    public InputDispatcher(Atchung bus, Topic<ClickEvent> clicks, Runnable requestLayout) {
+    /** The topic it publishes the touchpad gestures it recognises on: its tree's ({@link InputTopics#gestures}). */
+    public Topic<sibarum.tactroller.api.GestureEvent> gestures() {
+        return gestures;
+    }
+
+    public InputDispatcher(Atchung bus, String tree, Topic<ClickEvent> clicks) {
+        this(bus, tree, clicks, () -> { });
+    }
+
+    public InputDispatcher(Atchung bus, String tree, Topic<ClickEvent> clicks, Runnable requestLayout) {
         this.bus = bus;
         this.clicks = clicks;
+        this.input = InputTopics.input(tree);
+        this.gestures = InputTopics.gestures(tree);
         this.requestLayout = requestLayout;
         this.pump = bus.pump();
-        this.sub = pump.subscribe(InputTopics.INPUT, this::handle, MAILBOX, Backpressure.FAIL);
+        this.sub = pump.subscribe(input, this::handle, MAILBOX, Backpressure.FAIL);
         // Focus traversal is a framework *default*, not an interception: it is an ordinary global claim, so a
         // focused element that claims Tab (a multiline editor indenting) simply outranks it. Shift+Tab is left
         // unclaimed by such elements, which is what keeps a way out of the field.
@@ -590,7 +605,7 @@ public final class InputDispatcher {
      */
     private void feedTouchpad(InputEvent event) {
         for (sibarum.tactroller.api.GestureEvent g : touchpad.feed(event)) {
-            bus.publish(InputTopics.GESTURE, g);
+            bus.publish(gestures, g);
             for (Gesture t : gestureTriggers.feed(g)) {
                 Claim claimed = resolveClaim(t);
                 if (claimed == null) {

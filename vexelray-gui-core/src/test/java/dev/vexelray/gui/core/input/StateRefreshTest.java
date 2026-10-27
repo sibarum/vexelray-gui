@@ -28,7 +28,7 @@ class StateRefreshTest {
     private static final Topic<ClickEvent> CLICKS = Topic.of("test.state.refresh.clicks", ClickEvent.class);
 
     private final Atchung bus = Atchung.create();
-    private final InputDispatcher d = new InputDispatcher(bus, CLICKS);
+    private final InputDispatcher d = new InputDispatcher(bus, "test", CLICKS);
     private final RetainedNode root = node(0, 0, 0, 300, 300, null);
     /** Every observed node's deliveries, in registration order. */
     private final Map<Long, List<InteractionState>> seen = new LinkedHashMap<>();
@@ -58,17 +58,17 @@ class StateRefreshTest {
     }
 
     private void move(int x, int y) {
-        bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(x, y, 0, 0, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.PointerMoved(x, y, 0, 0, 0));
         d.dispatch(root);
     }
 
     private void press(int x, int y) {
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, x, y, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonPressed(MouseButton.LEFT, x, y, 0));
         d.dispatch(root);
     }
 
     private void release(int x, int y) {
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, x, y, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonReleased(MouseButton.LEFT, x, y, 0));
         d.dispatch(root);
     }
 

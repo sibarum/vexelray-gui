@@ -37,17 +37,17 @@ class ClaimAnyTest {
     }
 
     private static void press(Atchung bus, Key k) {
-        bus.publish(InputTopics.INPUT, new InputEvent.KeyPressed(k, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.KeyPressed(k, 0));
     }
 
     private static void release(Atchung bus, Key k) {
-        bus.publish(InputTopics.INPUT, new InputEvent.KeyReleased(k, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.KeyReleased(k, 0));
     }
 
     @Test
     void aFocusedWildcardHearsTheChordAndPreemptsGlobalOnes() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS);
+        InputDispatcher d = new InputDispatcher(bus, "test", CLICKS);
         RetainedNode root = tree();
         d.setFocusable(1, true);
         d.setFocusable(2, true);
@@ -72,7 +72,7 @@ class ClaimAnyTest {
     @Test
     void aNamedClaimAtTheSameScopeOutranksTheWildcard() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS);
+        InputDispatcher d = new InputDispatcher(bus, "test", CLICKS);
         RetainedNode root = tree();
         d.setFocusable(1, true);
         d.focus(1);
@@ -93,7 +93,7 @@ class ClaimAnyTest {
     @Test
     void releasingTheWildcardRestoresTheDefaultsAndKeepsNamedClaims() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS);
+        InputDispatcher d = new InputDispatcher(bus, "test", CLICKS);
         RetainedNode root = tree();
         d.setFocusable(1, true);
         d.setFocusable(2, true);
@@ -116,7 +116,7 @@ class ClaimAnyTest {
     @Test
     void aWildcardOnAnUnfocusedNodeHearsNothing() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS);
+        InputDispatcher d = new InputDispatcher(bus, "test", CLICKS);
         RetainedNode root = tree();
         d.setFocusable(1, true);
         d.setFocusable(2, true);

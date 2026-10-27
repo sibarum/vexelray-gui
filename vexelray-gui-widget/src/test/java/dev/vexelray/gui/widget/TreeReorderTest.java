@@ -91,15 +91,15 @@ class TreeReorderTest {
     }
 
     private static void press(HeadlessGui h, float x, float y) {
-        h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, (int) x, (int) y, 0));
+        h.bus.publish(h.gui.input(), new InputEvent.ButtonPressed(MouseButton.LEFT, (int) x, (int) y, 0));
     }
 
     private static void move(HeadlessGui h, float x, float y) {
-        h.bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved((int) x, (int) y, 0, 40, 0));
+        h.bus.publish(h.gui.input(), new InputEvent.PointerMoved((int) x, (int) y, 0, 40, 0));
     }
 
     private static void release(HeadlessGui h, float x, float y) {
-        h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, (int) x, (int) y, 0));
+        h.bus.publish(h.gui.input(), new InputEvent.ButtonReleased(MouseButton.LEFT, (int) x, (int) y, 0));
     }
 
     /** The click that puts a latched drag down: a press and its release. */
@@ -212,7 +212,7 @@ class TreeReorderTest {
 
             List<Integer> dead = new ArrayList<>();
             for (int y = top; y < bottom; y++) {
-                h.bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(40, y, 0, 1, 0));
+                h.bus.publish(h.gui.input(), new InputEvent.PointerMoved(40, y, 0, 1, 0));
                 h.frame();
                 Drop drop = h.gui.dragSession().drop();
                 if (!drop.accepts() && !overOwnRow(tree, y)) {
@@ -319,7 +319,7 @@ class TreeReorderTest {
             h.frame();
             assertNotNull(h.gui.dragSession());
 
-            h.bus.publish(InputTopics.INPUT, new InputEvent.KeyPressed(Key.ESCAPE, 0));
+            h.bus.publish(h.gui.input(), new InputEvent.KeyPressed(Key.ESCAPE, 0));
             h.frame();
             release(h, 40f, midOf(tree, "src"));
             h.frame();

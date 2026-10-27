@@ -22,7 +22,7 @@ class DoubleClickTest {
     private static final long MS = 1_000_000L;
 
     private final Atchung bus = Atchung.create();
-    private final InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS);
+    private final InputDispatcher dispatcher = new InputDispatcher(bus, "test", CLICKS);
     private final RetainedNode root = node(0, 0, 0, 300, 100);
     private final RetainedNode list = node(1, 0, 0, 300, 100);
     private final RetainedNode row = node(7, 10, 0, 200, 50);
@@ -45,8 +45,8 @@ class DoubleClickTest {
     }
 
     private void click(int x, int y, long atMs) {
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, x, y, atMs * MS));
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, x, y, atMs * MS));
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonPressed(MouseButton.LEFT, x, y, atMs * MS));
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonReleased(MouseButton.LEFT, x, y, atMs * MS));
         dispatcher.dispatch(root);
     }
 

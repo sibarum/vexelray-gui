@@ -41,13 +41,13 @@ class KeyClaimTest {
     }
 
     private static void press(Atchung bus, Key k) {
-        bus.publish(InputTopics.INPUT, new InputEvent.KeyPressed(k, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.KeyPressed(k, 0));
     }
 
     @Test
     void tabTraversesByDefaultBecauseTheFrameworkClaimsItGlobally() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS);
+        InputDispatcher d = new InputDispatcher(bus, "test", CLICKS);
         RetainedNode root = tree();
         List<FocusEvent> focus = new ArrayList<>();
         Topic<FocusEvent> ft = Topic.of("test.focus", FocusEvent.class);
@@ -66,7 +66,7 @@ class KeyClaimTest {
     @Test
     void aFocusedClaimOutranksTheFrameworksGlobalOne() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS);
+        InputDispatcher d = new InputDispatcher(bus, "test", CLICKS);
         RetainedNode root = tree();
         d.setFocusable(1, true);
         d.setFocusable(2, true);
@@ -85,7 +85,7 @@ class KeyClaimTest {
     @Test
     void aClaimByAnUnfocusedNodeDoesNotApply() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS);
+        InputDispatcher d = new InputDispatcher(bus, "test", CLICKS);
         RetainedNode root = tree();
         d.setFocusable(1, true);
         d.setFocusable(2, true);
@@ -103,7 +103,7 @@ class KeyClaimTest {
     @Test
     void aVisibleClaimAppliesWhileItsNodeIsInTheTree() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS);
+        InputDispatcher d = new InputDispatcher(bus, "test", CLICKS);
         RetainedNode root = tree();
         List<String> log = new ArrayList<>();
         d.claim(2, Shortcut.of(Key.ESCAPE), ClaimScope.VISIBLE, () -> log.add("close"));
@@ -121,7 +121,7 @@ class KeyClaimTest {
     @Test
     void aFocusedClaimOutranksAGlobalShortcut() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS);
+        InputDispatcher d = new InputDispatcher(bus, "test", CLICKS);
         RetainedNode root = tree();
         d.setFocusable(1, true);
         d.focus(1);
@@ -140,7 +140,7 @@ class KeyClaimTest {
     @Test
     void everyKeyIsReportedIncludingClaimedOnes() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS);
+        InputDispatcher d = new InputDispatcher(bus, "test", CLICKS);
         d.keyRoutedTopic(ROUTES);
         RetainedNode root = tree();
         d.setFocusable(1, true);
@@ -168,7 +168,7 @@ class KeyClaimTest {
     @Test
     void routedKeysCarryTheDrainsOrderAsAGaplessSequence() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS);
+        InputDispatcher d = new InputDispatcher(bus, "test", CLICKS);
         d.keyRoutedTopic(ROUTES);
         RetainedNode root = tree();
         d.setFocusable(1, true);
@@ -195,8 +195,8 @@ class KeyClaimTest {
     @Test
     void separateDispatchersAreSeparateConduits() {
         Atchung bus = Atchung.create();
-        InputDispatcher a = new InputDispatcher(bus, CLICKS);
-        InputDispatcher b = new InputDispatcher(bus, CLICKS);
+        InputDispatcher a = new InputDispatcher(bus, "test", CLICKS);
+        InputDispatcher b = new InputDispatcher(bus, "test", CLICKS);
         a.keyRoutedTopic(ROUTES);
         b.keyRoutedTopic(ROUTES);
         RetainedNode root = tree();

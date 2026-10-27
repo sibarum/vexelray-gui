@@ -153,15 +153,15 @@ class ValueWidgetUndoTest {
             Rect r = s.node().layout().rect();
             int y = (int) (r.y() + r.h() / 2f);
             float travel = r.w() - r.h();
-            w.h.bus.publish(InputTopics.INPUT,
+            w.h.bus.publish(w.h.gui.input(),
                     new InputEvent.ButtonPressed(MouseButton.LEFT, (int) (r.x() + r.h() / 2f), y, 0));
             w.h.frame();
             for (int k = 1; k <= 8; k++) {
                 int x = (int) (r.x() + r.h() / 2f + k * 0.1f * travel);
-                w.h.bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(x, y, 1, 0, 0));
+                w.h.bus.publish(w.h.gui.input(), new InputEvent.PointerMoved(x, y, 1, 0, 0));
                 w.h.frame();
             }
-            w.h.bus.publish(InputTopics.INPUT,
+            w.h.bus.publish(w.h.gui.input(),
                     new InputEvent.ButtonReleased(MouseButton.LEFT, (int) (r.x() + r.h() / 2f + 0.8f * travel), y, 0));
             w.h.frame().frame();
             assertEquals(0.8f, s.value(), 1e-5f);

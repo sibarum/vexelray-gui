@@ -319,12 +319,12 @@ class ColorPickerTest {
 
     /** Press, move, release — a drag, which the harness has no helper for. */
     private static void drag(HeadlessGui h, float x0, float y0, float x1, float y1) {
-        h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, (int) x0, (int) y0, 0));
+        h.bus.publish(h.gui.input(), new InputEvent.ButtonPressed(MouseButton.LEFT, (int) x0, (int) y0, 0));
         h.frame();
-        h.bus.publish(InputTopics.INPUT,
+        h.bus.publish(h.gui.input(),
                 new InputEvent.PointerMoved((int) x1, (int) y1, (int) (x1 - x0), (int) (y1 - y0), 0));
         h.frame();
-        h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, (int) x1, (int) y1, 0));
+        h.bus.publish(h.gui.input(), new InputEvent.ButtonReleased(MouseButton.LEFT, (int) x1, (int) y1, 0));
         h.frame();
     }
 

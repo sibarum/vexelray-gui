@@ -164,7 +164,7 @@ class HoverPathDiagnosisTest {
                             gui.box().size(Length.dp(100), Length.dp(100))));
             gui.frame(W, H, NO_TEXT);
 
-            gui.bus().publish(dev.vexelray.gui.core.input.InputTopics.INPUT,
+            gui.bus().publish(gui.input(),
                     new sibarum.tactroller.api.InputEvent.PointerMoved(250, 50, 240, 0, 0));
             gui.frame(W, H, NO_TEXT);
 

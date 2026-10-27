@@ -221,7 +221,7 @@ class UnknownEffectsTest {
         if (hover) {
             RetainedNode root = h.gui.frame(W, H, new TextFaces(FONTS));
             RetainedNode n = find(root, h.node.id());
-            h.bus.publish(InputTopics.INPUT,
+            h.bus.publish(h.gui.input(),
                     new InputEvent.PointerMoved((int) (n.x + n.w / 2), (int) (n.y + n.h / 2), 0, 0, 0));
         }
         return capture(h.gui, shader);

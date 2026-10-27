@@ -282,9 +282,9 @@ class PopoutTest {
             Rect header = panel.header().layout().rect();
             int x = (int) (header.x() + header.w() - px(Length.dp(6)) - px(Length.dp(12)));
             int y = (int) (header.y() + header.h() / 2f);
-            panel.awayGui().bus().publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, x, y, 0));
+            panel.awayGui().bus().publish(panel.awayGui().input(), new InputEvent.ButtonPressed(MouseButton.LEFT, x, y, 0));
             h.frame();
-            panel.awayGui().bus().publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, x, y, 0));
+            panel.awayGui().bus().publish(panel.awayGui().input(), new InputEvent.ButtonReleased(MouseButton.LEFT, x, y, 0));
             h.frame().frame();
 
             assertFalse(panel.collapsed(), "a click in the window is not a click in the host");

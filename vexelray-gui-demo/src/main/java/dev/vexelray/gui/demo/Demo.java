@@ -35,7 +35,7 @@ import sibarum.tactroller.api.CoordinateSpace;
 import sibarum.tactroller.api.Key;
 import sibarum.tactroller.api.Modifier;
 import sibarum.tactroller.api.Tactroller;
-import sibarum.tactroller.atchung.TactrollerInputBridge;
+import sibarum.tactroller.atchung.InputPublisher;
 import sibarum.tactroller.clipboard.Clipboard;
 import sibarum.tactroller.clipboard.ClipboardException;
 
@@ -200,7 +200,7 @@ public final class Demo {
                                 .cancelButton("Stay", request::cancel)));
             }
 
-            TactrollerInputBridge bridge = input == null ? null : new TactrollerInputBridge(input, gui.bus());
+            WindowFeed bridge = input == null ? null : new WindowFeed(input, gui);
             if (maxFrames <= 0) {
                 // Render on demand: park until something says a frame is due, and only on an uncapped run — a
                 // frame cap is a script, and blocking would make N frames of a still window take forever rather
@@ -423,7 +423,7 @@ public final class Demo {
             System.out.println("input unavailable for this window (" + e.getMessage() + ")");
             return WindowInput.NONE;
         }
-        TactrollerInputBridge bridge = new TactrollerInputBridge(backend, windowGui.bus());
+        WindowFeed bridge = new WindowFeed(backend, windowGui);
         return new WindowInput() {
 
             @Override
@@ -439,7 +439,7 @@ public final class Demo {
     }
 
     /** Snapshot input onto the bus for this frame; a transient backend poll failure just skips the frame. */
-    private static void pump(TactrollerInputBridge bridge) {
+    private static void pump(WindowFeed bridge) {
         if (bridge == null) {
             return;
         }
@@ -447,6 +447,21 @@ public final class Demo {
             bridge.pump();
         } catch (BackendException e) {
             // Transient poll failure — drop this frame's input rather than tear down the loop.
+        }
+    }
+
+    /**
+     * One window's device input, published on that window's tree's input topic ({@link Gui#input()}): what
+     * tactroller-atchung's {@code TactrollerInputBridge} does, on a topic named by the tree rather than the shared
+     * default, so each window on the bus hears only its own.
+     */
+    private record WindowFeed(Tactroller backend, InputPublisher publisher) {
+        WindowFeed(Tactroller backend, Gui gui) {
+            this(backend, new InputPublisher(gui.bus(), gui.input().name()));
+        }
+
+        void pump() throws BackendException {
+            publisher.publish(backend.snapshot());
         }
     }
 

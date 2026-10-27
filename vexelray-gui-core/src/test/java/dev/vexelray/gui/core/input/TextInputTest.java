@@ -35,15 +35,15 @@ class TextInputTest {
     @Test
     void charTypedGoesToFocusedCharHandler() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS);
+        InputDispatcher d = new InputDispatcher(bus, "test", CLICKS);
         RetainedNode field = textNode(1, "", 0, 100);
 
         StringBuilder typed = new StringBuilder();
         d.onChar(1, cp -> typed.appendCodePoint(cp));
         d.focus(1);
 
-        bus.publish(InputTopics.INPUT, new InputEvent.CharTyped('h', 0));
-        bus.publish(InputTopics.INPUT, new InputEvent.CharTyped('i', 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.CharTyped('h', 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.CharTyped('i', 0));
         d.dispatch(field);
 
         assertEquals("hi", typed.toString(), "typed text reaches the focused editable node");
@@ -52,14 +52,14 @@ class TextInputTest {
     @Test
     void charTypedIgnoredWhenNotFocused() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS);
+        InputDispatcher d = new InputDispatcher(bus, "test", CLICKS);
         RetainedNode field = textNode(1, "", 0, 100);
 
         StringBuilder typed = new StringBuilder();
         d.onChar(1, cp -> typed.appendCodePoint(cp));
         // no focus
 
-        bus.publish(InputTopics.INPUT, new InputEvent.CharTyped('x', 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.CharTyped('x', 0));
         d.dispatch(field);
 
         assertEquals("", typed.toString(), "no focus means no text delivery");

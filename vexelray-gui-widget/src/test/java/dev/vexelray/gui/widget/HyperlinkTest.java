@@ -69,7 +69,7 @@ class HyperlinkTest {
             assertFalse(underlines(h, f).isEmpty(), "armed");
 
             // Alt-tab away: the key comes up over somebody else's window and this one never hears the release.
-            h.bus.publish(dev.vexelray.gui.core.input.InputTopics.INPUT,
+            h.bus.publish(h.gui.input(),
                     new sibarum.tactroller.api.InputEvent.FocusChanged(false, 0));
             h.frame();
 

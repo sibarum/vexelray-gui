@@ -102,10 +102,11 @@ public final class Gui implements AutoCloseable {
     private static final sibarum.probe.Log LOG = sibarum.probe.Log.of("gui");
 
     /**
-     * The internal tree-mutation channel. A private topic name so it never collides with application traffic on a
-     * shared bus; losslessly drained on the GUI thread each frame.
+     * The internal tree-mutation channel, named by the tree ({@code vexelray.gui.<tree>.mutations}) so it never
+     * collides with application traffic or with another tree's on a shared bus; losslessly drained on the GUI thread
+     * each frame.
      */
-    private static final Topic<Mutation> MUTATIONS = Topic.of("vexelray.gui.mutations", Mutation.class);
+    private final Topic<Mutation> mutationTopic;
 
     /**
      * Mailbox bound for the mutation pump, in <b>cells</b> rather than in edits — the channel folds, so this
@@ -119,11 +120,11 @@ public final class Gui implements AutoCloseable {
      */
     private static final int MUTATION_MAILBOX = 1 << 16;
 
-    /** Framework click events, resolved from raw input by the dispatcher; workers subscribe here. */
-    private static final Topic<ClickEvent> CLICKS = Topic.of("vexelray.gui.clicks", ClickEvent.class);
+    /** Framework click events, resolved from raw input by the dispatcher: this tree's ({@link #clicks()}). */
+    private final Topic<ClickEvent> clickTopic;
 
-    /** Keyboard focus changes (gained/lost per node). */
-    private static final Topic<FocusEvent> FOCUS = Topic.of("vexelray.gui.focus", FocusEvent.class);
+    /** Keyboard focus changes (gained/lost per node), this tree's. */
+    private final Topic<FocusEvent> focusEventTopic;
 
     /**
      * How many frames a {@link #navigate} may spend before it gives up. Counted in frames rather than
@@ -134,7 +135,7 @@ public final class Gui implements AutoCloseable {
     private static final int MAX_NAV_FRAMES = 240;
 
     /** Every routed key press, whatever took it — the observation channel (see {@link KeyRouted}). */
-    private static final Topic<KeyRouted> KEY_ROUTES = Topic.of("vexelray.gui.keys", KeyRouted.class);
+    private final Topic<KeyRouted> keyRouteTopic;
 
     /** Where nodes come from: the id counter, the publisher seam, and the batch. See {@link Trees}. */
     private final Trees trees;
@@ -153,6 +154,8 @@ public final class Gui implements AutoCloseable {
     private final Routes routes;
     /** How many unnamed trees this process has made: what names each one apart from the others. */
     private static final java.util.concurrent.atomic.AtomicInteger TREES = new java.util.concurrent.atomic.AtomicInteger();
+    /** The names of the open trees on each bus, so a second of one name is refused rather than sharing topics. */
+    private static final Map<Atchung, java.util.Set<String>> NAMES = new java.util.WeakHashMap<>();
     /** This tree's name among the others on a bus: see {@link #name()}. */
     private final String treeName;
     /** This tree's node-event topics ({@link #hear}), one per kind heard so far. GUI thread only. */
@@ -304,17 +307,12 @@ public final class Gui implements AutoCloseable {
      * Create a GUI on a shared Atchung bus — hand in the same bus the application uses so input publishers
      * ({@code tactroller-atchung}), widgets, and workers all meet the framework on one fabric.
      *
-     * <p><b>One {@code Gui} per bus.</b> Share it with anything that is not a {@code Gui}; never with a second
-     * one. This class's topics are {@code static} — {@code vexelray.gui.mutations} is one name for every
-     * instance — so two trees on one bus each receive the other's mutations, and the mailbox they arrive in is
-     * bounded at {@value #MUTATION_MAILBOX} with {@link sibarum.atchung.Backpressure#BLOCK}. A tree that is not
-     * currently being presented never drains it, so the second {@code Gui} fills up and then <b>blocks the
-     * first one's node setters for good</b>: an application that freezes after some tens of thousands of
-     * edits, with no exception and nothing in a log.
-     *
-     * <p>Two windows means two buses today, and the cost is that a message cannot travel between them without
-     * something bridging it. Making one bus carry every tree is a real goal and a real change — the topics
-     * would have to be per instance rather than per class — and it is not this constructor.
+     * <p><b>Any number of trees may share a bus</b>, each under its own name: every topic a tree uses for itself — its
+     * mutations, its input, its clicks, focus and key routes, its node events — is named by the tree
+     * ({@code vexelray.gui.<tree>.mutations}), and every message its widgets publish carries an address qualified by
+     * it. So two windows on one bus never hear each other's input or apply each other's edits, and a message can
+     * travel between them with nothing bridging it. Navigation ({@code NavTopics.GO}) is the one topic they share on
+     * purpose: an address names its window, and each tree takes only its own.
      *
      * <p>The tree is named {@code tree<n>}, numbered in the order this process made them; see {@link #name()}.
      */
@@ -324,17 +322,30 @@ public final class Gui implements AutoCloseable {
 
     /**
      * Create a GUI called {@code name} on a shared Atchung bus: as {@link #Gui(Atchung)}, with a name chosen by whoever
-     * makes the window ("main", "settings", "editor-2" for the second of a kind).
+     * makes the window ("main", "settings", "editor-2" for the second of a kind). The name is the tree's on this bus
+     * until the tree is {@link #close closed}.
      *
      * @throws IllegalArgumentException when {@code name} is empty or holds a {@code '.'}, which separates it from a
      *                                  widget's name in an {@link #address}
+     * @throws IllegalStateException    when another open tree on {@code bus} already has the name: the two would
+     *                                  share every topic, and each apply the other's edits
      */
     public Gui(Atchung bus, String name) {
         java.util.Objects.requireNonNull(name, "name");
         if (name.isEmpty() || name.indexOf('.') >= 0) {
             throw new IllegalArgumentException("a GUI's name is not empty and holds no '.': \"" + name + "\"");
         }
+        synchronized (NAMES) {
+            if (!NAMES.computeIfAbsent(bus, b -> new java.util.HashSet<>()).add(name)) {
+                throw new IllegalStateException("a GUI called \"" + name + "\" is already open on this bus: two trees"
+                        + " of one name would share every topic; name each window's tree apart");
+            }
+        }
         this.treeName = name;
+        this.mutationTopic = Topic.of("vexelray.gui." + name + ".mutations", Mutation.class);
+        this.clickTopic = Topic.of("vexelray.gui." + name + ".clicks", ClickEvent.class);
+        this.focusEventTopic = Topic.of("vexelray.gui." + name + ".focus", FocusEvent.class);
+        this.keyRouteTopic = Topic.of("vexelray.gui." + name + ".keys", KeyRouted.class);
         this.bus = bus;
         this.pump = bus.pump();
         // One inbox for every widget, so commands to two widgets are applied in the order they were sent.
@@ -344,7 +355,7 @@ public final class Gui implements AutoCloseable {
         // Where nodes come from, and the seam their handles write through. It resolves Node.layout() through a
         // reader that is consulted lazily, which is what lets it be built before the read-model it will read —
         // a handle minted here does not ask about geometry until something reads one.
-        this.trees = new Trees(bus, MUTATIONS, this::wake, this::publishedLayout);
+        this.trees = new Trees(bus, mutationTopic, this::wake, this::publishedLayout);
         this.sink = trees.sink();
         long rootId = trees.rootId();
         // A node leaving the tree releases everything keyed by its id. Without this, a removed node kept its
@@ -363,7 +374,7 @@ public final class Gui implements AutoCloseable {
         // only observable is the state at its end, and a superseded write is unobservable in principle. That
         // condition is the whole licence for this and it is worth re-checking before anything is allowed to read
         // the model directly.
-        this.mutationSub = pump.subscribe(MUTATIONS, reconciler::apply, MUTATION_MAILBOX, Backpressure.BLOCK,
+        this.mutationSub = pump.subscribe(mutationTopic, reconciler::apply, MUTATION_MAILBOX, Backpressure.BLOCK,
                 Mutation::cell);
         // Navigation requests arrive on the same pump, so a link clicked in another window, a macro step and a
         // test all enter this tree at the same point in the frame the tree's own edits do — before the drain,
@@ -399,12 +410,12 @@ public final class Gui implements AutoCloseable {
         // scroll offset moves, the tree has to be laid out again, and nothing on the bus says so. In a
         // loop that redrew unconditionally the distinction never mattered; in one that parks, a
         // relayout nobody asked a frame for is a tree that stays exactly as it was last drawn.
-        this.input = new InputDispatcher(bus, CLICKS, () -> {
+        this.input = new InputDispatcher(bus, name, clickTopic, () -> {
             reconciler.markLayoutDirty();
             wake("layout requested");
         });
-        this.input.focusTopic(FOCUS);
-        this.input.keyRoutedTopic(KEY_ROUTES);
+        this.input.focusTopic(focusEventTopic);
+        this.input.keyRoutedTopic(keyRouteTopic);
         // Tab reveals what it lands on, exactly as Node.scrollIntoView would: posted during dispatch, drained this
         // frame and answered after this frame's layout, so no frame shows focus out of view.
         this.input.revealSink(id -> sink.post(new Mutation.Reveal(id)));
@@ -917,9 +928,23 @@ public final class Gui implements AutoCloseable {
         return input.menuPresenter();
     }
 
+    /**
+     * The topic this tree hears device input on ({@code vexelray.gui.<tree>.input}): what a window's input source
+     * publishes to, such as tactroller-atchung's {@code InputPublisher} named {@code gui.input().name()}, and what a
+     * driver that types or clicks into this tree publishes on. Per tree, so two windows on one bus hear their own.
+     */
+    public Topic<sibarum.tactroller.api.InputEvent> input() {
+        return input.input();
+    }
+
+    /** The touchpad gestures this tree's dispatcher recognises, published on its own topic: see {@link #input()}. */
+    public Topic<sibarum.tactroller.api.GestureEvent> gestures() {
+        return input.gestures();
+    }
+
     /** The click topic: {@code gui.bus().subscribe(gui.clicks(), ...)} to react to clicks anywhere (any button). */
     public Topic<ClickEvent> clicks() {
-        return CLICKS;
+        return clickTopic;
     }
 
     /**
@@ -1494,12 +1519,12 @@ public final class Gui implements AutoCloseable {
      * would otherwise never be told about. Observation only: subscribing cannot cancel or redirect anything.
      */
     public Topic<KeyRouted> keyRoutes() {
-        return KEY_ROUTES;
+        return keyRouteTopic;
     }
 
     /** The focus-change topic: {@code gui.bus().subscribe(gui.focusEvents(), ...)}. */
     public Topic<FocusEvent> focusEvents() {
-        return FOCUS;
+        return focusEventTopic;
     }
 
     /**
@@ -2513,5 +2538,11 @@ public final class Gui implements AutoCloseable {
         input.close();
         mutationSub.close();
         navSub.close();
+        synchronized (NAMES) {
+            java.util.Set<String> open = NAMES.get(bus);
+            if (open != null) {
+                open.remove(treeName);
+            }
+        }
     }
 }

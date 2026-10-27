@@ -33,11 +33,11 @@ class InputDispatcherTest {
     }
 
     private static void press(Atchung bus, int x, int y) {
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, x, y, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonPressed(MouseButton.LEFT, x, y, 0));
     }
 
     private static void release(Atchung bus, int x, int y) {
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, x, y, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonReleased(MouseButton.LEFT, x, y, 0));
     }
 
     @Test
@@ -46,7 +46,7 @@ class InputDispatcherTest {
         List<ClickEvent> published = new ArrayList<>();
         bus.subscribe(CLICKS, published::add);
 
-        InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS); // synchronous handlers
+        InputDispatcher dispatcher = new InputDispatcher(bus, "test", CLICKS); // synchronous handlers
         AtomicInteger fired = new AtomicInteger();
         dispatcher.onClick(7, fired::incrementAndGet);
 
@@ -67,7 +67,7 @@ class InputDispatcherTest {
     @Test
     void releaseOutsidePressTargetIsNotAClick() {
         Atchung bus = Atchung.create();
-        InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS);
+        InputDispatcher dispatcher = new InputDispatcher(bus, "test", CLICKS);
         AtomicInteger fired = new AtomicInteger();
         dispatcher.onClick(7, fired::incrementAndGet);
 
@@ -86,7 +86,7 @@ class InputDispatcherTest {
     @Test
     void clickBubblesToNearestAncestorHandler() {
         Atchung bus = Atchung.create();
-        InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS);
+        InputDispatcher dispatcher = new InputDispatcher(bus, "test", CLICKS);
         AtomicInteger parentFired = new AtomicInteger();
         dispatcher.onClick(0, parentFired::incrementAndGet); // handler on the parent only
 

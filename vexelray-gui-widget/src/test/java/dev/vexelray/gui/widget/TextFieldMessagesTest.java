@@ -40,7 +40,7 @@ class TextFieldMessagesTest {
             List<String> heard = new ArrayList<>();
             tick.inbox("editor").subscribe(TextField.CHANGED, c -> heard.add(c.text()), 1);
 
-            "hello".codePoints().forEach(cp -> h.bus.publish(InputTopics.INPUT, new InputEvent.CharTyped(cp, 0)));
+            "hello".codePoints().forEach(cp -> h.bus.publish(h.gui.input(), new InputEvent.CharTyped(cp, 0)));
             h.frame();
 
             assertEquals("hello", f.text(), "the edit is the widget's, applied in the frame, with no round trip");

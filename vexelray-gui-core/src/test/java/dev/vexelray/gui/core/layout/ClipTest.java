@@ -196,8 +196,8 @@ class ClipTest {
     private static void click(Gui gui, float x, float y) {
         int px = Math.round(x);
         int py = Math.round(y);
-        gui.bus().publish(InputTopics.INPUT, new InputEvent.PointerMoved(px, py, 0, 0, 0));
-        gui.bus().publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, px, py, 0));
-        gui.bus().publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, px, py, 0));
+        gui.bus().publish(gui.input(), new InputEvent.PointerMoved(px, py, 0, 0, 0));
+        gui.bus().publish(gui.input(), new InputEvent.ButtonPressed(MouseButton.LEFT, px, py, 0));
+        gui.bus().publish(gui.input(), new InputEvent.ButtonReleased(MouseButton.LEFT, px, py, 0));
     }
 }

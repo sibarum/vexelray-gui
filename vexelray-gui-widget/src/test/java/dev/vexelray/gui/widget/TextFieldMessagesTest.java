@@ -121,6 +121,32 @@ class TextFieldMessagesTest {
     }
 
     @Test
+    void whatOneLogicTickWritesAppearsInOneFrame() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TextField first = named(h, "first", "");
+            TextField last = new TextField(h.gui, "").name("last");
+            h.gui.root().children(first.node(), last.node());
+            h.frame();
+            Tick tick = h.bus.tick(null);
+            Inbox form = tick.inbox("form");
+            Sender<TextField.Command> fields = form.sender(TextField.COMMANDS);
+            form.subscribe(TextField.SUBMITTED, s -> {
+                fields.send(new TextField.SetText("first", "Ada"));
+                fields.send(new TextField.SetText("last", "Lovelace"));
+            }, 16);
+
+            h.bus.publish(TextField.SUBMITTED, new TextField.Submitted("name", "Ada Lovelace"));
+            tick.run(LATER);
+            assertEquals("", first.text());
+            assertEquals("", last.text(), "nothing yet: the frame has not run");
+
+            h.frame();
+            assertEquals("Ada", first.text());
+            assertEquals("Lovelace", last.text(), "both, in the same frame: a tick reaches the GUI whole");
+        }
+    }
+
+    @Test
     void aCommandForAnotherFieldIsNotThisOnes() {
         try (HeadlessGui h = new HeadlessGui()) {
             TextField path = named(h, "path", "a");

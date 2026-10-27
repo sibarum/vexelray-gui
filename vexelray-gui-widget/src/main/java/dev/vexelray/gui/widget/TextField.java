@@ -314,7 +314,7 @@ public final class TextField implements AutoCloseable {
         this.name = "textfield-" + node.id();
         // Every field hears every command and keeps its own: a prototype's routing, O(fields) per command. A router
         // keyed by name, one mailbox per tree, is what this becomes once more widgets are addressed this way.
-        this.commandsSub = gui.mailbox("TextField#commands", COMMANDS, this::command, 256);
+        this.commandsSub = gui.mailbox(COMMANDS, this::command, 256);
     }
 
     /**

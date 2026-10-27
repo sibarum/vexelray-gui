@@ -140,6 +140,14 @@ public final class Gui implements AutoCloseable {
     private final Atchung bus;
     private final MutationSink sink;
     private final Pump pump;
+    /**
+     * The widgets' mailboxes ({@link #mailbox}): a tick of the GUI's own, run on the GUI thread at the start of each
+     * frame's drain. A tick rather than more of {@link #pump} because a logic tick hands another tick all of its
+     * writes at once (atchung's {@code Tick}), so a frame applies all of what the logic wrote in one of its ticks or
+     * none of it, never half. Input and the tree's own mutations stay on the pump, as they always have.
+     */
+    private final sibarum.atchung.Tick widgets;
+    private final sibarum.atchung.Inbox widgetInbox;
 
     // Wakes are traced through Probe on the FRAME lane -- `-Dprobe=frame -Dprobe.trace=true`, or
     // `-Dprobe.format=csv` for the correlation log. There was a bespoke flag here writing to System.out, which
@@ -357,6 +365,9 @@ public final class Gui implements AutoCloseable {
                java.util.concurrent.Executor offloadExecutor) {
         this.bus = bus;
         this.pump = bus.pump();
+        // One inbox for every widget, so commands to two widgets are applied in the order they were sent.
+        this.widgets = bus.tick(() -> wake("widget message"));
+        this.widgetInbox = widgets.inbox("widgets");
         // Where nodes come from, and the seam their handles write through. It resolves Node.layout() through a
         // reader that is consulted lazily, which is what lets it be built before the read-model it will read —
         // a handle minted here does not ask about geometry until something reads one.
@@ -2017,14 +2028,16 @@ public final class Gui implements AutoCloseable {
      * it here, on the thread that owns it, so the widget needs no lock and the logic never touches a widget
      * (vexelray-framework's {@code docs/threading.md}, T3.8).
      *
-     * <p>For widget code, which is the framework's: what runs in {@code stage} runs inside the frame budget. A
-     * mailbox that overflows is a fault naming {@code name} and the topic, as every edge mailbox's is.
+     * <p>For widget code, which is the framework's: what runs in {@code stage} runs inside the frame budget. The
+     * topic's kind decides what waits: on a state topic only the last write per key since the last frame, on an edge
+     * topic every message, in order. Every widget's mailbox is one queue, so two widgets' messages are applied in the
+     * order they were sent, and what one logic tick wrote is applied in one frame, whole. An edge mailbox that
+     * overflows is a fault naming the topic.
      *
-     * @param name     the mailbox's name for the probe's rows: the widget's class and what it is for
-     * @param capacity how many messages may wait for one drain
+     * @param capacity how many edges may wait for one frame
      */
-    public <T> Subscription mailbox(String name, Topic<T> topic, sibarum.atchung.Subscriber<T> stage, int capacity) {
-        return pump.subscribe(name, topic, stage, capacity, Backpressure.FAIL);
+    public <T> Subscription mailbox(Topic<T> topic, sibarum.atchung.Subscriber<T> stage, int capacity) {
+        return widgetInbox.subscribe(topic, stage, capacity);
     }
 
     /**
@@ -2355,6 +2368,10 @@ public final class Gui implements AutoCloseable {
         try (Zone probeZone = Probe.zone(Lane.LAYOUT, "dispatch input")) {
             input.dispatch(reconciler.root());
         }
+        // The widgets' mailboxes, before the mutation drain, so the node writes a command makes (a field's text,
+        // say) are applied in this frame's drain rather than the next's. Everything staged is applied: a frame has
+        // no deadline to carry anything past.
+        widgets.run(Long.MAX_VALUE);
         // Drain the mutation pump on the GUI thread: the subscriber applies each Mutation to the reconciler in
         // FIFO order (single writer). The tree is up to date afterward.
         pump.drain();

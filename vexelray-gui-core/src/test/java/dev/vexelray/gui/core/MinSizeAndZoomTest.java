@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.layout.Length;
 import org.junit.jupiter.api.Test;
 import sibarum.atchung.Atchung;
@@ -34,7 +35,7 @@ class MinSizeAndZoomTest {
             gui.root().scroll(false, false);   // the canvas alone, without scrollbars narrowing the window
             Node content = filler(gui);
             gui.minSize(Length.rem(50), Length.rem(30));   // 800 x 480 at 1x
-            gui.frame(400f, 200f, MinSizeAndZoomTest::noText);
+            Seams.of(gui).frame(400f, 200f, MinSizeAndZoomTest::noText);
 
             assertEquals(800f, content.layout().rect().w(), 0.5f,
                     "the window is 400 wide, but the UI is laid out on the 800 it needs");
@@ -52,7 +53,7 @@ class MinSizeAndZoomTest {
         try (Gui gui = new Gui(Atchung.create())) {
             Node content = filler(gui);
             gui.minSize(Length.rem(50), Length.rem(30));
-            gui.frame(400f, 200f, MinSizeAndZoomTest::noText);
+            Seams.of(gui).frame(400f, 200f, MinSizeAndZoomTest::noText);
 
             assertEquals(400f, gui.root().layout().rect().w(), 0.5f, "the root is the window");
             assertEquals(200f, gui.root().layout().rect().h(), 0.5f);
@@ -69,7 +70,7 @@ class MinSizeAndZoomTest {
             gui.root().scroll(false, false).children(bar, content);
             gui.minSize(Length.rem(50), Length.rem(30));
             gui.zoom(2f);
-            gui.frame(900f, 560f, MinSizeAndZoomTest::noText);
+            Seams.of(gui).frame(900f, 560f, MinSizeAndZoomTest::noText);
 
             assertEquals(900f, bar.layout().rect().w(), 0.5f, "the bar is as wide as the window");
             assertEquals(1600f, content.layout().rect().w(), 0.5f, "while the content is as wide as the canvas");
@@ -82,7 +83,7 @@ class MinSizeAndZoomTest {
         try (Gui gui = new Gui(Atchung.create())) {
             Node content = filler(gui);
             gui.minSize(Length.rem(50), Length.rem(30));
-            gui.frame(1200f, 900f, MinSizeAndZoomTest::noText);
+            Seams.of(gui).frame(1200f, 900f, MinSizeAndZoomTest::noText);
 
             assertEquals(1200f, gui.root().layout().rect().w(), 0.5f, "the minimum is a floor, not a size");
             assertEquals(900f, gui.root().layout().rect().h(), 0.5f);
@@ -99,7 +100,7 @@ class MinSizeAndZoomTest {
             Node content = filler(gui);
             gui.minSize(Length.rem(50), Length.rem(30));
             gui.zoom(2f);
-            gui.frame(900f, 560f, MinSizeAndZoomTest::noText);
+            Seams.of(gui).frame(900f, 560f, MinSizeAndZoomTest::noText);
 
             assertEquals(1600f, content.layout().rect().w(), 0.5f,
                     "at 2x the same 50em minimum is 1600px, so a 900px window is below it");
@@ -112,7 +113,7 @@ class MinSizeAndZoomTest {
     void thereIsNoMinimumByDefault() {
         try (Gui gui = new Gui(Atchung.create())) {
             Node content = filler(gui);
-            gui.frame(300f, 150f, MinSizeAndZoomTest::noText);
+            Seams.of(gui).frame(300f, 150f, MinSizeAndZoomTest::noText);
             assertEquals(300f, gui.root().layout().rect().w(), 0.5f);
             assertEquals(150f, gui.root().layout().rect().h(), 0.5f);
             assertEquals(300f, content.layout().rect().w(), 0.5f);

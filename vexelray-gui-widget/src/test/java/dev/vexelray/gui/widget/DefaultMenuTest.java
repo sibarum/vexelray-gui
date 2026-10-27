@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.input.MenuItem;
 import dev.vexelray.gui.core.layout.Length;
 import org.junit.jupiter.api.Test;
@@ -258,13 +259,13 @@ class DefaultMenuTest {
     @Test
     void aFieldInstallsWhateverIsNeededToShowItsOwnMenu() {
         try (HeadlessGui h = new HeadlessGui()) {
-            assertTrue(h.gui.menus() == null, "a bare tree shows no menus");
+            assertTrue(Seams.of(h.gui).menus() == null, "a bare tree shows no menus");
             TextField field = new TextField(h.gui, "hello");
-            assertTrue(h.gui.menus() instanceof ContextMenu, "building the field installed one");
+            assertTrue(Seams.of(h.gui).menus() instanceof ContextMenu, "building the field installed one");
 
-            ContextMenu installed = (ContextMenu) h.gui.menus();
+            ContextMenu installed = (ContextMenu) Seams.of(h.gui).menus();
             TextField second = new TextField(h.gui, "world");
-            assertEquals(installed, h.gui.menus(), "and the next widget did not replace it");
+            assertEquals(installed, Seams.of(h.gui).menus(), "and the next widget did not replace it");
             field.close();
             second.close();
         }
@@ -291,7 +292,7 @@ class DefaultMenuTest {
     }
 
     private static ContextMenu menu(HeadlessGui h) {
-        return (ContextMenu) h.gui.menus();
+        return (ContextMenu) Seams.of(h.gui).menus();
     }
 
     private static List<String> labels(HeadlessGui h) {

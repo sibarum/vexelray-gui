@@ -1,5 +1,6 @@
 package dev.vexelray.gui.krono;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
@@ -48,7 +49,7 @@ class PresenceTest {
     /** One frame at logical time {@code at}: the clock first, then the frame, as {@code GuiApp.run} orders them. */
     private static RetainedNode at(KronoGui krono, long at) {
         krono.tick(ms(at));
-        return krono.gui().frame(400f, 300f, PresenceTest::noText);
+        return Seams.of(krono.gui()).frame(400f, 300f, PresenceTest::noText);
     }
 
     private static Node row(Gui gui) {

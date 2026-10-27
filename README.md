@@ -125,7 +125,7 @@ Colour is a **role**, resolved against the one `Theme` on `Gui` — no widget na
 gui.theme(Theme.LIGHT);                                            // before building; DARK is the default
 Node card = gui.box().background(gui.theme().color(Role.PANEL))    // PAGE / CHROME / PANEL / RAISED / WELL / LINE
         .border(Length.rem(0.1f), gui.theme().color(Role.LINE));   // INK / DIM / FAINT / ACCENT / ACTION / DANGER
-gui.onState(card, s -> card.background(gui.theme().color(Role.PANEL, s)));   // hover and press are derived
+Seams.of(gui).onState(card, s -> card.background(gui.theme().color(Role.PANEL, s)));   // hover and press are derived
 ```
 
 A `Palette` is nine authored numbers, not a table of colours: a page, a lightness step, an ink, a
@@ -158,15 +158,27 @@ bloom) are deliberately out of scope for the single-pass batch.
 
 ## Interaction
 
-Input arrives tactroller → atchung → the framework's dispatch; you subscribe by node:
+Input arrives tactroller → atchung → the framework's dispatch. An application hears it as messages: a widget's on its
+own topics, a node's of its own through `hear`, and what the dispatcher must know before the input (a menu, a chord)
+is declared, each item naming the message it sends:
 
 ```java
-gui.onClick(button, () -> log.append(gui.text("clicked")));       // the handler lane
-gui.onContextClick(row, e -> menu.show(e.x(), e.y()));            // right-click, with the pointer position
-gui.onState(button, s -> button.background(gui.theme().color(Role.PANEL, s))); // observers add up
-gui.onDrag(slider, e -> set(e.fractionX()));                      // pointer-captured
-gui.shortcut(Key.EQUAL, gui::zoomIn, Modifier.CONTROL);           // global chords
-gui.claim(node, Shortcut.of(Key.LEFT), ClaimScope.FOCUSED, cmd);  // focused-only chords
+gui.mailbox(Button.PRESSED, save.address(), p -> saves.send(new Save()));   // a widget's press
+gui.hear(row, NodeEvent.CLICK, click -> picks.send(new Pick(id)));          // a node's own click
+gui.hear(card, NodeEvent.STATE, s -> card.background(gui.theme().color(Role.PANEL, s)));
+gui.shortcut(Shortcut.of(Key.S, Modifier.CONTROL), saves, new Save());      // a global chord
+gui.claim(node, Shortcut.of(Key.LEFT), ClaimScope.FOCUSED, moves, new Move(-1));   // focused-only
+```
+
+The registrations a widget is built from, which run code in the dispatch in order with the input around it, are the
+widget library's and the host's, on `Seams.of(gui)`, and nothing an application is handed reaches them
+(vexelray-framework's `docs/threading.md`, T7.2):
+
+```java
+Seams seams = Seams.of(gui);
+seams.onClick(button, () -> press());                            // a widget answering its own input
+seams.onDrag(slider, e -> set(e.fractionX()));                   // pointer-captured
+seams.shortcut(Key.EQUAL, gui::zoomIn, Modifier.CONTROL);        // the library's own chords
 ```
 
 Clickable nodes get the pointer cursor by inference; register `gui.cursor(node, shape)` only when
@@ -178,7 +190,7 @@ the affordance can't be inferred (a slider wants GRAB). Focus is `gui.focusable(
 A menu is not an object you build and keep — it is a question asked at the moment of the right click:
 
 ```java
-gui.onContextMenu(row, menu -> menu
+Seams.of(gui).onContextMenu(row, menu -> menu
         .item("Open", () -> open(path))
         .item("Paste", clipboard.hasText(), () -> paste(path))   // shown, greyed when it cannot apply
         .separator()
@@ -213,8 +225,8 @@ half of that, and all of them are discovered after letting go, which is the wors
 anything.
 
 ```java
-gui.onDragSource(body, (x, y) -> rowAt(y) instanceof Row r ? Payload.of(ROW, r) : null);  // null = nothing here drags
-gui.onDrop(body, (payload, x, y) -> payload.as(ROW)                 // asked per frame, for *every* point
+Seams.of(gui).onDragSource(body, (x, y) -> rowAt(y) instanceof Row r ? Payload.of(ROW, r) : null);  // null = nothing here drags
+Seams.of(gui).onDrop(body, (payload, x, y) -> payload.as(ROW)                 // asked per frame, for *every* point
         .map(row -> seamAt(y).accept(row))
         .orElse(Drop.NONE));
 gui.dropHistory(history);                            // until this is set, drops resolve and draw but commit nothing
@@ -304,7 +316,7 @@ calling), so a page arrived at this way is in exactly the state it would be in h
 their way there. It is deliberately *not* synthesised input: input needs a place on screen to aim at,
 and half of what navigation does is make the target have one.
 
-`gui.reveals(node, reveal)` is the seam that lets navigation cross a tab panel, a collapsed branch or
+`Seams.of(gui).reveals(node, reveal)` is the seam that lets navigation cross a tab panel, a collapsed branch or
 a drawer without knowing what any of those are — the widgets that conceal things register their own,
 so an application needs this only for a container it wrote itself. An `Address` may name a window
 (`"prefs/theme.accent"`); one naming another window is *published* rather than walked, and `GuiApp`
@@ -348,7 +360,7 @@ answer.
 
 ```java
 NodeLayout box = node.layout();                      // rect, content rect, scroll, overflow, corner radii, text metrics
-gui.onResize(node, computed -> repaint(computed));   // "my geometry is real now" — including the first time
+Seams.of(gui).onResize(node, computed -> repaint(computed));   // "my geometry is real now" — including the first time
 gui.layout();                                        // the whole snapshot, as bus State
 gui.semanticSnapshot();                              // what each node *is*: role, name, structure, focus
 ```
@@ -573,7 +585,7 @@ or `.overlay(p)` (over the node, its border, its text and its children).
 
 ```java
 Node figure = gui.box().width(Length.FILL).height(Length.rem(12));
-gui.onResize(figure, computed -> figure.picture(chart(computed.rect())));   // pixels, so re-author per box
+Seams.of(gui).onResize(figure, computed -> figure.picture(chart(computed.rect())));   // pixels, so re-author per box
 ```
 
 **Why a picture rather than more nodes.** Before this there were two options: one node per mark, or a

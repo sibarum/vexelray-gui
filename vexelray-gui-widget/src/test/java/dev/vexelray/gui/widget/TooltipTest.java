@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.layout.Length;
@@ -89,7 +90,7 @@ class TooltipTest {
             Node page = h.gui.column().width(Length.FILL).height(Length.FILL);
             Node button = h.gui.box().width(Length.vw(25)).height(Length.rem(6.25f));
             page.append(button);
-            h.gui.onClick(page, () -> pageClicked[0] = true);
+            Seams.of(h.gui).onClick(page, () -> pageClicked[0] = true);
             tip.delayMillis(0).attach(button, "hint");
             h.gui.root().children(page);
             h.frame();
@@ -118,7 +119,7 @@ class TooltipTest {
             var seen = new java.util.ArrayList<InteractionState>();
             Tooltip tip = new Tooltip(h.gui);
             Node button = h.gui.box().width(Length.vw(25)).height(Length.rem(6.25f));
-            h.gui.onState(button, seen::add);          // the widget's own restyle, registered first
+            Seams.of(h.gui).onState(button, seen::add);          // the widget's own restyle, registered first
             tip.delayMillis(0).attach(button, "hint"); // the tooltip's observer, added second
             h.gui.root().children(button);
             h.frame();

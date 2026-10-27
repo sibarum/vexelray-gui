@@ -1,5 +1,6 @@
 package dev.vexelray.gui.demo.chapter;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.app.AppWindow;
@@ -79,7 +80,7 @@ public final class WindowChapter implements Chapter {
                         WindowConfig.of("VexelRay popup", 460, 320).decorations(Decorations.CLIENT), popupGui));
             });
             popup.set(window);
-            gui.shortcut(Key.GRAVE_ACCENT, () -> {
+            Seams.of(gui).shortcut(Key.GRAVE_ACCENT, () -> {
                 window.toggle();
                 console.note("popup toggled by Ctrl+`");
             }, Modifier.CONTROL);

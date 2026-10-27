@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
 import dev.vexelray.gui.core.layout.LayoutMotion;
 import dev.vexelray.gui.core.layout.Length;
@@ -22,7 +23,7 @@ class DisplaceWalkTest {
     }
 
     private static RetainedNode frame(Gui gui) {
-        return gui.frame(400f, 300f, DisplaceWalkTest::noText);
+        return Seams.of(gui).frame(400f, 300f, DisplaceWalkTest::noText);
     }
 
     private static RetainedNode find(RetainedNode from, long id) {
@@ -142,7 +143,7 @@ class DisplaceWalkTest {
             frame(gui);
             float x = find(frame(gui), after.id()).x;
 
-            RetainedNode wider = gui.frame(600f, 300f, DisplaceWalkTest::noText);
+            RetainedNode wider = Seams.of(gui).frame(600f, 300f, DisplaceWalkTest::noText);
 
             assertTrue(find(wider, after.id()).x > x, "the resize did move it");
             assertEquals(0, s.moves, "and nothing was told it moved");

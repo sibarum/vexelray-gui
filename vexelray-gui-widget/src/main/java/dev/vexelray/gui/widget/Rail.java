@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import sibarum.atchung.Sender;
 import sibarum.atchung.Topic;
 import dev.vexelray.gui.core.Addressed;
@@ -321,8 +322,8 @@ public final class Rail {
         items.add(item);
         gui.focusable(tile, true);
         gui.cursor(tile, CursorShape.POINTER);
-        gui.onClick(tile, () -> toggle(key));
-        gui.onState(tile, s -> paintTile(item, s == InteractionState.HOVER));
+        Seams.of(gui).onClick(tile, () -> toggle(key));
+        Seams.of(gui).onState(tile, s -> paintTile(item, s == InteractionState.HOVER));
         bar.append(tile);
         panelBody.append(body);
         paintTile(item, false);
@@ -358,8 +359,8 @@ public final class Rail {
                                 dev.vexelray.text.TextLayout.VAlign.MIDDLE));
         gui.focusable(tile, true);
         gui.cursor(tile, CursorShape.POINTER);
-        gui.onClick(tile, act);
-        gui.onState(tile, s -> {
+        Seams.of(gui).onClick(tile, act);
+        Seams.of(gui).onState(tile, s -> {
             tile.background(s == InteractionState.NORMAL ? Role.NONE : Role.SELECTION);
             tile.textColor(s == InteractionState.NORMAL ? Role.FAINT : Role.INK);
         });

@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core.layout;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
@@ -92,24 +93,24 @@ class ScrollLockTest {
             for (int i = 0; i < 20; i++) {
                 log.append(gui.box().width(Length.percent(100)).height(px(10)));
             }
-            RetainedNode retained = find(gui.frame(100f, 100f, TM), log.id());
+            RetainedNode retained = find(Seams.of(gui).frame(100f, 100f, TM), log.id());
             assertTrue(retained.scrollY > 0f, "the tail opens at the bottom of overflowing content");
 
             // The user scrolls away. Growth must not drag them back.
             retained.scrollAttached = false;
             retained.scrollY = 30f;
             log.append(gui.box().width(Length.percent(100)).height(px(10)));
-            gui.frame(100f, 100f, TM);
+            Seams.of(gui).frame(100f, 100f, TM);
             assertEquals(30f, retained.scrollY, 0.5f, "a detached tail holds its place as content grows");
 
             log.scrollToEdge();
-            gui.frame(100f, 100f, TM);
+            Seams.of(gui).frame(100f, 100f, TM);
             assertEquals(retained.contentH - retained.viewH, retained.scrollY, 0.5f,
                     "scrollToEdge lands on the bottom the content has now");
 
             // And it re-attached rather than jumping once: the next line has to carry it too.
             log.append(gui.box().width(Length.percent(100)).height(px(10)));
-            gui.frame(100f, 100f, TM);
+            Seams.of(gui).frame(100f, 100f, TM);
             assertEquals(retained.contentH - retained.viewH, retained.scrollY, 0.5f,
                     "and stays attached, so the tail keeps following");
         }
@@ -123,11 +124,11 @@ class ScrollLockTest {
             for (int i = 0; i < 20; i++) {
                 list.append(gui.box().width(Length.percent(100)).height(px(10)));
             }
-            RetainedNode retained = find(gui.frame(100f, 100f, TM), list.id());
+            RetainedNode retained = find(Seams.of(gui).frame(100f, 100f, TM), list.id());
             retained.scrollY = 30f;
 
             list.scrollToEdge();
-            gui.frame(100f, 100f, TM);
+            Seams.of(gui).frame(100f, 100f, TM);
 
             assertEquals(30f, retained.scrollY, 0.5f, "no lock, so there is no edge to be sent to");
         }

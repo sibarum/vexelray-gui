@@ -1,5 +1,6 @@
 package dev.vexelray.gui.automation;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.WindowControls;
 import dev.vexelray.gui.core.app.WindowView;
@@ -136,7 +137,7 @@ class ViewVerbsTest {
         driver.start();
         long deadline = System.nanoTime() + 8_000_000_000L;
         while (!answer.isDone() && System.nanoTime() < deadline) {
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
             Thread.onSpinWait();
         }
         return answer.getNow("err the driver never answered");

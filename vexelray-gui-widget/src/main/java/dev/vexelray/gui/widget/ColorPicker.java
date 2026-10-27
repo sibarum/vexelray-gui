@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import sibarum.atchung.Topic;
 import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.canvas.Color;
@@ -190,7 +191,7 @@ public final class ColorPicker implements AutoCloseable {
                 .corner(Length.rem(0.4f))
                 .border(HAIRLINE, theme.color(Role.LINE))
                 .scroll(false, false);
-        gui.onResize(preview, computed -> repaintPreview());
+        Seams.of(gui).onResize(preview, computed -> repaintPreview());
 
         this.hex = new TextField(gui, Hex.format(start));
         hex.node().width(Length.grow(1f)).height(Length.rem(2.4f));
@@ -343,11 +344,11 @@ public final class ColorPicker implements AutoCloseable {
                 .height(height)
                 .background(theme.color(Role.WELL))
                 .scroll(false, false);
-        gui.onDrag(n, drag);
+        Seams.of(gui).onDrag(n, drag);
         gui.cursor(n, CursorShape.GRAB);
         // A picture resolves no units of its own, so every ramp is re-authored against the box the layout
         // settled on -- which is also what carries it through a zoom or a DPI change.
-        gui.onResize(n, computed -> repaint());
+        Seams.of(gui).onResize(n, computed -> repaint());
         return new RampView(n);
     }
 
@@ -607,7 +608,7 @@ public final class ColorPicker implements AutoCloseable {
                 .border(HAIRLINE, theme.color(Role.LINE))
                 .background(theme.color(Role.WELL))
                 .scroll(false, false);
-        gui.onClick(slot, () -> {
+        Seams.of(gui).onClick(slot, () -> {
             Color c = colorAt(index);
             if (c != null) {
                 this.hsv = Hsv.of(c);
@@ -617,11 +618,11 @@ public final class ColorPicker implements AutoCloseable {
         });
         // An empty slot is not a control, so it does not light up: the strip reserves its space without
         // pretending there is something there to click.
-        gui.onState(slot, state -> slot.border(HAIRLINE,
+        Seams.of(gui).onState(slot, state -> slot.border(HAIRLINE,
                 colorAt(index) != null && state != InteractionState.NORMAL
                         ? theme.color(Role.ACCENT)
                         : theme.color(Role.LINE)));
-        gui.onResize(slot, computed -> slot.picture(swatchPicture(slot, colorAt(index))));
+        Seams.of(gui).onResize(slot, computed -> slot.picture(swatchPicture(slot, colorAt(index))));
         // Asked at hover, not at attach: a slot's colour outlives any one thing it held. Attached once, for the
         // reason Tooltip.attach(Node, Supplier) exists.
         swatchTips.attach(slot, () -> {

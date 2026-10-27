@@ -1,5 +1,6 @@
 package dev.vexelray.gui.demo;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.automation.Capability;
 import dev.vexelray.gui.automation.Sockets;
@@ -214,7 +215,7 @@ public final class Demo {
                         .maxFrameRate(16_666_666L);   // 60 Hz ceiling while animating
                 // And the wakes, without which the parking above is a hang rather than a saving: a worker's
                 // mutation and a timeline's tick are not OS input, so each has to nudge the message queue.
-                gui.onWork(app::postWake);
+                Seams.of(gui).onWork(app::postWake);
                 krono.kron().onWork(app::postWake);
             }
             try {
@@ -358,7 +359,7 @@ public final class Demo {
             // The GUI may carry the pointer along with something it animates — a cancelled card flying home with
             // the hand on it. Positions are in the CLIENT space just configured, the same space they arrive in.
             if (input.supportsPointerWarp()) {
-                gui.onPointerWarp((x, y) -> {
+                Seams.of(gui).onPointerWarp((x, y) -> {
                     try {
                         input.warpPointer(Math.round(x), Math.round(y));
                     } catch (BackendException e) {

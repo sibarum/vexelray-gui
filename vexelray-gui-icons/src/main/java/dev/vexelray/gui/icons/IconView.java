@@ -1,5 +1,6 @@
 package dev.vexelray.gui.icons;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.canvas.shadelet.Look;
 import dev.vexelray.gui.core.Gui;
@@ -65,7 +66,7 @@ public final class IconView {
         this.icon = icon;
         this.node = gui.box().size(Length.rem(1f), Length.rem(1f)).scroll(false, false);
         // Chosen against the box the layout settled on, which is in pixels and so already carries the scale.
-        gui.onResize(node, computed -> {
+        Seams.of(gui).onResize(node, computed -> {
             float side = Math.min(computed.rect().w(), computed.rect().h());
             if (side != px) {
                 px = side;

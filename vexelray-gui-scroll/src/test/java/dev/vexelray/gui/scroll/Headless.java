@@ -1,5 +1,6 @@
 package dev.vexelray.gui.scroll;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.InputTopics;
@@ -31,7 +32,7 @@ final class Headless implements AutoCloseable {
     }
 
     Headless frame() {
-        root = gui.frame(W, H, Headless::noText);
+        root = Seams.of(gui).frame(W, H, Headless::noText);
         return this;
     }
 

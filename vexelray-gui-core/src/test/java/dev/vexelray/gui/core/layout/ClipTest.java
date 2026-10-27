@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core.layout;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.InputTopics;
@@ -71,7 +72,7 @@ class ClipTest {
         Node scroller = gui.column().width(Length.dp(200)).height(Length.dp(100)).scroll(false, true)
                 .children(rows);
         gui.root().children(scroller);
-        gui.frame(W, H, NO_TEXT);
+        Seams.of(gui).frame(W, H, NO_TEXT);
         return new Rows(gui, scroller, rows);
     }
 
@@ -148,7 +149,7 @@ class ClipTest {
             Node scroller = gui.column().width(Length.dp(200)).height(Length.dp(100)).scroll(false, true)
                     .children(tall, overlay);
             gui.root().children(scroller);
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
 
             NodeLayout list = scroller.layout();
             assertTrue(list.content().w() < list.rect().w(),
@@ -174,19 +175,19 @@ class ClipTest {
             Rows list = list(gui);
             AtomicInteger clipped = new AtomicInteger();
             AtomicInteger straddling = new AtomicInteger();
-            gui.onClick(list.rows()[3], clipped::incrementAndGet);
-            gui.onClick(list.rows()[2], straddling::incrementAndGet);
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).onClick(list.rows()[3], clipped::incrementAndGet);
+            Seams.of(gui).onClick(list.rows()[2], straddling::incrementAndGet);
+            Seams.of(gui).frame(W, H, NO_TEXT);
 
             NodeLayout away = list.rows()[3].layout();
             click(gui, away.rect().centreX(), away.rect().centreY());
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
             assertEquals(0, clipped.get(),
                     "the centre of a clipped-away row is a place the pointer cannot address it");
 
             NodeLayout half = list.rows()[2].layout();
             click(gui, half.visibleRect().centreX(), half.visibleRect().centreY());
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
             assertEquals(1, straddling.get(),
                     "and the centre of what is left of a half-clipped row is a place it can");
         }

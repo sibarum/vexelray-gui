@@ -1,5 +1,6 @@
 package dev.vexelray.gui.automation;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
@@ -60,13 +61,13 @@ class CauseChainTest {
         AtomicLong handled = new AtomicLong();
         try (Gui gui = new Gui(sibarum.atchung.Atchung.create())) {
             Node target = gui.box().role("button").size(Length.dp(100), Length.dp(100));
-            gui.onClick(target, () -> {
+            Seams.of(gui).onClick(target, () -> {
                 handled.set(Cause.current());
                 target.size(Length.dp(140), Length.dp(100));        // the write the command is answerable for
             });
             gui.root().children(gui.row().width(Length.FILL).height(Length.dp(100)).scroll(false, false)
                     .children(target));
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
 
             String[] out = new String[1];
             String driven = drivenWithFramesRunning(gui, driver -> {
@@ -76,7 +77,7 @@ class CauseChainTest {
             assertTrue(driven.startsWith("ok"), driven);
             long deadline = System.nanoTime() + 500_000_000L;
             while (System.nanoTime() < deadline) {
-                gui.frame(W, H, NO_TEXT);        // let the handler land and its write be drained
+                Seams.of(gui).frame(W, H, NO_TEXT);        // let the handler land and its write be drained
             }
         }
 
@@ -119,7 +120,7 @@ class CauseChainTest {
         driver.start();
         long deadline = System.nanoTime() + 10_000_000_000L;
         while (!answer.isDone() && System.nanoTime() < deadline) {
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
             Thread.onSpinWait();
         }
         return answer.getNow("err the driver never answered");

@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
@@ -389,11 +390,11 @@ final class Rows {
                         .children(strip, label);
                 gui.focusable(card, true);
                 gui.cursor(card, CursorShape.POINTER);
-                gui.onClick(card, () -> {
+                Seams.of(gui).onClick(card, () -> {
                     set.accept(s.value());
                     refresh();
                 });
-                gui.onState(card, st -> paint(card, s.value(), st == InteractionState.HOVER));
+                Seams.of(gui).onState(card, st -> paint(card, s.value(), st == InteractionState.HOVER));
                 cards.add(card);
                 column.append(card);
             }

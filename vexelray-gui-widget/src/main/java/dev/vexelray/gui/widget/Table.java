@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import sibarum.atchung.Topic;
 import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.gui.core.Gui;
@@ -405,12 +406,12 @@ public final class Table<T> implements AutoCloseable {
 
             cell.children(label, mark, grip);
             if (column.sortable()) {
-                gui.onClick(label, () -> cycleSort(index));
+                Seams.of(gui).onClick(label, () -> cycleSort(index));
             }
         // The column's edge is dragged to change its width, so the horizontal resize arrow, held for the whole
         // drag. The same shape as SplitPane's divider, which is the same gesture.
         gui.cursor(grip, CursorShape.RESIZE_HORIZONTAL);
-            gui.onDrag(grip, e -> resize(index, e));
+            Seams.of(gui).onDrag(grip, e -> resize(index, e));
 
             headerCells.add(cell);
             headerLabels.add(label);

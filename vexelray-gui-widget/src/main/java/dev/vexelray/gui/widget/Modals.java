@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import sibarum.atchung.Sender;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
@@ -147,11 +148,11 @@ public final class Modals implements AutoCloseable {
         // Registered once, not per dialog: a global claim has no node to release it with, so a dialog that
         // claimed Escape on the way up would leave that claim behind on the way down. These read the dialog that
         // is up when the key arrives, which is the same thing and stays one registration.
-        gui.shortcut(Key.ESCAPE, () -> {
+        Seams.of(gui).shortcut(Key.ESCAPE, () -> {
             Live current = live.get();
             dismiss(current == null ? null : current.modal().cancelButton());
         });
-        gui.shortcut(Key.ENTER, () -> {
+        Seams.of(gui).shortcut(Key.ENTER, () -> {
             Live current = live.get();
             dismiss(current == null ? null : current.modal().defaultButton());
         });
@@ -367,11 +368,11 @@ public final class Modals implements AutoCloseable {
                 .textSize(Length.rem(0.95f)).textColor(label)
                 .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE)
                 .lit(Finish.LIT).elevation(gui.theme().elevation(Relief.CONTROL));
-        gui.onState(b, state -> {
+        Seams.of(gui).onState(b, state -> {
             b.background(fill.at(state));
             b.elevation(gui.theme().elevation(Relief.CONTROL, state));
         });
-        gui.onClick(b, () -> dismiss(spec));
+        Seams.of(gui).onClick(b, () -> dismiss(spec));
         return b;
     }
 

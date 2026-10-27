@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Node;
 import org.junit.jupiter.api.Test;
 
@@ -325,7 +326,7 @@ class RailTransitionTest {
             two.rail.select("layers");
             motion.finish();
             h.frame();
-            h.gui.onClick(two.layers.get(), () -> hit[0] = true);
+            Seams.of(h.gui).onClick(two.layers.get(), () -> hit[0] = true);
             h.frame();
 
             dev.vexelray.gui.core.layout.Rect r = two.layers.get().layout().rect();

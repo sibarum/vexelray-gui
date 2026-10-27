@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.layout.Length;
 import org.junit.jupiter.api.Test;
 import sibarum.atchung.Atchung;
@@ -27,19 +28,19 @@ class MutationBatchTest {
             Node a = gui.box().width(Length.rem(1)).height(Length.rem(1));
             Node b = gui.box().width(Length.rem(1)).height(Length.rem(1));
             gui.root().direction(dev.vexelray.gui.core.layout.LayoutEnums.Direction.ROW).children(a, b);
-            gui.frame(400f, 100f, MutationBatchTest::noText);
+            Seams.of(gui).frame(400f, 100f, MutationBatchTest::noText);
             assertEquals(16f, a.layout().rect().w(), 0.5f, "1rem to start");
 
             gui.batch(() -> {
                 a.width(Length.rem(5));
                 b.width(Length.rem(3));
                 // A frame taken from inside the group: the edits are buffered, so it can see neither of them.
-                gui.frame(400f, 100f, MutationBatchTest::noText);
+                Seams.of(gui).frame(400f, 100f, MutationBatchTest::noText);
                 assertEquals(16f, a.layout().rect().w(), 0.5f, "buffered, not published");
                 assertEquals(16f, b.layout().rect().w(), 0.5f);
             });
 
-            gui.frame(400f, 100f, MutationBatchTest::noText);
+            Seams.of(gui).frame(400f, 100f, MutationBatchTest::noText);
             assertEquals(80f, a.layout().rect().w(), 0.5f, "the whole group lands together");
             assertEquals(48f, b.layout().rect().w(), 0.5f);
         }
@@ -51,16 +52,16 @@ class MutationBatchTest {
         try (Gui gui = new Gui(Atchung.create())) {
             Node a = gui.box().width(Length.rem(1)).height(Length.rem(1));
             gui.root().children(a);
-            gui.frame(400f, 100f, MutationBatchTest::noText);
+            Seams.of(gui).frame(400f, 100f, MutationBatchTest::noText);
 
             gui.batch(() -> {
                 gui.batch(() -> a.width(Length.rem(5)));
-                gui.frame(400f, 100f, MutationBatchTest::noText);
+                Seams.of(gui).frame(400f, 100f, MutationBatchTest::noText);
                 assertEquals(16f, a.layout().rect().w(), 0.5f,
                         "the inner batch joined the outer one instead of publishing on its own");
             });
 
-            gui.frame(400f, 100f, MutationBatchTest::noText);
+            Seams.of(gui).frame(400f, 100f, MutationBatchTest::noText);
             assertEquals(80f, a.layout().rect().w(), 0.5f);
         }
     }
@@ -69,10 +70,10 @@ class MutationBatchTest {
     @Test
     void anEmptyBatchIsSilent() {
         try (Gui gui = new Gui(Atchung.create())) {
-            gui.frame(400f, 100f, MutationBatchTest::noText);
+            Seams.of(gui).frame(400f, 100f, MutationBatchTest::noText);
             long before = gui.layoutSnapshot().version();
             gui.batch(() -> { });
-            gui.frame(400f, 100f, MutationBatchTest::noText);
+            Seams.of(gui).frame(400f, 100f, MutationBatchTest::noText);
             assertEquals(before, gui.layoutSnapshot().version(), "nothing changed, so nothing republished");
         }
     }

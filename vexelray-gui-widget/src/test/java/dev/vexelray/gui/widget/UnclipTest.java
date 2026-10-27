@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.Length;
 import org.junit.jupiter.api.Test;
@@ -78,7 +79,7 @@ class UnclipTest {
         try (HeadlessGui h = new HeadlessGui()) {
             Page p = page(h, new Unclip(h.gui), LONG);
             int[] nextClicked = {0};
-            h.gui.onClick(p.next(), () -> nextClicked[0]++);
+            Seams.of(h.gui).onClick(p.next(), () -> nextClicked[0]++);
             h.frame();
 
             h.hover(50f, 15f);

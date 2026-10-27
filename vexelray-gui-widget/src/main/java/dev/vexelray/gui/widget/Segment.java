@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import sibarum.atchung.Topic;
 import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.gui.core.Gui;
@@ -106,8 +107,8 @@ public final class Segment<T> {
         order.add(value);
         gui.focusable(cell, true);
         gui.cursor(cell, CursorShape.POINTER);
-        gui.onClick(cell, () -> select(value));
-        gui.onState(cell, s -> paintOne(value, s == InteractionState.HOVER));
+        Seams.of(gui).onClick(cell, () -> select(value));
+        Seams.of(gui).onState(cell, s -> paintOne(value, s == InteractionState.HOVER));
         bar.append(cell);
         if (selected == null) {
             selected = value;

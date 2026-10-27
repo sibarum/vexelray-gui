@@ -120,7 +120,7 @@ directly, so a widget reading pans and a claim on a swipe agree on what the fing
 
 ## 3. Recording: a claim on every chord
 
-`gui.claimAny(node, scope, chord -> ...)` claims *every* chord for a node, and the command hears which one it
+`Seams.of(gui).claimAny(node, scope, chord -> ...)` claims *every* chord for a node, and the command hears which one it
 got. It is an ordinary claim, which is the whole point: while it applies it outranks the framework's Tab and
 the application's Ctrl+S, so a recorder records them rather than performing them. Nothing new in the
 dispatcher but the match. A touchpad gesture reaches it too, so the editor records a swipe by watching one

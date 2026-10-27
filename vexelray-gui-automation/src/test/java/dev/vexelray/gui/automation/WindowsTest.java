@@ -1,5 +1,6 @@
 package dev.vexelray.gui.automation;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.WindowControls;
@@ -97,9 +98,9 @@ class WindowsTest {
         Gui gui = new Gui(sibarum.atchung.Atchung.create()).windowKey(key);
         Node home = gui.box().role("button").size(Length.dp(100), Length.dp(40)).children(gui.text(label));
         gui.landmark("home", home);
-        gui.onClick(home, clicks::incrementAndGet);
+        Seams.of(gui).onClick(home, clicks::incrementAndGet);
         gui.root().children(home);
-        gui.frame(W, H, NO_TEXT);
+        Seams.of(gui).frame(W, H, NO_TEXT);
         return gui;
     }
 
@@ -115,8 +116,8 @@ class WindowsTest {
 
             // The address carries the window: the click lands in the viewport, though the main window is chosen.
             assertTrue(windows.command("click viewport/home").startsWith("ok"));
-            view.frame(W, H, NO_TEXT);
-            main.frame(W, H, NO_TEXT);
+            Seams.of(view).frame(W, H, NO_TEXT);
+            Seams.of(main).frame(W, H, NO_TEXT);
             assertEquals(1, viewClicks.get(), "the click went to the window the address names");
             assertEquals(0, mainClicks.get(), "and not to the chosen window's landmark of the same name");
             assertEquals("ok main", windows.command("window"), "a command naming its window does not move the choice");
@@ -131,7 +132,7 @@ class WindowsTest {
 
             // And a bare landmark means the chosen window's.
             assertTrue(windows.command("click home").startsWith("ok"));
-            view.frame(W, H, NO_TEXT);
+            Seams.of(view).frame(W, H, NO_TEXT);
             assertEquals(2, viewClicks.get());
             assertEquals(0, mainClicks.get());
         }
@@ -204,7 +205,7 @@ class WindowsTest {
         try (Gui main = window("main", "Main home", clicks)) {
             String out = new Automation(main).command("click viewport/home");
             assertTrue(out.startsWith("err") && out.contains("'viewport'"), out);
-            main.frame(W, H, NO_TEXT);
+            Seams.of(main).frame(W, H, NO_TEXT);
             assertEquals(0, clicks.get(), "the same landmark here is not the one the address meant");
             assertFalse(new Automation(main).command("click main/home").startsWith("err"),
                     "its own window's name is just a longer way to say the landmark");

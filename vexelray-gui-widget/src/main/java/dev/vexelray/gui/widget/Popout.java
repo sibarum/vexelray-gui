@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.WindowControls;
@@ -233,7 +234,7 @@ public final class Popout {
         // The one thing a container that conceals has to declare. Popped out, the docked copy is hidden and the
         // live one is in another tree that this landmark is not in — so the reveal brings the panel home, which
         // is the only way the node being navigated to becomes something the user can actually look at.
-        host.reveals(body, descendant -> {
+        Seams.of(host).reveals(body, descendant -> {
             if (popped) {
                 dock();
                 return true;
@@ -532,8 +533,8 @@ public final class Popout {
                 .scroll(false, false)
                 .windowRegion(region)
                 .children(icon);
-        gui.onClick(b, action);
-        gui.onState(b, state -> b.background(
+        Seams.of(gui).onClick(b, action);
+        Seams.of(gui).onState(b, state -> b.background(
                 state == InteractionState.NORMAL ? Role.NONE : hover));
         return b;
     }

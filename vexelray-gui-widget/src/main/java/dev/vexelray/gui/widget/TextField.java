@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.edit.Change;
@@ -47,8 +48,8 @@ import java.util.function.Consumer;
  *
  * <p><b>Edits are committed in the dispatch; the application is told by message.</b> Those are two different
  * requirements and the field treats them as such. Applying a keystroke to a document depends on arrival order and is
- * bounded model work, so it runs as an ordered stage ({@link Gui#onChar}, {@link Gui#onKey},
- * {@link Gui#onDrag}, {@link Gui#claim}) where a total order already exists. Telling the application what changed
+ * bounded model work, so it runs as an ordered stage ({@link dev.vexelray.gui.core.spi.Seams#onChar}, {@link dev.vexelray.gui.core.spi.Seams#onKey},
+ * {@link dev.vexelray.gui.core.spi.Seams#onDrag}, {@link Gui#claim}) where a total order already exists. Telling the application what changed
  * is a message ({@link #CHANGED}) carrying the document's version, so a reply computed from an older text is
  * detectably stale rather than silently out of sequence. Handing each input event to
  * a worker pool separately, as this widget used to, orders the invocations but not their effects: a typed burst
@@ -317,23 +318,23 @@ public final class TextField implements AutoCloseable {
 
         // The edit path, all of it ordered: typed text, edit commands, and pointer caret placement are the three
         // ways this document changes from input, and all three must sequence against each other.
-        gui.onChar(node, this::onCodePoint);
-        gui.onKey(node, e -> {
+        Seams.of(gui).onChar(node, this::onCodePoint);
+        Seams.of(gui).onKey(node, e -> {
             onKey(e);
             keys.accept(e);   // a node has one key handler, so a widget built on the field hears its keys here
         });
-        gui.onDrag(node, this::onPointer);
+        Seams.of(gui).onDrag(node, this::onPointer);
         // Undo is claimed, not heard as a key: the window's history holds Ctrl+Z as a claim, and a claim outranks
         // delivery, so a field that only listened for the key would have its own Ctrl+Z taken by the window's.
         // FOCUSED outranks it in turn, and routes to whichever history this field records into.
-        gui.claim(node, Shortcut.of(Key.Z, Modifier.CONTROL), ClaimScope.FOCUSED, this::undo);
-        gui.claim(node, Shortcut.of(Key.Z, Modifier.CONTROL, Modifier.SHIFT), ClaimScope.FOCUSED, this::redo);
-        gui.claim(node, Shortcut.of(Key.Y, Modifier.CONTROL), ClaimScope.FOCUSED, this::redo);
+        Seams.of(gui).claim(node, Shortcut.of(Key.Z, Modifier.CONTROL), ClaimScope.FOCUSED, this::undo);
+        Seams.of(gui).claim(node, Shortcut.of(Key.Z, Modifier.CONTROL, Modifier.SHIFT), ClaimScope.FOCUSED, this::redo);
+        Seams.of(gui).claim(node, Shortcut.of(Key.Y, Modifier.CONTROL), ClaimScope.FOCUSED, this::redo);
 
         // Clipboard actions on the right button, and a presenter to show them: a field with no menu is a field
         // that answers the keyboard and not the mouse, which is not a decision an application should have to make.
         ContextMenu.presentOn(gui);
-        gui.onContextMenu(node, this::defaultMenu);
+        Seams.of(gui).onContextMenu(node, this::defaultMenu);
 
         // Links are armed by a held modifier, and a held modifier is a condition rather than an event, so this
         // watches the state rather than the key edges. It is also why this is the only place the field asks
@@ -605,7 +606,7 @@ public final class TextField implements AutoCloseable {
         node.multiline(multiline);
         if (multiline) {
             // Seeded from the selection: a user who selected a word and asked to find has said which word.
-            gui.claim(node, FindBar.FIND, ClaimScope.FOCUSED, this::openFind);
+            Seams.of(gui).claim(node, FindBar.FIND, ClaimScope.FOCUSED, this::openFind);
         } else {
             gui.releaseClaim(node, FindBar.FIND);
             FindBar bar = find;
@@ -619,7 +620,7 @@ public final class TextField implements AutoCloseable {
         // Ordered, because indenting edits the same document typing does.
         Shortcut tab = Shortcut.of(Key.TAB);
         if (multiline) {
-            gui.claim(node, tab, ClaimScope.FOCUSED, this::insertSoftTab);
+            Seams.of(gui).claim(node, tab, ClaimScope.FOCUSED, this::insertSoftTab);
         } else {
             gui.releaseClaim(node, tab);
         }

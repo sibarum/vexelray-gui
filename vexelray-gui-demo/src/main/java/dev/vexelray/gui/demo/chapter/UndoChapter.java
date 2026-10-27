@@ -1,5 +1,6 @@
 package dev.vexelray.gui.demo.chapter;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.edit.Change;
@@ -88,7 +89,7 @@ public final class UndoChapter implements Chapter {
                 chip.pressed() ? "on" : "off", items.size()));
         // The popup opens on a handler thread, a moment after the click that asked for it; a scene waits for
         // "(open)" before it presses the keys the popup claims, rather than racing it.
-        gui.onResize(select.popupNode(), computed -> readOut.run());
+        Seams.of(gui).onResize(select.popupNode(), computed -> readOut.run());
         // And the live preview, so a scene sees the cursor land before it presses Enter.
         gui.mailbox(Select.CHANGED, select.address(), m -> readOut.run());
 
@@ -121,7 +122,7 @@ public final class UndoChapter implements Chapter {
 
         // What the framework's own presenter does in an application — a ring on a refused control, a prompt for
         // the rest — done here with the gallery's console, and said in a readout a scene can wait on.
-        gui.onUndo(e -> {
+        Seams.of(gui).onUndo(e -> {
             last = e.outcome().name().toLowerCase(Locale.ROOT);
             status.text(depths(history.status().value()) + "  ·  last: " + last);
             report(e, stage, console);

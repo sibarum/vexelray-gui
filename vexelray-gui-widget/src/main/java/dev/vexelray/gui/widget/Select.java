@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import sibarum.atchung.Topic;
 import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.gui.core.Gui;
@@ -208,8 +209,8 @@ public final class Select<T> implements AutoCloseable {
         this.name = new WidgetName(gui, "select", control);
         gui.focusable(control, true);
         gui.cursor(control, CursorShape.POINTER);
-        gui.onClick(control, this::toggleOpen);
-        gui.onState(control, state -> control.background(Role.WELL.at(state)));
+        Seams.of(gui).onClick(control, this::toggleOpen);
+        Seams.of(gui).onState(control, state -> control.background(Role.WELL.at(state)));
 
         this.list = new ListView<>(gui, ROW_REM, (g, item) -> g.text(label.apply(item))
                         .width(Length.FILL)
@@ -442,15 +443,15 @@ public final class Select<T> implements AutoCloseable {
      * model that degrades too. None of this is a branch on the mode.
      */
     private void armOpen() {
-        gui.claim(popup, DOWN, ClaimScope.VISIBLE, () -> step(1, false));
-        gui.claim(popup, UP, ClaimScope.VISIBLE, () -> step(-1, false));
-        gui.claim(popup, SHIFT_DOWN, ClaimScope.VISIBLE, () -> step(1, true));
-        gui.claim(popup, SHIFT_UP, ClaimScope.VISIBLE, () -> step(-1, true));
-        gui.claim(popup, HOME, ClaimScope.VISIBLE, () -> stepTo(0, false));
-        gui.claim(popup, END, ClaimScope.VISIBLE, () -> stepTo(Integer.MAX_VALUE, false));
-        gui.claim(popup, SPACE, ClaimScope.VISIBLE, this::toggleLead);
-        gui.claim(popup, ENTER, ClaimScope.VISIBLE, this::commit);
-        gui.claim(popup, ESCAPE, ClaimScope.VISIBLE, this::cancel);
+        Seams.of(gui).claim(popup, DOWN, ClaimScope.VISIBLE, () -> step(1, false));
+        Seams.of(gui).claim(popup, UP, ClaimScope.VISIBLE, () -> step(-1, false));
+        Seams.of(gui).claim(popup, SHIFT_DOWN, ClaimScope.VISIBLE, () -> step(1, true));
+        Seams.of(gui).claim(popup, SHIFT_UP, ClaimScope.VISIBLE, () -> step(-1, true));
+        Seams.of(gui).claim(popup, HOME, ClaimScope.VISIBLE, () -> stepTo(0, false));
+        Seams.of(gui).claim(popup, END, ClaimScope.VISIBLE, () -> stepTo(Integer.MAX_VALUE, false));
+        Seams.of(gui).claim(popup, SPACE, ClaimScope.VISIBLE, this::toggleLead);
+        Seams.of(gui).claim(popup, ENTER, ClaimScope.VISIBLE, this::commit);
+        Seams.of(gui).claim(popup, ESCAPE, ClaimScope.VISIBLE, this::cancel);
     }
 
     private void disarmOpen() {
@@ -467,8 +468,8 @@ public final class Select<T> implements AutoCloseable {
      * popup instead of letting the list move, and the bug would look like an arrow key that does nothing.
      */
     private void armClosed() {
-        gui.claim(control, DOWN, ClaimScope.FOCUSED, this::open);
-        gui.claim(control, ENTER, ClaimScope.FOCUSED, this::open);
+        Seams.of(gui).claim(control, DOWN, ClaimScope.FOCUSED, this::open);
+        Seams.of(gui).claim(control, ENTER, ClaimScope.FOCUSED, this::open);
     }
 
     private void disarmClosed() {

@@ -1,5 +1,6 @@
 package dev.vexelray.gui.harness;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.canvas.CanvasShader;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.canvas.shadelet.CoreShadelets;
@@ -219,7 +220,7 @@ class UnknownEffectsTest {
     /** The button, the pointer first moved onto it if {@code hover}, else left at rest. */
     private BufferedImage capture(Hovered h, CanvasShader.Composed shader, boolean hover) throws Exception {
         if (hover) {
-            RetainedNode root = h.gui.frame(W, H, new TextFaces(FONTS));
+            RetainedNode root = Seams.of(h.gui).frame(W, H, new TextFaces(FONTS));
             RetainedNode n = find(root, h.node.id());
             h.bus.publish(h.gui.input(),
                     new InputEvent.PointerMoved((int) (n.x + n.w / 2), (int) (n.y + n.h / 2), 0, 0, 0));

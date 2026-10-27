@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
@@ -92,8 +93,8 @@ public final class Toggle {
         paint(false);
         gui.focusable(track, true);
         gui.cursor(track, CursorShape.POINTER);
-        gui.onClick(track, this::flip);
-        gui.onState(track, s -> paint(s == dev.vexelray.gui.core.input.InteractionState.HOVER));
+        Seams.of(gui).onClick(track, this::flip);
+        Seams.of(gui).onState(track, s -> paint(s == dev.vexelray.gui.core.input.InteractionState.HOVER));
         this.undo = new ValueUndo<>(gui, track, () -> on, this::set, false);
     }
 

@@ -1,5 +1,6 @@
 package dev.vexelray.gui.automation;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.InteractionState;
@@ -80,14 +81,14 @@ class CursorTest {
         try (Gui gui = deterministic()) {
             Strip s = strip(gui);
             List<String> middleStates = new ArrayList<>();
-            gui.onState(s.middle(), state -> middleStates.add(state.name()));
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).onState(s.middle(), state -> middleStates.add(state.name()));
+            Seams.of(gui).frame(W, H, NO_TEXT);
 
             // Start left of everything, finish on the right box. The middle box is not the start, not the
             // target, and is never named — it is simply in the way, which is the whole point.
             Cursor cursor = new Cursor(gui, 10, 50);
             cursor.moveTo(250, 50);
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
 
             assertTrue(middleStates.contains("HOVER"),
                     "the box between start and target must have been hovered in passing, got " + middleStates);
@@ -101,15 +102,15 @@ class CursorTest {
         try (Gui gui = deterministic()) {
             Strip s = strip(gui);
             List<String> middleStates = new ArrayList<>();
-            gui.onState(s.middle(), state -> middleStates.add(state.name()));
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).onState(s.middle(), state -> middleStates.add(state.name()));
+            Seams.of(gui).frame(W, H, NO_TEXT);
 
             // The control for the test above: the same start and target, published as one edge the way a
             // teleporting driver would. If this ever starts reporting a hover, the test above has stopped
             // proving anything and something else is generating the transitions.
             gui.bus().publish(gui.input(),
                     new sibarum.tactroller.api.InputEvent.PointerMoved(250, 50, 240, 0, 0));
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
 
             assertTrue(middleStates.stream().noneMatch("HOVER"::equals),
                     "one jump cannot hover what it flew over, got " + middleStates);

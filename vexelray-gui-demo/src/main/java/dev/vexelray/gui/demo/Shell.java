@@ -1,5 +1,6 @@
 package dev.vexelray.gui.demo;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.InteractionState;
@@ -123,7 +124,7 @@ public final class Shell {
                 Key.DIGIT_6, Key.DIGIT_7, Key.DIGIT_8, Key.DIGIT_9};
         for (int i = 0; i < chapters.size() && i < digits.length; i++) {
             int index = i;
-            gui.shortcut(digits[i], () -> select(index), Modifier.CONTROL);
+            Seams.of(gui).shortcut(digits[i], () -> select(index), Modifier.CONTROL);
         }
         gui.mailbox(Tabs.SELECTED, pages.address(), selected -> showChapter(selected.index()));
         showChapter(0);
@@ -178,11 +179,11 @@ public final class Shell {
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
         navStates.add(state);
         navItems.add(item);
-        gui.onState(item, s -> {
+        Seams.of(gui).onState(item, s -> {
             state.set(s);
             paintNav();
         });
-        gui.onClick(item, () -> select(index));
+        Seams.of(gui).onClick(item, () -> select(index));
         nav.append(item);
     }
 

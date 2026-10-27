@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.style.PaintMotion;
@@ -58,16 +59,16 @@ class PaintMotionTest {
             Node n = gui.text("x").width(Length.dp(40)).height(Length.dp(20));
             gui.root().children(n);
             n.background(A).border(Length.dp(1), A).textColor(A);
-            gui.frame(400f, 300f, PaintMotionTest::noText);
+            Seams.of(gui).frame(400f, 300f, PaintMotionTest::noText);
             assertTrue(paint.told.isEmpty(), "a first colour has nowhere to come from: " + paint.told);
 
             n.background(B).border(Length.dp(1), B).textColor(B);
-            gui.frame(400f, 300f, PaintMotionTest::noText);
+            Seams.of(gui).frame(400f, 300f, PaintMotionTest::noText);
             assertEquals(List.of("BACKGROUND A->B", "BORDER A->B", "TEXT A->B"), paint.told);
 
             paint.told.clear();
             n.background(B);
-            gui.frame(400f, 300f, PaintMotionTest::noText);
+            Seams.of(gui).frame(400f, 300f, PaintMotionTest::noText);
             assertTrue(paint.told.isEmpty(), "writing the colour it already has changes nothing");
         }
     }
@@ -77,11 +78,11 @@ class PaintMotionTest {
         try (Gui gui = new Gui(Atchung.create())) {
             Recording paint = new Recording();
             gui.paintMotion(paint);
-            gui.frame(400f, 300f, PaintMotionTest::noText);
+            Seams.of(gui).frame(400f, 300f, PaintMotionTest::noText);
             gui.takeDrawNeeded();
 
             paint.moving = true;
-            gui.frame(400f, 300f, PaintMotionTest::noText);
+            Seams.of(gui).frame(400f, 300f, PaintMotionTest::noText);
             assertTrue(gui.takeDrawNeeded(), "a fade on its way draws a different frame next");
         }
     }
@@ -95,10 +96,10 @@ class PaintMotionTest {
             Node n = gui.text("x").width(Length.dp(40)).height(Length.dp(20)).paintCuts(true);
             gui.root().children(n);
             n.background(A).textColor(A);
-            gui.frame(400f, 300f, PaintMotionTest::noText);
+            Seams.of(gui).frame(400f, 300f, PaintMotionTest::noText);
 
             n.background(B).textColor(B);
-            gui.frame(400f, 300f, PaintMotionTest::noText);
+            Seams.of(gui).frame(400f, 300f, PaintMotionTest::noText);
 
             assertTrue(paint.told.isEmpty(), "nothing to fade: " + paint.told);
         }

@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core.layout;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
@@ -178,7 +179,7 @@ class ScrollbarRoomSweep {
             parent.children(before, scroller);
         }
         gui.root().children(parent);
-        RetainedNode root = gui.frame(800f, 600f, ScrollbarRoomSweep::text);
+        RetainedNode root = Seams.of(gui).frame(800f, 600f, ScrollbarRoomSweep::text);
         RetainedNode s = find(root, scroller.id());
         RetainedNode p = find(root, parent.id());
 

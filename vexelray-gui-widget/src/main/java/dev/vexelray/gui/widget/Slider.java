@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import sibarum.atchung.Topic;
 import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.canvas.Color;
@@ -146,8 +147,8 @@ public final class Slider {
                 .alignItems(AlignItems.CENTER).scroll(false, false) // a slider never scrolls
                 .children(leftSpacer, thumb, rightSpacer);
         this.name = new WidgetName(gui, "slider", track);
-        gui.onDrag(track, this::pointer);
-        gui.onKey(track, e -> {
+        Seams.of(gui).onDrag(track, this::pointer);
+        Seams.of(gui).onKey(track, e -> {
             if (e.key() == Key.LEFT || e.key() == Key.DOWN) {
                 step(-1);
             } else if (e.key() == Key.RIGHT || e.key() == Key.UP) {
@@ -166,7 +167,7 @@ public final class Slider {
         }, true);
         // A picture resolves no units of its own, so the ticks are re-authored against the box the layout
         // settled on — which is also what carries them through a zoom or a DPI change.
-        gui.onResize(track, computed -> {
+        Seams.of(gui).onResize(track, computed -> {
             paintTicks(computed.rect());
             measure(computed.rect());
         });

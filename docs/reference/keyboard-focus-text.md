@@ -121,7 +121,7 @@ gui.shortcut(Shortcut.of(Key.S, Modifier.CONTROL), app::save);   // == a GLOBAL 
 - Commands run on the worker executor like other handlers. The framework's own claims run inline on the
   GUI thread because they mutate dispatch state (focus); that variant is internal, not offered to apps.
 - Claims do **not** arm auto-repeat (§8.4), so a held Tab inserts one soft tab rather than a stream.
-- **A claim on every chord** — `gui.claimAny(node, scope, chord -> ...)` — is the same mechanism with a
+- **A claim on every chord** — `Seams.of(gui).claimAny(node, scope, chord -> ...)` — is the same mechanism with a
   wildcard match, for a control whose subject is the chord: a key-binding recorder holds one at `FOCUSED`
   and so records Ctrl+S and Tab instead of performing them. At one scope a named claim outranks the
   wildcard. See [keymap.md](keymap.md) §3.

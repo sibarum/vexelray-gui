@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.InputTopics;
@@ -139,7 +140,7 @@ final class HeadlessGui implements AutoCloseable {
 
     /** Drain the bus, dispatch input (handlers run here, inline) and lay out: one GUI frame. */
     HeadlessGui frame() {
-        lastRoot = gui.frame(W, H, measurer);
+        lastRoot = Seams.of(gui).frame(W, H, measurer);
         return this;
     }
 
@@ -198,7 +199,7 @@ final class HeadlessGui implements AutoCloseable {
      * frame loop this harness is not, so a test that wants to look at it has to step it itself.
      */
     RetainedNode frame(Gui other) {
-        return other.frame(W, H, measurer);
+        return Seams.of(other).frame(W, H, measurer);
     }
 
     /** Find {@code handle} in a tree laid out by {@link #frame(Gui)}, or null if it is not in it. */

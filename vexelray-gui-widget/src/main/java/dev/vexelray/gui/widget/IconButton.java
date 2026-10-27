@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.IconSource;
 import dev.vexelray.gui.core.Node;
@@ -71,13 +72,13 @@ public final class IconButton {
         this.address = new WidgetName(gui, "iconbutton", node);
         gui.focusable(node, true);
         gui.cursor(node, CursorShape.POINTER);
-        gui.onClick(node, this::activate);
-        gui.onState(node, s -> {
+        Seams.of(gui).onClick(node, this::activate);
+        Seams.of(gui).onState(node, s -> {
             this.state = s;
             paint();
         });
-        gui.claim(node, ENTER, ClaimScope.FOCUSED, this::activate);
-        gui.claim(node, SPACE, ClaimScope.FOCUSED, this::activate);
+        Seams.of(gui).claim(node, ENTER, ClaimScope.FOCUSED, this::activate);
+        Seams.of(gui).claim(node, SPACE, ClaimScope.FOCUSED, this::activate);
         paint();
     }
 

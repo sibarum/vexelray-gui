@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.diag.Diagnostics;
 import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
 import dev.vexelray.gui.core.layout.Length;
@@ -47,7 +48,7 @@ class UnaskedScrollTest {
             Node body = gui.column().width(Length.FILL).height(Length.dp(300))
                     .alignItems(dev.vexelray.gui.core.layout.LayoutEnums.AlignItems.CENTER).children(facts);
             gui.root().direction(Direction.COLUMN).children(body);
-            gui.frame(300f, 400f, UnaskedScrollTest::tenPerChar);
+            Seams.of(gui).frame(300f, 400f, UnaskedScrollTest::tenPerChar);
 
             assertTrue(body.layout().overflowX(), "the picture: a sideways bar");
             List<String> said = unasked();
@@ -67,7 +68,7 @@ class UnaskedScrollTest {
                     .children(gui.text("Build").wordWrap(false),
                             gui.text("d920925cfa80 + uncommitted changes").width(Length.grow(1f))));
             gui.root().direction(Direction.COLUMN).children(body);
-            gui.frame(300f, 400f, UnaskedScrollTest::tenPerChar);
+            Seams.of(gui).frame(300f, 400f, UnaskedScrollTest::tenPerChar);
 
             assertEquals(List.of(), unasked(), Diagnostics.recorded().toString());
         }
@@ -80,7 +81,7 @@ class UnaskedScrollTest {
             Node strip = gui.row().width(Length.FILL).height(Length.dp(100)).scroll(true, false)
                     .children(gui.box().size(Length.dp(2000), Length.dp(50)));
             gui.root().direction(Direction.COLUMN).children(strip);
-            gui.frame(300f, 400f, UnaskedScrollTest::tenPerChar);
+            Seams.of(gui).frame(300f, 400f, UnaskedScrollTest::tenPerChar);
 
             assertTrue(strip.layout().overflowX(), "it scrolls");
             assertEquals(List.of(), unasked());
@@ -94,7 +95,7 @@ class UnaskedScrollTest {
             Node page = gui.column().width(Length.FILL).height(Length.dp(200))
                     .children(gui.box().size(Length.dp(100), Length.dp(1000)));
             gui.root().direction(Direction.COLUMN).children(page);
-            gui.frame(300f, 400f, UnaskedScrollTest::tenPerChar);
+            Seams.of(gui).frame(300f, 400f, UnaskedScrollTest::tenPerChar);
 
             assertTrue(page.layout().overflowY(), "it scrolls down");
             assertEquals(List.of(), unasked());
@@ -107,7 +108,7 @@ class UnaskedScrollTest {
         try (Gui gui = new Gui(Atchung.create())) {
             gui.root().direction(Direction.COLUMN).children(gui.box().size(Length.FILL, Length.dp(50)));
             gui.minSize(Length.dp(600), Length.dp(100));
-            gui.frame(300f, 400f, UnaskedScrollTest::tenPerChar);
+            Seams.of(gui).frame(300f, 400f, UnaskedScrollTest::tenPerChar);
 
             assertTrue(gui.root().layout().overflowX(), "the root scrolls on its canvas");
             assertEquals(List.of(), unasked());

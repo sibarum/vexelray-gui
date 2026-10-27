@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.InteractionState;
@@ -98,7 +99,7 @@ public final class Tooltip implements AutoCloseable {
         // release half of a click — the user just acted on the control, and a tooltip popping up over the result
         // would be help arriving after the decision. It stays away until the pointer leaves and comes back.
         var last = new java.util.concurrent.atomic.AtomicReference<>(InteractionState.NORMAL);
-        gui.onState(target, state -> {
+        Seams.of(gui).onState(target, state -> {
             InteractionState previous = last.getAndSet(state);
             if (state == InteractionState.HOVER && previous == InteractionState.NORMAL) {
                 arm(() -> showFor(target, text));

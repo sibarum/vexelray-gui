@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.layout.Length;
 import org.junit.jupiter.api.Test;
 import sibarum.tactroller.api.Key;
@@ -54,7 +55,7 @@ class AppShortcutReachTest {
             h.gui.root().children(tree.node());
 
             AtomicInteger closes = new AtomicInteger();
-            h.gui.shortcut(Key.W, closes::incrementAndGet, sibarum.tactroller.api.Modifier.CONTROL);
+            Seams.of(h.gui).shortcut(Key.W, closes::incrementAndGet, sibarum.tactroller.api.Modifier.CONTROL);
 
             h.frame();
             tree.focus();
@@ -75,7 +76,7 @@ class AppShortcutReachTest {
              TreeView<Path> tree = Listing.tree(h, twoRoots())) {
             tree.node().width(Length.FILL).height(Length.FILL);
             h.gui.root().children(tree.node());
-            h.gui.shortcut(Key.DOWN, () -> { }, sibarum.tactroller.api.Modifier.CONTROL);
+            Seams.of(h.gui).shortcut(Key.DOWN, () -> { }, sibarum.tactroller.api.Modifier.CONTROL);
 
             h.frame();
             tree.focus();

@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.draw.Picture;
@@ -248,8 +249,8 @@ class TabsTest {
             Tabs tabs = new Tabs(h.gui);
             tabs.add("One", one);
             tabs.add("Two", two);
-            h.gui.onClick(one, () -> hit[0] = true);
-            h.gui.onClick(two, () -> hit[1] = true);
+            Seams.of(h.gui).onClick(one, () -> hit[0] = true);
+            Seams.of(h.gui).onClick(two, () -> hit[1] = true);
             h.gui.root().children(tabs.node());
             h.frame();
 

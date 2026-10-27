@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
@@ -191,9 +192,9 @@ public final class Board<T> {
     public Deck<T> column() {
         Deck<T> deck = new Deck<>(this, gui);
         decks.add(deck);
-        gui.onDragSource(deck.node, (x, y) -> payloadAt(deck, x, y));
-        gui.onDrop(deck.node, (payload, x, y) -> resolve(deck, payload, x, y));
-        gui.watchDrag(deck.node, watch);
+        Seams.of(gui).onDragSource(deck.node, (x, y) -> payloadAt(deck, x, y));
+        Seams.of(gui).onDrop(deck.node, (payload, x, y) -> resolve(deck, payload, x, y));
+        Seams.of(gui).watchDrag(deck.node, watch);
         return deck;
     }
 
@@ -661,10 +662,10 @@ public final class Board<T> {
         // On the face, which is the node the user sees: the focus ring is drawn round the focused node's own box
         // and corners, and round the carrier it would be a square frame standing off the card by its spacing.
         gui.focusable(face, true);
-        gui.claim(face, Shortcut.of(Key.UP, Modifier.ALT), ClaimScope.FOCUSED, () -> nudge(card, 0, -1));
-        gui.claim(face, Shortcut.of(Key.DOWN, Modifier.ALT), ClaimScope.FOCUSED, () -> nudge(card, 0, 1));
-        gui.claim(face, Shortcut.of(Key.LEFT, Modifier.ALT), ClaimScope.FOCUSED, () -> nudge(card, -1, 0));
-        gui.claim(face, Shortcut.of(Key.RIGHT, Modifier.ALT), ClaimScope.FOCUSED, () -> nudge(card, 1, 0));
+        Seams.of(gui).claim(face, Shortcut.of(Key.UP, Modifier.ALT), ClaimScope.FOCUSED, () -> nudge(card, 0, -1));
+        Seams.of(gui).claim(face, Shortcut.of(Key.DOWN, Modifier.ALT), ClaimScope.FOCUSED, () -> nudge(card, 0, 1));
+        Seams.of(gui).claim(face, Shortcut.of(Key.LEFT, Modifier.ALT), ClaimScope.FOCUSED, () -> nudge(card, -1, 0));
+        Seams.of(gui).claim(face, Shortcut.of(Key.RIGHT, Modifier.ALT), ClaimScope.FOCUSED, () -> nudge(card, 1, 0));
         // An open hand over a card: it can be picked up. Hover changes nothing on screen but the pointer, which is
         // the one thing that may. A button on the card keeps its own pointer — the nearer node decides.
         gui.cursor(face, dev.vexelray.gui.core.input.CursorShape.GRAB);

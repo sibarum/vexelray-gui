@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.drop.Drop;
 import dev.vexelray.gui.core.edit.Change;
@@ -470,7 +471,7 @@ class BoardTest {
             model.decks.put("todo", deck);
             List<String> binned = new ArrayList<>();
             Node bin = h.gui.box().width(Length.grow(1)).height(Length.FILL);
-            h.gui.onDrop(bin, (payload, x, y) -> payload.as(board.itemType())
+            Seams.of(h.gui).onDrop(bin, (payload, x, y) -> payload.as(board.itemType())
                     .map(item -> Drop.move(bin.layout().rect(), () -> {
                         binned.add(item);
                         Map<String, List<String>> next = new LinkedHashMap<>(model.columns);

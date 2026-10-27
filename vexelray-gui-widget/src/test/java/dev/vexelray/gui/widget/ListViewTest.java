@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.Rect;
@@ -269,7 +270,7 @@ class ListViewTest {
             assertEquals(Set.of("item00003"), list.selection().selection(), "the row under the pointer, alone");
             assertEquals("item00003", asked[0], "and the menu was asked about that item");
             assertEquals(List.of("Open item00003"),
-                    ((ContextMenu) h.gui.menus()).items().stream().map(dev.vexelray.gui.core.input.MenuItem::label)
+                    ((ContextMenu) Seams.of(h.gui).menus()).items().stream().map(dev.vexelray.gui.core.input.MenuItem::label)
                             .toList(),
                     "on a presenter the list installed, so it is on screen");
         }

@@ -51,7 +51,7 @@ changing `Tabs`.
 
 ### 2.1 This needs flex-wrap in core, and that is the right place for it
 
-`Tabs` can't wrap the headers itself. It could watch `gui.onResize(bar)`, count how many headers fit and move the
+`Tabs` can't wrap the headers itself. It could watch `Seams.of(gui).onResize(bar)`, count how many headers fit and move the
 rest into a second row, but that has three problems:
 
 - **It is a frame late, every time.** The headers would be laid out once in the wrong place and then corrected,

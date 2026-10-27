@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.input.MenuItem;
 import org.junit.jupiter.api.Test;
 import sibarum.tactroller.api.Key;
@@ -390,7 +391,7 @@ class TreeViewTest {
             assertEquals(x, at[0], 0.5f);
             assertEquals(y, at[1], 0.5f);
             assertEquals(java.util.Arrays.asList("Expand", "Collapse", null, "Open src"),
-                    ((ContextMenu) h.gui.menus()).items().stream().map(MenuItem::label).toList(),
+                    ((ContextMenu) Seams.of(h.gui).menus()).items().stream().map(MenuItem::label).toList(),
                     "the tree's own two commands, a rule, then what the application added — and a presenter of "
                             + "the tree's own installing, so the menu is actually on screen");
             tree.close();

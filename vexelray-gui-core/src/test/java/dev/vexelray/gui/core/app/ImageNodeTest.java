@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core.app;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.canvas.Canvas;
 import dev.vexelray.canvas.CanvasVertex;
 import dev.vexelray.canvas.shadelet.CoreLooks;
@@ -298,11 +299,11 @@ class ImageNodeTest {
             Node node = gui.box();
             gui.root().children(node);
             node.image(new FakeImage(1), ImageRegion.cell(2, 2, 2));
-            assertNotNull(find(gui.frame(W, H, ImageNodeTest::noText), node.id()).imageRegion());
+            assertNotNull(find(Seams.of(gui).frame(W, H, ImageNodeTest::noText), node.id()).imageRegion());
 
             node.image(new FakeImage(2));
 
-            assertNull(find(gui.frame(W, H, ImageNodeTest::noText), node.id()).imageRegion(),
+            assertNull(find(Seams.of(gui).frame(W, H, ImageNodeTest::noText), node.id()).imageRegion(),
                     "a node must never be left sampling last texture's cell of a new one");
         }
     }
@@ -316,7 +317,7 @@ class ImageNodeTest {
 
             node.image(null, ImageRegion.cell(3, 2, 2));
 
-            RetainedNode retained = find(gui.frame(W, H, ImageNodeTest::noText), node.id());
+            RetainedNode retained = find(Seams.of(gui).frame(W, H, ImageNodeTest::noText), node.id());
             assertNull(retained.image());
             assertNull(retained.imageRegion(), "a region of nothing is not a thing a node can hold");
         }

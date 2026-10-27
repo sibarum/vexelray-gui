@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.diag.Diagnostics;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.model.RetainedNode;
@@ -41,7 +42,7 @@ class ChildrenAppendsTest {
     void buildingANodeWithItSaysNothing() {
         try (Gui gui = new Gui(Atchung.create())) {
             gui.root().children(gui.row().children(chip(gui), chip(gui)));
-            gui.frame(200f, 100f, ChildrenAppendsTest::noText);
+            Seams.of(gui).frame(200f, 100f, ChildrenAppendsTest::noText);
             assertEquals(List.of(), said());
         }
     }
@@ -51,10 +52,10 @@ class ChildrenAppendsTest {
         try (Gui gui = new Gui(Atchung.create())) {
             Node row = gui.row().children(chip(gui), chip(gui));
             gui.root().children(row);
-            gui.frame(200f, 100f, ChildrenAppendsTest::noText);
+            Seams.of(gui).frame(200f, 100f, ChildrenAppendsTest::noText);
 
             row.children(chip(gui), chip(gui));
-            gui.frame(200f, 100f, ChildrenAppendsTest::noText);
+            Seams.of(gui).frame(200f, 100f, ChildrenAppendsTest::noText);
 
             assertEquals(4, row.layout() == null ? -1 : childCount(gui, row), "it appended, as it always has");
             List<String> m = said();
@@ -69,10 +70,10 @@ class ChildrenAppendsTest {
         try (Gui gui = new Gui(Atchung.create())) {
             Node row = gui.row().children(chip(gui));
             gui.root().children(row);
-            gui.frame(200f, 100f, ChildrenAppendsTest::noText);
+            Seams.of(gui).frame(200f, 100f, ChildrenAppendsTest::noText);
 
             row.append(chip(gui), chip(gui));
-            gui.frame(200f, 100f, ChildrenAppendsTest::noText);
+            Seams.of(gui).frame(200f, 100f, ChildrenAppendsTest::noText);
 
             assertEquals(3, childCount(gui, row));
             assertEquals(List.of(), said());
@@ -80,7 +81,7 @@ class ChildrenAppendsTest {
     }
 
     private static int childCount(Gui gui, Node node) {
-        RetainedNode r = find(gui.frame(200f, 100f, ChildrenAppendsTest::noText), node.id());
+        RetainedNode r = find(Seams.of(gui).frame(200f, 100f, ChildrenAppendsTest::noText), node.id());
         return r == null ? -1 : r.children.size();
     }
 

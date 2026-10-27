@@ -1,5 +1,6 @@
 package dev.vexelray.gui.automation;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.ClaimScope;
@@ -67,7 +68,7 @@ class AutomationTest {
                     .children(gui.box().size(Length.dp(100), Length.dp(1000)));
             Node plain = gui.box().size(Length.FILL, Length.dp(50));
             gui.root().children(body, plain);
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
 
             String tree = new Automation(gui).command("tree");
             assertTrue(tree.contains("\n" + body.id() + " box [0,0 "), "an unnamed scroller has a line: " + tree);
@@ -85,7 +86,7 @@ class AutomationTest {
             gui.root().direction(dev.vexelray.gui.core.layout.LayoutEnums.Direction.COLUMN)
                     .children(gui.box().size(Length.FILL, Length.dp(32)), body);
             gui.minSize(Length.rem(40), Length.rem(50));   // 800 tall, under a 600 px window
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
 
             String tree = new Automation(gui).command("tree");
             assertTrue(tree.lines().anyMatch(l -> l.startsWith(gui.root().id() + " box") && l.endsWith(" scrolls y")), tree);
@@ -100,7 +101,7 @@ class AutomationTest {
                     .children(gui.text("Save"));
             gui.landmark("save", save);
             gui.root().children(save);
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
 
             // Two matches, and correctly so: the button is named "Save" because its label is, and the label is
             // itself a node named "Save". A search is not a disambiguator — the landmark is.
@@ -120,19 +121,19 @@ class AutomationTest {
             Node spacer = gui.box().size(Length.dp(10), Length.dp(10));
             Node target = gui.box().role("button").size(Length.dp(100), Length.dp(40));
             AtomicInteger clicks = new AtomicInteger();
-            gui.onClick(target, clicks::incrementAndGet);
+            Seams.of(gui).onClick(target, clicks::incrementAndGet);
             gui.root().children(gui.column().width(Length.FILL).children(spacer, target));
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
 
             long ref = target.id();
             // The node moves after the agent has learned its ref, exactly as a real UI moves between the read
             // and the act. Resolving at act time is the whole reason a ref is not a coordinate.
             spacer.size(Length.dp(10), Length.dp(200));
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
 
             Automation driver = new Automation(gui);
             assertTrue(driver.command("click " + ref).startsWith("ok"));
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
             assertEquals(1, clicks.get(), "the click has to land on the node, not on where it used to be");
         }
     }
@@ -150,16 +151,16 @@ class AutomationTest {
             gui.landmark("buried", hidden);
             // The container declares how to un-conceal what is inside it — the framework's own inversion, so
             // navigation never has to know what a drawer is.
-            gui.reveals(drawer, descendant -> {
+            Seams.of(gui).reveals(drawer, descendant -> {
                 hidden.visible(true);
                 return true;
             });
             gui.root().children(drawer);
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
             assertFalse(gui.semanticSnapshot().node(hidden.id()).visible());
 
             AtomicInteger clicks = new AtomicInteger();
-            gui.onClick(hidden, clicks::incrementAndGet);
+            Seams.of(gui).onClick(hidden, clicks::incrementAndGet);
 
             // Navigation takes frames rather than returning done — a reveal has to be laid out before the next
             // step can see it — so this test has to be a loop and a driver, the two threads a real application
@@ -171,7 +172,7 @@ class AutomationTest {
             // the same asynchrony settle() cannot see through, and the reason this waits rather than asserts.
             long deadline = System.nanoTime() + 2_000_000_000L;
             while (clicks.get() == 0 && System.nanoTime() < deadline) {
-                gui.frame(W, H, NO_TEXT);
+                Seams.of(gui).frame(W, H, NO_TEXT);
                 Thread.onSpinWait();
             }
             assertEquals(1, clicks.get(), "the concealed target was revealed and then clicked");
@@ -189,7 +190,7 @@ class AutomationTest {
         driver.start();
         long deadline = System.nanoTime() + 5_000_000_000L;
         while (!answer.isDone() && System.nanoTime() < deadline) {
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
             Thread.onSpinWait();
         }
         return answer.getNow("err the driver never answered");
@@ -200,7 +201,7 @@ class AutomationTest {
         try (Gui gui = deterministic()) {
             Node hidden = gui.box().role("button").size(Length.dp(100), Length.dp(40)).visible(false);
             gui.root().children(gui.box().width(Length.FILL).children(hidden));
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
 
             String out = new Automation(gui).command("click " + hidden.id());
             // Not a silent click at the rect a hidden node still publishes — that would hit whatever is on top
@@ -217,9 +218,9 @@ class AutomationTest {
         try (Gui gui = deterministic()) {
             dev.vexelray.gui.core.drop.PayloadType<String> row = dev.vexelray.gui.core.drop.PayloadType.of("row");
             Node body = gui.box().size(Length.dp(200), Length.dp(200));
-            gui.onDragSource(body, (x, y) -> dev.vexelray.gui.core.drop.Payload.of(row, "r"));
+            Seams.of(gui).onDragSource(body, (x, y) -> dev.vexelray.gui.core.drop.Payload.of(row, "r"));
             gui.root().children(body);
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
             Automation driver = new Automation(gui);
 
             assertTrue(driver.command("down 20,20").startsWith("ok"));
@@ -227,19 +228,19 @@ class AutomationTest {
             // The press is stamped with the real clock, so the recogniser's hold is wall-clock time: frames are
             // stepped until it has passed, as a loop would step them while a hand held still.
             for (int i = 0; i < 100 && gui.dragSession() == null; i++) {
-                gui.frame(W, H, NO_TEXT);
+                Seams.of(gui).frame(W, H, NO_TEXT);
                 java.util.concurrent.locks.LockSupport.parkNanos(5_000_000L);
             }
             assertTrue(gui.dragSession() != null, "pressed and travelled: a drag, still in the hand");
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
             assertTrue(gui.dragSession() != null, "and still, a frame later — nothing let go of it");
 
             assertTrue(driver.command("up").startsWith("ok 20,90"));
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
             assertTrue(gui.dragSession() != null && gui.dragSession().latched(),
                     "let go: and a drag that is let go stays with the pointer, latched, until a click");
             driver.command("click 20,90");
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
             assertTrue(gui.dragSession() == null, "put down");
         }
     }
@@ -249,13 +250,13 @@ class AutomationTest {
         try (Gui gui = deterministic()) {
             StringBuilder typed = new StringBuilder();
             Node field = gui.box().size(Length.dp(200), Length.dp(40));
-            gui.onChar(field, cp -> typed.appendCodePoint(cp));
+            Seams.of(gui).onChar(field, cp -> typed.appendCodePoint(cp));
             gui.root().children(field);
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
             gui.focus(field);
 
             new Automation(gui).command("type hey");
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
             // Never a set-the-text shortcut: what is under test is the field, and a field written to rather
             // than typed into has skipped every claim, caret move and edit the typing would have caused.
             assertEquals("hey", typed.toString());
@@ -283,9 +284,9 @@ class AutomationTest {
                     .children(rows);
             Node footer = gui.box().width(Length.dp(200)).height(Length.dp(100));
             gui.root().children(gui.column().width(Length.FILL).children(list, footer));
-            gui.onClick(footer, footerClicks::incrementAndGet);
-            gui.onClick(rows[3], rowClicks::incrementAndGet);
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).onClick(footer, footerClicks::incrementAndGet);
+            Seams.of(gui).onClick(rows[3], rowClicks::incrementAndGet);
+            Seams.of(gui).frame(W, H, NO_TEXT);
 
             NodeLayout scrolledOut = rows[3].layout();
             assertTrue(scrolledOut.clippedAway(), "the premise: it has a rect, and none of it is on screen");
@@ -293,7 +294,7 @@ class AutomationTest {
                     "and the point the old resolution would have aimed at belongs to the footer");
 
             String out = new Automation(gui).command("click " + rows[3].id());
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
 
             assertTrue(out.startsWith("err"), out);
             assertTrue(out.contains("scrolled out of view"), "and it says which kind of unreachable: " + out);
@@ -320,15 +321,15 @@ class AutomationTest {
                     .children(rows);
             gui.landmark("last", rows[5]);
             gui.root().children(list);
-            gui.onClick(rows[5], clicks::incrementAndGet);
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).onClick(rows[5], clicks::incrementAndGet);
+            Seams.of(gui).frame(W, H, NO_TEXT);
             assertTrue(rows[5].layout().clippedAway(), "the premise: the last row is nowhere on screen");
 
             String out = drivenWithFramesRunning(gui, driver -> driver.command("click last"));
             assertTrue(out.startsWith("ok"), out);
             long deadline = System.nanoTime() + 2_000_000_000L;
             while (clicks.get() == 0 && System.nanoTime() < deadline) {
-                gui.frame(W, H, NO_TEXT);
+                Seams.of(gui).frame(W, H, NO_TEXT);
                 Thread.onSpinWait();
             }
             assertEquals(1, clicks.get(), "the row was scrolled into view and then clicked");
@@ -347,12 +348,12 @@ class AutomationTest {
             Node list = gui.column().width(Length.dp(200)).height(Length.dp(100)).scroll(false, true)
                     .children(rows);
             gui.root().children(list);
-            gui.onClick(rows[2], clicks::incrementAndGet);      // laid out at y=80..120, viewport ends at 100
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).onClick(rows[2], clicks::incrementAndGet);      // laid out at y=80..120, viewport ends at 100
+            Seams.of(gui).frame(W, H, NO_TEXT);
 
             assertTrue(rows[2].layout().clipped(), "the premise: half of this row is past the bottom edge");
             String out = new Automation(gui).command("click " + rows[2].id());
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
 
             assertTrue(out.startsWith("ok"), out);
             assertEquals(1, clicks.get(), "the click landed on the part of the row that is on screen");
@@ -370,7 +371,7 @@ class AutomationTest {
     void settleWaitsForATransitionInFlightWhenNoFrameIsOwed() {
         try (Gui gui = deterministic()) {
             gui.root().children(gui.box().size(Length.dp(10), Length.dp(10)));
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
             assertFalse(gui.frameOwed(), "the precondition: the loop has nothing outstanding");
 
             long quietAt = System.nanoTime() + 150_000_000L;
@@ -395,7 +396,7 @@ class AutomationTest {
             Node button = gui.box().role("button").size(Length.dp(100), Length.dp(40));
             gui.landmark("status", label);
             gui.landmark("go", button);
-            gui.onClick(button, () -> {
+            Seams.of(gui).onClick(button, () -> {
                 try {
                     Thread.sleep(200);
                 } catch (InterruptedException e) {
@@ -404,7 +405,7 @@ class AutomationTest {
                 label.text("after");
             });
             gui.root().children(gui.column().children(button, label));
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
 
             String out = drivenWithFramesRunning(gui, driver -> {
                 String clicked = driver.command("click go");
@@ -423,7 +424,7 @@ class AutomationTest {
             // Before frame #1 there is no tree to read, and `ok v0` followed by `(no tree yet)` is the answer an
             // agent connecting at startup used to get (docs/plans/background-runs.md).
             assertTrue(gui.frameOwed(), "a tree is owed its first frame");
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
             assertFalse(gui.frameOwed());
         }
     }
@@ -432,7 +433,7 @@ class AutomationTest {
     void aTimelineThatNeverGoesQuietIsReportedRatherThanWaitedOut() {
         try (Gui gui = deterministic()) {
             gui.root().children(gui.box().size(Length.dp(10), Length.dp(10)));
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
 
             String out = new Automation(gui, null, () -> false, 100L).command("settle");
 
@@ -445,7 +446,7 @@ class AutomationTest {
     void theRefusalNamesWhatTheClockSaysIsRunning() {
         try (Gui gui = deterministic()) {
             gui.root().children(gui.box().size(Length.dp(10), Length.dp(10)));
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
             // A clock answers from the tick after it was asked, so an answer read only at the start of the wait is
             // the moment the wait began. This one changes its answer once asked; the refusal has to carry the later.
             AtomicInteger asked = new AtomicInteger();
@@ -464,7 +465,7 @@ class AutomationTest {
     void withNoClockSettleIsAboutTheFrameLoopAlone() {
         try (Gui gui = deterministic()) {
             gui.root().children(gui.box().size(Length.dp(10), Length.dp(10)));
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
 
             assertTrue(new Automation(gui).command("settle").startsWith("ok"));
         }
@@ -479,25 +480,25 @@ class AutomationTest {
         try (Gui gui = deterministic()) {
             Node field = gui.box().size(Length.dp(200), Length.dp(40));
             gui.root().children(field);
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
             gui.focus(field);
             AtomicInteger chord = new AtomicInteger();
             AtomicInteger bare = new AtomicInteger();
             AtomicInteger enter = new AtomicInteger();
-            gui.claim(field, Shortcut.of(Key.W, Modifier.CONTROL, Modifier.SHIFT), ClaimScope.FOCUSED,
+            Seams.of(gui).claim(field, Shortcut.of(Key.W, Modifier.CONTROL, Modifier.SHIFT), ClaimScope.FOCUSED,
                     chord::incrementAndGet);
-            gui.claim(field, Shortcut.of(Key.W), ClaimScope.FOCUSED, bare::incrementAndGet);
-            gui.claim(field, Shortcut.of(Key.ENTER), ClaimScope.FOCUSED, enter::incrementAndGet);
+            Seams.of(gui).claim(field, Shortcut.of(Key.W), ClaimScope.FOCUSED, bare::incrementAndGet);
+            Seams.of(gui).claim(field, Shortcut.of(Key.ENTER), ClaimScope.FOCUSED, enter::incrementAndGet);
             Automation driver = new Automation(gui);
 
             assertEquals("ok LEFT_CONTROL+LEFT_SHIFT+W", driver.command("key ctrl+Shift+w"));
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
             assertEquals(1, chord.get(), "the chord fires its claim");
             assertEquals(0, bare.get(), "and not the bare key's");
 
             assertEquals("ok W", driver.command("key W"));
             assertEquals("ok ENTER", driver.command("key ENTER"));
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
             assertEquals(1, bare.get(), "the modifiers came back up: a plain key afterwards is plain");
             assertEquals(1, enter.get());
             assertTrue(gui.modifiers().value().isEmpty(), "nothing is left held");
@@ -526,19 +527,19 @@ class AutomationTest {
         try (Gui gui = deterministic()) {
             java.util.List<String> osMoves = new java.util.ArrayList<>();
             dev.vexelray.gui.core.input.PointerWarp host = (x, y) -> osMoves.add(x + "," + y);
-            gui.onPointerWarp(host);
+            Seams.of(gui).onPointerWarp(host);
             gui.root().children(gui.box().size(Length.dp(W), Length.dp(H)));
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
 
             Automation driver = new Automation(gui);
             assertTrue(driver.command("move 100,100").startsWith("ok"));
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
 
             // A cancelled drag flying home: the application carries the pointer it sees, which is the driver's.
             dev.vexelray.gui.core.input.PointerRide ride = gui.ridePointer();
             assertTrue(ride.to(104, 102), "the pointer is where the ride started it, so the step is accepted");
             ride.end();
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
 
             assertEquals(java.util.List.of(), osMoves, "the desk's mouse must not move under a scripted run");
             assertEquals("ok 104,102", driver.command("where"), "the driver's pointer is where the ride put it");
@@ -557,7 +558,7 @@ class AutomationTest {
     void awaitWithNoTextWaitsForTheLandmarkToExist() throws Exception {
         try (Gui gui = deterministic()) {
             gui.root().children(gui.box().size(Length.dp(10), Length.dp(10)));
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
             Automation driver = new Automation(gui);
 
             java.util.concurrent.CompletableFuture<String> waiting =
@@ -568,7 +569,7 @@ class AutomationTest {
             Node later = gui.box().role("button").size(Length.dp(100), Length.dp(40)).children(gui.text("Go"));
             gui.landmark("later", later);
             gui.root().children(later);
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
 
             String out = waiting.get(5, java.util.concurrent.TimeUnit.SECONDS);
             assertTrue(out.startsWith("ok "), out);
@@ -593,21 +594,21 @@ class AutomationTest {
         try (Gui gui = deterministic()) {
             Node field = gui.box().size(Length.dp(200), Length.dp(40));
             gui.root().children(field);
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
             gui.focus(field);
             AtomicInteger shifted = new AtomicInteger();
             AtomicInteger bare = new AtomicInteger();
-            gui.claim(field, Shortcut.of(Key.A, Modifier.SHIFT), ClaimScope.FOCUSED, shifted::incrementAndGet);
-            gui.claim(field, Shortcut.of(Key.A), ClaimScope.FOCUSED, bare::incrementAndGet);
+            Seams.of(gui).claim(field, Shortcut.of(Key.A, Modifier.SHIFT), ClaimScope.FOCUSED, shifted::incrementAndGet);
+            Seams.of(gui).claim(field, Shortcut.of(Key.A), ClaimScope.FOCUSED, bare::incrementAndGet);
             Automation driver = new Automation(gui);
             assertTrue(driver.drives("keydown shift") && driver.drives("keyup"), "both are the hand's");
 
             assertEquals("ok LEFT_SHIFT held: LEFT_SHIFT", driver.command("keydown shift"));
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
             assertEquals(java.util.Set.of(Modifier.SHIFT), gui.modifiers().value(), "the application sees it held");
 
             assertEquals("ok A", driver.command("key A"));
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
             assertEquals(1, shifted.get(), "a key pressed while shift is held is Shift+A");
             assertEquals(0, bare.get());
             assertEquals(java.util.Set.of(Modifier.SHIFT), gui.modifiers().value(),
@@ -618,10 +619,10 @@ class AutomationTest {
             assertTrue(driver.command("keyup CTRL").startsWith("err LEFT_CONTROL is not held; held: LEFT_SHIFT"));
 
             assertEquals("ok LEFT_SHIFT held: (none)", driver.command("keyup Shift"));
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
             assertTrue(gui.modifiers().value().isEmpty());
             assertEquals("ok A", driver.command("key A"));
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
             assertEquals(1, bare.get(), "released: a plain key afterwards is plain");
 
             assertEquals("ok nothing was held", driver.command("keyup"));
@@ -637,15 +638,15 @@ class AutomationTest {
     void lettingGoReleasesHeldKeys() {
         try (Gui gui = deterministic()) {
             gui.root().children(gui.box().size(Length.dp(10), Length.dp(10)));
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
             Automation driver = new Automation(gui);
 
             assertEquals("ok LEFT_CONTROL+LEFT_ALT held: LEFT_CONTROL+LEFT_ALT", driver.command("keydown ctrl+alt"));
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
             assertEquals(java.util.Set.of(Modifier.CONTROL, Modifier.ALT), gui.modifiers().value());
 
             driver.letGo();
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
             assertTrue(gui.modifiers().value().isEmpty(), "letting go released them");
             assertEquals("ok nothing was held", driver.command("keyup"));
 

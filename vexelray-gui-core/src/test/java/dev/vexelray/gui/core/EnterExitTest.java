@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.layout.EnterMotion;
 import dev.vexelray.gui.core.layout.ExitMotion;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
@@ -68,7 +69,7 @@ class EnterExitTest {
     }
 
     private static RetainedNode frame(Gui gui) {
-        return gui.frame(400f, 300f, EnterExitTest::noText);
+        return Seams.of(gui).frame(400f, 300f, EnterExitTest::noText);
     }
 
     private static RetainedNode find(RetainedNode from, long id) {

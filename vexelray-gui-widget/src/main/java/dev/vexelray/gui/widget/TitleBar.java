@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import sibarum.atchung.Sender;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.CaptionGrid;
@@ -290,10 +291,10 @@ public final class TitleBar {
         // menu opens it at the click instead, built then, against what is true then.
         if (tool.menu() != null) {
             // Told which window it is in, as an action is: a recording started from a popup records the popup.
-            gui.onClick(b, (dev.vexelray.gui.core.input.ClickEvent e) ->
-                    gui.openMenu(e, sink -> tool.menu().accept(this.controls, sink)));
+            Seams.of(gui).onClick(b, (dev.vexelray.gui.core.input.ClickEvent e) ->
+                    Seams.of(gui).openMenu(e, sink -> tool.menu().accept(this.controls, sink)));
         } else {
-            gui.onClick(b, () -> tool.action().accept(this.controls));
+            Seams.of(gui).onClick(b, () -> tool.action().accept(this.controls));
         }
         // Its role as a landmark, so a script reaches it by the name the tree shows (click instrument-automation).
         if (!tool.role().isEmpty()) {
@@ -378,7 +379,7 @@ public final class TitleBar {
             // Wired once per mark, resolving the action at click time, so a mark given before the action (or the
             // other way round) is the same mark. While there is no action the region below leaves it caption, the
             // window manager takes the pointer, and neither of these ever hears from it.
-            gui.onClick(node, () -> {
+            Seams.of(gui).onClick(node, () -> {
                 Runnable action = markAction;
                 if (action != null) {
                     action.run();
@@ -464,7 +465,7 @@ public final class TitleBar {
 
         Node node = gui.box().size(Length.dp(ICON_DP), Length.dp(ICON_DP)).scroll(false, false);
         // Chosen against the box the layout settled on, which is in pixels and so already carries the scale.
-        gui.onResize(node, computed -> node.image(sizes.get(uploaded.bestFor(
+        Seams.of(gui).onResize(node, computed -> node.image(sizes.get(uploaded.bestFor(
                 Math.round(Math.max(computed.rect().w(), computed.rect().h()))))));
         return icon(node);
     }
@@ -551,7 +552,7 @@ public final class TitleBar {
                 .scroll(false, false)
                 .windowRegion(region)
                 .children(own);
-        gui.onClick(b, action);
+        Seams.of(gui).onClick(b, action);
         return b;
     }
 
@@ -585,11 +586,11 @@ public final class TitleBar {
             this.node = node;
             this.danger = danger;
             this.glyph = glyph;
-            gui.onResize(node, computed -> {
+            Seams.of(gui).onResize(node, computed -> {
                 box = computed.rect();
                 paint();
             });
-            gui.onState(node, s -> {
+            Seams.of(gui).onState(node, s -> {
                 state = s;
                 paint();
             });

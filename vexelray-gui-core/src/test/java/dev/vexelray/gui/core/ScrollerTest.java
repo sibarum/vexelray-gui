@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.input.InputTopics;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
 import dev.vexelray.gui.core.layout.Length;
@@ -41,7 +42,7 @@ class ScrollerTest {
     }
 
     private static void frame(Gui gui) {
-        gui.frame(W, H, ScrollerTest::noText);
+        Seams.of(gui).frame(W, H, ScrollerTest::noText);
     }
 
     /** The window's whole area as a column, to build in. */

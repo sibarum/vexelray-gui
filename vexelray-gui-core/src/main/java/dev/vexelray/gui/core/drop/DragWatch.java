@@ -4,7 +4,7 @@ package dev.vexelray.gui.core.drop;
  * Hears about a drag in the frame it happens in, and hears how it ended.
  *
  * <pre>{@code
- * gui.watchDrag(deck, new DragWatch() {
+ * Seams.of(gui).watchDrag(deck, new DragWatch() {
  *     public void moved(DragState now) { card.floatAt(...); }              // lands this frame, not the next
  *     public void ended(DragState last, DropEffect performed) {
  *         if (performed.accepts()) settle(); else flyHome();                // a drop and a cancel look different

@@ -1,5 +1,6 @@
 package dev.vexelray.gui.keymap;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.InputTopics;
@@ -63,7 +64,7 @@ final class Headless implements AutoCloseable {
     };
 
     Headless frame() {
-        last = gui.frame(800f, 600f, measurer);
+        last = Seams.of(gui).frame(800f, 600f, measurer);
         return this;
     }
 

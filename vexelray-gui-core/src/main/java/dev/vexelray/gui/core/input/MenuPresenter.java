@@ -11,7 +11,7 @@ import java.util.List;
  * <p>The same split as {@link CursorShape} and {@code TextClipboard}: the framework resolves the fact from input
  * and hands it to an installed implementation, because drawing a panel of rows is a widget's job and core builds no
  * UI. {@code vexelray-gui-widget}'s {@code ContextMenu} is the one the framework ships. It is installed the first time
- * anything gives a node a menu ({@link Gui#onContextMenu}), found through the {@link Default} it registers, so a
+ * anything gives a node a menu ({@link dev.vexelray.gui.core.spi.Seams#onContextMenu}), found through the {@link Default} it registers, so a
  * right click opens something without the application wiring anything, whether the menu is a text field's own or
  * only the application's. Installing your own instead (before building the UI) replaces it wholesale — a menu that
  * looks nothing like this one is a presenter, not a fork of the dispatch rules.

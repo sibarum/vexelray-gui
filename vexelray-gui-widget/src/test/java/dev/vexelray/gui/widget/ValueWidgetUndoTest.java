@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.edit.Outcome;
 import dev.vexelray.gui.core.edit.UndoEvent;
@@ -35,7 +36,7 @@ class ValueWidgetUndoTest {
 
         Window() {
             h.gui.history(history);
-            h.gui.onUndo(events::add);
+            Seams.of(h.gui).onUndo(events::add);
         }
 
         Window mount(dev.vexelray.gui.core.Node... nodes) {

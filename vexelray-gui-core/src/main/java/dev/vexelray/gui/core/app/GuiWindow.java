@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core.app;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.canvas.Canvas;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.canvas.CanvasShader;
@@ -550,7 +551,7 @@ final class GuiWindow implements AutoCloseable {
         // Everything between a mutation and a drawable node: dispatch, drain, reconcile, layout, publish. The
         // LAYOUT lane names the pieces; this is their sum, and the one number to compare against DRAW and GPU.
         try (Zone z = Probe.zone(Lane.LAYOUT, "tree update")) {
-            root = gui == null ? null : gui.frame(canvas.width(), canvas.height(), measurer);
+            root = gui == null ? null : Seams.of(gui).frame(canvas.width(), canvas.height(), measurer);
         }
         if (clientChrome) {
             // The tree's own declarations, plus how far into its dead space it hands over a resize grip — both

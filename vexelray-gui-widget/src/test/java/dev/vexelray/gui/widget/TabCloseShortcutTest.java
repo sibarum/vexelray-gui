@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.Length;
 import org.junit.jupiter.api.Test;
@@ -43,7 +44,7 @@ class TabCloseShortcutTest {
             List<TextField> fields = fill(h, tabs, 3);
 
             // The app's close action, as an editor would wire it: bound on the Gui, acting on the widget.
-            h.gui.shortcut(Key.W, () -> tabs.remove(tabs.selected()), Modifier.CONTROL);
+            Seams.of(h.gui).shortcut(Key.W, () -> tabs.remove(tabs.selected()), Modifier.CONTROL);
 
             tabs.select(1);
             h.frame();

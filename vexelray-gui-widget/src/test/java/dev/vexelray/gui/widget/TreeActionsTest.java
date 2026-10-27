@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.input.MenuItem;
 import org.junit.jupiter.api.Test;
 import sibarum.tactroller.api.Key;
@@ -316,7 +317,7 @@ class TreeActionsTest {
     }
 
     private static ContextMenu menu(HeadlessGui h) {
-        return (ContextMenu) h.gui.menus();
+        return (ContextMenu) Seams.of(h.gui).menus();
     }
 
     /** The rows the tree considers visible, read the way the user reads them: Home, then Down to the end. */

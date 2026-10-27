@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core.app;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.canvas.Canvas;
 import dev.vexelray.canvas.CanvasShader;
 import dev.vexelray.canvas.CanvasVertex;
@@ -1599,7 +1600,7 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
      */
     private void wireWake(Gui gui) {
         if (gui != null && wired.add(gui)) {
-            gui.onWork(this::postWake);
+            Seams.of(gui).onWork(this::postWake);
             gui.systemReducedMotion(systemReducedMotion);
             suiteGraphics(gui);
         }
@@ -1784,7 +1785,7 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
 
     /**
      * Drive {@code gui}, running {@code beforeFrame} at the top of each frame — the app-edge hook for pumping input
-     * onto the bus (e.g. {@code TactrollerInputBridge::pump}) before {@link Gui#frame} drains and dispatches it.
+     * onto the bus (e.g. {@code TactrollerInputBridge::pump}) before {@link dev.vexelray.gui.core.spi.Seams#frame} drains and dispatches it.
      *
      * <p>This loop is the one thread all windows share: each iteration pumps and presents the main window, then
      * materialises any pending {@link #requestPopup} calls, then pumps and presents each open popup. A popup that
@@ -1800,7 +1801,7 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                 dev.vexelray.gui.core.nav.NavTopics.GO, this::route, this::post);
         wireWake(gui);
         // Map the GUI's desired cursor shape onto the OS window (I-beam over editable text, §8.3).
-        gui.onCursorChange(shape -> main.window.setCursor(osCursor(shape)));
+        Seams.of(gui).onCursorChange(shape -> main.window.setCursor(osCursor(shape)));
         int frame = 0;
         boolean running = true;
         main.liveStep(() -> iterationTop(false));
@@ -2014,9 +2015,9 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
         // fires inside it, and the mutation it posts is applied by the next drain. A still image wants the settled
         // state rather than the instant before it, so the first frame is a warm-up and the last is the picture.
         // Between them, settle: what handlers and animations still had in flight is carried to rest.
-        gui.frame(width, height, faces);
+        Seams.of(gui).frame(width, height, faces);
         settle(gui, width, height, faces);
-        RetainedNode root = gui.frame(width, height, faces);
+        RetainedNode root = Seams.of(gui).frame(width, height, faces);
         byte[] rgba = render(faces, canvasShader, width, height, bgR, bgG, bgB, canvas -> {
             if (root != null) {
                 TreeRenderer.emit(root, canvas, faces, gui);
@@ -2096,7 +2097,7 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
             if (animating) {
                 clock.advance(SETTLE_STEP);
             }
-            gui.frame(width, height, faces);
+            Seams.of(gui).frame(width, height, faces);
         }
         LOG.warn("capture: not at rest after " + SETTLE_ROUNDS + " rounds (" + gui.whatIsOwed()
                 + "); capturing as it stands");

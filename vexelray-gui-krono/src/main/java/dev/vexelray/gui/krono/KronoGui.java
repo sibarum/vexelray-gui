@@ -42,7 +42,7 @@ import java.util.function.Supplier;
  *      KronoGui krono = KronoGui.attach(gui)) {
  *
  *     krono.bind(card, Node::elevation, krono.lift());       // a signal drives a property
- *     gui.onClick(button, () -> krono.animate(               // callable from a worker thread
+ *     Seams.of(gui).onClick(button, () -> krono.animate(               // callable from a worker thread
  *             card, Node::elevation, dp(2), dp(8), ms(200), Ease.OUT_CUBIC));
  *
  *     app.run(gui, 0, krono::tick);                          // one tick per presented frame
@@ -52,7 +52,7 @@ import java.util.function.Supplier;
  * <h2>Where it attaches, and why there</h2>
  *
  * {@code GuiApp.run}'s {@code beforeFrame} hook is documented as the app-edge place to pump input onto
- * the bus <em>before</em> {@link Gui#frame} drains and dispatches. That is exactly the right moment for
+ * the bus <em>before</em> {@link dev.vexelray.gui.core.spi.Seams#frame} drains and dispatches. That is exactly the right moment for
  * {@link #tick()}: a {@linkplain Driven.Mode#INLINE driven} clock returns with its batch complete, so
  * every mutation an animation posts this frame is already on the bus when the reconciler runs. Nothing
  * is drawn out of phase with what was computed, and the frame that presents it is the frame that
@@ -149,7 +149,7 @@ public final class KronoGui implements AutoCloseable {
      * {@code GuiApp.run(gui, maxFrames, beforeFrame)}.
      *
      * <p>Returns with the batch complete, so the mutations this frame's animations produce are on the bus
-     * before {@link Gui#frame} reconciles.
+     * before {@link dev.vexelray.gui.core.spi.Seams#frame} reconciles.
      */
     public void tick() {
         // Read before the tick, so a post that lands during it counts as unseen: this tick may or may not place

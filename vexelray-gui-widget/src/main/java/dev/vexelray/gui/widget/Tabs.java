@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import sibarum.atchung.Topic;
 import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.canvas.Color;
@@ -376,19 +377,19 @@ public final class Tabs {
 
         // Handlers resolve the header to its index at event time, not add time: tabs can be removed, so a
         // baked-in index would aim every surviving closure one tab off. The node's identity is the stable key.
-        gui.onClick(header, () -> select(headers.indexOf(header)));
+        Seams.of(gui).onClick(header, () -> select(headers.indexOf(header)));
         gui.focusable(header, true);
         // Arrow keys walk the bar while a header holds focus. A claim rather than a key handler, so it preempts
         // anything else bound to those chords for exactly as long as this header is focused.
         // Focus goes with the selection: the claims are scoped to the focused header, so a walk that left focus
         // behind would answer every further press from where it started and never get past the next tab.
-        gui.claim(header, Shortcut.of(Key.LEFT), ClaimScope.FOCUSED,
+        Seams.of(gui).claim(header, Shortcut.of(Key.LEFT), ClaimScope.FOCUSED,
                 () -> select(headers.indexOf(header) - 1).focus());
-        gui.claim(header, Shortcut.of(Key.RIGHT), ClaimScope.FOCUSED,
+        Seams.of(gui).claim(header, Shortcut.of(Key.RIGHT), ClaimScope.FOCUSED,
                 () -> select(headers.indexOf(header) + 1).focus());
         // Hover shading. Recorded as well as painted, so that a selection landing on this header later knows
         // whether the pointer is still on it -- see the states list.
-        gui.onState(header, state -> {
+        Seams.of(gui).onState(header, state -> {
             int at = headers.indexOf(header);
             if (at >= 0) {
                 states.set(at, state);
@@ -399,7 +400,7 @@ public final class Tabs {
         // Close aims at wherever this header sits when the item is chosen, not where it sat when it was built.
         // It is also the only structural change an application does not itself call for, which is what REMOVED
         // is for -- an owner that keeps anything per tab hears about this one exactly as it hears about its own.
-        gui.onContextMenu(header, menu -> {
+        Seams.of(gui).onContextMenu(header, menu -> {
             int at = headers.indexOf(header);
             if (closable) {
                 menu.item(dev.vexelray.gui.icons.Icon.CLOSE, "Close", () -> remove(at));
@@ -410,7 +411,7 @@ public final class Tabs {
         // A hidden page is the plainest kind of concealment there is, so the panel says how to undo it: anything
         // navigated to inside this body selects the tab it is on, first. Index at reveal time, like every other
         // closure here — the page can have been dragged elsewhere in the bar since it was added.
-        gui.reveals(body, descendant -> {
+        Seams.of(gui).reveals(body, descendant -> {
             int at = bodies.indexOf(body);
             if (at < 0 || at == selected) {
                 return false;   // already showing, or no longer a page of this panel: nothing to reveal
@@ -420,7 +421,7 @@ public final class Tabs {
         });
 
         // A header that moves or resizes (a rename, a neighbour removed, the bar scrolled) takes the indicator with it.
-        gui.onResize(header, layout -> restIndicator());
+        Seams.of(gui).onResize(header, layout -> restIndicator());
         bar.append(header);
         pages.append(body.width(Length.FILL).height(Length.FILL).visible(false));
         headers.add(header);
@@ -470,7 +471,7 @@ public final class Tabs {
             return this;
         }
         // The bar resizing moves no header relative to it, but it does move its bottom edge, where the bar sits.
-        gui.onResize(bar, layout -> restIndicator());
+        Seams.of(gui).onResize(bar, layout -> restIndicator());
         restIndicator();
         return this;
     }

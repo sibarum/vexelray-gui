@@ -15,7 +15,7 @@ import dev.vexelray.gui.core.layout.Length;
  *
  * {@snippet :
  * Node button = gui.text("Save").background(Role.ACTION).lit(Finish.LIT);
- * gui.onState(button, state -> button.background(Role.ACTION.at(state)));
+ * Seams.of(gui).onState(button, state -> button.background(Role.ACTION.at(state)));
  * }
  *
  * <h2>Defining one</h2>
@@ -78,7 +78,7 @@ public interface Theme {
      * theme decides what hovering and pressing do to it:
      *
      * {@snippet :
-     * gui.onState(button, state -> button
+     * Seams.of(gui).onState(button, state -> button
      *         .background(Role.ACTION.at(state))
      *         .elevation(gui.theme().elevation(Relief.CONTROL, state)));
      * }

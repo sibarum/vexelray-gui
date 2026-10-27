@@ -1,5 +1,6 @@
 package dev.vexelray.gui.keymap;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.app.Settings;
 import dev.vexelray.gui.core.edit.History;
@@ -175,7 +176,7 @@ class KeymapTest {
             List<String> log = new ArrayList<>();
             Keymap keys = new Keymap(h.gui);
             keys.action("file.save", "Save", CTRL_S);
-            h.gui.shortcut(CTRL_S, () -> log.add("shortcut"));
+            Seams.of(h.gui).shortcut(CTRL_S, () -> log.add("shortcut"));
 
             h.frame().chord(Key.S, Key.LEFT_CONTROL);
 

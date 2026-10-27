@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.IconSource;
@@ -530,7 +531,7 @@ public final class TreeView<T> implements AutoCloseable {
                     .children(checkMark.node());
             // Guarded when it runs rather than when it is built, for the same reason the disclosure is: a tree
             // becomes checkable after its first rows already exist.
-            gui.onClick(checkBox, () -> {
+            Seams.of(gui).onClick(checkBox, () -> {
                 Checkable<T> c = checkable;
                 if (c == null) {
                     return;
@@ -541,7 +542,7 @@ public final class TreeView<T> implements AutoCloseable {
                 c.toggled(item);
                 recheck();
             });
-            gui.onState(checkBox, state -> checkBox.border(Length.rem(0.1f),
+            Seams.of(gui).onState(checkBox, state -> checkBox.border(Length.rem(0.1f),
                     state == InteractionState.NORMAL ? Role.EDGE : Role.ACCENT));
 
             // One line, cut off at the row's edge. The row is a fixed height — that is what keeps paging exact —
@@ -589,7 +590,7 @@ public final class TreeView<T> implements AutoCloseable {
             // that has been open once has rows in here at all — a branch never expanded has no nodes under it,
             // so there is nothing there for a landmark to name and nothing for this to reveal. Expanding walks
             // outward-in, so an ancestor's own reveal has already run by the time this one is asked.
-            gui.reveals(kidsBox, descendant -> {
+            Seams.of(gui).reveals(kidsBox, descendant -> {
                 if (expanded) {
                     return false;
                 }
@@ -600,25 +601,25 @@ public final class TreeView<T> implements AutoCloseable {
             // A row click selects; a click on the disclosure itself also toggles. Both arrive on the handler
             // executor and both funnel into synchronized transitions, so a click and a keystroke can interleave
             // but never tear the state.
-            gui.onClick(rowNode, () -> {
+            Seams.of(gui).onClick(rowNode, () -> {
                 select(this, true);
                 gui.bus().publish(CLICKED, new Clicked(address, item));
             });
             // A context click selects first — the convention every explorer follows — and that is true whether or
             // not anything ends up on the menu, so it stays a click handler rather than a side effect of building
             // one. It is also what makes the menu's commands legible: they act on the row that just lit up.
-            gui.onContextClick(rowNode, e -> select(this, true));
+            Seams.of(gui).onContextClick(rowNode, e -> select(this, true));
             // Two sources, and the order is the menu's shape: what the tree knows how to do to any row, then what
             // the application knows about this one. Both go on through the same door — the app's items are wrapped
             // so that choosing one supersedes whatever action was running, exactly as choosing a built-in does.
-            gui.onContextMenu(rowNode, menu -> rowMenu(item, menu));
-            gui.onContextMenu(rowNode, menu -> contextMenu.accept(item, new Preempting(menu)));
+            Seams.of(gui).onContextMenu(rowNode, menu -> rowMenu(item, menu));
+            Seams.of(gui).onContextMenu(rowNode, menu -> contextMenu.accept(item, new Preempting(menu)));
             // Registered whatever the row is today, and guarded when it runs rather than when it is built: a
             // leaf can gain children (a reconcile after a drop moved one into it), and a handler that was never
             // installed cannot be installed later without rebuilding the row and losing everything else on it.
             // A leaf's disclosure is only indent, and a click there is a click on the row, as it was before the
             // indent was part of the disclosure.
-            gui.onClick(disclosure, () -> {
+            Seams.of(gui).onClick(disclosure, () -> {
                 select(this, true);
                 if (canExpand) {
                     toggle(this);
@@ -626,11 +627,11 @@ public final class TreeView<T> implements AutoCloseable {
                     gui.bus().publish(CLICKED, new Clicked(address, item));
                 }
             });
-            gui.onState(rowNode, state -> {
+            Seams.of(gui).onState(rowNode, state -> {
                 restyle(this, state);
                 hovered(this, state != InteractionState.NORMAL);
             });
-            gui.onState(disclosure, state -> disclosureHovered(this, state != InteractionState.NORMAL));
+            Seams.of(gui).onState(disclosure, state -> disclosureHovered(this, state != InteractionState.NORMAL));
             // The full name, in place, for a row that cuts it off — and nothing for one that does not. Unclip asks
             // at hover time rather than being kept up to date, so a row costs one state observer until someone
             // rests on it: whether a name is cut depends on the depth, the tree's width and the zoom.
@@ -881,12 +882,12 @@ public final class TreeView<T> implements AutoCloseable {
         // Navigation is an ordered stage: moving a cursor is order-dependent under key repeat, and it is pure
         // lookups on the visible list — exactly what the GUI-thread lane is for. Registering it also makes the
         // tree focusable, which is the single tab stop.
-        gui.onKey(this.root, this::onKey);
+        Seams.of(gui).onKey(this.root, this::onKey);
         // Cut, copy and paste, claimed FOCUSED so they belong to the tree only while it holds focus -- a text
         // field in the same window keeps its own, and neither has to know about the other.
-        gui.claim(this.root, CUT, ClaimScope.FOCUSED, () -> take(selectedItem(), DropEffect.MOVE));
-        gui.claim(this.root, COPY, ClaimScope.FOCUSED, () -> take(selectedItem(), DropEffect.COPY));
-        gui.claim(this.root, PASTE, ClaimScope.FOCUSED, () -> paste(selectedItem()));
+        Seams.of(gui).claim(this.root, CUT, ClaimScope.FOCUSED, () -> take(selectedItem(), DropEffect.MOVE));
+        Seams.of(gui).claim(this.root, COPY, ClaimScope.FOCUSED, () -> take(selectedItem(), DropEffect.COPY));
+        Seams.of(gui).claim(this.root, PASTE, ClaimScope.FOCUSED, () -> paste(selectedItem()));
 
         // No find bar until searchable(true) asks for one: a tree nobody searches carries nothing for it.
         root.children(scrolling.node());
@@ -1183,7 +1184,7 @@ public final class TreeView<T> implements AutoCloseable {
      * <p>A press on a row becomes a drag only once it has travelled far enough and been held long enough, so an
      * ordinary click still selects; and a drop that never got as far as being drawn commits nothing, so a click
      * too quick to see cannot reorganise the tree. Escape cancels. All of that is the framework's, not this
-     * widget's — {@link Gui#onDragSource} and {@link Gui#onDrop} are the whole of what is registered here.
+     * widget's — {@link dev.vexelray.gui.core.spi.Seams#onDragSource} and {@link dev.vexelray.gui.core.spi.Seams#onDrop} are the whole of what is registered here.
      *
      * <p>The tree draws the rest: a line or a box where the drop would land, and the row's label riding beside the
      * pointer, wherever it is carried. An application draws neither (transfer.md §0).
@@ -1209,7 +1210,7 @@ public final class TreeView<T> implements AutoCloseable {
     public TreeView<T> reorderable(Reorder<T> reorder) {
         java.util.Objects.requireNonNull(reorder, "reorder");
         this.reorder = reorder;
-        gui.onDragSource(rows, (x, y) -> {
+        Seams.of(gui).onDragSource(rows, (x, y) -> {
             Row from = rowAt(y);
             if (from == null) {
                 return null;   // the space below the last row is somewhere to drop, not something to pick up
@@ -1219,7 +1220,7 @@ public final class TreeView<T> implements AutoCloseable {
             select(from, true);
             return Payload.of(itemType, from.item);
         });
-        gui.onDrop(rows, (payload, x, y) -> payload.as(itemType)
+        Seams.of(gui).onDrop(rows, (payload, x, y) -> payload.as(itemType)
                 .map(moved -> resolvePlacement(moved, y))
                 .orElse(Drop.NONE));
         // Drawn from the published drag rather than from the live session: the session is the framework's own
@@ -1231,7 +1232,7 @@ public final class TreeView<T> implements AutoCloseable {
         // an application that had to build this itself would be rebuilding it in every application. Watched
         // rather than read from the published drag, because it follows the pointer, and the published drag is a
         // frame behind it (transfer.md §12.3).
-        gui.watchDrag(rows, new DragWatch() {
+        Seams.of(gui).watchDrag(rows, new DragWatch() {
             @Override
             public void moved(DragState now) {
                 carry(now);

@@ -1,5 +1,6 @@
 package dev.vexelray.gui.keymap;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.ClaimScope;
@@ -33,7 +34,7 @@ import java.util.Set;
  * {@link KeymapWindow} is the same control in a window of its own, behind a title-bar instrument.
  *
  * <p><b>Recording takes every key.</b> Clicking a chip (or Enter on it) arms a recorder that holds a
- * {@link Gui#claimAny wildcard claim} while it has focus, so the next chord is <em>recorded</em> rather than
+ * {@link dev.vexelray.gui.core.spi.Seams#claimAny wildcard claim} while it has focus, so the next chord is <em>recorded</em> rather than
  * performed: Ctrl+S records Ctrl+S instead of saving, and Tab records Tab instead of moving on. Escape alone
  * cancels, and so does focus going anywhere else — a recorder nobody is looking at must not eat the next key.
  * The modifiers being held show as they are pressed, so the person can see the chord forming.
@@ -311,7 +312,7 @@ public final class KeymapEditor implements AutoCloseable {
                     .corner(Length.rem(0.3f)).background(Role.SELECTION)
                     .border(Length.rem(0.1f), Role.ACCENT).textColor(Role.INK);
             gui.focusable(capture, true);
-            gui.claimAny(capture, ClaimScope.FOCUSED, this::recorded);
+            Seams.of(gui).claimAny(capture, ClaimScope.FOCUSED, this::recorded);
             return capture;
         }
         Node chip;
@@ -322,21 +323,21 @@ public final class KeymapEditor implements AutoCloseable {
         } else {
             Node remove = gui.text("×").role("keymap-remove").wordWrap(false).textSize(TEXT)
                     .textColor(Role.DIM);
-            gui.onClick(remove, () -> remove(s));
+            Seams.of(gui).onClick(remove, () -> remove(s));
             gui.cursor(remove, CursorShape.POINTER);
             chip = gui.row().role("keymap-chord").alignItems(AlignItems.CENTER).gap(Length.rem(0.4f))
                     .padding(Length.rem(0.15f), Length.rem(0.5f)).corner(Length.rem(0.3f))
                     .background(Role.RAISED).border(Length.rem(0.1f), Role.LINE)
                     .children(gui.text(chord.text()).wordWrap(false).textSize(TEXT)
                             .textColor(Role.INK), remove);
-            gui.claim(chip, DELETE, ClaimScope.FOCUSED, () -> remove(s));
-            gui.claim(chip, BACKSPACE, ClaimScope.FOCUSED, () -> remove(s));
+            Seams.of(gui).claim(chip, DELETE, ClaimScope.FOCUSED, () -> remove(s));
+            Seams.of(gui).claim(chip, BACKSPACE, ClaimScope.FOCUSED, () -> remove(s));
         }
         gui.focusable(chip, true);
         gui.cursor(chip, CursorShape.POINTER);
-        gui.onClick(chip, () -> record(s));
-        gui.claim(chip, ENTER, ClaimScope.FOCUSED, () -> record(s));
-        gui.claim(chip, SPACE, ClaimScope.FOCUSED, () -> record(s));
+        Seams.of(gui).onClick(chip, () -> record(s));
+        Seams.of(gui).claim(chip, ENTER, ClaimScope.FOCUSED, () -> record(s));
+        Seams.of(gui).claim(chip, SPACE, ClaimScope.FOCUSED, () -> record(s));
         chips.put(s, chip);
         return chip;
     }

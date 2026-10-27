@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.gui.core.Gui;
@@ -123,19 +124,19 @@ public final class Button {
         this.name = new WidgetName(gui, "button", node);
         gui.focusable(node, true);
         gui.cursor(node, CursorShape.POINTER);
-        gui.onClick(node, (ClickEvent e) -> {
+        Seams.of(gui).onClick(node, (ClickEvent e) -> {
             NodeLayout at = node.layout();
             if (at.present()) {
                 inkFrom(e.x() - at.rect().x(), e.y() - at.rect().y());
             }
             activate();
         });
-        gui.onState(node, s -> {
+        Seams.of(gui).onState(node, s -> {
             this.state = s;
             paint();
         });
-        gui.claim(node, ENTER, ClaimScope.FOCUSED, this::pressFromKeys);
-        gui.claim(node, SPACE, ClaimScope.FOCUSED, this::pressFromKeys);
+        Seams.of(gui).claim(node, ENTER, ClaimScope.FOCUSED, this::pressFromKeys);
+        Seams.of(gui).claim(node, SPACE, ClaimScope.FOCUSED, this::pressFromKeys);
         paint();
         this.undo = new ValueUndo<>(gui, node, () -> pressed, this::set, false);
     }

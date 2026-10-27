@@ -1,5 +1,6 @@
 package dev.vexelray.gui.scroll;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
@@ -74,9 +75,9 @@ public final class Scrollbar implements AutoCloseable {
             }
             paint();
         });
-        gui.onResize(node, layout -> paint());
-        gui.onDrag(node, this::pointer);
-        gui.onWheel(node, this::wheel);
+        Seams.of(gui).onResize(node, layout -> paint());
+        Seams.of(gui).onDrag(node, this::pointer);
+        Seams.of(gui).onWheel(node, this::wheel);
     }
 
     /** The node to place in a layout. */

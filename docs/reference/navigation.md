@@ -75,7 +75,7 @@ an unknown name, a container that concealed the target and declared nothing, or 
 
 Every step goes through the commands the widgets already expose — `tabs.select(i)`, `tree.expand(item)`,
 `node.scrollIntoView()`, `gui.focus(node)`. These are the same methods a click ends up calling: `Tabs` registers
-`gui.onClick(header, () -> select(...))`, so a click and a navigation converge one call in. A page arrived at
+`Seams.of(gui).onClick(header, () -> select(...))`, so a click and a navigation converge one call in. A page arrived at
 this way is in the state it would be in had the user clicked their way there, `onSelect` handlers and all.
 
 Not synthesised pointer input, and the reason is structural: input needs a place on screen to aim at, and half of

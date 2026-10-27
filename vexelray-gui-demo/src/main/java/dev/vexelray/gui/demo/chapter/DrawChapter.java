@@ -1,5 +1,6 @@
 package dev.vexelray.gui.demo.chapter;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.app.GuiApp;
@@ -61,7 +62,7 @@ public final class DrawChapter implements Chapter {
         // is being dragged. The lane's caveat ("anything that computes belongs on onResize") is about heavy
         // work; this is a hundred marks and ninety-six sines, and paying it per resize frame is cheaper than
         // looking wrong.
-        gui.onResize(figure, layout -> {
+        Seams.of(gui).onResize(figure, layout -> {
             float w = layout.rect().w();
             float h = layout.rect().h();
             Picture p = Chart.of(w, h, gui.theme());

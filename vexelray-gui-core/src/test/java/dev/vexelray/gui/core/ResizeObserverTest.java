@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.NodeLayout;
 import org.junit.jupiter.api.Test;
@@ -39,11 +40,11 @@ class ResizeObserverTest {
             Node canvas = gui.box().width(Length.FILL).height(Length.FILL);
             gui.root().children(canvas);
             List<NodeLayout> seen = new ArrayList<>();
-            gui.onResize(canvas, seen::add);
+            Seams.of(gui).onResize(canvas, seen::add);
 
             assertEquals(List.of(), seen, "nothing has been laid out, so there is nothing to announce");
 
-            gui.frame(400f, 300f, ResizeObserverTest::noText);
+            Seams.of(gui).frame(400f, 300f, ResizeObserverTest::noText);
 
             assertEquals(1, seen.size(), "the box arriving is the change that matters most");
             assertEquals(400f, seen.get(0).rect().w(), 0.5f);
@@ -57,10 +58,10 @@ class ResizeObserverTest {
             Node canvas = gui.box().width(Length.FILL).height(Length.FILL);
             gui.root().children(canvas);
             List<NodeLayout> seen = new ArrayList<>();
-            gui.onResize(canvas, seen::add);
+            Seams.of(gui).onResize(canvas, seen::add);
 
-            gui.frame(400f, 300f, ResizeObserverTest::noText);
-            gui.frame(500f, 300f, ResizeObserverTest::noText);
+            Seams.of(gui).frame(400f, 300f, ResizeObserverTest::noText);
+            Seams.of(gui).frame(500f, 300f, ResizeObserverTest::noText);
 
             assertEquals(2, seen.size());
             assertEquals(500f, seen.get(1).rect().w(), 0.5f);
@@ -77,11 +78,11 @@ class ResizeObserverTest {
             Node canvas = gui.box().width(Length.FILL).height(Length.FILL);
             gui.root().children(canvas);
             List<NodeLayout> seen = new ArrayList<>();
-            gui.onResize(canvas, seen::add);
+            Seams.of(gui).onResize(canvas, seen::add);
 
-            gui.frame(400f, 300f, ResizeObserverTest::noText);
-            gui.frame(400f, 300f, ResizeObserverTest::noText);
-            gui.frame(400f, 300f, ResizeObserverTest::noText);
+            Seams.of(gui).frame(400f, 300f, ResizeObserverTest::noText);
+            Seams.of(gui).frame(400f, 300f, ResizeObserverTest::noText);
+            Seams.of(gui).frame(400f, 300f, ResizeObserverTest::noText);
 
             assertEquals(1, seen.size(), "the box never moved after the first frame");
         }
@@ -94,12 +95,12 @@ class ResizeObserverTest {
             Node card = gui.box().width(Length.rem(4)).height(Length.rem(2));
             gui.root().children(card);
             List<NodeLayout> seen = new ArrayList<>();
-            gui.onResize(card, seen::add);
+            Seams.of(gui).onResize(card, seen::add);
 
-            gui.frame(400f, 300f, ResizeObserverTest::noText);
+            Seams.of(gui).frame(400f, 300f, ResizeObserverTest::noText);
             float first = seen.get(0).rect().w();
             gui.zoom(2f);
-            gui.frame(400f, 300f, ResizeObserverTest::noText);
+            Seams.of(gui).frame(400f, 300f, ResizeObserverTest::noText);
 
             assertEquals(2, seen.size(), "an em is resolved against zoom, so zooming resizes the box");
             assertEquals(2 * first, seen.get(1).rect().w(), 0.5f);
@@ -117,14 +118,14 @@ class ResizeObserverTest {
             list.children(gui.box().width(Length.FILL).height(Length.rem(20)));
             gui.root().children(list);
             List<NodeLayout> seen = new ArrayList<>();
-            gui.onResize(list, seen::add);
+            Seams.of(gui).onResize(list, seen::add);
 
-            gui.frame(400f, 300f, ResizeObserverTest::noText);
+            Seams.of(gui).frame(400f, 300f, ResizeObserverTest::noText);
             assertEquals(1, seen.size());
             assertTrue(seen.get(0).overflowY(), "the fixture only means something if it actually overflows");
 
             list.scrollToEdge();
-            gui.frame(400f, 300f, ResizeObserverTest::noText);
+            Seams.of(gui).frame(400f, 300f, ResizeObserverTest::noText);
 
             assertEquals(1, seen.size(), "the viewport did not move; its contents did");
         }
@@ -141,9 +142,9 @@ class ResizeObserverTest {
         try (Gui gui = new Gui(Atchung.create())) {
             Node a = gui.box().width(Length.FILL).height(Length.rem(1));
             gui.root().children(a);
-            gui.onResize(a, layout -> ran.add(Thread.currentThread() == frame ? "frame" : "other"));
+            Seams.of(gui).onResize(a, layout -> ran.add(Thread.currentThread() == frame ? "frame" : "other"));
 
-            gui.frame(400f, 300f, ResizeObserverTest::noText);
+            Seams.of(gui).frame(400f, 300f, ResizeObserverTest::noText);
 
             assertEquals(List.of("frame"), ran);
         }
@@ -156,13 +157,13 @@ class ResizeObserverTest {
             Node canvas = gui.box().width(Length.FILL).height(Length.FILL);
             gui.root().children(canvas);
             List<NodeLayout> seen = new ArrayList<>();
-            gui.onResize(canvas, seen::add);
+            Seams.of(gui).onResize(canvas, seen::add);
 
-            gui.frame(400f, 300f, ResizeObserverTest::noText);
+            Seams.of(gui).frame(400f, 300f, ResizeObserverTest::noText);
             assertEquals(1, seen.size());
 
             gui.releaseNode(canvas);
-            gui.frame(500f, 300f, ResizeObserverTest::noText);
+            Seams.of(gui).frame(500f, 300f, ResizeObserverTest::noText);
 
             assertEquals(1, seen.size(), "released means released");
         }
@@ -175,11 +176,11 @@ class ResizeObserverTest {
             Node canvas = gui.box().width(Length.FILL).height(Length.FILL);
             gui.root().children(canvas);
             List<NodeLayout> seen = new ArrayList<>();
-            gui.onResize(canvas, seen::add);
+            Seams.of(gui).onResize(canvas, seen::add);
 
-            gui.frame(400f, 300f, ResizeObserverTest::noText);
+            Seams.of(gui).frame(400f, 300f, ResizeObserverTest::noText);
             canvas.remove();
-            gui.frame(500f, 300f, ResizeObserverTest::noText);
+            Seams.of(gui).frame(500f, 300f, ResizeObserverTest::noText);
 
             assertEquals(1, seen.size());
         }
@@ -196,11 +197,11 @@ class ResizeObserverTest {
             Node hidden = gui.box().width(Length.FILL).height(Length.FILL).visible(false);
             gui.root().children(hidden);
             List<NodeLayout> seen = new ArrayList<>();
-            gui.onResize(hidden, seen::add);
+            Seams.of(gui).onResize(hidden, seen::add);
 
-            gui.frame(400f, 300f, ResizeObserverTest::noText);
+            Seams.of(gui).frame(400f, 300f, ResizeObserverTest::noText);
             hidden.visible(true);
-            gui.frame(400f, 300f, ResizeObserverTest::noText);
+            Seams.of(gui).frame(400f, 300f, ResizeObserverTest::noText);
 
             assertEquals(400f, seen.get(seen.size() - 1).rect().w(), 0.5f,
                     "and the real box arrives when there is one");
@@ -214,10 +215,10 @@ class ResizeObserverTest {
             Node canvas = gui.box().width(Length.FILL).height(Length.FILL);
             gui.root().children(canvas);
             List<String> seen = new ArrayList<>();
-            gui.onResize(canvas, layout -> seen.add("first"));
-            gui.onResize(canvas, layout -> seen.add("second"));
+            Seams.of(gui).onResize(canvas, layout -> seen.add("first"));
+            Seams.of(gui).onResize(canvas, layout -> seen.add("second"));
 
-            gui.frame(400f, 300f, ResizeObserverTest::noText);
+            Seams.of(gui).frame(400f, 300f, ResizeObserverTest::noText);
 
             assertEquals(List.of("second"), seen);
         }
@@ -229,10 +230,10 @@ class ResizeObserverTest {
             Node canvas = gui.box().width(Length.FILL).height(Length.FILL);
             gui.root().children(canvas);
             List<NodeLayout> seen = new ArrayList<>();
-            assertSame(gui, gui.onResize(canvas, seen::add));
-            gui.onResize(canvas, null);
+            assertSame(Seams.of(gui), Seams.of(gui).onResize(canvas, seen::add), "it chains on the seams");
+            Seams.of(gui).onResize(canvas, null);
 
-            gui.frame(400f, 300f, ResizeObserverTest::noText);
+            Seams.of(gui).frame(400f, 300f, ResizeObserverTest::noText);
 
             assertEquals(List.of(), seen);
         }

@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import sibarum.atchung.Topic;
 import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.gui.core.Gui;
@@ -236,8 +237,8 @@ public final class ListView<T> implements AutoCloseable {
 
         // One tab stop for the whole list, as a tree is: registering the key stage is what makes the root
         // focusable, and rows are pointer targets rather than tab stops.
-        gui.onKey(box, this::onKey);
-        gui.claim(box, SELECT_ALL, ClaimScope.FOCUSED, () -> selection.all(order()));
+        Seams.of(gui).onKey(box, this::onKey);
+        Seams.of(gui).claim(box, SELECT_ALL, ClaimScope.FOCUSED, () -> selection.all(order()));
     }
 
     /** The node to place in a layout: the list, with its scrollbar beside it. */
@@ -486,7 +487,7 @@ public final class ListView<T> implements AutoCloseable {
     public ListView<T> draggable(PayloadType<List<T>> type, Function<List<T>, String> label) {
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(label, "label");
-        gui.onDragSource(root, (x, y) -> {
+        Seams.of(gui).onDragSource(root, (x, y) -> {
             T from = itemAt(x, y);
             if (from == null) {
                 return null;   // the space below the last row is somewhere to drop, not something to pick up
@@ -508,7 +509,7 @@ public final class ListView<T> implements AutoCloseable {
         });
         // Watched rather than read from the published drag, because it follows the pointer and the published drag
         // is a frame behind it (transfer.md §12.3).
-        gui.watchDrag(root, new DragWatch() {
+        Seams.of(gui).watchDrag(root, new DragWatch() {
             @Override
             public void moved(DragState now) {
                 carry(now, type, label);
@@ -531,7 +532,7 @@ public final class ListView<T> implements AutoCloseable {
     public <P> ListView<T> droppable(PayloadType<P> type, Receiver<T, P> receiver) {
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(receiver, "receiver");
-        gui.onDrop(root, (payload, x, y) -> payload.as(type)
+        Seams.of(gui).onDrop(root, (payload, x, y) -> payload.as(type)
                 .map(held -> resolve(receiver, held, x, y))
                 .orElse(Drop.NONE));
         synchronized (this) {
@@ -798,12 +799,12 @@ public final class ListView<T> implements AutoCloseable {
         // node's accessible name is derived from the text below it and the wrapper is one level too far up:
         // declared here, every row in a table reads as `row "3 item-00023 binary"` instead of `row ""`.
         row.append(builder.build(gui, item).role(itemRole));
-        gui.onClick(row, e -> onRowClick(item, e));
+        Seams.of(gui).onClick(row, e -> onRowClick(item, e));
         // The second click has already selected the row, so this activates what a click just chose.
-        gui.onDoubleClick(row, () -> activated(item));
-        gui.onContextClick(row, e -> onRowContextClick(item));
-        gui.onContextMenu(row, menu -> contextMenu.accept(item, menu));
-        gui.onState(row, state -> row.background(look(item).at(state)));
+        Seams.of(gui).onDoubleClick(row, () -> activated(item));
+        Seams.of(gui).onContextClick(row, e -> onRowContextClick(item));
+        Seams.of(gui).onContextMenu(row, menu -> contextMenu.accept(item, menu));
+        Seams.of(gui).onState(row, state -> row.background(look(item).at(state)));
         content.insert(row, at);
         shown.put(item, row);
         return row;

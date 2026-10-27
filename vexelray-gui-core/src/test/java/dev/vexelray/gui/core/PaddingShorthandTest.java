@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.model.RetainedNode;
 import org.junit.jupiter.api.Test;
@@ -21,7 +22,7 @@ class PaddingShorthandTest {
 
     /** The child's offset from its padded parent's corner, after one frame. */
     private static float[] inset(Gui gui, Node parent, Node child) {
-        gui.frame(400f, 200f, PaddingShorthandTest::noText);
+        Seams.of(gui).frame(400f, 200f, PaddingShorthandTest::noText);
         return new float[]{child.layout().rect().x() - parent.layout().rect().x(),
                 child.layout().rect().y() - parent.layout().rect().y()};
     }

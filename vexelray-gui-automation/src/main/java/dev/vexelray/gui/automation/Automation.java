@@ -1,5 +1,6 @@
 package dev.vexelray.gui.automation;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.WindowControls;
 import dev.vexelray.gui.core.layout.LayoutSnapshot;
@@ -194,7 +195,7 @@ public final class Automation implements Commands {
         releaseHeldKeys();
         synchronized (this) {
             if (hostWarp != null) {
-                gui.onPointerWarp(hostWarp);
+                Seams.of(gui).onPointerWarp(hostWarp);
                 hostWarp = null;
             }
         }
@@ -211,7 +212,7 @@ public final class Automation implements Commands {
     private synchronized void holdPointer() {
         if (hostWarp == null) {
             hostWarp = gui.pointerWarp();
-            gui.onPointerWarp(cursor::carry);
+            Seams.of(gui).onPointerWarp(cursor::carry);
         }
     }
 

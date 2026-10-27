@@ -1,5 +1,6 @@
 package dev.vexelray.gui.typeset;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
 import dev.vexelray.gui.core.layout.TextMeasurer;
@@ -132,8 +133,8 @@ class ProjectionTest {
     void aFrameRendersHeadlessAndEveryNodeIsLaidOut() {
         try (Harness h = new Harness()) {
             TypesetBlock block = h.show(Recipes.radical(P, Recipes.variable("x"), Recipes.number("3")));
-            assertNotNull(h.gui.frame(Harness.W, Harness.H, NEVER_CALLED), "a frame renders with no window");
-            RetainedNode container = h.find(h.gui.frame(Harness.W, Harness.H, NEVER_CALLED), block);
+            assertNotNull(Seams.of(h.gui).frame(Harness.W, Harness.H, NEVER_CALLED), "a frame renders with no window");
+            RetainedNode container = h.find(Seams.of(h.gui).frame(Harness.W, Harness.H, NEVER_CALLED), block);
 
             assertTrue(container.w > 0 && container.h > 0, "the block occupies real space");
             for (RetainedNode c : container.children) {
@@ -237,7 +238,7 @@ class ProjectionTest {
         }
 
         RetainedNode frameAndFind(TypesetBlock block) {
-            return find(gui.frame(W, H, NEVER_CALLED), block);
+            return find(Seams.of(gui).frame(W, H, NEVER_CALLED), block);
         }
 
         RetainedNode find(RetainedNode root, TypesetBlock block) {

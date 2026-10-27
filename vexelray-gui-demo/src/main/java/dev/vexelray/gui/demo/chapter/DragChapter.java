@@ -1,5 +1,6 @@
 package dev.vexelray.gui.demo.chapter;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.drop.DragState;
@@ -203,7 +204,7 @@ public final class DragChapter implements Chapter {
                                 .textSize(Length.rem(0.875f)).textColor(Role.FAINT)
                                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.TOP),
                         archived);
-        gui.onDrop(archive, (payload, x, y) -> payload.as(taskType)
+        Seams.of(gui).onDrop(archive, (payload, x, y) -> payload.as(taskType)
                 .map(task -> task.parent == null ? Drop.NONE : Drop.move(rectOf(archive), archiving(task)))
                 .orElse(Drop.NONE));
 

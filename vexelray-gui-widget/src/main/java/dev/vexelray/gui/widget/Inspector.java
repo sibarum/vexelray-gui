@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.CursorShape;
@@ -269,9 +270,9 @@ public final class Inspector {
             for (Node opener : List.of(name, caret)) {
                 gui.focusable(opener, true);
                 gui.cursor(opener, CursorShape.POINTER);
-                gui.onClick(opener, this::fold);
+                Seams.of(gui).onClick(opener, this::fold);
             }
-            gui.onState(head, s -> head.background(
+            Seams.of(gui).onState(head, s -> head.background(
                     s == InteractionState.NORMAL ? Role.PANEL : Role.RAISED));
             this.rows = gui.column().width(Length.grow(1f))
                     .padding(Length.rem(0.2f), Length.rem(0.5f))

@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.model.RetainedNode;
@@ -28,7 +29,7 @@ class SharedBusTest {
     }
 
     private static RetainedNode frame(Gui gui) {
-        return gui.frame(W, H, SharedBusTest::noText);
+        return Seams.of(gui).frame(W, H, SharedBusTest::noText);
     }
 
     private static Node fill(Gui gui) {
@@ -54,8 +55,8 @@ class SharedBusTest {
         Atchung bus = Atchung.create();
         try (Gui a = new Gui(bus, "a"); Gui b = new Gui(bus, "b")) {
             List<String> clicked = new ArrayList<>();
-            a.onClick(fill(a), () -> clicked.add("a"));
-            b.onClick(fill(b), () -> clicked.add("b"));
+            Seams.of(a).onClick(fill(a), () -> clicked.add("a"));
+            Seams.of(b).onClick(fill(b), () -> clicked.add("b"));
             frame(a);
             frame(b);
 

@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.layout.Length;
 import org.junit.jupiter.api.Test;
 import sibarum.atchung.Atchung;
@@ -24,9 +25,9 @@ class GuiThreadsTest {
             Node button = gui.box().width(Length.rem(4)).height(Length.rem(2));
             gui.root().children(button);
             int[] clicks = {0};
-            gui.onClick(button, () -> clicks[0]++);
+            Seams.of(gui).onClick(button, () -> clicks[0]++);
             for (int i = 0; i < 5; i++) {
-                gui.frame(400f, 300f, (node, axis, px) -> 0f);
+                Seams.of(gui).frame(400f, 300f, (node, axis, px) -> 0f);
             }
             Set<String> started = Thread.getAllStackTraces().keySet().stream()
                     .filter(t -> !before.contains(t))

@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core.app;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
@@ -55,7 +56,7 @@ class ModalScrimTest {
             ModalScrim scrim = ModalScrim.install(gui);
             scrim.dim(true, dev.vexelray.gui.core.style.Paint.of(Color.rgba(0f, 0f, 0f, 0.45f)));
 
-            RetainedNode root = gui.frame(W, H, ModalScrimTest::noText);
+            RetainedNode root = Seams.of(gui).frame(W, H, ModalScrimTest::noText);
             RetainedNode sheet = find(root, scrim.node().id());
             assertNotNull(sheet, "the scrim is in the tree");
             assertEquals(0f, sheet.x, 0.001f);
@@ -74,14 +75,14 @@ class ModalScrimTest {
             gui.root().children(page);
             ModalScrim scrim = ModalScrim.install(gui);
 
-            RetainedNode before = find(gui.frame(W, H, ModalScrimTest::noText), page.id());
+            RetainedNode before = find(Seams.of(gui).frame(W, H, ModalScrimTest::noText), page.id());
             float x = before.x;
             float y = before.y;
             float w = before.w;
             float h = before.h;
 
             scrim.dim(true, dev.vexelray.gui.core.style.Paint.of(Color.rgba(0f, 0f, 0f, 0.45f)));
-            RetainedNode after = find(gui.frame(W, H, ModalScrimTest::noText), page.id());
+            RetainedNode after = find(Seams.of(gui).frame(W, H, ModalScrimTest::noText), page.id());
             assertEquals(x, after.x, 0.001f, "a scrim that reflowed the page would be worse than no scrim");
             assertEquals(y, after.y, 0.001f);
             assertEquals(w, after.w, 0.001f);
@@ -97,7 +98,7 @@ class ModalScrimTest {
             ModalScrim scrim = ModalScrim.install(gui);
             scrim.dim(true, dev.vexelray.gui.core.style.Paint.of(Color.rgba(0f, 0f, 0f, 0.45f)));
 
-            RetainedNode root = gui.frame(W, H, ModalScrimTest::noText);
+            RetainedNode root = Seams.of(gui).frame(W, H, ModalScrimTest::noText);
             RetainedNode hit = HitTest.at(root, W / 2, H / 2);
             assertNotNull(hit);
             assertEquals(page.id(), hit.id,
@@ -111,14 +112,14 @@ class ModalScrimTest {
             gui.root().children(gui.box().width(Length.FILL).height(Length.FILL));
             ModalScrim scrim = ModalScrim.install(gui);
 
-            RetainedNode root = gui.frame(W, H, ModalScrimTest::noText);
+            RetainedNode root = Seams.of(gui).frame(W, H, ModalScrimTest::noText);
             assertFalse(present(root, scrim.node().id()), "installing a scrim does not dim anything");
 
             scrim.dim(true, dev.vexelray.gui.core.style.Paint.of(Color.rgba(0f, 0f, 0f, 0.45f)));
-            assertTrue(present(gui.frame(W, H, ModalScrimTest::noText), scrim.node().id()));
+            assertTrue(present(Seams.of(gui).frame(W, H, ModalScrimTest::noText), scrim.node().id()));
 
             scrim.dim(false, dev.vexelray.gui.core.style.Paint.of(Color.rgba(0f, 0f, 0f, 0.45f)));
-            assertFalse(present(gui.frame(W, H, ModalScrimTest::noText), scrim.node().id()),
+            assertFalse(present(Seams.of(gui).frame(W, H, ModalScrimTest::noText), scrim.node().id()),
                     "and the window comes back undimmed when the dialog goes");
         }
     }
@@ -130,7 +131,7 @@ class ModalScrimTest {
             ModalScrim scrim = ModalScrim.install(gui);
 
             scrim.dim(true, null);
-            assertFalse(present(gui.frame(W, H, ModalScrimTest::noText), scrim.node().id()),
+            assertFalse(present(Seams.of(gui).frame(W, H, ModalScrimTest::noText), scrim.node().id()),
                     "an application that turned dimming off gets modality without the sheet");
         }
     }

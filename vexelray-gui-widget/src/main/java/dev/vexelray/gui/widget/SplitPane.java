@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import sibarum.atchung.Topic;
 import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.gui.core.Gui;
@@ -131,8 +132,8 @@ public final class SplitPane {
                 .children(firstBox, divider, secondBox);
         this.name = new WidgetName(gui, "split", frame);
         gui.cursor(divider, across ? CursorShape.RESIZE_HORIZONTAL : CursorShape.RESIZE_VERTICAL);
-        gui.onDrag(divider, this::drag);
-        gui.onState(divider, state -> {
+        Seams.of(gui).onDrag(divider, this::drag);
+        Seams.of(gui).onState(divider, state -> {
             synchronized (this) {
                 pointer = state;
             }

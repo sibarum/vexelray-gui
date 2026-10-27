@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.drop.Payload;
 import dev.vexelray.gui.core.drop.PayloadType;
@@ -82,7 +83,7 @@ class DeclarationsTest {
             h.frame();
 
             h.rightClick(200f, 150f);
-            ContextMenu menu = (ContextMenu) h.gui.menus();
+            ContextMenu menu = (ContextMenu) Seams.of(h.gui).menus();
 
             assertTrue(menu.isOpen(), "the menu opened in the frame of the click, with nothing asked");
             assertEquals(List.of("Open", "-", "Delete"), labels(menu));
@@ -104,7 +105,7 @@ class DeclarationsTest {
             h.frame();
 
             h.rightClick(200f, 150f);
-            ContextMenu menu = (ContextMenu) h.gui.menus();
+            ContextMenu menu = (ContextMenu) Seams.of(h.gui).menus();
             assertEquals(List.of("Delete"), labels(menu), "the last declaration is the menu");
             menu.hide();
             h.frame();
@@ -120,12 +121,12 @@ class DeclarationsTest {
         try (HeadlessGui h = new HeadlessGui()) {
             View view = new View(h);
             Node row = page(h);
-            h.gui.onContextMenu(row, m -> m.item("Copy", () -> { }));
+            Seams.of(h.gui).onContextMenu(row, m -> m.item("Copy", () -> { }));
             h.gui.menu(row, Menu.builder().item("Open", view.open, new Open("a")).build());
             h.frame();
 
             h.rightClick(200f, 150f);
-            assertEquals(List.of("Copy", "-", "Open"), labels((ContextMenu) h.gui.menus()));
+            assertEquals(List.of("Copy", "-", "Open"), labels((ContextMenu) Seams.of(h.gui).menus()));
         }
     }
 
@@ -140,7 +141,7 @@ class DeclarationsTest {
             h.frame();
 
             h.rightClick(50f, 50f);   // on the inner box, which declares nothing: the panel's menu answers
-            assertEquals(List.of("Panel"), labels((ContextMenu) h.gui.menus()));
+            assertEquals(List.of("Panel"), labels((ContextMenu) Seams.of(h.gui).menus()));
         }
     }
 

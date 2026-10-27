@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import sibarum.tactroller.api.Key;
 import sibarum.tactroller.api.Modifier;
@@ -24,12 +25,12 @@ public final class ZoomKeys {
 
     /** Bind the six zoom chords on {@code gui}. Returns {@code gui}. */
     public static Gui bind(Gui gui) {
-        gui.shortcut(Key.EQUAL, gui::zoomIn, Modifier.CONTROL);
-        gui.shortcut(Key.MINUS, gui::zoomOut, Modifier.CONTROL);
-        gui.shortcut(Key.DIGIT_0, gui::resetZoom, Modifier.CONTROL);
-        gui.shortcut(Key.NUMPAD_ADD, gui::zoomIn, Modifier.CONTROL);
-        gui.shortcut(Key.NUMPAD_SUBTRACT, gui::zoomOut, Modifier.CONTROL);
-        gui.shortcut(Key.NUMPAD_0, gui::resetZoom, Modifier.CONTROL);
+        Seams.of(gui).shortcut(Key.EQUAL, gui::zoomIn, Modifier.CONTROL);
+        Seams.of(gui).shortcut(Key.MINUS, gui::zoomOut, Modifier.CONTROL);
+        Seams.of(gui).shortcut(Key.DIGIT_0, gui::resetZoom, Modifier.CONTROL);
+        Seams.of(gui).shortcut(Key.NUMPAD_ADD, gui::zoomIn, Modifier.CONTROL);
+        Seams.of(gui).shortcut(Key.NUMPAD_SUBTRACT, gui::zoomOut, Modifier.CONTROL);
+        Seams.of(gui).shortcut(Key.NUMPAD_0, gui::resetZoom, Modifier.CONTROL);
         return gui;
     }
 

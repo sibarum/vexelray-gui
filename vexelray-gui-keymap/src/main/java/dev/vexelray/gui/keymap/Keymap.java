@@ -1,5 +1,6 @@
 package dev.vexelray.gui.keymap;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.app.Settings;
@@ -411,7 +412,7 @@ public final class Keymap {
         }
         for (Claimed w : want) {
             if (!claimed.contains(w)) {
-                w.gui().claim(w.node(), w.chord(), w.scope(), w.action()::run);
+                Seams.of(w.gui()).claim(w.node(), w.chord(), w.scope(), w.action()::run);
             }
         }
         claimed = want;

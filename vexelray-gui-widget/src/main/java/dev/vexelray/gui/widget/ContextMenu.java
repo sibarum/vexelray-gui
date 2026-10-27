@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.ClaimScope;
@@ -123,7 +124,7 @@ public final class ContextMenu implements MenuPresenter {
         this.menu = panel(gui);
         ownIds.add(menu.id());
         this.clickSub = gui.bus().subscribe(gui.clicks(), this::onAnyClick);
-        gui.menus(this);
+        Seams.of(gui).menus(this);
     }
 
     /** A panel rows are drawn on: the menu's own, and each submenu's. */
@@ -148,7 +149,7 @@ public final class ContextMenu implements MenuPresenter {
      * widget that declares a default menu, so the defaults work in a UI that never mentions menus at all.
      */
     public static void presentOn(Gui gui) {
-        if (gui != null && gui.menus() == null) {
+        if (gui != null && Seams.of(gui).menus() == null) {
             new ContextMenu(gui);   // installs itself
         }
     }
@@ -200,7 +201,7 @@ public final class ContextMenu implements MenuPresenter {
             shown = true;
             // Claimed only while open (and released on hide): a hidden node keeps its claims, and a closed menu
             // owning Escape would shadow whatever the page wants it for.
-            gui.claim(menu, ESCAPE, ClaimScope.VISIBLE, this::hide);
+            Seams.of(gui).claim(menu, ESCAPE, ClaimScope.VISIBLE, this::hide);
         }
     }
 
@@ -477,7 +478,7 @@ public final class ContextMenu implements MenuPresenter {
             // Opened by pointing at it, as a desktop's submenus are, once the pointer rests there (see hovered), and
             // at once by a click, for a hand that does not hover (a touch, a script). It stays lit while what it
             // opened is open.
-            gui.onState(row, state -> {
+            Seams.of(gui).onState(row, state -> {
                 if (state != InteractionState.NORMAL) {
                     row.background(Role.SELECTION);
                     hovered(() -> openSubmenu(at, row, item));
@@ -485,7 +486,7 @@ public final class ContextMenu implements MenuPresenter {
                     row.background((Role) null);
                 }
             });
-            gui.onClick(row, () -> {
+            Seams.of(gui).onClick(row, () -> {
                 settle();
                 openSubmenu(at, row, item);
             });
@@ -493,13 +494,13 @@ public final class ContextMenu implements MenuPresenter {
             // Transparent at rest so the menu's own surface shows through, and the hover fill is the theme's, not a
             // constant of this widget's: an item is a panel the pointer is on. Pointing at a command closes any
             // submenu opened beside a row at its own depth, once the pointer rests there: it has moved on from it.
-            gui.onState(row, state -> {
+            Seams.of(gui).onState(row, state -> {
                 row.background(state == InteractionState.NORMAL ? null : Role.SELECTION);
                 if (state != InteractionState.NORMAL) {
                     hovered(() -> closeSubmenus(at));
                 }
             });
-            gui.onClick(row, () -> {
+            Seams.of(gui).onClick(row, () -> {
                 hide();
                 item.action().run();   // on the GUI thread, in the dispatch: an item sends its message from here
             });

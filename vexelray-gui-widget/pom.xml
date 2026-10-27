@@ -22,6 +22,11 @@
             <groupId>dev.vexelray.gui</groupId>
             <artifactId>vexelray-gui-core</artifactId>
         </dependency>
+        <!-- Scrolling widgets place a Scroller with a Scrollbar beside it rather than scrolling implicitly. -->
+        <dependency>
+            <groupId>dev.vexelray.gui</groupId>
+            <artifactId>vexelray-gui-scroll</artifactId>
+        </dependency>
         <!-- The icon set: every widget that shows an icon names one, and the renderer uploads the atlas. -->
         <dependency>
             <groupId>dev.vexelray.gui</groupId>

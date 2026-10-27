@@ -5,6 +5,7 @@ import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.scroll.Scrollbars;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.krono.KronoGui;
 import dev.vexelray.gui.widget.Cues;
@@ -72,7 +73,7 @@ public final class Shell {
         this.crossfade = Tabs.crossfade(
                 (progress, done) -> krono.ramp(Dur.ms(180), Ease.LINEAR, progress, done));
         pages.transition(crossfade);
-        pages.bar().visible(false);   // the rail is the tab bar; see the class note
+        pages.strip().visible(false);   // the rail is the tab bar; see the class note
 
         this.pageTitle = gui.text("").width(Length.FILL).height(Length.rem(2.25f))
                 .textSize(Length.rem(1.5f)).textColor(Role.INK)
@@ -85,12 +86,12 @@ public final class Shell {
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
         this.titleBar = new TitleBar(gui, dev.vexelray.gui.core.WindowControls.NONE, "VexelRay GUI");
 
-        Node nav = gui.column().width(NAV_W).height(Length.FILL)
-                .background(Role.CHROME)
-                .padding(Length.dp(10)).gap(Length.rem(0.125f))
-                .scroll(false, true);
+        // The chapters, in a Scroller with a bar beside it: on a short window the rail scrolls rather than the page.
+        Node rail = gui.column().width(Length.FILL).padding(Length.dp(10)).gap(Length.rem(0.125f));
+        Node nav = Scrollbars.vertical(gui, rail).node().width(NAV_W).height(Length.FILL)
+                .background(Role.CHROME);
         for (Chapter chapter : content) {
-            add(chapter, nav);
+            add(chapter, rail);
         }
 
         Node page = gui.column().width(Length.grow(1)).height(Length.FILL)

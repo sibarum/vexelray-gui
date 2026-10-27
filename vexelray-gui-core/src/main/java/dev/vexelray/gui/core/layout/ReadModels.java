@@ -106,6 +106,9 @@ public final class ReadModels {
      */
     private final ConcurrentMap<Long, ResizeWatch> resizeWatches = new ConcurrentHashMap<>();
 
+    /** Scroll observers by node id (see {@link #onScroll}): the same threading as {@link #resizeWatches}. */
+    private final ConcurrentMap<Long, ScrollWatch> scrollWatches = new ConcurrentHashMap<>();
+
     /**
      * @param meanings what the semantic half needs beyond the tree; {@link Meanings#NONE} is enough for geometry
      * @param handlers where an unordered resize observer is run — the worker pool, so a handler that computes
@@ -173,6 +176,7 @@ public final class ReadModels {
         }
 
         deliverResizes(snap);            // before the State commit, so a handler's edits ride the same drain
+        deliverScrolls(snap);
         layoutState.commit(setLayout, snap);
         semanticState.commit(setSemantics, sem);
     }
@@ -224,9 +228,63 @@ public final class ReadModels {
         resizeWatches.put(id, new ResizeWatch(handler, ordered));
     }
 
-    /** Drop the watch on a node that has left the tree. */
+    /**
+     * Watch what a node's scrolling looks at: its view, its content's extent and its offset — what a
+     * {@code ScrollRange} is made of. Unlike {@link #onResize}, a scroll alone is a change here. Delivered on the GUI
+     * thread inside the publish that produced it, so it must be short: a {@code Scroller} commits its two ranges
+     * and returns. One watch per node, and a {@code null} handler forgets it.
+     */
+    public void onScroll(long id, Consumer<NodeLayout> handler) {
+        if (handler == null) {
+            scrollWatches.remove(id);
+            return;
+        }
+        scrollWatches.put(id, new ScrollWatch(handler));
+    }
+
+    /** Drop the watches on a node that has left the tree. */
     public void forget(long id) {
         resizeWatches.remove(id);
+        scrollWatches.remove(id);
+    }
+
+    /** Tell each scroll observer whose view, content or offset changed. Nothing at all when nobody watches. */
+    private void deliverScrolls(LayoutSnapshot snap) {
+        if (scrollWatches.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<Long, ScrollWatch> entry : scrollWatches.entrySet()) {
+            NodeLayout computed = snap.node(entry.getKey());
+            if (!computed.present()) {
+                continue;
+            }
+            ScrollWatch watch = entry.getValue();
+            if (computed.content().equals(watch.view) && computed.contentW() == watch.contentW
+                    && computed.contentH() == watch.contentH && computed.scrollX() == watch.scrollX
+                    && computed.scrollY() == watch.scrollY) {
+                continue;
+            }
+            watch.view = computed.content();
+            watch.contentW = computed.contentW();
+            watch.contentH = computed.contentH();
+            watch.scrollX = computed.scrollX();
+            watch.scrollY = computed.scrollY();
+            watch.handler.accept(computed);
+        }
+    }
+
+    /** One scroll observer, and the scroll it was last told about. */
+    private static final class ScrollWatch {
+        private final Consumer<NodeLayout> handler;
+        private Rect view;
+        private float contentW = Float.NaN;
+        private float contentH = Float.NaN;
+        private float scrollX = Float.NaN;
+        private float scrollY = Float.NaN;
+
+        ScrollWatch(Consumer<NodeLayout> handler) {
+            this.handler = handler;
+        }
     }
 
     /**

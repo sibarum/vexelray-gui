@@ -2,6 +2,10 @@ package dev.vexelray.gui.core.input;
 
 import dev.vexelray.gui.core.IconSource;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.UnaryOperator;
+
 /**
  * One line of a context menu, as decided at the moment of the right click: an icon, a label, what choosing it
  * does, and whether it can be chosen at all.
@@ -23,13 +27,20 @@ import dev.vexelray.gui.core.IconSource;
  * nothing about where things are; a greyed line says "this exists, not now". A disabled item carries no action and
  * is inert: choosing it does nothing and does not dismiss the menu.
  *
- * @param icon    a glyph from the text atlas drawn beside the label, or {@code null} for none
- * @param label   the text shown, or {@code null} for a separator
- * @param action  what choosing it runs, or {@code null} if there is nothing to run
- * @param enabled whether it can be chosen
- * @param mark    an icon from the set drawn beside the label, or {@code null} for none
+ * <p><b>A submenu is an item with {@link #children()}</b>: a line that opens another list beside it rather than
+ * running anything ({@link #submenu(String, boolean, List)}). It is a line like any other, so it can be disabled,
+ * marked and placed among the rest; it is enabled while it has a child that can be chosen, since a submenu of greyed
+ * lines is one more step to a dead end.
+ *
+ * @param icon     a glyph from the text atlas drawn beside the label, or {@code null} for none
+ * @param label    the text shown, or {@code null} for a separator
+ * @param action   what choosing it runs, or {@code null} if there is nothing to run
+ * @param enabled  whether it can be chosen
+ * @param mark     an icon from the set drawn beside the label, or {@code null} for none
+ * @param children the lines of the submenu it opens, in order; empty for an item that runs something
  */
-public record MenuItem(String icon, String label, Runnable action, boolean enabled, IconSource mark) {
+public record MenuItem(String icon, String label, Runnable action, boolean enabled, IconSource mark,
+                       List<MenuItem> children) {
 
     /** A horizontal rule between groups. */
     public static final MenuItem SEPARATOR = new MenuItem(null, null, null, false, null);
@@ -37,6 +48,28 @@ public record MenuItem(String icon, String label, Runnable action, boolean enabl
     /** An item marked by a glyph, or by nothing. */
     public MenuItem(String icon, String label, Runnable action, boolean enabled) {
         this(icon, label, action, enabled, null);
+    }
+
+    /** An item that runs something, or does nothing: no submenu. */
+    public MenuItem(String icon, String label, Runnable action, boolean enabled, IconSource mark) {
+        this(icon, label, action, enabled, mark, List.of());
+    }
+
+    /**
+     * A line that opens {@code items} beside it. A separator at either end of them, or next to another, is dropped,
+     * as the menu's own sink drops one.
+     */
+    public static MenuItem submenu(String label, boolean enabled, List<MenuItem> items) {
+        List<MenuItem> kept = new ArrayList<>(items.size());
+        for (MenuItem item : items) {
+            if (!item.separator() || (!kept.isEmpty() && !kept.getLast().separator())) {
+                kept.add(item);
+            }
+        }
+        while (!kept.isEmpty() && kept.getLast().separator()) {
+            kept.removeLast();
+        }
+        return new MenuItem(null, label, null, enabled, null, kept);
     }
 
     /** An item that can be chosen. */
@@ -70,9 +103,16 @@ public record MenuItem(String icon, String label, Runnable action, boolean enabl
     }
 
     public MenuItem {
+        children = children == null ? List.of() : List.copyOf(children);
         // An item with nothing to run cannot be enabled, whatever the caller passed: the two would disagree on
-        // screen (a live-looking line that does nothing) and the presenter would have to guess which is true.
-        enabled = enabled && action != null;
+        // screen (a live-looking line that does nothing) and the presenter would have to guess which is true. A
+        // submenu runs nothing itself; what it has to offer is a child that can be chosen.
+        enabled = enabled && (children.isEmpty() ? action != null : children.stream().anyMatch(MenuItem::enabled));
+    }
+
+    /** Whether this line opens a submenu rather than running something. */
+    public boolean submenu() {
+        return !children.isEmpty();
     }
 
     /** Whether this line is a rule rather than a command. */
@@ -87,6 +127,15 @@ public record MenuItem(String icon, String label, Runnable action, boolean enabl
 
     /** This line running {@code action} instead, everything else as it is. */
     public MenuItem withAction(Runnable action) {
-        return new MenuItem(icon, label, action, enabled, mark);
+        return new MenuItem(icon, label, action, enabled, mark, children);
+    }
+
+    /**
+     * This line, and every line of its submenu at any depth, with each action passed through {@code wrap}: how a
+     * sink that adds something to every command (a tree's one-at-a-time rule) reaches the commands a submenu holds.
+     */
+    public MenuItem wrapActions(UnaryOperator<Runnable> wrap) {
+        List<MenuItem> wrapped = children.stream().map(c -> c.wrapActions(wrap)).toList();
+        return new MenuItem(icon, label, action == null ? null : wrap.apply(action), enabled, mark, wrapped);
     }
 }

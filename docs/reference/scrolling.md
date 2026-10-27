@@ -20,11 +20,7 @@ bar is renderer chrome, drawn by `TreeRenderer` for any node the layout marked `
   or a fixed-height row overflows instead, unclipped. `Node.scroll(allowX, allowY)` declares an axis either way,
   and the declaration wins.
 - **A bar takes room.** It reserves a strip 0.85 em thick on the other axis, and the content is measured again in
-  what is left (narrower wrapped text is taller). **Where that room comes from depends on who sized the box across
-  the bar.** A box sized to its content (`AUTO`) measures the strip in, so it grows by it and its neighbours move;
-  its content keeps all of its size. A box with a declared size (`rem`, `dp`, `em`), or one its parent sizes
-  (`FILL`, `grow`, a stretch, a percentage), keeps its size, and the strip comes out of its content.
-  [plans/scrollbar-room.md](../plans/scrollbar-room.md) §4.1 lists which boxes get the size they measure.
+  what is left (narrower wrapped text is taller).
 - **A `grow` child is the room that is left.** Its basis is 0 and it takes a share of the leftover space, so a body
   of `height(Length.grow(1f))` between a title bar and a status bar is exactly the space between them, and whatever
   it holds beyond that scrolls *in the body*. That is usually what you want, and it is the first half of §3.

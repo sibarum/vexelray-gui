@@ -4,6 +4,7 @@ import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.scroll.Scrollbars;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.demo.Chapter;
 import dev.vexelray.gui.demo.Console;
@@ -117,7 +118,7 @@ public final class IconsChapter implements Chapter {
         Node turning = gui.row().gap(Length.rem(1f)).alignItems(AlignItems.CENTER).scroll(false, false)
                 .children(busy.node(), spin);
 
-        return gui.column().width(Length.FILL).gap(Ui.GAP).scroll(false, true).children(
+        return Scrollbars.vertical(gui, gui.column().width(Length.FILL).gap(Ui.GAP).children(
                 Ui.strip(gui, Ui.heading(gui, "The set"),
                         Ui.prose(gui, Icon.values().length + " icons, every one a cell of one texture the renderer "
                                 + "uploads itself. Rest on one for its name."),
@@ -137,6 +138,6 @@ public final class IconsChapter implements Chapter {
                 Ui.strip(gui, Ui.heading(gui, "Turning"),
                         Ui.prose(gui, "A node's turn is a transform of the field's frame, so the edge stays one "
                                 + "pixel soft at every angle. The tree's chevron opens the same way."),
-                        turning));
+                        turning))).node();
     }
 }

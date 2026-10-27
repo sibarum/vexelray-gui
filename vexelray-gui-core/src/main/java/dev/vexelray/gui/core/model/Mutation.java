@@ -260,13 +260,15 @@ public interface Mutation {
      * came from scrolls back to where it was when the card was picked up. Both are written in one batch, so the two
      * land on the same frame and stay in step.
      *
-     * <p>A cell per container: two offsets written before the next frame are one write, and the later one is the
-     * only one anybody could have seen.
+     * <p>A cell per container and per set of axes written: two offsets written before the next frame are one write,
+     * and the later one is the only one anybody could have seen. An axis given as NaN is left where it is, which is
+     * how one axis's {@code ScrollSource} moves without restating the other's — and why the axes are part of the
+     * cell: a write to x alone and one to y alone are two writes, and coalescing them would lose one.
      */
     record ScrollTo(long id, float x, float y) implements Mutation {
 
-        /** What two writes to the same container's offset share. */
-        private record Cell(long id) {
+        /** What two writes to the same container's offset, along the same axes, share. */
+        private record Cell(long id, boolean x, boolean y) {
         }
 
         @Override
@@ -276,7 +278,7 @@ public interface Mutation {
 
         @Override
         public Object cell() {
-            return new Cell(id);
+            return new Cell(id, !Float.isNaN(x), !Float.isNaN(y));
         }
 
         @Override

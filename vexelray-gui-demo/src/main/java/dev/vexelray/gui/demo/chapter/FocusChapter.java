@@ -5,6 +5,7 @@ import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.FocusCause;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.scroll.Scrollbars;
 import dev.vexelray.gui.core.layout.SemanticSnapshot;
 import dev.vexelray.gui.core.model.SemanticNode;
 import dev.vexelray.gui.core.style.FocusRing;
@@ -171,11 +172,11 @@ public final class FocusChapter implements Chapter {
                 .scroll(false, false)
                 .children(fills.node().width(Length.FILL).height(Length.FILL));
 
-        Node scroller = gui.column().width(Length.FILL).height(Length.rem(6)).gap(Length.rem(0.375f))
-                .padding(Length.rem(0.375f)).scroll(false, true)
+        Node fields = gui.column().width(Length.FILL).gap(Length.rem(0.375f)).padding(Length.rem(0.375f));
+        Node scroller = Scrollbars.vertical(gui, fields).node().width(Length.FILL).height(Length.rem(6))
                 .border(Length.rem(0.1f), Role.LINE).corner(Length.rem(0.5f));
         for (int i = 1; i <= 6; i++) {
-            scroller.append(new TextField(gui, "Row " + i).node().width(Length.FILL));
+            fields.append(new TextField(gui, "Row " + i).node().width(Length.FILL));
         }
 
         Node touching = gui.row().width(Length.FILL).height(Length.AUTO).scroll(false, false)

@@ -953,6 +953,17 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
+     * Take the wheel over {@code node} (or a descendant): it arrives as a {@link dev.vexelray.gui.core.input.WheelEvent}
+     * on a worker thread, instead of scrolling whatever {@code node} is inside. For something that is not inside what
+     * it moves — a scrollbar beside its {@link Scroller}, a 3D view panning its camera. {@code null} gives the wheel
+     * back.
+     */
+    public Gui onWheel(Node node, java.util.function.Consumer<dev.vexelray.gui.core.input.WheelEvent> handler) {
+        input.onWheel(node.id(), handler);
+        return this;
+    }
+
+    /**
      * Say what would happen if a drag were released on {@code node} — see {@link DropTarget}.
      *
      * <p>Not the same thing as {@link #onDrag}, and a node may have both without them interacting. That one is a
@@ -1840,6 +1851,20 @@ public final class Gui implements AutoCloseable {
     /** A vertical box. */
     public Node column() {
         return trees.column();
+    }
+
+    /**
+     * A {@link Scroller} around {@code content}: a box that masks it and scrolls it along both axes, with no bar.
+     * Place {@link Scroller#node()}; put a bar beside it, bound to {@link Scroller#x()} or {@link Scroller#y()}
+     * (docs/plans/scrolling.md).
+     */
+    public Scroller scroller(Node content) {
+        return new Scroller(this, trees.scroller(), content);
+    }
+
+    /** A Scroller's own watch on its node's scroll: the range it publishes (ReadModels.onScroll). */
+    void onScroll(Node node, java.util.function.Consumer<NodeLayout> handler) {
+        readModels.onScroll(node.id(), handler);
     }
 
     /**

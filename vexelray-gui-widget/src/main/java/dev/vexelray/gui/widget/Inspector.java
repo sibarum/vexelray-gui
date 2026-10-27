@@ -7,6 +7,7 @@ import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.style.Role;
+import dev.vexelray.gui.scroll.Scrollbars;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -78,7 +79,10 @@ public final class Inspector {
     private static final dev.vexelray.gui.icons.Icon OPEN = dev.vexelray.gui.icons.Icon.CHEVRON_DOWN;
 
     private final Gui gui;
+    /** The rows, in the order added: what the Scroller moves. */
     private final Node body;
+    /** What is placed: the rows with their scrollbar beside them. */
+    private final Node box;
     private final List<Property> properties = new ArrayList<>();
     private final Map<String, Node> headings = new LinkedHashMap<>();
     private final List<Card> cards = new ArrayList<>();
@@ -88,16 +92,17 @@ public final class Inspector {
     /** Build an empty inspector on {@code gui}. */
     public Inspector(Gui gui) {
         this.gui = gui;
-        this.body = gui.column().role("inspector")
-                .width(Length.grow(1f))
+        this.body = gui.column()
+                .width(Length.FILL)
                 .gap(Length.rem(0.15f))
-                .padding(Length.rem(0.4f), Length.rem(0.6f))
-                .scroll(false, true);
+                .padding(Length.rem(0.4f), Length.rem(0.6f));
+        // The rows scroll in a Scroller with a bar beside it, and the panel as a whole is the pair.
+        this.box = Scrollbars.vertical(gui, body).node().role("inspector").width(Length.grow(1f));
     }
 
-    /** The node to place in a layout. It scrolls vertically. */
+    /** The node to place in a layout: the rows, scrolling vertically, with their bar beside them. */
     public Node node() {
-        return body;
+        return box;
     }
 
     /** Append a row, drawing its section heading first if this is the section's first row. */

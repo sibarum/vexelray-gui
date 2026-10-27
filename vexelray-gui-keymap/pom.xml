@@ -24,6 +24,11 @@
             <groupId>dev.vexelray.gui</groupId>
             <artifactId>vexelray-gui-core</artifactId>
         </dependency>
+        <!-- The list of actions scrolls in a Scroller with a Scrollbar beside it. -->
+        <dependency>
+            <groupId>dev.vexelray.gui</groupId>
+            <artifactId>vexelray-gui-scroll</artifactId>
+        </dependency>
         <!-- The editor is built from the stock controls: a filter field, buttons, a title bar for its window. -->
         <dependency>
             <groupId>dev.vexelray.gui</groupId>

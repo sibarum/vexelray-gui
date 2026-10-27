@@ -9,6 +9,7 @@ import dev.vexelray.gui.core.drop.PayloadType;
 import dev.vexelray.gui.core.edit.Change;
 import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.scroll.Scrollbars;
 import dev.vexelray.gui.core.layout.Rect;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.demo.Chapter;
@@ -197,8 +198,8 @@ public final class DragChapter implements Chapter {
         // so it can light up. The payload type is the tree's own, which is what stops two unrelated trees in one
         // window from silently accepting each other's rows.
         PayloadType<Task> taskType = board.itemType();
-        archiveList = gui.column().width(Length.FILL).height(Length.grow(1)).gap(Length.rem(0.25f))
-                .scroll(false, true);
+        archiveList = gui.column().width(Length.FILL).gap(Length.rem(0.25f));
+        Node archived = Scrollbars.vertical(gui, archiveList).node().width(Length.FILL).height(Length.grow(1));
         archive = gui.column().width(Length.FILL).height(Length.FILL)
                 .background(Role.WELL).corner(Length.rem(0.75f))
                 .border(Length.rem(0.15f), Role.LINE)
@@ -211,7 +212,7 @@ public final class DragChapter implements Chapter {
                                 .width(Length.FILL)
                                 .textSize(Length.rem(0.875f)).textColor(Role.FAINT)
                                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.TOP),
-                        archiveList);
+                        archived);
         gui.onDrop(archive, (payload, x, y) -> payload.as(taskType)
                 .map(task -> task.parent == null ? Drop.NONE : Drop.move(rectOf(archive), archiving(task)))
                 .orElse(Drop.NONE));

@@ -5,7 +5,10 @@ work is scheduled against it. Step 1 as built: the header row is a horizontal sc
 `scrollIntoView()` on the header it lands on, and Left/Right now carry focus to that header (they didn't, so a
 walk got no further than the next tab). When the headers overflow, the scroller shows its scrollbar along the
 bottom of the bar, which is also the pointer's way to the clipped tabs until `menu()` exists.
-`TabsTest.walkingPastTheEdgeKeepsTheSelectedHeaderInView` covers it. What follows is the plan as written. Today `Tabs` has no answer to "more headers than bar". The bar is a fixed
+`TabsTest.walkingPastTheEdgeKeepsTheSelectedHeaderInView` covers it. The seam was first drafted as `Tabs.Overflow`
+and renamed `Tabs.Crowding` on 2026-10-26, before it was built: `Overflow` is the framework's mailbox policy, and
+[scrolling.md](scrolling.md) §8 keeps the word for the condition. Its `menu()` waits for scrolling.md step 3, which
+makes the scrolling row a `Scrollbars.horizontal`. What follows is the plan as written. Today `Tabs` has no answer to "more headers than bar". The bar is a fixed
 `2.25rem` row with scrolling turned off (`Tabs.java:245`), and `FlexLayout` has no wrap, so the extra headers lay
 out past the bar's right edge and are clipped. They still exist and keep focus, so Left/Right can walk onto a tab
 you can't see. Nothing tells you there are more tabs, and no pointer gesture reaches them. This plan is done when
@@ -23,17 +26,17 @@ factories.
 
 ```java
 @FunctionalInterface
-public interface Overflow {
+public interface Crowding {
     /** Arrange the bar for this policy. Called once, when installed; the policy owns what it changes. */
     void install(Bar bar);
 
-    Overflow CLIP = bar -> { };            // today's behaviour, kept as the default so nothing moves
+    Crowding CLIP = bar -> { };            // today's behaviour, kept as the default so nothing moves
 }
 
-public static Overflow wrap()  { ... }    // §2
-public static Overflow menu()  { ... }    // §3
+public static Crowding wrap()  { ... }    // §2
+public static Crowding menu()  { ... }    // §3
 
-tabs.overflow(Tabs.menu());
+tabs.crowding(Tabs.menu());
 ```
 
 `Bar` is a narrow handle that only `Tabs` can construct. It exposes the header row, the slot after the row, the
@@ -147,7 +150,7 @@ once at open time and never kept up to date, so it can't fall a frame behind.
 
 1. **Reveal on select, for every policy.** One line in `select`, plus a test that walks Right past the edge and
    checks the header's rect is inside the bar. This fixes today's bug on its own.
-2. **`Overflow` seam + `Bar` handle,** with `CLIP` as the default. No change in behaviour, so the existing
+2. **`Crowding` seam + `Bar` handle,** with `CLIP` as the default. No change in behaviour, so the existing
    `TabsTest`, `TabTransitionTest` and `TabCrossfadeTest` must pass untouched.
 3. **`menu()`.** Scroller, button, `Select`-based list. Check `Select`'s reusability first (§3.3).
 4. **`FlexLayout` wrap** in core with its own tests (line breaking, gap across lines, height for width, nested

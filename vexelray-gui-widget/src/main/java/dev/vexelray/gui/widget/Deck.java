@@ -3,6 +3,7 @@ package dev.vexelray.gui.widget;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.scroll.Scrollbars;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -38,14 +39,16 @@ import java.util.List;
  *
  * <h2>The node</h2>
  *
- * <p>{@link #node()} is the deck's box, a column that scrolls vertically and fills its parent; size, pad and paint
+ * <p>{@link #node()} is the deck's box, a Scroller with its bar beside it, filling its parent; size, pad and paint
  * it as any other box. The cards are inside it, in a column of their own, and are the board's to place.
  */
 public final class Deck<T> {
 
     final Board<T> board;
-    /** The deck's box: what the application sizes, and what drags start on and drop into. */
+    /** The Scroller's node: the box the cards are seen through, its offset, where drags start and land. */
     final Node node;
+    /** What the application places and sizes: the deck with its scrollbar beside it. */
+    private final Node box;
     /** The column the slots are in. No padding and no gap, so a slot's top is the sum of the heights above it. */
     final Node inner;
     /** What the deck shows, in order: cards, and the gaps opening and closing between them. Guarded by the board. */
@@ -67,11 +70,19 @@ public final class Deck<T> {
         // The board opens and closes the gaps here and carries the cards itself, so the window's motion keeps out of it
         // (Node.childMotion): two clocks on one card put it in two places (MainFrame's Workspaces editor).
         this.inner = gui.column().width(Length.FILL).height(Length.AUTO).childMotion(false);
-        this.node = gui.column().width(Length.FILL).height(Length.FILL).scroll(false, true).children(inner);
+        // The cards scroll in a Scroller with a bar beside it; the board works in the Scroller's box.
+        Scrollbars scrolling = Scrollbars.vertical(gui, inner);
+        this.node = scrolling.scroller().node();
+        this.box = scrolling.node().width(Length.FILL).height(Length.FILL);
     }
 
-    /** The deck's box. */
+    /** The deck's box, with its scrollbar beside it. */
     public Node node() {
+        return box;
+    }
+
+    /** The box the cards are seen through: the Scroller's node, narrower than {@link #node()} by the bar. */
+    Node view() {
         return node;
     }
 

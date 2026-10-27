@@ -12,7 +12,9 @@ import java.util.List;
 
 /**
  * The flex layout: rows and columns with border-box sizing, padding, margin, border and gap. Not a full flex
- * implementation — no wrap, no shrink-below-basis — but bulletproof: every size is clamped non-negative, every
+ * implementation — no wrap, and no shrink-below-basis except down to what its {@code Scroller}s can give (see
+ * {@code mainSizes}) — but
+ * bulletproof: every size is clamped non-negative, every
  * property has a sensible default, and nothing is ever left null or NaN, so a node can never land at an unexpected
  * position or size (architecture.md §6).
  *
@@ -136,15 +138,22 @@ public final class FlexLayout {
         // Overflow + reserve: a scrollbar on one axis reserves a strip on the other. Recompute once so reserving
         // vertical space can reveal horizontal overflow and vice versa. Scrollbars appear purely from overflow
         // (docs/reference/scrolling.md §1).
-        float sb = scrollbarThickness(ctx);
+        // A Scroller reserves no strip: its bar, if it has one, is an element beside it that the flow already sized
+        // (docs/plans/scrolling.md §4). Zero thickness is also what keeps the renderer and the dispatcher from
+        // drawing or grabbing a bar on it.
+        float sb = n.scroller() ? 0f : scrollbarThickness(ctx);
         // A container that never said whether it scrolls scrolls only along an axis long enough to hold a scrollbar
         // worth having: a thumb is at least two thicknesses long, so below SENSIBLE_SCROLL of them it has nowhere to
         // travel, and a pill squeezed into a chip, a button or a fixed-height row is chrome that scrolls by a few
         // pixels and narrows the content it was meant to reveal. Such a box overflows instead, as it would with
         // scroll(false, false) — what every application had been writing on each one by hand. Declared either way,
         // the declaration wins, so a short box that genuinely scrolls says scroll(..., true).
-        boolean scrollsY = n.scrollYAllowed() && (n.scrollYDeclared() || baseH >= SENSIBLE_SCROLL * sb);
-        boolean scrollsX = n.scrollXAllowed() && (n.scrollXDeclared() || baseW >= SENSIBLE_SCROLL * sb);
+        //
+        // A Scroller's content never scrolls without saying so: the Scroller is the scroller, and a second one
+        // implied inside it is the nested pair scrolling.md §3 warns about.
+        boolean implied = n.parent == null || !n.parent.scroller();
+        boolean scrollsY = n.scrollYAllowed() && (n.scrollYDeclared() || (implied && baseH >= SENSIBLE_SCROLL * sb));
+        boolean scrollsX = n.scrollXAllowed() && (n.scrollXDeclared() || (implied && baseW >= SENSIBLE_SCROLL * sb));
         boolean overY = scrollsY && neededH > baseH + EPS;
         boolean overX = scrollsX && neededW > baseW + EPS;
         float viewW = baseW - (overY ? sb : 0f);
@@ -207,21 +216,23 @@ public final class FlexLayout {
                                  boolean row, float gap, LayoutContext ctx, TextMeasurer tm) {
         List<RetainedNode> kids = flowChildren(n);
         Axis cross = row ? Axis.VERTICAL : Axis.HORIZONTAL;
+        boolean scrollCross = scrollsAlong(n, cross);
         int count = kids.size();
         // Wrapped text is height-for-width, not an intrinsic: a label that wraps onto three lines is three lines
         // tall. The two axes therefore resolve in opposite orders. In a COLUMN the child's width is settled by the
         // container before its height matters, so resolve the cross axis first and feed each width into the height
         // measure below. In a ROW the dependency runs the other way — width is the main size — and the cross pass
         // further down already has it.
-        // A row records the height it holds each child to instead, where it knows one, so a child that scrolls down
-        // inside that height measures its scrollbar into its width (scrollbar-room.md §4).
         float[] crossPre = new float[count];
-        for (int i = 0; i < count; i++) {
-            crossPre[i] = row ? heldHeight(n, kids.get(i), availCross, ctx)
-                    : crossSize(n, kids.get(i), availCross, ctx, tm, true);
+        if (!row) {
+            for (int i = 0; i < count; i++) {
+                crossPre[i] = crossSize(n, kids.get(i), availCross, ctx, tm, true);
+            }
         }
         float[] marginMain = new float[count];
-        float[] mainSize = mainSizes(kids, availMain, row, gap, crossPre, marginMain, ctx, tm);
+        Axis mainAxis = row ? Axis.HORIZONTAL : Axis.VERTICAL;
+        float[] mainSize = mainSizes(kids, availMain, row, scrollsAlong(n, mainAxis), holdsAlong(n, mainAxis),
+                gap, crossPre, marginMain, ctx, tm);
         float gaps = gap * Math.max(0, count - 1);
 
         float used = gaps;
@@ -256,6 +267,11 @@ public final class FlexLayout {
             boolean stretched = fillsCross(n, crossLen, crossFixed);
             if (stretched) {
                 cs = availC;
+                // Across an axis a Scroller scrolls, its content is as wide as it is, not as the view: stretched to
+                // the view only where it is narrower. A column measured that width already (crossSize).
+                if (scrollCross) {
+                    cs = row ? Math.max(cs, measure(c, cross, ctx, tm, ms)) : crossPre[i];
+                }
                 crossPos = mCross;
             } else if (!row) {
                 cs = crossPre[i];   // already resolved above, and the height basis was measured against it
@@ -267,6 +283,10 @@ public final class FlexLayout {
             } else {
                 // Row: the cross axis is height, so this is the height-for-width measure — ms is the width.
                 cs = Math.max(0f, crossFixed >= 0f ? crossFixed : measure(c, cross, ctx, tm, ms));
+                if (crossFixed < 0f && cs > availC && !holdsAlong(n, cross)) {
+                    // Across as well as along, what holds a Scroller gives way to its least (scrolling.md §2.1).
+                    cs = Math.max(availC, least(c, cross, ctx, tm, ms));
+                }
                 crossPos = switch (n.alignItems()) {
                     case START, STRETCH -> mCross;
                     case CENTER -> mCross + Math.max(0f, (availC - cs) / 2f);
@@ -275,8 +295,9 @@ public final class FlexLayout {
             }
             // Stretched children fill the cross extent by definition, so they never cause cross overflow; only
             // fixed/intrinsic cross sizes count toward the content size (otherwise reserving a scrollbar on one
-            // axis would spuriously report overflow on the other).
-            if (!stretched) {
+            // axis would spuriously report overflow on the other). Inside a Scroller scrolling across, a stretched
+            // child can be wider than the view, and that is the overflow it scrolls.
+            if (!stretched || scrollCross) {
                 neededCross = Math.max(neededCross, cs + 2f * mCross);
             }
 
@@ -300,19 +321,35 @@ public final class FlexLayout {
     /**
      * The main-axis size of each of {@code kids} in {@code availMain}: its fixed length, else its measured content
      * (0 for a grow child), then the free space shared out by grow factor. {@code crossPre} holds a column's
-     * already-resolved child widths, which its children's heights are measured against, or a row's held heights (-1
-     * where unknown), which its children's scrollbars are measured against; null in a row means none known. Fills
+     * already-resolved child widths, which its children's heights are measured against; a row ignores it. Fills
      * {@code marginMain} with each child's main-axis margin.
      *
      * <p>Shared by {@link #place} and by {@link #measure} for a row, so a row's height is measured against the
      * very widths it will place its children at.
+     *
+     * <p>{@code scrolls} says the parent is a {@code Scroller} along this axis. Its room there is unbounded, so a
+     * grow child's basis is its content rather than nothing: it fills the view when the content is shorter and is
+     * its content's length when it is longer, which is the length that scrolls.
+     *
+     * <p><b>What holds a Scroller gives way.</b> Where the children ask for more than {@code availMain}, every
+     * {@code AUTO} child gives up what it can, down to its <em>least</em> size: its measure with every Scroller in it
+     * counted as nothing along the axes it scrolls ({@link #least}). Each gives the same share of what it can give,
+     * so Scrollers give way in proportion to their content. This is CSS's {@code flex-shrink} with a min-content
+     * floor (docs/plans/scrolling.md §2.1). A box with no Scroller in it has nothing to give — its least size is its
+     * size — so it holds, as every box did before; a Scroller wrapped in a content-sized box gives way through it.
+     * A declared or grow child does not: a declared one said its size, and a grow one is already the room left.
+     *
+     * <p>{@code holds} says the parent scrolls along this axis ({@link #holdsAlong}), so its room there is unbounded
+     * and nothing in it gives way: what does not fit is what it scrolls.
      */
-    private static float[] mainSizes(List<RetainedNode> kids, float availMain, boolean row, float gap,
-                                     float[] crossPre, float[] marginMain, LayoutContext ctx, TextMeasurer tm) {
+    private static float[] mainSizes(List<RetainedNode> kids, float availMain, boolean row, boolean scrolls,
+                                     boolean holds, float gap, float[] crossPre, float[] marginMain,
+                                     LayoutContext ctx, TextMeasurer tm) {
         Axis main = row ? Axis.HORIZONTAL : Axis.VERTICAL;
         int count = kids.size();
         float[] basis = new float[count];
         float[] growF = new float[count];
+        boolean[] auto = new boolean[count];
         float sumBasis = 0f;
         float sumGrow = 0f;
         for (int i = 0; i < count; i++) {
@@ -321,24 +358,63 @@ public final class FlexLayout {
             Length mainLen = row ? c.width() : c.height();
             float fixed = mainLen.resolve(own, availMain);
             basis[i] = fixed >= 0f ? fixed
-                    : (mainLen.growFactor() > 0f ? 0f
-                            : row ? measure(c, main, ctx, tm, -1f, crossPre == null ? -1f : crossPre[i])
-                            : measure(c, main, ctx, tm, crossPre[i]));
+                    : (mainLen.growFactor() > 0f && !scrolls ? 0f
+                            : measure(c, main, ctx, tm, row ? -1f : crossPre[i]));
             growF[i] = mainLen.growFactor();
+            auto[i] = fixed < 0f && growF[i] <= 0f;
             marginMain[i] = c.margin().scalarPx(own, availMain);
             sumBasis += basis[i] + 2f * marginMain[i];
             sumGrow += growF[i];
         }
         float free = availMain - sumBasis - gap * Math.max(0, count - 1);
 
+        // Short of room: what each AUTO child can give, worked out only now, since a layout with room never asks.
+        float[] slack = new float[count];
+        float give = 0f;
+        if (free < 0f && !holds) {
+            float giveable = 0f;
+            for (int i = 0; i < count; i++) {
+                if (auto[i]) {
+                    float floor = least(kids.get(i), main, ctx, tm, row ? -1f : crossPre[i]);
+                    slack[i] = Math.max(0f, basis[i] - floor);
+                    giveable += slack[i];
+                }
+            }
+            give = giveable > 0f ? Math.min(1f, -free / giveable) : 0f;
+        }
+
         float[] mainSize = new float[count];
         for (int i = 0; i < count; i++) {
-            mainSize[i] = basis[i];
+            mainSize[i] = basis[i] - slack[i] * give;
             if (sumGrow > 0f && free > 0f) {
                 mainSize[i] += free * (growF[i] / sumGrow);
             }
         }
         return mainSize;
+    }
+
+    /**
+     * The least {@code n} can be along {@code axis}: its {@link #measure} with every Scroller in it, itself included,
+     * counted as nothing along the axes it scrolls — a Scroller's content is what it scrolls, so none of it is a
+     * size anything must make room for. Equal to the measure for a subtree with no Scroller in it.
+     */
+    private static float least(RetainedNode n, Axis axis, LayoutContext ctx, TextMeasurer tm, float knownWidth) {
+        return measure(n, axis, ctx, tm, knownWidth, true);
+    }
+
+    /** Whether {@code n} is a {@code Scroller} that scrolls along {@code axis}. */
+    private static boolean scrollsAlong(RetainedNode n, Axis axis) {
+        return n.scroller() && (axis == Axis.HORIZONTAL ? n.scrollXAllowed() : n.scrollYAllowed());
+    }
+
+    /**
+     * Whether {@code n} said it scrolls along {@code axis} — a Scroller, or a box that declared {@code scroll} there
+     * — so its room along it is unbounded and nothing in it gives way. An undeclared box does not count: the old
+     * model scrolls one only if something is still left over once what it holds has given what it can.
+     */
+    private static boolean holdsAlong(RetainedNode n, Axis axis) {
+        return axis == Axis.HORIZONTAL ? n.scrollXDeclared() && n.scrollXAllowed()
+                : n.scrollYDeclared() && n.scrollYAllowed();
     }
 
     /**
@@ -569,115 +645,22 @@ public final class FlexLayout {
      * height without it can only assume one line; with it, wrapped text reports its true height.
      */
     public static float measure(RetainedNode n, Axis axis, LayoutContext ctx, TextMeasurer tm, float knownWidth) {
-        return measure(n, axis, ctx, tm, knownWidth, -1f);
+        return measure(n, axis, ctx, tm, knownWidth, false);
     }
 
-    /**
-     * As {@link #measure(RetainedNode, Axis, LayoutContext, TextMeasurer, float)}, with the node's border-box height
-     * as well when the caller knows it — a row knows the height it holds a child to before it measures the child's
-     * width. Either one may be -1.
-     *
-     * <p><b>A box sized to its content makes room for its own scrollbar</b> (docs/plans/scrollbar-room.md §4). When
-     * the content will overflow along one axis, the box measures one scrollbar thickness more across it, so the strip
-     * is room the layout gives and the neighbours move, rather than room taken from the content it was sized to. A
-     * declared length returns before this: the box promised its size, and the strip comes out of it as before.
-     */
-    static float measure(RetainedNode n, Axis axis, LayoutContext ctx, TextMeasurer tm, float knownWidth,
-                         float knownHeight) {
+    /** The measure, or with {@code least} the {@link #least} size: Scrollers counted as nothing where they scroll. */
+    private static float measure(RetainedNode n, Axis axis, LayoutContext ctx, TextMeasurer tm, float knownWidth,
+                                 boolean least) {
         LayoutContext own = own(n, ctx);
         Length along = axis == Axis.HORIZONTAL ? n.width() : n.height();
         if (isBasisFree(along)) {
             return Math.max(0f, along.resolve(own, 0f));
         }
-        float content = measureContent(n, axis, ctx, tm, knownWidth, knownHeight);
-        return content + strip(n, axis, content, ctx, tm, knownWidth, knownHeight);
-    }
-
-    /**
-     * The scrollbar thickness {@code n} measures larger along {@code axis}, or 0: a strip across the axis its content
-     * overflows on. Decided as {@link #layoutBox} will decide it — the same content box, the same need, the same
-     * SENSIBLE_SCROLL floor — so the room given is the room the bar takes. Where a size the decision needs is not
-     * known it answers 0, which is how every box measured before this existed.
-     */
-    private static float strip(RetainedNode n, Axis axis, float measured, LayoutContext ctx, TextMeasurer tm,
-                               float knownWidth, float knownHeight) {
-        List<RetainedNode> kids = flowChildren(n);
-        if (n.hasText() || kids.isEmpty()) {
-            return 0f;   // a text leaf has its own scrolling rules, and an empty box has nothing to overflow
-        }
-        LayoutContext own = own(n, ctx);
-        float sb = scrollbarThickness(ctx);
-        float insetX = n.borderWidth().scalarPx(own, 0f) + n.paddingX().scalarPx(own, 0f);
-        float insetY = n.borderWidth().scalarPx(own, 0f) + n.paddingY().scalarPx(own, 0f);
-        boolean row = n.direction() == Direction.ROW;
-        if (axis == Axis.VERTICAL) {
-            // A horizontal bar: the box is as wide as it is held to, and its content is wider.
-            float w = knownWidth >= 0f ? knownWidth : declaredSize(n, n.width(), own);
-            if (w < 0f) {
-                return 0f;
-            }
-            float cw = Math.max(0f, w - 2f * insetX);
-            if (!n.scrollXAllowed() || !(n.scrollXDeclared() || cw >= SENSIBLE_SCROLL * sb)) {
-                return 0f;
-            }
-            float gap = n.gap().scalarPx(own, w);
-            float needW = 0f;
-            if (row) {
-                float[] marginMain = new float[kids.size()];
-                float[] widths = mainSizes(kids, cw, true, gap, null, marginMain, ctx, tm);
-                needW = gap * Math.max(0, kids.size() - 1);
-                for (int i = 0; i < kids.size(); i++) {
-                    needW += widths[i] + 2f * marginMain[i];
-                }
-            } else {
-                // Across a column only what is not stretched counts, exactly as in place.
-                for (RetainedNode c : kids) {
-                    LayoutContext co = own(c, ctx);
-                    if (!fillsCross(n, c.width(), c.width().resolve(co, cw))) {
-                        needW = Math.max(needW, crossSize(n, c, cw, ctx, tm, true)
-                                + 2f * c.margin().scalarPx(co, cw));
-                    }
-                }
-            }
-            return needW > cw + EPS ? sb : 0f;
-        }
-        // A vertical bar: the box is as tall as it is held to, and its content, at the width just measured, is taller.
-        float h = knownHeight >= 0f ? knownHeight : declaredSize(n, n.height(), own);
-        if (h < 0f) {
-            return 0f;
-        }
-        float ch = Math.max(0f, h - 2f * insetY);
-        if (!n.scrollYAllowed() || !(n.scrollYDeclared() || ch >= SENSIBLE_SCROLL * sb)) {
-            return 0f;
-        }
-        float needH = measureContent(n, Axis.VERTICAL, ctx, tm, measured, -1f) - 2f * insetY;
-        return needH > ch + EPS ? sb : 0f;
-    }
-
-    /** A length the node declared in a basis-free unit, resolved, or -1 when it has none. */
-    private static float declaredSize(RetainedNode n, Length l, LayoutContext own) {
-        return isBasisFree(l) ? Math.max(0f, l.resolve(own, 0f)) : -1f;
-    }
-
-    /**
-     * The height a row holds {@code c} to before measuring its width: its row's content height when it stretches or
-     * fills, its own fixed height, or -1 when its height is its content's and not yet known.
-     */
-    private static float heldHeight(RetainedNode row, RetainedNode c, float availCross, LayoutContext ctx) {
-        LayoutContext own = own(c, ctx);
-        float fixed = c.height().resolve(own, availCross);
-        if (fillsCross(row, c.height(), fixed)) {
-            return Math.max(0f, availCross - 2f * c.margin().scalarPx(own, availCross));
-        }
-        return fixed >= 0f ? fixed : -1f;
-    }
-
-    /** {@link #measure}'s content size, before any strip: what a box needs to show everything without scrolling. */
-    private static float measureContent(RetainedNode n, Axis axis, LayoutContext ctx, TextMeasurer tm,
-                                        float knownWidth, float knownHeight) {
-        LayoutContext own = own(n, ctx);
         Length padAxis = axis == Axis.HORIZONTAL ? n.paddingX() : n.paddingY();
         float inset = n.borderWidth().scalarPx(own, 0f) + padAxis.scalarPx(own, 0f);
+        if (least && scrollsAlong(n, axis)) {
+            return 2f * inset;   // what it holds along here is what it scrolls, not room it needs
+        }
         if (n.hasText()) {
             float textPx = own.emPx();
             // An editable node adds its caret gutter, so an auto-sized field measures to a width its text
@@ -707,12 +690,13 @@ public final class FlexLayout {
         float childWidth = mainAxis == Axis.VERTICAL ? contentWidth : -1f;
         if (axis == Axis.VERTICAL && mainAxis == Axis.HORIZONTAL && contentWidth >= 0f) {
             float[] marginMain = new float[kids.size()];
-            float[] widths = mainSizes(kids, contentWidth, true, n.gap().scalarPx(own, knownWidth), null,
-                    marginMain, ctx, tm);
+            float[] widths = mainSizes(kids, contentWidth, true, scrollsAlong(n, Axis.HORIZONTAL),
+                    holdsAlong(n, Axis.HORIZONTAL),
+                    n.gap().scalarPx(own, knownWidth), null, marginMain, ctx, tm);
             float max = 0f;
             for (int i = 0; i < kids.size(); i++) {
                 RetainedNode c = kids.get(i);
-                max = Math.max(max, measure(c, axis, ctx, tm, Math.max(0f, widths[i]))
+                max = Math.max(max, measure(c, axis, ctx, tm, Math.max(0f, widths[i]), least)
                         + 2f * c.margin().scalarPx(own(c, ctx), 0f));
             }
             return max + 2f * inset;
@@ -720,21 +704,15 @@ public final class FlexLayout {
         if (axis == mainAxis) {
             float gap = n.gap().scalarPx(own, 0f);
             float sum = gap * Math.max(0, kids.size() - 1);
-            // A row whose own height is known holds each child to a height, as place will, so a child that scrolls
-            // down inside it measures the width of its bar too.
-            float h = mainAxis == Axis.HORIZONTAL
-                    ? (knownHeight >= 0f ? knownHeight : declaredSize(n, n.height(), own)) : -1f;
-            float contentH = h < 0f ? -1f
-                    : Math.max(0f, h - 2f * (n.borderWidth().scalarPx(own, 0f) + n.paddingY().scalarPx(own, 0f)));
             for (RetainedNode c : kids) {
-                float held = contentH < 0f ? -1f : heldHeight(n, c, contentH, ctx);
-                sum += measure(c, axis, ctx, tm, childWidth, held) + 2f * c.margin().scalarPx(own(c, ctx), 0f);
+                sum += measure(c, axis, ctx, tm, childWidth, least) + 2f * c.margin().scalarPx(own(c, ctx), 0f);
             }
             return sum + 2f * inset;
         }
         float max = 0f;
         for (RetainedNode c : kids) {
-            max = Math.max(max, measure(c, axis, ctx, tm, childWidth) + 2f * c.margin().scalarPx(own(c, ctx), 0f));
+            max = Math.max(max, measure(c, axis, ctx, tm, childWidth, least)
+                    + 2f * c.margin().scalarPx(own(c, ctx), 0f));
         }
         return max + 2f * inset;
     }
@@ -765,6 +743,10 @@ public final class FlexLayout {
     /**
      * The cross-axis size {@code c} will take inside {@code parent}. Extracted so a column can resolve it before
      * the main-axis basis loop (text height depends on it) and reuse the identical value when placing.
+     *
+     * <p>Two Scroller rules land here (docs/plans/scrolling.md §2.1): a child stretched across an axis its
+     * Scroller parent scrolls is at least its content's width, and a child that is not stretched gives way to the
+     * cross extent it is given, down to its {@link #least} size.
      */
     private static float crossSize(RetainedNode parent, RetainedNode c, float availCross, LayoutContext ctx,
                                    TextMeasurer tm, boolean column) {
@@ -773,11 +755,13 @@ public final class FlexLayout {
         float availC = Math.max(0f, availCross - 2f * mCross);
         Length crossLen = column ? c.width() : c.height();
         float crossFixed = crossLen.resolve(own, availCross);
+        Axis crossAxis = column ? Axis.HORIZONTAL : Axis.VERTICAL;
         if (fillsCross(parent, crossLen, crossFixed)) {
-            return availC;
+            return scrollsAlong(parent, crossAxis) ? Math.max(availC, measure(c, crossAxis, ctx, tm)) : availC;
         }
-        return Math.max(0f, crossFixed >= 0f ? crossFixed
-                : measure(c, column ? Axis.HORIZONTAL : Axis.VERTICAL, ctx, tm));
+        float size = Math.max(0f, crossFixed >= 0f ? crossFixed : measure(c, crossAxis, ctx, tm));
+        return crossFixed < 0f && size > availC && !holdsAlong(parent, crossAxis)
+                ? Math.max(availC, least(c, crossAxis, ctx, tm, -1f)) : size;
     }
 
     /**

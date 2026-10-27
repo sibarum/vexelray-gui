@@ -27,6 +27,8 @@ import dev.vexelray.gui.core.style.Finish;
 import dev.vexelray.gui.core.style.Paint;
 import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
+import dev.vexelray.gui.scroll.Scrollbar;
+import dev.vexelray.gui.scroll.Scrollbars;
 import dev.vexelray.gui.icons.Icon;
 import dev.vexelray.gui.icons.IconView;
 import dev.vexelray.text.TextLayout;
@@ -611,7 +613,12 @@ public final class TreeView<T> implements AutoCloseable {
      * The rows, and the thing that scrolls. Separate from {@link #root} so the find bar can be chrome rather than
      * content: a bar inside the scroller is a bar that scrolls away, which is not a bar.
      */
+    /** The Scroller's node: the box the rows are seen through. See {@link #scroller()}. */
     private final Node rows;
+    /** What the Scroller moves: the top-level entries, each holding its subtree. */
+    private final Node entries;
+    /** The Scroller and its bar. */
+    private final Scrollbars scrolling;
 
     /** All state below is guarded by {@code this}. The GUI-thread stages and the handler executor both mutate
      *  it; the monitor makes their transitions atomic, and every callback leaves the monitor before dispatch. */
@@ -720,7 +727,13 @@ public final class TreeView<T> implements AutoCloseable {
                 .border(Length.rem(0.1f), Role.LINE)
                 .padding(Length.dp(4))
                 .scroll(false, false);
-        this.rows = gui.column().width(Length.FILL).height(Length.FILL).childMotion(false);   // see kidsBox
+        // The rows scroll in a Scroller with a bar beside it. `rows` is the Scroller's node -- the box that stays
+        // put, its view and offset, where drags start and land, the drop overlay -- and the entries go in the content
+        // it moves.
+        this.entries = gui.column().width(Length.FILL).childMotion(false);   // see kidsBox
+        this.scrolling = Scrollbars.vertical(gui, entries);
+        this.rows = scrolling.scroller().node();
+        scrolling.node().width(Length.FILL).height(Length.FILL);
         this.dropIndicator = DropIndicator.of(gui.theme().color(Role.ACCENT));
         // The window's reveal, so it fades as every other one does. Before any row: each attaches as it is built.
         this.unclip = Unclip.of(gui);
@@ -737,14 +750,14 @@ public final class TreeView<T> implements AutoCloseable {
 
         // No find bar until searchable(true) asks for one: a tree nobody searches carries nothing for it.
         this.matcher = (item, query) -> source.label(item).toLowerCase().contains(query.toLowerCase());
-        root.children(rows);
+        root.children(scrolling.node());
 
         synchronized (this) {
             for (T item : source.roots()) {
                 Row r = new Row(item, null);
                 rootRows.add(r);
                 rowsByItem.put(item, r);
-                rows.append(r.entry);
+                entries.append(r.entry);
             }
             refreshVisible();
         }
@@ -860,7 +873,7 @@ public final class TreeView<T> implements AutoCloseable {
      * obviously right. A mutation that sets a node where it already is costs a list remove and an add.
      */
     private void reconcile(Row parent, List<T> items, java.util.Set<T> live) {
-        Node box = parent == null ? rows : parent.kidsBox;
+        Node box = parent == null ? entries : parent.kidsBox;
         List<Row> settled = new ArrayList<>(items.size());
         for (int i = 0; i < items.size(); i++) {
             T item = items.get(i);
@@ -1488,6 +1501,7 @@ public final class TreeView<T> implements AutoCloseable {
                 gui.releaseNode(r.disclosure);
             }
         }
+        scrolling.verticalBar().ifPresent(Scrollbar::close);
         gui.releaseNode(root);
     }
 
@@ -1856,8 +1870,8 @@ public final class TreeView<T> implements AutoCloseable {
 
         @Override
         public MenuSink item(MenuItem item) {
-            Runnable action = item.action();
-            delegate.item(action == null ? item : item.withAction(() -> {
+            // Every command at any depth: a submenu's lines are the tree's too.
+            delegate.item(item.wrapActions(action -> () -> {
                 begin();
                 action.run();
             }));

@@ -193,4 +193,37 @@ class PresenceTest {
             assertNull(find(at(krono, 0), quick.id()), "and gone at once");
         }
     }
+
+    /**
+     * A context menu between openings: hidden, its rows replaced, shown somewhere else. Nobody saw the old rows, so they
+     * do not fade out over the new ones, lifted at the place they stood relative to a parent that is not drawn.
+     */
+    @Test
+    @DisplayName("rows replaced inside a hidden panel are gone when it is shown, and the new ones arrive in place")
+    void aPanelRebuiltWhileHiddenDoesNotShowItsOldRows() {
+        Scene s = scene();
+        try (KronoGui krono = s.krono()) {
+            Gui gui = krono.gui();
+            Node old = row(gui);
+            s.list().append(old);
+            at(krono, 0);
+            at(krono, 200);
+            s.list().visible(false);
+            at(krono, 216);
+
+            old.remove();
+            Node fresh = row(gui);
+            s.list().append(fresh);
+            s.list().visible(true);
+            RetainedNode tree = at(krono, 232);
+
+            assertNull(find(tree, old.id()), "the old row went at once: it was not on screen to be seen going");
+            RetainedNode f = find(tree, fresh.id());
+            RetainedNode list = find(tree, s.list().id());
+            assertEquals(list.x, f.x, "the new row stands where it belongs");
+            assertEquals(list.y, f.y);
+            at(krono, 282);
+            assertEquals(0.5f, f.presence, 0.02f, "and arrives at once, not held for an old row to go");
+        }
+    }
 }

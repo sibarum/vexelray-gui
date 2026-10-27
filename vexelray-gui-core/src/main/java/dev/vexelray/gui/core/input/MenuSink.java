@@ -104,4 +104,43 @@ public interface MenuSink {
      * finished menu, or next to another one, is dropped.
      */
     MenuSink separator();
+
+    /**
+     * A line that opens a submenu beside it, filled by {@code items} from a sink of its own: the same vocabulary at
+     * any depth, a submenu inside a submenu included. {@link #event()} and {@link #history()} are this sink's, so an
+     * {@link #edit} item there is undoable as one here is.
+     */
+    default MenuSink submenu(String label, java.util.function.Consumer<MenuSink> items) {
+        return submenu(label, true, items);
+    }
+
+    /** A submenu that is shown greyed out when {@code enabled} is false, whatever it holds. */
+    default MenuSink submenu(String label, boolean enabled, java.util.function.Consumer<MenuSink> items) {
+        java.util.List<MenuItem> children = new java.util.ArrayList<>();
+        MenuSink outer = this;
+        items.accept(new MenuSink() {
+            @Override
+            public ClickEvent event() {
+                return outer.event();
+            }
+
+            @Override
+            public History history() {
+                return outer.history();
+            }
+
+            @Override
+            public MenuSink item(MenuItem item) {
+                children.add(item);
+                return this;
+            }
+
+            @Override
+            public MenuSink separator() {
+                children.add(MenuItem.SEPARATOR);
+                return this;
+            }
+        });
+        return item(MenuItem.submenu(label, enabled, children));
+    }
 }

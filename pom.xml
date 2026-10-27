@@ -35,6 +35,9 @@
         <!-- The file-type families: their sheets and emblems in an atlas of their own, for the one kind of
              application that draws them (a file browser). On core only. See vexelray-gui-file-icons/README.md. -->
         <module>vexelray-gui-file-icons</module>
+        <!-- Scrollbars as elements: Scrollbar shows and moves one axis of a core ScrollSource, Scrollbars pairs one
+             with a Scroller. On core and draw; the layout knows nothing about either. See docs/plans/scrolling.md. -->
+        <module>vexelray-gui-scroll</module>
         <!-- Widgets built on core: box, text, button, slider, list, scroll, text field, ... -->
         <module>vexelray-gui-widget</module>
         <!-- The GUI's one native binding: a Panama nativefiledialog-extended facade. -->
@@ -134,6 +137,11 @@
             <dependency>
                 <groupId>dev.vexelray.gui</groupId>
                 <artifactId>vexelray-gui-draw</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.vexelray.gui</groupId>
+                <artifactId>vexelray-gui-scroll</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

@@ -10,8 +10,30 @@ import dev.vexelray.gui.core.model.RetainedNode;
  */
 public final class HitTest {
 
-    /** @return the topmost node containing {@code (x, y)}, or {@code null} if the point is outside {@code root}. */
+    /**
+     * @return the topmost node containing {@code (x, y)}, or {@code null} if the point is outside {@code root}.
+     *
+     * <p>A node the layout grew past its slot ({@code Node.overhang}) is drawn over everything, so it is tried before
+     * anything else, last-grown first, and anywhere in its grown box — including the part outside its ancestors.
+     */
     public static RetainedNode at(RetainedNode root, float x, float y) {
+        if (root != null && root.parent == null) {
+            java.util.List<RetainedNode> grown = root.overhangs();
+            for (int i = grown.size() - 1; i >= 0; i--) {
+                RetainedNode n = grown.get(i);
+                if (n.overhung && n.visible() && contains(n, x, y)) {
+                    RetainedNode hit = within(n, x, y);
+                    if (hit != null) {
+                        return hit;
+                    }
+                }
+            }
+        }
+        return within(root, x, y);
+    }
+
+    /** The topmost node containing the point within {@code root}'s subtree, by paint order. */
+    private static RetainedNode within(RetainedNode root, float x, float y) {
         if (root != null && !root.visible()) {
             return null;   // hidden nodes are not pointer targets, whatever geometry they still carry
         }
@@ -27,7 +49,7 @@ public final class HitTest {
         for (int i = root.children.size() - 1; i >= 0; i--) {
             RetainedNode child = root.children.get(i);
             if (child.floating()) {
-                RetainedNode hit = at(child, x, y);
+                RetainedNode hit = within(child, x, y);
                 if (hit != null) {
                     return hit;
                 }
@@ -41,7 +63,7 @@ public final class HitTest {
             for (int i = root.children.size() - 1; i >= 0; i--) {
                 RetainedNode child = root.children.get(i);
                 if (!child.floating()) {
-                    RetainedNode hit = at(child, x, y);
+                    RetainedNode hit = within(child, x, y);
                     if (hit != null) {
                         return hit;
                     }

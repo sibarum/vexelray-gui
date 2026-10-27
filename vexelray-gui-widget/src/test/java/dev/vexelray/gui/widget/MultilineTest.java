@@ -24,7 +24,7 @@ class MultilineTest {
 
     /** A focused multiline field, 6 characters wide and 6 lines tall, optionally wrapping. */
     private static TextField field(HeadlessGui h, boolean wrap) {
-        TextField f = new TextField(h.gui, "").multiline(true).wordWrap(wrap);
+        TextField f = new TextField(h.gui, "").multiline(true).wordWrap(wrap).overhang(false);   // scrolling, not overhang
         f.node().width(Length.vw(10.5f)).height(Length.rem(5));
         h.gui.root().children(f.node());
         h.frame();

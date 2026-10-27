@@ -29,7 +29,8 @@ class CaretScrollTest {
 
     /** Build a focused, 80px-wide field and type {@link #TWENTY} into it, leaving the caret at the end. */
     private static TextField overflowingField(HeadlessGui h) {
-        TextField f = new TextField(h.gui, "");
+        // Scrolls inside its box rather than growing over the window: this is about scrolling, not overhang.
+        TextField f = new TextField(h.gui, "").overhang(false);
         f.node().width(Length.vw(10));          // 10% of the 800px headless viewport = 80px
         h.gui.root().children(f.node());
         h.frame();

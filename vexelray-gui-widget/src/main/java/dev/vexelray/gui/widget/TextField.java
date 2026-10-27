@@ -8,7 +8,9 @@ import dev.vexelray.gui.core.edit.Target;
 import dev.vexelray.gui.core.input.ClaimScope;
 import dev.vexelray.gui.core.input.CursorShape;
 import dev.vexelray.gui.core.input.DragEvent;
+import dev.vexelray.gui.core.input.FocusCause;
 import dev.vexelray.gui.core.input.FocusEvent;
+import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.input.KeyEvent;
 import dev.vexelray.gui.core.input.MenuSink;
 import dev.vexelray.gui.core.input.Shortcut;
@@ -149,6 +151,10 @@ public final class TextField implements AutoCloseable {
     private volatile Consumer<Link> onLink;
 
     private volatile boolean multiline;
+    /** Whether the field grows over its neighbours while focused. See {@link #overhang}. */
+    private volatile boolean overhang = true;
+    /** Whether a press that focused the field is waiting for its release to grow it. See {@link #onFocus}. */
+    private volatile boolean growOnRelease;
     private volatile boolean autoIndent;
     private volatile boolean readOnly;
     private volatile boolean focused;
@@ -207,6 +213,13 @@ public final class TextField implements AutoCloseable {
         this.modifierSub = gui.modifiers().onCommit(held -> armLinks(held.value()));
 
         this.focusSub = gui.bus().subscribe(gui.focusEvents(), this::onFocus);
+        // A press that focused the field grows it on release (see onFocus): the release is the state leaving PRESSED.
+        gui.onState(node, state -> {
+            if (state != InteractionState.PRESSED && growOnRelease) {
+                growOnRelease = false;
+                node.overhang(focused && overhang);
+            }
+        });
         this.blink = CaretBlink.register(gui, node, () -> focused);
     }
 
@@ -423,6 +436,19 @@ public final class TextField implements AutoCloseable {
         } else {
             gui.releaseClaim(node, tab);
         }
+        return this;
+    }
+
+    /**
+     * Whether the field, while it holds focus, grows over its neighbours to show text that is cut off (on by
+     * default). It keeps its slot, so nothing moves; it grows only along an axis whose size is its own (declared, or
+     * its content), only as far as the room it is in, and only while the text is larger than the box; past the room
+     * it scrolls as it always has. An editor its parent sizes never grows. Turn it off for a field that should scroll
+     * inside its box whatever room there is around it (docs/plans/scrolling.md §7.3).
+     */
+    public TextField overhang(boolean overhang) {
+        this.overhang = overhang;
+        node.overhang(focused && overhang);
         return this;
     }
 
@@ -1449,6 +1475,21 @@ public final class TextField implements AutoCloseable {
             return;
         }
         focused = e.gained();
+        // While it is being worked in, a field whose text is cut off grows over its neighbours to show it whole, as
+        // far as the room it is in, and gives the room back when it loses focus. One that fits does not change
+        // (Node.overhang; docs/plans/scrolling.md §7.3).
+        //
+        // Focus that a press brought grows the field when that press is released, not before: growing moves what
+        // is under the pointer (a find bar's x at the field's right edge, text near the window's edge), and a press
+        // and its release must land on the same thing. Keyboard and program focus grow at once.
+        // A pointer focus always comes from a press, and it is announced before the press is: so this waits for the
+        // pointer to leave PRESSED rather than asking whether it is in it now.
+        if (focused && e.cause() == FocusCause.POINTER) {
+            growOnRelease = true;
+        } else {
+            growOnRelease = false;
+            node.overhang(focused && overhang);
+        }
         if (focused) {
             node.caret(document.value().caret());
             node.caretOn(true);

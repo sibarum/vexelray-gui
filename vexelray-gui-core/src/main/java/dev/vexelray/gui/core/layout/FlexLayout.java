@@ -54,6 +54,7 @@ public final class FlexLayout {
         root.y = 0f;
         root.w = Math.max(0f, w);
         root.h = Math.max(0f, h);
+        root.overhangs().clear();   // refilled by this pass, in paint order
         // Only a canvas larger than the window is a floor. One the window's size would count the strip a scrollbar
         // reserves on the other axis as overflow — content that fitted the window not fitting beside the bar.
         layoutBox(root, ctx, tm, canvasW > root.w ? canvasW : 0f, canvasH > root.h ? canvasH : 0f);
@@ -312,6 +313,11 @@ public final class FlexLayout {
                 c.x = originX + crossPos;
                 c.w = cs;
             }
+            // The slot is decided and the siblings are placed against it; an overhanging node may now grow past it.
+            c.overhung = false;
+            if (c.overhang()) {
+                overhang(c, ctx, tm);
+            }
             layoutBox(c, ctx, tm);
             cursor += 2f * mMain + ms + gap + extraGap;
         }
@@ -391,6 +397,73 @@ public final class FlexLayout {
             }
         }
         return mainSize;
+    }
+
+    /**
+     * Grow an {@linkplain RetainedNode#overhang() overhanging} node past the slot it was given, to what its content
+     * needs, as far as the room it is in (docs/plans/scrolling.md §7.3). Its siblings were placed against the slot,
+     * so nothing moves for it: it is drawn over them and hit first, which the renderer and {@code HitTest} do for any
+     * node this marks {@code overhung}.
+     *
+     * <p>Text that wraps keeps the slot's width and grows down; anything else grows across first, and then down for
+     * that width. Never smaller than the slot, so content that fits leaves the node exactly where it was. The room is
+     * the window, narrowed by every ancestor that scrolls: past a scroller's box the node would be over the
+     * scroller's neighbours while belonging to content that moves. A node that would cross the room's far edge moves
+     * back inside it, and one larger than the room stops at it — what does not fit is the node's own to scroll.
+     */
+    private static void overhang(RetainedNode n, LayoutContext ctx, TextMeasurer tm) {
+        float roomL = Float.NEGATIVE_INFINITY;
+        float roomT = Float.NEGATIVE_INFINITY;
+        float roomR = Float.POSITIVE_INFINITY;
+        float roomB = Float.POSITIVE_INFINITY;
+        RetainedNode root = n;
+        for (RetainedNode a = n.parent; a != null; a = a.parent) {
+            if (a.parent == null || holdsAlong(a, Axis.HORIZONTAL) || holdsAlong(a, Axis.VERTICAL)) {
+                roomL = Math.max(roomL, a.x);
+                roomT = Math.max(roomT, a.y);
+                roomR = Math.min(roomR, a.x + a.w);
+                roomB = Math.min(roomB, a.y + a.h);
+            }
+            root = a;
+        }
+        float roomW = Math.max(0f, roomR - roomL);
+        float roomH = Math.max(0f, roomB - roomT);
+
+        float w = n.w;
+        if (fitted(n, Axis.HORIZONTAL, ctx) && !(n.hasText() && n.wrapsText())) {
+            w = Math.max(n.w, Math.min(roomW, natural(n, Axis.HORIZONTAL, ctx, tm, -1f, false)));
+        }
+        float h = n.h;
+        if (fitted(n, Axis.VERTICAL, ctx)) {
+            h = Math.max(n.h, Math.min(roomH, natural(n, Axis.VERTICAL, ctx, tm, w, false)));
+        }
+        if (w <= n.w + EPS && h <= n.h + EPS) {
+            return;   // it fits its slot: nothing to grow, nothing to draw over
+        }
+        n.w = w;
+        n.h = h;
+        n.x = Math.max(roomL, Math.min(n.x, roomR - w));
+        n.y = Math.max(roomT, Math.min(n.y, roomB - h));
+        n.overhung = true;
+        if (!root.overhangs().contains(n)) {
+            root.overhangs().add(n);   // a scrolling parent places its children twice: once to measure, once offset
+        }
+    }
+
+    /**
+     * Whether {@code n}'s size along {@code axis} is its own — declared in a fixed unit, or its content — rather than
+     * its parent's: {@code FILL}, {@code grow}, a percentage, or a stretch across the parent. Only a fitted size is
+     * one an overhang may grow past. A box its parent sized already has all the room the parent gives it, and growing
+     * would cover the panes beside it: an editor filling its pane scrolls, and does not spread over the window.
+     */
+    private static boolean fitted(RetainedNode n, Axis axis, LayoutContext ctx) {
+        Length len = axis == Axis.HORIZONTAL ? n.width() : n.height();
+        if (!(isBasisFree(len) || len instanceof Length.Auto)) {
+            return false;
+        }
+        RetainedNode p = n.parent;
+        boolean across = p != null && (p.direction() == Direction.ROW) == (axis == Axis.VERTICAL);
+        return !across || !fillsCross(p, len, len.resolve(own(n, ctx), 0f));
     }
 
     /**
@@ -651,11 +724,21 @@ public final class FlexLayout {
     /** The measure, or with {@code least} the {@link #least} size: Scrollers counted as nothing where they scroll. */
     private static float measure(RetainedNode n, Axis axis, LayoutContext ctx, TextMeasurer tm, float knownWidth,
                                  boolean least) {
-        LayoutContext own = own(n, ctx);
         Length along = axis == Axis.HORIZONTAL ? n.width() : n.height();
         if (isBasisFree(along)) {
-            return Math.max(0f, along.resolve(own, 0f));
+            return Math.max(0f, along.resolve(own(n, ctx), 0f));
         }
+        return natural(n, axis, ctx, tm, knownWidth, least);
+    }
+
+    /**
+     * What {@code n}'s content needs along {@code axis}, whatever size it declared: text metrics for a text node, the
+     * children for a box, plus border and padding. {@link #measure} without the declaration; what an
+     * {@linkplain RetainedNode#overhang() overhanging} node grows to.
+     */
+    private static float natural(RetainedNode n, Axis axis, LayoutContext ctx, TextMeasurer tm, float knownWidth,
+                                 boolean least) {
+        LayoutContext own = own(n, ctx);
         Length padAxis = axis == Axis.HORIZONTAL ? n.paddingX() : n.paddingY();
         float inset = n.borderWidth().scalarPx(own, 0f) + padAxis.scalarPx(own, 0f);
         if (least && scrollsAlong(n, axis)) {

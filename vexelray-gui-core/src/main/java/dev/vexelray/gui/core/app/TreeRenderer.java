@@ -243,7 +243,7 @@ public final class TreeRenderer {
     private void unclipped(Canvas canvas) {
         for (Lift lift : lifts) {
             RetainedNode n = lift.node();
-            alpha = lift.alpha() * n.unclip();
+            alpha = lift.alpha() * lifted(n);
             transX = lift.transX();
             transY = lift.transY();
             unbound();
@@ -252,7 +252,9 @@ public final class TreeRenderer {
                 canvas.pushTranslate(transX, transY);
             }
             plating = n;
-            if (!seen(lift) || n.rotation() != 0f || n.scale() != 1f) {
+            // A node grown past its slot (Node.overhang) is over its later siblings inside the very mask it was seen
+            // in, so the ordinary walk's draw of it there is under them: it is drawn whole, on top.
+            if (n.overhung || !seen(lift) || n.rotation() != 0f || n.scale() != 1f) {
                 walk(n, canvas);   // no mask to keep out of, or none that holds under a turn: it fades as its parts
             } else {
                 float[] hole = {lift.clipL(), lift.clipT(), lift.clipR(), lift.clipB()};
@@ -282,6 +284,15 @@ public final class TreeRenderer {
             }
         }
         lifts.clear();
+    }
+
+    /**
+     * How far {@code n} is drawn out from under its clips: its {@code unclip}, or all the way while the layout has
+     * grown it past its slot ({@code Node.overhang}) — a grown node is over its neighbours by definition, and is the
+     * pointer's target there, so it is drawn there whole.
+     */
+    private static float lifted(RetainedNode n) {
+        return n.overhung ? 1f : n.unclip();
     }
 
     /** No mask: what the unclipped pass starts every node from. */
@@ -424,7 +435,7 @@ public final class TreeRenderer {
         // Fully transparent: skip the subtree exactly as a hidden node does. Not the same as hiding it, though —
         // it was laid out, so its box is real and it is still hit-testable unless it also said hitInert.
         if (alpha > 0f) {
-            if (plating == null && node.unclip() > 0f) {
+            if (plating == null && lifted(node) > 0f) {
                 // Drawn here as usual, and again later
                 lifts.add(new Lift(node, inherited, transX, transY, clipL, clipT, clipR, clipB));
             }

@@ -30,7 +30,8 @@ class TextScrollTest {
     private static final String LONG = "abcdefghijklmnopqrst";   // 20 chars = 200px
 
     private static TextField field(HeadlessGui h, boolean multiline, boolean wrap) {
-        TextField f = new TextField(h.gui, "").multiline(multiline).wordWrap(wrap);
+        TextField f = new TextField(h.gui, "").multiline(multiline).wordWrap(wrap)
+                .overhang(false);   // these are about scrolling inside the box, not growing past it
         f.node().width(Length.vw(10)).height(Length.rem(2.5f));
         h.gui.root().children(f.node());
         h.frame();

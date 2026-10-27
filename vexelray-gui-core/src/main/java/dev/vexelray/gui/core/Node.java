@@ -722,6 +722,21 @@ public final class Node {
         return this;
     }
 
+    /**
+     * Grow past the slot the layout gives this node, to what its content needs, as far as the room it is in — the
+     * window, narrowed by any scroller it is inside. Nothing around it moves: its siblings are placed against the
+     * slot, and the grown node is drawn over them and is the pointer's target wherever it is drawn. Text that wraps
+     * grows down; anything else grows across, then down. A node whose content fits its slot does not change at all,
+     * and one larger than the room stops at its edge and scrolls the rest as it would have.
+     *
+     * <p>For something cut off that is being worked in: {@code TextField} turns it on while it holds focus and off
+     * when it loses it, so a field shows the whole of what is being typed and gives the room back afterwards. On
+     * hover, use {@code Unclip} instead, which draws without taking the pointer.
+     */
+    public Node overhang(boolean overhang) {
+        return prop(PropKey.OVERHANG, overhang ? Boolean.TRUE : null);
+    }
+
     // --- structure ---
 
     /**

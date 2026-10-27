@@ -68,7 +68,11 @@ public final class Clip {
         float sx1 = clips ? Math.min(cx1, n.viewX + n.viewW) : cx1;
         float sy1 = clips ? Math.min(cy1, n.viewY + n.viewH) : cy1;
         for (RetainedNode c : n.children) {
-            if (c.floating()) {
+            if (c.overhung) {
+                // Grown past its slot (Node.overhang): drawn whole over everything and hit anywhere in its box, which
+                // the layout already kept inside the window and every scroller it is in. Its box is what is seen.
+                resolve(c, c.x, c.y, c.x + c.w, c.y + c.h);
+            } else if (c.floating()) {
                 resolve(c, cx0, cy0, cx1, cy1);
             } else {
                 resolve(c, sx0, sy0, sx1, sy1);

@@ -247,6 +247,12 @@ public enum PropKey {
      */
     SCROLLER(true),
     /**
+     * Grow past the slot the layout gives this node to what its content needs, as far as the room it is in, drawn
+     * over its neighbours and hit first (Boolean, absent for not). The slot is unchanged, so nothing around it moves.
+     * {@code TextField} sets it while focused: Unclip's focused-field phase (docs/plans/scrolling.md §7.3).
+     */
+    OVERHANG(true),
+    /**
      * Out-of-flow placement (both Lengths, or absent for a normal in-flow child). A floating node does not take
      * part in its parent's flex distribution, measurement or overflow — it is sized to its own props/content and
      * placed at these offsets from the parent's border-box origin, clamped so it stays inside the parent. It is

@@ -1,6 +1,6 @@
 # Scrolling as elements: `Scroller`, `ScrollRange`, `Scrollbar`
 
-**Status: proposed 2026-10-26; steps 0–3 and 6 done (the revert; `Scroller` in core; `vexelray-gui-scroll`; the framework widgets and the demo moved, all but the multi-line `TextField`; `collapsing()`); names settled (§8).** This replaces automatic scrolling, and it supersedes
+**Status: proposed 2026-10-26; steps 0–3 and 6 done (the revert; `Scroller` in core; `vexelray-gui-scroll`; the framework widgets and the demo moved, all but the multi-line `TextField`; `collapsing()`); names settled (§8); text fields (§7.3): the overhang done, the docked bar not yet.** This replaces automatic scrolling, and it supersedes
 [scrollbar-room.md](scrollbar-room.md), whose step 1 this plan reverts.
 
 Today any box scrolls when its content is longer than it is. The layout decides that after sizing the box, the
@@ -346,7 +346,7 @@ until step 5.
 | `Tabs` bar | `scroll(true, false)`, a declared `2.25rem` height, headers `FILL` | `Scrollbars.horizontal` around the header row. The bar becomes `AUTO` and headers a fixed `2.25rem` (scrollbar-room.md §5C), so the bar is headers plus scrollbar. The indicator sits at the headers' bottom, not the bar's |
 | `ListView`, `TreeView`, `Table` body | scroll y, `viewH`/`viewW` for virtualisation and paging | `Scrollbars.vertical`, with virtualisation reading `range().view` |
 | `Deck`, `Inspector`, `Rail` panel body, `KeymapEditor` | `scroll(false, true)` | `Scrollbars.vertical` |
-| `TextField`, multi-line | a text leaf with its own bar and `viewH` | a `ScrollSource` over its lines, with no bar of its own. The text area composes a `Scrollbar` beside it. A single-line field keeps scrolling with its caret and has no bar |
+| `TextField`, multi-line | a text leaf with its own bar and `viewH` | §7.3: the field grows over its neighbours while focused, and scrolls only past the room it has, with a `Scrollbar` docked inside its right edge |
 | Window root, under `Gui.minSize` | the root scrolls on a canvas larger than the window (scrolling.md §2) | the root never scrolls. An app that wants a small window to scroll wraps its content in `Scrollbars.both`. Otherwise the overflow is reported |
 | `Automation` / `ottermate tree` | `scrolls x/y` from `overflowX/Y` | a `Scroller` line with its ranges, and a `Scrollbar` line naming its source |
 | Demo | 7 opt-ins (Drag, Focus, Icons, Image, Motion, Window chapters, `Shell`), `Console`'s bottom lock | `Scrollbars.vertical`. `Console` gets `lock(BOTTOM)` |
@@ -367,6 +367,65 @@ until step 5.
 Any box in those apps that scrolls today *without* declaring it will overflow after step 5. The §1 report names
 each one on the first run that reaches it. Step 4 runs each app through its acceptance path for exactly that
 reason.
+
+### 7.3 Text fields: grow before scrolling (decided 2026-10-27)
+
+A field whose text is cut off has two different problems depending on how much is cut off, and they get two
+different answers. Which one applies follows from two lengths the layout already has: the content C, and the room R
+around the field (the window, narrowed by any scroller it sits in). This is a container query in CSS's sense, and
+safe for the reason CSS restricts those to: R is room the field is given, which nothing it does can change.
+
+| | What happens |
+| --- | --- |
+| C ≤ the field's box | nothing |
+| box < C ≤ R | **while focused, the field overhangs**: it keeps its slot, its box grows to fit the text, and it is drawn over its neighbours and hit first. Unclip's focused-field phase |
+| C > R | it overhangs as far as R, and **scrolls the rest**. A multi-line field shows a `Scrollbar` docked inside its right edge |
+
+No code asks which row applies. The box grows until it fits or reaches R; past R the text node overflows its box,
+as it always has, and its range scrolls. The third row is the second one, stopped at the room's edge.
+
+**The mechanisms:**
+- **`Node.overhang(true)`**, a layout property. The node is laid out in its slot, and its siblings are placed
+  against that slot. Then its own box grows to its natural size (text measured at the slot's width if it wraps,
+  unwrapped otherwise), clamped to the room, moved back inside the room if it would cross its far edge. A grown
+  node is painted over everything by the renderer's unclip pass, at full strength, and `HitTest` tries grown nodes
+  before anything else. Growth only happens while the content is larger than the slot, so a field that fits does
+  not move. `TextField` sets it on focus and clears it on blur.
+- **A docked float can dock to the right and bottom edges**, not only the top. Today `dock(true)` keeps the
+  parent's content out from under a top band (the find bar). Docking to an edge generalises that: the parent's
+  viewport stops short of the band between the float and that edge.
+- **A multi-line `TextField` carries its bar**: a `Scrollbar` bound to the text node's own vertical range,
+  floating and docked to the field's right edge, `collapsing()`. `field.node()` stays the text node, so every
+  caller that sizes, styles or focuses it keeps meaning the same thing. A field with `wordWrap(false)` gets a
+  horizontal bar docked to its bottom edge the same way.
+- **Any node can be a `ScrollSource`**, not only a `Scroller`: `gui.scrollAxes(node)` reads a node's published
+  scroll and asks it for offsets, through the same watch and `ScrollTo` a `Scroller` uses.
+- **Text nodes reserve no strip.** Caret-follow, the wheel and line culling stay the text node's own, which is why
+  it keeps scrolling itself rather than becoming content inside a `Scroller`: the renderer culls a document's lines
+  against the node's own view, so a 10,000-line text node sized to its content would draw every line every frame.
+
+A single-line field never gets a bar: past R its text keeps following the caret behind a masked edge, as now.
+
+Built in two pieces: the overhang (rows one and two, every field), then the docked bar and the end of the text
+strip (row three).
+
+**The overhang, as built (2026-10-27).** Three things the design above did not say, all found by building it:
+- **Only a size the field owns grows.** An axis grows only if the field's size along it is declared in a fixed unit
+  or is its content. An axis its parent sizes (`FILL`, `grow`, a percentage, a stretch across the parent) does not.
+  Without that, an editor filling its pane would spread over the whole window on focus. It is the same line step 1
+  of scrollbar-room.md drew between content-sized and parent-sized boxes.
+- **A press that focuses a field grows it on release.** Growing moves what is under the pointer, and a press and
+  its release must land on the same thing. The find bar's × proved it: pressing it focused the field, the field
+  widened, and the × moved 400px before the release. A pointer focus is announced before the press is, so the field
+  waits for its pointer state to leave `PRESSED`. Keyboard and program focus grow at once.
+- **A grown node is repainted whole.** Unclip's pass draws only the part outside the mask a node was seen in, which
+  is right for a node spilling out of its clip. A grown node is also over later siblings inside that mask, so the
+  pass draws all of it.
+
+`TextField.overhang(false)` keeps a field scrolling inside its box. The tests of scrolling inside a box use it.
+`OverhangTest` (8) and `TextFieldOverhangTest` (4) cover it. The Scrolling chapter has a cut-off path field and a
+two-line note of eight lines, shot with ottermate: focused, each shows all of its text over its neighbours, and the
+note, near the bottom of its scroller, moved up to stay inside it.
 
 ## 8. Names (settled 2026-10-26)
 

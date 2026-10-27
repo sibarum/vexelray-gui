@@ -147,6 +147,11 @@ public final class RetainedNode {
     // as the user scrolls away from and back onto the edge.
     public boolean scrollAttached = true;
 
+    // Overhang (PropKey.OVERHANG): whether this layout grew the node past its slot, and — on the root only — every node
+    // it grew, in paint order, so the renderer can draw them over everything and HitTest can try them first.
+    public boolean overhung;
+    private java.util.List<RetainedNode> overhangs;
+
     // Derived geometry for a text node: the caret/line metrics the compute phase bakes each changed frame, which
     // publish then copies into the read-model verbatim (docs/reference/layout-read-model.md §2.1). Null for a non-text node,
     // for empty text, or when the measurer has no glyph metrics. Never serialized from here — it is model-side
@@ -689,6 +694,22 @@ public final class RetainedNode {
     public dev.vexelray.gui.core.WindowRegion windowRegion() {
         Object v = props.get(PropKey.WINDOW_REGION);
         return v instanceof dev.vexelray.gui.core.WindowRegion r ? r : null;
+    }
+
+    /** Whether this node grows past its slot to fit its content ({@link PropKey#OVERHANG}). */
+    public boolean overhang() {
+        return Boolean.TRUE.equals(props.get(PropKey.OVERHANG));
+    }
+
+    /**
+     * The nodes the last layout grew past their slots, in paint order. Kept on the root, which is the one node it is
+     * read from; empty, and allocated only when asked, everywhere else.
+     */
+    public java.util.List<RetainedNode> overhangs() {
+        if (overhangs == null) {
+            overhangs = new java.util.ArrayList<>(2);
+        }
+        return overhangs;
     }
 
     /** Whether this node is a {@code Scroller} ({@link PropKey#SCROLLER}). */

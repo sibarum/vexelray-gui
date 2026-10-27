@@ -15,6 +15,7 @@ import dev.vexelray.gui.draw.Sketch;
 import dev.vexelray.gui.scroll.Scrollbar;
 import dev.vexelray.gui.scroll.Scrollbars;
 import dev.vexelray.gui.widget.Tabs;
+import dev.vexelray.gui.widget.TextField;
 import dev.vexelray.text.TextLayout;
 import sibarum.atchung.Committer;
 import sibarum.atchung.State;
@@ -61,6 +62,17 @@ public final class ScrollChapter implements Chapter {
         gui.landmark("scroll.tabs", tabs.node());
         gui.landmark("scroll.addtabs", addTen);
 
+        // ---- fields that are cut off: they grow while focused, and scroll only past the room ----------------
+
+        TextField path = new TextField(gui,
+                "C:/Users/someone/Documents/GitHub/vexelray-gui/docs/plans/scrolling.md");
+        path.node().width(Length.rem(14));
+        TextField note = new TextField(gui, "One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight").multiline(true);
+        note.node().width(Length.rem(14)).height(Length.rem(4));
+        Node neighbour = Ui.prose(gui, "A neighbour the fields grow over while they have focus; it does not move.");
+        gui.landmark("scroll.path", path.node());
+        gui.landmark("scroll.note", note.node());
+
         // ---- a page: a fixed height, so the bar's width comes out of the text --------------------------------
 
         Node lines = gui.column().width(Length.FILL).gap(Length.rem(0.25f));
@@ -105,6 +117,14 @@ public final class ScrollChapter implements Chapter {
                                         + "down. The headers keep all of their height, and every title stays whole "
                                         + "and clickable."),
                                 addTen, tabs.node()),
+                        Ui.strip(gui,
+                                Ui.heading(gui, "Fields that are cut off"),
+                                Ui.prose(gui, "Click into either. A field whose text does not fit grows over its "
+                                        + "neighbours to show all of it while it has focus, keeping its place, and "
+                                        + "gives the room back when it loses focus. Only past the room it is in "
+                                        + "does it scroll."),
+                                gui.row().width(Length.FILL).gap(Ui.GAP).alignItems(AlignItems.START)
+                                        .children(path.node(), note.node(), neighbour)),
                         Ui.strip(gui,
                                 Ui.heading(gui, "A page"),
                                 Ui.prose(gui, "Here the box has a fixed height, so the content gives way to it, "

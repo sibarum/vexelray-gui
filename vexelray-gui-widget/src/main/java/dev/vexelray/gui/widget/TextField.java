@@ -27,6 +27,7 @@ import dev.vexelray.text.TextLayout;
 import sibarum.atchung.Committer;
 import sibarum.atchung.State;
 import sibarum.atchung.Subscription;
+import sibarum.atchung.Topic;
 import sibarum.atchung.Versioned;
 import sibarum.tactroller.api.Key;
 import sibarum.tactroller.api.Modifier;
@@ -73,6 +74,100 @@ import java.util.function.Consumer;
  * subscriptions, claims and blink registration when it is removed from the tree.
  */
 public final class TextField implements AutoCloseable {
+
+    // ------------------------------------------------------------------------------------------- on the bus
+
+    /*
+     * The message model (vexelray-framework docs/threading.md, T3.8 and T3.9): a field is a component of the GUI's
+     * own kind. Typing, the caret, selection and undo stay in here, on the GUI thread, and cost no message. What the
+     * application must know leaves as a message (CHANGED, SUBMITTED); what the application wants done arrives as one
+     * (COMMANDS), applied in the frame's drain. A field is addressed by its name (#name), which is what every record
+     * on these topics carries first.
+     */
+
+    /**
+     * What a field now says: published whenever its document changes, typed or written. A state topic keyed by the
+     * field's name, so a component that ran once a frame sees the last text of the frame and not each keystroke.
+     */
+    public static final Topic<Changed> CHANGED =
+            Topic.state("vexelray.gui.textfield.changed", Changed.class, Changed::field);
+
+    /** Enter in a single-line field: every one, in order. */
+    public static final Topic<Submitted> SUBMITTED = Topic.edge("vexelray.gui.textfield.submitted", Submitted.class);
+
+    /** What the application asks a field to do, applied on the GUI thread in the frame's drain. In order. */
+    public static final Topic<Command> COMMANDS = Topic.edge("vexelray.gui.textfield.command", Command.class);
+
+    /**
+     * {@code field} now says {@code text}. {@code version} is its document's version, which a {@link Replace} names
+     * to say which text it was computed from.
+     */
+    public record Changed(String field, String text, long version) {
+    }
+
+    /** Enter was pressed in {@code field}, which said {@code text}. */
+    public record Submitted(String field, String text) {
+    }
+
+    /**
+     * Something the application asks of a field. Each kind says what it does to the field itself, so the field never
+     * switches over the kinds (vexelray-gui's style rule).
+     */
+    public sealed interface Command permits SetText, Replace, Insert, Select, ReadOnly {
+        /** The name of the field this is for. */
+        String field();
+
+        /** Do it, on the GUI thread. */
+        void applyTo(TextField target);
+    }
+
+    /** {@link #text(String)}: content the field has no past with, a file loaded or a reset. */
+    public record SetText(String field, String text) implements Command {
+        @Override
+        public void applyTo(TextField target) {
+            target.text(text);
+        }
+    }
+
+    /**
+     * {@link #replace(String)}: an edit, undoable, computed from what the field said at {@code basedOn}. If the field
+     * has changed since (the person kept typing while the logic worked), the replacement is stale and is dropped,
+     * and the field says again what it says now, so the logic can compute from that instead. A {@code basedOn} of
+     * {@link #ANY} replaces whatever is there.
+     */
+    public record Replace(String field, String text, long basedOn) implements Command {
+        @Override
+        public void applyTo(TextField target) {
+            target.replaceIfCurrent(text, basedOn);
+        }
+    }
+
+    /** The version that matches any: a {@link Replace} that is not computed from the field's text. */
+    public static final long ANY = -1;
+
+    /** {@link #insert(String)}: as if typed at the caret. */
+    public record Insert(String field, String text) implements Command {
+        @Override
+        public void applyTo(TextField target) {
+            target.insert(text);
+        }
+    }
+
+    /** {@link #select(int, int)}. */
+    public record Select(String field, int start, int end) implements Command {
+        @Override
+        public void applyTo(TextField target) {
+            target.select(start, end);
+        }
+    }
+
+    /** {@link #readOnly(boolean)}. */
+    public record ReadOnly(String field, boolean readOnly) implements Command {
+        @Override
+        public void applyTo(TextField target) {
+            target.readOnly(readOnly);
+        }
+    }
 
     /** Cap on retained undo history, so a long editing session can't grow the stacks without bound. */
     private static final int UNDO_LIMIT = 1000;
@@ -153,8 +248,15 @@ public final class TextField implements AutoCloseable {
     private volatile boolean readOnly;
     private volatile boolean focused;
     private volatile Consumer<MenuSink> contextMenu = menu -> { };
-    private volatile Consumer<String> onChange = s -> { };
-    private volatile Consumer<String> onSubmit = s -> { };
+    /** The no-op the two callbacks start as, so a field nobody gave one to sends nothing to the handler lane. */
+    private static final Consumer<String> NONE = s -> { };
+    private volatile Consumer<String> onChange = NONE;
+    private volatile Consumer<String> onSubmit = NONE;
+
+    /** What this field is called on the bus: the first field of every record on {@link #COMMANDS} and the others. */
+    private volatile String name;
+    /** This field's mailbox for {@link #COMMANDS}, drained on the GUI thread with the frame's mutations. */
+    private final Subscription commandsSub;
 
     /** Build an empty text field on {@code gui}. Size it via {@link #node()} (e.g. {@code .width(...)}). */
     public TextField(Gui gui) {
@@ -208,6 +310,52 @@ public final class TextField implements AutoCloseable {
 
         this.focusSub = gui.bus().subscribe(gui.focusEvents(), this::onFocus);
         this.blink = CaretBlink.register(gui, node, () -> focused);
+
+        this.name = "textfield-" + node.id();
+        // Every field hears every command and keeps its own: a prototype's routing, O(fields) per command. A router
+        // keyed by name, one mailbox per tree, is what this becomes once more widgets are addressed this way.
+        this.commandsSub = gui.mailbox("TextField#commands", COMMANDS, this::command, 256);
+    }
+
+    /**
+     * What this field is called on the bus: the name {@link #COMMANDS} address it by, and the one its
+     * {@link #CHANGED} and {@link #SUBMITTED} carry. Unique on its bus, chosen by whoever builds the view ("path",
+     * "search"). Until it is given one it is {@code textfield-<node id>}.
+     */
+    public TextField name(String name) {
+        this.name = java.util.Objects.requireNonNull(name, "name");
+        return this;
+    }
+
+    /** What this field is called on the bus. */
+    public String name() {
+        return name;
+    }
+
+    /** A command from {@link #COMMANDS}, on the GUI thread: this field's, or somebody else's to ignore. */
+    private void command(Command c) {
+        if (c.field().equals(name)) {
+            c.applyTo(this);
+        }
+    }
+
+    /**
+     * {@link #replace(String)} if the document is still at {@code basedOn} (or {@code basedOn} is {@link #ANY});
+     * otherwise drop it and say again what the field says now, so whoever computed it computes from that. On the
+     * GUI thread, where nothing else edits the document between the check and the edit.
+     */
+    private void replaceIfCurrent(String text, long basedOn) {
+        Versioned<Document> now = document.current();
+        if (basedOn != ANY && now.version() != basedOn) {
+            announce(now.value(), now.version());
+            return;
+        }
+        replace(text);
+    }
+
+    /** Tell the bus what the field says, at which version. */
+    private void announce(Document d, long version) {
+        gui.bus().publish(CHANGED, new Changed(name, d.text(), version));
     }
 
     /** The node to place in a layout (style/size it further through this handle). */
@@ -348,7 +496,7 @@ public final class TextField implements AutoCloseable {
 
     /** React to content edits (typing, deletion, paste, programmatic set). Runs on the handler executor. */
     public TextField onChange(Consumer<String> handler) {
-        this.onChange = handler == null ? s -> { } : handler;
+        this.onChange = handler == null ? NONE : handler;
         return this;
     }
 
@@ -387,7 +535,7 @@ public final class TextField implements AutoCloseable {
 
     /** React to Enter being pressed in the field. Runs on the handler executor. Never fires on a multiline field. */
     public TextField onSubmit(Consumer<String> handler) {
-        this.onSubmit = handler == null ? s -> { } : handler;
+        this.onSubmit = handler == null ? NONE : handler;
         return this;
     }
 
@@ -472,6 +620,7 @@ public final class TextField implements AutoCloseable {
     /** Release this field's subscriptions, claims and blink registration. Call when removing it from the tree. */
     @Override
     public void close() {
+        commandsSub.close();
         focusSub.close();
         modifierSub.close();
         blink.close();
@@ -718,7 +867,11 @@ public final class TextField implements AutoCloseable {
                     barrier();
                 } else {
                     String current = d.text();
-                    gui.handlers().execute(() -> onSubmit.accept(current));
+                    gui.bus().publish(SUBMITTED, new Submitted(name, current));
+                    Consumer<String> handler = onSubmit;
+                    if (handler != NONE) {
+                        gui.handlers().execute(() -> handler.accept(current));
+                    }
                 }
             }
             // Escape lets go of a selection. Anything that owns Escape for itself — a find bar, a dialog — claims
@@ -1405,8 +1558,13 @@ public final class TextField implements AutoCloseable {
      */
     private void published() {
         Document d = mirror();   // the document the node was just given, so the notification carries that one
+        // The version read after the mirror can be newer than d when another writer committed in between, which
+        // only makes a Replace computed from this text stale sooner: it is never older than the text it is sent with.
+        announce(d, document.version());
         Consumer<String> handler = onChange;
-        gui.handlers().execute(() -> handler.accept(d.text()));
+        if (handler != NONE) {
+            gui.handlers().execute(() -> handler.accept(d.text()));
+        }
     }
 
     /**

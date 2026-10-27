@@ -2011,6 +2011,23 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
+     * A widget's mailbox: {@code topic}'s messages delivered to {@code stage} on the GUI thread, in each frame's
+     * drain, after input is dispatched and with the tree's own mutations, before layout. This is how a message from
+     * an application's logic reaches a widget's state: the logic publishes a command record and the widget applies
+     * it here, on the thread that owns it, so the widget needs no lock and the logic never touches a widget
+     * (vexelray-framework's {@code docs/threading.md}, T3.8).
+     *
+     * <p>For widget code, which is the framework's: what runs in {@code stage} runs inside the frame budget. A
+     * mailbox that overflows is a fault naming {@code name} and the topic, as every edge mailbox's is.
+     *
+     * @param name     the mailbox's name for the probe's rows: the widget's class and what it is for
+     * @param capacity how many messages may wait for one drain
+     */
+    public <T> Subscription mailbox(String name, Topic<T> topic, sibarum.atchung.Subscriber<T> stage, int capacity) {
+        return pump.subscribe(name, topic, stage, capacity, Backpressure.FAIL);
+    }
+
+    /**
      * Buffer a group of edits and post them as one atomic {@link Mutation.Batch} — one publish, so no frame
      * boundary can split the group and no drain can observe it half-applied (§4).
      *

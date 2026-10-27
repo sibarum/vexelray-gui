@@ -32,7 +32,7 @@ class TreeReorderTest {
             "src", List.of("main", "test"),
             "docs", List.of()));
 
-    private static final class MapSource implements TreeView.Source<String> {
+    private static final class MapSource implements Listing<String> {
         @Override
         public List<String> roots() {
             return List.of("src", "docs", "notes.txt");
@@ -128,7 +128,7 @@ class TreeReorderTest {
         try (HeadlessGui h = new HeadlessGui()) {
             History history = new History();
             h.gui.dropHistory(history);
-            TreeView<String> tree = new TreeView<>(h.gui, new MapSource());
+            TreeView<String> tree = Listing.tree(h, new MapSource());
             tree.reorderable(recording());
             h.gui.root().children(tree.node());
             h.frame();
@@ -150,7 +150,7 @@ class TreeReorderTest {
     void theMiddleOfABranchMeansInto() {
         try (HeadlessGui h = new HeadlessGui()) {
             h.gui.dropHistory(new History());
-            TreeView<String> tree = new TreeView<>(h.gui, new MapSource());
+            TreeView<String> tree = Listing.tree(h, new MapSource());
             tree.reorderable(recording());
             h.gui.root().children(tree.node());
             h.frame();
@@ -167,7 +167,7 @@ class TreeReorderTest {
     void aLeafDividesInTwo() {
         try (HeadlessGui h = new HeadlessGui()) {
             h.gui.dropHistory(new History());
-            TreeView<String> tree = new TreeView<>(h.gui, new MapSource());
+            TreeView<String> tree = Listing.tree(h, new MapSource());
             tree.reorderable(recording());
             h.gui.root().children(tree.node());
             h.frame();
@@ -190,7 +190,7 @@ class TreeReorderTest {
     void thereAreNoDeadPixels() {
         try (HeadlessGui h = new HeadlessGui()) {
             h.gui.dropHistory(new History());
-            TreeView<String> tree = new TreeView<>(h.gui, new MapSource());
+            TreeView<String> tree = Listing.tree(h, new MapSource());
             tree.reorderable(recording());
             h.gui.root().children(tree.node());
             h.frame();
@@ -238,7 +238,7 @@ class TreeReorderTest {
     void belowTheLastRowMeansTheRoot() {
         try (HeadlessGui h = new HeadlessGui()) {
             h.gui.dropHistory(new History());
-            TreeView<String> tree = new TreeView<>(h.gui, new MapSource());
+            TreeView<String> tree = Listing.tree(h, new MapSource());
             tree.reorderable(recording());
             h.gui.root().children(tree.node());
             h.frame();
@@ -258,7 +258,7 @@ class TreeReorderTest {
     void aRefusalIsVisibleBeforeTheDrop() {
         try (HeadlessGui h = new HeadlessGui()) {
             h.gui.dropHistory(new History());
-            TreeView<String> tree = new TreeView<>(h.gui, new MapSource());
+            TreeView<String> tree = Listing.tree(h, new MapSource());
             tree.reorderable(recording());
             h.gui.root().children(tree.node());
             h.frame();
@@ -284,7 +284,7 @@ class TreeReorderTest {
         try (HeadlessGui h = new HeadlessGui()) {
             History history = new History();
             h.gui.dropHistory(history);
-            TreeView<String> tree = new TreeView<>(h.gui, new MapSource());
+            TreeView<String> tree = Listing.tree(h, new MapSource());
             tree.reorderable(recording());
             h.gui.root().children(tree.node());
             h.frame();
@@ -309,7 +309,7 @@ class TreeReorderTest {
         try (HeadlessGui h = new HeadlessGui()) {
             History history = new History();
             h.gui.dropHistory(history);
-            TreeView<String> tree = new TreeView<>(h.gui, new MapSource());
+            TreeView<String> tree = Listing.tree(h, new MapSource());
             tree.reorderable(recording());
             h.gui.root().children(tree.node());
             h.frame();
@@ -336,7 +336,7 @@ class TreeReorderTest {
     void aStillCarryParks() {
         try (HeadlessGui h = new HeadlessGui()) {
             h.gui.dropHistory(new History());
-            TreeView<String> tree = new TreeView<>(h.gui, new MapSource());
+            TreeView<String> tree = Listing.tree(h, new MapSource());
             tree.reorderable(recording());
             h.gui.root().children(tree.node());
             h.frame();
@@ -360,7 +360,7 @@ class TreeReorderTest {
     void withoutReorderNothingDrags() {
         try (HeadlessGui h = new HeadlessGui()) {
             h.gui.dropHistory(new History());
-            TreeView<String> tree = new TreeView<>(h.gui, new MapSource());
+            TreeView<String> tree = Listing.tree(h, new MapSource());
             h.gui.root().children(tree.node());
             h.frame();
 
@@ -378,7 +378,7 @@ class TreeReorderTest {
     void draggingSelects() {
         try (HeadlessGui h = new HeadlessGui()) {
             h.gui.dropHistory(new History());
-            TreeView<String> tree = new TreeView<>(h.gui, new MapSource());
+            TreeView<String> tree = Listing.tree(h, new MapSource());
             tree.reorderable(recording());
             h.gui.root().children(tree.node());
             h.frame();
@@ -399,7 +399,7 @@ class TreeReorderTest {
      * them, and its cards are leaves for the same reason. {@code hasChildren} answers about content — which is
      * what decides whether a row can be opened — and {@code acceptsChildren} about kind.
      */
-    private static final class BoardSource implements TreeView.Source<String> {
+    private static final class BoardSource implements Listing<String> {
 
         final Map<String, List<String>> columns = new LinkedHashMap<>();
 
@@ -444,7 +444,7 @@ class TreeReorderTest {
     void anEmptyBranchIsStillABranch() {
         try (HeadlessGui h = new HeadlessGui()) {
             h.gui.dropHistory(new History());
-            TreeView<String> tree = new TreeView<>(h.gui, new BoardSource());
+            TreeView<String> tree = Listing.tree(h, new BoardSource());
             tree.reorderable(recording());
             h.gui.root().children(tree.node());
             tree.expand("Todo");
@@ -464,7 +464,7 @@ class TreeReorderTest {
     void aRealLeafStillDividesInTwo() {
         try (HeadlessGui h = new HeadlessGui()) {
             h.gui.dropHistory(new History());
-            TreeView<String> tree = new TreeView<>(h.gui, new BoardSource());
+            TreeView<String> tree = Listing.tree(h, new BoardSource());
             tree.reorderable(recording());
             h.gui.root().children(tree.node());
             tree.expand("Todo");

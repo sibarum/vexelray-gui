@@ -25,7 +25,7 @@ class TreeFindTest {
             "test", List.of("AppTest.java"),
             "docs", List.of());
 
-    private static final class MapSource implements TreeView.Source<String> {
+    private static final class MapSource implements Listing<String> {
         final AtomicInteger fetches = new AtomicInteger();
 
         @Override
@@ -54,7 +54,7 @@ class TreeFindTest {
     @Test
     void aTreeThatIsNotSearchableHasNoBar() {
         try (HeadlessGui h = new HeadlessGui()) {
-            TreeView<String> tree = new TreeView<>(h.gui, new MapSource());
+            TreeView<String> tree = Listing.tree(h, new MapSource());
             h.gui.root().children(tree.node());
             h.frame();
             tree.focus();
@@ -214,7 +214,7 @@ class TreeFindTest {
     }
 
     private static TreeView<String> tree(HeadlessGui h, MapSource source) {
-        TreeView<String> tree = new TreeView<>(h.gui, source).searchable(true);
+        TreeView<String> tree = Listing.tree(h, source).searchable(true);
         h.gui.root().children(tree.node());
         h.frame();
         return tree;
@@ -226,7 +226,7 @@ class TreeFindTest {
         h.chord(Key.F, Key.LEFT_CONTROL);
         h.frame();
         h.type(query);
-        h.frame();
+        h.frames(4);   // the walk goes on from each level it asks for in the frame after the reply lands
     }
 
     private static boolean shown(HeadlessGui h, TreeView<String> tree) {

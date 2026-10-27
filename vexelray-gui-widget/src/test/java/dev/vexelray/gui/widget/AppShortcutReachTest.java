@@ -21,8 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  */
 class AppShortcutReachTest {
 
-    private static TreeView.Source<Path> twoRoots() {
-        return new TreeView.Source<>() {
+    private static Listing<Path> twoRoots() {
+        return new Listing<>() {
             @Override
             public List<Path> roots() {
                 return List.of(Path.of("alpha"), Path.of("beta"));
@@ -49,7 +49,7 @@ class AppShortcutReachTest {
     @Test
     void aFocusedTreeDoesNotSwallowGlobalShortcuts() {
         try (HeadlessGui h = new HeadlessGui();
-             TreeView<Path> tree = new TreeView<>(h.gui, twoRoots())) {
+             TreeView<Path> tree = Listing.tree(h, twoRoots())) {
             tree.node().width(Length.FILL).height(Length.FILL);
             h.gui.root().children(tree.node());
 
@@ -72,7 +72,7 @@ class AppShortcutReachTest {
     @Test
     void theTreeStillOwnsItsNavigationKeys() {
         try (HeadlessGui h = new HeadlessGui();
-             TreeView<Path> tree = new TreeView<>(h.gui, twoRoots())) {
+             TreeView<Path> tree = Listing.tree(h, twoRoots())) {
             tree.node().width(Length.FILL).height(Length.FILL);
             h.gui.root().children(tree.node());
             h.gui.shortcut(Key.DOWN, () -> { }, sibarum.tactroller.api.Modifier.CONTROL);

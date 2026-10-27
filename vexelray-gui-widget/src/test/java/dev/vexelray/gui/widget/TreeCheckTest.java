@@ -37,7 +37,7 @@ class TreeCheckTest {
             "src", List.of("main", "test"),
             "docs", List.of()));
 
-    private static final class MapSource implements TreeView.Source<String> {
+    private static final class MapSource implements Listing<String> {
 
         @Override
         public List<String> roots() {
@@ -96,7 +96,7 @@ class TreeCheckTest {
     @DisplayName("a tree with no Checkable shows no boxes and reserves no width for them")
     void boxesAreAbsentUntilAskedFor() {
         try (HeadlessGui h = new HeadlessGui()) {
-            TreeView<String> tree = new TreeView<>(h.gui, new MapSource());
+            TreeView<String> tree = Listing.tree(h, new MapSource());
             h.gui.root().children(tree.node());
             h.frame();
 
@@ -112,7 +112,7 @@ class TreeCheckTest {
     void clickingABoxTogglesThroughTheApplication() {
         try (HeadlessGui h = new HeadlessGui()) {
             Ticks ticks = new Ticks();
-            TreeView<String> tree = new TreeView<>(h.gui, new MapSource());
+            TreeView<String> tree = Listing.tree(h, new MapSource());
             h.gui.root().children(tree.node());
             tree.checkable(ticks);
             h.frame();
@@ -136,7 +136,7 @@ class TreeCheckTest {
     @DisplayName("clicking a box selects its row, so the keyboard carries on from there")
     void tickingSelects() {
         try (HeadlessGui h = new HeadlessGui()) {
-            TreeView<String> tree = new TreeView<>(h.gui, new MapSource());
+            TreeView<String> tree = Listing.tree(h, new MapSource());
             h.gui.root().children(tree.node());
             tree.checkable(new Ticks());
             h.frame();
@@ -155,7 +155,7 @@ class TreeCheckTest {
     void spaceTogglesTheSelection() {
         try (HeadlessGui h = new HeadlessGui()) {
             Ticks ticks = new Ticks();
-            TreeView<String> tree = new TreeView<>(h.gui, new MapSource());
+            TreeView<String> tree = Listing.tree(h, new MapSource());
             h.gui.root().children(tree.node());
             tree.checkable(ticks);
             tree.select("docs");
@@ -216,7 +216,7 @@ class TreeCheckTest {
         };
 
         try (HeadlessGui h = new HeadlessGui()) {
-            TreeView<String> tree = new TreeView<>(h.gui, new MapSource());
+            TreeView<String> tree = Listing.tree(h, new MapSource());
             h.gui.root().children(tree.node());
             tree.checkable(staged);
             tree.expand("src");
@@ -245,7 +245,7 @@ class TreeCheckTest {
     void recheckPicksUpAChangeMadeElsewhere() {
         try (HeadlessGui h = new HeadlessGui()) {
             Ticks ticks = new Ticks();
-            TreeView<String> tree = new TreeView<>(h.gui, new MapSource());
+            TreeView<String> tree = Listing.tree(h, new MapSource());
             h.gui.root().children(tree.node());
             tree.checkable(ticks);
             h.frame();
@@ -274,7 +274,7 @@ class TreeCheckTest {
         try (HeadlessGui h = new HeadlessGui()) {
             Ticks ticks = new Ticks();
             var mixed = new java.util.concurrent.atomic.AtomicBoolean();
-            TreeView<String> tree = new TreeView<>(h.gui, new MapSource());
+            TreeView<String> tree = Listing.tree(h, new MapSource());
             h.gui.root().children(tree.node());
             tree.checkable(new TreeView.Checkable<>() {
 
@@ -326,7 +326,7 @@ class TreeCheckTest {
     @DisplayName("a row materialised later still has a box")
     void rowsBuiltLaterAreCheckableToo() {
         try (HeadlessGui h = new HeadlessGui()) {
-            TreeView<String> tree = new TreeView<>(h.gui, new MapSource());
+            TreeView<String> tree = Listing.tree(h, new MapSource());
             h.gui.root().children(tree.node());
             tree.checkable(new Ticks());
             h.frame();

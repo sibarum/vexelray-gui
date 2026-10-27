@@ -183,7 +183,7 @@ class UnclipTest {
             assertTrue(window == Unclip.of(h.gui), "asked twice, the same one");
             assertFalse(window == Unclip.of(other.gui), "and every window its own");
 
-            TreeView<String> tree = new TreeView<>(h.gui, new TreeView.Source<String>() {
+            TreeView<String> tree = Listing.tree(h, new Listing<String>() {
                 @Override
                 public List<String> roots() {
                     return List.of("a");

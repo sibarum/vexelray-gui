@@ -35,7 +35,7 @@ class TreeTransferTest {
             "src", List.of("main"),
             "docs", List.of()));
 
-    private static final class MapSource implements TreeView.Source<String> {
+    private static final class MapSource implements Listing<String> {
 
         @Override
         public List<String> roots() {
@@ -96,7 +96,7 @@ class TreeTransferTest {
     /** A tree with focus, a history, and a reorder — the three things a transfer needs. */
     private TreeView<String> tree(HeadlessGui h, History history) {
         h.gui.dropHistory(history);
-        TreeView<String> tree = new TreeView<>(h.gui, new MapSource());
+        TreeView<String> tree = Listing.tree(h, new MapSource());
         tree.reorderable(recording());
         h.gui.root().children(tree.node());
         tree.focus();
@@ -243,7 +243,7 @@ class TreeTransferTest {
     @DisplayName("no history, no paste")
     void aPasteWithNowhereToRecordIsRefused() {
         try (HeadlessGui h = new HeadlessGui()) {
-            TreeView<String> tree = new TreeView<>(h.gui, new MapSource());
+            TreeView<String> tree = Listing.tree(h, new MapSource());
             tree.reorderable(recording());
             h.gui.root().children(tree.node());
             tree.focus();
@@ -269,8 +269,8 @@ class TreeTransferTest {
         try (HeadlessGui h = new HeadlessGui()) {
             History history = new History();
             h.gui.dropHistory(history);
-            TreeView<String> from = new TreeView<>(h.gui, new MapSource());
-            TreeView<String> to = new TreeView<>(h.gui, new MapSource());
+            TreeView<String> from = Listing.tree(h, new MapSource());
+            TreeView<String> to = Listing.tree(h, new MapSource());
             from.reorderable(recording());
             // The receiving tree is told about the other's payload type — without that they do not accept each
             // other's rows, which is the whole point of the type being per-instance.

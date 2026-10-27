@@ -31,7 +31,7 @@ class TreeActionsTest {
             "docs", List.of());
 
     /** A source over {@link #KIDS} that counts its fetches, so what a walk actually asked for is assertable. */
-    private static final class MapSource implements TreeView.Source<String> {
+    private static final class MapSource implements Listing<String> {
         final AtomicInteger fetches = new AtomicInteger();
 
         @Override
@@ -61,7 +61,7 @@ class TreeActionsTest {
      * {@code children}. That is where a walk over a real hierarchy spends its time, so it is where a test has to
      * be able to stand something else up.
      */
-    private static final class Chain implements TreeView.Source<String> {
+    private static final class Chain implements Listing<String> {
         final AtomicInteger fetches = new AtomicInteger();
         volatile Runnable duringFetch = () -> { };
 
@@ -96,7 +96,7 @@ class TreeActionsTest {
     void expandOpensTheWholeSubtreeAndCollapseShutsItAllTheWayDown() {
         try (HeadlessGui h = new HeadlessGui()) {
             MapSource source = new MapSource();
-            TreeView<String> tree = new TreeView<>(h.gui, source);
+            TreeView<String> tree = Listing.tree(h, source);
             h.gui.root().children(tree.node());
             h.frame();
 
@@ -127,7 +127,7 @@ class TreeActionsTest {
     void theTreesOwnCommandsAreEnabledByWhatTheRowIs() {
         try (HeadlessGui h = new HeadlessGui()) {
             MapSource source = new MapSource();
-            TreeView<String> tree = new TreeView<>(h.gui, source);
+            TreeView<String> tree = Listing.tree(h, source);
             h.gui.root().children(tree.node());
             h.frame();
 
@@ -161,7 +161,7 @@ class TreeActionsTest {
         try (HeadlessGui h = new HeadlessGui()) {
             MapSource source = new MapSource();
             List<String> deleted = new ArrayList<>();
-            TreeView<String> tree = new TreeView<>(h.gui, source)
+            TreeView<String> tree = Listing.tree(h, source)
                     .action(TreeView.Action.<String>of("×", "Delete", (item, job) -> deleted.add(item))
                             .shownWhen(item -> !item.equals("src"))
                             .enabledWhen(item -> item.endsWith(".java")));
@@ -196,7 +196,7 @@ class TreeActionsTest {
     void theNextActionTakesOverFromTheOneStillRunning() {
         try (HeadlessGui h = new HeadlessGui()) {
             Chain source = new Chain();
-            TreeView<String> tree = new TreeView<>(h.gui, source);
+            TreeView<String> tree = Listing.tree(h, source);
             h.gui.root().children(tree.node());
             h.frame();
 
@@ -225,7 +225,7 @@ class TreeActionsTest {
     void aFlipByHandTakesTheTreeOverFromARunningWalk() {
         try (HeadlessGui h = new HeadlessGui()) {
             Chain source = new Chain();
-            TreeView<String> tree = new TreeView<>(h.gui, source);
+            TreeView<String> tree = Listing.tree(h, source);
             h.gui.root().children(tree.node());
             h.frame();
 
@@ -252,7 +252,7 @@ class TreeActionsTest {
             MapSource source = new MapSource();
             TreeView.Job[] first = {null};
             TreeView.Job[] second = {null};
-            TreeView<String> tree = new TreeView<>(h.gui, source)
+            TreeView<String> tree = Listing.tree(h, source)
                     .action(TreeView.Action.<String>of("First", (item, job) -> first[0] = job))
                     .action(TreeView.Action.<String>of("Second", (item, job) -> second[0] = job))
                     // A free-form source contributes lines and runs them itself — and is still the tree's action.

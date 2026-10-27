@@ -1,7 +1,6 @@
 package dev.vexelray.gui.demo.chapter;
 
 import dev.vexelray.gui.core.Gui;
-import dev.vexelray.gui.core.IconSource;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.demo.Chapter;
@@ -20,17 +19,46 @@ import java.util.ArrayDeque;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.List;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 /**
  * A tree over the real filesystem: lazy children, per-row commands, a search that walks, and a subtree that
  * takes the room it needs over time rather than teleporting.
  *
  * <p>Every awkward property of a real tree is here on purpose. The hierarchy is <em>not</em> the widget's — it
- * is read through a {@code Source} — the children of a folder are not known until it opens, listing a directory
- * is I/O and must not happen on an input stage, a deep count takes long enough to be worth stopping, and the
+ * is told it by message, a level at a time — the children of a folder are not known until it opens, listing a
+ * directory is I/O and must not happen in the frame, a deep count takes long enough to be worth stopping, and the
  * user can outrun a search. A tree that only handles the in-memory case is a list with indentation.
  */
 public final class TreeChapter implements Chapter {
+
+    /** The tree's name on the bus: what its requests carry, and what the listing answers to. */
+    private static final String FILES = "files";
+
+    /** Where directories are listed: one thread, the demo's I/O, off the frame. */
+    private static final Executor LISTING = Executors.newSingleThreadExecutor(
+            r -> Thread.ofPlatform().daemon().name("tree-listing").unstarted(r));
+
+    /** What is in {@code dir}: folders first, then files, each by name. */
+    private static List<Path> list(Path dir) {
+        try (var kids = Files.list(dir)) {
+            return kids.sorted(Comparator
+                            .comparing((Path k) -> !Files.isDirectory(k))
+                            .thenComparing(k -> k.getFileName().toString().toLowerCase()))
+                    .toList();
+        } catch (IOException e) {
+            return List.of();   // an unreadable directory shows as empty, not as a crash
+        }
+    }
+
+    /** {@code p} as the tree draws it: its name, and a folder that opens or a file that does not. */
+    private static TreeView.Entry entry(Path p) {
+        Path name = p.getFileName();
+        String label = name == null ? p.toString() : name.toString();
+        return Files.isDirectory(p) ? TreeView.Entry.branch(p, label).icon(Icon.FOLDER)
+                : TreeView.Entry.leaf(p, label).icon(Icon.FILE);
+    }
 
     @Override
     public String title() {
@@ -48,44 +76,20 @@ public final class TreeChapter implements Chapter {
         Gui gui = stage.gui();
         Console console = stage.console();
 
-        // hasChildren answers from the directory bit without listing, so a folder gets a disclosure control for
-        // free; children() runs its listing on the handler executor the first time the folder opens. The ordered
-        // input stages never touch the disk, which is the whole reason those two questions are separate.
-        TreeView<Path> files = new TreeView<>(gui, new TreeView.Source<Path>() {
-
-            @Override
-            public List<Path> roots() {
-                return List.of(Path.of(".").toAbsolutePath().normalize());
+        // The tree asks for each folder's contents the first time it opens, and the listing answers on a thread of its
+        // own: listing a directory is I/O, and the frame never touches the disk. Subscribed before the tree is built,
+        // because building it is what asks for the roots. Whether a row opens comes from the directory bit, in the
+        // answer, so a folder gets a disclosure control without anything under it being listed.
+        gui.bus().subscribeAsync(TreeView.CHILDREN_WANTED, wanted -> {
+            if (!wanted.tree().equals(FILES)) {
+                return;
             }
-
-            @Override
-            public String label(Path p) {
-                Path name = p.getFileName();
-                return name == null ? p.toString() : name.toString();
-            }
-
-            @Override
-            public boolean hasChildren(Path p) {
-                return Files.isDirectory(p);
-            }
-
-            @Override
-            public IconSource icon(Path p) {
-                return Files.isDirectory(p) ? Icon.FOLDER : Icon.FILE;
-            }
-
-            @Override
-            public List<Path> children(Path p) {
-                try (var kids = Files.list(p)) {
-                    return kids.sorted(Comparator
-                                    .comparing((Path k) -> !Files.isDirectory(k))
-                                    .thenComparing(k -> k.getFileName().toString().toLowerCase()))
-                            .toList();
-                } catch (IOException e) {
-                    return List.of();   // an unreadable directory shows as empty, not as a crash
-                }
-            }
-        });
+            Path parent = (Path) wanted.parent();
+            List<Path> level = parent == null ? List.of(Path.of(".").toAbsolutePath().normalize()) : list(parent);
+            gui.bus().publish(TreeView.CHILDREN, new TreeView.Children(FILES, parent,
+                    level.stream().map(TreeChapter::entry).toList()));
+        }, LISTING);
+        TreeView<Path> files = new TreeView<>(gui, FILES);
         files.node().width(Length.FILL).height(Length.FILL);
 
         // Expanding a folder slides the rows below it down instead of teleporting them. OUT_CUBIC here, where

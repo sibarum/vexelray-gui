@@ -38,7 +38,7 @@ import java.util.List;
  * an ordinary click an ordinary click, the flick too quick to have been drawn committing nothing, Escape
  * cancelling, the undo record, and the focus move that keeps Ctrl+Z pointed at the history the drop wrote into.
  *
- * <p><b>The split is the whole design.</b> A tree reads its hierarchy through a {@code Source}, so it can say
+ * <p><b>The split is the whole design.</b> A tree is told its hierarchy a level at a time, so it can say
  * where a drop would land <em>in the tree's own terms</em> — before this row, into that branch, out to the root —
  * but it cannot say what putting it there does, because that is a mutation of a model it can only read. So the
  * tree resolves a placement and the application returns a {@link Change}. <b>Refusal is the application's too</b>,
@@ -51,6 +51,9 @@ import java.util.List;
  * change like any other.
  */
 public final class DragChapter implements Chapter {
+
+    /** The board's name on the bus: what its requests carry, and what this answers to. */
+    private static final String BOARD = "board";
 
     /** A task, or a column of them — the hierarchy is one thing, not two. */
     private static final class Task {
@@ -121,48 +124,35 @@ public final class DragChapter implements Chapter {
         // silently so. Setting one is the application saying where those changes go.
         gui.dropHistory(history);
 
-        board = new TreeView<>(gui, new TreeView.Source<Task>() {
-
-            @Override
-            public List<Task> roots() {
-                return List.copyOf(root.kids);
+        // The tree asks for each level and this answers it. Inline, on the thread that asks, which is the GUI thread:
+        // the model is in memory and is changed there, by the drops below, so it is read where it is written. A model
+        // behind a disk answers on a thread of its own (the Trees chapter). Subscribed before the tree is built,
+        // because building it is what asks for the columns.
+        gui.bus().subscribe(TreeView.CHILDREN_WANTED, wanted -> {
+            if (!wanted.tree().equals(BOARD)) {
+                return;
             }
-
-            @Override
-            public String label(Task task) {
-                return task.name;
+            Task parent = (Task) wanted.parent();
+            List<TreeView.Entry> level = new ArrayList<>();
+            for (Task task : (parent == null ? root : parent).kids) {
+                // Anything on this board can hold anything else — a column holds tasks, a task holds subtasks — and,
+                // crucially, that stays true of a column the user has just emptied. Answering this with whether it
+                // has children is what makes the last card out of a column the last card ever to go into it.
+                level.add(new TreeView.Entry(task, task.name, null, !task.kids.isEmpty(), true));
             }
-
-            @Override
-            public boolean hasChildren(Task task) {
-                return !task.kids.isEmpty();
-            }
-
-            @Override
-            public List<Task> children(Task task) {
-                return List.copyOf(task.kids);
-            }
-
-            @Override
-            public boolean acceptsChildren(Task task) {
-                // Anything on this board can hold anything else — a column holds tasks, a task holds subtasks —
-                // and, crucially, that stays true of a column the user has just emptied. Answering this with
-                // hasChildren is what makes the last card out of a column the last card ever to go into it.
-                return true;
-            }
+            gui.bus().publish(TreeView.CHILDREN, new TreeView.Children(BOARD, parent, level));
         });
+        board = new TreeView<>(gui, BOARD);
         board.node().width(Length.FILL).height(Length.FILL);
-        // Opened before the motion is installed, and the order is load-bearing rather than tidy. A board whose
-        // columns are shut is a board with nothing to drag, so these have to be open on the first frame — and an
-        // animated open is a change spread over frames a capture run never presents, which would photograph
-        // three columns with their contents still at zero height. With no motion installed yet the tree takes
-        // its instant path, which is the same reason Tabs defaults to no transition.
+        // A board whose columns are shut is a board with nothing to drag, so they are opened from the start: when
+        // the columns land, and each one's tasks a frame after that.
         for (Task column : root.kids) {
             board.expand(column);
         }
-        // From here on, opening a column slides the rows below it down rather than teleporting them. A reordered
-        // row still lands at once, which is deliberate: the whole board settles on the same frame, and half a
-        // view animating while the other half snaps is worse than either (see the Motion chapter).
+        // Opening a column slides the rows below it down rather than teleporting them, the first opening included:
+        // the tasks land after the columns, and arriving is a change like any other. A capture plays it to rest. A
+        // reordered row still lands at once, which is deliberate: the whole board settles on the same frame, and half
+        // a view animating while the other half snaps is worse than either (see the Motion chapter).
         board.motion((progress, done) ->
                 stage.krono().ramp(sibarum.kronometer.Dur.ms(180), sibarum.kronometer.anim.Ease.OUT_CUBIC,
                         progress, done));
@@ -360,7 +350,7 @@ public final class DragChapter implements Chapter {
      * Every change ends here: the model has moved, so the views are told.
      *
      * <p>Two of them, and neither is the tree's business to know about. {@code refresh()} is the obligation the
-     * {@code Source} split leaves with the application — the tree reads the hierarchy and is never notified when
+     * request-and-reply split leaves with the application — the tree asks for the hierarchy and is never told when
      * it changes — and the archive is an ordinary list of nodes this chapter owns outright.
      */
     private void shown(String what) {

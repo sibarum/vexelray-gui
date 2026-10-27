@@ -27,7 +27,7 @@ class TreeDropIndicatorTest {
 
     private static final Map<String, List<String>> KIDS = Map.of("src", List.of("main"));
 
-    private static final class MapSource implements TreeView.Source<String> {
+    private static final class MapSource implements Listing<String> {
         @Override
         public List<String> roots() {
             return List.of("src", "notes.txt");
@@ -53,7 +53,7 @@ class TreeDropIndicatorTest {
     private final List<Rect> painted = new ArrayList<>();
 
     private TreeView<String> tree(HeadlessGui h) {
-        TreeView<String> tree = new TreeView<>(h.gui, new MapSource());
+        TreeView<String> tree = Listing.tree(h, new MapSource());
         tree.reorderable((moved, where, effect) -> moved.equals(where.reference()) ? null : () -> null);
         tree.dropIndicator((where, effect) -> {
             painted.add(where);

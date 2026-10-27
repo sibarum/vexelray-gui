@@ -143,6 +143,17 @@ final class HeadlessGui implements AutoCloseable {
         return this;
     }
 
+    /**
+     * {@code n} frames: for what takes more than one, such as a tree's walk, which goes on from each level in the
+     * frame after the level's reply lands.
+     */
+    HeadlessGui frames(int n) {
+        for (int i = 0; i < n; i++) {
+            frame();
+        }
+        return this;
+    }
+
     /** The retained tree the last frame laid out — the thing the renderer would walk. */
     private RetainedNode lastRoot;
 

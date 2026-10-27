@@ -36,6 +36,14 @@ final class Routes {
         return table.add(address, stage);
     }
 
+    /** Drop whatever answers to {@code address} on {@code topic}: for a node that has left the tree. */
+    void remove(Topic<?> topic, Object address) {
+        Table<?> table = tables.get(topic);
+        if (table != null) {
+            table.routes.remove(address);
+        }
+    }
+
     /** One topic's routes, and the one subscription that feeds them. */
     private static final class Table<T extends Addressed> {
         private final Topic<T> topic;

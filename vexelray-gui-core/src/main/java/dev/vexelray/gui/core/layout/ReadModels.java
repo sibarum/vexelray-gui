@@ -242,6 +242,11 @@ public final class ReadModels {
         scrollWatches.put(id, new ScrollWatch(handler));
     }
 
+    /** True if {@code id}'s geometry is watched: one watch per node, which a second must not replace unasked. */
+    public boolean watchesResize(long id) {
+        return resizeWatches.containsKey(id);
+    }
+
     /** Drop the watches on a node that has left the tree. */
     public void forget(long id) {
         resizeWatches.remove(id);

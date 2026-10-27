@@ -151,6 +151,12 @@ public final class Gui implements AutoCloseable {
     private final sibarum.atchung.Inbox widgetInbox;
     /** The widgets' addressed mailboxes, routed by address: see {@link #mailbox(Topic, Object, sibarum.atchung.Subscriber)}. */
     private final Routes routes;
+    /** How many trees this process has made: what names each one's node-event topics apart. */
+    private static final java.util.concurrent.atomic.AtomicInteger TREES = new java.util.concurrent.atomic.AtomicInteger();
+    /** This tree's name among the others on a bus, for the topics that are per tree. */
+    private final String treeName = "tree" + TREES.incrementAndGet();
+    /** This tree's node-event topics ({@link #hear}), one per kind heard so far. GUI thread only. */
+    private final Map<NodeEvent<?>, Topic<?>> nodeTopics = new java.util.HashMap<>();
 
     // Wakes are traced through Probe on the FRAME lane -- `-Dprobe=frame -Dprobe.trace=true`, or
     // `-Dprobe.format=csv` for the correlation log. There was a bespoke flag here writing to System.out, which
@@ -1162,6 +1168,9 @@ public final class Gui implements AutoCloseable {
     private void releaseNodeId(long id) {
         boundHistories.remove(id);
         input.clearHandlers(id);
+        for (Topic<?> topic : nodeTopics.values()) {
+            routes.remove(topic, id);
+        }
         readModels.forget(id);
         navigator.forget(id);
     }
@@ -1935,6 +1944,69 @@ public final class Gui implements AutoCloseable {
     public <T extends Addressed> Subscription mailbox(Topic<T> topic, Object address,
                                                       sibarum.atchung.Subscriber<T> stage) {
         return routes.add(topic, address, stage);
+    }
+
+    /**
+     * Hear {@code kind} of event on {@code node} as a message: the form for a view, which is an application's
+     * (vexelray-framework's {@code docs/threading.md}, T7.4). The dispatcher publishes each event on this tree's topic
+     * for the kind, addressed to the node, and it reaches {@code stage} in the widget tick, on the GUI thread, after
+     * input is dispatched and before the tree's mutations are applied: so a click is heard, and what the view writes
+     * about it drawn, in the frame the click arrived.
+     *
+     * {@snippet :
+     * gui.hear(swatch, NodeEvent.CLICK, click -> pick.send(new Pick(colour)))
+     *    .hear(swatch, NodeEvent.STATE, state -> swatch.border(look.at(state)));
+     * }
+     *
+     * <p><b>A message, not a call.</b> The event is queued with every other message for the widgets, under its kind:
+     * every click arrives, in order; for {@link NodeEvent#STATE} and {@link NodeEvent#RESIZE} only the last per node
+     * in a tick, so hovering across a row and off it again within a frame is heard as where the pointer ended.
+     * Hearing a node is what makes it a target, as registering a handler did: a click bubbles to the nearest node that
+     * hears clicks, and hearing {@link NodeEvent#KEY} makes a node focusable.
+     *
+     * <p><b>Once per node and kind, and never over a widget's own.</b> A node a widget already handles that kind on
+     * belongs to the widget, which says what happened to it on topics of its own; hearing it as well is refused rather
+     * than either silently replacing the other. Released with the node.
+     *
+     * <p>The node-level registrations ({@link #onClick}, {@link #onState} and the rest) are the widget library's, which
+     * is the GUI and needs its events during dispatch, in order with the input around them.
+     *
+     * @throws IllegalStateException when the node already has its one handler of {@code kind}
+     */
+    public <E> Gui hear(Node node, NodeEvent<E> kind, sibarum.atchung.Subscriber<? super E> stage) {
+        long id = node.id();
+        if (kind.taken(input, this, id)) {
+            throw new IllegalStateException("node " + id + " already has a " + kind.name() + " handler, which is a "
+                    + "widget's: hear what the widget publishes about it instead of the node beneath it");
+        }
+        Topic<NodeEvent.Message<E>> topic = nodeTopic(kind);
+        routes.add(topic, id, message -> stage.on(message.event()));
+        kind.listen(input, this, id, event -> bus.publish(topic, new NodeEvent.Message<>(id, event)));
+        return this;
+    }
+
+    /** This tree's topic for {@code kind}, made the first time a node hears one. */
+    @SuppressWarnings("unchecked")
+    private <E> Topic<NodeEvent.Message<E>> nodeTopic(NodeEvent<E> kind) {
+        return (Topic<NodeEvent.Message<E>>) nodeTopics.computeIfAbsent(kind, k -> {
+            // Named per tree, because node ids are per tree: two trees on one bus would each hear the other's node 7
+            // (T4.6). The kind decides whether a node's events fold.
+            String name = "vexelray.gui." + treeName + ".node." + k.name();
+            Class<NodeEvent.Message<E>> type = (Class<NodeEvent.Message<E>>) (Class<?>) NodeEvent.Message.class;
+            return k.isState()
+                    ? Topic.state(name, type, NodeEvent.Message::node)
+                    : Topic.edge(name, type);
+        });
+    }
+
+    /** {@link NodeEvent#RESIZE}'s side of the read-model, for {@link NodeEvent}. */
+    boolean watchesResize(long id) {
+        return readModels.watchesResize(id);
+    }
+
+    /** {@link NodeEvent#RESIZE}'s registration: in the layout pass, so the message leaves with the size it reports. */
+    void watchResize(long id, java.util.function.Consumer<NodeLayout> publish) {
+        readModels.onResize(id, publish, true);
     }
 
     /**

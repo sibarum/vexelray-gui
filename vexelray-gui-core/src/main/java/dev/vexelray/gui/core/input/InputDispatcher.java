@@ -857,6 +857,43 @@ public final class InputDispatcher {
         focusable.add(nodeId);
     }
 
+    // --- whether a node's one handler of a kind is held: Gui.hear adds a listener and never replaces one ---
+
+    /** True if {@code nodeId} has a click handler. */
+    public boolean hasClick(long nodeId) {
+        return clickHandlers.containsKey(nodeId);
+    }
+
+    /** True if {@code nodeId} has a double-click handler. */
+    public boolean hasDoubleClick(long nodeId) {
+        return doubleClickHandlers.containsKey(nodeId);
+    }
+
+    /** True if {@code nodeId} has a context-click handler. */
+    public boolean hasContextClick(long nodeId) {
+        return contextHandlers.containsKey(nodeId);
+    }
+
+    /** True if {@code nodeId} has a drag handler or drag stage. */
+    public boolean hasDrag(long nodeId) {
+        return dragHandlers.containsKey(nodeId) || dragStages.containsKey(nodeId);
+    }
+
+    /** True if {@code nodeId} takes the wheel. */
+    public boolean hasWheel(long nodeId) {
+        return wheelHandlers.containsKey(nodeId);
+    }
+
+    /** True if {@code nodeId} has a key handler or key stage. */
+    public boolean hasKey(long nodeId) {
+        return keyHandlers.containsKey(nodeId) || keyStages.containsKey(nodeId);
+    }
+
+    /** True if {@code nodeId} has a typed-text handler or stage. */
+    public boolean hasChar(long nodeId) {
+        return charHandlers.containsKey(nodeId) || charStages.containsKey(nodeId);
+    }
+
     /** Explicitly mark a node focusable (e.g. a button) even without a key handler. */
     public void setFocusable(long nodeId, boolean canFocus) {
         if (canFocus) {

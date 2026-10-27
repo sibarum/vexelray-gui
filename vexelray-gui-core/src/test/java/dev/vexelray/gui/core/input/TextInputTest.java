@@ -35,7 +35,7 @@ class TextInputTest {
     @Test
     void charTypedGoesToFocusedCharHandler() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS, Runnable::run);
+        InputDispatcher d = new InputDispatcher(bus, CLICKS);
         RetainedNode field = textNode(1, "", 0, 100);
 
         StringBuilder typed = new StringBuilder();
@@ -52,7 +52,7 @@ class TextInputTest {
     @Test
     void charTypedIgnoredWhenNotFocused() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS, Runnable::run);
+        InputDispatcher d = new InputDispatcher(bus, CLICKS);
         RetainedNode field = textNode(1, "", 0, 100);
 
         StringBuilder typed = new StringBuilder();

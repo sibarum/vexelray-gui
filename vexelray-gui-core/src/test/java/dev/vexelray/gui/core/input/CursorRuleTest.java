@@ -66,7 +66,7 @@ class CursorRuleTest {
 
     private static Harness harness() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS, Runnable::run, () -> { });
+        InputDispatcher d = new InputDispatcher(bus, CLICKS, () -> { });
         List<CursorShape> seen = new ArrayList<>();
         d.cursorSink(seen::add);
         return new Harness(d, bus, seen);

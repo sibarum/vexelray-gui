@@ -7,20 +7,19 @@ import java.util.concurrent.atomic.AtomicInteger;
  * What the frame loop still owes this tree, as one count — the read side of the wake, for
  * {@link Gui#frameOwed()} and the automation driver's {@code settle}.
  *
- * <p><b>One count, not three flags.</b> Work travels through three stages: a <em>wake</em> (something was
- * published and no frame has started on it), a <em>frame</em> that took that wake (drain, lay out, publish), and
- * a <em>handler</em> that frame dispatched onto the worker lane, whose own wake starts the cycle again. Each
- * stage was once read on its own, and the reader could always land between two of them: the wake flag is
- * cleared at the top of the frame, so a {@code settle} arriving while that frame was still dispatching the
- * click — or while the click's handler ran on its worker — saw nothing owed and answered {@code ok} against the
- * tree from before the click. Reading three flags in any order cannot close that, because the stages form a
- * cycle and some order of reads always falls through the hand-over.
+ * <p><b>One count, not two flags.</b> Work travels through two stages: a <em>wake</em> (something was published
+ * and no frame has started on it) and a <em>frame</em> that took that wake (dispatch input and run its handlers,
+ * drain, lay out, publish), and a frame that ran a handler wakes the loop again, because a handler's effect need
+ * not be a mutation. Each stage was once read on its own (0.1 had a third, a handler on a worker lane), and the
+ * reader could always land between two of them: the wake flag is cleared at the top of the frame, so a
+ * {@code settle} arriving while that frame was still dispatching the click saw nothing owed and answered
+ * {@code ok} against the tree from before the click. Reading flags in any order cannot close that, because the
+ * stages form a cycle and some order of reads always falls through the hand-over.
  *
  * <p>So every stage <b>takes its unit before the stage that handed it over pays</b>: a frame keeps the wake's
- * unit until it has published, a handler's unit is taken while the frame that dispatched it is still running,
- * and a handler wakes before it pays. The count therefore never touches zero while work is moving, and zero
- * means exactly "the loop has caught up with everything it has been told, and everything that followed from
- * it".
+ * unit until it has published, and a frame that ran a handler wakes before it pays. The count therefore never
+ * touches zero while work is moving, and zero means exactly "the loop has caught up with everything it has been
+ * told, and everything that followed from it".
  *
  * <p>A frame that was not woken takes nothing. A loop that runs frames back to back — a test spinning
  * {@code frame}, a host that never parks — would otherwise hold a unit almost continuously, and a reader would
@@ -29,8 +28,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 final class Owed {
 
     private final AtomicInteger units = new AtomicInteger();
-    /** Handlers still running, apart from the total, only so a refusal can say which kind of debt it is. */
-    private final AtomicInteger handlers = new AtomicInteger();
     private final Object paid = new Object();
 
     /** Starts owing one: a tree is owed its first frame, and "nothing laid out yet" is not "settled". */
@@ -48,20 +45,6 @@ final class Owed {
                 paid.notifyAll();
             }
         }
-    }
-
-    void oweHandler() {
-        handlers.incrementAndGet();
-        owe();
-    }
-
-    void payHandler() {
-        if (handlers.decrementAndGet() <= 0) {
-            synchronized (paid) {
-                paid.notifyAll();
-            }
-        }
-        pay();
     }
 
     boolean any() {
@@ -88,34 +71,8 @@ final class Owed {
         }
     }
 
-    /**
-     * Block until no handler is running, bounded — {@code true} once that holds, {@code false} if one still is
-     * when {@code timeout} runs out. Wakes and frames are not waited for: this is for a caller that runs the
-     * frames itself, and would otherwise be waiting on its own frame.
-     *
-     * <p>A handler that dispatches another takes the second's unit before it pays its own, so a chain of them
-     * reads as running until its last link has returned.
-     */
-    boolean awaitHandlers(long timeout, TimeUnit unit) throws InterruptedException {
-        long deadline = System.nanoTime() + unit.toNanos(timeout);
-        synchronized (paid) {
-            while (handlers.get() > 0) {
-                long remaining = deadline - System.nanoTime();
-                if (remaining <= 0) {
-                    return false;
-                }
-                TimeUnit.NANOSECONDS.timedWait(paid, remaining);
-            }
-            return true;
-        }
-    }
-
-    /** What is owed, as a phrase for a refusal: {@code "2 handlers still running"}, {@code "frame still owed"}. */
+    /** What is owed, as a phrase for a refusal: {@code "frame still owed"}. */
     String describe() {
-        int h = handlers.get();
-        if (h > 0) {
-            return h == 1 ? "a handler still running" : h + " handlers still running";
-        }
         return any() ? "frame still owed" : "nothing owed";
     }
 }

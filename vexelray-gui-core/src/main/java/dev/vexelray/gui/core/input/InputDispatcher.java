@@ -33,7 +33,6 @@ import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 import java.util.function.LongConsumer;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executor;
 
 /**
  * Framework-owned input dispatch (architecture.md §8). Subscribes a {@link Pump} to the {@link InputTopics#INPUT}
@@ -48,7 +47,8 @@ import java.util.concurrent.Executor;
  *       restyle. State is computed with ancestor-or-self coverage, so hovering a button's label counts as hovering
  *       the button.</li>
  * </ul>
- * Handlers run on the supplied executor (off the GUI thread by default), so a slow handler never stalls rendering.
+ * Handlers run here, on the GUI thread, during {@link #dispatch}: they are the GUI's own components answering their
+ * input, and must not block (vexelray-framework's {@code docs/threading.md}, T1.1, T3.8).
  *
  * <p>Because {@link #dispatch} runs during the frame, before layout, hit-testing uses the previous frame's rects —
  * the standard one-frame-geometry latency, invisible in practice. Focus routing, capture, wheel, keyboard, and
@@ -127,7 +127,8 @@ public final class InputDispatcher {
 
     private final Atchung bus;
     private final Topic<ClickEvent> clicks;
-    private final Executor handlerExecutor;
+    /** Whether a handler has run since {@link #dispatch} last asked: what the frame owes the next one a look for. */
+    private boolean ranHandler;
     private final Runnable requestLayout;
     private final Pump pump;
     private final Subscription sub;
@@ -191,7 +192,8 @@ public final class InputDispatcher {
 
     /**
      * Handlers registered as an <b>ordered stage</b> rather than as application logic: they run inline on the GUI
-     * thread during {@link #dispatch}, in arrival order, instead of being handed to the worker executor.
+     * thread during {@link #dispatch}, in arrival order. Every handler does in 0.2; the two registrations are 0.1's
+     * split between the GUI thread and a worker pool, kept until the widget library's registrations are merged.
      *
      * <p>The distinction is what the handler <em>is</em>. An observer reacts to an event and has no ordering
      * requirement, so it belongs off-thread where a slow one cannot stall rendering. A command performs a state
@@ -208,7 +210,7 @@ public final class InputDispatcher {
     /**
      * Declared preemption (see {@link ClaimScope}). Ordered only by scope precedence, never by registration, so
      * a focused element always outranks a global default. {@code inline} marks the framework's own claims, whose
-     * commands mutate GUI-thread state (focus) and so must not be handed to the worker executor.
+     * commands mutate GUI-thread state (focus). Every claim runs on the GUI thread in 0.2, so the flag is 0.1's.
      *
      * <p>A claim is on a {@link Trigger}: a chord, or a touchpad {@link Gesture} (a swipe, a tap), which resolve
      * the same way. A {@code null} chord is a claim on <em>every</em> trigger ({@link #claimAny}), and its command
@@ -358,14 +360,13 @@ public final class InputDispatcher {
     private Consumer<Boolean> pointerLockSink = locked -> { };
     private boolean lockRequested;
 
-    public InputDispatcher(Atchung bus, Topic<ClickEvent> clicks, Executor handlerExecutor) {
-        this(bus, clicks, handlerExecutor, () -> { });
+    public InputDispatcher(Atchung bus, Topic<ClickEvent> clicks) {
+        this(bus, clicks, () -> { });
     }
 
-    public InputDispatcher(Atchung bus, Topic<ClickEvent> clicks, Executor handlerExecutor, Runnable requestLayout) {
+    public InputDispatcher(Atchung bus, Topic<ClickEvent> clicks, Runnable requestLayout) {
         this.bus = bus;
         this.clicks = clicks;
-        this.handlerExecutor = handlerExecutor;
         this.requestLayout = requestLayout;
         this.pump = bus.pump();
         this.sub = pump.subscribe(InputTopics.INPUT, this::handle, MAILBOX, Backpressure.FAIL);
@@ -473,7 +474,7 @@ public final class InputDispatcher {
 
     /**
      * Register a wheel handler for {@code nodeId}: the wheel turned over the node (or a descendant) goes to it as a
-     * {@link WheelEvent}, on the handler executor, instead of scrolling the nearest overflowing ancestor. The nearest
+     * {@link WheelEvent}, during the dispatch, instead of scrolling the nearest overflowing ancestor. The nearest
      * such node on the pointer's path wins. Replaces any prior handler for that node; {@code null} removes it.
      */
     public void onWheel(long nodeId, Consumer<WheelEvent> handler) {
@@ -598,7 +599,7 @@ public final class InputDispatcher {
                 if (claimed.inline()) {
                     claimed.command().accept(t);
                 } else {
-                    handlerExecutor.execute(() -> claimed.command().accept(t));
+                    handled(() -> claimed.command().accept(t));
                 }
             }
         }
@@ -1176,7 +1177,7 @@ public final class InputDispatcher {
      * Drain this frame's input against {@code root} (the laid-out tree, or {@code null} before the first layout).
      * Runs on the GUI thread: {@link Pump#drain()} delivers queued edges to {@link #handle} on this thread.
      */
-    public void dispatch(RetainedNode root) {
+    public boolean dispatch(RetainedNode root) {
         this.currentRoot = root;
         dropDisabledFocus();
         pump.drain();
@@ -1193,6 +1194,19 @@ public final class InputDispatcher {
         }
         settleDragSession();
         showArmed();
+        boolean ran = ranHandler;
+        ranHandler = false;
+        return ran;
+    }
+
+    /**
+     * Run a handler: here, now, in order with the input around it. Noted, because a handler may do something that
+     * publishes no mutation (start a motion, send a message), and the frame that ran it owes the loop a look at the
+     * next one: see what {@link #dispatch} returns.
+     */
+    private void handled(Runnable handler) {
+        handler.run();
+        ranHandler = true;
     }
 
     /**
@@ -1383,7 +1397,7 @@ public final class InputDispatcher {
                     float step = WHEEL_STEP_EM * em(taker);
                     WheelEvent w = new WheelEvent((float) s.xOffset() * step, -(float) s.yOffset() * step);
                     if (handler != null) {
-                        handlerExecutor.execute(() -> handler.accept(w));
+                        handled(() -> handler.accept(w));
                     }
                     break;
                 }
@@ -1423,7 +1437,7 @@ public final class InputDispatcher {
                     }
                     IntConsumer handler = charHandlers.get(focusedId);
                     if (handler != null) {
-                        handlerExecutor.execute(() -> handler.accept(cp));
+                        handled(() -> handler.accept(cp));
                     }
                 }
             }
@@ -1482,7 +1496,7 @@ public final class InputDispatcher {
             if (claimed.inline()) {
                 claimed.command().accept(pressed);
             } else {
-                handlerExecutor.execute(() -> claimed.command().accept(pressed));
+                handled(() -> claimed.command().accept(pressed));
             }
             report(e, true);
             return;
@@ -1497,7 +1511,7 @@ public final class InputDispatcher {
             }
             Consumer<KeyEvent> handler = keyHandlers.get(focusedId);
             if (handler != null) {
-                handlerExecutor.execute(() -> handler.accept(e));
+                handled(() -> handler.accept(e));
             }
             // Arm auto-repeat: this key re-fires after the initial delay until released (§8.4).
             repeatKey = key;
@@ -1609,7 +1623,7 @@ public final class InputDispatcher {
         }
         Consumer<KeyEvent> handler = keyHandlers.get(focusedId);
         if (handler != null) {
-            handlerExecutor.execute(() -> handler.accept(e));
+            handled(() -> handler.accept(e));
         }
         repeatNextNanos = now + REPEAT_INTERVAL_NANOS; // frame-rate-bounded; no burst catch-up
     }
@@ -1910,7 +1924,7 @@ public final class InputDispatcher {
                 }
                 InteractionState delivered = now;
                 for (Consumer<InteractionState> observer : entry.getValue()) {
-                    handlerExecutor.execute(() -> observer.accept(delivered));
+                    handled(() -> observer.accept(delivered));
                 }
             }
         }
@@ -2051,7 +2065,7 @@ public final class InputDispatcher {
         }
         Consumer<DragEvent> handler = dragHandlers.get(n.id);
         if (handler != null) {
-            handlerExecutor.execute(() -> handler.accept(e));
+            handled(() -> handler.accept(e));
         }
     }
 
@@ -2079,7 +2093,7 @@ public final class InputDispatcher {
         for (RetainedNode n = target; n != null; n = n.parent) {
             Consumer<ClickEvent> handler = handlers.get(n.id);
             if (handler != null) {
-                handlerExecutor.execute(() -> handler.accept(e));
+                handled(() -> handler.accept(e));
                 return; // consumed; bubbling stops at the first handler
             }
         }
@@ -2091,8 +2105,8 @@ public final class InputDispatcher {
      * inside a panel inside a page can each have one, and the innermost thing the user actually pointed at is the
      * one that answers, without any of them knowing the others exist.
      *
-     * <p>The sources themselves run on the handler executor, not here: they read application state to decide what
-     * is on the menu, and the GUI thread is mid-frame. A node whose sources contribute nothing has no menu — an
+     * <p>The sources run here, in the dispatch, and must not block: they read state to decide what
+     * is on the menu, and a declared menu (T7.5) reads none. A node whose sources contribute nothing has no menu — an
      * empty panel is never flashed — and with no presenter installed nothing is collected, which is said once if a
      * node on the way up has a menu that therefore goes undrawn.
      */
@@ -2117,7 +2131,7 @@ public final class InputDispatcher {
             }
             java.util.List<Consumer<MenuSink>> sources = menuSources.getOrDefault(n.id, java.util.List.of());
             Menu declared = declaredMenus.getOrDefault(n.id, Menu.NONE);
-            handlerExecutor.execute(() -> {
+            handled(() -> {
                 MenuCollector collector = new MenuCollector(e, menuHistory.apply(e.nodeId()));
                 for (Consumer<MenuSink> source : sources) {
                     source.accept(collector);
@@ -2145,7 +2159,7 @@ public final class InputDispatcher {
 
     /**
      * Ask {@code source} for a menu and show it at {@code e}, as a right click on a node with a menu would: for a
-     * control whose plain click opens a menu (a title-bar instrument's). On the handler lane, as the sources are.
+     * control whose plain click opens a menu (a title-bar instrument's). In the dispatch, as the sources are.
      */
     public void openMenu(ClickEvent e, Consumer<MenuSink> source) {
         MenuPresenter presenter = menuPresenter;
@@ -2154,7 +2168,7 @@ public final class InputDispatcher {
                     "no MenuPresenter is installed on this tree; install one with Gui.menus");
             return;
         }
-        handlerExecutor.execute(() -> {
+        handled(() -> {
             MenuCollector collector = new MenuCollector(e, menuHistory.apply(e.nodeId()));
             source.accept(collector);
             java.util.List<MenuItem> items = collector.build();

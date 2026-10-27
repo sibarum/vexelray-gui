@@ -37,7 +37,7 @@ class DragWatchTest {
     private static final PayloadType<String> ROW = PayloadType.of("row");
 
     private final Atchung bus = Atchung.create();
-    private final InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS, Runnable::run);
+    private final InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS);
     private final History history = new History();
     private final List<String> heard = new ArrayList<>();
     private RetainedNode root;

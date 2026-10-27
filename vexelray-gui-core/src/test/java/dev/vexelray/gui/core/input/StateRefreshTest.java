@@ -28,7 +28,7 @@ class StateRefreshTest {
     private static final Topic<ClickEvent> CLICKS = Topic.of("test.state.refresh.clicks", ClickEvent.class);
 
     private final Atchung bus = Atchung.create();
-    private final InputDispatcher d = new InputDispatcher(bus, CLICKS, Runnable::run);
+    private final InputDispatcher d = new InputDispatcher(bus, CLICKS);
     private final RetainedNode root = node(0, 0, 0, 300, 300, null);
     /** Every observed node's deliveries, in registration order. */
     private final Map<Long, List<InteractionState>> seen = new LinkedHashMap<>();

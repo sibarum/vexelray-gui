@@ -292,15 +292,6 @@ public final class Gui implements AutoCloseable {
     /** The focus state and theme the read-models were last published against; see the frame's publish step. */
     private dev.vexelray.gui.core.input.FocusState publishedFocus = dev.vexelray.gui.core.input.FocusState.NONE;
     private Theme publishedTheme;
-    /**
-     * Where an input handler runs: here, on the GUI thread, during the frame's dispatch, followed by a wake.
-     *
-     * <p>0.1 ran handlers on a pool of their own, so a click was answered on whichever worker took it. In 0.2 the
-     * tree's handlers are the GUI's own components answering their input, which is the GUI thread's work, and an
-     * application's logic hears a widget by a message instead (vexelray-framework's {@code docs/threading.md},
-     * T1.1, T3.8). Nothing that blocks belongs in one: blocking work is a job's.
-     */
-    private final Executor handlers;
     /** Set by {@link #close}. */
     private volatile boolean closed;
 
@@ -401,31 +392,14 @@ public final class Gui implements AutoCloseable {
             }
         }, bus, this::wake);
         this.navSub = pump.subscribe(NavTopics.GO, navigator::accept, MUTATION_MAILBOX, Backpressure.BLOCK);
-        // Framework input dispatch on the same bus. Every handler runs here, on the GUI thread, during dispatch, and
-        // is followed by a wake, whatever it did.
+        // Framework input dispatch on the same bus. Every handler runs in the dispatch, on the GUI thread, inside the
+        // frame and the cause of the input it answers; the frame that ran one wakes the loop (see frameBody).
         //
-        // Mutating a node wakes the loop already, because the publish does it. But a handler's effect is not always
-        // a mutation: it may publish a message, or start a motion, and to a loop that parks, an effect nothing asked
-        // a frame for does not exist until some unrelated event causes one. So the wake is hung on the one thing every
-        // such path has in common, a handler ran, at the cost of one frame per input event that finds nothing to do.
-        // Owed from start to return, and the wake comes before the payment: a handler is the frame's work while it
-        // runs, and a settle that cannot see it answers before the click has done anything (Owed). Run in the cause
-        // it was given in, the click's or the key's, so what it does is charged to the input that asked for it
-        // (atchung's docs/correlation.md).
-        this.handlers = task -> {
-            owed.oweHandler();
-            try {
-                Cause.carry(task).run();
-            } finally {
-                wake("handler returned");
-                owed.payHandler();
-            }
-        };
         // Dirtying layout is a change like any other, and it is the one that publishes no Mutation: a
         // scroll offset moves, the tree has to be laid out again, and nothing on the bus says so. In a
         // loop that redrew unconditionally the distinction never mattered; in one that parks, a
         // relayout nobody asked a frame for is a tree that stays exactly as it was last drawn.
-        this.input = new InputDispatcher(bus, CLICKS, handlers, () -> {
+        this.input = new InputDispatcher(bus, CLICKS, () -> {
             reconciler.markLayoutDirty();
             wake("layout requested");
         });
@@ -474,13 +448,13 @@ public final class Gui implements AutoCloseable {
             public String landmarkName(long id) {
                 return navigator.landmarkName(id);
             }
-        }, handlers);
+        });
         this.layoutReader = readModels.reader();
         // After the reader, because the events it sends carry node handles, and a handle reads its geometry there.
         LayoutReader reads = this.layoutReader;
         this.undoing = new Undoing(navigator, input, reconciler::node, reconciler::root,
                 id -> sink.post(new Mutation.Reveal(id)),   // as Tab reveals what it lands on
-                handlers, this::wake, id -> new Node(id, sink, reads));
+                this::wake, id -> new Node(id, sink, reads));
 
         // The modifiers held right now, published the same way, and a State rather than a topic for the same
         // reason: this is a *condition*, not an event. Nobody wants the edges — they want to know what is held.
@@ -778,7 +752,7 @@ public final class Gui implements AutoCloseable {
 
     /**
      * Register a click handler for {@code node} — fired when a left press and release land on it (bubbling to the
-     * nearest ancestor with a handler). Runs on a worker thread, so it may freely mutate the tree via handles.
+     * nearest ancestor with a handler). Runs on the GUI thread, in the dispatch, so it must be short.
      */
     public Gui onClick(Node node, Runnable handler) {
         input.onClick(node.id(), handler);
@@ -793,7 +767,7 @@ public final class Gui implements AutoCloseable {
      * moment a pointer handler runs — a second channel alongside the event, and one that is already wrong if the
      * key came up while the handler was queued. The modifiers were always part of the click (see
      * {@link ClickEvent}); this hands them to the left-button handler as {@link #onContextClick} already does to
-     * the right-button one. Runs on a worker thread, like the plain form.
+     * the right-button one. Runs in the dispatch, like the plain form.
      */
     public Gui onClick(Node node, java.util.function.Consumer<ClickEvent> handler) {
         input.onClick(node.id(), handler);
@@ -812,7 +786,7 @@ public final class Gui implements AutoCloseable {
      * <p>The clicks still arrive as clicks: the second one reaches {@link #onClick} and then this. That is what
      * keeps single clicks immediate — telling a lone click from the first half of a double would mean holding
      * every click for the whole double-click window. For triple clicks and beyond, read
-     * {@link ClickEvent#clicks()} in an {@link #onClick} handler. Runs on a worker thread, like a click.
+     * {@link ClickEvent#clicks()} in an {@link #onClick} handler. Runs in the dispatch, like a click.
      */
     public Gui onDoubleClick(Node node, Runnable handler) {
         input.onDoubleClick(node.id(), handler);
@@ -830,7 +804,7 @@ public final class Gui implements AutoCloseable {
      * (bubbling to the nearest ancestor with a handler). The handler receives the {@link ClickEvent} because a
      * context action almost always needs the pointer position, to anchor a menu at it. A right click changes
      * nothing else — no focus move, no PRESSED state, no drag capture; what it means is the widget's decision.
-     * Runs on a worker thread, so it may freely mutate the tree via handles.
+     * Runs on the GUI thread, in the dispatch, so it must be short.
      */
     public Gui onContextClick(Node node, java.util.function.Consumer<ClickEvent> handler) {
         input.onContextClick(node.id(), handler);
@@ -857,7 +831,8 @@ public final class Gui implements AutoCloseable {
      * and only the source knows what that is. A source that adds nothing means no menu opens, so "sometimes there
      * is nothing to offer here" needs no special case.
      *
-     * <p>Sources run on a worker thread, so they may read application state freely.
+     * <p>Sources run on the GUI thread, in the dispatch, so they must be short. An application declares its menu
+     * instead ({@link #menu}, T7.5).
      *
      * <p><b>The first menu brings its presenter.</b> A tree with no {@link #menus() presenter} gets the
      * {@link MenuPresenter.Default} on the class path here ({@code vexelray-gui-widget}'s {@code ContextMenu}), so
@@ -949,8 +924,7 @@ public final class Gui implements AutoCloseable {
 
     /**
      * React to {@code node}'s pointer-interaction state (NORMAL/HOVER/PRESSED) — e.g. to restyle a button on hover
-     * and press. The handler is invoked on a worker thread on each state change, so it may mutate the tree via
-     * handles. Hovering a descendant (a button's label) counts as hovering {@code node}.
+     * and press. The handler is invoked in the dispatch on each state change, so it must be short. Hovering a descendant (a button's label) counts as hovering {@code node}.
      */
     public Gui onState(Node node, java.util.function.Consumer<InteractionState> handler) {
         input.onState(node.id(), handler);
@@ -959,8 +933,8 @@ public final class Gui implements AutoCloseable {
 
     /**
      * Drag {@code node}: a left press on it (or a descendant) captures the pointer and delivers START/MOVE/END
-     * {@link DragEvent}s — MOVE continues while held even when the pointer leaves the node. The handler runs on a
-     * worker thread; use {@link DragEvent#fractionX()}/{@code fractionY()} to map the pointer onto the node.
+     * {@link DragEvent}s — MOVE continues while held even when the pointer leaves the node. The handler runs in the
+     * dispatch; use {@link DragEvent#fractionX()}/{@code fractionY()} to map the pointer onto the node.
      */
     public Gui onDrag(Node node, java.util.function.Consumer<DragEvent> handler) {
         input.onDrag(node.id(), handler);
@@ -969,7 +943,7 @@ public final class Gui implements AutoCloseable {
 
     /**
      * Take the wheel over {@code node} (or a descendant): it arrives as a {@link dev.vexelray.gui.core.input.WheelEvent}
-     * on a worker thread, instead of scrolling whatever {@code node} is inside. For something that is not inside what
+     * in the dispatch, instead of scrolling whatever {@code node} is inside. For something that is not inside what
      * it moves — a scrollbar beside its {@link Scroller}, a 3D view panning its camera. {@code null} gives the wheel
      * back.
      */
@@ -1084,7 +1058,7 @@ public final class Gui implements AutoCloseable {
 
     /**
      * Observe {@code node}'s computed geometry: the handler is called with its {@link NodeLayout} whenever the
-     * node's box changes, <b>including the first time it has one</b>. Runs on a worker thread.
+     * node's box changes, <b>including the first time it has one</b>. Runs on the GUI thread, in the dispatch.
      *
      * <p><b>This is the seam for "my geometry is real now".</b> Everything else a node can be told about is
      * input; geometry was observable only by polling {@link Node#layout} or by subscribing to {@link #layout()}
@@ -1105,7 +1079,7 @@ public final class Gui implements AutoCloseable {
      * that size checks and waits for the next call.
      */
     public Gui onResize(Node node, java.util.function.Consumer<NodeLayout> handler) {
-        return watchResize(node, handler, false);
+        return watchResize(node, handler);
     }
 
     /**
@@ -1115,17 +1089,17 @@ public final class Gui implements AutoCloseable {
      * handle, return. Anything that computes belongs on {@link #onResize}.
      */
     public Gui onResizeUi(Node node, java.util.function.Consumer<NodeLayout> handler) {
-        return watchResize(node, handler, true);
+        return watchResize(node, handler);
     }
 
-    private Gui watchResize(Node node, java.util.function.Consumer<NodeLayout> handler, boolean ordered) {
-        readModels.onResize(node.id(), handler, ordered);
+    private Gui watchResize(Node node, java.util.function.Consumer<NodeLayout> handler) {
+        readModels.onResize(node.id(), handler);
         return this;
     }
 
     /**
      * Register a key handler for {@code node} (which becomes focusable). Fires with each key press while the node
-     * holds focus, after shortcuts and Tab traversal have had first refusal. Runs on a worker thread.
+     * holds focus, after shortcuts and Tab traversal have had first refusal. Runs on the GUI thread, in the dispatch.
      */
     public Gui onKey(Node node, java.util.function.Consumer<KeyEvent> handler) {
         input.onKey(node.id(), handler);
@@ -1135,8 +1109,8 @@ public final class Gui implements AutoCloseable {
     /**
      * Register a typed-text handler for {@code node} (which becomes focusable and, by convention, editable).
      * Fires once per Unicode code point typed while the node holds focus — the text channel, delivered from
-     * {@code CharTyped}, kept separate from {@link #onKey} (caret motion, backspace, shortcuts). Runs on a
-     * worker thread.
+     * {@code CharTyped}, kept separate from {@link #onKey} (caret motion, backspace, shortcuts). Runs in the
+     * dispatch.
      */
     public Gui onChar(Node node, java.util.function.IntConsumer handler) {
         input.onChar(node.id(), handler);
@@ -1150,7 +1124,7 @@ public final class Gui implements AutoCloseable {
      * frame's input drain, <b>in arrival order</b>.
      *
      * <p>Use this — not {@link #onChar} — when the handler performs a state transition that depends on the order
-     * events arrived in. The worker executor orders the invocations but not their effects: a burst of typed
+     * events arrived in. In 0.1 a worker executor ordered the invocations but not their effects: a burst of typed
      * characters handed to a pool one task at a time can apply scrambled, and because each individual edit is
      * coherent, the result reads as a dropped keystroke rather than a race. Everything without an ordering
      * requirement — application logic, notifications, anything slow — belongs on {@link #onChar}, where it still
@@ -1317,7 +1291,7 @@ public final class Gui implements AutoCloseable {
         return navigator.windowKey();
     }
 
-    /** Register a global keyboard shortcut. The command runs on a worker thread. */
+    /** Register a global keyboard shortcut. The command runs on the GUI thread, in the dispatch. */
     public Gui shortcut(Shortcut shortcut, Runnable command) {
         input.registerShortcut(shortcut, command);
         return this;
@@ -1344,8 +1318,8 @@ public final class Gui implements AutoCloseable {
      * {@link ClaimScope#GLOBAL} claims, so a focused element outranks them).
      *
      * <p>This is what the framework offers in place of {@code preventDefault}, which it cannot: cancelling
-     * requires a handler to answer synchronously, and handlers here run on worker threads. Declaring the
-     * preemption up front lets the dispatcher decide on the GUI thread while the command runs wherever.
+     * requires a handler to answer before the dispatch moves on, and a handler that may refuse is a callback with
+     * a veto. Declaring the preemption up front lets the dispatcher decide without asking anyone.
      *
      * <p>The chord may as well be a touchpad {@link Gesture} — a three-finger swipe, a two-finger double tap —
      * which is claimed, outranked and released exactly as a key is.
@@ -1412,7 +1386,7 @@ public final class Gui implements AutoCloseable {
      * never shadows a key somebody asked for by name. A modifier pressed alone is not a chord and reaches nobody,
      * here as everywhere; read {@link #modifiers()} to show the ones being held. A touchpad {@link Gesture} that
      * is a command (a swipe, a tap) is heard too, so a recorder records the gesture made on the pad. The command
-     * runs on a worker.
+     * runs in the dispatch.
      */
     public Gui claimAny(Node node, ClaimScope scope, java.util.function.Consumer<Trigger> command) {
         input.claimAny(node.id(), scope, command);
@@ -1942,15 +1916,6 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
-     * Runs a task as an input handler runs: here, on the GUI thread, then wakes the loop. <b>Transitional, for 0.2's
-     * phase 3:</b> it is what a widget's remaining callbacks are still delivered through while they become messages,
-     * and it goes when the last one does (vexelray-framework's {@code docs/threading.md}, T7.2).
-     */
-    public Executor handlers() {
-        return handlers;
-    }
-
-    /**
      * A widget's mailbox: {@code topic}'s messages delivered to {@code stage} on the GUI thread, in each frame's
      * drain, after input is dispatched and with the tree's own mutations, before layout. This is how a message from
      * an application's logic reaches a widget's state: the logic publishes a command record and the widget applies
@@ -2042,7 +2007,7 @@ public final class Gui implements AutoCloseable {
 
     /** {@link NodeEvent#RESIZE}'s registration: in the layout pass, so the message leaves with the size it reports. */
     void watchResize(long id, java.util.function.Consumer<NodeLayout> publish) {
-        readModels.onResize(id, publish, true);
+        readModels.onResize(id, publish);
     }
 
     /**
@@ -2146,7 +2111,7 @@ public final class Gui implements AutoCloseable {
      * <p>The read side of the wake, for anything that needs to know whether the tree has settled: chiefly the
      * automation driver's {@code settle}, which waits for a mutation to be reflected before it reads or clicks
      * again (docs/reference/automation.md §5). It is one count rather than the wake flag because the flag is
-     * cleared at the top of the frame, and a reader that asked it between there and the publish — or while the
+     * cleared at the top of the frame, and a reader that asked it between there and the publish — in 0.1, or while the
      * click's handler ran on its worker — was told nothing was owed; see {@link Owed}.
      *
      * <p><b>What it does not say.</b> Work the application starts for itself — on {@link #async}, on a thread of
@@ -2168,18 +2133,6 @@ public final class Gui implements AutoCloseable {
         return owed.awaitPaid(timeout, unit);
     }
 
-    /**
-     * Block until every handler dispatched so far has returned, bounded — {@code true} once none is running,
-     * {@code false} if one still is when {@code timeout} runs out.
-     *
-     * <p>For a caller that runs the frames itself, such as a headless capture: {@link #awaitNothingOwed} would
-     * wait on a frame only that caller can run. What a returned handler published is waiting for the next frame.
-     * Work a handler handed to {@link #async} is not waited for, for the reason {@link #frameOwed} gives.
-     */
-    public boolean awaitHandlers(long timeout, java.util.concurrent.TimeUnit unit) throws InterruptedException {
-        return owed.awaitHandlers(timeout, unit);
-    }
-
     /** What {@link #frameOwed} is owed, as a phrase a refusal can quote: {@code "frame still owed"}, {@code "a handler still running"}. */
     public String whatIsOwed() {
         return owed.describe();
@@ -2189,10 +2142,10 @@ public final class Gui implements AutoCloseable {
      * How a host loop that parks between frames is told a mutation is waiting for it.
      *
      * <p><b>Required by any loop that sleeps</b>, and its absence is a window that stops updating rather
-     * than a slow one. Click handlers run on the worker executor, off the GUI thread — so a handler
-     * publishes its mutation <em>after</em> the frame that dispatched the click has already drained,
-     * reconciled and presented. A loop that then asks only its animation clock is told there is nothing
-     * to do, parks, and leaves the mutation queued: the button was clicked, the state changed, and the
+     * than a slow one. An application's logic publishes from its own thread, between frames, after the
+     * frame that showed the click has already drained, reconciled and presented. A loop that then asks only its
+     * animation clock is told there is nothing to do, parks, and leaves the mutation queued: the button was
+     * clicked, the state changed, and the
      * screen keeps showing what it showed before. It comes right the instant any OS event arrives, so it
      * presents as "the UI only updates when I move the mouse" — which points at input handling rather
      * than at the loop, and it is worst on a touchpad where a click carries no movement with it.
@@ -2336,7 +2289,7 @@ public final class Gui implements AutoCloseable {
      *
      * <p>For a host that wants to check rather than be told — a diagnostic, or a belt-and-braces term in
      * a pacing supplier. {@link #onWork} is the load-bearing half; this cannot close the race on its own,
-     * because a handler still running on a worker has not published yet and so has nothing to report.
+     * because work an application's logic is still doing has not published yet and so has nothing to report.
      */
     public boolean hasPendingWork() {
         return pump.hasPending();
@@ -2371,7 +2324,13 @@ public final class Gui implements AutoCloseable {
         // Dispatch this frame's input first, against the previous frame's laid-out tree (§8, §10): a click may
         // register a mutation, which the drain below then applies in the same frame.
         try (Zone probeZone = Probe.zone(Lane.LAYOUT, "dispatch input")) {
-            input.dispatch(reconciler.root());
+            // A handler's effect is not always a mutation, which wakes the loop by being published: it may start a
+            // motion or send a message, and to a loop that parks, an effect nothing asked a frame for does not
+            // exist until some unrelated event causes one. So a frame that ran a handler asks for the next one,
+            // at the cost of a frame per input that finds nothing to do; and it asks before this frame pays.
+            if (input.dispatch(reconciler.root())) {
+                wake("handler returned");
+            }
         }
         // The widgets' mailboxes, before the mutation drain, so the node writes a command makes (a field's text,
         // say) are applied in this frame's drain rather than the next's. Everything staged is applied: a frame has

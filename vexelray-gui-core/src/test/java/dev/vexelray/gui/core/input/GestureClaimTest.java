@@ -49,7 +49,7 @@ class GestureClaimTest {
     @Test
     void aThreeFingerSwipeRunsItsClaimAndThePanIsPublished() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS, Runnable::run);
+        InputDispatcher d = new InputDispatcher(bus, CLICKS);
         RetainedNode root = tree();
         List<String> log = Collections.synchronizedList(new ArrayList<>());
         List<GestureEvent> seen = Collections.synchronizedList(new ArrayList<>());
@@ -73,7 +73,7 @@ class GestureClaimTest {
     @Test
     void aGestureClaimRanksAsAChordDoes() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS, Runnable::run);
+        InputDispatcher d = new InputDispatcher(bus, CLICKS);
         RetainedNode root = tree();
         d.setFocusable(1, true);
         d.focus(1);

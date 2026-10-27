@@ -40,7 +40,7 @@ class KeyboardFocusTest {
     @Test
     void ctrlSFiresShortcutAndModifierReleaseStopsIt() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS, Runnable::run);
+        InputDispatcher d = new InputDispatcher(bus, CLICKS);
         AtomicInteger saves = new AtomicInteger();
         d.registerShortcut(Shortcut.of(Key.S, Modifier.CONTROL), saves::incrementAndGet);
 
@@ -59,7 +59,7 @@ class KeyboardFocusTest {
     @Test
     void focusStateSaysHowFocusArrivedAndWhetherTheWindowIsInFront() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS, Runnable::run);
+        InputDispatcher d = new InputDispatcher(bus, CLICKS);
         AtomicInteger told = new AtomicInteger();
         d.onFocusState(told::incrementAndGet);
         RetainedNode root = node(0, 0, 0, 100, 100);
@@ -85,7 +85,7 @@ class KeyboardFocusTest {
     @Test
     void unclaimedKeyRoutesToFocusedNode() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS, Runnable::run);
+        InputDispatcher d = new InputDispatcher(bus, CLICKS);
         RetainedNode root = node(0, 0, 0, 100, 100);
         RetainedNode field = node(1, 0, 0, 100, 20);
         field.parent = root;
@@ -103,7 +103,7 @@ class KeyboardFocusTest {
     @Test
     void tabTraversesFocusInTreeOrder() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS, Runnable::run);
+        InputDispatcher d = new InputDispatcher(bus, CLICKS);
         RetainedNode root = node(0, 0, 0, 100, 100);
         RetainedNode a = node(1, 0, 0, 100, 20);
         RetainedNode b = node(2, 0, 20, 100, 20);
@@ -135,7 +135,7 @@ class KeyboardFocusTest {
         List<FocusEvent> events = new ArrayList<>();
         bus.subscribe(focus, events::add);
 
-        InputDispatcher d = new InputDispatcher(bus, CLICKS, Runnable::run);
+        InputDispatcher d = new InputDispatcher(bus, CLICKS);
         d.focusTopic(focus);
         RetainedNode root = node(0, 0, 0, 100, 100);
         RetainedNode a = node(1, 0, 0, 100, 40);
@@ -164,7 +164,7 @@ class KeyboardFocusTest {
     @Test
     void tabSkipsHiddenNodesAndWhatIsInsideThem() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS, Runnable::run);
+        InputDispatcher d = new InputDispatcher(bus, CLICKS);
         RetainedNode root = node(0, 0, 0, 100, 100);
         RetainedNode shown = node(1, 0, 0, 100, 40);
         RetainedNode hiddenBar = node(2, 0, 40, 100, 40);
@@ -197,7 +197,7 @@ class KeyboardFocusTest {
     @Test
     void tabDoesNothingWithNoFocusables() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS, Runnable::run);
+        InputDispatcher d = new InputDispatcher(bus, CLICKS);
         keyDown(bus, Key.TAB);
         d.dispatch(node(0, 0, 0, 10, 10));
         assertEquals(-1, d.focused());

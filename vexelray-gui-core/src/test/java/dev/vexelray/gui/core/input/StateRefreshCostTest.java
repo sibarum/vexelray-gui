@@ -42,7 +42,7 @@ class StateRefreshCostTest {
     @Test
     void movesOverADeepObservedTree() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS, Runnable::run);
+        InputDispatcher d = new InputDispatcher(bus, CLICKS);
         AtomicLong deliveries = new AtomicLong();
 
         RetainedNode root = node(0, 0, 0, 2000, 1000, null);

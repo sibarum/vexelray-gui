@@ -1823,11 +1823,11 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                 wakePosted.set(false);   // a wake from here on was posted during this frame, so it is pending for the next
                 long frameStarted = System.nanoTime();   // the gap the ceiling holds is frame start to frame start
                 try (Zone frameZone = Probe.zone(Lane.FRAME, "frame")) {
-                    running = main.frame(beforeFrame) || mainGate.keepAlive(main.window, gui.handlers());
+                    running = main.frame(beforeFrame) || mainGate.keepAlive(main.window);
                 }
                 open.removeIf(w -> {
                     // Each window pumps its own input before its own frame: two OS windows, one loop, one GUI.
-                    if (w.window.frame(w.input::pump) || w.gate.keepAlive(w.window.window, w.spec.gui().handlers())) {
+                    if (w.window.frame(w.input::pump) || w.gate.keepAlive(w.window.window)) {
                         return false;
                     }
                     if (w.window.window == modal) {
@@ -2070,19 +2070,16 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
     private static final int SETTLE_ROUNDS = 64;
     /** Logical time one settle round carries the animation clock: well short of Driven's one-second forgiveness. */
     private static final java.time.Duration SETTLE_STEP = java.time.Duration.ofMillis(100);
-    /** How long one round waits for the handler lane before capturing whatever has landed. */
-    private static final long SETTLE_HANDLER_WAIT_MS = 5_000;
 
     /**
      * Run frames until the tree has nothing left in flight, so a capture photographs where it was going rather
      * than wherever thread timing left it.
      *
-     * <p>Two frames were enough for a mutation posted by layout, and not for one posted by a handler. A widget
-     * that fetches on the handler lane — a tree opening its rows, say — publishes whenever its worker gets there,
-     * which may be before the picture frame or after it; and if a transition was installed in between, the edit
-     * starts one that only a ticked clock would ever finish. Six captures of the same page made three pictures.
-     * So each round waits for the handler lane to return, applies what it published, and steps the registered
-     * {@link dev.vexelray.gui.core.AnimationClock} until nothing is scheduled. Nothing here presents a frame, so
+     * <p>Two frames were enough for a mutation posted by layout, and not for what follows a handler: a message to a
+     * widget lands a frame later, and an edit may start a transition that only a ticked clock would ever finish.
+     * So each round runs a frame while one is owed, and steps the registered
+     * {@link dev.vexelray.gui.core.AnimationClock} until nothing is scheduled. An application's reply from another
+     * thread (a tree's listing) is not waited for; that is the shell's "what is owed", in phase 5. Nothing here presents a frame, so
      * the clock is the capture's alone, and stepping it in fixed amounts is what makes where it ends up the same
      * every time.
      *
@@ -2091,15 +2088,6 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
      */
     private static void settle(Gui gui, int width, int height, TextFaces faces) {
         for (int round = 0; round < SETTLE_ROUNDS; round++) {
-            try {
-                if (!gui.awaitHandlers(SETTLE_HANDLER_WAIT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)) {
-                    LOG.warn("capture: " + gui.whatIsOwed() + " after " + SETTLE_HANDLER_WAIT_MS
-                            + " ms; capturing without it");
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return;
-            }
             dev.vexelray.gui.core.AnimationClock clock = gui.animationClock();
             boolean animating = clock != null && !clock.quiet();
             if (!animating && !gui.frameOwed()) {

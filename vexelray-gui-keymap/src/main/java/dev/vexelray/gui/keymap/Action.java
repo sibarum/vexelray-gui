@@ -28,7 +28,6 @@ public final class Action {
     private final String label;
     private final List<Trigger> defaults;
     private volatile Runnable handler;
-    private volatile boolean ordered;
     private volatile Keymap.Context context = Keymap.Context.APPLICATION;
 
     Action(Keymap keymap, String id, String label, List<Trigger> defaults) {
@@ -86,18 +85,6 @@ public final class Action {
     }
 
     /**
-     * Run the handler on the GUI thread, in the order keys arrived ({@link Gui#claimUi}), rather than on a worker:
-     * for a command that edits what typing also edits, such as pasting into a terminal or a document. A worker
-     * orders the commands it is handed but not their effects, so a paste run on one could land among the
-     * characters typed around it. Bounded work only, as with any ordered stage: it runs inline on the frame loop.
-     */
-    public Action ordered() {
-        ordered = true;
-        keymap.sync();
-        return this;
-    }
-
-    /**
      * Apply only where {@code node} is — while it holds focus ({@link ClaimScope#FOCUSED}), while it is in the
      * tree ({@link ClaimScope#VISIBLE}) — rather than application-wide. The claim is the node's, in {@code gui},
      * so it ranks exactly as that node's own claims do; and rebinding releases the node's claim on the old chord.
@@ -120,10 +107,6 @@ public final class Action {
 
     boolean handled() {
         return handler != null;
-    }
-
-    boolean runsOrdered() {
-        return ordered;
     }
 
     Keymap.Context context() {

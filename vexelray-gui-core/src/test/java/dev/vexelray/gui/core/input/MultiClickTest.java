@@ -25,7 +25,7 @@ class MultiClickTest {
     private static final long MS = 1_000_000L;
 
     private final Atchung bus = Atchung.create();
-    private final InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS, Runnable::run);
+    private final InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS);
     private final RetainedNode root = node(0, 0, 0, 300, 100);
     private final List<DragEvent> starts = new ArrayList<>();
 

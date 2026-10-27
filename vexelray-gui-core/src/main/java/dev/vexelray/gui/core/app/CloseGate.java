@@ -2,7 +2,6 @@ package dev.vexelray.gui.core.app;
 
 import dev.vexelray.os.NativeWindow;
 
-import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
@@ -49,10 +48,11 @@ final class CloseGate {
      * A close was reported for {@code window}. Returns whether the window should <b>keep running</b>: true means
      * the host carries on pumping and presenting it, false means tear it down.
      *
-     * <p>Runs on the main thread, inside the frame loop. The handler itself runs on {@code handlers} — an
-     * application's answer is application logic, and belongs off the GUI thread with the rest of it.
+     * <p>Runs on the main thread, inside the frame loop, and so does the handler: it must not block. It puts a
+     * question to the user (a dialog) and returns, and the request is answered whenever they do. Making the request a
+     * message, so the application's logic answers it, is the framework's close in phase 5.
      */
-    boolean keepAlive(NativeWindow window, Executor handlers) {
+    boolean keepAlive(NativeWindow window) {
         Consumer<CloseRequest> h = handler.get();
         if (h == null || allowed) {
             return false;
@@ -71,7 +71,7 @@ final class CloseGate {
                 },
                 () -> pending.set(null));
         pending.set(request);
-        handlers.execute(() -> h.accept(request));
+        h.accept(request);
         return true;
     }
 

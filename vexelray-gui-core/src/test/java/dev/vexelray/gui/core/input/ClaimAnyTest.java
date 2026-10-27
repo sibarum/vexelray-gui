@@ -47,7 +47,7 @@ class ClaimAnyTest {
     @Test
     void aFocusedWildcardHearsTheChordAndPreemptsGlobalOnes() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS, Runnable::run);
+        InputDispatcher d = new InputDispatcher(bus, CLICKS);
         RetainedNode root = tree();
         d.setFocusable(1, true);
         d.setFocusable(2, true);
@@ -72,7 +72,7 @@ class ClaimAnyTest {
     @Test
     void aNamedClaimAtTheSameScopeOutranksTheWildcard() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS, Runnable::run);
+        InputDispatcher d = new InputDispatcher(bus, CLICKS);
         RetainedNode root = tree();
         d.setFocusable(1, true);
         d.focus(1);
@@ -93,7 +93,7 @@ class ClaimAnyTest {
     @Test
     void releasingTheWildcardRestoresTheDefaultsAndKeepsNamedClaims() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS, Runnable::run);
+        InputDispatcher d = new InputDispatcher(bus, CLICKS);
         RetainedNode root = tree();
         d.setFocusable(1, true);
         d.setFocusable(2, true);
@@ -116,7 +116,7 @@ class ClaimAnyTest {
     @Test
     void aWildcardOnAnUnfocusedNodeHearsNothing() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS, Runnable::run);
+        InputDispatcher d = new InputDispatcher(bus, CLICKS);
         RetainedNode root = tree();
         d.setFocusable(1, true);
         d.setFocusable(2, true);

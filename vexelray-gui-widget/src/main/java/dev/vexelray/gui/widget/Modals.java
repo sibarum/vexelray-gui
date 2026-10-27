@@ -342,13 +342,13 @@ public final class Modals implements AutoCloseable {
     }
 
     /**
-     * Run a chosen button's action as an input handler runs, on the GUI thread, after the dialog's close has been
-     * asked for, so an action that puts up the next dialog does not race its own window's teardown. Transitional:
-     * a dialog's buttons become messages later in 0.2's phase 3.
+     * Run a chosen button's action on the GUI thread, after the dialog's close has been asked for, so an action that
+     * puts up the next dialog does not race its own window's teardown. An application's button sends a message from
+     * here ({@link Modal#button(String, sibarum.atchung.Sender, Object)}).
      */
     private void run(Modal.Button chosen) {
         if (chosen != null) {
-            gui.handlers().execute(chosen.action());
+            chosen.action().run();
         }
     }
 

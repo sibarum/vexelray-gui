@@ -35,7 +35,7 @@ class WheelScrollTest {
     void wheelScrollsClampedAndRequestsLayout() {
         Atchung bus = Atchung.create();
         AtomicInteger relayouts = new AtomicInteger();
-        InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS, Runnable::run, relayouts::incrementAndGet);
+        InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS, relayouts::incrementAndGet);
 
         RetainedNode node = scrollable(1);
 
@@ -55,7 +55,7 @@ class WheelScrollTest {
     void draggingTheThumbSetsScrollProportionally() {
         Atchung bus = Atchung.create();
         AtomicInteger relayouts = new AtomicInteger();
-        InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS, Runnable::run, relayouts::incrementAndGet);
+        InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS, relayouts::incrementAndGet);
 
         RetainedNode n = scrollable(1);
         n.viewX = 0;
@@ -95,7 +95,7 @@ class WheelScrollTest {
     void pressingTheTrackPagesAndConsumesThePress() {
         Atchung bus = Atchung.create();
         AtomicInteger relayouts = new AtomicInteger();
-        InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS, Runnable::run, relayouts::incrementAndGet);
+        InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS, relayouts::incrementAndGet);
 
         RetainedNode n = scrollable(1);
         n.viewX = 0;
@@ -125,7 +125,7 @@ class WheelScrollTest {
     void aTrackPressDoesNotClickThrough() {
         Atchung bus = Atchung.create();
         AtomicInteger clicks = new AtomicInteger();
-        InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS, Runnable::run, () -> { });
+        InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS, () -> { });
         dispatcher.onClick(1, clicks::incrementAndGet);
 
         RetainedNode n = scrollable(1);
@@ -147,7 +147,7 @@ class WheelScrollTest {
     void wheelIgnoredWhenNoOverflowingContainer() {
         Atchung bus = Atchung.create();
         AtomicInteger relayouts = new AtomicInteger();
-        InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS, Runnable::run, relayouts::incrementAndGet);
+        InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS, relayouts::incrementAndGet);
 
         RetainedNode node = new RetainedNode(1); // no overflow
         node.w = 100;

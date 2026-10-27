@@ -37,7 +37,7 @@ class DropGestureTest {
     private static final PayloadType<String> ROW = PayloadType.of("row");
 
     private final Atchung bus = Atchung.create();
-    private final InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS, Runnable::run);
+    private final InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS);
     private final List<String> applied = new ArrayList<>();
     private final History history = new History();
     private RetainedNode root;

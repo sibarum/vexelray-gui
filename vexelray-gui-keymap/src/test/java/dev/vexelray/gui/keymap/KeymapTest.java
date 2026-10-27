@@ -293,8 +293,8 @@ class KeymapTest {
 
     /**
      * Every action runs in the frame that dispatched its chord, in the order the chords arrived. In 0.1 only an
-     * {@code ordered()} action did and the rest waited for a worker; 0.2 has no worker (vexelray-framework's
-     * {@code docs/threading.md}, T1.1), and {@code ordered()} goes when actions become messages.
+     * action marked ordered did and the rest waited for a worker; 0.2 has no worker (vexelray-framework's
+     * {@code docs/threading.md}, T1.1), so there is no mark.
      */
     @Test
     void everyActionRunsInTheFrameThatDispatchedIt() {
@@ -302,7 +302,7 @@ class KeymapTest {
             List<String> log = new ArrayList<>();
             Keymap keys = new Keymap(h.gui);
             keys.action("file.save", "Save", CTRL_S).on(() -> log.add("save"));
-            Action paste = keys.action("edit.paste", "Paste", CTRL_K).on(() -> log.add("paste")).ordered();
+            Action paste = keys.action("edit.paste", "Paste", CTRL_K).on(() -> log.add("paste"));
 
             h.frame().chord(Key.S, Key.LEFT_CONTROL).chord(Key.K, Key.LEFT_CONTROL);
             assertEquals(List.of("save", "paste"), log, "both, inline, in the order their chords arrived");

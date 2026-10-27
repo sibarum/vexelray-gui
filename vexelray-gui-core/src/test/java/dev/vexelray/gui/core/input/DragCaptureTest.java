@@ -32,7 +32,7 @@ class DragCaptureTest {
     @Test
     void dragTracksOffNodeUntilRelease() {
         Atchung bus = Atchung.create();
-        InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS, Runnable::run);
+        InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS);
 
         RetainedNode root = node(0, 0, 0, 300, 100);
         RetainedNode track = node(7, 10, 0, 100, 20); // x in [10,110)

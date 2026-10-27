@@ -22,7 +22,7 @@ class DoubleClickTest {
     private static final long MS = 1_000_000L;
 
     private final Atchung bus = Atchung.create();
-    private final InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS, Runnable::run);
+    private final InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS);
     private final RetainedNode root = node(0, 0, 0, 300, 100);
     private final RetainedNode list = node(1, 0, 0, 300, 100);
     private final RetainedNode row = node(7, 10, 0, 200, 50);

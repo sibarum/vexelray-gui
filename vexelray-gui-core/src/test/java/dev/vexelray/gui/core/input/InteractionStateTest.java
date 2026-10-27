@@ -45,7 +45,7 @@ class InteractionStateTest {
     @Test
     void hoverPressReleaseLeaveSequence() {
         Atchung bus = Atchung.create();
-        InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS, Runnable::run);
+        InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS);
 
         RetainedNode root = node(0, 0, 0, 200, 200);
         RetainedNode btn = node(7, 10, 10, 80, 30);   // covers x[10,90) y[10,40)
@@ -68,7 +68,7 @@ class InteractionStateTest {
     @Test
     void draggingOffAPressedNodeReleasesThePressedLook() {
         Atchung bus = Atchung.create();
-        InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS, Runnable::run);
+        InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS);
 
         RetainedNode root = node(0, 0, 0, 200, 200);
         RetainedNode btn = node(7, 10, 10, 80, 30);
@@ -89,7 +89,7 @@ class InteractionStateTest {
     @Test
     void hoveringAChildCountsAsHoveringTheContainer() {
         Atchung bus = Atchung.create();
-        InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS, Runnable::run);
+        InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS);
 
         RetainedNode root = node(0, 0, 0, 200, 200);
         RetainedNode container = node(5, 0, 0, 100, 100);

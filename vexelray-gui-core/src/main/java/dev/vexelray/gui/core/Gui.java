@@ -148,6 +148,8 @@ public final class Gui implements AutoCloseable {
      */
     private final sibarum.atchung.Tick widgets;
     private final sibarum.atchung.Inbox widgetInbox;
+    /** The widgets' addressed mailboxes, routed by address: see {@link #mailbox(Topic, Object, sibarum.atchung.Subscriber)}. */
+    private final Routes routes;
 
     // Wakes are traced through Probe on the FRAME lane -- `-Dprobe=frame -Dprobe.trace=true`, or
     // `-Dprobe.format=csv` for the correlation log. There was a bespoke flag here writing to System.out, which
@@ -368,6 +370,7 @@ public final class Gui implements AutoCloseable {
         // One inbox for every widget, so commands to two widgets are applied in the order they were sent.
         this.widgets = bus.tick(() -> wake("widget message"));
         this.widgetInbox = widgets.inbox("widgets");
+        this.routes = new Routes(widgetInbox);
         // Where nodes come from, and the seam their handles write through. It resolves Node.layout() through a
         // reader that is consulted lazily, which is what lets it be built before the read-model it will read —
         // a handle minted here does not ask about geometry until something reads one.
@@ -2038,6 +2041,19 @@ public final class Gui implements AutoCloseable {
      */
     public <T> Subscription mailbox(Topic<T> topic, sibarum.atchung.Subscriber<T> stage, int capacity) {
         return widgetInbox.subscribe(topic, stage, capacity);
+    }
+
+    /**
+     * A widget's mailbox for the messages on {@code topic} {@link Addressed addressed} to it: as
+     * {@link #mailbox(Topic, sibarum.atchung.Subscriber, int)}, routed by address, so a widget is handed only its own.
+     * Every widget on a topic shares one route table, and a message for an address nobody answers to is dropped and
+     * counted. GUI thread only, as building and closing a widget are.
+     *
+     * @throws IllegalStateException when another mailbox on {@code topic} already answers to {@code address}
+     */
+    public <T extends Addressed> Subscription mailbox(Topic<T> topic, Object address,
+                                                      sibarum.atchung.Subscriber<T> stage) {
+        return routes.add(topic, address, stage);
     }
 
     /**

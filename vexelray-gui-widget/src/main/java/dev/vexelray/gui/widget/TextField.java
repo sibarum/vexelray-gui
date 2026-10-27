@@ -113,9 +113,16 @@ public final class TextField implements AutoCloseable {
      * Something the application asks of a field. Each kind says what it does to the field itself, so the field never
      * switches over the kinds (vexelray-gui's style rule).
      */
-    public sealed interface Command permits SetText, Replace, Insert, Select, ReadOnly {
+    public sealed interface Command extends dev.vexelray.gui.core.Addressed
+            permits SetText, Replace, Insert, Select, ReadOnly {
         /** The name of the field this is for. */
         String field();
+
+        /** Routed by the field's name: see {@link Gui#mailbox(Topic, Object, sibarum.atchung.Subscriber)}. */
+        @Override
+        default Object address() {
+            return field();
+        }
 
         /** Do it, on the GUI thread. */
         void applyTo(TextField target);
@@ -255,8 +262,8 @@ public final class TextField implements AutoCloseable {
 
     /** What this field is called on the bus: the first field of every record on {@link #COMMANDS} and the others. */
     private volatile String name;
-    /** This field's mailbox for {@link #COMMANDS}, drained on the GUI thread with the frame's mutations. */
-    private final Subscription commandsSub;
+    /** This field's mailbox for {@link #COMMANDS}, routed by {@link #name}; replaced when the name is. GUI thread. */
+    private Subscription commandsSub;
 
     /** Build an empty text field on {@code gui}. Size it via {@link #node()} (e.g. {@code .width(...)}). */
     public TextField(Gui gui) {
@@ -312,18 +319,25 @@ public final class TextField implements AutoCloseable {
         this.blink = CaretBlink.register(gui, node, () -> focused);
 
         this.name = "textfield-" + node.id();
-        // Every field hears every command and keeps its own: a prototype's routing, O(fields) per command. A router
-        // keyed by name, one mailbox per tree, is what this becomes once more widgets are addressed this way.
-        this.commandsSub = gui.mailbox(COMMANDS, this::command, 256);
+        this.commandsSub = gui.mailbox(COMMANDS, name, this::command);
     }
 
     /**
      * What this field is called on the bus: the name {@link #COMMANDS} address it by, and the one its
-     * {@link #CHANGED} and {@link #SUBMITTED} carry. Unique on its bus, chosen by whoever builds the view ("path",
-     * "search"). Until it is given one it is {@code textfield-<node id>}.
+     * {@link #CHANGED} and {@link #SUBMITTED} carry. Unique among a tree's fields, chosen by whoever builds the view
+     * ("path", "search"). Until it is given one it is {@code textfield-<node id>}. On the GUI thread, where the field
+     * was built.
+     *
+     * @throws IllegalStateException when another field of this tree already has the name
      */
     public TextField name(String name) {
-        this.name = java.util.Objects.requireNonNull(name, "name");
+        java.util.Objects.requireNonNull(name, "name");
+        if (!name.equals(this.name)) {
+            Subscription next = gui.mailbox(COMMANDS, name, this::command);
+            commandsSub.close();
+            commandsSub = next;
+            this.name = name;
+        }
         return this;
     }
 
@@ -332,11 +346,9 @@ public final class TextField implements AutoCloseable {
         return name;
     }
 
-    /** A command from {@link #COMMANDS}, on the GUI thread: this field's, or somebody else's to ignore. */
+    /** A command from {@link #COMMANDS} for this field, on the GUI thread. */
     private void command(Command c) {
-        if (c.field().equals(name)) {
-            c.applyTo(this);
-        }
+        c.applyTo(this);
     }
 
     /**

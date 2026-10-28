@@ -253,26 +253,24 @@ class ListViewTest {
         }
     }
 
-    /** A right click selects the row under the pointer and asks for that item's menu, which is then shown. */
+    /** A right click selects the row under the pointer and offers its menu; choosing a line says which item. */
     @Test
-    void aRightClickSelectsTheRowAndBuildsItsMenuAroundTheItem() {
+    void aRightClickSelectsTheRowAndOffersItsMenuForTheItem() {
         try (HeadlessGui h = new HeadlessGui()) {
-            ListView<String> list = mountTall(h, 10);
-            String[] asked = {null};
-            list.onContextMenu((item, menu) -> {
-                asked[0] = item;
-                menu.item("Open " + item, () -> { });
-            });
+            ListView<String> list = mountTall(h, 10).action(MenuAction.of("open", "Open"));
+            List<Chosen> chosen = new ArrayList<>();
+            h.gui.mailbox(ListView.CHOSEN, list.address(), chosen::add);
             clickRow(h, list, "item00001");
 
             rightClickRow(h, list, "item00003");
 
             assertEquals(Set.of("item00003"), list.selection().selection(), "the row under the pointer, alone");
-            assertEquals("item00003", asked[0], "and the menu was asked about that item");
-            assertEquals(List.of("Open item00003"),
-                    ((ContextMenu) Seams.of(h.gui).menus()).items().stream().map(dev.vexelray.gui.core.input.MenuItem::label)
-                            .toList(),
+            ContextMenu menu = (ContextMenu) Seams.of(h.gui).menus();
+            assertEquals(List.of("Open"), menu.items().stream().map(dev.vexelray.gui.core.input.MenuItem::label).toList(),
                     "on a presenter the list installed, so it is on screen");
+            menu.items().get(0).action().run();
+            h.frame();
+            assertEquals(List.of(new Chosen(list.address(), "open", "item00003")), chosen, "about that item");
         }
     }
 
@@ -281,7 +279,7 @@ class ListViewTest {
     void aRightClickInsideTheSelectionKeepsIt() {
         try (HeadlessGui h = new HeadlessGui()) {
             ListView<String> list = mountTall(h, 10);
-            list.onContextMenu((item, menu) -> menu.item("Delete", () -> { }));
+            list.action(MenuAction.of("delete", "Delete"));
             clickRow(h, list, "item00002");
             clickRow(h, list, "item00004", Key.LEFT_CONTROL);
 

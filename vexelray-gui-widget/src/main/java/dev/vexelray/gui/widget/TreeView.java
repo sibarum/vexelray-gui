@@ -92,7 +92,7 @@ import java.util.function.Predicate;
  *
  * <p><b>Every row carries a menu.</b> The tree's own lines are Expand and Collapse — recursive, because the
  * single-level flip is what the disclosure control and the arrow keys already are — and Cut, Copy and Paste where
- * it moves things. An application's commands are {@link Action}s: declared once, offered per row as each row's
+ * it moves things. An application's commands are {@link MenuAction}s: declared once, offered per row as each row's
  * {@link Entry} says, and announced on {@link #CHOSEN} when chosen, so a right click runs nothing of the
  * application's. <b>The tree runs one walk at a time</b> — expand-all, find, reveal — and starting another, or
  * choosing any line, stops the one running wherever it had got to.
@@ -158,7 +158,7 @@ public final class TreeView<T> implements AutoCloseable {
     public static final Topic<Placed> PLACED = Topic.edge("vexelray.gui.tree.placed", Placed.class);
 
     /**
-     * One of the application's {@link Action}s chosen from a row's menu. The tree does nothing else for it: the work
+     * One of the application's {@link MenuAction}s chosen from a row's menu. The tree does nothing else for it: the work
      * is the application's, done where its logic runs. Every one, in order.
      */
     public static final Topic<Chosen> CHOSEN = Topic.edge("vexelray.gui.tree.chosen", Chosen.class);
@@ -178,7 +178,6 @@ public final class TreeView<T> implements AutoCloseable {
     /** The id of the tree's own Paste, on the menu where the tree takes anything at all. */
     public static final String PASTE = "paste";
 
-    private static final java.util.Set<String> BUILT_IN = java.util.Set.of(EXPAND, COLLAPSE, CUT, COPY, PASTE);
 
     /**
      * The hierarchy has changed: the tree that is told asks again for every level it has listed, as
@@ -220,14 +219,6 @@ public final class TreeView<T> implements AutoCloseable {
 
     /** The tree at {@code tree} should look at its hierarchy again: something under it has changed. */
     public record Refresh(String tree) implements Addressed {
-        @Override
-        public Object address() {
-            return tree;
-        }
-    }
-
-    /** The action {@code action} was chosen from the menu of {@code item}'s row in the tree at {@code tree}. */
-    public record Chosen(String tree, String action, Object item) implements Addressed {
         @Override
         public Object address() {
             return tree;
@@ -303,7 +294,7 @@ public final class TreeView<T> implements AutoCloseable {
      * <p><b>What the row's menu offers is part of the entry too</b> ({@code hidden}, {@code greyed}), for the same
      * reason: whether Delete applies to this file is a fact about the file, known to whoever lists it, and asking it
      * at the right click would run the application's code in the frame (vexelray-framework's threading.md, T7.5).
-     * Every {@link Action} is shown and enabled unless the entry says otherwise. When the facts change, the
+     * Every {@link MenuAction} is shown and enabled unless the entry says otherwise. When the facts change, the
      * application sends {@link #REFRESH}, as it does for a new label. The ids are the actions' own and the tree's
      * {@link #EXPAND}, {@link #COLLAPSE}, {@link #CUT}, {@link #COPY} and {@link #PASTE}; hiding one of the tree's own
      * takes it off this row's menu, and when it is enabled stays the tree's.
@@ -408,48 +399,6 @@ public final class TreeView<T> implements AutoCloseable {
     private interface Job {
         /** Whether this walk is still the tree's current one. */
         boolean live();
-    }
-
-    /**
-     * One of the application's commands on the row menu: an id, a mark and a label, and nothing that runs. Choosing
-     * it publishes {@link Chosen} on {@link #CHOSEN} with the id and the row's item, and the application does the work
-     * where its logic runs (vexelray-framework's threading.md, T7.2 and T7.5).
-     *
-     * <p>Which rows offer it is declared with the rows: an {@link Entry} {@link Entry#hides hides} or
-     * {@link Entry#greys greys} it by id. <b>Absent and greyed say different things</b>, so both are there rather
-     * than one standing in for the other: greyed is for a command that belongs on this kind of row but does not apply
-     * now, and teaches where the command lives; hidden is for one that has no business on this row at all, where a
-     * permanently greyed line would be furniture that never lights up.
-     *
-     * @param id    what {@link Chosen#action()} carries, and what an entry names it by: unique in the tree, and none of
-     *              the tree's own ({@link #EXPAND} and the rest)
-     * @param icon  the glyph drawn beside the label, or null
-     * @param mark  the icon from the set drawn beside the label, or null
-     * @param label the text shown
-     */
-    public record Action(String id, String icon, IconSource mark, String label) {
-        public Action {
-            java.util.Objects.requireNonNull(id, "id");
-            java.util.Objects.requireNonNull(label, "label");
-            if (id.isBlank()) {
-                throw new IllegalArgumentException("an action's id is what an entry names it by, so it has one");
-            }
-        }
-
-        /** A command with no mark. */
-        public static Action of(String id, String label) {
-            return new Action(id, null, null, label);
-        }
-
-        /** A command marked with {@code icon}, a glyph, or null for none. */
-        public static Action of(String id, String icon, String label) {
-            return new Action(id, icon, null, label);
-        }
-
-        /** A command marked with {@code mark}, an icon from the set. */
-        public static Action of(String id, IconSource mark, String label) {
-            return new Action(id, null, mark, label);
-        }
     }
 
     /**
@@ -861,8 +810,8 @@ public final class TreeView<T> implements AutoCloseable {
     /** The tree's own lines, in menu order, with a rule after Collapse. */
     private final List<Line<T>> lines;
 
-    /** What the application declared, in the order it declared it. Read on every right click, written at build time. */
-    private final List<Action> extraActions = new CopyOnWriteArrayList<>();
+    /** What the application declared, in the order it declared it. */
+    private final MenuActions extraActions = new MenuActions(EXPAND, COLLAPSE, CUT, COPY, PASTE);
 
     /**
      * The find bar: null until {@link #searchable} first asks for one, then hidden until Ctrl+F, and no part of
@@ -1714,24 +1663,13 @@ public final class TreeView<T> implements AutoCloseable {
      * the user chose instead. Work the application started for an earlier {@code Chosen} is the application's to stop.
      *
      * {@snippet :
-     * tree.action(TreeView.Action.of("delete", "×", "Delete"));
+     * tree.action(MenuAction.of("delete", "×", "Delete"));
      * gui.mailbox(TreeView.CHOSEN, tree.address(), chosen -> outbox.send(new Delete((Path) chosen.item())));
      * }
      *
      * @throws IllegalArgumentException when the id is one of the tree's own, or another action already has it
      */
-    public TreeView<T> action(Action action) {
-        java.util.Objects.requireNonNull(action, "action");
-        if (BUILT_IN.contains(action.id())) {
-            throw new IllegalArgumentException("'" + action.id() + "' is the tree's own line; hide it on an entry, "
-                    + "or give this action an id of its own");
-        }
-        for (Action had : extraActions) {
-            if (had.id().equals(action.id())) {
-                throw new IllegalArgumentException("two actions with the id '" + action.id() + "' could not be told "
-                        + "apart in what CHOSEN carries");
-            }
-        }
+    public TreeView<T> action(MenuAction action) {
         extraActions.add(action);
         return this;
     }
@@ -2324,15 +2262,7 @@ public final class TreeView<T> implements AutoCloseable {
                 menu.separator();
             }
         }
-        for (Action action : extraActions) {
-            if (!row.hidden.contains(action.id())) {
-                Chosen chosen = new Chosen(address, action.id(), row.item);
-                menu.item(new MenuItem(action.icon(), action.label(), () -> {
-                    begin();   // the walk running is superseded by whatever the user chose instead
-                    gui.bus().publish(CHOSEN, chosen);
-                }, !row.greyed.contains(action.id()), action.mark()));
-            }
-        }
+        extraActions.offer(menu, gui, CHOSEN, address, row.item, row.hidden, row.greyed, this::begin);
     }
 
     /**

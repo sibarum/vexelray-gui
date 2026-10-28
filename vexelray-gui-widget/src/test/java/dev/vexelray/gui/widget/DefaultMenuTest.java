@@ -1,9 +1,11 @@
 package dev.vexelray.gui.widget;
 
 import dev.vexelray.gui.core.spi.Seams;
+import dev.vexelray.gui.core.input.Menu;
 import dev.vexelray.gui.core.input.MenuItem;
 import dev.vexelray.gui.core.layout.Length;
 import org.junit.jupiter.api.Test;
+import sibarum.atchung.Topic;
 import sibarum.tactroller.api.Key;
 import sibarum.tactroller.api.Modifier;
 
@@ -138,7 +140,10 @@ class DefaultMenuTest {
     void anApplicationAddsToTheFieldMenuWithoutRestatingTheClipboard() {
         try (HeadlessGui h = new HeadlessGui()) {
             TextField field = new TextField(h.gui, "hello");
-            field.onContextMenu(menu -> menu.separator().item("Look up", () -> { }));
+            // The application's lines are declared on the field's node, each sending a message: no code at the click.
+            Topic<String> lookUp = Topic.edge("test.menu.look-up", String.class);
+            h.gui.menu(field.node(), Menu.builder()
+                    .item("Look up", h.bus.tick(() -> { }).inbox("view").sender(lookUp), "hello").build());
             field.node().width(Length.FILL);
             h.gui.root().children(field.node());
             h.frame();
@@ -146,7 +151,7 @@ class DefaultMenuTest {
             rightClickField(h, field);
 
             assertEquals(java.util.Arrays.asList("Copy", "Cut", "Paste", null, "Look up"), labels(h),
-                    "the widget's items first, then the application's, with the rule it asked for");
+                    "the widget's items first, then the application's, behind a rule");
             field.close();
         }
     }
@@ -198,8 +203,7 @@ class DefaultMenuTest {
     @Test
     void aPaneStillCarriesTheApplicationsOwnItems() {
         try (HeadlessGui h = new HeadlessGui()) {
-            Tabs tabs = new Tabs(h.gui).closable(false)
-                    .onContextMenu((index, menu) -> menu.item("Reset", () -> { }));
+            Tabs tabs = new Tabs(h.gui).closable(false).action(MenuAction.of("reset", "Reset"));
             tabs.add("⁘", h.gui.box());
             tabs.add("θ", h.gui.box());
             h.gui.root().children(tabs.node());
@@ -237,12 +241,9 @@ class DefaultMenuTest {
     @Test
     void anApplicationAddsToTheTabMenuAndIsToldWhichTab() {
         try (HeadlessGui h = new HeadlessGui()) {
-            int[] askedFor = {-1};
-            Tabs tabs = new Tabs(h.gui);
-            tabs.onContextMenu((index, menu) -> {
-                askedFor[0] = index;
-                menu.item("Duplicate", () -> { });
-            });
+            List<Chosen> chosen = new ArrayList<>();
+            Tabs tabs = new Tabs(h.gui).action(MenuAction.of("duplicate", "Duplicate"));
+            h.gui.mailbox(Tabs.CHOSEN, tabs.address(), chosen::add);
             tabs.add("Editor", h.gui.box());
             tabs.add("Files", h.gui.box());
             h.gui.root().children(tabs.node());
@@ -250,8 +251,22 @@ class DefaultMenuTest {
 
             rightClick(h, headerCenterX(tabs, 1), headerCenterY(tabs));
 
-            assertEquals(1, askedFor[0], "the source was told which tab the click was on");
             assertEquals(List.of("Close", "Duplicate"), labels(h));
+            choose(h, 1, 2);
+            assertEquals(List.of(new Chosen(tabs.address(), "duplicate", 1)), chosen,
+                    "choosing it said which tab the click was on");
+        }
+    }
+
+    /** An action's id is what {@code Chosen} names it by, so the bar's own Close and a second "duplicate" are refused. */
+    @Test
+    void aTabActionsIdIsItsOwn() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Tabs tabs = new Tabs(h.gui).action(MenuAction.of("duplicate", "Duplicate"));
+            org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                    () -> tabs.action(MenuAction.of(Tabs.CLOSE, "Shut")));
+            org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                    () -> tabs.action(MenuAction.of("duplicate", "Copy")));
         }
     }
 

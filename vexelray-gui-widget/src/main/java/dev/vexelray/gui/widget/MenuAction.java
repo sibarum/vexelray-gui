@@ -1,0 +1,46 @@
+package dev.vexelray.gui.widget;
+
+import dev.vexelray.gui.core.IconSource;
+
+import java.util.Objects;
+
+/**
+ * One of the application's commands on the menu a widget gives each of its items: a tree's rows
+ * ({@link TreeView#action}), a list's ({@link ListView#action}), a tab bar's tabs ({@link Tabs#action}). An id, a mark
+ * and a label, and nothing that runs. Choosing it publishes {@link Chosen} on the widget's own topic with the id and
+ * the item, and the application does the work where its logic runs (vexelray-framework's threading.md, T7.2 and T7.5).
+ *
+ * <p>A menu that belongs to no item, on a node the view holds (a text field, a panel), is declared whole with
+ * {@code Gui.menu} and a {@code Menu}; this is the form for a widget whose items the view does not hold the nodes of,
+ * because the widget builds them.
+ *
+ * @param id    what {@link Chosen#action()} carries: unique in the widget, and none of the widget's own lines
+ * @param icon  the glyph drawn beside the label, or null
+ * @param mark  the icon from the set drawn beside the label, or null
+ * @param label the text shown
+ */
+public record MenuAction(String id, String icon, IconSource mark, String label) {
+
+    public MenuAction {
+        Objects.requireNonNull(id, "id");
+        Objects.requireNonNull(label, "label");
+        if (id.isBlank()) {
+            throw new IllegalArgumentException("an action's id is what Chosen names it by, so it has one");
+        }
+    }
+
+    /** A command with no mark. */
+    public static MenuAction of(String id, String label) {
+        return new MenuAction(id, null, null, label);
+    }
+
+    /** A command marked with {@code icon}, a glyph, or null for none. */
+    public static MenuAction of(String id, String icon, String label) {
+        return new MenuAction(id, icon, null, label);
+    }
+
+    /** A command marked with {@code mark}, an icon from the set. */
+    public static MenuAction of(String id, IconSource mark, String label) {
+        return new MenuAction(id, null, mark, label);
+    }
+}

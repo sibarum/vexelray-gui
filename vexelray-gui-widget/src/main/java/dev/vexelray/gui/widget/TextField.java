@@ -278,7 +278,6 @@ public final class TextField implements AutoCloseable {
     private volatile boolean autoIndent;
     private volatile boolean readOnly;
     private volatile boolean focused;
-    private volatile Consumer<MenuSink> contextMenu = menu -> { };
     /** The widget library's hooks start as nothing: see {@link #onChange}. */
     private static final Consumer<String> NONE = s -> { };
     private volatile Consumer<String> onChange = NONE;
@@ -564,16 +563,6 @@ public final class TextField implements AutoCloseable {
     /** Whether the user's edits are refused (see {@link #readOnly(boolean)}). */
     public boolean readOnly() {
         return readOnly;
-    }
-
-    /**
-     * Add to the field's context menu. The clipboard actions come first, then this — sources accumulate, so an
-     * application contributes what only it knows (Look up, Insert snippet) without restating Copy/Cut/Paste.
-     * Open the group with {@code menu.separator()}; a rule that would land at either end is dropped.
-     */
-    public TextField onContextMenu(Consumer<MenuSink> source) {
-        this.contextMenu = source == null ? menu -> { } : source;
-        return this;
     }
 
     /** The widget library's hook on Enter in a single-line field, as {@link #onChange} is on a change. */
@@ -1371,6 +1360,8 @@ public final class TextField implements AutoCloseable {
      *
      * <p>Runs on the GUI thread at the moment of the click, which is what lets it read the selection and the
      * clipboard rather than guess: the menu is a statement about the field as it is right now.
+     * It is the widget library's, so it may (T7.5). An application adds to it by declaring the node's menu,
+     * {@code gui.menu(field.node(), menu)}, whose lines follow these behind a rule and each send a message.
      */
     private void defaultMenu(MenuSink menu) {
         boolean hasSelection = !document.value().selectedText().isEmpty();
@@ -1380,7 +1371,6 @@ public final class TextField implements AutoCloseable {
             menu.item(dev.vexelray.gui.icons.Icon.CUT, "Cut", hasSelection, this::cut)
                     .item(dev.vexelray.gui.icons.Icon.PASTE, "Paste", clip != null && !clip.isEmpty(), this::paste);
         }
-        contextMenu.accept(menu);
     }
 
     // --- clipboard (I/O kept off the commit) ---

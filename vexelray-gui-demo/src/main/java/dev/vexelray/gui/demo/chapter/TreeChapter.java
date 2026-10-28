@@ -8,6 +8,7 @@ import dev.vexelray.gui.demo.Console;
 import dev.vexelray.gui.demo.Stage;
 import dev.vexelray.gui.demo.Ui;
 import dev.vexelray.gui.icons.Icon;
+import dev.vexelray.gui.widget.MenuAction;
 import dev.vexelray.gui.widget.TreeView;
 import sibarum.kronometer.Dur;
 import sibarum.kronometer.anim.Ease;
@@ -131,10 +132,10 @@ public final class TreeChapter implements Chapter {
         // The row's commands: declared once, with a mark from the set like the tree's own. Which rows offer them
         // is in entry() above, where the listing already knows what each path is: Count only on a folder. Choosing
         // one runs nothing in the tree; it is announced on CHOSEN, and heard here.
-        files.action(TreeView.Action.of(COUNT, Icon.SEARCH, "Count files"))
-                .action(TreeView.Action.of("open", Icon.OPEN, "Open"))
-                .action(TreeView.Action.of("copy-path", Icon.COPY, "Copy path"))
-                .action(TreeView.Action.of("properties", Icon.INFO, "Properties"));
+        files.action(MenuAction.of(COUNT, Icon.SEARCH, "Count files"))
+                .action(MenuAction.of("open", Icon.OPEN, "Open"))
+                .action(MenuAction.of("copy-path", Icon.COPY, "Copy path"))
+                .action(MenuAction.of("properties", Icon.INFO, "Properties"));
         gui.mailbox(TreeView.CHOSEN, files.address(), chosen -> {
             Path path = (Path) chosen.item();
             // Any line chosen stops a count still running, and Count starts a new one. The count is a walk of the

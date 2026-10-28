@@ -172,8 +172,8 @@ class TreeActionsTest {
                 }
             };
             TreeView<String> tree = Listing.tree(h, source)
-                    .action(TreeView.Action.of("delete", "×", "Delete"));
-            List<TreeView.Chosen> chosen = hear(h, tree);
+                    .action(MenuAction.of("delete", "×", "Delete"));
+            List<Chosen> chosen = hear(h, tree);
             h.gui.root().children(tree.node());
             h.frame();
             tree.expandAll("src");
@@ -192,7 +192,7 @@ class TreeActionsTest {
             assertTrue(enabled(h, "Delete"));
             assertEquals("×", item(h, "Delete").icon(), "and it is drawn with its own mark");
             choose(h, "Delete");
-            assertEquals(List.of(new TreeView.Chosen(tree.address(), "delete", "App.java")), chosen,
+            assertEquals(List.of(new Chosen(tree.address(), "delete", "App.java")), chosen,
                     "announced with the id and the item it was chosen on");
             tree.close();
         }
@@ -209,7 +209,7 @@ class TreeActionsTest {
                     return locked[0] ? super.entry(item).greys("delete") : super.entry(item);
                 }
             };
-            TreeView<String> tree = Listing.tree(h, source).action(TreeView.Action.of("delete", "Delete"));
+            TreeView<String> tree = Listing.tree(h, source).action(MenuAction.of("delete", "Delete"));
             h.gui.root().children(tree.node());
             h.frame();
 
@@ -253,12 +253,12 @@ class TreeActionsTest {
     @Test
     void anActionsIdIsItsOwn() {
         try (HeadlessGui h = new HeadlessGui()) {
-            TreeView<String> tree = Listing.tree(h, new MapSource()).action(TreeView.Action.of("delete", "Delete"));
-            assertThrows(IllegalArgumentException.class, () -> tree.action(TreeView.Action.of("delete", "Remove")),
+            TreeView<String> tree = Listing.tree(h, new MapSource()).action(MenuAction.of("delete", "Delete"));
+            assertThrows(IllegalArgumentException.class, () -> tree.action(MenuAction.of("delete", "Remove")),
                     "two lines one Chosen could not tell apart");
-            assertThrows(IllegalArgumentException.class, () -> tree.action(TreeView.Action.of(TreeView.EXPAND, "More")),
+            assertThrows(IllegalArgumentException.class, () -> tree.action(MenuAction.of(TreeView.EXPAND, "More")),
                     "nor one of the tree's own");
-            assertThrows(IllegalArgumentException.class, () -> TreeView.Action.of(" ", "Blank"));
+            assertThrows(IllegalArgumentException.class, () -> MenuAction.of(" ", "Blank"));
             tree.close();
         }
     }
@@ -327,8 +327,8 @@ class TreeActionsTest {
     void choosingAnApplicationsLineStopsTheWalk() {
         try (HeadlessGui h = new HeadlessGui()) {
             Chain source = new Chain();
-            TreeView<String> tree = Listing.tree(h, source).action(TreeView.Action.of("count", "Count"));
-            List<TreeView.Chosen> chosen = hear(h, tree);
+            TreeView<String> tree = Listing.tree(h, source).action(MenuAction.of("count", "Count"));
+            List<Chosen> chosen = hear(h, tree);
             h.gui.root().children(tree.node());
             h.frame();
 
@@ -353,10 +353,10 @@ class TreeActionsTest {
     }
 
     /** Every {@code Chosen} for {@code tree}, in order. */
-    private static List<TreeView.Chosen> hear(HeadlessGui h, TreeView<String> tree) {
-        List<TreeView.Chosen> heard = new ArrayList<>();
+    private static List<Chosen> hear(HeadlessGui h, TreeView<String> tree) {
+        List<Chosen> heard = new ArrayList<>();
         h.bus.subscribe(TreeView.CHOSEN, c -> {
-            if (c.tree().equals(tree.address())) {
+            if (c.at().equals(tree.address())) {
                 heard.add(c);
             }
         });

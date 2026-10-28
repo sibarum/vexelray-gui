@@ -187,36 +187,45 @@ the affordance can't be inferred (a slider wants GRAB). Focus is `gui.focusable(
 
 ### Context menus
 
-A menu is not an object you build and keep — it is a question asked at the moment of the right click:
+An application's menu is **declared**, never built at the click: the menu has to open in the frame of the
+right click, so what is on it is set ahead of time, and choosing a line sends a message (vexelray-framework's
+`threading.md`, T7.5). On a node the view holds, the menu is declared whole, each item naming its message:
 
 ```java
-Seams.of(gui).onContextMenu(row, menu -> menu
-        .item("Open", () -> open(path))
-        .item("Paste", clipboard.hasText(), () -> paste(path))   // shown, greyed when it cannot apply
+gui.menu(row, Menu.builder()
+        .item("Open", open, new Open(path))
+        .item("Rename", !readOnly, rename, new Rename(path))   // shown, greyed when it cannot apply
         .separator()
-        .item("Properties", () -> inspect(path)));
+        .item("Properties", inspect, new Inspect(path))
+        .build());
+```
+
+On a widget that builds its own items' nodes (a tree's rows, a list's, a tab bar's tabs), the view declares
+each line once and is told which item it was chosen on:
+
+```java
+tree.action(MenuAction.of("delete", "×", "Delete"));
+gui.mailbox(TreeView.CHOSEN, tree.address(), chosen -> outbox.send(new Delete((Path) chosen.item())));
 ```
 
 - **The nearest node with a menu owns the click** — leaf→root, the same rule a click handler follows,
   so a row inside a panel inside a page may each declare one and the innermost answers.
-- **Sources accumulate**, like `onState` observers: the widget states its defaults and the
-  application adds what only it knows, into one menu, in registration order. Nothing is restated and
-  nothing has to agree on an order.
-- **A tree's row menu is declared, not built at the click**: `tree.action(TreeView.Action.of("delete",
-  "×", "Delete"))` puts a line on every row, each row's `Entry` says which lines it hides or greys
-  (`hides("delete")`, `greys("delete")`), and choosing one publishes `Chosen(tree, action, item)` on
-  `TreeView.CHOSEN`. A right click runs nothing of the application's; what a row offers is a fact the
-  listing already states, and a changed fact arrives with `REFRESH`, like a changed label.
-- **Other widgets hand their own context to the builder**: `ListView.onContextMenu((item, menu) -> …)`
-  and `Tabs.onContextMenu((index, menu) -> …)` say *which* thing was clicked, which the framework has
-  no way to name. They follow the tree's declared shape next.
-- **Contribute nothing and no menu opens** — "there is nothing to offer here" needs no special case.
+- **The widget's own lines come first**, then the application's: a field's Copy/Cut/Paste then its
+  declared menu behind a rule, a tab's Close then the bar's actions, a tree's Expand and Collapse then
+  its actions. Nothing is restated.
+- **`Chosen(at, action, item)`** arrives on the widget's own topic, `TreeView.CHOSEN`, `ListView.CHOSEN`
+  or `Tabs.CHOSEN`, carrying the item (a tab's index as it was when the menu opened).
+- **What a tree's row offers comes with its `Entry`**: `hides("delete")`, `greys("delete")`. It is a
+  fact the listing already states, and a changed fact arrives with `REFRESH`, like a changed label. A
+  list's and a tab bar's actions are on every item.
+- **Offer nothing and no menu opens** — "there is nothing to offer here" needs no special case.
 - **Defaults ship with the widgets**: a `TextField` offers Copy/Cut/Paste (Copy alone when
-  `readOnly(true)`, each greyed when it does not apply), a tab offers Close.
+  `readOnly(true)`, each greyed when it does not apply), a tab offers Close. These are the widget
+  library's, and answer in code through `Seams.onContextMenu`, which an application is not handed.
 
-`ContextMenu` draws them, installed by the first `onContextMenu` on a tree whatever declared it (it is
-registered as core's `MenuPresenter.Default`); `gui.menus(presenter)` replaces it with something else entirely
-(`MenuPresenter`), the same way `gui.clipboard(...)` replaces the clipboard.
+`ContextMenu` draws them, installed by the first widget or declaration that needs one (it is
+registered as core's `MenuPresenter.Default`); `Seams.of(gui).menus(presenter)` replaces it with something
+else entirely (`MenuPresenter`), the same way `gui.clipboard(...)` replaces the clipboard.
 
 **Threading**: `gui.async(work)` runs app logic off the GUI thread; `gui.batch(edits)` groups
 mutations into one frame. Install the OS clipboard with `gui.clipboard(...)` (see the demo — the

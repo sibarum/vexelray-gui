@@ -9,7 +9,6 @@ import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.ClaimScope;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.input.Shortcut;
-import dev.vexelray.gui.core.input.MenuSink;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.NodeLayout;
 import dev.vexelray.gui.core.style.Finish;
@@ -24,6 +23,7 @@ import sibarum.tactroller.api.Key;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.function.IntConsumer;
 
 /**
@@ -59,6 +59,15 @@ public final class Tabs {
      * for each of these in the order they arrive, and adds one for each tab it adds, stays in step with the bar.
      */
     public static final Topic<Removed> REMOVED = Topic.edge("vexelray.gui.tabs.removed", Removed.class);
+
+    /**
+     * One of the bar's {@link #action actions} chosen from a tab's menu, with the tab's index as it was when the menu
+     * opened. The bar does nothing else for it. Every one, in order.
+     */
+    public static final Topic<Chosen> CHOSEN = Topic.edge("vexelray.gui.tabs.chosen", Chosen.class);
+
+    /** The id of the bar's own Close, which no action of the application's may take. */
+    public static final String CLOSE = "close";
 
     /** The panel at {@code tabs} now shows tab {@code index}. */
     public record Selected(String tabs, int index) implements Addressed {
@@ -98,7 +107,8 @@ public final class Tabs {
     private volatile boolean closable = true;
     private volatile HeaderSkin skin = this::themeSkin;
     private final WidgetName name;
-    private volatile TabMenu contextMenu = (index, menu) -> { };
+    /** What is on every tab's menu after Close, in the order declared. */
+    private final MenuActions actions = new MenuActions(CLOSE);
     private volatile TabTransition transition = TabTransition.NONE;
 
     /** The two pages a transition currently has hold of, or null when the panel is at rest. Guarded by {@code this}. */
@@ -118,17 +128,6 @@ public final class Tabs {
     private int indicatorGlide;
     private boolean indicatorGliding;
 
-
-    /**
-     * What an application adds to a tab's context menu, told which tab was right-clicked. A separate type rather
-     * than a {@code BiConsumer<Integer, MenuSink>} because the index is an {@code int} and the pair reads better
-     * named: {@code (index, menu) -> menu.item("Duplicate", () -> duplicate(index))}.
-     */
-    @FunctionalInterface
-    public interface TabMenu {
-        /** Add to the menu for tab {@code index}. Runs on the GUI thread, at the moment of the click. */
-        void build(int index, MenuSink menu);
-    }
 
     /**
      * The motion of one tab change: the outgoing page is on its way out, the incoming one is already visible, and
@@ -405,7 +404,7 @@ public final class Tabs {
             if (closable) {
                 menu.item(dev.vexelray.gui.icons.Icon.CLOSE, "Close", () -> remove(at));
             }
-            contextMenu.build(at, menu);
+            actions.offer(menu, gui, CHOSEN, name.address(), at, Set.of(), Set.of(), () -> { });
         });
 
         // A hidden page is the plainest kind of concealment there is, so the panel says how to undo it: anything
@@ -739,12 +738,15 @@ public final class Tabs {
     }
 
     /**
-     * Add to the context menu of every tab. Close comes first, then this — sources accumulate, so an application
-     * contributes "Close others", "Duplicate", "Pin" without restating the one the bar already knows how to do.
-     * With {@link #closable} off there is no Close, and this is the whole menu.
+     * Put {@code action} on every tab's menu, after Close, in the order actions are declared: "Close others",
+     * "Duplicate", "Pin", without restating the one the bar already knows how to do. With {@link #closable} off there
+     * is no Close, and these are the whole menu. Choosing one publishes {@link Chosen} on {@link #CHOSEN} with the
+     * tab's index; nothing of the application's runs at the right click (vexelray-framework's threading.md, T7.5).
+     *
+     * @throws IllegalArgumentException when the id is {@link #CLOSE}, or another action already has it
      */
-    public Tabs onContextMenu(TabMenu source) {
-        this.contextMenu = source == null ? (index, menu) -> { } : source;
+    public Tabs action(MenuAction action) {
+        actions.add(action);
         return this;
     }
 

@@ -14,7 +14,6 @@ import dev.vexelray.gui.core.drop.PayloadType;
 import dev.vexelray.gui.core.input.ClaimScope;
 import dev.vexelray.gui.core.input.ClickEvent;
 import dev.vexelray.gui.core.input.KeyEvent;
-import dev.vexelray.gui.core.input.MenuSink;
 import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.NodeLayout;
@@ -36,7 +35,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -100,6 +98,12 @@ public final class ListView<T> implements AutoCloseable {
      * it; what landing means is the application's. Every one, in order.
      */
     public static final Topic<Landed> LANDED = Topic.edge("vexelray.gui.list.landed", Landed.class);
+
+    /**
+     * One of the list's {@link #action actions} chosen from a row's menu, with the row's item. The list does nothing else
+     * for it. Every one, in order.
+     */
+    public static final Topic<Chosen> CHOSEN = Topic.edge("vexelray.gui.list.chosen", Chosen.class);
 
     /**
      * {@code held}, the payload, was dropped with {@code effect} on the row of the list at {@code list} showing
@@ -185,9 +189,8 @@ public final class ListView<T> implements AutoCloseable {
 
     private volatile Consumer<T> onRowClicked = t -> { };
     private final WidgetName name;
-    private volatile BiConsumer<T, MenuSink> contextMenu = (item, menu) -> { };
-    /** Whether rows have a menu, and so whether a right click selects. A list with none ignores it, as before. */
-    private volatile boolean hasMenu;
+    /** What is on every row's menu, in the order declared. A list with none has no menu, and a right click on it selects nothing. */
+    private final MenuActions actions = new MenuActions();
 
     /** Rows that are marked without being selected, and how selected and marked rows look. See {@link #marked}. */
     private volatile Predicate<T> marked = t -> false;
@@ -450,24 +453,21 @@ public final class ListView<T> implements AutoCloseable {
     }
 
     /**
-     * Give every row a context menu, {@code TreeView}'s door for a list: this is asked what should be on it at each
-     * right click, with the item under the pointer in hand, which is the context the list can add that the framework
-     * cannot. Contributing nothing opens no menu.
+     * Put {@code action} on every row's menu, in the order actions are declared, as a tree does. Choosing it publishes
+     * {@link Chosen} on {@link #CHOSEN} with the row's item; nothing of the application's runs at the right click
+     * (vexelray-framework's threading.md, T7.5). A list with no actions has no menu.
      *
      * <p><b>The right click selects first</b>, the convention every explorer follows, so the menu's commands visibly
      * have a subject: an unselected row becomes the selection, as a plain click would make it. A row that is already
-     * selected leaves the selection alone, so a menu opened on one of several selected rows is about all of them. A
-     * source wanting to know which case it is in asks {@link #selection()}; it runs on the GUI thread.
+     * selected leaves the selection alone, so a menu opened on one of several selected rows is about all of them:
+     * the selection was published on {@link #SELECTED} before the menu opened, and whoever hears the choice knows
+     * which case it is from that.
      *
-     * <p>Rows are rebuilt as they scroll in, so the source is held by the list and asked by each row, not attached
-     * to rows by the caller. Installs a menu presenter on the tree if there is none, so the menu is actually shown.
+     * @throws IllegalArgumentException when another action already has the id
      */
-    public ListView<T> onContextMenu(BiConsumer<T, MenuSink> source) {
-        this.contextMenu = source == null ? (item, menu) -> { } : source;
-        this.hasMenu = source != null;
-        if (source != null) {
-            ContextMenu.presentOn(gui);
-        }
+    public ListView<T> action(MenuAction action) {
+        actions.add(action);
+        ContextMenu.presentOn(gui);   // installs a presenter on the tree if there is none, so the menu is shown
         return this;
     }
 
@@ -800,7 +800,8 @@ public final class ListView<T> implements AutoCloseable {
         // The second click has already selected the row, so this activates what a click just chose.
         Seams.of(gui).onDoubleClick(row, () -> activated(item));
         Seams.of(gui).onContextClick(row, e -> onRowContextClick(item));
-        Seams.of(gui).onContextMenu(row, menu -> contextMenu.accept(item, menu));
+        Seams.of(gui).onContextMenu(row, menu -> actions.offer(menu, gui, CHOSEN, name.address(), item, Set.of(), Set.of(),
+                () -> { }));
         Seams.of(gui).onState(row, state -> row.background(look(item).at(state)));
         content.insert(row, at);
         shown.put(item, row);
@@ -848,7 +849,7 @@ public final class ListView<T> implements AutoCloseable {
      * selection. Without a menu it means nothing, so a drop-down's options are not chosen by one.
      */
     private void onRowContextClick(T item) {
-        if (hasMenu && !selection.isSelected(item)) {
+        if (!actions.isEmpty() && !selection.isSelected(item)) {
             selection.at(item);
             clicked(item);
         }

@@ -37,7 +37,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.function.Predicate;
 
 /**
  * A list whose retained tree holds <b>viewport-many rows however long the list is</b>. The invariant, and the
@@ -146,12 +145,6 @@ public final class ListView<T> implements AutoCloseable {
         }
     }
 
-    /** Builds the contents of one row. The row's box, its height and its selected look are the list's business. */
-    @FunctionalInterface
-    public interface RowBuilder<T> {
-        Node build(Gui gui, T item);
-    }
-
     /** Rows kept beyond each edge of the viewport, so a scroll of a few pixels does not build anything. */
     private static final int OVERSCAN = 2;
 
@@ -162,7 +155,8 @@ public final class ListView<T> implements AutoCloseable {
     private static final Paint CARRY_REFUSES = Role.DANGER.alpha(0.92f);
 
     private final Gui gui;
-    private final RowBuilder<T> builder;
+    /** Draws the contents of one row. The row's box, its height and its selected look are the list's business. */
+    private final Face<T> builder;
     private final float rowRem;
     private final SelectionModel<T> selection;
 
@@ -192,8 +186,8 @@ public final class ListView<T> implements AutoCloseable {
     /** What is on every row's menu, in the order declared. A list with none has no menu, and a right click on it selects nothing. */
     private final MenuActions actions = new MenuActions();
 
-    /** Rows that are marked without being selected, and how selected and marked rows look. See {@link #marked}. */
-    private volatile Predicate<T> marked = t -> false;
+    /** Rows that are marked without being selected, and how selected and marked rows look. See {@link #marks}. */
+    private volatile Set<Object> marked = Set.of();
     private volatile Role selectedLook = Role.SELECTION;
     private volatile Role markedLook = Role.HIGHLIGHT;
 
@@ -219,11 +213,11 @@ public final class ListView<T> implements AutoCloseable {
     /** What the carried label last showed, and where: written only when it changes. Guarded by this. */
     private Object carriedAs;
 
-    public ListView(Gui gui, float rowRem, RowBuilder<T> builder) {
+    public ListView(Gui gui, float rowRem, Face<T> builder) {
         this(gui, rowRem, builder, SelectionModel.range());
     }
 
-    public ListView(Gui gui, float rowRem, RowBuilder<T> builder, SelectionModel<T> selection) {
+    public ListView(Gui gui, float rowRem, Face<T> builder, SelectionModel<T> selection) {
         this.gui = Objects.requireNonNull(gui, "gui");
         this.builder = Objects.requireNonNull(builder, "builder");
         this.selection = Objects.requireNonNull(selection, "selection");
@@ -325,20 +319,15 @@ public final class ListView<T> implements AutoCloseable {
      * <p>A mark is a fact about a row that is not a choice — a search hit, a file a suggestion would reach, a row
      * that differs from the other folder — and it exists because the alternative is to make it a selection, which
      * is a claim about what the user chose. A preview that <em>is</em> the selection cannot be ignored for free:
-     * the user who wanted only the file they clicked has to undo it. Marks are read through a predicate rather than
-     * held as a set, so the list needs no copy of the application's state, and a row realized by a later scroll
-     * asks the same question the rows already on screen were asked.
+     * the user who wanted only the file they clicked has to undo it. The marks are told as data, the whole set each
+     * time they change, rather than asked of a predicate: a predicate is asked on every paint, in the frame, and reads
+     * whatever it captured (vexelray-framework's threading.md, T7.2). A row realized by a later scroll wears what the
+     * set says, as the rows already on screen do.
      *
-     * <p>Selected outranks marked. Call again (or {@link #remark}) when the answer changes.
+     * <p>Selected outranks marked.
      */
-    public ListView<T> marked(Predicate<T> marked) {
-        this.marked = marked == null ? t -> false : marked;
-        restyleAll();
-        return this;
-    }
-
-    /** Re-read {@link #marked}'s predicate for every row on screen, when what it answers has changed. */
-    public ListView<T> remark() {
+    public ListView<T> marks(java.util.Collection<? extends T> marked) {
+        this.marked = marked == null ? Set.of() : Set.copyOf(marked);
         restyleAll();
         return this;
     }
@@ -795,7 +784,9 @@ public final class ListView<T> implements AutoCloseable {
         // declared without the other becoming a second, anonymous row in the tree. The contents win, because a
         // node's accessible name is derived from the text below it and the wrapper is one level too far up:
         // declared here, every row in a table reads as `row "3 item-00023 binary"` instead of `row ""`.
-        row.append(builder.build(gui, item).role(itemRole));
+        // A press on a row's button is the row's item chosen, announced as the menu's lines are.
+        Nodes nodes = new Nodes(gui, "list", action -> gui.bus().publish(CHOSEN, new Chosen(name.address(), action, item)));
+        row.append(builder.build(nodes, item).role(itemRole));
         Seams.of(gui).onClick(row, e -> onRowClick(item, e));
         // The second click has already selected the row, so this activates what a click just chose.
         Seams.of(gui).onDoubleClick(row, () -> activated(item));
@@ -937,7 +928,7 @@ public final class ListView<T> implements AutoCloseable {
 
     /** The fill an item wears: selected outranks marked, because being chosen is the stronger fact. */
     private Role look(T item) {
-        return selection.isSelected(item) ? selectedLook : marked.test(item) ? markedLook : Role.NONE;
+        return selection.isSelected(item) ? selectedLook : marked.contains(item) ? markedLook : Role.NONE;
     }
 
     @Override

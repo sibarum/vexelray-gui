@@ -191,8 +191,8 @@ class InspectorTest {
     @Test
     void aRailPanelHeadingHasAHeightToo() {
         try (HeadlessGui h = new HeadlessGui()) {
-            Rail rail = new Rail(h.gui)
-                    .item("layers", h.gui.text("L"), "Layers", (g, into) -> into.append(g.text("rows")));
+            Rail rail = new Rail(h.gui).item("layers", h.gui.text("L"), "Layers");
+            pages(h, rail, Map.of("layers", into -> into.append(h.gui.text("rows"))));
             h.gui.root().children(rail.node(), rail.panel());
             rail.select("layers").hint("5");
             h.frame();
@@ -691,16 +691,17 @@ class InspectorTest {
             AtomicInteger builtLayers = new AtomicInteger();
             AtomicInteger builtColor = new AtomicInteger();
             Rail rail = new Rail(h.gui)
-                    .item("layers", h.gui.text("L"), "Layers",
-                            (g, into) -> {
-                                builtLayers.incrementAndGet();
-                                into.append(g.text("layer rows"));
-                            })
-                    .item("color", h.gui.text("C"), "Color",
-                            (g, into) -> {
-                                builtColor.incrementAndGet();
-                                into.append(g.text("colour rows"));
-                            });
+                    .item("layers", h.gui.text("L"), "Layers")
+                    .item("color", h.gui.text("C"), "Color");
+            pages(h, rail, Map.of(
+                    "layers", into -> {
+                        builtLayers.incrementAndGet();
+                        into.append(h.gui.text("layer rows"));
+                    },
+                    "color", into -> {
+                        builtColor.incrementAndGet();
+                        into.append(h.gui.text("colour rows"));
+                    }));
             h.gui.root().children(rail.node(), rail.panel());
             h.frame();
 
@@ -724,8 +725,8 @@ class InspectorTest {
     @Test
     void noneIsAnAnswerARailCanGive() {
         try (HeadlessGui h = new HeadlessGui()) {
-            Rail rail = new Rail(h.gui)
-                    .item("layers", h.gui.text("L"), "Layers", (g, into) -> into.append(g.text("rows")));
+            Rail rail = new Rail(h.gui).item("layers", h.gui.text("L"), "Layers");
+            pages(h, rail, Map.of("layers", into -> into.append(h.gui.text("rows"))));
             h.gui.root().children(rail.node(), rail.panel());
             h.frame();
 
@@ -742,5 +743,13 @@ class InspectorTest {
             assertFalse(showing(h, rail.panel()));
             assertTrue(showing(h, rail.node()), "the rail itself stays -- the tools did not go away with the panel");
         }
+    }
+
+    /**
+     * Build each of {@code rail}'s pages the first time it opens, as a view does: by hearing {@link Rail#OPENED} and
+     * building into {@link Rail#page}, in the widget tick of the frame it opened.
+     */
+    static void pages(HeadlessGui h, Rail rail, Map<String, java.util.function.Consumer<Node>> builders) {
+        h.gui.mailbox(Rail.OPENED, rail.address(), o -> builders.get(o.key()).accept(rail.page(o.key())));
     }
 }

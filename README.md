@@ -443,9 +443,10 @@ The controls themselves:
 - **`SplitPane`** — two panes and a draggable divider, side by side or stacked. **One pane has the size and the
   other takes the rest** (`sized(Pane)`), so a resized window moves the far edge and leaves the divider where the
   user put it. Read as a displacement, like `Table`'s grip; `onResize` reports the size in dp for `WindowMemory`.
-- **`ListView.marked` / `looks`** — a row can be *marked* without being selected: a search hit, a file a suggestion
+- **`ListView.marks` / `looks`** — a row can be *marked* without being selected: a search hit, a file a suggestion
   would reach, a row that differs from the other folder. A mark is a fact that is not a choice, so previewing one
-  does not have to be undone. `Table.headers(face, size, ink)` styles the column titles and `Table.onSort` says when
+  does not have to be undone. The marks are told as a set, the whole of it each time it changes, not asked of a
+  predicate in the frame. `Table.headers(face, size, ink)` styles the column titles and `Table.onSort` says when
   the order changed, however it changed.
 - **`Select<T>`** — the other end of the same choice: one line high whatever the list holds, with the
   alternatives a click away. A closed strip over a floating `ListView`, so a select over ten thousand values
@@ -492,8 +493,8 @@ The controls themselves:
   on its side**: a tab bar asks *which of these documents am I looking at*, so one is always selected; a rail
   asks *which tool am I holding*, so **none** is a legitimate answer and clicking the selected icon puts the
   panel away. That state is the reason it is its own widget rather than an orientation flag on the other one —
-  the work is the canvas, and the panel is on loan from it. Pages are builders, built the first time they are
-  shown and kept thereafter (a rebuilt page would come back drawing correctly and unable to take a keystroke,
+  the work is the canvas, and the panel is on loan from it. A page is built by the view the first time it is
+  shown, when `Rail.OPENED` says so, into `rail.page(key)`, in the widget tick of that frame, and kept thereafter (a rebuilt page would come back drawing correctly and unable to take a keystroke,
   since registrations are keyed by node id and released when a node leaves the tree). The icons keep their
   places whether the panel is open or shut and the panel takes its space from the content, so nothing appears,
   grows or shifts under the pointer. A `PanelTransition` (`Rail.fade`, `Rail.slide`, or the application's own)
@@ -517,6 +518,10 @@ The controls themselves:
   end does not walk the list into existence. Rows that stay in the window are *kept*, not rebuilt: a
   scroll of one row builds one row. Row height is uniform and stated in `rem`, which is what makes the
   offset→index map O(1) and keeps the rows zooming with everything else.
+  **A row is drawn by a `Face<T>`, `(nodes, item) -> Node`**, which is handed a `Nodes` and never the `Gui`: boxes,
+  text, icons, the theme, and `nodes.button(icon, label, action, enabled)`, a control whose press arrives as
+  `Chosen(list, action, item)` on `ListView.CHOSEN`. A face runs whenever a row scrolls in, so it may draw and
+  nothing else: no bus, no mailbox, no clipboard. `Table.Column`'s cells and `Board`'s cards are `Face`s too.
 - **`Table<T>`** — a `ListView` body under a sticky header, with columns the user can resize and sort
   by. A column width is a constraint *between siblings' children*, which is the cross-tree solve the
   layout engine deliberately does not do, so the table does it itself in the shape that decision
@@ -568,7 +573,8 @@ The controls themselves:
 - **`Popout`** — a panel docked against one edge of the window, collapsible to a rail and poppable out into a
   window of its own. Docked, it is an ordinary child of the host tree: the host's content shrinks by exactly
   its width, and it clips and scrolls with the window. Popping out is **not** a reparent — a `Node` belongs to
-  the tree that minted it — so the content is declared as a builder and run once per tree, both instances then
+  the tree that minted it — so the view builds the content once per tree: into `body()` when it builds the panel,
+  and into `awayBody()`, against `away()`, when `Popout.POPPED` says it was first popped. Both instances are then
   hidden rather than removed. Collapsed and popped-out leave the same footprint, the rail carrying the control
   that undoes it; a `Reveal` makes a landmark inside the panel reachable, docking it back if it was out. The
   window is a named `AppWindow` wearing the application's own `TitleBar` (`Decorations.CLIENT`), with the dock
@@ -577,11 +583,9 @@ The controls themselves:
 - **`Tooltip`** — hover help that is admissible under the hover rule by construction: the bubble is
   `hitInert` (drawn, never a pointer target), anchored to the control's box (never follows the
   pointer), and coexists with the control's own hover restyle because state observers accumulate.
-  `attach(target, Supplier<String>)` is for help that is a fact about *the moment* rather than about the
-  control — a swatch saying which colour it currently holds, a button saying why it is unavailable now. The
-  supplier is asked once per hover, at the moment the bubble would show, exactly as a context menu's source is
-  asked once per click; null or blank shows nothing. It exists so that there is never a reason to re-attach,
-  which would silently add a second observer.
+  Attaching again changes what a target says, on the one observer it already has, so help that is a fact about
+  *the moment* — a button saying why it is unavailable now — is told when it changes, as a label is; null or blank
+  shows nothing. The text is data: a function asked at hover would be the caller's code in the frame.
 
 The demo is a **gallery**: a navigation rail, a page, and an activity rail, with one
 [chapter](vexelray-gui-demo/src/main/java/dev/vexelray/gui/demo/Chapter.java) per part of the

@@ -9,6 +9,7 @@ import dev.vexelray.gui.demo.Chapter;
 import dev.vexelray.gui.demo.Console;
 import dev.vexelray.gui.demo.Stage;
 import dev.vexelray.gui.demo.Ui;
+import dev.vexelray.gui.widget.Nodes;
 import dev.vexelray.gui.widget.Table;
 import dev.vexelray.text.TextLayout;
 
@@ -135,7 +136,7 @@ public final class TableChapter implements Chapter {
     }
 
     /** One cell: a plain text node, because a cell's box, width and clipping are the table's business. */
-    private static Node cell(Gui gui, String text, boolean numeric) {
+    private static Node cell(Nodes gui, String text, boolean numeric) {
         return gui.text(text).width(Length.FILL).height(Length.FILL)
                 .textSize(Length.rem(0.9375f))
                 .textColor(numeric ? Role.DIM : Role.INK)

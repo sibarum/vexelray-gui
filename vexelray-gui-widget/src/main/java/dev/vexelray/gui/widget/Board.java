@@ -29,13 +29,12 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.function.Function;
 
 /**
  * Cards the user can pick up, carry and put down — within a stack, and between the stacks of one board.
  *
  * <pre>{@code
- * Board<Task> board = new Board<Task>(gui, task -> card(task))   // what a card looks like: any node
+ * Board<Task> board = new Board<Task>(gui, (n, task) -> card(n, task))   // what a card looks like: any node
  *         .motion(motion.arrival);                              // how long moving takes; none, and it is instant
  * Deck<Task> todo  = board.column().name("todo").items(model.todo()).reorderable();
  * Deck<Task> doing = board.column().name("doing").items(model.doing()).reorderable();
@@ -91,7 +90,7 @@ public final class Board<T> {
     private static final Paint PAD_EDGE = Role.ACCENT.alpha(0.38f);
 
     private final Gui gui;
-    private final Function<? super T, ? extends Node> faces;
+    private final Face<T> faces;
     private final PayloadType<T> itemType = PayloadType.of("board-card");
     final List<Deck<T>> decks = new CopyOnWriteArrayList<>();
 
@@ -155,7 +154,7 @@ public final class Board<T> {
      * <p>The factory is called once per item, when the item first appears in a deck, and the node is removed when
      * the item leaves the board. Give the node its own background and corners; a card's width is the deck's.
      */
-    public Board(Gui gui, Function<? super T, ? extends Node> faces) {
+    public Board(Gui gui, Face<T> faces) {
         this.gui = Objects.requireNonNull(gui, "gui");
         this.faces = Objects.requireNonNull(faces, "faces");
     }
@@ -653,7 +652,7 @@ public final class Board<T> {
 
     /** Build the card for {@code item}: the application's node, in a carrier the board can move. */
     private Card<T> build(T item) {
-        Node face = faces.apply(item);
+        Node face = faces.build(new Nodes(gui, "board"), item);   // a card takes no presses: no board has asked
         Node carrier = gui.column().width(Length.FILL).height(Length.AUTO)
                 .padding(spacing, Length.ZERO).children(face);
         Card<T> card = new Card<>(this, item, carrier, face);

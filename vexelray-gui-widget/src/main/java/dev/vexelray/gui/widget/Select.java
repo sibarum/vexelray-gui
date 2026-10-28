@@ -212,7 +212,7 @@ public final class Select<T> implements AutoCloseable {
         Seams.of(gui).onClick(control, this::toggleOpen);
         Seams.of(gui).onState(control, state -> control.background(Role.WELL.at(state)));
 
-        this.list = new ListView<>(gui, ROW_REM, (g, item) -> g.text(label.apply(item))
+        this.list = new ListView<>(gui, ROW_REM, (n, item) -> n.text(label.apply(item))
                         .width(Length.FILL)
                         .wordWrap(false)
                         .padding(Length.ZERO, Length.rem(0.5f))

@@ -125,7 +125,7 @@ public final class Table<T> implements AutoCloseable {
      * @param cell  builds the contents of one cell; the cell's box and width are the table's business
      * @param sort  how rows compare on this column, or null when it cannot be sorted by
      */
-    public record Column<T>(String title, Length width, ListView.RowBuilder<T> cell, Comparator<T> sort) {
+    public record Column<T>(String title, Length width, Face<T> cell, Comparator<T> sort) {
 
         public Column {
             Objects.requireNonNull(title, "title");
@@ -134,7 +134,7 @@ public final class Table<T> implements AutoCloseable {
         }
 
         /** A column that cannot be sorted by — the default, because most columns cannot be ordered meaningfully. */
-        public static <T> Column<T> of(String title, Length width, ListView.RowBuilder<T> cell) {
+        public static <T> Column<T> of(String title, Length width, Face<T> cell) {
             return new Column<>(title, width, cell, null);
         }
 
@@ -146,7 +146,7 @@ public final class Table<T> implements AutoCloseable {
          * the comparator un-passable. Here the comparator is an argument, so it pins the type like the cell
          * builder does.
          */
-        public static <T> Column<T> of(String title, Length width, ListView.RowBuilder<T> cell,
+        public static <T> Column<T> of(String title, Length width, Face<T> cell,
                                        Comparator<T> sort) {
             return new Column<>(title, width, cell, sort);
         }
@@ -456,7 +456,10 @@ public final class Table<T> implements AutoCloseable {
     // ------------------------------------------------------------------ rows
 
     /** One row: a cell per column, recorded so the solve can write each one its width. */
-    private Node buildRow(Gui g, T item) {
+    private Node buildRow(Nodes ignored, T item) {
+        // A cell's button would be announced as the body list's, under an address that is not this table's, so a
+        // table's cells take no presses until a table that needs them says what they announce.
+        Nodes g = new Nodes(gui, "table");
         Node row = g.row().width(Length.FILL).height(Length.FILL).scroll(false, false);
         List<Node> built = new ArrayList<>(columns.size());
         for (int i = 0; i < columns.size(); i++) {

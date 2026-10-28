@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -371,5 +372,56 @@ class ListViewTest {
         Rect r = row.layout().rect();
         assertTrue(r.y() >= box.y() - 0.5f && r.y() + r.h() <= box.y() + box.h() + 0.5f,
                 "the row sits inside the list's box: row " + r + " in " + box);
+    }
+
+    /**
+     * A row's button is drawn by the face and pressed by the user, and the press is a message: the row's item and
+     * the button's action on {@link ListView#CHOSEN}. Nothing of the view's runs at the press.
+     */
+    @Test
+    void aRowsButtonIsAnnouncedWithItsItem() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            ListView<String> list = new ListView<>(h.gui, ROW_REM, (n, item) -> n.row().children(
+                    n.text(item).width(Length.grow(1)),
+                    n.button(dev.vexelray.gui.icons.Icon.PLUS, "Stage", "stage", true)));
+            list.node().height(TALL_H);
+            h.gui.root().children(list.node());
+            list.items(names(3));
+            List<Chosen> chosen = new ArrayList<>();
+            h.gui.mailbox(ListView.CHOSEN, list.address(), chosen::add);
+            h.frame().frame();
+
+            dev.vexelray.gui.core.model.RetainedNode button = withRole(h.retained(list.rowNode("item00001")), "button");
+            assertNotNull(button, "the face drew a button");
+            h.click(button.x + button.w / 2f, button.y + button.h / 2f);
+            h.frame();
+
+            assertEquals(List.of(new Chosen(list.address(), "stage", "item00001")), chosen);
+        }
+    }
+
+    /** The first node under {@code n} with {@code role}, or null. */
+    private static dev.vexelray.gui.core.model.RetainedNode withRole(dev.vexelray.gui.core.model.RetainedNode n,
+                                                                    String role) {
+        if (role.equals(n.role())) {
+            return n;
+        }
+        for (var c : n.children) {
+            var found = withRole(c, role);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    /** A board's cards take no presses yet, and say so where the face asks for one rather than dropping the press. */
+    @Test
+    void aBoardsCardsRefuseAButton() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Nodes card = new Nodes(h.gui, "board");
+            assertThrows(IllegalStateException.class,
+                    () -> card.button(dev.vexelray.gui.icons.Icon.PLUS, "Stage", "stage", true));
+        }
     }
 }

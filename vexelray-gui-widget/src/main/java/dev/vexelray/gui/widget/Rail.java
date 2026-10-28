@@ -34,8 +34,8 @@ import java.util.function.Consumer;
  *
  * <h2>Pages are built once and hidden</h2>
  *
- * A page is a {@link Page} builder rather than a node, and it is built the first time it is shown and kept
- * thereafter — the same choice {@link Tabs} makes for its pages and {@link Popout} for its two hosts, for the
+ * A page is built the first time it is shown and kept thereafter: the rail announces it ({@link #OPENED}) and the view
+ * builds into {@link #page}, in the widget tick of the frame it was opened, so it is never drawn empty — the same choice {@link Tabs} makes for its pages and {@link Popout} for its two hosts, for the
  * same reason. A {@link Node}'s registrations are keyed by node id inside the tree that minted it and released
  * when it leaves, so a page that was removed and rebuilt would come back drawing correctly and unable to take a
  * keystroke. Building lazily is the affordable half of that: a rail with six panels costs one panel's nodes until
@@ -69,6 +69,12 @@ public final class Rail {
      */
     public static final Topic<Selected> SELECTED = Topic.state("vexelray.gui.rail.selected", Selected.class, Selected::rail);
 
+    /**
+     * A panel shown for the first time: build its page into {@link #page(String) page(key)}. Heard in the widget tick of
+     * the frame the panel opened, before it is laid out, so the page is never drawn empty. Every one, in order.
+     */
+    public static final Topic<Opened> OPENED = Topic.edge("vexelray.gui.rail.opened", Opened.class);
+
     /** The rail at {@code rail} shows the panel {@code key}, or none when null. */
     public record Selected(String rail, String key) implements Addressed {
         @Override
@@ -77,13 +83,15 @@ public final class Rail {
         }
     }
 
-    private static final Length TILE = Length.rem(1.9f);
-
-    /** Builds a panel's contents, once, into the node it is given. */
-    @FunctionalInterface
-    public interface Page {
-        void build(Gui gui, Node into);
+    /** The panel {@code key} of the rail at {@code rail} is shown for the first time. */
+    public record Opened(String rail, String key) implements Addressed {
+        @Override
+        public Object address() {
+            return rail;
+        }
     }
+
+    private static final Length TILE = Length.rem(1.9f);
 
     /**
      * The motion of one change of panel. Three changes are possible, and a transition can tell them apart from
@@ -253,7 +261,7 @@ public final class Rail {
     private Node fadingOut;
     private Node fadingIn;
 
-    private record Item(String key, String title, Node tile, Node body, Page page, boolean[] built) {
+    private record Item(String key, String title, Node tile, Node body, boolean[] built) {
     }
 
     /** Build an empty rail on {@code gui}; add panels with {@link #item}. */
@@ -306,10 +314,10 @@ public final class Rail {
      *
      * @param key   how the application names this panel — what {@link #select} takes and {@link #SELECTED} carries
      * @param icon  the tile's contents; the application's, because this module has no icon set and should not grow one
-     * @param title shown in the panel's heading
-     * @param page  builds the panel's contents, the first time it is shown
+     * @param title shown in the panel's heading. The page is built by the view, into {@link #page}, when {@link #OPENED}
+     *              says the panel is first shown
      */
-    public Rail item(String key, Node icon, String title, Page page) {
+    public Rail item(String key, Node icon, String title) {
         Node tile = gui.box().role("rail-item")
                 .size(TILE, TILE)
                 .corner(Length.rem(0.35f))
@@ -318,7 +326,7 @@ public final class Rail {
                         .align(dev.vexelray.text.TextLayout.HAlign.CENTER,
                                 dev.vexelray.text.TextLayout.VAlign.MIDDLE));
         Node body = gui.column().width(Length.grow(1f)).visible(false);
-        Item item = new Item(key, title, tile, body, page, new boolean[1]);
+        Item item = new Item(key, title, tile, body, new boolean[1]);
         items.add(item);
         gui.focusable(tile, true);
         gui.cursor(tile, CursorShape.POINTER);
@@ -426,7 +434,7 @@ public final class Rail {
         if (found != null) {
             if (!found.built()[0]) {
                 found.built()[0] = true;
-                found.page().build(gui, found.body());
+                gui.bus().publish(OPENED, new Opened(name.address(), found.key()));
             }
             // The arriving page and the panel are shown now. What is leaving is left exactly as it is and put
             // away by settle(), which is the whole of what makes a close something that can be watched.
@@ -457,6 +465,19 @@ public final class Rail {
         selected(this.selected);
         transition.run(new Change(panel, outgoing, incoming), this::settle);
         return this;
+    }
+
+    /**
+     * The node panel {@code key}'s page is built into, by the view, when {@link #OPENED} says the panel is first shown.
+     *
+     * @throws IllegalArgumentException when there is no such panel
+     */
+    public Node page(String key) {
+        Item found = item(key);
+        if (found == null) {
+            throw new IllegalArgumentException("no panel '" + key + "' on this rail");
+        }
+        return found.body();
     }
 
     /** Shut the panel, leaving the rail. */

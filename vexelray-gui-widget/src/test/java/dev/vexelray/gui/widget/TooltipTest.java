@@ -172,4 +172,21 @@ class TooltipTest {
             tip.close();
         }
     }
+
+    /** Attached again, a target says the new text, on the one observer it already had. */
+    @Test
+    void attachingAgainChangesWhatItSays() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Tooltip tip = new Tooltip(h.gui);
+            Node button = target(h, tip, "stage");
+            tip.attach(button, "nothing to stage");
+
+            h.hover(100f, 50f);
+            h.frame();
+
+            assertTrue(tip.isOpen(), "one observer still shows it");
+            assertEquals("nothing to stage", h.retained(tip.node()).textString(), "and it says the latest text");
+            tip.close();
+        }
+    }
 }

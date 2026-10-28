@@ -132,7 +132,7 @@ class BoardTest {
     /** One column, or several side by side, each holding the listed cards. */
     private Board<String> board(HeadlessGui h, Map<String, List<String>> columns) {
         Board<String> board = new Board<String>(h.gui,
-                s -> h.gui.box().width(Length.FILL).height(Length.dp(40)))
+                (n, s) -> n.box().width(Length.FILL).height(Length.dp(40)))
                 .spacing(Length.dp(5)).motion(hand);
         Node row = h.gui.row().width(Length.FILL).height(Length.FILL);
         model.columns = new LinkedHashMap<>(columns);
@@ -470,7 +470,7 @@ class BoardTest {
     void takenElsewhere() {
         try (HeadlessGui h = new HeadlessGui()) {
             Board<String> board = new Board<String>(h.gui,
-                    s -> h.gui.box().width(Length.FILL).height(Length.dp(40)))
+                    (n, s) -> n.box().width(Length.FILL).height(Length.dp(40)))
                     .spacing(Length.dp(5)).motion(hand);
             model.columns = new LinkedHashMap<>(Map.of("todo", List.of("a", "b")));
             Deck<String> deck = board.column().name("todo").reorderable();

@@ -74,14 +74,17 @@ class RailTransitionTest {
 
         Two(HeadlessGui h) {
             this.rail = new Rail(h.gui)
-                    .item("layers", h.gui.text("L"), "Layers", (g, into) -> {
+                    .item("layers", h.gui.text("L"), "Layers")
+                    .item("colour", h.gui.text("C"), "Colour");
+            InspectorTest.pages(h, rail, java.util.Map.of(
+                    "layers", into -> {
                         layers.set(into);
-                        into.append(g.text("layer rows"));
-                    })
-                    .item("colour", h.gui.text("C"), "Colour", (g, into) -> {
+                        into.append(h.gui.text("layer rows"));
+                    },
+                    "colour", into -> {
                         colour.set(into);
-                        into.append(g.text("colour rows"));
-                    });
+                        into.append(h.gui.text("colour rows"));
+                    }));
             h.gui.root().children(rail.node(), rail.panel());
         }
     }

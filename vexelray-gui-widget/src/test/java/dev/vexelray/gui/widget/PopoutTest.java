@@ -81,9 +81,24 @@ class PopoutTest {
         return false;
     }
 
-    /** A host row of [content, panel] with the panel docked right — the arrangement the edge asks for. */
-    private static Popout dockRight(HeadlessGui h, Node content, Popout.Content builds) {
-        Popout panel = new Popout(h.gui, "Outline", Popout.Edge.RIGHT, builds).size(Length.rem(14));
+    /** What a view builds into a panel, in whichever tree it is building for. */
+    @FunctionalInterface
+    private interface Builds {
+        void build(dev.vexelray.gui.core.Gui gui, Node into);
+    }
+
+    /**
+     * A host row of [content, panel] with the panel docked right — the arrangement the edge asks for — and its
+     * content built as a view builds it: the docked copy now, and the popped-out copy when {@link Popout#POPPED} says.
+     */
+    private static Popout dockRight(HeadlessGui h, Node content, Builds builds) {
+        Popout panel = new Popout(h.gui, "Outline", Popout.Edge.RIGHT).size(Length.rem(14));
+        builds.build(h.gui, panel.body());
+        h.bus.subscribe(Popout.POPPED, p -> {
+            if (p.popout().equals(panel.address())) {
+                builds.build(panel.away(), panel.awayBody());
+            }
+        });
         h.gui.root().direction(dev.vexelray.gui.core.layout.LayoutEnums.Direction.ROW)
                 .children(content.width(Length.grow(1)).height(Length.FILL), panel.node());
         return panel;
@@ -207,17 +222,17 @@ class PopoutTest {
             h.frame().frame();
             panel.buildAway();   // what the first pop does; there is no window to open here
 
-            RetainedNode root = h.frame(panel.awayGui());
+            RetainedNode root = h.frame(panel.away());
             assertNotNull(HeadlessGui.find(root, panel.awayBar().node()),
                     "the popped-out window draws the application's own title bar, not the desktop's");
             assertNotNull(HeadlessGui.find(root, away[0]),
                     "and the content was built a second time, into that tree");
-            assertEquals(h.gui.theme(), panel.awayGui().theme(),
+            assertEquals(h.gui.theme(), panel.away().theme(),
                     "against the host's theme — a second window is not a second opinion about how the "
                             + "application looks");
 
             panel.title("Symbols");
-            assertTrue(showsText(h.frame(panel.awayGui()), "Symbols"),
+            assertTrue(showsText(h.frame(panel.away()), "Symbols"),
                     "renaming the panel reaches the window that came out of it, not just the docked header");
         }
     }
@@ -238,7 +253,7 @@ class PopoutTest {
     }
 
     /** Content that says which tree it was built into, so a tree showing the other's text is visible as such. */
-    private static Popout.Content saysWhichTree(HeadlessGui h) {
+    private static Builds saysWhichTree(HeadlessGui h) {
         return (gui, into) -> into.append(gui.text(gui == h.gui ? "docked" : "away"));
     }
 
@@ -251,7 +266,7 @@ class PopoutTest {
             float open = panel.node().layout().rect().w();
 
             panel.buildAway();   // what the first pop does
-            RetainedNode away = h.frame(panel.awayGui());
+            RetainedNode away = h.frame(panel.away());
             h.frame().frame();
 
             RetainedNode host = h.retained(h.gui.root());
@@ -263,7 +278,7 @@ class PopoutTest {
             assertTrue(h.retained(panel.body()).visible(), "the docked body is where it was");
             assertEquals(open, panel.node().layout().rect().w(), 0.5f, "and the same size");
             assertEquals(W - open, content.layout().rect().w(), 0.5f, "with the host's content beside it");
-            assertNotSame(h.gui.bus(), panel.awayGui().bus(),
+            assertNotSame(h.gui.bus(), panel.away().bus(),
                     "two trees, two buses: Gui's topics are static, so a shared bus is a shared tree");
         }
     }
@@ -282,9 +297,9 @@ class PopoutTest {
             Rect header = panel.header().layout().rect();
             int x = (int) (header.x() + header.w() - px(Length.dp(6)) - px(Length.dp(12)));
             int y = (int) (header.y() + header.h() / 2f);
-            panel.awayGui().bus().publish(panel.awayGui().input(), new InputEvent.ButtonPressed(MouseButton.LEFT, x, y, 0));
+            panel.away().bus().publish(panel.away().input(), new InputEvent.ButtonPressed(MouseButton.LEFT, x, y, 0));
             h.frame();
-            panel.awayGui().bus().publish(panel.awayGui().input(), new InputEvent.ButtonReleased(MouseButton.LEFT, x, y, 0));
+            panel.away().bus().publish(panel.away().input(), new InputEvent.ButtonReleased(MouseButton.LEFT, x, y, 0));
             h.frame().frame();
 
             assertFalse(panel.collapsed(), "a click in the window is not a click in the host");
@@ -299,17 +314,17 @@ class PopoutTest {
             panel.buildAway();
             // What GuiApp does for the main window and for every window it opens by name.
             h.gui.windowKey("main");
-            panel.awayGui().windowKey("outline");
+            panel.away().windowKey("outline");
 
             List<Address> atHost = new CopyOnWriteArrayList<>();
             List<Address> atAway = new CopyOnWriteArrayList<>();
             h.gui.bus().subscribe(NavTopics.GO, atHost::add);
-            panel.awayGui().bus().subscribe(NavTopics.GO, atAway::add);
+            panel.away().bus().subscribe(NavTopics.GO, atAway::add);
 
             // Outbound: a link inside the popped-out panel to another window has to reach the bus GuiApp routes
             // windows from — the host's, for a panel docked in the main window.
             Address toMain = Address.of("main", "editor");
-            panel.awayGui().navigate(toMain);
+            panel.away().navigate(toMain);
             assertEquals(List.of(toMain), atHost, "a request from the window reaches the host's bus, once");
 
             // Inbound: a request naming the window, published in the host, reaches the tree that has the landmark.

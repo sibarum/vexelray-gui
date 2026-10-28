@@ -12,6 +12,7 @@ import dev.vexelray.gui.demo.Chapter;
 import dev.vexelray.gui.demo.Console;
 import dev.vexelray.gui.demo.Stage;
 import dev.vexelray.gui.demo.Ui;
+import dev.vexelray.gui.widget.Nodes;
 import dev.vexelray.gui.widget.Board;
 import dev.vexelray.gui.widget.Deck;
 import dev.vexelray.gui.widget.Placement;
@@ -88,7 +89,7 @@ public final class CardsChapter implements Chapter {
 
         // What a card looks like, and how long anything takes to move. The board owns the card's elevation —
         // that is how a card shows it has been picked up — and everything else about it is ours.
-        Board<Task> board = new Board<Task>(gui, task -> card(gui, task))
+        Board<Task> board = new Board<Task>(gui, CardsChapter::card)
                 .motion((progress, done) -> stage.krono().ramp(Dur.ms(200), Ease.OUT_CUBIC, progress, done));
 
         Node row = gui.row().width(Length.FILL).height(Length.FILL).gap(Ui.GAP);
@@ -149,7 +150,7 @@ public final class CardsChapter implements Chapter {
     }
 
     /** A card: a lit panel with the task's title, and a tag under it. */
-    private static Node card(Gui gui, Task task) {
+    private static Node card(Nodes gui, Task task) {
         Role tagInk = task.urgent() ? Role.ACCENT : Role.DIM;
         Node tag = gui.text(task.tag()).width(Length.AUTO).height(Length.rem(1.25f))
                 .padding(Length.ZERO, Length.rem(0.5f)).corner(Length.rem(0.625f))

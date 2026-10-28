@@ -1,5 +1,6 @@
 package dev.vexelray.gui.demo.chapter;
 
+import dev.vexelray.gui.core.Timing;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.edit.History;
@@ -13,7 +14,6 @@ import dev.vexelray.gui.demo.Stage;
 import dev.vexelray.gui.demo.Ui;
 import dev.vexelray.gui.widget.Cue;
 import dev.vexelray.gui.widget.Cues;
-import dev.vexelray.gui.widget.Ramp;
 import dev.vexelray.gui.widget.TextField;
 import dev.vexelray.canvas.Color;
 import sibarum.kronometer.Dur;
@@ -103,7 +103,7 @@ public final class TextChapter implements Chapter {
         Cue written = Cue.wash(Color.withAlpha(theme.color(Role.ACCENT), 0.5f));
         Cue rejected = Cue.ring(theme.color(Role.DANGER))
                 .with(Cue.wash(Color.withAlpha(theme.color(Role.DANGER), 0.45f)));
-        Ramp insistent = (progress, done) -> stage.krono().ramp(Dur.ms(650), Ease.LINEAR, progress, done);
+        Timing insistent = Timing.millis(650, Timing.Curve.LINEAR);
 
         TextField line = new TextField(gui, "type here, Enter to log — long text scrolls and is masked at the edge");
         line.node().width(Length.grow(1));

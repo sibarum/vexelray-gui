@@ -123,12 +123,9 @@ class RethemeCaptureTest {
                 .background(Role.PANEL).border(Length.dp(1), Role.LINE);
         parts.put("panel (node paints, R1)", panel);
 
-        // An indicator that arrives at once: the motion is not under test, the colour it was drawn in is.
-        dev.vexelray.gui.widget.Ramp instant = (progress, done) -> {
-            progress.accept(1d);
-            done.run();
-        };
-        Tabs tabs = new Tabs(gui).indicator(instant)
+        // An indicator that arrives at once, a tree with no clock landing every timing: the motion is not under test, the
+        // colour it was drawn in is.
+        Tabs tabs = new Tabs(gui).indicator(dev.vexelray.gui.core.Timing.millis(100, dev.vexelray.gui.core.Timing.Curve.LINEAR))
                 .add("One", gui.text("first page")).add("Two", gui.text("second page"));
         tabs.node().width(Length.dp(300)).height(Length.dp(80));
         parts.put("tabs (indicator picture)", tabs.node());

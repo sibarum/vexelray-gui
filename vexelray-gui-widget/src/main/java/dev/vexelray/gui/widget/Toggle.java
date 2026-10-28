@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.Timing;
 import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.gui.core.Gui;
@@ -168,8 +169,8 @@ public final class Toggle {
      * knob in one step — see the class note. A ramp installed mid-travel takes effect on the next flip; the one
      * in flight finishes on the terms it started with.
      */
-    public Toggle transition(Ramp ramp) {
-        this.ramp = ramp;
+    public Toggle transition(Timing timing) {
+        this.ramp = Ramp.of(gui, timing);
         return this;
     }
 

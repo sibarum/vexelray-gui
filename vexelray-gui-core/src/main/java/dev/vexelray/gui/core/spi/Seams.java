@@ -371,6 +371,15 @@ public abstract class Seams {
      */
     public abstract Seams onPointerWarp(dev.vexelray.gui.core.input.PointerWarp warp);
 
+    /**
+     * Install the tree's clock, which runs every widget's {@link dev.vexelray.gui.core.Timing}: the host's, once, as a
+     * window's motion is set up. Replaces any before it. Until one is installed a timing lands at once.
+     */
+    public abstract Seams clock(Clock clock);
+
+    /** The tree's clock, or null before the host installs one. */
+    public abstract Clock clock();
+
     // --- the GUI's own read models, as bus States: what a widget restyles or re-solves from (T7.2) ---
 
     /**

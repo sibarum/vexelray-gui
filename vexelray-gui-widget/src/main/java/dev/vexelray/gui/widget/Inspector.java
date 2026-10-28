@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.Timing;
 import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.gui.core.Gui;
@@ -139,7 +140,7 @@ public final class Inspector implements AutoCloseable {
     private final WidgetName name;
     private Subscription valuesSub;
     /** The time this panel gives whatever its controls move; null for none, which is the default. */
-    private volatile Ramp knobs;
+    private volatile Timing knobs;
 
     /** Build an empty inspector on {@code gui}. */
     public Inspector(Gui gui) {
@@ -233,7 +234,7 @@ public final class Inspector implements AutoCloseable {
      * transform, so it belongs with the one {@code TreeView} runs for a subtree and is not this method dressed
      * up differently.
      */
-    public Inspector motion(Ramp knobs) {
+    public Inspector motion(Timing knobs) {
         this.knobs = knobs;
         for (Property p : properties) {
             p.motion(knobs);
@@ -444,7 +445,7 @@ public final class Inspector implements AutoCloseable {
          * {@link Inspector#motion} says for the whole panel. A later panel-wide call wins, which is the point:
          * the panel is where a reduced-motion setting is honoured in one place.
          */
-        public Card motion(Ramp ramp) {
+        public Card motion(Timing ramp) {
             toggle.transition(ramp);
             for (Property p : own) {
                 p.motion(ramp);

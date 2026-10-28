@@ -1,5 +1,6 @@
 package dev.vexelray.gui.demo.chapter;
 
+import dev.vexelray.gui.core.Timing;
 import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
@@ -11,7 +12,6 @@ import dev.vexelray.gui.demo.Console;
 import dev.vexelray.gui.demo.Stage;
 import dev.vexelray.gui.demo.Ui;
 import dev.vexelray.gui.widget.Lattice;
-import dev.vexelray.gui.widget.Ramp;
 import dev.vexelray.gui.widget.Segment;
 import dev.vexelray.gui.widget.Select;
 import dev.vexelray.gui.widget.SelectionModel;
@@ -172,7 +172,7 @@ public final class ChooserChapter implements Chapter {
 
         // ---- a number on a lattice ---------------------------------------------------------------------------
 
-        Ramp settle = (progress, done) -> stage.krono().ramp(Dur.ms(140), Ease.OUT_CUBIC, progress, done);
+        Timing settle = Timing.millis(140, Timing.Curve.OUT_CUBIC);
         // Four zooms an octave apart: the lattice is four points across the whole card, and the track says so.
         Node zoom = lattice(gui, console, "Zoom", Lattice.intervals(3), settle, 2f / 3f,
                 f -> Math.round(25 * Math.pow(2, f * 3)) + "%");
@@ -207,7 +207,7 @@ public final class ChooserChapter implements Chapter {
     }
 
     /** A captioned slider on {@code lattice}, with its value read out beside it in the caller's words. */
-    private static Node lattice(Gui gui, Console console, String caption, Lattice lattice, Ramp settle,
+    private static Node lattice(Gui gui, Console console, String caption, Lattice lattice, Timing settle,
                                 float initial, DoubleFunction<String> text) {
         Node readout = gui.text("").width(Length.rem(4)).height(Length.rem(1.5f))
                 .textSize(Length.rem(0.875f))

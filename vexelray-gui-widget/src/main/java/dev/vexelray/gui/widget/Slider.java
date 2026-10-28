@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.Timing;
 import dev.vexelray.gui.core.spi.Seams;
 import sibarum.atchung.Topic;
 import dev.vexelray.gui.core.Addressed;
@@ -266,8 +267,8 @@ public final class Slider {
      * Give the thumb its time, so it settles onto a point rather than jumping there. Passing null, or never
      * calling this, places it in one step — which is the whole of the reduced-motion path.
      */
-    public Slider transition(Ramp ramp) {
-        this.ramp = ramp;
+    public Slider transition(Timing timing) {
+        this.ramp = Ramp.of(gui, timing);
         return this;
     }
 

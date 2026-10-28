@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.Timing;
 import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
@@ -166,8 +167,8 @@ public final class Board<T> {
      * stopping dead in it. Without one everything moves instantly, which is the reduced-motion path and is still
      * correct: the card still follows the pointer and the gap still opens, they just do not take time to.
      */
-    public Board<T> motion(Ramp ramp) {
-        this.motion = ramp;
+    public Board<T> motion(Timing timing) {
+        this.motion = Ramp.of(gui, timing);
         return this;
     }
 

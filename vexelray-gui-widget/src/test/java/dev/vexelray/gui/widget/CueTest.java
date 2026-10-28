@@ -211,7 +211,7 @@ class CueTest {
         try (HeadlessGui h = new HeadlessGui()) {
             Node n = field(h);
             Manual ramp = new Manual();
-            Cues cues = new Cues(ramp);
+            Cues cues = new Cues(h.gui, TestClocks.drive(h, ramp));
 
             cues.play(n, Cue.scanline(ACCENT));
             h.frame();
@@ -239,7 +239,7 @@ class CueTest {
             Node n = field(h);
             Manual first = new Manual();
             Manual second = new Manual();
-            Cues cues = new Cues(first);
+            Cues cues = new Cues(h.gui, TestClocks.drive(h, first));
 
             cues.play(n, Cue.scanline(ACCENT));
             first.to(0.4d);
@@ -247,7 +247,7 @@ class CueTest {
             Picture midFirst = overlayOf(h, n);
             assertNotNull(midFirst);
 
-            cues.play(n, Cue.wash(ACCENT), second);
+            cues.play(n, Cue.wash(ACCENT), TestClocks.drive(h, second));
             second.to(0.5d);
             h.frame();
             Picture midSecond = overlayOf(h, n);
@@ -278,10 +278,10 @@ class CueTest {
             Node b = field(h);
             Manual ra = new Manual();
             Manual rb = new Manual();
-            Cues cues = new Cues(ra);
+            Cues cues = new Cues(h.gui, TestClocks.drive(h, ra));
 
             cues.play(a, Cue.scanline(ACCENT));
-            cues.play(b, Cue.wash(ACCENT), rb);
+            cues.play(b, Cue.wash(ACCENT), TestClocks.drive(h, rb));
             ra.to(0.5d);
             rb.to(0.5d);
             h.frame();
@@ -300,7 +300,7 @@ class CueTest {
         try (HeadlessGui h = new HeadlessGui()) {
             Node n = field(h);
             Manual ramp = new Manual();
-            Cues cues = new Cues(ramp);
+            Cues cues = new Cues(h.gui, TestClocks.drive(h, ramp));
 
             cues.play(n, Cue.scanline(ACCENT));
             ramp.to(0.5d);
@@ -344,7 +344,7 @@ class CueTest {
         try (HeadlessGui h = new HeadlessGui()) {
             Node n = h.gui.text("not in the tree");     // never appended, so never laid out
             Manual ramp = new Manual();
-            Cues cues = new Cues(ramp);
+            Cues cues = new Cues(h.gui, TestClocks.drive(h, ramp));
 
             cues.play(n, Cue.scanline(ACCENT));
             ramp.finish();
@@ -365,7 +365,7 @@ class CueTest {
             h.frame();
 
             Manual ramp = new Manual();
-            new Cues(ramp).play(parent, Cue.wash(ACCENT));
+            new Cues(h.gui, TestClocks.drive(h, ramp)).play(parent, Cue.wash(ACCENT));
             ramp.to(0.5d);
             h.frame();
 

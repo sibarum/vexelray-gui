@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.Timing;
 import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
@@ -83,7 +84,7 @@ public interface Property {
      * panel was given its motion, after it for one that was already there, and with null to mean no motion —
      * which is the default and the whole of the reduced-motion path.
      */
-    default void motion(Ramp ramp) {
+    default void motion(Timing timing) {
     }
 
     /** Where a property writes the number, word or nothing that belongs in the row's value column. */
@@ -179,7 +180,7 @@ final class Rows {
         private Slider slider;
         private Readout value;
         /** Kept, not just forwarded: the panel may be given its motion before this row is asked for a slider. */
-        private Ramp knob;
+        private Timing knob;
 
         Range(String id, String section, String name, double min, double max, double step) {
             super(id, section, name);
@@ -221,7 +222,7 @@ final class Rows {
         }
 
         @Override
-        public void motion(Ramp ramp) {
+        public void motion(Timing ramp) {
             this.knob = ramp;
             if (slider != null) {
                 slider.transition(ramp);
@@ -274,7 +275,7 @@ final class Rows {
     static final class Flag extends Base {
         private Toggle toggle;
         /** Kept, not just forwarded: the panel may be given its motion before this row is asked for a switch. */
-        private Ramp knob;
+        private Timing knob;
 
         Flag(String id, String section, String name) {
             super(id, section, name);
@@ -297,7 +298,7 @@ final class Rows {
         }
 
         @Override
-        public void motion(Ramp ramp) {
+        public void motion(Timing ramp) {
             this.knob = ramp;
             if (toggle != null) {
                 toggle.transition(ramp);

@@ -58,7 +58,7 @@ class TabsTest {
     void theIndicatorSitsUnderTheSelectedHeaderAndGlidesToTheNext() {
         try (HeadlessGui h = new HeadlessGui()) {
             Manual ramp = new Manual();
-            Tabs tabs = new Tabs(h.gui).indicator(ramp);
+            Tabs tabs = new Tabs(h.gui).indicator(TestClocks.drive(h, ramp));
             tabs.add("One", page(h, "one"));
             tabs.add("A longer second", page(h, "two"));
             tabs.add("Three", page(h, "three"));
@@ -96,7 +96,7 @@ class TabsTest {
     void aSelectionMidGlideTurnsRoundFromWhereTheIndicatorIs() {
         try (HeadlessGui h = new HeadlessGui()) {
             Manual ramp = new Manual();
-            Tabs tabs = new Tabs(h.gui).indicator(ramp);
+            Tabs tabs = new Tabs(h.gui).indicator(TestClocks.drive(h, ramp));
             tabs.add("One", page(h, "one"));
             tabs.add("Two", page(h, "two"));
             tabs.add("Three", page(h, "three"));

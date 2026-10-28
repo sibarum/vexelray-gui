@@ -1,5 +1,6 @@
 package dev.vexelray.gui.demo;
 
+import dev.vexelray.gui.core.Timing;
 import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
@@ -61,8 +62,7 @@ class TabCrossfadeTest {
         try (KronoGui krono = KronoGui.attach(gui, Kron.driven())) {
             Node one = gui.text("one").width(Length.FILL).height(Length.FILL);
             Node two = gui.text("two").width(Length.FILL).height(Length.FILL);
-            Tabs tabs = new Tabs(gui).transition(Tabs.crossfade(
-                    (progress, done) -> krono.ramp(Dur.ms(100), Ease.LINEAR, progress, done)));
+            Tabs tabs = new Tabs(gui).crossfade(Timing.millis(100, Timing.Curve.LINEAR));   // on the clock KronoGui installed
             tabs.add("One", one);
             tabs.add("Two", two);
             gui.root().children(tabs.node());
@@ -115,8 +115,7 @@ class TabCrossfadeTest {
                     gui.text("one").width(Length.FILL).height(Length.FILL),
                     gui.text("two").width(Length.FILL).height(Length.FILL),
                     gui.text("three").width(Length.FILL).height(Length.FILL));
-            Tabs tabs = new Tabs(gui).transition(Tabs.crossfade(
-                    (progress, done) -> krono.ramp(Dur.ms(100), Ease.LINEAR, progress, done)));
+            Tabs tabs = new Tabs(gui).crossfade(Timing.millis(100, Timing.Curve.LINEAR));   // on the clock KronoGui installed
             tabs.add("One", pages.get(0));
             tabs.add("Two", pages.get(1));
             tabs.add("Three", pages.get(2));

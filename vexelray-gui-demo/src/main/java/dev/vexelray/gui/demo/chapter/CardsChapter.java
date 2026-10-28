@@ -1,5 +1,6 @@
 package dev.vexelray.gui.demo.chapter;
 
+import dev.vexelray.gui.core.Timing;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.drop.DragRelease;
@@ -90,7 +91,7 @@ public final class CardsChapter implements Chapter {
         // What a card looks like, and how long anything takes to move. The board owns the card's elevation —
         // that is how a card shows it has been picked up — and everything else about it is ours.
         Board<Task> board = new Board<Task>(gui, CardsChapter::card)
-                .motion((progress, done) -> stage.krono().ramp(Dur.ms(200), Ease.OUT_CUBIC, progress, done));
+                .motion(Timing.millis(200, Timing.Curve.OUT_CUBIC));
 
         Node row = gui.row().width(Length.FILL).height(Length.FILL).gap(Ui.GAP);
         for (String lane : LANES) {

@@ -516,6 +516,9 @@ public final class Gui implements AutoCloseable {
         return this;
     }
 
+    /** What runs a widget's Timing: the host's, installed through Seams.clock, or null for none. */
+    private volatile dev.vexelray.gui.core.spi.Clock clock;
+
     /** The thread frames run on, from the first frame; null before it. */
     private volatile Thread frameThread;
 
@@ -1981,6 +1984,17 @@ public final class Gui implements AutoCloseable {
 
     /** The seams' implementation: an inner class, so each one is the old method on this tree, moved. */
     private final class GuiSeams extends dev.vexelray.gui.core.spi.Seams {
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams clock(dev.vexelray.gui.core.spi.Clock clock) {
+            Gui.this.clock = clock;
+            return this;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Clock clock() {
+            return Gui.this.clock;
+        }
 
         @Override
         public sibarum.atchung.State<DragState> drag() {

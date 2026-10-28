@@ -1,5 +1,6 @@
 package dev.vexelray.gui.demo;
 
+import dev.vexelray.gui.core.Timing;
 import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
@@ -47,7 +48,7 @@ public final class Shell {
     private final Console console;
     private final TitleBar titleBar;
     private final Tabs pages;
-    private final Tabs.TabTransition crossfade;
+    private final Timing crossfade = Timing.millis(180, Timing.Curve.LINEAR);
     private final Node status;
     private final Node pageTitle;
     private final Node pageBlurb;
@@ -64,16 +65,14 @@ public final class Shell {
         // user is actually looking at, so under about a third of a second it reads as a rendering glitch if it
         // registers at all. Linear, because a cue does not arrive anywhere — it travels through, or rises and
         // falls, and easing a thing with no destination only produces a stall.
-        Cues cues = new Cues((progress, done) -> krono.ramp(Dur.ms(420), Ease.LINEAR, progress, done));
+        Cues cues = new Cues(gui, Timing.millis(420, Timing.Curve.LINEAR));
         this.stage = new Stage(gui, krono, cues, console);
 
         this.pages = new Tabs(gui);
         // The dissolve, and LINEAR again for the same reason: OUT_CUBIC is 87% faded by the halfway point, so
         // the visible part of the transition finishes in the first third and the rest of the duration is a stall
         // — a delay followed by a change, rather than a change.
-        this.crossfade = Tabs.crossfade(
-                (progress, done) -> krono.ramp(Dur.ms(180), Ease.LINEAR, progress, done));
-        pages.transition(crossfade);
+        pages.crossfade(crossfade);
         pages.strip().visible(false);   // the rail is the tab bar; see the class note
 
         this.pageTitle = gui.text("").width(Length.FILL).height(Length.rem(2.25f))
@@ -162,9 +161,9 @@ public final class Shell {
      * instant transition is not a special case for captures: it is the default, and the reduced-motion path.
      */
     public void selectNow(int index) {
-        pages.transition(Tabs.TabTransition.NONE);
+        pages.crossfade(null);
         pages.select(index);
-        pages.transition(crossfade);
+        pages.crossfade(crossfade);
     }
 
     private void add(Chapter chapter, Node nav) {

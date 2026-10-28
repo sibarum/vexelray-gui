@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.Timing;
 import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.gui.core.Gui;
@@ -2560,8 +2561,8 @@ public final class TreeView<T> implements AutoCloseable {
      * shortcut — displacing the rows below with a transform would move them without making room, so the tree's
      * own extent, its overflow and its scrollbar would all describe a tree that is not the one on screen.
      */
-    public synchronized TreeView<T> motion(Ramp motion) {
-        this.motion = motion;
+    public synchronized TreeView<T> motion(Timing timing) {
+        this.motion = Ramp.of(gui, timing);
         return this;
     }
 

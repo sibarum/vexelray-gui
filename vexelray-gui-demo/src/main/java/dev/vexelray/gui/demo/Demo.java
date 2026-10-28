@@ -1,5 +1,6 @@
 package dev.vexelray.gui.demo;
 
+import dev.vexelray.gui.core.Timing;
 import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.automation.Capability;
@@ -101,7 +102,7 @@ public final class Demo {
         // Every reveal in the window — a tree's cut-off name, a table's cut-off cell — fades the same way, said
         // once. Quick, because it is the thing itself and not help arriving, and symmetric, so it leaves the way it
         // came: an ease-out over the same time is mostly done in its first frames and reads as a snap.
-        Unclip.of(gui).motion((progress, done) -> krono.ramp(Dur.ms(150), Ease.IN_OUT_CUBIC, progress, done));
+        Unclip.of(gui).motion(Timing.millis(150, Timing.Curve.IN_OUT_CUBIC));
 
         // Undo for the whole window, bound before any chapter is built, as the framework binds one on every window:
         // every control in every chapter records into it, and Ctrl+Z reaches all of them (docs/plans/undo.md).

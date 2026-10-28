@@ -133,7 +133,7 @@ class BoardTest {
     private Board<String> board(HeadlessGui h, Map<String, List<String>> columns) {
         Board<String> board = new Board<String>(h.gui,
                 (n, s) -> n.box().width(Length.FILL).height(Length.dp(40)))
-                .spacing(Length.dp(5)).motion(hand);
+                .spacing(Length.dp(5)).motion(TestClocks.drive(h, hand));
         Node row = h.gui.row().width(Length.FILL).height(Length.FILL);
         model.columns = new LinkedHashMap<>(columns);
         for (String name : columns.keySet()) {
@@ -471,7 +471,7 @@ class BoardTest {
         try (HeadlessGui h = new HeadlessGui()) {
             Board<String> board = new Board<String>(h.gui,
                     (n, s) -> n.box().width(Length.FILL).height(Length.dp(40)))
-                    .spacing(Length.dp(5)).motion(hand);
+                    .spacing(Length.dp(5)).motion(TestClocks.drive(h, hand));
             model.columns = new LinkedHashMap<>(Map.of("todo", List.of("a", "b")));
             Deck<String> deck = board.column().name("todo").reorderable();
             model.hear(h, deck, "todo", history);

@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.Timing;
 import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
@@ -61,8 +62,8 @@ public final class Unclip {
     }
 
     /** How the drawn-out node fades in and out, or null to snap. One ramp for both directions. */
-    public Unclip motion(Ramp ramp) {
-        this.motion = ramp;
+    public Unclip motion(Timing timing) {
+        this.motion = Ramp.of(gui, timing);
         return this;
     }
 

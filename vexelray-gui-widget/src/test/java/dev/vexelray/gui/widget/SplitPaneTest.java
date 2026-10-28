@@ -237,7 +237,7 @@ class SplitPaneTest {
         try (HeadlessGui h = new HeadlessGui()) {
             Mounted m = mount(h, SplitPane.Orientation.SIDE_BY_SIDE);
             List<DoubleConsumer> fades = new ArrayList<>();
-            m.pane().motion((progress, done) -> fades.add(progress));
+            m.pane().motion(TestClocks.drive(h, (progress, done) -> fades.add(progress)));
             Color rest = h.gui.theme().color(Role.LINE);
             Color accent = h.gui.theme().color(Role.ACCENT);
             Rect r = m.first().layout().rect();

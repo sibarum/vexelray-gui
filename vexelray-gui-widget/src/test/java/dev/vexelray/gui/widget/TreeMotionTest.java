@@ -80,7 +80,7 @@ class TreeMotionTest {
     void openingSlidesTheRowsBelowRatherThanJumpingThem() {
         try (HeadlessGui h = new HeadlessGui()) {
             Steps ramp = new Steps();
-            TreeView<String> tree = Listing.tree(h, new MapSource()).motion(ramp);
+            TreeView<String> tree = Listing.tree(h, new MapSource()).motion(TestClocks.drive(h, ramp));
             h.gui.root().children(tree.node());
             h.frame();
             float shut = docsY(h, tree);
@@ -119,7 +119,7 @@ class TreeMotionTest {
     void aSettledSubtreeIsSizedByItsContentAgain() {
         try (HeadlessGui h = new HeadlessGui()) {
             Steps ramp = new Steps();
-            TreeView<String> tree = Listing.tree(h, new MapSource()).motion(ramp);
+            TreeView<String> tree = Listing.tree(h, new MapSource()).motion(TestClocks.drive(h, ramp));
             h.gui.root().children(tree.node());
             h.frame();
 
@@ -149,7 +149,7 @@ class TreeMotionTest {
     void collapsingReturnsTheRowsBelowToWhereTheyStarted() {
         try (HeadlessGui h = new HeadlessGui()) {
             Steps ramp = new Steps();
-            TreeView<String> tree = Listing.tree(h, new MapSource()).motion(ramp);
+            TreeView<String> tree = Listing.tree(h, new MapSource()).motion(TestClocks.drive(h, ramp));
             h.gui.root().children(tree.node());
             h.frame();
             float shut = docsY(h, tree);
@@ -186,7 +186,7 @@ class TreeMotionTest {
     void togglingMidAnimationReversesFromWhereItGotTo() {
         try (HeadlessGui h = new HeadlessGui()) {
             Steps ramp = new Steps();
-            TreeView<String> tree = Listing.tree(h, new MapSource()).motion(ramp);
+            TreeView<String> tree = Listing.tree(h, new MapSource()).motion(TestClocks.drive(h, ramp));
             h.gui.root().children(tree.node());
             h.frame();
             float shut = docsY(h, tree);

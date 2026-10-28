@@ -287,8 +287,8 @@ The same mechanism for things that are not rows — cards in a kanban, steps in 
 where the thing itself should leave its place and travel with the hand:
 
 ```java
-Board<Task> board = new Board<Task>(gui, task -> card(task))       // any node; the board moves that node
-        .motion((p, done) -> krono.ramp(Dur.ms(200), Ease.OUT_CUBIC, p, done));
+Board<Task> board = new Board<Task>(gui, (n, task) -> card(n, task))   // any node; the board moves that node
+        .motion(Timing.millis(200, Timing.Curve.OUT_CUBIC));
 Deck<Task> todo = board.column().name("todo").items(model.todo()).reorderable();
 gui.mailbox(Deck.PLACED, todo.address(), p -> logic.send(new Move(p.item(), TODO, p.where())));
 // told the logic's new list, the view hands it over: todo.items(list). Every edit ends there, undo included
@@ -414,8 +414,8 @@ The controls themselves:
 - **`Slider`** — a dragged track with a lit, elevated thumb; `value()`/`onChange`.
 - **`Toggle`** — a switch, and literally a two-valued slider: two grow-weighted spacers split the free space in
   the ratio `on : (1-on)`, so the knob lands flush at either end at any track width and any DPI, with no pixel
-  arithmetic to keep in step with the geometry. The crossing is a `Ramp` — installed or not by the application,
-  and with none installed the knob simply appears at the other end, which is both what a switch did before there
+  arithmetic to keep in step with the geometry. The crossing is a `Timing` — given or not by the application,
+  and with none given the knob simply appears at the other end, which is both what a switch did before there
   was motion and the whole of the reduced-motion path.
 - **`NumberField`** — a `TextField` that only ever hands out a number. **What is on screen and what has been
   agreed are two different things**: `-1.` and a bare `-` are each halfway to a real number, so a field that
@@ -497,7 +497,7 @@ The controls themselves:
   shown, when `Rail.OPENED` says so, into `rail.page(key)`, in the widget tick of that frame, and kept thereafter (a rebuilt page would come back drawing correctly and unable to take a keystroke,
   since registrations are keyed by node id and released when a node leaves the tree). The icons keep their
   places whether the panel is open or shut and the panel takes its space from the content, so nothing appears,
-  grows or shifts under the pointer. A `PanelTransition` (`Rail.fade`, `Rail.slide`, or the application's own)
+  grows or shifts under the pointer. Its motion (`rail.fade(timing)`, `rail.slide(timing, travel)`)
   is where the *none* state costs something the other widget never pays: a panel on its way out has to still be
   there while it goes, so **hiding it is the last thing that happens, not the first** — and `onSelect` is told at
   the moment the selection changes rather than after the panel has gone, which is what lets a handler move
@@ -548,7 +548,7 @@ The controls themselves:
   out from under it.
 - **`Cue` / `Cues`** — one-shot feedback on a node: `cues.play(field.node(), Cue.scanline(accent))`
   after a submit, `Cue.ring(danger)` on a refusal, `Cue.wash(...)` when something changed
-  programmatically. A cue is a pure `(progress, box) -> Picture`; a `Ramp` says when. What `Cues` owns
+  programmatically. A cue is a pure `(progress, box) -> Picture`; a `Timing` says how long. What `Cues` owns
   is only that **the box comes back clean**: a cue paints into the node's overlay slot, whose identity
   value is null, so settling is `overlay(null)` and there is no resting value to guess wrong — which
   is what lets a cue be played on a node it did not build. One cue per node, superseding rather than
@@ -662,21 +662,20 @@ the bottom row is three *rasterisations* of one SVG rather than one bitmap scale
 
 ## Motion
 
-Motion is opt-in everywhere, and the seam is one interface: a **`Ramp`** drives `progress` over
-`[0,1]` and calls `done`. That is deliberately clock-free — `-widget` names no clock, because a clock
-enters at the application edge — so `-krono` satisfies it without either module knowing the other
-exists, and the reduced-motion path is simply not calling it.
+Motion is opt-in everywhere, and what a view says is a tempo: a **`Timing`**, a duration and a curve. The widget
+runs it on its tree's **clock**, which the host installs (`Seams.clock`) and `-krono` provides when it attaches, so
+`-widget` names no clock and a view runs no code over time (vexelray-framework's threading.md, T7.2). With no
+clock, or with motion reduced, a timing lands at once.
 
 ```java
-Ramp quick = (p, done) -> krono.ramp(ms(200), Ease.LINEAR, p, done);
-tabs.transition(Tabs.slide(quick));
-rail.transition(Rail.slide(quick, -1.5f));   // sign: which edge the rail is against
-inspector.motion(quick);                     // every switch the panel built itself
-Cues cues = new Cues((p, done) -> krono.ramp(ms(240), Ease.LINEAR, p, done));
+Timing quick = Timing.millis(200, Timing.Curve.LINEAR);
+tabs.slide(quick);
+rail.slide(quick, -1.5f);      // sign: which edge the rail is against
+inspector.motion(quick);       // every switch the panel built itself
+Cues cues = new Cues(gui, Timing.millis(240, Timing.Curve.LINEAR));
 ```
 
-Which is the shape the seam is *for*: one ramp, declared once at the application edge, handed to
-every widget that has something to move. Reduced motion is then one place — hand out nothing.
+One tempo, declared once, handed to every widget that has something to move.
 
 **`vexelray-gui-krono`** attaches [Kronometer](https://github.com/sibarum/kronometer) to the frame
 loop rather than replacing it: `KronoGui.attach(gui)`, ticked from `GuiApp.run`'s `beforeFrame` hook,
@@ -685,7 +684,7 @@ drawn out of phase with what was computed. `krono.bind(card, Node::elevation, kr
 property from a signal; `krono.animate(...)` is callable from a click handler, which is not on the
 timeline, because every scheduling method routes through `onTimeline`.
 
-A ramp must deliver both endpoints exactly, and the last one on a frame that is actually presented: a
+A clock must deliver both endpoints exactly, and the last one on a frame that is actually presented: a
 consumer that never sees 0 begins by jumping to wherever the first sample landed, and one that tears
 down on arrival runs in the same batch as the final sample unless something separates them.
 

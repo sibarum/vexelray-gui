@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.Timing;
 import dev.vexelray.gui.core.spi.Seams;
 import sibarum.atchung.Topic;
 import dev.vexelray.gui.core.Addressed;
@@ -165,8 +166,8 @@ public final class SplitPane {
      * Fade the line between its resting colour and the accent along {@code ramp}, instead of switching in one
      * frame. A fade that is interrupted turns round from wherever it had got to. {@code null} cuts, as before.
      */
-    public SplitPane motion(Ramp ramp) {
-        this.motion = ramp;
+    public SplitPane motion(Timing timing) {
+        this.motion = Ramp.of(gui, timing);
         return this;
     }
 

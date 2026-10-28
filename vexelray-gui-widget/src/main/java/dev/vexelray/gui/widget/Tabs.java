@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.Timing;
 import dev.vexelray.gui.core.spi.Seams;
 import sibarum.atchung.Topic;
 import dev.vexelray.gui.core.Addressed;
@@ -148,7 +149,7 @@ public final class Tabs {
      * with no frame loop behaves exactly like one in a running application that never installed a transition.
      */
     @FunctionalInterface
-    public interface TabTransition {
+    interface TabTransition {
 
         /** Move the pages. Safe to call {@code done} inline, from a frame loop, or from another thread. */
         void run(Change change, Runnable done);
@@ -231,7 +232,7 @@ public final class Tabs {
      * moving — which does not read as a slow fade, it reads as a delay followed by a jump. The failure is
      * invisible to a test that only checks the endpoints, because the endpoints are perfect either way.
      */
-    public static TabTransition crossfade(Ramp ramp) {
+    static TabTransition crossfade(Ramp ramp) {
         return (change, done) -> {
             dissolve(change, 0f);
             ramp.run(p -> dissolve(change, clamp(p)), done);
@@ -264,7 +265,7 @@ public final class Tabs {
      * behind its trailing edge — the leaving page is what covers the box while the arriving one is still faint,
      * so it is the one thing here that cannot go anywhere.
      */
-    public static TabTransition slide(Ramp ramp) {
+    static TabTransition slide(Ramp ramp) {
         return (change, done) -> {
             // The arriving page enters from the side you moved toward; leftward selections come from the left.
             float from = change.incomingOnTop() ? TRAVEL : -TRAVEL;
@@ -435,11 +436,20 @@ public final class Tabs {
     }
 
     /**
-     * Install the motion for a tab change. The default is {@link TabTransition#NONE} — instant, and identical to
-     * how the panel behaved before transitions existed, so this is opt-in and the reduced-motion path is simply
-     * not calling it.
+     * Slide the arriving page in over {@code timing} on a tab change, the leaving one dissolving under it; null to cut.
+     * The default is a cut, instant and identical to how the panel behaved before transitions existed.
      */
-    public Tabs transition(TabTransition transition) {
+    public Tabs slide(Timing timing) {
+        return transition(timing == null ? null : slide(Ramp.of(gui, timing)));
+    }
+
+    /** Dissolve one page into the next over {@code timing} on a tab change; null to cut. Give it a linear curve. */
+    public Tabs crossfade(Timing timing) {
+        return transition(timing == null ? null : crossfade(Ramp.of(gui, timing)));
+    }
+
+    /** Install the motion for a tab change, or none for a cut: the widget library's and its tests'. */
+    Tabs transition(TabTransition transition) {
         this.transition = transition == null ? TabTransition.NONE : transition;
         return this;
     }
@@ -457,7 +467,8 @@ public final class Tabs {
      * <p>It is drawn over the bar, in the bar's overlay; the headers themselves are painted as before. For reduced
      * motion, pass a ramp that arrives at once, and the indicator still marks the selection.
      */
-    public Tabs indicator(Ramp ramp) {
+    public Tabs indicator(Timing timing) {
+        Ramp ramp = Ramp.of(gui, timing);
         synchronized (indicatorLock) {
             indicatorRamp = ramp;
             indicatorGlide++;   // whatever was gliding has lost

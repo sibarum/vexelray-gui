@@ -1,5 +1,6 @@
 package dev.vexelray.gui.demo.chapter;
 
+import dev.vexelray.gui.core.Timing;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.Length;
@@ -108,7 +109,7 @@ public final class TreeChapter implements Chapter {
         // Expanding a folder slides the rows below it down instead of teleporting them. OUT_CUBIC here, where
         // the page crossfade is linear, and the difference is the point: this is a distance being covered, and
         // decelerating into the place it stops is what reads as weight.
-        files.motion((progress, done) -> stage.krono().ramp(Dur.ms(200), Ease.OUT_CUBIC, progress, done));
+        files.motion(Timing.millis(200, Timing.Curve.OUT_CUBIC));
 
         // A name the tree is too narrow for is shown whole while its row is hovered — in place, over the pane
         // beside the tree, and never the thing under the pointer there. It fades as every reveal in the window

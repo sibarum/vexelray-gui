@@ -1,5 +1,6 @@
 package dev.vexelray.gui.demo.chapter;
 
+import dev.vexelray.gui.core.Timing;
 import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
@@ -150,9 +151,7 @@ public final class DragChapter implements Chapter {
         // the tasks land after the columns, and arriving is a change like any other. A capture plays it to rest. A
         // reordered row still lands at once, which is deliberate: the whole board settles on the same frame, and half
         // a view animating while the other half snaps is worse than either (see the Motion chapter).
-        board.motion((progress, done) ->
-                stage.krono().ramp(sibarum.kronometer.Dur.ms(180), sibarum.kronometer.anim.Ease.OUT_CUBIC,
-                        progress, done));
+        board.motion(Timing.millis(180, Timing.Curve.OUT_CUBIC));
 
         // Moves and copies, by drag and by Ctrl+X, Ctrl+C and Ctrl+V. The tree decides in the frame which placements
         // it offers, from what it can see (a task into itself, a move that changes nothing) and from what each entry

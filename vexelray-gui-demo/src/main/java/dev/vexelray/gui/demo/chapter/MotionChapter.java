@@ -1,5 +1,6 @@
 package dev.vexelray.gui.demo.chapter;
 
+import dev.vexelray.gui.core.Timing;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
@@ -17,7 +18,6 @@ import dev.vexelray.gui.krono.Transitions;
 import dev.vexelray.gui.widget.Button;
 import dev.vexelray.gui.widget.Cue;
 import dev.vexelray.gui.widget.Cues;
-import dev.vexelray.gui.widget.Ramp;
 import dev.vexelray.gui.widget.Tabs;
 import dev.vexelray.text.TextLayout;
 import sibarum.kronometer.Dur;
@@ -74,7 +74,7 @@ public final class MotionChapter implements Chapter {
                 .textSize(Length.rem(0.9375f)).textColor(Role.DIM)
                 .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE);
 
-        Ramp insistent = (progress, done) -> krono.ramp(Dur.ms(650), Ease.LINEAR, progress, done);
+        Timing insistent = Timing.millis(650, Timing.Curve.LINEAR);
         Node cues = Ui.strip(gui,
                 Ui.heading(gui, "Cues — a moment, played once"),
                 target,
@@ -165,7 +165,7 @@ public final class MotionChapter implements Chapter {
 
         // --- feedback -----------------------------------------------------------------------------------
         // Ripples get their own player: longer than the house cue, so the spread is seen before it has finished.
-        Cues ripples = new Cues((progress, done) -> krono.ramp(Dur.ms(450), Ease.LINEAR, progress, done));
+        Cues ripples = new Cues(gui, Timing.millis(450, Timing.Curve.LINEAR));
         Button primary = new Button(gui, "Primary").kind(Button.Kind.PRIMARY).ripple(ripples);
         Button secondary = new Button(gui, "Secondary").kind(Button.Kind.SECONDARY).ripple(ripples);
         Button ghost = new Button(gui, "Ghost").kind(Button.Kind.GHOST).ripple(ripples);
@@ -176,7 +176,7 @@ public final class MotionChapter implements Chapter {
         gui.mailbox(Button.PRESSED, ghost.address(),
                 p -> console.note("ghost: its fill fades up from nothing, not from black"));
         Tabs strip = new Tabs(gui).closable(false)
-                .indicator((progress, done) -> krono.ramp(Dur.ms(220), Ease.OUT_CUBIC, progress, done));
+                .indicator(Timing.millis(220, Timing.Curve.OUT_CUBIC));
         strip.add("Overview", note(gui, "The underline is one mark, and it travels."));
         strip.add("A much longer title", note(gui, "It stretches toward where it is going, then closes up."));
         strip.add("Notes", note(gui, "Click back mid-glide: it turns round from where it is."));

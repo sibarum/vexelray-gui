@@ -124,7 +124,7 @@ class UnclipTest {
     void itFadesInAndOutOnTheRampItIsGiven() {
         try (HeadlessGui h = new HeadlessGui()) {
             Steps ramp = new Steps();
-            Page p = page(h, new Unclip(h.gui).motion(ramp), LONG);
+            Page p = page(h, new Unclip(h.gui).motion(TestClocks.drive(h, ramp)), LONG);
 
             h.hover(50f, 15f);
             h.frame();
@@ -151,7 +151,7 @@ class UnclipTest {
     void aSupersededFadeDoesNothing() {
         try (HeadlessGui h = new HeadlessGui()) {
             Steps ramp = new Steps();
-            Page p = page(h, new Unclip(h.gui).motion(ramp), LONG);
+            Page p = page(h, new Unclip(h.gui).motion(TestClocks.drive(h, ramp)), LONG);
 
             h.hover(50f, 15f);
             h.frame();

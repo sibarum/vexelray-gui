@@ -8,6 +8,7 @@ import sibarum.kronometer.Cell;
 import sibarum.kronometer.Clock;
 import sibarum.kronometer.Curve;
 import sibarum.kronometer.Driven;
+import dev.vexelray.gui.core.spi.Seams;
 import sibarum.kronometer.Dur;
 import sibarum.kronometer.Effect;
 import sibarum.kronometer.Interp;
@@ -92,6 +93,9 @@ public final class KronoGui implements AutoCloseable {
     /** {@link #whyBusy()} as the last tick that was asked for it left it. */
     private volatile java.util.List<String> busyAtLastTick = java.util.List.of();
 
+    /** This clock as the tree's, installed at attach and taken away at close. */
+    private final dev.vexelray.gui.core.spi.Clock clock;
+
     private KronoGui(Gui gui, Kron kron) {
         this.gui = gui;
         this.kron = kron;
@@ -107,7 +111,23 @@ public final class KronoGui implements AutoCloseable {
         if (kron.clock() instanceof sibarum.kronometer.Driven) {
             registerClock();
         }
+        // The tree's clock: what runs a widget's Timing, which a view states and never drives.
+        this.clock = (timing, progress, done) ->
+                ramp(new Dur(timing.duration().toNanos()), ease(timing.curve()), progress, done);
+        Seams.of(gui).clock(clock);
     }
+
+    /** The curve a widget's {@link dev.vexelray.gui.core.Timing.Curve} names, on this clock. */
+    static Ease ease(dev.vexelray.gui.core.Timing.Curve curve) {
+        return CURVES.get(curve);
+    }
+
+    /** Every curve a timing can name. {@code KronoGuiTest} holds that none is missing. */
+    private static final java.util.Map<dev.vexelray.gui.core.Timing.Curve, Ease> CURVES = new java.util.EnumMap<>(
+            java.util.Map.of(
+                    dev.vexelray.gui.core.Timing.Curve.LINEAR, Ease.LINEAR,
+                    dev.vexelray.gui.core.Timing.Curve.OUT_CUBIC, Ease.OUT_CUBIC,
+                    dev.vexelray.gui.core.Timing.Curve.IN_OUT_CUBIC, Ease.IN_OUT_CUBIC));
 
     private void registerClock() {
         gui.animationClock(new dev.vexelray.gui.core.AnimationClock() {
@@ -505,6 +525,9 @@ public final class KronoGui implements AutoCloseable {
 
     @Override
     public void close() {
+        if (Seams.of(gui).clock() == clock) {
+            Seams.of(gui).clock(null);   // a later attach installed its own: that one stays
+        }
         kron.close();
     }
 

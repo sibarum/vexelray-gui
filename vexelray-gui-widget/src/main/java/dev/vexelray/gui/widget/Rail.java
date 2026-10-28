@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.Timing;
 import dev.vexelray.gui.core.spi.Seams;
 import sibarum.atchung.Sender;
 import sibarum.atchung.Topic;
@@ -113,7 +114,7 @@ public final class Rail {
      * <p>Nothing here mentions time, which is what keeps this module free of any clock — see {@link Ramp}.
      */
     @FunctionalInterface
-    public interface PanelTransition {
+    interface PanelTransition {
 
         /** Move the panel, or its pages. Safe to call {@code done} inline, from a frame loop, or from a thread. */
         void run(Change change, Runnable done);
@@ -173,7 +174,7 @@ public final class Rail {
      * the eye reads it about as it is given — an {@code OUT_CUBIC} fade is 87% done at its own halfway point, so
      * it reads as a jump followed by a stall rather than as a slow fade.
      */
-    public static PanelTransition fade(Ramp ramp) {
+    static PanelTransition fade(Ramp ramp) {
         return (change, done) -> {
             dissolve(change, 0f);
             ramp.run(p -> dissolve(change, clamp(p)), done);
@@ -200,7 +201,7 @@ public final class Rail {
      * because a panel leaving has nowhere to be and accelerating away is what reads as leaving rather than as
      * drifting.
      */
-    public static PanelTransition slide(Ramp ramp, float travel) {
+    static PanelTransition slide(Ramp ramp, float travel) {
         return (change, done) -> {
             dissolve(change, 0f);
             if (change.opening()) {
@@ -394,11 +395,20 @@ public final class Rail {
     }
 
     /**
-     * Install the motion for opening, closing and swapping panels. The default is {@link PanelTransition#NONE} —
-     * instant, and identical to how a rail behaved before transitions existed, so this is opt-in and the
-     * reduced-motion path is simply not calling it.
+     * Fade panels in and out, and pages into each other, over {@code timing}; null to cut. The default is a cut,
+     * instant and identical to how a rail behaved before transitions existed.
      */
-    public Rail transition(PanelTransition transition) {
+    public Rail fade(Timing timing) {
+        return transition(timing == null ? null : fade(Ramp.of(gui, timing)));
+    }
+
+    /** Slide panels in and out by {@code travel} of their width over {@code timing}, fading as they go; null to cut. */
+    public Rail slide(Timing timing, float travel) {
+        return transition(timing == null ? null : slide(Ramp.of(gui, timing), travel));
+    }
+
+    /** Install the motion for opening, closing and swapping panels, or none for a cut: the widget library's and its tests'. */
+    Rail transition(PanelTransition transition) {
         this.transition = transition == null ? PanelTransition.NONE : transition;
         return this;
     }

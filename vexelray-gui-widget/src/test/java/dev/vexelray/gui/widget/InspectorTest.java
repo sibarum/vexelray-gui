@@ -470,7 +470,7 @@ class InspectorTest {
     void aKnobGivenTimeTravelsAcrossItsTrackInsteadOfJumping() {
         try (HeadlessGui h = new HeadlessGui()) {
             Shared ramp = new Shared();
-            Toggle t = new Toggle(h.gui, false).transition(ramp);
+            Toggle t = new Toggle(h.gui, false).transition(TestClocks.drive(h, ramp));
             h.gui.root().children(t.node());
             h.frame();
             assertEquals(0f, knobAt(h, t.node()), 0.03f);
@@ -501,7 +501,7 @@ class InspectorTest {
     void aSecondFlipReversesFromTheKnobAndDropsTheFlipItSuperseded() {
         try (HeadlessGui h = new HeadlessGui()) {
             Shared first = new Shared();
-            Toggle t = new Toggle(h.gui, false).transition(first);
+            Toggle t = new Toggle(h.gui, false).transition(TestClocks.drive(h, first));
             h.gui.root().children(t.node());
             h.frame();
 
@@ -511,7 +511,7 @@ class InspectorTest {
             assertEquals(0.4f, knobAt(h, t.node()), 0.03f);
 
             Shared second = new Shared();
-            t.transition(second);
+            t.transition(TestClocks.drive(h, second));
             t.on(false);            // flipped back with the knob 40% of the way across
             second.to(0.0);
             h.frame();
@@ -549,7 +549,7 @@ class InspectorTest {
             Inspector ins = new Inspector(h.gui);
             List<Inspector.Edited> edits = edits(h, ins);
             ins.card("layer", "Layer", "");
-            ins.motion(ramp);
+            ins.motion(TestClocks.drive(h, ramp));
             ins.add(Property.flag("visible", "", "Visible"));
             h.gui.root().children(ins.node());
             h.frame();

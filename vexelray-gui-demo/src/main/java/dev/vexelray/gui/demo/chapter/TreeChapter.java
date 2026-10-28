@@ -16,9 +16,14 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Deque;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
@@ -85,7 +90,9 @@ public final class TreeChapter implements Chapter {
                 return;
             }
             Path parent = (Path) wanted.parent();
-            List<Path> level = parent == null ? List.of(Path.of(".").toAbsolutePath().normalize()) : list(parent);
+            List<Path> level = parent == null ? List.of(ROOT) : list(parent);
+            // What is ticked on the level goes with it, so its rows are drawn marked from their first frame.
+            tell(gui, level);
             gui.bus().publish(TreeView.CHILDREN, new TreeView.Children(wanted.tree(), parent,
                     level.stream().map(TreeChapter::entry).toList()));
         }, LISTING);
@@ -145,53 +152,47 @@ public final class TreeChapter implements Chapter {
         files.searchable(true);   // Ctrl+F: the find bar, which a tree has only when it asks for one
 
         // Checkboxes, with a staging area's policy: ticking a folder ticks everything under it, and a folder
-        // whose contents are partly ticked reads MIXED. None of that is in the widget — it is all in the two
-        // methods below, which is the point. A filter would answer state() with a plain set lookup and cascade
+        // whose contents are partly ticked reads MIXED. None of that is in the widget — it is all in the methods
+        // below, on the listing thread, which is the point. A filter would mark the one item clicked and cascade
         // nothing; a permission tree would propagate upward instead. A tree that picked one of those for
         // everybody would be wrong for the other two and would have to be worked around.
-        files.checkable(new TreeView.Checkable<Path>() {
-
-            @Override
-            public TreeView.Check state(Path path) {
-                if (!Files.isDirectory(path)) {
-                    return staged.contains(path) ? TreeView.Check.ON : TreeView.Check.OFF;
-                }
-                // A folder is answered from what is under it rather than from a tick of its own, so the answer
-                // stays right when a child is ticked from somewhere else — including by the button below.
-                boolean any = false;
-                boolean all = true;
-                for (Path kid : listing(path)) {
-                    if (state(kid) == TreeView.Check.OFF) {
-                        all = false;
-                    } else {
-                        any = true;
-                    }
-                }
-                return !any ? TreeView.Check.OFF : all ? TreeView.Check.ON : TreeView.Check.MIXED;
+        files.checkable();
+        gui.bus().subscribeAsync(TreeView.TOGGLED, toggled -> {
+            if (!toggled.tree().equals(files.address())) {
+                return;
             }
-
-            @Override
-            public void toggled(Path path) {
-                boolean turningOn = state(path) != TreeView.Check.ON;
-                stage(path, turningOn);
-                console.note((turningOn ? "staged " : "unstaged ") + path.getFileName()
-                        + "  ·  " + staged.size() + " files staged");
-            }
-        });
+            Path path = (Path) toggled.item();
+            boolean turningOn = state(path) != TreeView.Check.ON;
+            List<Path> changed = new ArrayList<>();
+            stage(path, turningOn, changed);
+            // Everything under it changed, and so may every folder above it: one message, so it shows at once.
+            changed.addAll(ancestors(path));
+            tell(gui, changed);
+            String note = (turningOn ? "staged " : "unstaged ") + path.getFileName()
+                    + "  ·  " + staged.size() + " files staged";
+            gui.batch(() -> console.note(note));
+        }, LISTING);
 
         Node tools = Ui.strip(gui,
                 Ui.controls(gui,
                         Ui.label(gui, "Try:", Length.rem(3)),
                         Ui.button(gui, "Focus the tree", files::focus),
                         Ui.button(gui, "Clear the ticks", () -> {
-                            staged.clear();
-                            // Nothing told the tree: the ticks are the application's, exactly as the hierarchy
-                            // is, so a change made from outside the tree is one the application has to declare.
-                            files.recheck();
+                            // The ticks are the application's, exactly as the hierarchy is, so a change made from
+                            // outside the tree is one the application has to tell it: every file that was staged and
+                            // every folder above one, which are all the boxes that were not empty.
+                            LISTING.execute(() -> {
+                                List<Path> changed = new ArrayList<>(staged);
+                                for (Path file : staged) {
+                                    changed.addAll(ancestors(file));
+                                }
+                                staged.clear();
+                                tell(gui, changed);
+                            });
                             console.note("cleared every tick");
                         }),
                         Ui.button(gui, "Collapse all", () -> {
-                            for (Path root : List.of(Path.of(".").toAbsolutePath().normalize())) {
+                            for (Path root : List.of(ROOT)) {
                                 files.collapseAll(root);
                             }
                             console.note("collapsed every open folder");
@@ -208,11 +209,44 @@ public final class TreeChapter implements Chapter {
                         Ui.card(gui, Ui.heading(gui, "Selected"), selected).width(Length.grow(1))), tools);
     }
 
-    /** What is staged — the model behind the ticks, and the only place any of it lives. */
-    private final java.util.Set<Path> staged = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** The folder the tree starts at. */
+    private static final Path ROOT = Path.of(".").toAbsolutePath().normalize();
 
-    /** Stage or unstage {@code path} and everything under it. The cascade, in four lines. */
-    private void stage(Path path, boolean on) {
+    /** What is staged — the model behind the ticks, and the only place any of it lives. The listing thread's. */
+    private final Set<Path> staged = new HashSet<>();
+
+    /** Tell the tree what is ticked for each of {@code paths}. */
+    private void tell(Gui gui, List<Path> paths) {
+        Map<Object, TreeView.Check> marks = new HashMap<>();
+        for (Path p : paths) {
+            marks.put(p, state(p));
+        }
+        gui.bus().publish(TreeView.MARKS, new TreeView.Marks(gui.address(FILES), marks));
+    }
+
+    /**
+     * What {@code path}'s box says. A folder is answered from what is under it rather than from a tick of its own,
+     * so the answer stays right when a child is ticked from somewhere else — including by the button below.
+     */
+    private TreeView.Check state(Path path) {
+        if (!Files.isDirectory(path)) {
+            return staged.contains(path) ? TreeView.Check.ON : TreeView.Check.OFF;
+        }
+        boolean any = false;
+        boolean all = true;
+        for (Path kid : listing(path)) {
+            if (state(kid) == TreeView.Check.OFF) {
+                all = false;
+            } else {
+                any = true;
+            }
+        }
+        return !any ? TreeView.Check.OFF : all ? TreeView.Check.ON : TreeView.Check.MIXED;
+    }
+
+    /** Stage or unstage {@code path} and everything under it, naming each in {@code changed}. The cascade. */
+    private void stage(Path path, boolean on, List<Path> changed) {
+        changed.add(path);
         if (!Files.isDirectory(path)) {
             if (on) {
                 staged.add(path);
@@ -222,16 +256,25 @@ public final class TreeChapter implements Chapter {
             return;
         }
         for (Path kid : listing(path)) {
-            stage(kid, on);
+            stage(kid, on, changed);
         }
+    }
+
+    /** The folders above {@code path}, up to the tree's root. */
+    private static List<Path> ancestors(Path path) {
+        List<Path> up = new ArrayList<>();
+        for (Path p = path.getParent(); p != null && p.startsWith(ROOT); p = p.getParent()) {
+            up.add(p);
+        }
+        return up;
     }
 
     /**
      * One directory's contents, or nothing.
      *
      * <p>Read again on every ask rather than cached, which is honest for a demo over a live filesystem and is
-     * the reason a real staging area would keep its own model of the tree instead: {@code state} is called for
-     * every visible row whenever the ticks are refreshed, and a folder's answer walks everything under it.
+     * the reason a real staging area would keep its own model of the tree instead: {@code state} is asked for
+     * every item the tree is told about, and a folder's answer walks everything under it.
      */
     private static List<Path> listing(Path dir) {
         try (var kids = Files.list(dir)) {

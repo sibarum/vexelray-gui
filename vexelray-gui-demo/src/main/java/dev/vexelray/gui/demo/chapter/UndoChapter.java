@@ -77,8 +77,11 @@ public final class UndoChapter implements Chapter {
         text.node().width(Length.rem(12));
         Button chip = new Button(gui, "Bold").toggle(true);
         List<String> items = new CopyOnWriteArrayList<>(List.of("first"));
-        Button add = new Button(gui, "Add an item").kind(Button.Kind.PRIMARY)
-                .perform(() -> adding(items, "item " + (items.size() + 1)));
+        Button add = new Button(gui, "Add an item").kind(Button.Kind.PRIMARY);
+        // A command as an edit: the press is heard like any other, and the view records the change in the window's
+        // history, so Ctrl+Z takes it back. The items are this page's own; a model that is the logic's would be
+        // changed by a Change whose apply and revert each send it a message.
+        gui.mailbox(Button.PRESSED, add.address(), p -> history.perform(adding(items, "item " + (items.size() + 1))));
 
         Node values = Ui.label(gui, "", Length.FILL);
         Node status = Ui.label(gui, "", Length.FILL);

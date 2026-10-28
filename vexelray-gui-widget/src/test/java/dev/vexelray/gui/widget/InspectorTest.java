@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -20,8 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * The declarative panel and the three editors under it, checked on the properties that are actually load-bearing:
- * that a section is a heading drawn once rather than a sort key, that a property is read from the model rather
- * than remembered, that folding and disabling <b>hide</b> rather than remove, and that the number field does not
+ * that a section is a heading drawn once rather than a sort key, that a row shows what it is told and announces
+ * only what the user does, that folding and disabling <b>hide</b> rather than remove, and that the number field does not
  * validate what is still being typed.
  *
  * <p>Nothing here asserts a colour or a pixel. The look comes from the theme and is guarded elsewhere
@@ -81,21 +82,18 @@ class InspectorTest {
     @Test
     void everyVisibleLabelHasAHeight() {
         try (HeadlessGui h = new HeadlessGui()) {
-            double[] model = {2};
-            AtomicBoolean on = new AtomicBoolean(true);
-            AtomicReference<String> mode = new AtomicReference<>("solid");
-
             Inspector inspector = new Inspector(h.gui);
             inspector.add(
-                    Property.range("Look", "Opacity", 0, 100, 1, () -> model[0], v -> model[0] = v),
-                    Property.number("Look", "Width", 1, 0, 9, () -> model[0], v -> model[0] = v),
-                    Property.flag("Look", "Wireframe", on::get, on::set),
-                    Property.choice("Look", "Material", List.of(
-                                    new Property.Option<>("Solid", "solid"),
-                                    new Property.Option<>("SSS", "sss")),
-                            mode::get, mode::set));
-            Inspector.Card card = inspector.card("Line", "3", on::get, on::set).open(true);
-            card.add(Property.flag("", "Drop lines", on::get, on::set));
+                    Property.range("opacity", "Look", "Opacity", 0, 100, 1),
+                    Property.number("width", "Look", "Width", 1, 0, 9),
+                    Property.flag("wireframe", "Look", "Wireframe"),
+                    Property.choice("material", "Look", "Material", List.of(
+                            new Property.Option<>("Solid", "solid"),
+                            new Property.Option<>("SSS", "sss"))));
+            Inspector.Card card = inspector.card("line", "Line", "3").open(true);
+            card.add(Property.flag("drop", "", "Drop lines"));
+            tell(h, inspector,
+                    Map.of("opacity", 2.0, "width", 2.0, "wireframe", true, "material", "solid", "line", true));
             h.gui.root().children(inspector.node());
             h.frame();
 
@@ -119,13 +117,11 @@ class InspectorTest {
     @Test
     void aLabelIsNotCrushedByTheControlBesideIt() {
         try (HeadlessGui h = new HeadlessGui()) {
-            AtomicReference<String> mode = new AtomicReference<>("solid");
             Inspector inspector = new Inspector(h.gui);
-            inspector.add(Property.choice("", "Material", List.of(
-                            new Property.Option<>("Solid", "solid"),
-                            new Property.Option<>("Additive", "additive"),
-                            new Property.Option<>("SSS", "sss")),
-                    mode::get, mode::set));
+            inspector.add(Property.choice("material", "", "Material", List.of(
+                    new Property.Option<>("Solid", "solid"),
+                    new Property.Option<>("Additive", "additive"),
+                    new Property.Option<>("SSS", "sss"))));
             // The width the plot workspace gives it, so this is the real constraint and not a generous one.
             inspector.node().width(Length.dp(284));
             h.gui.root().children(inspector.node());
@@ -212,12 +208,12 @@ class InspectorTest {
     @Test
     void aSectionHeadingIsDrawnOnceAndRowsKeepTheirDeclaredOrder() {
         try (HeadlessGui h = new HeadlessGui()) {
-            double[] model = {1, 2, 3};
             Inspector inspector = new Inspector(h.gui);
             inspector.add(
-                    Property.number("Look", "Alpha", 1, 0, 9, () -> model[0], v -> model[0] = v),
-                    Property.number("Look", "Beta", 1, 0, 9, () -> model[1], v -> model[1] = v),
-                    Property.number("Sampling", "Gamma", 1, 0, 9, () -> model[2], v -> model[2] = v));
+                    Property.number("alpha", "Look", "Alpha", 1, 0, 9),
+                    Property.number("beta", "Look", "Beta", 1, 0, 9),
+                    Property.number("gamma", "Sampling", "Gamma", 1, 0, 9));
+            tell(h, inspector, Map.of("alpha", 1.0, "beta", 2.0, "gamma", 3.0));
             h.gui.root().children(inspector.node());
             h.frame();
 
@@ -231,9 +227,9 @@ class InspectorTest {
     @Test
     void anUngroupedRowGetsNoHeading() {
         try (HeadlessGui h = new HeadlessGui()) {
-            double[] model = {7};
             Inspector inspector = new Inspector(h.gui);
-            inspector.add(Property.number("", "Loose", 1, 0, 9, () -> model[0], v -> model[0] = v));
+            inspector.add(Property.number("loose", "", "Loose", 1, 0, 9));
+            tell(h, inspector, Map.of("loose", 7.0));
             h.gui.root().children(inspector.node());
             h.frame();
 
@@ -241,87 +237,103 @@ class InspectorTest {
         }
     }
 
-    // ---------------------------------------------------------------- the model is the truth
+    // ---------------------------------------------------------------- told values, announced edits
 
+    /** Tell {@code inspector} {@code values}, as the application's logic would: they land in the next frame. */
+    private static void tell(HeadlessGui h, Inspector inspector, Map<String, Object> values) {
+        h.bus.publish(Inspector.VALUES, new Inspector.Values(inspector.address(), values));
+    }
+
+    /** Every edit {@code inspector} announces, in order. */
+    private static List<Inspector.Edited> edits(HeadlessGui h, Inspector inspector) {
+        List<Inspector.Edited> heard = new ArrayList<>();
+        h.bus.subscribe(Inspector.EDITED, e -> {
+            if (e.inspector().equals(inspector.address())) {
+                heard.add(e);
+            }
+        });
+        return heard;
+    }
+
+    /**
+     * The model is the application's, so the panel shows what it is told and reports nothing for it. Were a told
+     * value reported as an edit, the application would write it to the model, the model would tell the panel again,
+     * and the two would chase each other without bound, whatever the values were.
+     */
     @Test
-    void refreshReReadsTheModelRatherThanTheControl() {
+    void aToldValueIsShownAndAnnouncesNothing() {
         try (HeadlessGui h = new HeadlessGui()) {
-            AtomicBoolean flag = new AtomicBoolean(false);
-            AtomicReference<String> mode = new AtomicReference<>("solid");
             Inspector inspector = new Inspector(h.gui);
-            Property fl = Property.flag("", "Wireframe", flag::get, flag::set);
-            Property ch = Property.choice("", "Material",
-                    List.of(new Property.Option<>("Solid", "solid"), new Property.Option<>("SSS", "sss")),
-                    mode::get, mode::set);
-            inspector.add(fl, ch);
+            List<Inspector.Edited> edits = edits(h, inspector);
+            inspector.add(
+                    Property.flag("wireframe", "", "Wireframe"),
+                    Property.choice("material", "", "Material",
+                            List.of(new Property.Option<>("Solid", "solid"), new Property.Option<>("SSS", "sss"))),
+                    Property.range("scale", "", "Scale", 0, 1, 0.01),
+                    Property.number("count", "", "Count", 1, 0, 10));
             h.gui.root().children(inspector.node());
             h.frame();
 
-            // Something else changes the model -- a preset, a keystroke, a fit. The panel was not told.
-            flag.set(true);
-            mode.set("sss");
-            inspector.refresh();
+            tell(h, inspector, Map.of("wireframe", true, "material", "sss", "scale", 0.75, "count", 7.0));
             h.frame();
 
-            // The controls now show what the model says, because a property is a view onto it and never a copy.
-            assertTrue(flag.get());
-            assertEquals("sss", mode.get());
-            assertEquals(List.of("Wireframe", "Material", "Solid", "SSS"),
-                    texts(h.retained(inspector.node())));
+            assertEquals(List.of(), edits, "a told value was announced as the user's edit");
+            List<String> seen = texts(h.retained(inspector.node()));
+            assertTrue(seen.contains("0.75"), "the range shows what it was told: " + seen);
+            assertTrue(seen.contains("7"), "and so does the number: " + seen);
         }
     }
 
+    /** What the user does leaves as a message naming the row, and the panel keeps nothing of the model's. */
     @Test
-    void aRefreshWritesNothingBackToTheModel() {
+    void anEditIsAnnouncedByTheRowsId() {
         try (HeadlessGui h = new HeadlessGui()) {
-            AtomicBoolean flag = new AtomicBoolean(false);
-            AtomicReference<String> mode = new AtomicReference<>("solid");
-            AtomicReference<Double> scale = new AtomicReference<>(0.25);
-            AtomicReference<Double> count = new AtomicReference<>(3.0);
-            AtomicInteger writes = new AtomicInteger();
-
-            Inspector inspector = new Inspector(h.gui);
-            inspector.add(
-                    Property.flag("", "Wireframe", flag::get, v -> {
-                        writes.incrementAndGet();
-                        flag.set(v);
-                    }),
-                    Property.choice("", "Material",
-                            List.of(new Property.Option<>("Solid", "solid"), new Property.Option<>("SSS", "sss")),
-                            mode::get, v -> {
-                                writes.incrementAndGet();
-                                mode.set(v);
-                            }),
-                    Property.range("", "Scale", 0, 1, 0.01, scale::get, v -> {
-                        writes.incrementAndGet();
-                        scale.set(v);
-                    }),
-                    Property.number("", "Count", 1, 0, 10, count::get, v -> {
-                        writes.incrementAndGet();
-                        count.set(v);
-                    }));
+            Inspector inspector = new Inspector(h.gui).name("settings");
+            List<Inspector.Edited> edits = edits(h, inspector);
+            inspector.add(Property.flag("wireframe", "", "Wireframe"));
             h.gui.root().children(inspector.node());
             h.frame();
-            writes.set(0);
 
-            // The model moved under the panel, and every row is asked to catch up.
-            flag.set(true);
-            mode.set("sss");
-            scale.set(0.75);
-            count.set(7.0);
-            inspector.refresh();
+            RetainedNode track = null;
+            for (RetainedNode n : allOf(h.retained(inspector.node()))) {
+                if ("switch".equals(n.role())) {
+                    track = n;
+                }
+            }
+            assertNotNull(track);
+            h.click(track.x + track.w / 2f, track.y + track.h / 2f);
             h.frame();
 
-            // A sync is not an edit. Were the rows to report one, the application would write to the model, the
-            // model would republish the panel, and the panel would refresh again -- without bound, and whatever
-            // the values were, because the notification never depended on anything having moved.
-            assertEquals(0, writes.get(), "a refresh told the application the user had edited every row");
+            assertEquals(List.of(new Inspector.Edited(h.gui.address("settings"), "wireframe", true)), edits);
+        }
+    }
 
-            // And the sync still happened: the rows hold what the model says, they just did not announce it.
-            assertTrue(flag.get());
-            assertEquals("sss", mode.get());
-            assertEquals(0.75, scale.get(), 1e-9);
-            assertEquals(7.0, count.get(), 1e-9);
+    /** Values and rows may arrive in either order: a row added after its value was told is built showing it. */
+    @Test
+    void aValueToldBeforeItsRowIsShownWhenTheRowIsBuilt() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Inspector inspector = new Inspector(h.gui);
+            h.gui.root().children(inspector.node());
+            tell(h, inspector, Map.of("count", 5.0));
+            h.frame();
+
+            inspector.add(Property.number("count", "", "Count", 1, 0, 10));
+            h.frame();
+
+            assertEquals(List.of("Count", "5"), texts(h.retained(inspector.node())));
+        }
+    }
+
+    /** An id is what edits and values name a row by, so it means one row, cards included. */
+    @Test
+    void anIdIsOneRow() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Inspector inspector = new Inspector(h.gui);
+            inspector.add(Property.flag("visible", "", "Visible"));
+            org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                    () -> inspector.add(Property.flag("visible", "", "Shown")));
+            org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                    () -> inspector.card("visible", "Layer", ""));
         }
     }
 
@@ -355,11 +367,10 @@ class InspectorTest {
     @Test
     void aFoldedCardHidesItsRowsAndDoesNotRemoveThem() {
         try (HeadlessGui h = new HeadlessGui()) {
-            AtomicBoolean on = new AtomicBoolean(true);
-            double[] width = {2};
             Inspector inspector = new Inspector(h.gui);
-            Inspector.Card card = inspector.card("Line", "3", on::get, on::set);
-            card.add(Property.number("", "Width", 1, 0, 9, () -> width[0], v -> width[0] = v));
+            Inspector.Card card = inspector.card("line", "Line", "3");
+            card.add(Property.number("width", "", "Width", 1, 0, 9));
+            tell(h, inspector, Map.of("line", true, "width", 2.0));
             h.gui.root().children(inspector.node());
             h.frame();
 
@@ -384,16 +395,14 @@ class InspectorTest {
     @Test
     void switchingACardOffDimsItRatherThanEmptyingIt() {
         try (HeadlessGui h = new HeadlessGui()) {
-            AtomicBoolean on = new AtomicBoolean(true);
-            double[] width = {2};
             Inspector inspector = new Inspector(h.gui);
-            Inspector.Card card = inspector.card("Line", "", on::get, on::set).open(true);
-            card.add(Property.number("", "Width", 1, 0, 9, () -> width[0], v -> width[0] = v));
+            Inspector.Card card = inspector.card("line", "Line", "").open(true);
+            card.add(Property.number("width", "", "Width", 1, 0, 9));
+            tell(h, inspector, Map.of("line", true, "width", 2.0));
             h.gui.root().children(inspector.node());
             h.frame();
 
-            on.set(false);
-            inspector.refresh();
+            tell(h, inspector, Map.of("line", false));
             h.frame();
             // Still readable, so it is clear what turning it back on would do.
             assertTrue(texts(h.retained(inspector.node())).contains("Width"));
@@ -537,12 +546,11 @@ class InspectorTest {
     void aPanelsMotionReachesTheSwitchesItBuiltItself() {
         try (HeadlessGui h = new HeadlessGui()) {
             Shared ramp = new Shared();
-            boolean[] enabled = {false};
-            boolean[] visible = {false};
             Inspector ins = new Inspector(h.gui);
-            ins.card("Layer", "", () -> enabled[0], v -> enabled[0] = v);
+            List<Inspector.Edited> edits = edits(h, ins);
+            ins.card("layer", "Layer", "");
             ins.motion(ramp);
-            ins.add(Property.flag("", "Visible", () -> visible[0], v -> visible[0] = v));
+            ins.add(Property.flag("visible", "", "Visible"));
             h.gui.root().children(ins.node());
             h.frame();
 
@@ -558,8 +566,8 @@ class InspectorTest {
             }
             h.frame();
 
-            assertTrue(enabled[0], "the card switch flipped");
-            assertTrue(visible[0], "and so did the row's");
+            assertEquals(List.of("layer", "visible"), edits.stream().map(Inspector.Edited::property).toList(),
+                    "the card switch flipped, and so did the row's");
             assertEquals(2, ramp.progress.size(), "and both asked the panel's ramp for their time");
 
             ramp.to(0.5);

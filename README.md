@@ -475,11 +475,13 @@ The controls themselves:
   takes, for the same reason. Two consequences worth stating: the **value column belongs to the inspector**, not
   to the row — it is reserved for every row and handed to the property as a `Readout`, because a column that
   appeared only where there was something to put in it would move the controls beside it as values came and
-  went; and factories take a **supplier and a consumer, not a value and a callback**, so the model stays the
-  truth and `refresh()` re-reads it after a preset, a keystroke or a fit changed it elsewhere. Sections are
-  declared, never sorted: the order on screen is the order in the source. `card(...)` is the other shape — a
-  heading with a switch and a badge over a body of rows that folds away — which is here rather than in an
-  application because a layer list is the same thing every time. `motion(ramp)` gives the knobs of the switches
+  went; and **a row holds no getter or setter onto the model**: each has an id, the values arrive as one
+  message (`Values` on `Inspector.VALUES`) and are shown, never echoed, and what the user changes leaves as
+  `Edited(inspector, property, value)` on `Inspector.EDITED`, so the model stays the application's, on its own
+  thread. A value told before its row exists is shown when the row is built. Sections are declared, never
+  sorted: the order on screen is the order in the source. `card(id, title, badge)` is the other shape — a
+  heading with a switch, told and edited like a row, and a badge, over a body of rows that folds away — which is
+  here rather than in an application because a layer list is the same thing every time. `motion(ramp)` gives the knobs of the switches
   the panel builds itself — a card head's, a `flag` row's — their time, offered to every row the same way the
   `Readout` is (`Property.motion`, default: ignore it), so a row with nothing to animate is not asked to have
   any and a panel says it once rather than per row.

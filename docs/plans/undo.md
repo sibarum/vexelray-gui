@@ -10,7 +10,9 @@ set underneath (`conflict`); 120 replies, all ok. It found two defects, both fix
 `BigDecimal.equals` calls them different), and **the navigator never asked a target to reveal itself**, so a
 landmark on a tab page — `Tabs` registers its reveal on each page — was unreachable. MainFrame's workspaces page
 dropped its hand-wired history and records into its window's; witnessed live: New, Ctrl+Z, Ctrl+Y. Step 7 as built: `Button.perform(Supplier<Change>)` and
-`MenuSink.edit(label, [enabled,] Supplier<Change>)`. Both take a supplier rather than a change, because a command's
+`MenuSink.edit(label, [enabled,] Supplier<Change>)`. *(0.2: `Button.perform` is gone with T7.2's walk: a view hears
+`Button.PRESSED` and calls `history.perform(change)` itself, and a change to data the logic owns is a `Change` whose
+apply and revert each send it a message. `MenuSink.edit` stays, as the widget library's.)* Both take a supplier rather than a change, because a command's
 change depends on what is selected when it is chosen, and a null answer means "nothing to do this time". Both
 perform through the history nearest the button, or the right-clicked node (`MenuSink.history()`, which a wrapping
 sink must pass through, as `TreeView`'s does), and still apply where none is bound. A chip (`Button.toggle`) holds

@@ -1,6 +1,7 @@
 package dev.vexelray.gui.widget;
 
 import dev.vexelray.gui.core.spi.Seams;
+import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.CursorShape;
@@ -9,13 +10,14 @@ import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.scroll.Scrollbars;
+import sibarum.atchung.Subscription;
+import sibarum.atchung.Topic;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.BooleanSupplier;
-import java.util.function.Consumer;
+import java.util.HashMap;
 
 /**
  * A panel of settings, built from what they are rather than from how they look: hand it {@link Property
@@ -50,8 +52,49 @@ import java.util.function.Consumer;
  * time — the disclosure, the enabled state that dims the rows without removing them, and the fold that keeps the
  * panel scrollable. Rows inside a card are ordinary properties, so a card's contents cost nothing extra to
  * declare.
+ *
+ * <h2>Told values, announced edits</h2>
+ *
+ * The values are the application's, so the panel holds none of its own and reads none: it is told them as one
+ * message, {@link Values} on {@link #VALUES}, naming each row by its id, and says what the user changed as
+ * {@link Edited} on {@link #EDITED}. A card's switch is a value like any row's. A value told before its row is added
+ * is kept and shown when the row is built, so the order the panel and its values arrive in does not matter.
  */
-public final class Inspector {
+public final class Inspector implements AutoCloseable {
+
+    /**
+     * A row, or a card's switch, edited by the user: the inspector at {@code inspector}, the row {@code property}, now
+     * {@code value}. The last in a frame for each row, so a drag along a slider is heard once a frame.
+     */
+    public static final Topic<Edited> EDITED =
+            Topic.state("vexelray.gui.inspector.edited", Edited.class, e -> List.of(e.inspector(), e.property()));
+
+    /** What the rows of the inspector at {@code inspector} now hold, by id: shown, never reported back as an edit. */
+    public static final Topic<Values> VALUES = Topic.edge("vexelray.gui.inspector.values", Values.class);
+
+    /** The row {@code property} of the inspector at {@code inspector} edited to {@code value}. */
+    public record Edited(String inspector, String property, Object value) implements Addressed {
+        @Override
+        public Object address() {
+            return inspector;
+        }
+    }
+
+    /**
+     * What the rows named in {@code values} now hold, for the inspector at {@code inspector}: the rest keep what they
+     * were last told. A row's value is the type its factory says (a {@code Double}, a {@code Boolean}, an option's
+     * value); a card's is a {@code Boolean}.
+     */
+    public record Values(String inspector, Map<String, Object> values) implements Addressed {
+        public Values {
+            values = Map.copyOf(values);
+        }
+
+        @Override
+        public Object address() {
+            return inspector;
+        }
+    }
 
     private static final Length ROW_GAP = Length.rem(0.5f);
     private static final Length VALUE_W = Length.rem(2.6f);
@@ -87,6 +130,14 @@ public final class Inspector {
     private final List<Property> properties = new ArrayList<>();
     private final Map<String, Node> headings = new LinkedHashMap<>();
     private final List<Card> cards = new ArrayList<>();
+    /** Every row by id, the panel's and its cards', so a told value finds it. GUI thread. */
+    private final Map<String, Property> rowsById = new HashMap<>();
+    /** Every card by id. GUI thread. */
+    private final Map<String, Card> cardsById = new HashMap<>();
+    /** The last value told for each id, whether its row is here yet or not. GUI thread. */
+    private final Map<String, Object> told = new HashMap<>();
+    private final WidgetName name;
+    private Subscription valuesSub;
     /** The time this panel gives whatever its controls move; null for none, which is the default. */
     private volatile Ramp knobs;
 
@@ -99,11 +150,33 @@ public final class Inspector {
                 .padding(Length.rem(0.4f), Length.rem(0.6f));
         // The rows scroll in a Scroller with a bar beside it, and the panel as a whole is the pair.
         this.box = Scrollbars.vertical(gui, body).node().role("inspector").width(Length.grow(1f));
+        this.name = new WidgetName(gui, "inspector", box);
+        this.valuesSub = gui.mailbox(VALUES, name.address(), this::told);
     }
 
     /** The node to place in a layout: the rows, scrolling vertically, with their bar beside them. */
     public Node node() {
         return box;
+    }
+
+    /**
+     * Call this inspector {@code name} in its tree ("settings"): its {@link #address()} is the tree's name and this,
+     * which its edits carry and its values are sent to. On the GUI thread, where the inspector was built.
+     */
+    public Inspector name(String name) {
+        java.util.Objects.requireNonNull(name, "name");
+        if (!name.equals(this.name.name())) {
+            Subscription next = gui.mailbox(VALUES, gui.address(name), this::told);
+            valuesSub.close();
+            valuesSub = next;
+            this.name.name(name);
+        }
+        return this;
+    }
+
+    /** Where this inspector is on the bus: {@code "<tree>.<name>"}. */
+    public String address() {
+        return name.address();
     }
 
     /** Append a row, drawing its section heading first if this is the section's first row. */
@@ -122,17 +195,24 @@ public final class Inspector {
     }
 
     /**
-     * Append a foldable card: a switch, a title, a badge, and rows that fold away.
+     * Append a foldable card: a switch, a title, a badge, and rows that fold away. The switch is a value like any
+     * row's, a {@code Boolean} named {@code id}: told by {@link #VALUES}, and edited on {@link #EDITED}. Off until
+     * told.
      *
-     * @param title  the card's heading
-     * @param badge  a short word shown at the right of the heading — a count, a state, a unit; empty for none
-     * @param on     reads whether the card's subject is enabled
-     * @param toggle called when the switch moves
+     * @param id    what the switch's edits and values name it by: unique in the inspector, rows included
+     * @param title the card's heading
+     * @param badge a short word shown at the right of the heading — a count, a state, a unit; empty for none
      */
-    public Card card(String title, String badge, BooleanSupplier on, Consumer<Boolean> toggle) {
-        Card c = new Card(gui, title, badge, on, toggle);
+    public Card card(String id, String title, String badge) {
+        claim(id);
+        Card c = new Card(gui, id, title, badge);
         cards.add(c);
+        cardsById.put(id, c);
         body.append(c.node());
+        Object value = told.get(id);
+        if (value != null) {
+            c.show(value);
+        }
         return c;
     }
 
@@ -164,15 +244,39 @@ public final class Inspector {
         return this;
     }
 
-    /** Re-read every property and card from the model. See {@link Property} on getters rather than values. */
-    public Inspector refresh() {
-        for (Property p : properties) {
-            p.refresh();
+    /** Release the inspector's subscription. Call it when the panel is taken away for good. */
+    @Override
+    public void close() {
+        valuesSub.close();
+    }
+
+    /** Values told: kept for rows still to come, and shown on the rows already here. In the widget tick. */
+    private void told(Values values) {
+        for (Map.Entry<String, Object> e : values.values().entrySet()) {
+            told.put(e.getKey(), e.getValue());
+            Property row = rowsById.get(e.getKey());
+            if (row != null) {
+                row.show(e.getValue());
+            }
+            Card card = cardsById.get(e.getKey());
+            if (card != null) {
+                card.show(e.getValue());
+            }
         }
-        for (Card c : cards) {
-            c.refresh();
+    }
+
+    /** Take {@code id} for a row or a card, refusing one already taken. */
+    private void claim(String id) {
+        java.util.Objects.requireNonNull(id, "id");
+        if (rowsById.containsKey(id) || cardsById.containsKey(id)) {
+            throw new IllegalArgumentException("two rows with the id '" + id + "' could not be told apart in what "
+                    + "EDITED and VALUES carry");
         }
-        return this;
+    }
+
+    /** Publish the user's edit of {@code id}. */
+    private void edited(String id, Object value) {
+        gui.bus().publish(EDITED, new Edited(name.address(), id, value));
     }
 
     /**
@@ -203,6 +307,8 @@ public final class Inspector {
 
     /** One row: label, control, value. Built here so every row in every card shares one geometry. */
     private Node row(Property property, Node unused) {
+        claim(property.id());
+        rowsById.put(property.id(), property);
         Node label = gui.text(property.name())
                 .width(Length.grow(1f))
                 .textSize(LABEL_SIZE)
@@ -213,7 +319,12 @@ public final class Inspector {
                 .wordWrap(false)
                 .textColor(Role.FAINT)
                 .align(dev.vexelray.text.TextLayout.HAlign.RIGHT, dev.vexelray.text.TextLayout.VAlign.MIDDLE);
-        Node control = property.editor(gui, value::text);
+        String id = property.id();
+        Node control = property.editor(gui, value::text, v -> edited(id, v));
+        Object current = told.get(id);
+        if (current != null) {
+            property.show(current);   // told before the row was here: shown from its first frame
+        }
         // Offered to every row, wherever the row came from — the panel or one of its cards — so a row added
         // after the panel was given its motion is not the one that jumps. Most rows ignore it.
         property.motion(knobs);
@@ -242,15 +353,15 @@ public final class Inspector {
         private final dev.vexelray.gui.icons.IconView caretIcon;
         private final Node badgeNode;
         private final Toggle toggle;
-        private final BooleanSupplier on;
         private final List<Property> own = new ArrayList<>();
         private boolean open;
 
-        private Card(Gui gui, String title, String badge, BooleanSupplier on, Consumer<Boolean> toggle) {
-            this.on = on;
-            this.toggle = new Toggle(gui, on.getAsBoolean()).onChange(v -> {
-                toggle.accept(v);
+        private Card(Gui gui, String id, String title, String badge) {
+            // The switch moves under the finger and the rows dim with it, as a switch does: the user's control, showing
+            // what they just chose. A value told later wins.
+            this.toggle = new Toggle(gui, false).onChange(v -> {
                 paint();
+                edited(id, v);
             }).transition(knobs);
             Node name = gui.text(title).width(Length.grow(1f))
                     .textSize(TITLE_SIZE).wordWrap(false)
@@ -345,20 +456,19 @@ public final class Inspector {
             open(!open);
         }
 
-        void refresh() {
-            // show, not on: this is the card being told what the model says, not the user flipping it. See
-            // Toggle.show -- reporting a sync as an edit made a refresh write back to the model, which
-            // republished the panel, which refreshed the card, without bound.
-            toggle.show(on.getAsBoolean());
-            for (Property p : own) {
-                p.refresh();
+        void show(Object value) {
+            if (value instanceof Boolean on) {
+                // show, not on: this is the card being told what the model says, not the user flipping it. See
+                // Toggle.show -- reporting a sync as an edit made a told value write back to the model, which
+                // told the panel again, without bound.
+                toggle.show(on);
+                paint();
             }
-            paint();
         }
 
         private void paint() {
             // Off is dimmer, not gone: the rows stay readable so it is clear what turning it back on would do.
-            rows.opacity(on.getAsBoolean() ? 1f : 0.45f);
+            rows.opacity(toggle.on() ? 1f : 0.45f);
         }
     }
 }

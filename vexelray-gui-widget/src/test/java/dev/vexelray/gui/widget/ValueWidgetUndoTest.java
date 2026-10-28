@@ -247,51 +247,48 @@ class ValueWidgetUndoTest {
         }
     }
 
-    /** A command as a change: the press does it, Ctrl+Z undoes it, and the change is built at press time. */
+    /**
+     * A command as a change, recorded by the view that heard the press. The model here is the logic's, on the other
+     * side of the bus: the change's apply and revert each send it a message, so Ctrl+Z undoes it without touching
+     * the logic's data from the frame.
+     */
     @Test
-    void aButtonThatPerformsAChangeIsUndone() {
+    void aPressRecordedAsAChangeIsUndoneByMessage() {
         try (Window w = new Window()) {
-            List<String> items = new CopyOnWriteArrayList<>(List.of("a"));
-            java.util.concurrent.atomic.AtomicInteger asked = new java.util.concurrent.atomic.AtomicInteger();
-            Button add = new Button(w.h.gui, "Add").perform(() -> {
-                asked.incrementAndGet();
-                String item = "n" + items.size();
-                return new dev.vexelray.gui.core.edit.Change() {
-                    @Override
-                    public dev.vexelray.gui.core.edit.Change apply() {
-                        items.add(item);
-                        dev.vexelray.gui.core.edit.Change self = this;
-                        return () -> {
-                            items.remove(item);
-                            return self;
-                        };
-                    }
-                };
-            });
+            List<String> items = new CopyOnWriteArrayList<>(List.of("a"));   // the logic's, changed only by message
+            sibarum.atchung.Topic<String> added = sibarum.atchung.Topic.edge("test.undo.added", String.class);
+            sibarum.atchung.Topic<String> removed = sibarum.atchung.Topic.edge("test.undo.removed", String.class);
+            w.h.bus.subscribe(added, items::add);
+            w.h.bus.subscribe(removed, items::remove);
+
+            Button add = new Button(w.h.gui, "Add");
+            w.h.gui.mailbox(Button.PRESSED, add.address(), p -> w.history.perform(adding(w, added, removed,
+                    "n" + items.size())));
             w.mount(add.node());
 
             w.click(add.node());
             w.h.pause();
             w.click(add.node());
             assertEquals(List.of("a", "n1", "n2"), items);
-            assertEquals(2, asked.get(), "the change is asked for on each press, against what is there then");
             assertEquals(2, w.history.undoDepth());
 
             w.undo();
-            assertEquals(List.of("a", "n1"), items, "Ctrl+Z takes the last command back");
+            assertEquals(List.of("a", "n1"), items, "Ctrl+Z sent the last command's undoing");
             w.redo();
             assertEquals(List.of("a", "n1", "n2"), items);
         }
     }
 
-    @Test
-    void aCommandWithNothingToDoRecordsNothing() {
-        try (Window w = new Window()) {
-            Button b = new Button(w.h.gui, "Nothing").perform(() -> null);
-            w.mount(b.node());
-            w.click(b.node());
-            assertEquals(0, w.history.undoDepth());
-        }
+    /** Adding {@code item}, as a pair of messages: one to do it, one to take it back. */
+    private static dev.vexelray.gui.core.edit.Change adding(Window w, sibarum.atchung.Topic<String> added,
+                                                          sibarum.atchung.Topic<String> removed, String item) {
+        return () -> {
+            w.h.bus.publish(added, item);
+            return () -> {
+                w.h.bus.publish(removed, item);
+                return adding(w, added, removed, item);
+            };
+        };
     }
 
     @Test

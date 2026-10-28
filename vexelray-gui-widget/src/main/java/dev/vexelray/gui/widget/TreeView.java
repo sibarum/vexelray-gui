@@ -164,6 +164,12 @@ public final class TreeView<T> implements AutoCloseable {
      */
     public static final Topic<Chosen> CHOSEN = Topic.edge("vexelray.gui.tree.chosen", Chosen.class);
 
+    /**
+     * A {@link #revealPath} walk ended: at its last item, selected, or short of it where the tree no longer offered the
+     * way down. Not for a walk superseded by another. Every one, in order.
+     */
+    public static final Topic<Revealed> REVEALED = Topic.edge("vexelray.gui.tree.revealed", Revealed.class);
+
     /** The id of the tree's own Expand: everything under the row, opened. For an {@link Entry} to {@link Entry#hides hide}. */
     public static final String EXPAND = "expand";
 
@@ -220,6 +226,14 @@ public final class TreeView<T> implements AutoCloseable {
 
     /** The tree at {@code tree} should look at its hierarchy again: something under it has changed. */
     public record Refresh(String tree) implements Addressed {
+        @Override
+        public Object address() {
+            return tree;
+        }
+    }
+
+    /** A reveal in the tree at {@code tree} toward {@code item} ended, at it ({@code reached}) or short of it. */
+    public record Revealed(String tree, Object item, boolean reached) implements Addressed {
         @Override
         public Object address() {
             return tree;
@@ -1751,16 +1765,21 @@ public final class TreeView<T> implements AutoCloseable {
      * it when its {@link Children} land: so it opens each level as it arrives, exactly as {@link #expandAll} does. It
      * is an action like any other, so it supersedes whatever was running and gives way to whatever comes next.
      *
-     * <p>{@code then} runs once the walk has ended, on the GUI thread — somewhere to put whatever wanted the row that
-     * now exists, a mark on it being the case this was written for. It does not run when the walk was superseded,
-     * which is the same rule the walk itself obeys.
+     * <p>When the walk has ended it is announced on {@link #REVEALED}, so whatever wanted the row that now exists (a mark
+     * on it being the case this was written for) hears it in the frame it landed. A superseded walk announces
+     * nothing, which is the same rule the walk itself obeys.
      *
      * <p><b>Not reaching the end is not an error.</b> A level the source no longer offers stops the walk where it
-     * is: the tree is left open as far as it got, nothing is selected, and {@code then} still runs — the caller
-     * asked about a hierarchy that has moved under it, and that is an answer rather than a failure.
+     * is: the tree is left open as far as it got, nothing is selected, and it is still announced, as not reached —
+     * the caller asked about a hierarchy that has moved under it, and that is an answer rather than a failure.
+     *
+     * @throws IllegalArgumentException when {@code chain} is empty
      */
-    public TreeView<T> revealPath(List<T> chain, Runnable then) {
-        new RevealWalk(begin(), List.copyOf(chain), then).run();
+    public TreeView<T> revealPath(List<T> chain) {
+        if (chain.isEmpty()) {
+            throw new IllegalArgumentException("a reveal is a way down to something: the chain is empty");
+        }
+        new RevealWalk(begin(), List.copyOf(chain)).run();
         return this;
     }
 
@@ -2328,13 +2347,11 @@ public final class TreeView<T> implements AutoCloseable {
      */
     private final class RevealWalk extends Walk {
         private final List<T> path;
-        private final Runnable then;
         private int at;
 
-        RevealWalk(Job job, List<T> path, Runnable then) {
+        RevealWalk(Job job, List<T> path) {
             super(job);
             this.path = path;
-            this.then = then;
         }
 
         @Override
@@ -2363,18 +2380,18 @@ public final class TreeView<T> implements AutoCloseable {
                     return false;   // resumed by the reply, which finds this level done and looks for the next
                 }
             }
+            boolean reached = false;
             if (at >= path.size() - 1) {
                 Row target;
                 synchronized (TreeView.this) {
-                    target = path.isEmpty() ? null : rowsByItem.get(path.getLast());
+                    target = rowsByItem.get(path.getLast());
                 }
                 if (target != null) {
                     select(target, true);
+                    reached = true;
                 }
             }
-            if (then != null) {
-                then.run();
-            }
+            gui.bus().publish(REVEALED, new Revealed(address, path.getLast(), reached));
             return false;
         }
     }

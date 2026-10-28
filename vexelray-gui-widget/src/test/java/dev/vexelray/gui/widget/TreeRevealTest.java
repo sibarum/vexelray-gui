@@ -68,7 +68,7 @@ class TreeRevealTest {
             h.gui.root().children(tree.node());
             h.frame();
 
-            tree.revealPath(List.of("src", "main", "java", "App.java"), null);
+            tree.revealPath(List.of("src", "main", "java", "App.java"));
             h.frames(LEVELS);
 
             assertEquals("App.java", tree.selected(), "the walk lands on the row the chain ends at");
@@ -87,7 +87,7 @@ class TreeRevealTest {
             h.gui.root().children(tree.node());
             h.frame();
 
-            tree.revealPath(List.of("src", "main", "java", "App.java"), null);
+            tree.revealPath(List.of("src", "main", "java", "App.java"));
             h.frames(LEVELS);
 
             assertNotNull(tree.rowNode("App.java"), "three levels deep, in one walk");
@@ -105,7 +105,7 @@ class TreeRevealTest {
             h.gui.root().children(tree.node());
             h.frame();
 
-            tree.revealPath(List.of("src", "main", "java"), null);
+            tree.revealPath(List.of("src", "main", "java"));
             h.frames(LEVELS);
 
             assertNotNull(tree.rowNode("resources"), "the way down was opened");
@@ -124,13 +124,13 @@ class TreeRevealTest {
             h.gui.root().children(tree.node());
             h.frame();
 
-            tree.revealPath(List.of("src", "test", "AppTest.java"), null);
+            tree.revealPath(List.of("src", "test", "AppTest.java"));
             h.frames(LEVELS);   // to its end: a reveal begun while another waits on a level supersedes it
-            tree.revealPath(List.of("src", "main", "java", "App.java"), null);
+            tree.revealPath(List.of("src", "main", "java", "App.java"));
             h.frames(LEVELS);
             int fetched = source.fetches.get();
 
-            tree.revealPath(List.of("src", "main", "java", "Util.java"), null);
+            tree.revealPath(List.of("src", "main", "java", "Util.java"));
             h.frames(LEVELS);
 
             assertEquals("Util.java", tree.selected());
@@ -140,9 +140,9 @@ class TreeRevealTest {
         }
     }
 
-    /** The callback is where a caller puts what needed the row, so it runs after the row is there to be had. */
+    /** The end of the walk is announced after the row is there to be had, so whoever wanted the row finds it. */
     @Test
-    void theCallbackRunsOnceTheRowExists() {
+    void theEndIsAnnouncedOnceTheRowExists() {
         try (HeadlessGui h = new HeadlessGui()) {
             MapSource source = new MapSource();
             TreeView<String> tree = Listing.tree(h, source);
@@ -150,17 +150,23 @@ class TreeRevealTest {
             h.frame();
 
             AtomicReference<Node> seen = new AtomicReference<>();
-            tree.revealPath(List.of("src", "main", "java", "App.java"), () -> seen.set(tree.rowNode("App.java")));
-            h.frames(LEVELS);
+            List<TreeView.Revealed> told = new java.util.ArrayList<>();
+            h.gui.mailbox(TreeView.REVEALED, tree.address(), r -> {
+                told.add(r);
+                seen.set(tree.rowNode("App.java"));
+            });
+            tree.revealPath(List.of("src", "main", "java", "App.java"));
+            h.frames(LEVELS + 1);
 
-            assertNotNull(seen.get(), "the row was built by the time the caller was told the walk had ended");
+            assertNotNull(seen.get(), "the row was built by the time the walk was announced as ended");
+            assertEquals(List.of(new TreeView.Revealed(tree.address(), "App.java", true)), told);
             tree.close();
         }
     }
 
     /**
-     * A chain through something the source no longer offers stops where it runs out. The caller still gets its
-     * turn — it asked about a hierarchy that has moved under it, and that is an answer rather than a failure.
+     * A chain through something the source no longer offers stops where it runs out. The end is still announced, as
+     * not reached — the caller asked about a hierarchy that has moved under it, and that is an answer rather than a failure.
      */
     @Test
     void aChainThatRunsOutSelectsNothingAndStillReportsBack() {
@@ -170,12 +176,14 @@ class TreeRevealTest {
             h.gui.root().children(tree.node());
             h.frame();
 
-            AtomicInteger told = new AtomicInteger();
-            tree.revealPath(List.of("src", "gone", "App.java"), told::incrementAndGet);
-            h.frames(LEVELS);
+            List<TreeView.Revealed> told = new java.util.ArrayList<>();
+            h.gui.mailbox(TreeView.REVEALED, tree.address(), told::add);
+            tree.revealPath(List.of("src", "gone", "App.java"));
+            h.frames(LEVELS + 1);
 
             assertNull(tree.selected(), "there was no row to land on");
-            assertEquals(1, told.get(), "the walk ended, and said so");
+            assertEquals(List.of(new TreeView.Revealed(tree.address(), "App.java", false)), told,
+                    "the walk ended, and said so");
             assertTrue(source.fetches.get() >= 1, "it opened as far down as the chain was real");
             tree.close();
         }

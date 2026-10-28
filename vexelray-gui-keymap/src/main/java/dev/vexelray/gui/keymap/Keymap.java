@@ -29,8 +29,8 @@ import java.util.regex.Pattern;
  *
  * {@snippet :
  * Keymap keys = new Keymap(gui).persist(AppHome.of("editor").settings());
- * keys.action("file.save", "Save", Shortcut.of(Key.S, Modifier.CONTROL)).on(this::save);
- * keys.action("file.save-as", "Save As", Shortcut.of(Key.S, Modifier.CONTROL, Modifier.SHIFT)).on(this::saveAs);
+ * keys.action("file.save", "Save", Shortcut.of(Key.S, Modifier.CONTROL)).sends(commands, new Save());
+ * keys.action("file.save-as", "Save As", Shortcut.of(Key.S, Modifier.CONTROL, Modifier.SHIFT)).sends(commands, new SaveAs());
  * }
  *
  * That is the whole of the integration. Each line replaces a {@code gui.shortcut(...)}: the action is claimed on

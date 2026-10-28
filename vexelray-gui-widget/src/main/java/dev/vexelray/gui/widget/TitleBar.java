@@ -49,6 +49,10 @@ import dev.vexelray.text.TextLayout;
  */
 public final class TitleBar {
 
+    static {
+        Hosting.install();
+    }
+
     /** Caption button footprint — the Windows caption-button metrics, in density-independent pixels. */
     private static final Length BUTTON_W = Length.dp(46);
     private static final Length BAR_H = Length.dp(32);
@@ -409,10 +413,10 @@ public final class TitleBar {
      *
      * <p>Replacing rather than accumulating, like {@link #instruments}, and any time, before the mark or after.
      *
-     * <p>The {@code Runnable} is the host's form (the framework opening About); an application's is
-     * {@link #onMark(String, Sender, Object)}. Moving this one out of an application's reach is owed with T7.2's walk.
+     * <p>The host's form (the framework opening About), reached through {@code WidgetSeams}; an application's is
+     * {@link #onMark(String, Sender, Object)}.
      */
-    public TitleBar onMark(String tooltip, Runnable action) {
+    TitleBar onMark(String tooltip, Runnable action) {
         this.markTip = tooltip;
         this.markAction = action;
         markRegion();

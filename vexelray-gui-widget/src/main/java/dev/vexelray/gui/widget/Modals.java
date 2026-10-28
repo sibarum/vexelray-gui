@@ -208,30 +208,18 @@ public final class Modals implements AutoCloseable {
 
     /** A message with one "OK" button — the "your export finished" dialog. */
     public static void info(String title, String message) {
-        show(Modal.of(title, message).severity(Modal.Severity.INFO).defaultButton("OK", () -> { }));
+        show(Modal.of(title, message).severity(Modal.Severity.INFO).defaultButton("OK"));
     }
 
     /** Something went wrong, with one "OK" button — the "could not save the file" dialog. */
     public static void error(String title, String message) {
-        show(Modal.of(title, message).severity(Modal.Severity.ERROR).defaultButton("OK", () -> { }));
-    }
-
-    /**
-     * A yes/no question. {@code onConfirm} runs if the user takes the affirmative button, {@code onCancel} if
-     * they take Cancel, press Escape, or close the dialog — so "the user did not answer" is answered too, which
-     * is the case an application that only handles the yes leaves hanging.
-     */
-    public static void confirm(String title, String message, String confirmLabel,
-                               Runnable onConfirm, Runnable onCancel) {
-        show(Modal.of(title, message)
-                .severity(Modal.Severity.QUESTION)
-                .defaultButton(confirmLabel, onConfirm)
-                .cancelButton("Cancel", onCancel));
+        show(Modal.of(title, message).severity(Modal.Severity.ERROR).defaultButton("OK"));
     }
 
     /**
      * A yes/no question answered by message: {@code yes} is sent through {@code to} if the user takes the affirmative
-     * button, {@code no} if they take Cancel, press Escape, or close the dialog. The form for an application.
+     * button, {@code no} if they take Cancel, press Escape, or close the dialog, so "the user did not answer" is
+     * answered too, which is the case an application that only handles the yes leaves hanging.
      */
     public static <T> void confirm(String title, String message, String confirmLabel, Sender<T> to, T yes, T no) {
         show(Modal.of(title, message)
@@ -343,13 +331,12 @@ public final class Modals implements AutoCloseable {
     }
 
     /**
-     * Run a chosen button's action on the GUI thread, after the dialog's close has been asked for, so an action that
-     * puts up the next dialog does not race its own window's teardown. An application's button sends a message from
-     * here ({@link Modal#button(String, sibarum.atchung.Sender, Object)}).
+     * Send a chosen button's message, after the dialog's close has been asked for, so whoever puts up the next dialog
+     * on hearing it does not race this window's teardown.
      */
     private void run(Modal.Button chosen) {
         if (chosen != null) {
-            chosen.action().run();
+            chosen.press();
         }
     }
 

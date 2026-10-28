@@ -75,10 +75,11 @@ public final class Action {
     }
 
     /**
-     * What it does, in code: the widget library's form. Runs during the frame, like every claim. Until an action has
-     * a handler its chords are not claimed at all, so a declared but unimplemented action never swallows a key.
+     * What it does, in code: the keymap's own form, which {@link #sends} is built on. Runs during the frame, like every
+     * claim, so it is not an application's (vexelray-framework's threading.md, T7.2). Until an action has a handler its
+     * chords are not claimed at all, so a declared but unimplemented action never swallows a key.
      */
-    public Action on(Runnable handler) {
+    Action on(Runnable handler) {
         this.handler = handler;
         keymap.sync();
         return this;

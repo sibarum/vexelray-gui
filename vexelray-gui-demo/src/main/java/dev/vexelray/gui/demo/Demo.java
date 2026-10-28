@@ -1,5 +1,8 @@
 package dev.vexelray.gui.demo;
 
+import sibarum.atchung.Topic;
+import sibarum.atchung.Sender;
+import dev.vexelray.gui.widget.spi.WidgetSeams;
 import dev.vexelray.gui.core.Timing;
 import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.canvas.Color;
@@ -196,10 +199,14 @@ public final class Demo {
             // Closing the window is a *request* the application may refuse. Installed only when there is input
             // to answer it with: a dialog nobody can click would be a window that cannot be closed at all.
             if (input != null) {
-                app.onCloseRequest(request -> Modals.show(
-                        Modal.of("Quit the gallery?", "Window placement and zoom are saved either way.")
-                                .defaultButton("Quit", request::proceed)
-                                .cancelButton("Stay", request::cancel)));
+                // The host's, so its buttons run code: a close request is answered by proceeding or cancelling it.
+                WidgetSeams host = WidgetSeams.get();
+                app.onCloseRequest(request -> {
+                    Modal quit = Modal.of("Quit the gallery?", "Window placement and zoom are saved either way.");
+                    host.defaultButton(quit, "Quit", request::proceed);
+                    host.cancelButton(quit, "Stay", request::cancel);
+                    Modals.show(quit);
+                });
             }
 
             WindowFeed bridge = input == null ? null : new WindowFeed(input, gui);
@@ -291,15 +298,35 @@ public final class Demo {
      * {@link Settings} over one file each write back everything they hold, so the second save would undo the
      * first.
      */
+    /** A zoom key's message. */
+    private enum Zoom {
+        IN, OUT, RESET;
+
+        void apply(Gui gui) {
+            if (this == IN) {
+                gui.zoomIn();
+            } else if (this == OUT) {
+                gui.zoomOut();
+            } else {
+                gui.resetZoom();
+            }
+        }
+    }
+
     private static Keymap zoomKeys(Gui gui) {
         Keymap keys = new Keymap(gui).persist(AppHome.of(APP).settings("keys"));
+        // A chord sends a message, and the gallery hears it, as an application's view would: a key is never code run in
+        // the frame by the keymap.
+        Topic<Zoom> zoom = Topic.edge("demo.zoom", Zoom.class);
+        gui.bus().subscribe(zoom, z -> z.apply(gui));
+        Sender<Zoom> to = gui.bus().tick(() -> { }).inbox("zoom-keys").sender(zoom);
         // Numpad equivalents too, for keyboards where the main row needs a modifier to reach + at all.
         keys.action("view.zoom-in", "Zoom in", Shortcut.of(Key.EQUAL, Modifier.CONTROL),
-                Shortcut.of(Key.NUMPAD_ADD, Modifier.CONTROL)).on(gui::zoomIn);
+                Shortcut.of(Key.NUMPAD_ADD, Modifier.CONTROL)).sends(to, Zoom.IN);
         keys.action("view.zoom-out", "Zoom out", Shortcut.of(Key.MINUS, Modifier.CONTROL),
-                Shortcut.of(Key.NUMPAD_SUBTRACT, Modifier.CONTROL)).on(gui::zoomOut);
+                Shortcut.of(Key.NUMPAD_SUBTRACT, Modifier.CONTROL)).sends(to, Zoom.OUT);
         keys.action("view.zoom-reset", "Actual size", Shortcut.of(Key.DIGIT_0, Modifier.CONTROL),
-                Shortcut.of(Key.NUMPAD_0, Modifier.CONTROL)).on(gui::resetZoom);
+                Shortcut.of(Key.NUMPAD_0, Modifier.CONTROL)).sends(to, Zoom.RESET);
         return keys;
     }
 

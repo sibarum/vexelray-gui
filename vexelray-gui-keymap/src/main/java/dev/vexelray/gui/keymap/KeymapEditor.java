@@ -182,8 +182,11 @@ public final class KeymapEditor implements AutoCloseable {
         render();
     }
 
-    /** Run {@code then} after the Cancel button has reverted — to close the window the editor is in, say. */
-    public KeymapEditor onCancel(Runnable then) {
+    /**
+     * Run {@code then} after the Cancel button has reverted — to close the window the editor is in. The keymap
+     * module's own ({@link KeymapWindow}): code a view would run in the frame (vexelray-framework's threading.md, T7.2).
+     */
+    KeymapEditor onCancel(Runnable then) {
         this.onCancel = then == null ? () -> { } : then;
         return this;
     }

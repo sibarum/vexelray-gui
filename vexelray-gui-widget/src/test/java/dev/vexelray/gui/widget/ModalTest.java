@@ -50,7 +50,7 @@ class ModalTest {
     void aButtonWithoutAnActionStillWorks() {
         Modal m = Modal.of("Title", "Message").button("OK", null);
         assertEquals(1, m.buttons().size());
-        m.buttons().getFirst().action().run();   // must not throw
+        m.buttons().getFirst().press();   // must not throw
     }
 
     @Test
@@ -91,7 +91,7 @@ class ModalTest {
         Modal.Button go = m.defaultButton();
         assertTrue(go.isDefault());
         assertFalse(go.isCancel());
-        go.action().run();
+        go.press();
         assertEquals(1, runs.get());
     }
 
@@ -113,5 +113,17 @@ class ModalTest {
         assertTrue(Modals.width(three) > 460, "and long ones widen it: " + Modals.width(three));
 
         assertEquals(300, Modals.width(three.size(300, 200)), "an explicit size is the caller's call");
+    }
+
+    /** What a dialog answers is data on its buttons: the message each sends, readable before it is shown. */
+    @Test
+    void aButtonDeclaresTheMessageItSends() {
+        var inbox = sibarum.atchung.Atchung.create().tick(() -> { }).inbox("view");
+        sibarum.atchung.Sender<String> answer = inbox.sender(sibarum.atchung.Topic.edge("test.answer", String.class));
+        Modal m = Modal.of("T", "M").defaultButton("Save", answer, "save").cancelButton("Cancel", answer, "keep")
+                .button("Later", answer, "later");
+        assertEquals("save", m.defaultButton().message());
+        assertEquals("keep", m.cancelButton().message());
+        assertNull(Modal.of("T", "M").defaultButton("OK").defaultButton().message(), "an OK only puts it away");
     }
 }

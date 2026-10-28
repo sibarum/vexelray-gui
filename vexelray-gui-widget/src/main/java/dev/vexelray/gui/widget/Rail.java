@@ -62,6 +62,10 @@ import java.util.function.Consumer;
  */
 public final class Rail {
 
+    static {
+        Hosting.install();
+    }
+
     /**
      * The panel on show, by its key, or null when the panel shuts: published at the moment the selection changes, while
      * the panel is <b>still on show</b>, whether it is arriving or leaving, because the motion has not started yet. A
@@ -351,11 +355,8 @@ public final class Rail {
         return action(icon, () -> to.send(message));
     }
 
-    /**
-     * {@link #action(Node, Sender, Object)} running {@code act}: the widget library's form, owed out of an
-     * application's reach with T7.2's API walk.
-     */
-    public Rail action(Node icon, Runnable act) {
+    /** {@link #action(Node, Sender, Object)} running {@code act}: the host's form, reached through {@code WidgetSeams}. */
+    Rail action(Node icon, Runnable act) {
         Node rule = gui.box().width(Length.percent(70)).height(Length.dp(1))
                 .margin(Length.rem(0.15f))
                 .background(Role.LINE);

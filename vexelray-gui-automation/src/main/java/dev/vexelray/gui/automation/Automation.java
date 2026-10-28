@@ -211,7 +211,7 @@ public final class Automation implements Commands {
      */
     private synchronized void holdPointer() {
         if (hostWarp == null) {
-            hostWarp = gui.pointerWarp();
+            hostWarp = Seams.of(gui).pointerWarp();
             Seams.of(gui).onPointerWarp(cursor::carry);
         }
     }

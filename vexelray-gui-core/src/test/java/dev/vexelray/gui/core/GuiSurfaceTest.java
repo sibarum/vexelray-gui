@@ -70,6 +70,21 @@ class GuiSurfaceTest {
         assertEquals(Set.of(), states, "a State's onCommit runs code on the committing thread: hand it out from Seams");
     }
 
+    /**
+     * A function handed back is the other half of a seam: whoever holds it can run it, or run what it was given, in the
+     * frame. The pointer warp the host installed was such a getter, and it is on {@link Seams} with the setter.
+     */
+    @Test
+    void guiReturnsNoFunction() {
+        Set<String> returning = new TreeSet<>();
+        for (Method m : Gui.class.getMethods()) {
+            if (m.getDeclaringClass() != Object.class && isFunction(m.getReturnType())) {
+                returning.add(m.getName());
+            }
+        }
+        assertEquals(Set.of(), returning, "a function returned from Gui is a seam a view could reach: move it to Seams");
+    }
+
     /** A functional interface, an executor or a future: what T7.2 names. */
     private static boolean isFunction(Class<?> type) {
         return type.isAnnotationPresent(FunctionalInterface.class)

@@ -546,7 +546,7 @@ class AutomationTest {
 
             // Letting go of the hand gives the host its rides back, for whoever takes over.
             driver.letGo();
-            assertTrue(gui.pointerWarp() == host, "the host's warp is restored");
+            assertTrue(Seams.of(gui).pointerWarp() == host, "the host's warp is restored");
         }
     }
 

@@ -359,7 +359,7 @@ and a paste land in the same stack whichever way they were made.
 
 ```java
 Keymap keys = new Keymap(gui).persist(AppHome.of("editor").settings("keys"));
-keys.action("file.save", "Save", Shortcut.of(Key.S, Modifier.CONTROL)).on(this::save);
+keys.action("file.save", "Save", Shortcut.of(Key.S, Modifier.CONTROL)).sends(commands, new Save());
 titleBar.instruments(List.of(SaveScreenshot.instrument(), KeymapWindow.instrument(app, gui, keys)));
 ```
 

@@ -1095,13 +1095,6 @@ public final class Gui implements AutoCloseable {
         return this;
     }
 
-    /**
-     * The warp installed now, {@link dev.vexelray.gui.core.input.PointerWarp#NONE} if none. For a second pointer
-     * that borrows the seam — an automation driver while it holds the hand — and has to give it back.
-     */
-    public dev.vexelray.gui.core.input.PointerWarp pointerWarp() {
-        return input.pointerWarp();
-    }
 
     /**
      * Begin carrying the pointer along with an animation, until the hand takes it back — see
@@ -1985,6 +1978,11 @@ public final class Gui implements AutoCloseable {
 
     /** The seams' implementation: an inner class, so each one is the old method on this tree, moved. */
     private final class GuiSeams extends dev.vexelray.gui.core.spi.Seams {
+
+        @Override
+        public dev.vexelray.gui.core.input.PointerWarp pointerWarp() {
+            return input.pointerWarp();
+        }
 
         @Override
         public dev.vexelray.gui.core.spi.ScrollSource scrollSource(Scroller scroller, boolean vertical) {

@@ -11,8 +11,8 @@ by name. Which chord reaches the handler is no longer the code's to fix:
 
 ```java
 Keymap keys = new Keymap(gui).persist(AppHome.of("editor").settings("keys"));
-keys.action("file.save", "Save", Shortcut.of(Key.S, Modifier.CONTROL)).on(this::save);
-keys.action("file.save-as", "Save As", Shortcut.of(Key.S, Modifier.CONTROL, Modifier.SHIFT)).on(this::saveAs);
+keys.action("file.save", "Save", Shortcut.of(Key.S, Modifier.CONTROL)).sends(commands, new Save());
+keys.action("file.save-as", "Save As", Shortcut.of(Key.S, Modifier.CONTROL, Modifier.SHIFT)).sends(commands, new SaveAs());
 keys.action("view.zen", "Zen mode").on(ui::toggleZen);          // no default: the user may give it one
 ```
 

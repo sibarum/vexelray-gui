@@ -372,6 +372,12 @@ public abstract class Seams {
     public abstract Seams onPointerWarp(dev.vexelray.gui.core.input.PointerWarp warp);
 
     /**
+     * The warp installed now, {@link dev.vexelray.gui.core.input.PointerWarp#NONE} if none. For a second pointer that
+     * borrows the seam — an automation driver while it holds the hand — and has to give it back.
+     */
+    public abstract dev.vexelray.gui.core.input.PointerWarp pointerWarp();
+
+    /**
      * Install the tree's clock, which runs every widget's {@link dev.vexelray.gui.core.Timing}: the host's, once, as a
      * window's motion is set up. Replaces any before it. Until one is installed a timing lands at once.
      */

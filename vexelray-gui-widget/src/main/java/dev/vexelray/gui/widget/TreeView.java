@@ -48,7 +48,6 @@ import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
-import java.util.function.BiPredicate;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
@@ -91,11 +90,12 @@ import java.util.function.Predicate;
  * only known forwards, so it walks from the top remembering the last match it passed and stops at the row the
  * selection is on.
  *
- * <p><b>Every row carries a menu, and everything on it is an {@link Action}.</b> Expand and Collapse are two of
- * them — recursive, because the single-level flip is what the disclosure control and the arrow keys already are —
- * and an application's own commands are the same kind of thing, with the same icon, the same per-item
- * availability, and the same place in the queue. Which is the other half: <b>the tree runs one action at a time</b>
- * (see {@link Job}), so triggering a second one supersedes the first wherever it had got to.
+ * <p><b>Every row carries a menu.</b> The tree's own lines are Expand and Collapse — recursive, because the
+ * single-level flip is what the disclosure control and the arrow keys already are — and Cut, Copy and Paste where
+ * it moves things. An application's commands are {@link Action}s: declared once, offered per row as each row's
+ * {@link Entry} says, and announced on {@link #CHOSEN} when chosen, so a right click runs nothing of the
+ * application's. <b>The tree runs one walk at a time</b> — expand-all, find, reveal — and starting another, or
+ * choosing any line, stops the one running wherever it had got to.
  *
  * <p>Scrolling, clipping and scrollbars come from the container itself (overflow is a layout fact, not a widget
  * feature), so a tree taller than its box scrolls with no code here. Which container is the point: {@link #node()}
@@ -158,6 +158,29 @@ public final class TreeView<T> implements AutoCloseable {
     public static final Topic<Placed> PLACED = Topic.edge("vexelray.gui.tree.placed", Placed.class);
 
     /**
+     * One of the application's {@link Action}s chosen from a row's menu. The tree does nothing else for it: the work
+     * is the application's, done where its logic runs. Every one, in order.
+     */
+    public static final Topic<Chosen> CHOSEN = Topic.edge("vexelray.gui.tree.chosen", Chosen.class);
+
+    /** The id of the tree's own Expand: everything under the row, opened. For an {@link Entry} to {@link Entry#hides hide}. */
+    public static final String EXPAND = "expand";
+
+    /** The id of the tree's own Collapse: everything under the row, shut. */
+    public static final String COLLAPSE = "collapse";
+
+    /** The id of the tree's own Cut, on the menu where the tree moves things. */
+    public static final String CUT = "cut";
+
+    /** The id of the tree's own Copy, on the menu where the tree copies things. */
+    public static final String COPY = "copy";
+
+    /** The id of the tree's own Paste, on the menu where the tree takes anything at all. */
+    public static final String PASTE = "paste";
+
+    private static final java.util.Set<String> BUILT_IN = java.util.Set.of(EXPAND, COLLAPSE, CUT, COPY, PASTE);
+
+    /**
      * The hierarchy has changed: the tree that is told asks again for every level it has listed, as
      * {@link #refresh()} does. The last in a frame, since a second in the same frame would ask the same questions.
      */
@@ -197,6 +220,14 @@ public final class TreeView<T> implements AutoCloseable {
 
     /** The tree at {@code tree} should look at its hierarchy again: something under it has changed. */
     public record Refresh(String tree) implements Addressed {
+        @Override
+        public Object address() {
+            return tree;
+        }
+    }
+
+    /** The action {@code action} was chosen from the menu of {@code item}'s row in the tree at {@code tree}. */
+    public record Chosen(String tree, String action, Object item) implements Addressed {
         @Override
         public Object address() {
             return tree;
@@ -269,13 +300,34 @@ public final class TreeView<T> implements AutoCloseable {
      * drop succeeds: the application still refuses what only its model knows when it hears {@link #PLACED}. This decides whether
      * the band is offered at all; that decides what happens in it.
      *
-     * @param icon drawn before the label — a folder, a file's type, a class — or null for none. A tree none of whose
-     *             entries names an icon is laid out exactly as it was before icons existed.
+     * <p><b>What the row's menu offers is part of the entry too</b> ({@code hidden}, {@code greyed}), for the same
+     * reason: whether Delete applies to this file is a fact about the file, known to whoever lists it, and asking it
+     * at the right click would run the application's code in the frame (vexelray-framework's threading.md, T7.5).
+     * Every {@link Action} is shown and enabled unless the entry says otherwise. When the facts change, the
+     * application sends {@link #REFRESH}, as it does for a new label. The ids are the actions' own and the tree's
+     * {@link #EXPAND}, {@link #COLLAPSE}, {@link #CUT}, {@link #COPY} and {@link #PASTE}; hiding one of the tree's own
+     * takes it off this row's menu, and when it is enabled stays the tree's.
+     *
+     * @param icon   drawn before the label — a folder, a file's type, a class — or null for none. A tree none of whose
+     *               entries names an icon is laid out exactly as it was before icons existed.
+     * @param hidden the actions not on this row's menu at all: Rename on a header, Extract on what is not an archive
+     * @param greyed the actions on this row's menu that cannot be chosen now: a greyed line teaches where it lives
+     * @param find   what Ctrl+F looks for the query in, ignoring case: the label unless the entry says otherwise, such
+     *               as a whole path, or a SKU beside the name
      */
-    public record Entry(Object item, String label, IconSource icon, boolean branch, boolean acceptsChildren) {
+    public record Entry(Object item, String label, IconSource icon, boolean branch, boolean acceptsChildren,
+                        java.util.Set<String> hidden, java.util.Set<String> greyed, String find) {
         public Entry {
             java.util.Objects.requireNonNull(item, "item");
             label = label == null ? String.valueOf(item) : label;
+            hidden = hidden == null ? java.util.Set.of() : java.util.Set.copyOf(hidden);
+            greyed = greyed == null ? java.util.Set.of() : java.util.Set.copyOf(greyed);
+            find = find == null ? label : find;
+        }
+
+        /** An entry whose menu offers everything, found by its label. */
+        public Entry(Object item, String label, IconSource icon, boolean branch, boolean acceptsChildren) {
+            this(item, label, icon, branch, acceptsChildren, null, null, null);
         }
 
         /** An item that does not open, and takes no drop into it. */
@@ -290,12 +342,33 @@ public final class TreeView<T> implements AutoCloseable {
 
         /** This entry, drawn with {@code icon}. */
         public Entry icon(IconSource icon) {
-            return new Entry(item, label, icon, branch, acceptsChildren);
+            return new Entry(item, label, icon, branch, acceptsChildren, hidden, greyed, find);
         }
 
         /** This entry, taking a drop into it or not: a leaf that holds things, or a branch that refuses them. */
         public Entry acceptsChildren(boolean accepts) {
-            return new Entry(item, label, icon, branch, accepts);
+            return new Entry(item, label, icon, branch, accepts, hidden, greyed, find);
+        }
+
+        /** This entry, with the actions {@code ids} off its menu as well as any it already hides. */
+        public Entry hides(String... ids) {
+            return new Entry(item, label, icon, branch, acceptsChildren, union(hidden, ids), greyed, find);
+        }
+
+        /** This entry, with the actions {@code ids} greyed on its menu as well as any it already greys. */
+        public Entry greys(String... ids) {
+            return new Entry(item, label, icon, branch, acceptsChildren, hidden, union(greyed, ids), find);
+        }
+
+        /** This entry, found by Ctrl+F through {@code text} rather than its label. */
+        public Entry find(String text) {
+            return new Entry(item, label, icon, branch, acceptsChildren, hidden, greyed, text);
+        }
+
+        private static java.util.Set<String> union(java.util.Set<String> had, String... ids) {
+            java.util.Set<String> all = new java.util.HashSet<>(had);
+            all.addAll(List.of(ids));
+            return all;
         }
     }
 
@@ -322,101 +395,69 @@ public final class TreeView<T> implements AutoCloseable {
     }
 
     /**
-     * The tree runs one action at a time, and a job is how a running one finds out it is no longer the one: the
-     * instant another action is triggered, every job handed out before it is dead, and stays dead.
+     * The tree runs one walk at a time — expand-all, collapse-all, find, reveal — and a job is how a running one finds
+     * out it is no longer the one: the instant another starts, or a line is chosen from a row's menu, every job handed
+     * out before it is dead, and stays dead.
      *
-     * <p><b>Superseded, not interrupted.</b> The tree cannot pull a thread out of application code, so a body that
-     * never asks simply runs to the end — what is guaranteed is that the question is always answerable. The built-in
-     * walks ask between rows and whenever a level they waited for lands, so a superseded walk asks for nothing more;
-     * a request already sent is answered, and the answer still builds its level, which is never wrong to have.
+     * <p><b>Superseded, not interrupted.</b> A walk asks between rows and whenever a level it waited for lands, so a
+     * superseded walk asks for nothing more; a request already sent is answered, and the answer still builds its
+     * level, which is never wrong to have. The tree's own: an application's work, started by {@link #CHOSEN}, runs
+     * where its logic does, and stops itself when it hears the next.
      */
     @FunctionalInterface
-    public interface Job {
-        /** Whether this action is still the tree's current one. */
+    private interface Job {
+        /** Whether this walk is still the tree's current one. */
         boolean live();
     }
 
     /**
-     * What an {@link Action} does: told which item it was invoked on, and which job it is running as. Runs on the GUI
-     * thread when the item is chosen, so it must not block; work that does belongs to the application's logic, sent
-     * a message from here. One of the function-valued seams owed with vexelray-framework's T7.2 walk.
+     * One of the application's commands on the row menu: an id, a mark and a label, and nothing that runs. Choosing
+     * it publishes {@link Chosen} on {@link #CHOSEN} with the id and the row's item, and the application does the work
+     * where its logic runs (vexelray-framework's threading.md, T7.2 and T7.5).
+     *
+     * <p>Which rows offer it is declared with the rows: an {@link Entry} {@link Entry#hides hides} or
+     * {@link Entry#greys greys} it by id. <b>Absent and greyed say different things</b>, so both are there rather
+     * than one standing in for the other: greyed is for a command that belongs on this kind of row but does not apply
+     * now, and teaches where the command lives; hidden is for one that has no business on this row at all, where a
+     * permanently greyed line would be furniture that never lights up.
+     *
+     * @param id    what {@link Chosen#action()} carries, and what an entry names it by: unique in the tree, and none of
+     *              the tree's own ({@link #EXPAND} and the rest)
+     * @param icon  the glyph drawn beside the label, or null
+     * @param mark  the icon from the set drawn beside the label, or null
+     * @param label the text shown
      */
-    @FunctionalInterface
-    public interface Command<T> {
-        /** Do the work, returning early once {@code job} is no longer {@link Job#live()}. */
-        void run(T item, Job job);
+    public record Action(String id, String icon, IconSource mark, String label) {
+        public Action {
+            java.util.Objects.requireNonNull(id, "id");
+            java.util.Objects.requireNonNull(label, "label");
+            if (id.isBlank()) {
+                throw new IllegalArgumentException("an action's id is what an entry names it by, so it has one");
+            }
+        }
+
+        /** A command with no mark. */
+        public static Action of(String id, String label) {
+            return new Action(id, null, null, label);
+        }
+
+        /** A command marked with {@code icon}, a glyph, or null for none. */
+        public static Action of(String id, String icon, String label) {
+            return new Action(id, icon, null, label);
+        }
+
+        /** A command marked with {@code mark}, an icon from the set. */
+        public static Action of(String id, IconSource mark, String label) {
+            return new Action(id, null, mark, label);
+        }
     }
 
     /**
-     * One command on the row menu: a mark, a label, what it does, and — per item — whether it is offered at all
-     * and whether it can be chosen.
-     *
-     * <p><b>Absent and greyed say different things</b>, so both are here rather than one standing in for the other.
-     * {@link #enabledWhen} is for a command that belongs on this kind of row but does not apply to this one right
-     * now — a greyed line teaches where the command lives. {@link #shownWhen} is for a command that has no business
-     * on this row at all — Rename on a header, Extract on something that is not an archive — where a permanently
-     * greyed line would be furniture that never lights up.
-     *
-     * <p>Built and tuned before the tree is shown; the predicates are asked at the moment of each right click, on
-     * the GUI thread, so they must be cheap.
+     * One of the tree's own lines: library code, which the tree runs itself, with when it is offered decided from the
+     * tree's own state. The application can only take one off a row, by its id on the {@link Entry}.
      */
-    public static final class Action<T> {
-
-        private final String icon;
-        private final IconSource mark;
-        private final String label;
-        private final Command<T> body;
-        private volatile Predicate<T> shown = item -> true;
-        private volatile Predicate<T> enabled = item -> true;
-
-        private Action(String icon, IconSource mark, String label, Command<T> body) {
-            this.icon = icon;
-            this.mark = mark;
-            this.label = label;
-            this.body = body == null ? (item, job) -> { } : body;
-        }
-
-        /** A command with no mark, offered on every row by default. */
-        public static <T> Action<T> of(String label, Command<T> body) {
-            return new Action<>(null, null, label, body);
-        }
-
-        /** A command marked with {@code icon} (a glyph, or null for none), offered on every row by default. */
-        public static <T> Action<T> of(String icon, String label, Command<T> body) {
-            return new Action<>(icon, null, label, body);
-        }
-
-        /** A command marked with {@code mark}, an icon from the set, offered on every row by default. */
-        public static <T> Action<T> of(IconSource mark, String label, Command<T> body) {
-            return new Action<>(null, mark, label, body);
-        }
-
-        /** Offer this action only for items {@code test} accepts; for the rest it is not on the menu at all. */
-        public Action<T> shownWhen(Predicate<T> test) {
-            this.shown = test == null ? item -> true : test;
-            return this;
-        }
-
-        /** Show this action greyed for items {@code test} rejects — it belongs here, it just does not apply. */
-        public Action<T> enabledWhen(Predicate<T> test) {
-            this.enabled = test == null ? item -> true : test;
-            return this;
-        }
-
-        /** The glyph drawn beside the label, or null. */
-        public String icon() {
-            return icon;
-        }
-
-        /** The icon from the set drawn beside the label, or null. */
-        public IconSource mark() {
-            return mark;
-        }
-
-        /** The text shown. */
-        public String label() {
-            return label;
-        }
+    private record Line<T>(String id, Icon mark, String label, BiConsumer<T, Job> body,
+                           Predicate<T> shown, Predicate<T> enabled) {
     }
 
     /** Indent per depth level, in em, so the stagger scales with the text it indents. */
@@ -442,9 +483,9 @@ public final class TreeView<T> implements AutoCloseable {
     /** The gap between a row's parts, in em. The indent carries one more, where it used to sit beside the chevron. */
     private static final float GAP_EM = 0.25f;
 
-    private static final Shortcut CUT = Shortcut.of(Key.X, Modifier.CONTROL);
-    private static final Shortcut COPY = Shortcut.of(Key.C, Modifier.CONTROL);
-    private static final Shortcut PASTE = Shortcut.of(Key.V, Modifier.CONTROL);
+    private static final Shortcut CUT_CHORD = Shortcut.of(Key.X, Modifier.CONTROL);
+    private static final Shortcut COPY_CHORD = Shortcut.of(Key.C, Modifier.CONTROL);
+    private static final Shortcut PASTE_CHORD = Shortcut.of(Key.V, Modifier.CONTROL);
 
     /** The carried label's fill where releasing would place it, and where it would not: barely see-through. */
     private static final Paint CARRY_ACCEPTS = Role.ACTION.alpha(0.92f);
@@ -475,6 +516,10 @@ public final class TreeView<T> implements AutoCloseable {
         /** What the application last said the item is called, and whether it takes a drop into it. */
         String name;
         boolean acceptsChildren;
+        /** What its menu leaves off and greys, and what Ctrl+F looks in: the entry's, as last told. */
+        java.util.Set<String> hidden;
+        java.util.Set<String> greyed;
+        String key;
         /** The walks waiting for this row's children to arrive, resumed when they do. */
         final List<Walk> waiters = new ArrayList<>(0);
         /** The pointer's state on the row as a whole, and whether it is on the disclosure. Guarded by the tree. */
@@ -500,6 +545,9 @@ public final class TreeView<T> implements AutoCloseable {
             this.canExpand = entry.branch();
             this.name = entry.label();
             this.acceptsChildren = entry.acceptsChildren();
+            this.hidden = entry.hidden();
+            this.greyed = entry.greyed();
+            this.key = entry.find();
 
             this.spacer = gui.box().width(indent(depth)).scroll(false, false);
             // Turned, never moved: hit-inert, so a click on the column reaches the column whatever angle it is at.
@@ -626,11 +674,9 @@ public final class TreeView<T> implements AutoCloseable {
             // not anything ends up on the menu, so it stays a click handler rather than a side effect of building
             // one. It is also what makes the menu's commands legible: they act on the row that just lit up.
             Seams.of(gui).onContextClick(rowNode, e -> select(this, true));
-            // Two sources, and the order is the menu's shape: what the tree knows how to do to any row, then what
-            // the application knows about this one. Both go on through the same door — the app's items are wrapped
-            // so that choosing one supersedes whatever action was running, exactly as choosing a built-in does.
-            Seams.of(gui).onContextMenu(rowNode, menu -> rowMenu(item, menu));
-            Seams.of(gui).onContextMenu(rowNode, menu -> contextMenu.accept(item, new Preempting(menu)));
+            // The menu is the tree's own lines, then the application's actions, each offered as this row's entry
+            // last said: built here from what the tree already holds, with nothing of the application's run.
+            Seams.of(gui).onContextMenu(rowNode, menu -> rowMenu(this, menu));
             // Registered whatever the row is today, and guarded when it runs rather than when it is built: a
             // leaf can gain children (a reconcile after a drop moved one into it), and a handler that was never
             // installed cannot be installed later without rebuilding the row and losing everything else on it.
@@ -710,6 +756,9 @@ public final class TreeView<T> implements AutoCloseable {
             icon.icon(entry.icon());
             icon.node().visible(entry.icon() != null);
             acceptsChildren = entry.acceptsChildren();
+            hidden = entry.hidden();
+            greyed = entry.greyed();
+            key = entry.find();
             boolean now = entry.branch();
             if (now == canExpand) {
                 return;
@@ -801,24 +850,19 @@ public final class TreeView<T> implements AutoCloseable {
     private volatile CursorShape rowCursor;
     /** The row the pointer is on, or null. Guarded by {@code this}. */
     private Row hoveredRow;
-    private volatile BiConsumer<T, MenuSink> contextMenu = (item, menu) -> { };
 
     /**
-     * Which action is the current one. Every {@link Job} is a captured value of this counter compared back against
-     * it, so starting an action is one increment and "am I still it?" is one read — no registry of running work,
+     * Which walk is the current one. Every {@link Job} is a captured value of this counter compared back against
+     * it, so starting one is one increment and "am I still it?" is one read — no registry of running work,
      * nothing to unregister, and no way for a job to outlive its own answer.
      */
     private final AtomicLong actions = new AtomicLong();
 
-    /** The two the tree ships. Public handles, because their availability is the application's to retune. */
-    private final Action<T> expandAction;
-    private final Action<T> collapseAction;
-    private final Action<T> cutAction;
-    private final Action<T> copyAction;
-    private final Action<T> pasteAction;
+    /** The tree's own lines, in menu order, with a rule after Collapse. */
+    private final List<Line<T>> lines;
 
-    /** What the application added, in the order it added it. Read on every right click, written at build time. */
-    private final List<Action<T>> extraActions = new CopyOnWriteArrayList<>();
+    /** What the application declared, in the order it declared it. Read on every right click, written at build time. */
+    private final List<Action> extraActions = new CopyOnWriteArrayList<>();
 
     /**
      * The find bar: null until {@link #searchable} first asks for one, then hidden until Ctrl+F, and no part of
@@ -831,12 +875,6 @@ public final class TreeView<T> implements AutoCloseable {
      * is beside the tree and never hit there, so it changes nothing under the pointer.
      */
     private final Unclip unclip;
-
-    /**
-     * How a row answers a query, or null for a case-insensitive substring of its label. Replaceable: only the
-     * application knows what its items are searchable by.
-     */
-    private volatile BiPredicate<T, String> matcher;
 
     /**
      * Build a tree called {@code name} and ask for its roots. On the GUI thread, where every widget is built.
@@ -859,25 +897,24 @@ public final class TreeView<T> implements AutoCloseable {
         ContextMenu.presentOn(gui);   // rows carry whatever menu the application declares; this shows it
         // Marked plus and minus, the set's own for "open everything under it" and "shut it": the row's chevron
         // opens one level, and these walk the whole subtree, so they are told apart from it on purpose. Enabled by
-        // what the row is — a leaf has nothing to expand, a shut row has nothing to collapse — which is a default
-        // the application can replace, and a reason it is stated as a predicate rather than baked into the walk.
-        this.expandAction = Action.<T>of(Icon.PLUS, "Expand", this::expandDeep).enabledWhen(this::canOpen);
-        this.collapseAction = Action.<T>of(Icon.MINUS, "Collapse", this::collapseDeep).enabledWhen(this::isOpen);
+        // what the row is — a leaf has nothing to expand, a shut row has nothing to collapse.
+        Predicate<T> always = item -> true;
         // The transfer commands, on the menu as well as on the chords — a cut you can only reach by knowing the
         // chord is half a feature, and the menu is where a user finds out that a tree can do this at all.
         //
         // Shown only where the tree accepts transfers, because reorderable() is what makes any of them mean
         // anything; hidden rather than greyed, since a tree that will never take a paste is not a tree where
-        // Paste "does not apply right now".
-        this.cutAction = Action.<T>of(Icon.CUT, "Cut", (item, job) -> take(item, DropEffect.MOVE))
-                .shownWhen(item -> offers(DropEffect.MOVE));
-        this.copyAction = Action.<T>of(Icon.COPY, "Copy", (item, job) -> take(item, DropEffect.COPY))
-                .shownWhen(item -> offers(DropEffect.COPY));
-        // Greyed rather than hidden, because this one genuinely is "not right now": there is nothing in hand,
-        // and the entry disappearing would leave the user wondering where the command went between two clicks.
-        this.pasteAction = Action.<T>of(Icon.PASTE, "Paste", (item, job) -> paste(item))
-                .shownWhen(item -> effects != null)
-                .enabledWhen(item -> gui.transfer().offers(itemType));
+        // Paste "does not apply right now". Paste is greyed rather than hidden when nothing is in hand, because that
+        // genuinely is "not right now", and the line disappearing would leave the user wondering where it went.
+        this.lines = List.of(
+                new Line<>(EXPAND, Icon.PLUS, "Expand", this::expandDeep, always, this::canOpen),
+                new Line<>(COLLAPSE, Icon.MINUS, "Collapse", this::collapseDeep, always, this::isOpen),
+                new Line<>(CUT, Icon.CUT, "Cut", (item, job) -> take(item, DropEffect.MOVE),
+                        item -> offers(DropEffect.MOVE), always),
+                new Line<>(COPY, Icon.COPY, "Copy", (item, job) -> take(item, DropEffect.COPY),
+                        item -> offers(DropEffect.COPY), always),
+                new Line<>(PASTE, Icon.PASTE, "Paste", (item, job) -> paste(item),
+                        item -> effects != null, item -> gui.transfer().offers(itemType)));
         // The frame and the scroller are two boxes, not one. The frame carries the tree's own look and holds the
         // chrome; the rows go inside a scroller that fills what is left of it. One box could not do both: the bar
         // would be content, and content scrolls.
@@ -907,9 +944,9 @@ public final class TreeView<T> implements AutoCloseable {
         Seams.of(gui).onKey(this.root, this::onKey);
         // Cut, copy and paste, claimed FOCUSED so they belong to the tree only while it holds focus -- a text
         // field in the same window keeps its own, and neither has to know about the other.
-        Seams.of(gui).claim(this.root, CUT, ClaimScope.FOCUSED, () -> take(selectedItem(), DropEffect.MOVE));
-        Seams.of(gui).claim(this.root, COPY, ClaimScope.FOCUSED, () -> take(selectedItem(), DropEffect.COPY));
-        Seams.of(gui).claim(this.root, PASTE, ClaimScope.FOCUSED, () -> paste(selectedItem()));
+        Seams.of(gui).claim(this.root, CUT_CHORD, ClaimScope.FOCUSED, () -> take(selectedItem(), DropEffect.MOVE));
+        Seams.of(gui).claim(this.root, COPY_CHORD, ClaimScope.FOCUSED, () -> take(selectedItem(), DropEffect.COPY));
+        Seams.of(gui).claim(this.root, PASTE_CHORD, ClaimScope.FOCUSED, () -> paste(selectedItem()));
 
         // No find bar until searchable(true) asks for one: a tree nobody searches carries nothing for it.
         root.children(scrolling.node());
@@ -1668,53 +1705,35 @@ public final class TreeView<T> implements AutoCloseable {
     }
 
     /**
-     * Give every row a context menu. The row is selected first — the menu that opens is about the row under the
-     * pointer, so that row must visibly become the subject — and then this is asked what should be on it, with the
-     * item in hand. That is the context a tree can add that the framework cannot: which <em>thing</em> was clicked.
+     * Put {@code action} on every row's menu, after the tree's own lines and behind a rule, in the order actions are
+     * declared. The row is selected first — the menu that opens is about the row under the pointer, so that row must
+     * visibly become the subject — and choosing the line publishes {@link Chosen} on {@link #CHOSEN}. Which rows
+     * offer it, and which grey it, each row's {@link Entry} says.
      *
-     * <p>Runs on the GUI thread at the moment of the click. Contributing nothing still leaves the tree's own
-     * items on the menu; what this adds lands after them.
-     *
-     * <p>This is the free-form door — anything a {@link MenuSink} can express, decided at click time. An
-     * application whose commands <em>are</em> commands on the item, with a mark and an availability, wants
-     * {@link #action} instead: the difference is that an {@code Action} is a peer of Expand and Collapse and the
-     * tree runs it, where a source contributes lines and runs them itself. Either way the action is one of the
-     * tree's: choosing anything from a row's menu supersedes whatever was running.
-     */
-    public TreeView<T> onContextMenu(BiConsumer<T, MenuSink> source) {
-        this.contextMenu = source == null ? (item, menu) -> { } : source;
-        return this;
-    }
-
-    /**
-     * Add a command to every row's menu, after Expand and Collapse and behind a rule. Added actions appear in the
-     * order they were added, each shown, greyed or dropped per item by its own predicates.
+     * <p>Choosing any line stops the walk the tree was running — an expand-all still unfolding underneath the thing
+     * the user chose instead. Work the application started for an earlier {@code Chosen} is the application's to stop.
      *
      * {@snippet :
-     * tree.action(TreeView.Action.<Path>of("×", "Delete", (path, job) -> delete(path))
-     *         .enabledWhen(Files::isWritable)
-     *         .shownWhen(path -> !path.equals(root)));
+     * tree.action(TreeView.Action.of("delete", "×", "Delete"));
+     * gui.mailbox(TreeView.CHOSEN, tree.address(), chosen -> outbox.send(new Delete((Path) chosen.item())));
      * }
+     *
+     * @throws IllegalArgumentException when the id is one of the tree's own, or another action already has it
      */
-    public TreeView<T> action(Action<T> action) {
-        if (action != null) {
-            extraActions.add(action);
+    public TreeView<T> action(Action action) {
+        java.util.Objects.requireNonNull(action, "action");
+        if (BUILT_IN.contains(action.id())) {
+            throw new IllegalArgumentException("'" + action.id() + "' is the tree's own line; hide it on an entry, "
+                    + "or give this action an id of its own");
         }
+        for (Action had : extraActions) {
+            if (had.id().equals(action.id())) {
+                throw new IllegalArgumentException("two actions with the id '" + action.id() + "' could not be told "
+                        + "apart in what CHOSEN carries");
+            }
+        }
+        extraActions.add(action);
         return this;
-    }
-
-    /**
-     * The built-in recursive Expand, so an application can retune it: {@code shownWhen}/{@code enabledWhen} to
-     * change when it is offered, or {@code shownWhen(item -> false)} to take it off the menu entirely. Enabled by
-     * default for any row that can open at all.
-     */
-    public Action<T> expandAction() {
-        return expandAction;
-    }
-
-    /** The built-in recursive Collapse — the twin of {@link #expandAction}, enabled for any row that is open. */
-    public Action<T> collapseAction() {
-        return collapseAction;
     }
 
     /**
@@ -1969,23 +1988,13 @@ public final class TreeView<T> implements AutoCloseable {
     // --- find: Ctrl+F, and the search that is an action like any other ---
 
     /**
-     * How a row answers a query. The default is a case-insensitive substring of the row's label, which is what a
-     * user typing into a find bar means by "search" — and wrong for exactly the applications that know better: a
-     * filesystem tree searched by full path, a symbol tree searched by kind, an inventory searched by SKU.
-     *
-     * <p>Asked on the GUI thread, in the frame, once per row the walk reaches: a pure test of the item, which must
-     * not block. It is one of the function-valued seams owed with vexelray-framework's T7.2 walk.
+     * Whether {@code row} answers {@code query}: its entry's {@link Entry#find find} text holding the query, ignoring
+     * case. The label unless the entry says otherwise, which is what a user typing into a find bar means by "search";
+     * an application that knows better (a filesystem searched by whole path, an inventory by SKU) says so on the
+     * entry, so the walk runs nothing of the application's in the frame.
      */
-    public TreeView<T> matcher(BiPredicate<T, String> test) {
-        this.matcher = test;
-        return this;
-    }
-
-    /** Whether {@code row} answers {@code query}: the application's matcher, or its label holding the query. */
     private boolean matches(Row row, String query) {
-        BiPredicate<T, String> test = matcher;
-        return test != null ? test.test(row.item, query)
-                : row.name.toLowerCase().contains(query.toLowerCase());
+        return row.key.toLowerCase().contains(query.toLowerCase());
     }
 
     /**
@@ -2296,78 +2305,43 @@ public final class TreeView<T> implements AutoCloseable {
 
     // --- actions: the row menu, and the one-at-a-time rule ---
 
-    /** What the tree itself puts on a row's menu: its own two commands, then whatever the application added. */
-    private void rowMenu(T item, MenuSink menu) {
-        offer(expandAction, item, menu);
-        offer(collapseAction, item, menu);
-        // Unconditional: a rule that would open the menu or double another is dropped by the sink, so this needs
-        // no test for whether anything above it or below it survived its own predicates.
-        menu.separator();
-        offer(cutAction, item, menu);
-        offer(copyAction, item, menu);
-        offer(pasteAction, item, menu);
-        menu.separator();
-        for (Action<T> action : extraActions) {
-            offer(action, item, menu);
+    /**
+     * A row's menu: the tree's own lines, then the application's actions, each offered as the row's entry last said.
+     * The row is the GUI thread's, as is this, so what the entry said is read without asking anyone.
+     */
+    private void rowMenu(Row row, MenuSink menu) {
+        for (int i = 0; i < lines.size(); i++) {
+            Line<T> line = lines.get(i);
+            if (line.shown().test(row.item) && !row.hidden.contains(line.id())) {
+                T item = row.item;
+                boolean enabled = line.enabled().test(item) && !row.greyed.contains(line.id());
+                menu.item(new MenuItem(null, line.label(), () -> line.body().accept(item, begin()), enabled,
+                        line.mark()));
+            }
+            // A rule after Collapse and after Paste. Unconditional: a rule that would open the menu or double
+            // another is dropped by the sink, so this needs no test of what survived above or below it.
+            if (line.id().equals(COLLAPSE) || line.id().equals(PASTE)) {
+                menu.separator();
+            }
         }
-    }
-
-    /** Put {@code action} on {@code menu} for {@code item} — shown or not, enabled or not, as it says. */
-    private void offer(Action<T> action, T item, MenuSink menu) {
-        if (!action.shown.test(item)) {
-            return;
+        for (Action action : extraActions) {
+            if (!row.hidden.contains(action.id())) {
+                Chosen chosen = new Chosen(address, action.id(), row.item);
+                menu.item(new MenuItem(action.icon(), action.label(), () -> {
+                    begin();   // the walk running is superseded by whatever the user chose instead
+                    gui.bus().publish(CHOSEN, chosen);
+                }, !row.greyed.contains(action.id()), action.mark()));
+            }
         }
-        menu.item(new MenuItem(action.icon(), action.label(), () -> action.body.run(item, begin()),
-                action.enabled.test(item), action.mark()));
     }
 
     /**
-     * Claim the tree for a new action and hand back its job. One increment: everything running is now superseded,
+     * Claim the tree for a new walk and hand back its job. One increment: everything running is now superseded,
      * and this is what the next {@link Job#live()} will be measured against.
      */
     private Job begin() {
         long generation = actions.incrementAndGet();
         return () -> actions.get() == generation;
-    }
-
-    /**
-     * The sink handed to a {@link #onContextMenu} source: the same menu, with each contributed action made one of
-     * the tree's. A source that adds "Delete" gets the one-at-a-time rule for free, and a long expand does not
-     * carry on unfolding underneath the thing the user chose instead.
-     */
-    private final class Preempting implements MenuSink {
-
-        private final MenuSink delegate;
-
-        Preempting(MenuSink delegate) {
-            this.delegate = delegate;
-        }
-
-        @Override
-        public ClickEvent event() {
-            return delegate.event();
-        }
-
-        @Override
-        public dev.vexelray.gui.core.edit.History history() {
-            return delegate.history();   // or a source's edit items would stop being undoable inside a tree
-        }
-
-        @Override
-        public MenuSink item(MenuItem item) {
-            // Every command at any depth: a submenu's lines are the tree's too.
-            delegate.item(item.wrapActions(action -> () -> {
-                begin();
-                action.run();
-            }));
-            return this;
-        }
-
-        @Override
-        public MenuSink separator() {
-            delegate.separator();
-            return this;
-        }
     }
 
     /** Whether {@code item}'s row can open at all — Expand's default availability. */

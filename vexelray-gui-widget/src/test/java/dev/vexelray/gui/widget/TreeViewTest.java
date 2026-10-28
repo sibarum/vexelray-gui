@@ -366,18 +366,12 @@ class TreeViewTest {
 
     /** A context click selects the row first — the menu that opens is about the row under the pointer. */
     @Test
-    void aContextClickSelectsTheRowAndBuildsItsMenuAroundTheItem() {
+    void aContextClickSelectsTheRowAndOffersItsMenuForTheItem() {
         try (HeadlessGui h = new HeadlessGui()) {
             MapSource source = new MapSource();
-            String[] contextItem = {null};
-            float[] at = {-1f, -1f};
-            TreeView<String> tree = Listing.tree(h, source)
-                    .onContextMenu((item, menu) -> {
-                        contextItem[0] = item;
-                        at[0] = menu.event().x();
-                        at[1] = menu.event().y();
-                        menu.item("Open " + item, () -> { });
-                    });
+            java.util.List<TreeView.Chosen> chosen = new java.util.ArrayList<>();
+            h.bus.subscribe(TreeView.CHOSEN, chosen::add);
+            TreeView<String> tree = Listing.tree(h, source).action(TreeView.Action.of("open", "Open"));
             h.gui.root().children(tree.node());
             h.frame();
 
@@ -387,13 +381,14 @@ class TreeViewTest {
             h.frame();
 
             assertEquals("src", tree.selected(), "the row under the pointer became the selection");
-            assertEquals("src", contextItem[0], "and the app was asked for that item's menu, with the position");
-            assertEquals(x, at[0], 0.5f);
-            assertEquals(y, at[1], 0.5f);
-            assertEquals(java.util.Arrays.asList("Expand", "Collapse", null, "Open src"),
-                    ((ContextMenu) Seams.of(h.gui).menus()).items().stream().map(MenuItem::label).toList(),
-                    "the tree's own two commands, a rule, then what the application added — and a presenter of "
+            ContextMenu menu = (ContextMenu) Seams.of(h.gui).menus();
+            assertEquals(java.util.Arrays.asList("Expand", "Collapse", null, "Open"),
+                    menu.items().stream().map(MenuItem::label).toList(),
+                    "the tree's own two commands, a rule, then what the application declared — and a presenter of "
                             + "the tree's own installing, so the menu is actually on screen");
+            menu.items().get(3).action().run();
+            assertEquals(java.util.List.of(new TreeView.Chosen(tree.address(), "open", "src")), chosen,
+                    "choosing it says which item the menu was about");
             tree.close();
         }
     }

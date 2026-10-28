@@ -26,6 +26,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * A tree over the real filesystem: lazy children, per-row commands, a search that walks, and a subtree that
@@ -57,12 +58,16 @@ public final class TreeChapter implements Chapter {
         }
     }
 
-    /** {@code p} as the tree draws it: its name, and a folder that opens or a file that does not. */
+    /**
+     * {@code p} as the tree draws it: its name, a folder that opens or a file that does not, what its menu offers,
+     * and what Ctrl+F finds it by.
+     */
     private static TreeView.Entry entry(Path p) {
         Path name = p.getFileName();
         String label = name == null ? p.toString() : name.toString();
-        return Files.isDirectory(p) ? TreeView.Entry.branch(p, label).icon(Icon.FOLDER)
-                : TreeView.Entry.leaf(p, label).icon(Icon.FILE);
+        TreeView.Entry entry = Files.isDirectory(p) ? TreeView.Entry.branch(p, label).icon(Icon.FOLDER)
+                : TreeView.Entry.leaf(p, label).icon(Icon.FILE).hides(COUNT);
+        return entry.find(p.toString());   // Ctrl+F looks in the whole path, not only the name the row shows
     }
 
     @Override
@@ -73,7 +78,7 @@ public final class TreeChapter implements Chapter {
     @Override
     public String blurb() {
         return "Lazy children off the input stages, checkboxes whose cascade is the application's, a context "
-                + "menu built at the moment of the click, and Ctrl+F searching a tree by walking it.";
+                + "menu whose lines each row declares, and Ctrl+F searching a tree by walking it.";
     }
 
     @Override
@@ -111,8 +116,7 @@ public final class TreeChapter implements Chapter {
         // Ctrl+F with the tree focused opens its find bar; typing walks the real directory tree, fetching as it
         // goes, stopping at the first match and opening only the path to it. Nothing here wires that up. The one
         // thing an application supplies is what "matches" means for its own items — a whole path, say, rather
-        // than the name the row happens to show.
-        files.matcher((path, query) -> String.valueOf(path).toLowerCase().contains(query.toLowerCase()));
+        // than the name the row happens to show — and it says so on each entry, in entry() above.
 
         // The pane beside the tree: what a tree on the left of an application usually sits next to, and what a
         // long name on hover is drawn over.
@@ -124,30 +128,41 @@ public final class TreeChapter implements Chapter {
         });
         gui.mailbox(TreeView.ACTIVATED, files.address(), a -> console.good("activated " + a.item()));
 
-        // A command that belongs to the row rather than to the menu: marked from the set like the tree's own, and
-        // offered only on a row it applies to, and cancellable. It is a walk on purpose — counting a
-        // deep directory takes long enough to be worth stopping, and choosing anything else on any row's menu
-        // stops it, because the tree runs one action at a time.
-        files.action(TreeView.Action.<Path>of(Icon.SEARCH, "Count files", (path, job) -> {
-            int found = countFiles(path, job);
-            if (job.live()) {
-                console.good("count: " + found + " files under " + path.getFileName());
-            } else {
-                console.refused("count: stopped");
-            }
-        }).shownWhen(Files::isDirectory));
-
-        // And the free-form door, for lines that are not commands on the item in that sense. They land after the
-        // tree's own, and choosing one still takes the tree over — which an application does not have to know in
-        // order to get it.
-        files.onContextMenu((path, menu) -> menu
-                .item(Icon.OPEN, "Open", () -> console.say("open: " + path))
-                .item(Icon.COPY, "Copy path", () -> {
-                    gui.clipboard().set(String.valueOf(path));
+        // The row's commands: declared once, with a mark from the set like the tree's own. Which rows offer them
+        // is in entry() above, where the listing already knows what each path is: Count only on a folder. Choosing
+        // one runs nothing in the tree; it is announced on CHOSEN, and heard here.
+        files.action(TreeView.Action.of(COUNT, Icon.SEARCH, "Count files"))
+                .action(TreeView.Action.of("open", Icon.OPEN, "Open"))
+                .action(TreeView.Action.of("copy-path", Icon.COPY, "Copy path"))
+                .action(TreeView.Action.of("properties", Icon.INFO, "Properties"));
+        gui.mailbox(TreeView.CHOSEN, files.address(), chosen -> {
+            Path path = (Path) chosen.item();
+            // Any line chosen stops a count still running, and Count starts a new one. The count is a walk of the
+            // disk, so it runs on a thread of its own, and stops because it looks: between directories it asks
+            // whether it is still the latest. Nothing interrupts it.
+            long mine = counting.incrementAndGet();
+            switch (chosen.action()) {
+                case COUNT -> COUNTING.execute(() -> {
+                    int found = countFiles(path, mine);
+                    String said = counting.get() == mine
+                            ? "count: " + found + " files under " + path.getFileName() : null;
+                    gui.batch(() -> {
+                        if (said != null) {
+                            console.good(said);
+                        } else {
+                            console.refused("count: stopped");
+                        }
+                    });
+                });
+                case "open" -> console.say("open: " + path);
+                case "copy-path" -> {
+                    gui.clipboard().set(String.valueOf(path));   // the clipboard is the window's: this is the view
                     console.good("copied path to the clipboard");
-                })
-                .separator()
-                .item(Icon.INFO, "Properties", () -> console.note("properties: " + path)));
+                }
+                case "properties" -> console.note("properties: " + path);
+                default -> { }
+            }
+        });
 
         files.searchable(true);   // Ctrl+F: the find bar, which a tree has only when it asks for one
 
@@ -284,18 +299,27 @@ public final class TreeChapter implements Chapter {
         }
     }
 
+    /** The id of the Count files line. */
+    private static final String COUNT = "count";
+
+    /** Where a count walks the disk: off the frame, and off the listing, which it would hold up. */
+    private static final Executor COUNTING = Executors.newSingleThreadExecutor(
+            r -> Thread.ofPlatform().daemon().name("tree-count").unstarted(r));
+
+    /** Which count is the latest: bumped by every line chosen, and read by the count between directories. */
+    private final AtomicLong counting = new AtomicLong();
+
     /**
-     * Count the ordinary files under {@code dir}, giving up the moment the tree hands its job to something else.
+     * Count the ordinary files under {@code dir}, giving up the moment a later line is chosen.
      *
      * <p>The interesting line is the one in the {@code while}: a long piece of application work asks, between
-     * the steps it is made of, whether it is still the action the tree is running. Nothing interrupts it — it
-     * stops because it looked.
+     * the steps it is made of, whether it is still the latest. Nothing interrupts it — it stops because it looked.
      */
-    private static int countFiles(Path dir, TreeView.Job job) {
+    private int countFiles(Path dir, long mine) {
         int found = 0;
         Deque<Path> pending = new ArrayDeque<>();
         pending.push(dir);
-        while (job.live() && !pending.isEmpty()) {
+        while (counting.get() == mine && !pending.isEmpty()) {
             try (var kids = Files.list(pending.poll())) {
                 for (Path kid : (Iterable<Path>) kids::iterator) {
                     if (Files.isDirectory(kid)) {

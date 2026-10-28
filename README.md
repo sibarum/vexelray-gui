@@ -202,9 +202,14 @@ Seams.of(gui).onContextMenu(row, menu -> menu
 - **Sources accumulate**, like `onState` observers: the widget states its defaults and the
   application adds what only it knows, into one menu, in registration order. Nothing is restated and
   nothing has to agree on an order.
-- **A widget can hand its own context to the builder**: `TreeView.onContextMenu((item, menu) -> …)`
+- **A tree's row menu is declared, not built at the click**: `tree.action(TreeView.Action.of("delete",
+  "×", "Delete"))` puts a line on every row, each row's `Entry` says which lines it hides or greys
+  (`hides("delete")`, `greys("delete")`), and choosing one publishes `Chosen(tree, action, item)` on
+  `TreeView.CHOSEN`. A right click runs nothing of the application's; what a row offers is a fact the
+  listing already states, and a changed fact arrives with `REFRESH`, like a changed label.
+- **Other widgets hand their own context to the builder**: `ListView.onContextMenu((item, menu) -> …)`
   and `Tabs.onContextMenu((index, menu) -> …)` say *which* thing was clicked, which the framework has
-  no way to name.
+  no way to name. They follow the tree's declared shape next.
 - **Contribute nothing and no menu opens** — "there is nothing to offer here" needs no special case.
 - **Defaults ship with the widgets**: a `TextField` offers Copy/Cut/Paste (Copy alone when
   `readOnly(true)`, each greyed when it does not apply), a tab offers Close.

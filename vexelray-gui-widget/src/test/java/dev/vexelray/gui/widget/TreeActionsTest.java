@@ -15,13 +15,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The commands on a tree row's menu: the two the tree ships, the ones an application adds, and the rule that
- * governs all of them — <b>one at a time</b>. Expand and Collapse are recursive on purpose (the single-level flip
- * is what the disclosure glyph and the arrow keys already are), and every action, built-in or not, is a peer:
- * same mark, same per-item availability, same job.
+ * The commands on a tree row's menu: the two the tree ships and runs, the ones an application declares and is told
+ * were chosen, and the rule over the tree's walks — <b>one at a time</b>. Expand and Collapse are recursive on
+ * purpose (the single-level flip is what the disclosure glyph and the arrow keys already are). What a row offers is
+ * its entry's to say, so a right click runs nothing of the application's.
  */
 class TreeActionsTest {
 
@@ -32,7 +33,7 @@ class TreeActionsTest {
             "docs", List.of());
 
     /** A source over {@link #KIDS} that counts its fetches, so what a walk actually asked for is assertable. */
-    private static final class MapSource implements Listing<String> {
+    private static class MapSource implements Listing<String> {
         final AtomicInteger fetches = new AtomicInteger();
 
         @Override
@@ -154,18 +155,25 @@ class TreeActionsTest {
     }
 
     /**
-     * An application's command is a peer of the built-ins, and says per item which of the three things it is:
-     * choosable, greyed, or not on the menu at all.
+     * An application's command is declared, and each row's entry says which of three things it is there:
+     * choosable, greyed, or not on the menu at all. Choosing it runs nothing; it is announced, with the item.
      */
     @Test
-    void anAddedActionIsGreyedOrDroppedPerItem() {
+    void anAddedActionIsGreyedOrDroppedPerItemAndAnnounced() {
         try (HeadlessGui h = new HeadlessGui()) {
-            MapSource source = new MapSource();
-            List<String> deleted = new ArrayList<>();
+            MapSource source = new MapSource() {
+                @Override
+                public TreeView.Entry entry(String item) {
+                    TreeView.Entry entry = super.entry(item);
+                    if (item.equals("src")) {
+                        return entry.hides("delete");
+                    }
+                    return item.endsWith(".java") ? entry : entry.greys("delete");
+                }
+            };
             TreeView<String> tree = Listing.tree(h, source)
-                    .action(TreeView.Action.<String>of("×", "Delete", (item, job) -> deleted.add(item))
-                            .shownWhen(item -> !item.equals("src"))
-                            .enabledWhen(item -> item.endsWith(".java")));
+                    .action(TreeView.Action.of("delete", "×", "Delete"));
+            List<TreeView.Chosen> chosen = hear(h, tree);
             h.gui.root().children(tree.node());
             h.frame();
             tree.expandAll("src");
@@ -184,7 +192,73 @@ class TreeActionsTest {
             assertTrue(enabled(h, "Delete"));
             assertEquals("×", item(h, "Delete").icon(), "and it is drawn with its own mark");
             choose(h, "Delete");
-            assertEquals(List.of("App.java"), deleted, "told which item it was chosen on");
+            assertEquals(List.of(new TreeView.Chosen(tree.address(), "delete", "App.java")), chosen,
+                    "announced with the id and the item it was chosen on");
+            tree.close();
+        }
+    }
+
+    /** What a row offers is a fact the listing states, so a changed fact arrives the way a changed label does. */
+    @Test
+    void aRefreshChangesWhatARowOffers() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            boolean[] locked = {true};
+            MapSource source = new MapSource() {
+                @Override
+                public TreeView.Entry entry(String item) {
+                    return locked[0] ? super.entry(item).greys("delete") : super.entry(item);
+                }
+            };
+            TreeView<String> tree = Listing.tree(h, source).action(TreeView.Action.of("delete", "Delete"));
+            h.gui.root().children(tree.node());
+            h.frame();
+
+            rightClickRow(h, tree, "docs");
+            assertFalse(enabled(h, "Delete"));
+
+            locked[0] = false;
+            h.bus.publish(TreeView.REFRESH, new TreeView.Refresh(tree.address()));
+            h.frame();
+            h.frame();
+
+            rightClickRow(h, tree, "docs");
+            assertTrue(enabled(h, "Delete"), "the entry the refresh brought says so now");
+            tree.close();
+        }
+    }
+
+    /** The tree's own lines are offered by the tree's state, and an entry can still take one off its row. */
+    @Test
+    void anEntryCanTakeTheTreesOwnLineOffItsRow() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            MapSource source = new MapSource() {
+                @Override
+                public TreeView.Entry entry(String item) {
+                    return item.equals("docs") ? super.entry(item).hides(TreeView.EXPAND) : super.entry(item);
+                }
+            };
+            TreeView<String> tree = Listing.tree(h, source);
+            h.gui.root().children(tree.node());
+            h.frame();
+
+            rightClickRow(h, tree, "docs");
+            assertEquals(List.of("Collapse"), labels(h));
+            rightClickRow(h, tree, "src");
+            assertEquals(List.of("Expand", "Collapse"), labels(h), "and only off its own");
+            tree.close();
+        }
+    }
+
+    /** An id is what an entry and a {@code Chosen} name an action by, so it means one line. */
+    @Test
+    void anActionsIdIsItsOwn() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TreeView<String> tree = Listing.tree(h, new MapSource()).action(TreeView.Action.of("delete", "Delete"));
+            assertThrows(IllegalArgumentException.class, () -> tree.action(TreeView.Action.of("delete", "Remove")),
+                    "two lines one Chosen could not tell apart");
+            assertThrows(IllegalArgumentException.class, () -> tree.action(TreeView.Action.of(TreeView.EXPAND, "More")),
+                    "nor one of the tree's own");
+            assertThrows(IllegalArgumentException.class, () -> TreeView.Action.of(" ", "Blank"));
             tree.close();
         }
     }
@@ -245,36 +319,48 @@ class TreeActionsTest {
             tree.close();
         }
     }
-
-    /** What a body asks, and the answer it gets: a job is current until the next action is triggered, then never. */
+    /**
+     * Choosing an application's line stops the walk the tree is running, as choosing one of its own does: an
+     * expand-all does not carry on unfolding underneath the thing the user chose instead.
+     */
     @Test
-    void aJobKnowsTheMomentItStopsBeingTheCurrentOne() {
+    void choosingAnApplicationsLineStopsTheWalk() {
         try (HeadlessGui h = new HeadlessGui()) {
-            MapSource source = new MapSource();
-            TreeView.Job[] first = {null};
-            TreeView.Job[] second = {null};
-            TreeView<String> tree = Listing.tree(h, source)
-                    .action(TreeView.Action.<String>of("First", (item, job) -> first[0] = job))
-                    .action(TreeView.Action.<String>of("Second", (item, job) -> second[0] = job))
-                    // A free-form source contributes lines and runs them itself — and is still the tree's action.
-                    .onContextMenu((item, menu) -> menu.item("Refresh", () -> { }));
+            Chain source = new Chain();
+            TreeView<String> tree = Listing.tree(h, source).action(TreeView.Action.of("count", "Count"));
+            List<TreeView.Chosen> chosen = hear(h, tree);
             h.gui.root().children(tree.node());
             h.frame();
 
-            rightClickRow(h, tree, "src");
-            choose(h, "First");
-            assertTrue(first[0].live(), "while it is the one the tree is running");
+            rightClickRow(h, tree, "l0");
+            MenuItem count = item(h, "Count");
+            menu(h).hide();
+            source.duringFetch = () -> {
+                if (source.fetches.get() == 2) {
+                    count.action().run();   // the user chose Count while the tree was still unfolding
+                }
+            };
+            tree.expandAll("l0");
+            h.frame();
+            h.frame();
+            h.frame();
 
-            rightClickRow(h, tree, "src");
-            choose(h, "Second");
-            assertFalse(first[0].live(), "superseded the instant another action was triggered");
-            assertTrue(second[0].live());
-
-            rightClickRow(h, tree, "src");
-            choose(h, "Refresh");
-            assertFalse(second[0].live(), "including by an item the application contributed through a source");
+            assertEquals(2, source.fetches.get(), "the walk stopped at the level it was superseded on");
+            assertNull(tree.rowNode("l3"), "so the level below was never asked for");
+            assertEquals(1, chosen.size(), "and the choice was announced");
             tree.close();
         }
+    }
+
+    /** Every {@code Chosen} for {@code tree}, in order. */
+    private static List<TreeView.Chosen> hear(HeadlessGui h, TreeView<String> tree) {
+        List<TreeView.Chosen> heard = new ArrayList<>();
+        h.bus.subscribe(TreeView.CHOSEN, c -> {
+            if (c.tree().equals(tree.address())) {
+                heard.add(c);
+            }
+        });
+        return heard;
     }
 
     // --- helpers: drive the menu the way the presenter does, and read the tree the way the user does ---

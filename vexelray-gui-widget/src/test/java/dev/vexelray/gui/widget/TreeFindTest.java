@@ -25,7 +25,7 @@ class TreeFindTest {
             "test", List.of("AppTest.java"),
             "docs", List.of());
 
-    private static final class MapSource implements Listing<String> {
+    private static class MapSource implements Listing<String> {
         final AtomicInteger fetches = new AtomicInteger();
 
         @Override
@@ -163,6 +163,27 @@ class TreeFindTest {
 
             assertEquals("No match", status(h, tree), "the search reached the end of the hierarchy and said so");
             assertEquals(List.of("src", "docs"), visibleRows(h, tree), "nothing was opened to report nothing");
+            tree.close();
+        }
+    }
+
+    /**
+     * What a row is found by is its entry's to say: here a whole path, which the label does not show. The walk tests
+     * the text it was given and runs nothing of the application's.
+     */
+    @Test
+    void anEntryCanBeFoundByMoreThanItsLabel() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TreeView<String> tree = tree(h, new MapSource() {
+                @Override
+                public TreeView.Entry entry(String item) {
+                    return item.equals("Util.java") ? super.entry(item).find("src/main/Util.java")
+                            : super.entry(item);
+                }
+            });
+            find(h, tree, "main/util");
+
+            assertEquals("Util.java", tree.selected(), "matched by its path, ignoring case");
             tree.close();
         }
     }

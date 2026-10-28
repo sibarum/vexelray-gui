@@ -208,7 +208,7 @@ public final class SplitPane {
     public SplitPane size(Length size) {
         float em = Math.max(1f, gui.rootEmPx());
         this.sizeDp = size.scalarPx(LayoutContext.of(em * 100f, em * 100f), 0f)
-                / Math.max(0.0001f, gui.dpi().value());
+                / Math.max(0.0001f, Seams.of(gui).dpi().value());
         place(size);
         return this;
     }
@@ -263,7 +263,7 @@ public final class SplitPane {
 
     private void drag(DragEvent e) {
         boolean across = orientation == Orientation.SIDE_BY_SIDE;
-        float dpi = Math.max(0.0001f, gui.dpi().value());
+        float dpi = Math.max(0.0001f, Seams.of(gui).dpi().value());
         if (e.phase() != DragEvent.Phase.MOVE) {
             synchronized (this) {
                 dragging = e.phase() == DragEvent.Phase.START;

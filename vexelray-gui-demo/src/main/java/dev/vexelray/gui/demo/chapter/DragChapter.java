@@ -198,7 +198,7 @@ public final class DragChapter implements Chapter {
         // behind the pointer, which nobody can see on a box lighting up. The drag is the window's, not this
         // chapter's — a card picked up in the Cards chapter is published here too — so the archive lights only for
         // a drag whose payload is one of the tree's tasks.
-        gui.drag().onCommit(v -> {
+        Seams.of(gui).drag().onCommit(v -> {
             DragState drag = v.value();
             boolean task = drag.active() && drag.payload().as(taskType).isPresent();
             lightArchive(task && over(archive, drag) && drag.accepts());

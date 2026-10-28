@@ -187,7 +187,7 @@ public final class Tooltip implements AutoCloseable {
             attachedToRoot = true;
             gui.root().append(bubble);
         }
-        float dpi = Math.max(0.0001f, gui.dpi().value());
+        float dpi = Math.max(0.0001f, Seams.of(gui).dpi().value());
         bubble.text(text);
         bubble.floatAt(Length.dp(rect.x() / dpi), Length.dp((rect.y() + rect.h() + GAP_PX) / dpi));
         bubble.visible(true);

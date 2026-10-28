@@ -506,74 +506,37 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
-     * The live drag as a bus {@code State} — subscribe with {@code gui.drag().onCommit(...)} to draw a ghost or a
-     * drop indicator. {@link DragState#NONE} whenever nothing is being dragged.
-     *
-     * <p>Published once per frame, on change only, so a still pointer over a settled indicator costs nothing.
-     */
-    public State<DragState> drag() {
-        return transfers.drag();
-    }
-
-    /**
-     * The modifier keys held right now, as a bus {@code State} — subscribe with
-     * {@code gui.modifiers().onCommit(...)} to restyle while one is held, or read {@code .value()} inside a
-     * handler that needs to know what a click meant.
-     *
-     * <p><b>Why this exists at all.</b> A modifier press is not a command and is routed nowhere: it arms the
-     * chord the next key makes, and until now that was the whole of its life. But a modifier is also a
-     * <em>mode</em> the user can see — hold Ctrl and the links in a document underline themselves — and a mode
-     * with no observable state is one every widget would have to reconstruct from key edges of its own, which
-     * is precisely the side channel this framework does not permit. It comes from the same tactroller edges as
-     * everything else; this is where the framework stops keeping it to itself.
-     *
-     * <p>Committed on change only, and cleared when the window loses focus — a key released over another window
-     * is never seen here, and a modifier that stays held for ever is a UI stuck in a mode with no way out.
-     */
-    public State<java.util.Set<Modifier>> modifiers() {
-        return modifierState;
-    }
-
-    /**
-     * The live window size as a bus {@code State} — subscribe with {@code gui.viewport().onCommit(...)}. The
-     * drawable area in layout px, the space {@link #layout()} rects and input events are in: always the real
-     * window, never the canvas {@link #minSize} may clamp it to, and not the OS outer rect a window is created at.
-     */
-    public State<Viewport> viewport() {
-        return metrics.viewport();
-    }
-
-    /**
-     * The user zoom factor as a bus {@code State} (1.0 = unscaled). Read it with {@code gui.zoom().value()} or
-     * subscribe to observe changes.
-     *
-     * <p>Zoom is not a property of any node: it is one of the ambient factors every {@link Length} resolves
-     * against ({@code em = v · rootEmPx · zoom · dpi}, §6), so changing it rescales the entire UI — box sizes,
-     * padding, border, corner radius, text size, the scrollbar thickness, the text insets and the wheel step —
-     * in one step and in proportion. That is the whole point of §6's "no pixel unit", and zooming is the cheapest
-     * way to see whether it actually holds: anything that fails to move with the rest is still pinned to device
-     * pixels. The one deliberate exception is {@link Length#dp}: chrome that honours density and opts out of zoom
-     * (§6), so a gap or a hairline in dp is meant to stay put.
-     *
-     * <p><b>The window follows.</b> In a {@code GuiApp}, a window that is not maximized, minimized or fullscreen
-     * scales its client area by the same ratio, so a zoom keeps the composition rather than crowding or emptying
-     * the window; an axis already spanning the screen's work area keeps its span, and a window that would outgrow
-     * the screen is fitted into it. A resize by hand is the new base. A zoom set before the first frame (a restored
-     * one) is not a change: the window was already sized for it.
-     */
-    public State<Float> zoom() {
-        return metrics.zoom();
-    }
-
-    /**
      * Set the zoom factor, clamped to the configured range ({@link #zoomRange}; by default
-     * 0.5 to 3). Safe from any thread — it commits
-     * to the {@code State}, and the next {@link dev.vexelray.gui.core.spi.Seams#frame} notices the change and relays out, so nothing writes to
-     * the reconciler off the GUI thread.
+     * 0.5 to 3). Safe from any thread: on the GUI thread, or before the first frame, it is at once; from another, it
+     * is applied at the top of the next frame, so whatever restyles from the zoom runs on the GUI thread and never on
+     * the caller's (see {@link #scale}).
      */
     public Gui zoom(float factor) {
-        metrics.zoom(factor);
+        scale(() -> metrics.zoom(factor));
         return this;
+    }
+
+    /** The thread frames run on, from the first frame; null before it. */
+    private volatile Thread frameThread;
+
+    /** Zoom and density writes made off the frame thread, applied in order at the top of the next frame. */
+    private final java.util.concurrent.ConcurrentLinkedQueue<Runnable> scaleWrites =
+            new java.util.concurrent.ConcurrentLinkedQueue<>();
+
+    /**
+     * Make a zoom or density write on the frame thread. The zoom and density are bus {@code State}s whose listeners
+     * run on the thread that commits, and the widgets that restyle from them (a typeset block rebuilding, a status
+     * line) touch nodes, so a commit from a logic thread would run widget code there. So one made off the frame thread
+     * waits for the next frame, and one made on it, or before frames begin, is made at once.
+     */
+    private void scale(Runnable write) {
+        Thread frames = frameThread;
+        if (frames == null || frames == Thread.currentThread()) {
+            write.run();
+        } else {
+            scaleWrites.add(write);
+            requestFrame();
+        }
     }
 
     /**
@@ -584,7 +547,7 @@ public final class Gui implements AutoCloseable {
      * <p>Re-clamps the current factor immediately, so narrowing the range cannot leave the UI outside it.
      */
     public Gui zoomRange(float min, float max, float step) {
-        metrics.zoomRange(min, max, step);
+        scale(() -> metrics.zoomRange(min, max, step));
         return this;
     }
 
@@ -593,21 +556,21 @@ public final class Gui implements AutoCloseable {
      * glide is already heading, so three presses are three steps. {@link #zoom(float)} is always at once.
      */
     public Gui zoomIn() {
-        metrics.zoomIn();
+        scale(metrics::zoomIn);
         requestFrame();
         return this;
     }
 
     /** Zoom out one step, clamped to the configured minimum, as {@link #zoomIn} does. */
     public Gui zoomOut() {
-        metrics.zoomOut();
+        scale(metrics::zoomOut);
         requestFrame();
         return this;
     }
 
     /** Back to 1.0 — unscaled, gliding as a step does. */
     public Gui resetZoom() {
-        metrics.resetZoom();
+        scale(metrics::resetZoom);
         requestFrame();
         return this;
     }
@@ -684,19 +647,6 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
-     * The display density as a bus {@code State} — the points-to-pixels ratio of the surface being drawn to
-     * (1.0 on a conventional display, 2.0 on a Retina-class one).
-     *
-     * <p>Distinct from {@link #zoom} on purpose, even though both currently multiply into the same em. Density
-     * keeps a UI the same <em>physical</em> size on a denser screen; zoom is the user asking for bigger. A length
-     * can sensibly honour one and not the other, and that is only expressible while the two stay separate
-     * factors.
-     */
-    public State<Float> dpi() {
-        return metrics.dpi();
-    }
-
-    /**
      * The root em in pixels before zoom and DPI — the flat basis every {@link Length#em} resolves against
      * ({@code em = v · rootEmPx · zoom · dpi}, §6). A constant today, and exposed rather than the whole
      * {@link dev.vexelray.gui.core.layout.LayoutContext}, which is viewport-dependent and would couple a caller
@@ -725,30 +675,8 @@ public final class Gui implements AutoCloseable {
      * development on such a machine and surfaces on the first dense one.
      */
     public Gui dpi(float scale) {
-        metrics.dpi(scale);
+        scale(() -> metrics.dpi(scale));
         return this;
-    }
-
-    /**
-     * The computed-layout read-model as a coalesced {@code State} (docs/reference/layout-read-model.md): every node's
-     * position/size/scroll after layout, republished per changed frame. Subscribe to react to layout changes, or
-     * read a node's own via {@link Node#layout()}. The value is one frame stale (the framework's input latency).
-     */
-    public State<LayoutSnapshot> layout() {
-        return readModels.layout();
-    }
-
-    /**
-     * The semantic read-model as a coalesced {@code State} (docs/reference/automation.md §3): what every node <b>is</b> —
-     * role, name, structure, focus — published on the same frames and at the same {@code version} as
-     * {@link #layout()}, so the two join by node id and by frame.
-     *
-     * <p>Exists because {@link dev.vexelray.gui.core.model.NodeKind} is {@code BOX} or {@code TEXT}: enough for
-     * the renderer, and an anonymous tree to everyone else. A consumer that must address a node by meaning — an
-     * automation agent, a thin client — reads this.
-     */
-    public State<SemanticSnapshot> semantics() {
-        return readModels.semantics();
     }
 
     /** The latest semantic snapshot (never null; {@link SemanticSnapshot#EMPTY} before the first layout). */
@@ -1382,7 +1310,8 @@ public final class Gui implements AutoCloseable {
         boolean still = reducedMotion();
         input.scrollGlide(still ? 0L : glideNanos);
         input.focusFade(still ? 0L : focusFadeNanos);
-        metrics.zoomGlide(still ? 0L : zoomGlideNanos);
+        long zoomHalfLife = still ? 0L : zoomGlideNanos;
+        scale(() -> metrics.zoomGlide(zoomHalfLife));   // turning motion off mid-glide lands the zoom: a write
     }
 
     /**
@@ -1865,6 +1794,11 @@ public final class Gui implements AutoCloseable {
         // after. One step per frame is not a delay, it is the only honest cadence — see Navigation.
         stepNavigations();
         RetainedNode r = reconciler.root();
+        // Zoom and density written from another thread since the last frame, in the order they were made: applied
+        // here so the State commits, and everything that restyles from it runs, on this thread.
+        for (Runnable write = scaleWrites.poll(); write != null; write = scaleWrites.poll()) {
+            write.run();
+        }
         // A zoom step on its way moves one frame's worth before the size and scale are asked, so this frame is laid
         // out at the zoom it is drawn at; while it is still on its way, the next frame is owed.
         if (metrics.stepZoomGlide(System.nanoTime()) && metrics.zoomGliding()) {
@@ -2047,6 +1981,41 @@ public final class Gui implements AutoCloseable {
 
     /** The seams' implementation: an inner class, so each one is the old method on this tree, moved. */
     private final class GuiSeams extends dev.vexelray.gui.core.spi.Seams {
+
+        @Override
+        public sibarum.atchung.State<DragState> drag() {
+            return transfers.drag();
+        }
+
+        @Override
+        public sibarum.atchung.State<java.util.Set<Modifier>> modifiers() {
+            return modifierState;
+        }
+
+        @Override
+        public sibarum.atchung.State<Viewport> viewport() {
+            return metrics.viewport();
+        }
+
+        @Override
+        public sibarum.atchung.State<Float> zoom() {
+            return metrics.zoom();
+        }
+
+        @Override
+        public sibarum.atchung.State<Float> dpi() {
+            return metrics.dpi();
+        }
+
+        @Override
+        public sibarum.atchung.State<LayoutSnapshot> layout() {
+            return readModels.layout();
+        }
+
+        @Override
+        public sibarum.atchung.State<SemanticSnapshot> semantics() {
+            return readModels.semantics();
+        }
 
         @Override
         public dev.vexelray.gui.core.spi.Seams onClick(Node node, Runnable handler) {
@@ -2256,6 +2225,7 @@ public final class Gui implements AutoCloseable {
             // The flag is cleared here but the debt is not: this frame holds the wake's unit until it has published,
             // and only then pays it. A reader asking in between is still owed this frame (Owed).
             boolean tookWake = woken.getAndSet(false);
+            frameThread = Thread.currentThread();
             try {
                 return frameBody(viewportW, viewportH, tm);
             } finally {

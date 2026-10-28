@@ -249,7 +249,7 @@ public final class ListView<T> implements AutoCloseable {
 
         // The window follows the scroll offset, which the read-model republishes on every changed frame. This is
         // the whole of the virtualisation trigger: no polling, and no frame callback of our own.
-        subs.add(gui.layout().onCommit(snapshot -> update()));
+        subs.add(Seams.of(gui).layout().onCommit(snapshot -> update()));
         this.name = new WidgetName(gui, "list", box);
         selection.onChange(sel -> {
             restyleAll();
@@ -541,7 +541,7 @@ public final class ListView<T> implements AutoCloseable {
                 .orElse(Drop.NONE));
         synchronized (this) {
             if (dropSub == null) {
-                dropSub = gui.drag().onCommit(v -> showDrop(v.value()));
+                dropSub = Seams.of(gui).drag().onCommit(v -> showDrop(v.value()));
                 subs.add(dropSub);
             }
         }
@@ -651,7 +651,7 @@ public final class ListView<T> implements AutoCloseable {
             shownLabel.visible(false);
             return;
         }
-        float dpi = Math.max(0.0001f, gui.dpi().value());
+        float dpi = Math.max(0.0001f, Seams.of(gui).dpi().value());
         shownLabel.text(text).visible(true)
                 .floatAt(Length.dp(drag.x() / dpi + 14f), Length.dp(drag.y() / dpi + 12f))
                 .background(drag.accepts() ? CARRY_ACCEPTS : CARRY_REFUSES)
@@ -703,8 +703,8 @@ public final class ListView<T> implements AutoCloseable {
     private float rowPx() {
         return Length.rem(rowRem).scalarPx(
                 new dev.vexelray.gui.core.layout.LayoutContext(
-                        gui.rootEmPx(), gui.zoom().value(), gui.dpi().value(),
-                        gui.viewport().value().width(), gui.viewport().value().height()),
+                        gui.rootEmPx(), Seams.of(gui).zoom().value(), Seams.of(gui).dpi().value(),
+                        Seams.of(gui).viewport().value().width(), Seams.of(gui).viewport().value().height()),
                 0f);
     }
 
@@ -738,7 +738,7 @@ public final class ListView<T> implements AutoCloseable {
             // Before the first layout the list's own viewport is unknown, and the window it will need cannot be
             // larger than the one the whole application is drawn in. Bounding by that fills the first frame with
             // rows rather than with nothing, and the real viewport replaces it a frame later.
-            float viewH = l.present() && l.viewH() > 0f ? l.viewH() : gui.viewport().value().height();
+            float viewH = l.present() && l.viewH() > 0f ? l.viewH() : Seams.of(gui).viewport().value().height();
             float scrollY = l.present() ? l.scrollY() : 0f;
 
             int visible = (int) Math.ceil(viewH / rowPx) + 1;
@@ -902,7 +902,7 @@ public final class ListView<T> implements AutoCloseable {
     /** How many rows a page key moves — what fits in the viewport, and at least one. */
     private int pageRows() {
         NodeLayout l = root.layout();
-        float viewH = l.present() && l.viewH() > 0f ? l.viewH() : gui.viewport().value().height();
+        float viewH = l.present() && l.viewH() > 0f ? l.viewH() : Seams.of(gui).viewport().value().height();
         return Math.max(1, (int) Math.floor(viewH / rowPx()));
     }
 

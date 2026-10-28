@@ -1254,7 +1254,7 @@ public final class TreeView<T> implements AutoCloseable {
         // state, mutated on the GUI thread inside the frame, and a widget reading it would be reading a value
         // that changes underneath its paint. The State commits once per frame and only on change, so a pointer
         // held still over one seam costs nothing.
-        this.dragSub = gui.drag().onCommit(v -> showDrop(v.value()));
+        this.dragSub = Seams.of(gui).drag().onCommit(v -> showDrop(v.value()));
         // What is in the hand is the tree's to draw, as the indicator is: the tree knows what a row is called, and
         // an application that had to build this itself would be rebuilding it in every application. Watched
         // rather than read from the published drag, because it follows the pointer, and the published drag is a
@@ -1314,7 +1314,7 @@ public final class TreeView<T> implements AutoCloseable {
             label.visible(false);
             return;
         }
-        float dpi = Math.max(0.0001f, gui.dpi().value());
+        float dpi = Math.max(0.0001f, Seams.of(gui).dpi().value());
         label.text(text).visible(true)
                 .floatAt(Length.dp(drag.x() / dpi + 14f), Length.dp(drag.y() / dpi + 12f))
                 .background(drag.accepts() ? CARRY_ACCEPTS : CARRY_REFUSES)

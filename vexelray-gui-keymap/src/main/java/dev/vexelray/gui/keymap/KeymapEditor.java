@@ -143,7 +143,7 @@ public final class KeymapEditor implements AutoCloseable {
                 .padding(Length.rem(0.75f)).gap(Length.rem(0.5f))
                 .children(header, actions, footer);
         this.mapSub = keymap.overrides().onCommitLatest(committed -> render());
-        this.heldSub = gui.modifiers().onCommit(committed -> showHeld(committed.value()));
+        this.heldSub = Seams.of(gui).modifiers().onCommit(committed -> showHeld(committed.value()));
         this.focusSub = gui.bus().subscribe(gui.focusEvents(), this::focusMoved);
         render();
     }
@@ -307,7 +307,7 @@ public final class KeymapEditor implements AutoCloseable {
             // A node of its own rather than the chip in another state: the chip claims Enter and Delete by name,
             // and a named claim outranks a wildcard at one scope — so recording on the chip could never record
             // Enter. A fresh node has no claims but the one that records.
-            capture = gui.text(Shortcut.prefix(gui.modifiers().value()) + "…").role("keymap-recording")
+            capture = gui.text(Shortcut.prefix(Seams.of(gui).modifiers().value()) + "…").role("keymap-recording")
                     .wordWrap(false).textSize(TEXT).padding(Length.rem(0.15f), Length.rem(0.5f))
                     .corner(Length.rem(0.3f)).background(Role.SELECTION)
                     .border(Length.rem(0.1f), Role.ACCENT).textColor(Role.INK);

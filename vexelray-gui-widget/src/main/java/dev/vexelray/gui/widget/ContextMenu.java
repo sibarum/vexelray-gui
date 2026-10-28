@@ -194,7 +194,7 @@ public final class ContextMenu implements MenuPresenter {
             attached = true;
             gui.root().append(menu);
         }
-        float dpi = Math.max(0.0001f, gui.dpi().value());
+        float dpi = Math.max(0.0001f, Seams.of(gui).dpi().value());
         menu.floatAt(Length.dp(where.x() / dpi), Length.dp(where.y() / dpi));
         menu.visible(true);
         if (!shown) {
@@ -286,7 +286,7 @@ public final class ContextMenu implements MenuPresenter {
         // window by the layout, so one that would run off the right edge stands over the menu instead.
         dev.vexelray.gui.core.layout.NodeLayout l = row.layout();
         if (l.present()) {
-            float dpi = Math.max(0.0001f, gui.dpi().value());
+            float dpi = Math.max(0.0001f, Seams.of(gui).dpi().value());
             level.panel.floatAt(Length.dp((l.rect().x() + l.rect().w()) / dpi + PAD_DP),
                     Length.dp(l.rect().y() / dpi - PAD_DP));
         }

@@ -130,7 +130,7 @@ public final class Shell {
         showChapter(0);
         // The zoom readout, live. Every length in this window resolves through zoom, so the status line saying
         // what it is is the one place the number itself appears.
-        gui.zoom().onCommit(v -> restatus());
+        Seams.of(gui).zoom().onCommit(v -> restatus());
     }
 
     /** The tree's root is already built; this is the handle {@code Demo} needs to bind the window chrome. */
@@ -233,7 +233,7 @@ public final class Shell {
         int index = pages.selected();
         status.text(String.format("Chapter %d of %d  ·  %s  ·  zoom %.0f%%  ·  Ctrl+1..9 chapters, "
                         + "Ctrl+= / Ctrl+- zoom",
-                index + 1, chapters.size(), chapters.get(index).title(), gui.zoom().value() * 100f));
+                index + 1, chapters.size(), chapters.get(index).title(), Seams.of(gui).zoom().value() * 100f));
     }
 
     private Node statusBar() {

@@ -1,5 +1,6 @@
 package dev.vexelray.gui.demo.chapter;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
@@ -106,7 +107,7 @@ public final class LayoutChapter implements Chapter {
                         Ui.button(gui, "Reset", gui::resetZoom),
                         Ui.button(gui, "What zoom am I at?", () ->
                                 console.note(String.format("zoom %.2fx, root em %.1f px",
-                                        gui.zoom().value(), gui.rootEmPx())))),
+                                        Seams.of(gui).zoom().value(), gui.rootEmPx())))),
                 Ui.prose(gui, "The gap slider is in rem and the padding slider in dp. Zoom in and watch which "
                         + "of the two changes: content grows, frame does not. That is the whole distinction, "
                         + "and getting it backwards is what makes a zoomed interface feel like a screenshot "

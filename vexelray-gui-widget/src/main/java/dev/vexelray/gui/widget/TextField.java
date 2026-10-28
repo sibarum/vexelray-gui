@@ -340,7 +340,7 @@ public final class TextField implements AutoCloseable {
         // about the keyboard outside its own focus: a document shows its links whether or not it is the focused
         // field, exactly as every editor and browser does — you hold Ctrl and look.
 
-        this.modifierSub = gui.modifiers().onCommit(held -> armLinks(held.value()));
+        this.modifierSub = Seams.of(gui).modifiers().onCommit(held -> armLinks(held.value()));
 
         this.focusSub = gui.bus().subscribe(gui.focusEvents(), this::onFocus);
         this.blink = CaretBlink.register(gui, node, () -> focused);

@@ -1426,7 +1426,7 @@ public final class Board<T> {
     }
 
     private float dpi() {
-        return gui.dpi().value();
+        return Seams.of(gui).dpi().value();
     }
 
     private Length px(float px) {
@@ -1597,7 +1597,7 @@ public final class Board<T> {
         if (give <= 0f && !card.pullPainted) {
             return;
         }
-        float em = gui.rootEmPx() * gui.zoom().value() * dpi();
+        float em = gui.rootEmPx() * Seams.of(gui).zoom().value() * dpi();
         card.carrier.translate(card.pullX * give / em, card.pullY * give / em);
         card.pullPainted = give > 0f;
     }

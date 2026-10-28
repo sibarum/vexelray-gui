@@ -50,7 +50,7 @@ class LayoutReadModelTest {
     void snapshotIsPublishedAsBusState() {
         try (Gui gui = new Gui(Atchung.create())) {
             long[] seen = {0};
-            gui.layout().onCommit(s -> seen[0] = s.version());
+            Seams.of(gui).layout().onCommit(s -> seen[0] = s.version());
 
             Node a = gui.box().width(Length.rem(1)).height(Length.rem(1));
             gui.root().children(a);

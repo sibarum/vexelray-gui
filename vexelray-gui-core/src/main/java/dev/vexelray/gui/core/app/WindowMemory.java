@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core.app;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.os.NativePlatform;
 import dev.vexelray.os.NativeWindow;
@@ -96,7 +97,7 @@ public final class WindowMemory {
             this.width = width;
             this.height = height;
             this.maximized = maximized;
-            this.zoom = gui == null ? 1f : gui.zoom().value();
+            this.zoom = gui == null ? 1f : Seams.of(gui).zoom().value();
         }
     }
 
@@ -315,7 +316,7 @@ public final class WindowMemory {
             // window is, and Ctrl+= while a window is minimized is not a thing that happens but the reason it
             // is skipped below would not be a reason here.
             if (w.gui != null) {
-                float now = w.gui.zoom().value();
+                float now = Seams.of(w.gui).zoom().value();
                 if (Math.abs(now - w.zoom) >= ZOOM_EPSILON) {
                     w.zoom = now;
                     storeZoom(entry.getKey(), w);

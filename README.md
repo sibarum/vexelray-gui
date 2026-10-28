@@ -379,7 +379,7 @@ answer.
 ```java
 NodeLayout box = node.layout();                      // rect, content rect, scroll, overflow, corner radii, text metrics
 Seams.of(gui).onResize(node, computed -> repaint(computed));   // "my geometry is real now" — including the first time
-gui.layout();                                        // the whole snapshot, as bus State
+gui.layoutSnapshot();                                // the whole snapshot, read now
 gui.semanticSnapshot();                              // what each node *is*: role, name, structure, focus
 ```
 

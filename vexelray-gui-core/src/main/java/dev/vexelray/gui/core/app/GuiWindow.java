@@ -267,7 +267,7 @@ final class GuiWindow implements AutoCloseable {
         if (gui != null) {
             // Before the frame, so the resize it may ask for is pumped by this frame's input and laid out once,
             // rather than drawn a frame at the new zoom in the old size and then again.
-            zoomSizing.follow(window, gui.zoom().value());
+            zoomSizing.follow(window, Seams.of(gui).zoom().value());
         }
         if (window.isMinimized()) {
             // A minimized window is 0x0: there is nothing to present to, and a swapchain acquired against a

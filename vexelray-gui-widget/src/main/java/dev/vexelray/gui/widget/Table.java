@@ -241,7 +241,7 @@ public final class Table<T> implements AutoCloseable {
 
         // The solve rides the same read-model commit the body's window does: it is the frame's collect-and-place
         // step, and it needs the geometry that frame produced.
-        subs.add(gui.layout().onCommit(snapshot -> solve()));
+        subs.add(Seams.of(gui).layout().onCommit(snapshot -> solve()));
     }
 
     /** The node to place in a layout. */
@@ -431,7 +431,7 @@ public final class Table<T> implements AutoCloseable {
             return;
         }
         synchronized (this) {
-            float dpi = Math.max(0.0001f, gui.dpi().value());
+            float dpi = Math.max(0.0001f, Seams.of(gui).dpi().value());
             float now = solved[column] > 0f ? solved[column] : 0f;
             float min = Length.rem(MIN_COLUMN_REM).scalarPx(context(), 0f);
             dragged[column] = Length.dp(Math.max(min, now + e.dx()) / dpi);
@@ -488,7 +488,7 @@ public final class Table<T> implements AutoCloseable {
      */
     private synchronized Length widthOf(int column) {
         if (solved[column] > 0f) {
-            return Length.dp(solved[column] / Math.max(0.0001f, gui.dpi().value()));
+            return Length.dp(solved[column] / Math.max(0.0001f, Seams.of(gui).dpi().value()));
         }
         Length declared = dragged[column] != null ? dragged[column] : columns.get(column).width();
         return toContent(declared) ? Length.AUTO : declared;
@@ -552,7 +552,7 @@ public final class Table<T> implements AutoCloseable {
                 }
                 solved[i] = width;
                 int index = i;
-                Length as = Length.dp(width / Math.max(0.0001f, gui.dpi().value()));
+                Length as = Length.dp(width / Math.max(0.0001f, Seams.of(gui).dpi().value()));
                 writes.add(() -> place(index, as));
             }
         }
@@ -612,8 +612,8 @@ public final class Table<T> implements AutoCloseable {
     }
 
     private LayoutContext context() {
-        return new LayoutContext(gui.rootEmPx(), gui.zoom().value(), gui.dpi().value(),
-                gui.viewport().value().width(), gui.viewport().value().height());
+        return new LayoutContext(gui.rootEmPx(), Seams.of(gui).zoom().value(), Seams.of(gui).dpi().value(),
+                Seams.of(gui).viewport().value().width(), Seams.of(gui).viewport().value().height());
     }
 
     @Override

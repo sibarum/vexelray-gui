@@ -256,7 +256,7 @@ public final class Select<T> implements AutoCloseable {
         // The popup follows the control: a page that scrolls, a window that resizes or a row that reflows all move
         // the thing this is anchored to, and an overlay that stayed put would be pointing at nothing. Read from the
         // same published layout the list virtualises against — no frame callback of this widget's own.
-        subs.add(gui.layout().onCommit(snapshot -> reanchor(true)));
+        subs.add(Seams.of(gui).layout().onCommit(snapshot -> reanchor(true)));
         subs.add(gui.bus().subscribe(gui.clicks(), this::onAnyClick));
 
         armClosed();
@@ -537,13 +537,13 @@ public final class Select<T> implements AutoCloseable {
         }
         anchoredTo = r;
 
-        float dpi = Math.max(0.0001f, gui.dpi().value());
+        float dpi = Math.max(0.0001f, Seams.of(gui).dpi().value());
         float bodyPx = rowPx() * Math.clamp(list.count(), 1, VISIBLE_ROWS);
         // The panel is its rows plus its own border, top and bottom. Flipping on the rows alone puts a panel that
         // opens upwards two pixels *over* the control it belongs to, which is the sort of miss that looks like a
         // rounding error and is a missing term.
         float panelPx = bodyPx + 2f * BORDER_DP * dpi;
-        float viewportH = gui.viewport().value().height();
+        float viewportH = Seams.of(gui).viewport().value().height();
         boolean above = r.y() + r.h() + panelPx > viewportH && r.y() - panelPx >= 0f;
         float y = above ? r.y() - panelPx : r.y() + r.h();
 
@@ -555,8 +555,8 @@ public final class Select<T> implements AutoCloseable {
     /** One row in pixels at the current basis — what turns a count of options into a height. */
     private float rowPx() {
         return Length.rem(ROW_REM).scalarPx(
-                new LayoutContext(gui.rootEmPx(), gui.zoom().value(), gui.dpi().value(),
-                        gui.viewport().value().width(), gui.viewport().value().height()),
+                new LayoutContext(gui.rootEmPx(), Seams.of(gui).zoom().value(), Seams.of(gui).dpi().value(),
+                        Seams.of(gui).viewport().value().width(), Seams.of(gui).viewport().value().height()),
                 0f);
     }
 

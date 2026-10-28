@@ -2,7 +2,9 @@ package dev.vexelray.gui.core.spi;
 
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
+import dev.vexelray.gui.core.Viewport;
 import dev.vexelray.gui.core.drop.DragSource;
+import dev.vexelray.gui.core.drop.DragState;
 import dev.vexelray.gui.core.drop.DropTarget;
 import dev.vexelray.gui.core.input.ClaimScope;
 import dev.vexelray.gui.core.input.ClickEvent;
@@ -14,7 +16,10 @@ import dev.vexelray.gui.core.input.MenuPresenter;
 import dev.vexelray.gui.core.input.MenuSink;
 import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.input.Trigger;
+import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.layout.LayoutSnapshot;
 import dev.vexelray.gui.core.layout.NodeLayout;
+import dev.vexelray.gui.core.layout.SemanticSnapshot;
 import dev.vexelray.gui.core.layout.TextMeasurer;
 import dev.vexelray.gui.core.model.RetainedNode;
 import dev.vexelray.gui.core.nav.Reveal;
@@ -365,6 +370,89 @@ public abstract class Seams {
      * cannot reach an OS to put it there. Until one is installed, a ride moves nothing.
      */
     public abstract Seams onPointerWarp(dev.vexelray.gui.core.input.PointerWarp warp);
+
+    // --- the GUI's own read models, as bus States: what a widget restyles or re-solves from (T7.2) ---
+
+    /**
+     * The live drag as a bus {@code State} — subscribe with {@code Seams.of(gui).drag().onCommit(...)} to draw a ghost or a
+     * drop indicator. {@link DragState#NONE} whenever nothing is being dragged.
+     *
+     * <p>Published once per frame, on change only, so a still pointer over a settled indicator costs nothing.
+     */
+    public abstract sibarum.atchung.State<DragState> drag();
+
+    /**
+     * The modifier keys held right now, as a bus {@code State} — subscribe with
+     * {@code Seams.of(gui).modifiers().onCommit(...)} to restyle while one is held, or read {@code .value()} inside a
+     * handler that needs to know what a click meant.
+     *
+     * <p><b>Why this exists at all.</b> A modifier press is not a command and is routed nowhere: it arms the
+     * chord the next key makes, and until now that was the whole of its life. But a modifier is also a
+     * <em>mode</em> the user can see — hold Ctrl and the links in a document underline themselves — and a mode
+     * with no observable state is one every widget would have to reconstruct from key edges of its own, which
+     * is precisely the side channel this framework does not permit. It comes from the same tactroller edges as
+     * everything else; this is where the framework stops keeping it to itself.
+     *
+     * <p>Committed on change only, and cleared when the window loses focus — a key released over another window
+     * is never seen here, and a modifier that stays held for ever is a UI stuck in a mode with no way out.
+     */
+    public abstract sibarum.atchung.State<java.util.Set<Modifier>> modifiers();
+
+    /**
+     * The live window size as a bus {@code State} — subscribe with {@code Seams.of(gui).viewport().onCommit(...)}. The
+     * drawable area in layout px, the space {@link #layout()} rects and input events are in: always the real
+     * window, never the canvas {@link Gui#minSize} may clamp it to, and not the OS outer rect a window is created at.
+     */
+    public abstract sibarum.atchung.State<Viewport> viewport();
+
+    /**
+     * The user zoom factor as a bus {@code State} (1.0 = unscaled). Read it with {@code Seams.of(gui).zoom().value()} or
+     * subscribe to observe changes.
+     *
+     * <p>Zoom is not a property of any node: it is one of the ambient factors every {@link Length} resolves
+     * against ({@code em = v · rootEmPx · zoom · dpi}, §6), so changing it rescales the entire UI — box sizes,
+     * padding, border, corner radius, text size, the scrollbar thickness, the text insets and the wheel step —
+     * in one step and in proportion. That is the whole point of §6's "no pixel unit", and zooming is the cheapest
+     * way to see whether it actually holds: anything that fails to move with the rest is still pinned to device
+     * pixels. The one deliberate exception is {@link Length#dp}: chrome that honours density and opts out of zoom
+     * (§6), so a gap or a hairline in dp is meant to stay put.
+     *
+     * <p><b>The window follows.</b> In a {@code GuiApp}, a window that is not maximized, minimized or fullscreen
+     * scales its client area by the same ratio, so a zoom keeps the composition rather than crowding or emptying
+     * the window; an axis already spanning the screen's work area keeps its span, and a window that would outgrow
+     * the screen is fitted into it. A resize by hand is the new base. A zoom set before the first frame (a restored
+     * one) is not a change: the window was already sized for it.
+     */
+    public abstract sibarum.atchung.State<Float> zoom();
+
+    /**
+     * The display density as a bus {@code State} — the points-to-pixels ratio of the surface being drawn to
+     * (1.0 on a conventional display, 2.0 on a Retina-class one).
+     *
+     * <p>Distinct from {@link #zoom} on purpose, even though both currently multiply into the same em. Density
+     * keeps a UI the same <em>physical</em> size on a denser screen; zoom is the user asking for bigger. A length
+     * can sensibly honour one and not the other, and that is only expressible while the two stay separate
+     * factors.
+     */
+    public abstract sibarum.atchung.State<Float> dpi();
+
+    /**
+     * The computed-layout read-model as a coalesced {@code State} (docs/reference/layout-read-model.md): every node's
+     * position/size/scroll after layout, republished per changed frame. Subscribe to react to layout changes, or
+     * read a node's own via {@link Node#layout()}. The value is one frame stale (the framework's input latency).
+     */
+    public abstract sibarum.atchung.State<LayoutSnapshot> layout();
+
+    /**
+     * The semantic read-model as a coalesced {@code State} (docs/reference/automation.md §3): what every node <b>is</b> —
+     * role, name, structure, focus — published on the same frames and at the same {@code version} as
+     * {@link #layout()}, so the two join by node id and by frame.
+     *
+     * <p>Exists because {@link dev.vexelray.gui.core.model.NodeKind} is {@code BOX} or {@code TEXT}: enough for
+     * the renderer, and an anonymous tree to everyone else. A consumer that must address a node by meaning — an
+     * automation agent, a thin client — reads this.
+     */
+    public abstract sibarum.atchung.State<SemanticSnapshot> semantics();
 
     /**
      * Drain + reconcile + (re)layout for one frame; returns the retained root to render (may be null on the very

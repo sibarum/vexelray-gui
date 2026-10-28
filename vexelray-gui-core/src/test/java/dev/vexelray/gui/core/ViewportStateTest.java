@@ -22,13 +22,13 @@ class ViewportStateTest {
     void framePublishesViewportOnResize() {
         Gui gui = new Gui();
         List<Viewport> seen = new ArrayList<>();
-        gui.viewport().onCommit(v -> seen.add(v.value()));
+        Seams.of(gui).viewport().onCommit(v -> seen.add(v.value()));
 
         Seams.of(gui).frame(800f, 600f, TM);   // initial size
         Seams.of(gui).frame(800f, 600f, TM);   // unchanged -> no new commit
         Seams.of(gui).frame(400f, 300f, TM);   // resize -> new commit
 
-        assertEquals(new Viewport(400, 300), gui.viewport().current().value(), "State holds the latest size");
+        assertEquals(new Viewport(400, 300), Seams.of(gui).viewport().current().value(), "State holds the latest size");
         assertEquals(List.of(new Viewport(800, 600), new Viewport(400, 300)), seen,
                 "one commit per actual size change, none for the unchanged frame");
         gui.close();

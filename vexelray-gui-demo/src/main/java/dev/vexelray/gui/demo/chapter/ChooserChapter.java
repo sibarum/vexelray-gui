@@ -1,5 +1,6 @@
 package dev.vexelray.gui.demo.chapter;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
@@ -108,7 +109,7 @@ public final class ChooserChapter implements Chapter {
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
         // Read on every published layout, written only when it changed — a text write invalidates the layout that
         // produced it, so a counter that wrote unconditionally would relayout for ever.
-        gui.layout().onCommit(snapshot -> {
+        Seams.of(gui).layout().onCommit(snapshot -> {
             String now = many.size() + " options  ·  " + deep.list().realizedRows() + " rows exist  ·  "
                     + (deep.isOpen() ? "open" : "shut");
             if (!now.equals(lastCount)) {

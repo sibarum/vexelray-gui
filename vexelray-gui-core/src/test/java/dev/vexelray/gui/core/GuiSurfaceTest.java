@@ -55,6 +55,21 @@ class GuiSurfaceTest {
         assertEquals(Set.of(), leading, "the seams are reached by Seams.of(gui), never from what a view is handed");
     }
 
+    /**
+     * A bus {@code State} carries {@code onCommit}, whose listener runs on whichever thread commits: in the frame,
+     * for the GUI's own read models. So handing one out is handing out a seam, and they are on {@link Seams}.
+     */
+    @Test
+    void guiHandsOutNoState() {
+        Set<String> states = new TreeSet<>();
+        for (Method m : Gui.class.getMethods()) {
+            if (sibarum.atchung.State.class.isAssignableFrom(m.getReturnType())) {
+                states.add(m.getName());
+            }
+        }
+        assertEquals(Set.of(), states, "a State's onCommit runs code on the committing thread: hand it out from Seams");
+    }
+
     /** A functional interface, an executor or a future: what T7.2 names. */
     private static boolean isFunction(Class<?> type) {
         return type.isAnnotationPresent(FunctionalInterface.class)

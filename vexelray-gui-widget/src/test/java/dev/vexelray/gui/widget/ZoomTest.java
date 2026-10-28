@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.text.TextMetrics;
@@ -63,9 +64,9 @@ class ZoomTest {
     void zoomIsClamped() {
         try (HeadlessGui h = new HeadlessGui()) {
             h.gui.zoom(1000f);
-            assertEquals(3f, h.gui.zoom().value(), 0.001f);
+            assertEquals(3f, Seams.of(h.gui).zoom().value(), 0.001f);
             h.gui.zoom(0f);
-            assertEquals(0.5f, h.gui.zoom().value(), 0.001f);
+            assertEquals(0.5f, Seams.of(h.gui).zoom().value(), 0.001f);
         }
     }
 

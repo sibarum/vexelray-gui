@@ -216,7 +216,7 @@ public final class TitleBar {
 
         // The window can be maximized or restored without this widget being the cause, and every one of those
         // routes changes the viewport. Re-deriving from the window on that signal is what keeps the icon honest.
-        gui.viewport().onCommit(v -> syncMaximized());
+        Seams.of(gui).viewport().onCommit(v -> syncMaximized());
         syncMaximized();
     }
 

@@ -40,8 +40,8 @@ public final class ZoomKeys {
      */
     public static float follow(Gui gui, Gui opener) {
         bind(gui);
-        float zoom = opener == null ? 1f : opener.zoom().value();
+        float zoom = opener == null ? 1f : Seams.of(opener).zoom().value();
         gui.zoom(zoom);
-        return gui.zoom().value();
+        return Seams.of(gui).zoom().value();
     }
 }

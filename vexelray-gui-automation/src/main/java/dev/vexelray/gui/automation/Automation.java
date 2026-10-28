@@ -535,7 +535,7 @@ public final class Automation implements Commands {
         long deadline = System.nanoTime() + SETTLE_TIMEOUT_MS * 1_000_000L;
         java.util.concurrent.Semaphore published = new java.util.concurrent.Semaphore(0);
         String why;
-        try (var sub = gui.layout().onCommit(v -> published.release())) {
+        try (var sub = Seams.of(gui).layout().onCommit(v -> published.release())) {
             // Subscribed before the condition is read, never after: the frame carrying the scroll can land in
             // between, and layout does not republish when nothing has moved — so a wait armed afterwards is a
             // wait for a commit that is never coming again.
@@ -1114,7 +1114,7 @@ public final class Automation implements Commands {
         // Subscribed before the first look, or the publish that satisfies the wait can land in the gap between
         // looking and subscribing -- and then nothing further is published, and the wait runs to its timeout
         // having been true the whole time.
-        try (var sub = gui.layout().onCommit(v -> published.release())) {
+        try (var sub = Seams.of(gui).layout().onCommit(v -> published.release())) {
             while (true) {
                 String name = named(landmark);
                 if (name != null && name.toLowerCase(Locale.ROOT).contains(needle)) {
@@ -1157,7 +1157,7 @@ public final class Automation implements Commands {
     private String awaitExists(String landmark) {
         long deadline = System.nanoTime() + AWAIT_TIMEOUT_MS * 1_000_000L;
         java.util.concurrent.Semaphore published = new java.util.concurrent.Semaphore(0);
-        try (var sub = gui.layout().onCommit(v -> published.release())) {
+        try (var sub = Seams.of(gui).layout().onCommit(v -> published.release())) {
             while (true) {
                 SemanticNode n = landmarked(landmark);
                 if (n != null) {
@@ -1198,8 +1198,8 @@ public final class Automation implements Commands {
      * Everything {@link #zoom}, {@link #dpi} and {@link #resize} can change, read back in one line.
      */
     public String size() {
-        float zoom = gui.zoom().value();
-        float dpi = gui.dpi().value();
+        float zoom = Seams.of(gui).zoom().value();
+        float dpi = Seams.of(gui).dpi().value();
         WindowControls controls = this.controls.get();
         return "ok " + controls.width() + "x" + controls.height() + " zoom=" + number(zoom) + " dpi=" + number(dpi)
                 + " em=" + number(gui.rootEmPx() * zoom * dpi) + "px";
@@ -1215,12 +1215,12 @@ public final class Automation implements Commands {
      */
     private String zoom(String rest) {
         if (rest.isBlank()) {
-            return "ok zoom=" + number(gui.zoom().value());
+            return "ok zoom=" + number(Seams.of(gui).zoom().value());
         }
         float asked = factor(rest, "zoom");
         gui.zoom(asked);
         String failed = relayout();
-        float got = gui.zoom().value();
+        float got = Seams.of(gui).zoom().value();
         return failed != null ? failed : "ok zoom=" + number(got) + clampNote(asked, got, "zoom");
     }
 
@@ -1233,12 +1233,12 @@ public final class Automation implements Commands {
      */
     private String dpi(String rest) {
         if (rest.isBlank()) {
-            return "ok dpi=" + number(gui.dpi().value());
+            return "ok dpi=" + number(Seams.of(gui).dpi().value());
         }
         float asked = factor(rest, "dpi");
         gui.dpi(asked);
         String failed = relayout();
-        float got = gui.dpi().value();
+        float got = Seams.of(gui).dpi().value();
         return failed != null ? failed : "ok dpi=" + number(got) + clampNote(asked, got, "dpi");
     }
 
@@ -1294,7 +1294,7 @@ public final class Automation implements Commands {
             return "err resize needs a width and a height, like 1024x768 or 46em 30em";
         }
         String[] parts = {m.group(1), m.group(2)};
-        float em = gui.rootEmPx() * gui.zoom().value() * gui.dpi().value();
+        float em = gui.rootEmPx() * Seams.of(gui).zoom().value() * Seams.of(gui).dpi().value();
         int w = pixels(parts[0], em);
         int h = pixels(parts[1], em);
         controls.resize(w, h);

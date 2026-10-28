@@ -1,5 +1,6 @@
 package dev.vexelray.gui.demo.chapter;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.Length;
@@ -82,7 +83,7 @@ public final class TableChapter implements Chapter {
         // Read on every published layout, written only when it changed. The guard is not an optimisation: a
         // text write invalidates the layout, so a counter that wrote unconditionally would relayout for ever --
         // the same discipline the table's own column solve is under, which is why it is worth seeing twice.
-        gui.layout().onCommit(snapshot -> {
+        Seams.of(gui).layout().onCommit(snapshot -> {
             String now = ROWS + " rows  ·  " + table.rows().realizedRows() + " of them exist  ·  "
                     + table.selection().size() + " selected";
             if (!now.equals(lastCount)) {

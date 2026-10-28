@@ -149,7 +149,7 @@ class ViewVerbsTest {
             Automation automation = new Automation(gui, new FakeWindow(800, 600, 100, 100));
             String out = driven(gui, x -> automation.command("zoom 1.5"));
             assertEquals("ok zoom=1.5", out);
-            assertEquals(1.5f, gui.zoom().value());
+            assertEquals(1.5f, Seams.of(gui).zoom().value());
         }
     }
 
@@ -169,7 +169,7 @@ class ViewVerbsTest {
         try (Gui gui = deterministic()) {
             Automation automation = new Automation(gui, new FakeWindow(800, 600, 100, 100));
             assertEquals("ok dpi=2", driven(gui, x -> automation.command("dpi 2")));
-            assertEquals(2f, gui.dpi().value());
+            assertEquals(2f, Seams.of(gui).dpi().value());
         }
     }
 
@@ -189,7 +189,7 @@ class ViewVerbsTest {
     void resizeTakesEmResolvedAtTheCurrentZoom() {
         try (Gui gui = deterministic()) {
             Automation automation = new Automation(gui, new FakeWindow(800, 600, 100, 100));
-            float em = gui.rootEmPx() * gui.zoom().value() * gui.dpi().value();
+            float em = gui.rootEmPx() * Seams.of(gui).zoom().value() * Seams.of(gui).dpi().value();
             String out = driven(gui, x -> automation.command("resize 40em 30em"));
             assertEquals("ok " + Math.round(40 * em) + "x" + Math.round(30 * em), out);
         }
@@ -265,8 +265,8 @@ class ViewVerbsTest {
             windows.command("window prefs");
             String out = driven(prefs, x -> windows.command("zoom 2"));
             assertEquals("ok zoom=2", out);
-            assertEquals(2f, prefs.zoom().value());
-            assertEquals(1f, main.zoom().value(), "zoom in one window must not reach the other");
+            assertEquals(2f, Seams.of(prefs).zoom().value());
+            assertEquals(1f, Seams.of(main).zoom().value(), "zoom in one window must not reach the other");
         }
     }
 

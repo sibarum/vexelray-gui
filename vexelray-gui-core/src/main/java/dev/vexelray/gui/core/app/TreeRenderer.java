@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core.app;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.canvas.Canvas;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
@@ -179,8 +180,8 @@ public final class TreeRenderer {
      * destination and then fade to it from where it was.
      */
     public static void emit(RetainedNode node, Canvas canvas, TextFaces faces, Gui gui) {
-        Viewport v = gui.viewport().value();
-        LayoutContext ctx = new LayoutContext(gui.rootEmPx(), gui.zoom().value(), gui.dpi().value(),
+        Viewport v = Seams.of(gui).viewport().value();
+        LayoutContext ctx = new LayoutContext(gui.rootEmPx(), Seams.of(gui).zoom().value(), Seams.of(gui).dpi().value(),
                 v == null ? 0f : v.width(), v == null ? 0f : v.height());
         emit(node, canvas, faces, gui.drawnTheme(), gui.focusState(), ctx, gui.paintMotion(),
                 gui.flatShading());

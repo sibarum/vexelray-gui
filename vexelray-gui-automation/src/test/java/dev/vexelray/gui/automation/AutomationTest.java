@@ -501,7 +501,7 @@ class AutomationTest {
             Seams.of(gui).frame(W, H, NO_TEXT);
             assertEquals(1, bare.get(), "the modifiers came back up: a plain key afterwards is plain");
             assertEquals(1, enter.get());
-            assertTrue(gui.modifiers().value().isEmpty(), "nothing is left held");
+            assertTrue(Seams.of(gui).modifiers().value().isEmpty(), "nothing is left held");
 
             assertEquals("ok LEFT_CONTROL+T", driver.command("key CONTROL+T"), "the Modifier enum's own name");
             assertTrue(driver.command("key HYPER+T").startsWith("err no modifier named 'HYPER'"));
@@ -605,13 +605,13 @@ class AutomationTest {
 
             assertEquals("ok LEFT_SHIFT held: LEFT_SHIFT", driver.command("keydown shift"));
             Seams.of(gui).frame(W, H, NO_TEXT);
-            assertEquals(java.util.Set.of(Modifier.SHIFT), gui.modifiers().value(), "the application sees it held");
+            assertEquals(java.util.Set.of(Modifier.SHIFT), Seams.of(gui).modifiers().value(), "the application sees it held");
 
             assertEquals("ok A", driver.command("key A"));
             Seams.of(gui).frame(W, H, NO_TEXT);
             assertEquals(1, shifted.get(), "a key pressed while shift is held is Shift+A");
             assertEquals(0, bare.get());
-            assertEquals(java.util.Set.of(Modifier.SHIFT), gui.modifiers().value(),
+            assertEquals(java.util.Set.of(Modifier.SHIFT), Seams.of(gui).modifiers().value(),
                     "and key did not let go of what keydown holds");
 
             assertTrue(driver.command("keydown SHIFT").startsWith("err LEFT_SHIFT is already held"));
@@ -620,7 +620,7 @@ class AutomationTest {
 
             assertEquals("ok LEFT_SHIFT held: (none)", driver.command("keyup Shift"));
             Seams.of(gui).frame(W, H, NO_TEXT);
-            assertTrue(gui.modifiers().value().isEmpty());
+            assertTrue(Seams.of(gui).modifiers().value().isEmpty());
             assertEquals("ok A", driver.command("key A"));
             Seams.of(gui).frame(W, H, NO_TEXT);
             assertEquals(1, bare.get(), "released: a plain key afterwards is plain");
@@ -643,11 +643,11 @@ class AutomationTest {
 
             assertEquals("ok LEFT_CONTROL+LEFT_ALT held: LEFT_CONTROL+LEFT_ALT", driver.command("keydown ctrl+alt"));
             Seams.of(gui).frame(W, H, NO_TEXT);
-            assertEquals(java.util.Set.of(Modifier.CONTROL, Modifier.ALT), gui.modifiers().value());
+            assertEquals(java.util.Set.of(Modifier.CONTROL, Modifier.ALT), Seams.of(gui).modifiers().value());
 
             driver.letGo();
             Seams.of(gui).frame(W, H, NO_TEXT);
-            assertTrue(gui.modifiers().value().isEmpty(), "letting go released them");
+            assertTrue(Seams.of(gui).modifiers().value().isEmpty(), "letting go released them");
             assertEquals("ok nothing was held", driver.command("keyup"));
 
             assertEquals("ok LEFT_SHIFT held: LEFT_SHIFT", driver.command("keydown SHIFT"));

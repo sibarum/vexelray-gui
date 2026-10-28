@@ -93,6 +93,13 @@ public final class TextField implements AutoCloseable {
     public static final Topic<Changed> CHANGED =
             Topic.state("vexelray.gui.textfield.changed", Changed.class, Changed::field);
 
+    /**
+     * Where a field's caret is: published whenever it moves, by typing, the keys or a click. A state topic keyed by
+     * the field's address, so a status line hears where it ended up in a frame, and never runs anything in the field's.
+     */
+    public static final Topic<Caret> CARET =
+            Topic.state("vexelray.gui.textfield.caret", Caret.class, Caret::field);
+
     /** Enter in a single-line field: every one, in order. */
     public static final Topic<Submitted> SUBMITTED = Topic.edge("vexelray.gui.textfield.submitted", Submitted.class);
 
@@ -104,6 +111,17 @@ public final class TextField implements AutoCloseable {
      * to say which text it was computed from.
      */
     public record Changed(String field, String text, long version) implements dev.vexelray.gui.core.Addressed {
+        @Override
+        public Object address() {
+            return field;
+        }
+    }
+
+    /**
+     * The caret in {@code field} is at character {@code offset}: on line {@code line} and column {@code column},
+     * both counted from 1.
+     */
+    public record Caret(String field, int offset, int line, int column) implements dev.vexelray.gui.core.Addressed {
         @Override
         public Object address() {
             return field;
@@ -402,11 +420,10 @@ public final class TextField implements AutoCloseable {
     }
 
     /**
-     * The document as a versioned bus {@code State} — subscribe with {@code field.document().onCommit(...)} to
-     * observe every change with the version and the diff that produced it, or read {@code .value()} for a
-     * coherent snapshot from any thread without a lock.
+     * The document as a versioned bus {@code State}: the widget library's, since its listeners run on whoever commits,
+     * in the frame (vexelray-framework's threading.md, T7.2). A view hears {@link #CHANGED} and {@link #CARET}.
      */
-    public State<Document> document() {
+    State<Document> document() {
         return document;
     }
 
@@ -1592,6 +1609,28 @@ public final class TextField implements AutoCloseable {
         // only makes a Replace computed from this text stale sooner: it is never older than the text it is sent with.
         announce(d, document.version());
         onChange.accept(d.text());
+        if (d.caret() != lastCaret) {
+            lastCaret = d.caret();
+            gui.bus().publish(CARET, caret(address(), d));
+        }
+    }
+
+    /** Where the caret was last announced, so a commit that moved nothing of it announces nothing. */
+    private volatile int lastCaret = -1;
+
+    /** {@code d}'s caret, as line and column counted from 1. */
+    static Caret caret(String field, Document d) {
+        String text = d.text();
+        int at = Math.min(d.caret(), text.length());
+        int line = 1;
+        int lineStart = 0;
+        for (int i = 0; i < at; i++) {
+            if (text.charAt(i) == '\n') {
+                line++;
+                lineStart = i + 1;
+            }
+        }
+        return new Caret(field, at, line, at - lineStart + 1);
     }
 
     /**

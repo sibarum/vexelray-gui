@@ -71,7 +71,7 @@ public final class ColorHistory {
     }
 
     /** The colours, most recent first, as bus state — {@code history.colors().onCommit(...)} to follow it. */
-    public State<List<Color>> colors() {
+    State<List<Color>> colors() {
         return colors;
     }
 

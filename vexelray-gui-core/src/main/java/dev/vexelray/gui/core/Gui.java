@@ -1037,6 +1037,7 @@ public final class Gui implements AutoCloseable {
 
     /** The application-wide binding: {@link #history(Node, History, ClaimScope)} on the root, always in force. */
     public Gui history(History history) {
+        java.util.Objects.requireNonNull(history, "history").announceOn(bus, address(History.ADDRESS));   // heard in a mailbox
         return history(root, history, ClaimScope.GLOBAL);
     }
 
@@ -1984,6 +1985,11 @@ public final class Gui implements AutoCloseable {
 
     /** The seams' implementation: an inner class, so each one is the old method on this tree, moved. */
     private final class GuiSeams extends dev.vexelray.gui.core.spi.Seams {
+
+        @Override
+        public dev.vexelray.gui.core.spi.ScrollSource scrollSource(Scroller scroller, boolean vertical) {
+            return vertical ? scroller.y() : scroller.x();
+        }
 
         @Override
         public dev.vexelray.gui.core.spi.Seams clock(dev.vexelray.gui.core.spi.Clock clock) {

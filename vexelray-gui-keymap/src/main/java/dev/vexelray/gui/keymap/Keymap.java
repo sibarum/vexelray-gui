@@ -214,7 +214,7 @@ public final class Keymap {
     // ------------------------------------------------------------------ reading
 
     /** What the user changed, as bus state — {@code keymap.overrides().onCommitLatest(...)} to follow it. */
-    public State<Overrides> overrides() {
+    State<Overrides> overrides() {
         return overrides;
     }
 

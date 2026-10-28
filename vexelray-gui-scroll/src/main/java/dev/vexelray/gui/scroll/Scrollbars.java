@@ -1,5 +1,6 @@
 package dev.vexelray.gui.scroll;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.Scroller;
@@ -40,14 +41,14 @@ public final class Scrollbars {
     public static Scrollbars vertical(Gui gui, Node content) {
         Scroller scroller = gui.scroller(content).axes(false, true);
         scroller.node().width(Length.grow(1f));
-        Scrollbar bar = Scrollbar.vertical(gui, scroller.y());
+        Scrollbar bar = Scrollbar.vertical(gui, Seams.of(gui).scrollSource(scroller, true));
         return new Scrollbars(gui.row().children(scroller.node(), bar.node()), scroller, null, bar);
     }
 
     /** {@code content} scrolling horizontally, with a bar under it. */
     public static Scrollbars horizontal(Gui gui, Node content) {
         Scroller scroller = gui.scroller(content).axes(true, false);
-        Scrollbar bar = Scrollbar.horizontal(gui, scroller.x());
+        Scrollbar bar = Scrollbar.horizontal(gui, Seams.of(gui).scrollSource(scroller, false));
         return new Scrollbars(gui.column().children(scroller.node(), bar.node()), scroller, bar, null);
     }
 
@@ -55,8 +56,8 @@ public final class Scrollbars {
     public static Scrollbars both(Gui gui, Node content) {
         Scroller scroller = gui.scroller(content);
         scroller.node().width(Length.grow(1f));
-        Scrollbar right = Scrollbar.vertical(gui, scroller.y());
-        Scrollbar under = Scrollbar.horizontal(gui, scroller.x());
+        Scrollbar right = Scrollbar.vertical(gui, Seams.of(gui).scrollSource(scroller, true));
+        Scrollbar under = Scrollbar.horizontal(gui, Seams.of(gui).scrollSource(scroller, false));
         // The square where the two bars would cross: a box, so the bar under stops where the one beside begins.
         Node corner = gui.box().width(Scrollbar.THICKNESS).height(Scrollbar.THICKNESS);
         Node top = gui.row().children(scroller.node(), right.node());

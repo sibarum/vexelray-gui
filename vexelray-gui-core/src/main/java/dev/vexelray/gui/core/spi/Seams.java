@@ -380,6 +380,9 @@ public abstract class Seams {
     /** The tree's clock, or null before the host installs one. */
     public abstract Clock clock();
 
+    /** One axis of {@code scroller} as a scrollbar's source: vertical when {@code vertical}, else horizontal. */
+    public abstract ScrollSource scrollSource(dev.vexelray.gui.core.Scroller scroller, boolean vertical);
+
     // --- the GUI's own read models, as bus States: what a widget restyles or re-solves from (T7.2) ---
 
     /**

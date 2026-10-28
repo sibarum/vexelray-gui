@@ -5,7 +5,7 @@ import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.ScrollRange;
-import dev.vexelray.gui.core.ScrollSource;
+import dev.vexelray.gui.core.spi.ScrollSource;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.style.Role;

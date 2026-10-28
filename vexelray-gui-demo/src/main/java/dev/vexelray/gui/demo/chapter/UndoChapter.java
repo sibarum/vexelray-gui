@@ -103,9 +103,9 @@ public final class UndoChapter implements Chapter {
         gui.mailbox(Select.COMMITTED, select.address(), m -> readOut.run());
         gui.mailbox(TextField.CHANGED, text.address(), m -> readOut.run());
         gui.mailbox(Button.TOGGLED, chip.address(), m -> readOut.run());
-        history.status().onCommit(s -> {
+        gui.mailbox(History.STATUS, gui.address(History.ADDRESS), c -> {
             readOut.run();   // a command's change has no handler of its own to say so
-            status.text(depths(s.value()) + "  ·  last: " + last);
+            status.text(depths(c.status()) + "  ·  last: " + last);
         });
 
         // ---- the three refusals ----------------------------------------------------------------------------
@@ -127,7 +127,7 @@ public final class UndoChapter implements Chapter {
         // the rest — done here with the gallery's console, and said in a readout a scene can wait on.
         Seams.of(gui).onUndo(e -> {
             last = e.outcome().name().toLowerCase(Locale.ROOT);
-            status.text(depths(history.status().value()) + "  ·  last: " + last);
+            status.text(depths(history.status()) + "  ·  last: " + last);
             report(e, stage, console);
         });
 
@@ -146,7 +146,7 @@ public final class UndoChapter implements Chapter {
         gui.landmark("undo.remove", remove.node());
         gui.landmark("undo.underneath", underneath.node());
         readOut.run();
-        status.text(depths(history.status().value()) + "  ·  last: " + last);
+        status.text(depths(history.status()) + "  ·  last: " + last);
 
         Node page = gui.column().width(Length.FILL).height(Length.AUTO).gap(Ui.GAP).scroll(false, false).children(
                 Ui.card(gui,

@@ -1,6 +1,7 @@
 package dev.vexelray.gui.core;
 
 import dev.vexelray.gui.core.layout.LayoutEnums.ScrollLock;
+import dev.vexelray.gui.core.spi.ScrollSource;
 import dev.vexelray.gui.core.layout.NodeLayout;
 import sibarum.atchung.Committer;
 import sibarum.atchung.State;
@@ -83,13 +84,13 @@ public final class Scroller {
         return this;
     }
 
-    /** The horizontal axis, for a bar or anything else that shows and moves it. */
-    public ScrollSource x() {
+    /** The horizontal axis, for a bar or anything else that shows and moves it: the library's, by {@code Seams.scrollSource}. */
+    ScrollSource x() {
         return x;
     }
 
     /** The vertical axis. */
-    public ScrollSource y() {
+    ScrollSource y() {
         return y;
     }
 

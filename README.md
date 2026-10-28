@@ -227,13 +227,12 @@ anything.
 ```java
 Seams.of(gui).onDragSource(body, (x, y) -> rowAt(y) instanceof Row r ? Payload.of(ROW, r) : null);  // null = nothing here drags
 Seams.of(gui).onDrop(body, (payload, x, y) -> payload.as(ROW)                 // asked per frame, for *every* point
-        .map(row -> seamAt(y).accept(row))
+        .map(row -> seamAt(y).accept(row))           // a Drop: the effect, the indicator, and what landing does
         .orElse(Drop.NONE));
-gui.dropHistory(history);                            // until this is set, drops resolve and draw but commit nothing
 ```
 
 - **Sources are plural; resolution is singular.** A drag begun by the pointer and a cut carried in
-  hand resolve against the same targets, produce the same `Change`, and record in the same undo stack.
+  hand resolve against the same targets and land as the same message.
   The keyboard route is the pointer route with the position supplied by the selection instead of the
   mouse — which is why `gui.transfer(...)` (what is held for a paste) is one per `Gui` and not the OS
   clipboard: a typed payload has nowhere to ride across a process boundary.
@@ -252,11 +251,16 @@ gui.dropHistory(history);                            // until this is set, drops
   on purpose: it rules out the drop that works in some places and silently does nothing in others, so
   the user learns to hunt for the spot that "takes". `Drop.NONE` is a legitimate answer — the point is
   that it is an *answer*, chosen, rather than a gap nobody considered. It describes and never acts:
-  what is *shown* is what is performed on release, from the same resolution.
-- **Refusing is an ordinary answer.** A `Reorder<T>` returns the `Change` that puts an item at a
-  `Placement`, or null — dropping a folder inside itself, a read-only branch, a copy of an item that
-  cannot be duplicated. Refusing here means the user is told by the indicator *before* releasing
-  rather than by nothing happening afterwards.
+  what is *shown* is what lands on release, from the same resolution. Those are the widget library's seams
+  (`Seams`); an application's own widgets declare and announce, below.
+- **What is offered is declared; what lands is announced.** A tree is made `reorderable(MOVE)` (or `MOVE, COPY`),
+  and each `Entry` says whether it `acceptsChildren`. From that and what it can see, the tree refuses in the
+  frame: a folder dropped inside itself, a read-only branch, a move that leaves an item where it is, a copy in a
+  tree without one. The user is told by the indicator *before* releasing rather than by nothing happening
+  afterwards, and no application code runs while the pointer moves. A drop or a paste that is offered lands as
+  `TreeView.PLACED`; the application moves the item in its own model, records it in its own history, and sends
+  `TreeView.REFRESH`. What only the model knows (a name already taken there) it refuses when it hears it.
+  vexelray-framework's threading.md, T7.2 and T7.5, has why.
 - **A `Placement` is relative, never an index.** "After Q" survives an edit elsewhere; "under P at
   index 4" does not, and a reorder undone minutes later is not hypothetical.
 - **`DropIndicator`** is told *where* and decides only *how* — a bar on a seam, a ring around a box,
@@ -271,9 +275,9 @@ where the thing itself should leave its place and travel with the hand:
 ```java
 Board<Task> board = new Board<Task>(gui, task -> card(task))       // any node; the board moves that node
         .motion((p, done) -> krono.ramp(Dur.ms(200), Ease.OUT_CUBIC, p, done));
-Deck<Task> todo = board.column().items(model.todo())
-        .reorderable((moved, where, effect) -> model.move(moved, TODO, where));   // a Change, or null
-model.onChange(() -> todo.items(model.todo()));    // every edit ends here, undo included
+Deck<Task> todo = board.column().name("todo").items(model.todo()).reorderable();
+gui.mailbox(Deck.PLACED, todo.address(), p -> logic.send(new Move(p.item(), TODO, p.where())));
+// told the logic's new list, the view hands it over: todo.items(list). Every edit ends there, undo included
 ```
 
 - **Every state shows, and none of it in words.** Pressed, the card sinks into its lane and follows the
@@ -333,9 +337,9 @@ gui.history(field.node(), field.history(), ClaimScope.FOCUSED);   // and the edi
 Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y, bound to a `History` and claimed at a scope. **Nesting needs nothing
 new**: claim precedence already says the specific binding wins while it applies, so Ctrl+Z undoes your
 typing while the caret is in a field and the last document command when it is not, with neither
-history knowing the other exists. A transfer records into `gui.dropHistory()` whichever way it was
-made, so a drop and a paste land in the same stack rather than in two that disagree about what "the
-last thing you did" was.
+history knowing the other exists. A drop or a paste is the application's edit, announced by the widget
+(`TreeView.PLACED`, `Deck.PLACED`), and the application records it where it records its other edits, so a drop
+and a paste land in the same stack whichever way they were made.
 
 ### Key bindings
 
@@ -488,7 +492,7 @@ The controls themselves:
   (Up/Down/Left/Right/Home/End/PageUp/PageDown/Enter).
 - **`Board<T>` / `Deck<T>`** — cards the user picks up, carries and puts down: within a column, and between the
   columns (`Deck`s) of one board. The application says what a card looks like (any node — the board moves that
-  same node everywhere it goes) and what a placement means (a `Reorder<T>`, as for the tree); the board does the
+  same node everywhere it goes) and what a placement means (it hears `Deck.PLACED`, as a tree's application hears `TreeView.PLACED`); the board does the
   rest, and **nothing on screen ever jumps** doing it. See *Cards* under Transfer above.
 - **`ListView<T>`** — a list whose retained tree holds **viewport-many rows however long the list is**.
   Three children, always: a top spacer, the realized rows, a bottom spacer. The spacers stand in for

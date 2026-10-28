@@ -75,7 +75,7 @@ class BoardTest {
         }
     }
 
-    /** The application: named columns of strings, changed only through undoable changes. */
+    /** The application: named columns of strings, changed only through undoable changes in its own history. */
     private static final class Model {
         Map<String, List<String>> columns = new LinkedHashMap<>();
         final Map<String, Deck<String>> decks = new LinkedHashMap<>();
@@ -96,8 +96,14 @@ class BoardTest {
             };
         }
 
-        Reorder<String> into(String column) {
-            return (moved, where, effect) -> {
+        /** Hear where cards are put in {@code deck}, and move them there as one step of {@code history}. */
+        void hear(HeadlessGui h, Deck<String> deck, String column, History history) {
+            h.bus.subscribe(Deck.PLACED, placed -> {
+                if (!placed.at().equals(deck.address())) {
+                    return;
+                }
+                String moved = (String) placed.item();
+                Placement<?> where = placed.where();
                 asked.add(moved + " " + where.relation() + " " + where.reference() + " in " + column);
                 Map<String, List<String>> next = new LinkedHashMap<>();
                 for (Map.Entry<String, List<String>> e : columns.entrySet()) {
@@ -112,8 +118,10 @@ class BoardTest {
                     at = where.relation() == Placement.Relation.BEFORE ? ref : ref + 1;
                 }
                 to.add(at, moved);
-                return next.equals(columns) ? null : set(next);
-            };
+                if (!next.equals(columns)) {
+                    history.perform(set(next));
+                }
+            });
         }
     }
 
@@ -123,14 +131,14 @@ class BoardTest {
 
     /** One column, or several side by side, each holding the listed cards. */
     private Board<String> board(HeadlessGui h, Map<String, List<String>> columns) {
-        h.gui.dropHistory(history);
         Board<String> board = new Board<String>(h.gui,
                 s -> h.gui.box().width(Length.FILL).height(Length.dp(40)))
                 .spacing(Length.dp(5)).motion(hand);
         Node row = h.gui.row().width(Length.FILL).height(Length.FILL);
         model.columns = new LinkedHashMap<>(columns);
         for (String name : columns.keySet()) {
-            Deck<String> deck = board.column().reorderable(model.into(name));
+            Deck<String> deck = board.column().name(name).reorderable();
+            model.hear(h, deck, name, history);
             deck.node().width(Length.grow(1));
             model.decks.put(name, deck);
             row.append(deck.node());
@@ -461,12 +469,12 @@ class BoardTest {
     @DisplayName("a card taken by something that is not a deck fades where it was let go, and its slot closes")
     void takenElsewhere() {
         try (HeadlessGui h = new HeadlessGui()) {
-            h.gui.dropHistory(history);
             Board<String> board = new Board<String>(h.gui,
                     s -> h.gui.box().width(Length.FILL).height(Length.dp(40)))
                     .spacing(Length.dp(5)).motion(hand);
             model.columns = new LinkedHashMap<>(Map.of("todo", List.of("a", "b")));
-            Deck<String> deck = board.column().reorderable(model.into("todo"));
+            Deck<String> deck = board.column().name("todo").reorderable();
+            model.hear(h, deck, "todo", history);
             deck.node().width(Length.rem(20));
             model.decks.put("todo", deck);
             List<String> binned = new ArrayList<>();
@@ -478,7 +486,7 @@ class BoardTest {
                         List<String> l = new ArrayList<>(next.get("todo"));
                         l.remove(item);
                         next.put("todo", l);
-                        return model.set(next).apply();
+                        history.perform(model.set(next));
                     }))
                     .orElse(Drop.NONE));
             h.gui.root().children(h.gui.row().width(Length.FILL).height(Length.FILL).children(deck.node(), bin));

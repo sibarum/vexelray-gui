@@ -1,6 +1,5 @@
 package dev.vexelray.gui.core.drop;
 
-import dev.vexelray.gui.core.edit.History;
 
 import java.util.List;
 import java.util.Objects;
@@ -32,14 +31,14 @@ import java.util.Objects;
  *
  * <p>{@link #commit} refuses unless the session was rendered at least once. That is the protection against the
  * gesture that was meant to be a click: a fast press-twitch-release can satisfy any distance threshold, and
- * without this it would land a real, undoable mutation from a drag that never appeared on screen for even one
+ * without this it would land a real edit from a drag that never appeared on screen for even one
  * frame. Distance and time thresholds are a source's business and they help, but they are tuning; this is the
  * invariant, and it is stated where the commit happens rather than where the gesture is recognised, because it
  * has to hold for every source including the ones that have no thresholds at all.
  *
- * <p>The counterpart matters as much: a cancelled drag records <b>nothing</b>. Not a change and its immediate
- * undo — {@link History#record} discards the redo stack, so a cancelled drag would silently destroy work the
- * user could otherwise have redone, which is a worse outcome than the drag they just abandoned.
+ * <p>The counterpart matters as much: a cancelled drag lands <b>nothing</b>. Not a landing and its immediate
+ * undo, which in a history that discards its redo stack on every new step would silently destroy work the user
+ * could otherwise have redone — a worse outcome than the drag they just abandoned.
  *
  * <h2>Threading</h2>
  *
@@ -170,16 +169,15 @@ public final class DragSession {
     }
 
     /**
-     * End the drag by releasing, performing the resolved change through {@code history} if there is one to
-     * perform and the user has actually seen this drag.
+     * End the drag by releasing, landing the resolved drop if there is one and the user has actually seen this
+     * drag.
      *
      * <p>Ends the session either way: a release that lands on nothing is still the end of the gesture.
      *
      * @return the drop that was performed, or {@link Drop#NONE} if nothing was — which the caller should treat
      *         as a cancel for the purposes of animation, because from the user's side nothing happened
      */
-    public Drop commit(History history) {
-        Objects.requireNonNull(history, "history");
+    public Drop commit() {
         if (ended) {
             return Drop.NONE;
         }
@@ -187,14 +185,14 @@ public final class DragSession {
         if (!drop.accepts() || framesSeen == 0) {
             return Drop.NONE;
         }
-        history.perform(drop.change());
+        drop.landed().run();
         return drop;
     }
 
     /**
      * End the drag without performing anything — Escape, an OS {@code DragLeave}, or a source tearing down.
      *
-     * <p>Deliberately takes no {@link History}: there is nothing to tell it. The animation that returns the
+     * <p>Lands nothing: there is nothing to tell anyone. The animation that returns the
      * dragged thing to where it came from is the caller's, and it is the only trace a cancel leaves.
      */
     public void cancel() {

@@ -1,6 +1,5 @@
 package dev.vexelray.gui.widget;
 
-import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.input.InputTopics;
 import dev.vexelray.gui.core.layout.Rect;
 import dev.vexelray.gui.draw.Picture;
@@ -54,13 +53,12 @@ class TreeDropIndicatorTest {
 
     private TreeView<String> tree(HeadlessGui h) {
         TreeView<String> tree = Listing.tree(h, new MapSource());
-        tree.reorderable((moved, where, effect) -> moved.equals(where.reference()) ? null : () -> null);
+        tree.reorderable(dev.vexelray.gui.core.drop.DropEffect.MOVE);
         tree.dropIndicator((where, effect) -> {
             painted.add(where);
             return Picture.of(new Picture.Fill(where.x(), where.y(), where.w(), where.h(), 0, 0,
                     h.gui.theme().color(dev.vexelray.gui.core.style.Role.ACCENT)));
         });
-        h.gui.dropHistory(new History());
         h.gui.root().children(tree.node());
         h.frame();
         return tree;

@@ -6,8 +6,6 @@ import dev.vexelray.gui.core.drop.Drop;
 import dev.vexelray.gui.core.drop.DropEffect;
 import dev.vexelray.gui.core.drop.Payload;
 import dev.vexelray.gui.core.drop.PayloadType;
-import dev.vexelray.gui.core.edit.Change;
-import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.layout.Rect;
 import dev.vexelray.gui.core.model.RetainedNode;
 import org.junit.jupiter.api.DisplayName;
@@ -38,7 +36,7 @@ class DragWatchTest {
 
     private final Atchung bus = Atchung.create();
     private final InputDispatcher dispatcher = new InputDispatcher(bus, "test", CLICKS);
-    private final History history = new History();
+    private final List<String> landed = new ArrayList<>();
     private final List<String> heard = new ArrayList<>();
     private RetainedNode root;
 
@@ -58,8 +56,7 @@ class DragWatchTest {
         body.parent = root;
         root.children.add(body);
         dispatcher.onDragSource(7, (x, y) -> Payload.of(ROW, "r"));
-        dispatcher.onDrop(7, (payload, x, y) -> Drop.move(new Rect(0f, y, 200f, 2f), nothing()));
-        dispatcher.dropHistory(history);
+        dispatcher.onDrop(7, (payload, x, y) -> Drop.move(new Rect(0f, y, 200f, 2f), () -> landed.add("r")));
         dispatcher.watchDrag(7, recorder("w"));
     }
 
@@ -73,15 +70,6 @@ class DragWatchTest {
             @Override
             public void ended(DragState last, DropEffect performed) {
                 heard.add(name + ":ended " + Math.round(last.y()) + " " + last.effect() + " -> " + performed);
-            }
-        };
-    }
-
-    private static Change nothing() {
-        return new Change() {
-            @Override
-            public Change apply() {
-                return this;
             }
         };
     }
@@ -179,7 +167,7 @@ class DragWatchTest {
 
         assertEquals("w:ended 60 MOVE -> NONE", heard.getLast(),
                 "no frame drew it, so there is nothing to settle — but the source still has to put it back");
-        assertFalse(history.canUndo());
+        assertTrue(landed.isEmpty());
     }
 
     @Test
@@ -205,7 +193,7 @@ class DragWatchTest {
         release(20, 60);
         frame();
         assertTrue(seen.getLast().latched(), "and still carried, latched, once it is up");
-        assertFalse(history.canUndo(), "letting go is not dropping");
+        assertTrue(landed.isEmpty(), "letting go is not dropping");
 
         move(20, 90);
         frame();
@@ -213,7 +201,7 @@ class DragWatchTest {
         press(20, 90);
         release(20, 90);
         frame();
-        assertTrue(history.canUndo(), "the click did");
+        assertFalse(landed.isEmpty(), "the click did");
         assertEquals("w:ended 90 MOVE -> MOVE", heard.getLast());
     }
 
@@ -235,7 +223,7 @@ class DragWatchTest {
 
         assertEquals("w:ended 60 MOVE -> NONE", heard.getLast());
         assertEquals(List.of(), menus, "the click that cancelled is used up by cancelling");
-        assertFalse(history.canUndo());
+        assertTrue(landed.isEmpty());
     }
 
     @Test

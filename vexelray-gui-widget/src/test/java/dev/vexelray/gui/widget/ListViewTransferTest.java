@@ -1,9 +1,7 @@
 package dev.vexelray.gui.widget;
 
-import dev.vexelray.gui.core.drop.Drop;
+import dev.vexelray.gui.core.drop.DropEffect;
 import dev.vexelray.gui.core.drop.PayloadType;
-import dev.vexelray.gui.core.edit.Change;
-import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.input.InputTopics;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.Rect;
@@ -21,8 +19,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Dragging rows between two lists told about the same payload type: what is carried, where it lands, and that a
- * row refusing a drop hands it to the list rather than leaving a hole.
+ * Dragging rows between two lists told about the same payload type: what is carried, and where it lands, announced on
+ * {@code LANDED}. What landing means, a row that will not take it included, is the application's.
  */
 class ListViewTransferTest {
 
@@ -30,28 +28,13 @@ class ListViewTransferTest {
 
     private final List<String> drops = new ArrayList<>();
 
-    /** Lands on a row ending in "/" (a folder) as "into", anywhere else on the list as "here"; never on its own rows. */
-    private ListView.Receiver<String, List<String>> receiver(List<String> own) {
-        return (held, onto) -> {
-            if (own.containsAll(held)) {
-                return onto != null && onto.endsWith("/") && !held.contains(onto)
-                        ? Drop.move(Rect.ZERO, change(held + " into " + onto)) : Drop.NONE;
+    /** Write down what lands on {@code list}, and where. */
+    private void recording(HeadlessGui h, ListView<String> list) {
+        h.bus.subscribe(ListView.LANDED, l -> {
+            if (l.list().equals(list.address())) {
+                drops.add(l.held() + " onto " + (l.onto() == null ? "the list" : l.onto()));
             }
-            if (onto == null) {
-                return Drop.copy(Rect.ZERO, change(held + " here"));
-            }
-            return onto.endsWith("/") ? Drop.move(Rect.ZERO, change(held + " into " + onto)) : Drop.NONE;
-        };
-    }
-
-    private Change change(String what) {
-        return new Change() {
-            @Override
-            public Change apply() {
-                drops.add(what);
-                return change("undo(" + what + ")");
-            }
-        };
+        });
     }
 
     private static final List<String> LEFT = List.of("a.txt", "b.txt", "c.txt");
@@ -67,8 +50,10 @@ class ListViewTransferTest {
             l.draggable(NAMES, held -> held.size() == 1 ? held.get(0) : held.size() + " items");
             l.node().width(Length.grow(1f));
         }
-        left.droppable(NAMES, receiver(LEFT));
-        right.droppable(NAMES, receiver(RIGHT));
+        left.droppable(NAMES, DropEffect.MOVE);
+        right.droppable(NAMES, DropEffect.MOVE);
+        recording(h, left);
+        recording(h, right);
         left.items(LEFT);
         right.items(RIGHT);
         h.gui.root().children(h.gui.row().width(Length.FILL).height(Length.FILL)
@@ -108,6 +93,7 @@ class ListViewTransferTest {
         press(h, tx, ty);
         release(h, tx, ty);
         h.frame();
+        h.frame();          // and what landed is delivered
     }
 
     private static float midX(Rect r) {
@@ -119,32 +105,28 @@ class ListViewTransferTest {
     }
 
     @Test
-    @DisplayName("a row dropped on a folder row of the other list lands in it, and undoes")
+    @DisplayName("a row dropped on a row of the other list lands on it")
     void ontoARow() {
         try (HeadlessGui h = new HeadlessGui()) {
-            History history = new History();
-            h.gui.dropHistory(history);
             Two t = two(h);
             Rect from = rect(t.left(), "b.txt");
             Rect to = rect(t.right(), "y/");
             drag(h, midX(from), midY(from), midX(to), midY(to));
-            assertEquals(List.of("[b.txt] into y/"), drops);
+            assertEquals(List.of("[b.txt] onto y/"), drops);
             assertEquals(Set.of("b.txt"), t.left().selection().selection(), "what was grabbed is the selection");
-            assertTrue(history.canUndo());
         }
     }
 
     @Test
-    @DisplayName("a row that refuses hands the drop to the list, and the whole selection is carried in order")
-    void refusalBubbles() {
+    @DisplayName("the whole selection is carried, in order")
+    void theSelectionIsCarried() {
         try (HeadlessGui h = new HeadlessGui()) {
-            h.gui.dropHistory(new History());
             Two t = two(h);
             t.left().selection().set(Set.of("c.txt", "a.txt"));
             Rect from = rect(t.left(), "c.txt");
-            Rect to = rect(t.right(), "x.txt");   // a file: refuses, so the list takes it
+            Rect to = rect(t.right(), "x.txt");   // a file: what landing on it means is the application's
             drag(h, midX(from), midY(from), midX(to), midY(to));
-            assertEquals(List.of("[a.txt, c.txt] here"), drops);
+            assertEquals(List.of("[a.txt, c.txt] onto x.txt"), drops);
         }
     }
 
@@ -152,13 +134,12 @@ class ListViewTransferTest {
     @DisplayName("below the last row is the list itself, for a drop and never for a pick-up")
     void belowTheRows() {
         try (HeadlessGui h = new HeadlessGui()) {
-            h.gui.dropHistory(new History());
             Two t = two(h);
             Rect from = rect(t.left(), "a.txt");
             Rect last = rect(t.right(), "y/");
             float below = last.y() + last.h() * 3f;
             drag(h, midX(from), midY(from), midX(last), below);
-            assertEquals(List.of("[a.txt] here"), drops);
+            assertEquals(List.of("[a.txt] onto the list"), drops);
 
             drops.clear();
             drag(h, midX(last), below, midX(from), midY(from));   // nothing there to pick up

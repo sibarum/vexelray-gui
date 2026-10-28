@@ -95,6 +95,25 @@ public final class ListView<T> implements AutoCloseable {
     /** A row activated: double-clicked, or Enter on a selection of one. Every one, in order. */
     public static final Topic<Activated> ACTIVATED = Topic.edge("vexelray.gui.list.activated", Activated.class);
 
+    /**
+     * Something dropped on a {@link #droppable} list: on a row, or on the list itself. The list changes nothing for
+     * it; what landing means is the application's. Every one, in order.
+     */
+    public static final Topic<Landed> LANDED = Topic.edge("vexelray.gui.list.landed", Landed.class);
+
+    /**
+     * {@code held}, the payload, was dropped with {@code effect} on the row of the list at {@code list} showing
+     * {@code onto}, or on the list itself when {@code onto} is null: below the last row. A row whose item cannot take
+     * it is the application's to treat as the list, the way a file dropped on a file in an explorer pane lands in the
+     * folder the pane shows (transfer.md §4).
+     */
+    public record Landed(String list, Object held, Object onto, DropEffect effect) implements Addressed {
+        @Override
+        public Object address() {
+            return list;
+        }
+    }
+
     /** The list at {@code list} has {@code chosen} selected. */
     public record Selected(String list, Set<Object> chosen) implements Addressed {
         public Selected {
@@ -455,23 +474,6 @@ public final class ListView<T> implements AutoCloseable {
     // ------------------------------------------------------------------ transfer
 
     /**
-     * What dropping {@code held} on a row of this list would do, as a {@code DropTarget} answers it: the effect and
-     * the change, or {@link Drop#NONE} (or null) to refuse.
-     *
-     * <p>{@code onto} is the row under the pointer, or null for <b>the list itself</b> — the space below the last
-     * row, and any row whose own answer was a refusal. That second case is the one that matters: declines bubble
-     * (transfer.md §4), so a row that will not take a drop does not punch a row-shaped hole in a list that would. A
-     * file dropped on a file in an explorer pane lands in the folder the pane shows.
-     *
-     * <p>Where the drop is shown is the list's: the row's box, or the list's own for null. The indicator in the
-     * returned {@link Drop} is not read, so pass {@code Rect.ZERO}.
-     */
-    @FunctionalInterface
-    public interface Receiver<T, P> {
-        Drop land(P held, T onto);
-    }
-
-    /**
      * Let rows be dragged out of this list, offered as {@code type}: the whole selection, in the order shown, when
      * the row grabbed is part of it, and otherwise that row alone, which becomes the selection — the same thing a
      * click would do, so the menu and the keyboard agree with what the pointer just picked up.
@@ -524,16 +526,18 @@ public final class ListView<T> implements AutoCloseable {
     }
 
     /**
-     * Let something dragged as {@code type} be dropped on this list, with {@code receiver} saying what each landing
-     * means. Every point in the list resolves: a row, or failing that the list itself (see {@link Receiver}). Nothing
-     * happens until the release, and then through {@link Gui#dropHistory}, so the drop undoes like any other edit;
-     * without a history it resolves and draws but commits nothing.
+     * Let something dragged as {@code type} be dropped on this list, meaning {@code effect}: on a row, or below the
+     * last one on the list itself. Every point in the list resolves, so there is no crack between two rows where a
+     * drop silently fails. Which drops are offered is declared here, by type, and decided in the frame; what landing
+     * means is the application's, told on {@link #LANDED} (vexelray-framework's threading.md, T7.5).
      */
-    public <P> ListView<T> droppable(PayloadType<P> type, Receiver<T, P> receiver) {
+    public <P> ListView<T> droppable(PayloadType<P> type, DropEffect effect) {
         Objects.requireNonNull(type, "type");
-        Objects.requireNonNull(receiver, "receiver");
+        if (!effect.accepts()) {
+            throw new IllegalArgumentException("a drop has an effect: " + effect);
+        }
         Seams.of(gui).onDrop(root, (payload, x, y) -> payload.as(type)
-                .map(held -> resolve(receiver, held, x, y))
+                .map(held -> resolve(held, effect, x, y))
                 .orElse(Drop.NONE));
         synchronized (this) {
             if (dropSub == null) {
@@ -544,23 +548,16 @@ public final class ListView<T> implements AutoCloseable {
         return this;
     }
 
-    /** Which row the pointer is over, and what landing there means — or, refused there, landing on the list. */
-    private <P> Drop resolve(Receiver<T, P> receiver, P held, float x, float y) {
+    /** Which row the pointer is over, or the list below the last one: where the drop is shown, and what it says. */
+    private Drop resolve(Object held, DropEffect effect, float x, float y) {
         T onto = itemAt(x, y);
-        if (onto != null) {
-            Drop d = receiver.land(held, onto);
-            Node row = rowNode(onto);
-            Rect at = row == null ? null : row.layout().rect();
-            if (d != null && d.accepts() && at != null) {
-                return new Drop(d.effect(), at, d.change());
-            }
-        }
-        Rect box = root.layout().rect();
-        Drop d = receiver.land(held, null);
-        if (d == null || !d.accepts() || box == null) {
+        Node row = onto == null ? null : rowNode(onto);
+        Rect at = (row == null ? root : row).layout().rect();
+        if (at == null) {
             return Drop.NONE;
         }
-        return new Drop(d.effect(), box, d.change());
+        Object on = row == null ? null : onto;
+        return new Drop(effect, at, () -> gui.bus().publish(LANDED, new Landed(name.address(), held, on, effect)));
     }
 
     /**

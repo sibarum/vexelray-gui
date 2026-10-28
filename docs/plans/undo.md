@@ -149,8 +149,9 @@ conflict check makes that safe for built-in widgets, but not for an application'
 
 ## 5. Scope
 
-**One history per window**, created by the framework shell, bound to the chords and to `dropHistory`, and
-injectable. *Ruled 2026-10-13* (scope per window). Reason: two windows on two documents must not share one
+**One history per window**, created by the framework shell, bound to the chords, and
+injectable. (It was also the GUI's drop history until 0.2, when a drop became the application's edit, announced
+by the widget and recorded by the application: vexelray-framework's threading.md, T7.2.) *Ruled 2026-10-13* (scope per window). Reason: two windows on two documents must not share one
 stack.
 
 **Text fields stop keeping a private history**; their typing runs become entries in the window's, ended by a

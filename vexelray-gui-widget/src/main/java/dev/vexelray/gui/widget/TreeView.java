@@ -11,12 +11,10 @@ import dev.vexelray.gui.core.drop.DragWatch;
 import dev.vexelray.gui.core.drop.DropEffect;
 import dev.vexelray.gui.core.drop.Payload;
 import dev.vexelray.gui.core.drop.PayloadType;
-import dev.vexelray.gui.core.edit.Change;
 import dev.vexelray.gui.core.input.ClickEvent;
 import dev.vexelray.gui.core.input.CursorShape;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.layout.LayoutEnums;
-import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.drop.Transfer;
 import dev.vexelray.gui.core.input.ClaimScope;
 import dev.vexelray.gui.core.input.KeyEvent;
@@ -153,6 +151,18 @@ public final class TreeView<T> implements AutoCloseable {
     /** What is ticked, for the tree that is told: applied on the GUI thread, in the frame it arrives. Every one. */
     public static final Topic<Marks> MARKS = Topic.edge("vexelray.gui.tree.marks", Marks.class);
 
+    /**
+     * An item put somewhere in a {@link #reorderable} tree, by a drop or a paste. The tree moves no row for it: the
+     * hierarchy is the application's, and it says when it has changed with {@link #REFRESH}. Every one, in order.
+     */
+    public static final Topic<Placed> PLACED = Topic.edge("vexelray.gui.tree.placed", Placed.class);
+
+    /**
+     * The hierarchy has changed: the tree that is told asks again for every level it has listed, as
+     * {@link #refresh()} does. The last in a frame, since a second in the same frame would ask the same questions.
+     */
+    public static final Topic<Refresh> REFRESH = Topic.state("vexelray.gui.tree.refresh", Refresh.class, Refresh::tree);
+
     /** The tree at {@code tree} has {@code item} selected. */
     public record Selected(String tree, Object item) implements Addressed {
         @Override
@@ -179,6 +189,14 @@ public final class TreeView<T> implements AutoCloseable {
 
     /** The pointer is on {@code item}'s row in the tree at {@code tree}, or on none of its rows when null. */
     public record Hovered(String tree, Object item) implements Addressed {
+        @Override
+        public Object address() {
+            return tree;
+        }
+    }
+
+    /** The tree at {@code tree} should look at its hierarchy again: something under it has changed. */
+    public record Refresh(String tree) implements Addressed {
         @Override
         public Object address() {
             return tree;
@@ -248,7 +266,7 @@ public final class TreeView<T> implements AutoCloseable {
      * drop <em>into</em> — and since taking the last child out of a branch is what empties it, the tree let the user
      * reach a state it gave them no way to leave. Say true where a branch is a branch because of what it <em>is</em>
      * rather than what happens to be in it: a directory, a column on a board, a group. It is not a promise that any
-     * drop succeeds: the application still refuses individual placements through {@link Reorder}. This decides whether
+     * drop succeeds: the application still refuses what only its model knows when it hears {@link #PLACED}. This decides whether
      * the band is offered at all; that decides what happens in it.
      *
      * @param icon drawn before the label — a folder, a file's type, a class — or null for none. A tree none of whose
@@ -711,9 +729,10 @@ public final class TreeView<T> implements AutoCloseable {
     private final String name;
     /** Where it is on the bus, the GUI's name and {@link #name}: what every message to or from it carries. */
     private final String address;
-    /** The tree's mailboxes for {@link #CHILDREN} and {@link #MARKS}, routed by {@link #address}. */
+    /** The tree's mailboxes for {@link #CHILDREN}, {@link #MARKS} and {@link #REFRESH}, routed by {@link #address}. */
     private final Subscription childrenSub;
     private final Subscription marksSub;
+    private final Subscription refreshSub;
     private final Node root;
 
     /**
@@ -754,8 +773,8 @@ public final class TreeView<T> implements AutoCloseable {
     private final Map<T, Row> rowsByItem = new HashMap<>();
     private final List<Row> visible = new ArrayList<>();
     private Row selected;
-    /** What a reorder means, or null until reorderable() is called. */
-    private volatile Reorder<T> reorder;
+    /** The effects a placement may have, or null until reorderable() is called. */
+    private volatile java.util.Set<DropEffect> effects;
     /** Whether checkable() has been called, which is what shows every box. */
     private volatile boolean checkable;
     /** What the application last said is ticked, by item, whether or not the item has a row. Guarded by this. */
@@ -836,6 +855,7 @@ public final class TreeView<T> implements AutoCloseable {
         this.address = gui.address(name);
         this.childrenSub = gui.mailbox(CHILDREN, address, this::listed);
         this.marksSub = gui.mailbox(MARKS, address, this::marked);
+        this.refreshSub = gui.mailbox(REFRESH, address, r -> refresh());
         ContextMenu.presentOn(gui);   // rows carry whatever menu the application declares; this shows it
         // Marked plus and minus, the set's own for "open everything under it" and "shut it": the row's chevron
         // opens one level, and these walk the whole subtree, so they are told apart from it on purpose. Enabled by
@@ -850,13 +870,13 @@ public final class TreeView<T> implements AutoCloseable {
         // anything; hidden rather than greyed, since a tree that will never take a paste is not a tree where
         // Paste "does not apply right now".
         this.cutAction = Action.<T>of(Icon.CUT, "Cut", (item, job) -> take(item, DropEffect.MOVE))
-                .shownWhen(item -> reorder != null);
+                .shownWhen(item -> offers(DropEffect.MOVE));
         this.copyAction = Action.<T>of(Icon.COPY, "Copy", (item, job) -> take(item, DropEffect.COPY))
-                .shownWhen(item -> reorder != null);
+                .shownWhen(item -> offers(DropEffect.COPY));
         // Greyed rather than hidden, because this one genuinely is "not right now": there is nothing in hand,
         // and the entry disappearing would leave the user wondering where the command went between two clicks.
         this.pasteAction = Action.<T>of(Icon.PASTE, "Paste", (item, job) -> paste(item))
-                .shownWhen(item -> reorder != null)
+                .shownWhen(item -> effects != null)
                 .enabledWhen(item -> gui.transfer().offers(itemType));
         // The frame and the scroller are two boxes, not one. The frame carries the tree's own look and holds the
         // chrome; the rows go inside a scroller that fills what is left of it. One box could not do both: the bar
@@ -1025,7 +1045,8 @@ public final class TreeView<T> implements AutoCloseable {
     }
 
     /**
-     * Ask for the hierarchy again and bring the rows into line with it — the other half of {@link #reorderable}.
+     * Ask for the hierarchy again and bring the rows into line with it — what {@link #REFRESH} does, and the other half
+     * of {@link #reorderable}.
      *
      * <p>A tree is told its model a level at a time, when it asks, and is never told when that model changes, which
      * is the right split (it is the application's model, mutated by the application's code) and leaves the
@@ -1179,10 +1200,15 @@ public final class TreeView<T> implements AutoCloseable {
     }
 
     /**
-     * Let rows be dragged to new places in the tree, with {@code reorder} saying what each placement means.
+     * Let rows be dragged to new places in the tree, and cut, copied and pasted, with the effects the model has:
+     * {@code MOVE} for a drag or a cut, {@code COPY} for a copy, which a model whose items are unique leaves out.
+     * Where one lands is announced as {@link #PLACED}; the application moves it in its own model, records it in its
+     * own history, and sends {@link #REFRESH} for the tree to show it.
      *
      * <pre>{@code
-     * tree.reorderable((moved, where) -> model.change(moved, where));   // null refuses the placement
+     * tree.reorderable(DropEffect.MOVE);
+     * gui.mailbox(TreeView.PLACED, tree.address(), p -> logic.send(new Move(p.item(), p.where())));
+     * // the logic, having moved it: refresh.send(new TreeView.Refresh(tree))
      * }</pre>
      *
      * <p>A press on a row becomes a drag only once it has travelled far enough and been held long enough, so an
@@ -1201,19 +1227,30 @@ public final class TreeView<T> implements AutoCloseable {
      * by which rect contains the point: a sub-pixel gap between two rows would otherwise be a place where drops
      * silently do nothing, and that is exactly the kind of crack a user learns to hunt for.
      *
-     * <p>Refusal is the application's, through {@code reorder} returning null — dropping a folder into itself,
-     * a placement that would leave the item where it already is, a branch that will not take children. Refusing
-     * there means the user sees it before releasing rather than discovering it afterwards.
+     * <p><b>What is refused is decided here, in the frame, from what is declared</b> ({@link #placeable}): an item
+     * dropped onto or under itself, a move that leaves it where it already is, a place among the children of an
+     * entry that does not {@link Entry#acceptsChildren accept} them, an effect not given here. Refusing in the frame
+     * means the user sees it before releasing rather than discovering it afterwards. What only the model can know
+     * (a name already taken in that folder) the application refuses when it hears the placement, and says why.
      *
      * <p>The payload is offered as {@link #itemType()}, which is private to this tree: two trees do not accept
      * one another's rows unless one is deliberately told about the other's type.
-     *
-     * <p>Set {@link Gui#dropHistory} for the move to be undoable — without one it resolves and draws but commits
-     * nothing, which is the framework refusing to make a change the user could not take back.
      */
-    public TreeView<T> reorderable(Reorder<T> reorder) {
-        java.util.Objects.requireNonNull(reorder, "reorder");
-        this.reorder = reorder;
+    public TreeView<T> reorderable(DropEffect... effects) {
+        java.util.EnumSet<DropEffect> given = java.util.EnumSet.noneOf(DropEffect.class);
+        for (DropEffect effect : effects) {
+            if (!effect.accepts()) {
+                throw new IllegalArgumentException("a placement has an effect: " + effect);
+            }
+            given.add(effect);
+        }
+        if (given.isEmpty()) {
+            throw new IllegalArgumentException("reorderable with no effect would offer nothing: say MOVE, COPY or both");
+        }
+        if (this.effects != null) {
+            throw new IllegalStateException("this tree is already reorderable");
+        }
+        this.effects = java.util.Collections.unmodifiableSet(given);
         Seams.of(gui).onDragSource(rows, (x, y) -> {
             Row from = rowAt(y);
             if (from == null) {
@@ -1403,19 +1440,81 @@ public final class TreeView<T> implements AutoCloseable {
         return placed(moved, Placement.into(row.item), rect);
     }
 
-    /** Ask the application what this placement means; a refusal is an ordinary answer and becomes NONE. */
+    /** The drop this placement is, if it is offered: landing announces it. A refusal is an ordinary NONE. */
     private Drop placed(T moved, Placement<T> where, Rect indicator) {
         // MOVE, because a pointer drag has no way to say otherwise yet: the gesture carries no modifier state,
         // so there is nothing for a Ctrl-drag to be recognised from. When it does, this is the one line that
-        // changes — the application side already answers COPY, because a paste asks it the same question.
-        Change change = resolve(moved, where, DropEffect.MOVE);
-        return change == null ? Drop.NONE : Drop.move(indicator, change);
+        // changes — a paste already places with COPY.
+        return placeable(moved, where, DropEffect.MOVE)
+                ? Drop.move(indicator, () -> announce(moved, where, DropEffect.MOVE))
+                : Drop.NONE;
     }
 
-    /** Ask the application what {@code effect} at {@code where} means; a refusal is an ordinary null. */
-    private Change resolve(T moved, Placement<T> where, DropEffect effect) {
-        Reorder<T> r = reorder;
-        return r == null ? null : r.move(moved, where, effect);
+    /** Say that {@code moved} was put at {@code where}: the application's to make so. */
+    private void announce(T moved, Placement<T> where, DropEffect effect) {
+        gui.bus().publish(PLACED, new Placed(address, moved, where, effect));
+    }
+
+    /** Whether this tree was made reorderable with {@code effect}. */
+    private boolean offers(DropEffect effect) {
+        java.util.Set<DropEffect> given = effects;
+        return given != null && given.contains(effect);
+    }
+
+    /**
+     * Whether putting {@code moved} at {@code where} with {@code effect} is offered, from what is declared and what
+     * the tree can see: never asking the application, because this is asked every frame of a drag.
+     *
+     * <ul>
+     *   <li>The effect is one the tree was made {@link #reorderable} with.
+     *   <li>Not onto, beside or under itself: an item cannot be put inside what it contains, and beside itself is
+     *       where it is. For a copy too, which would be a folder holding a copy of itself, forever.
+     *   <li>The place is among the children of something that {@link Entry#acceptsChildren accepts} them: {@code
+     *       INTO} asks the reference, {@code BEFORE} and {@code AFTER} ask its parent, and the top level always does.
+     *   <li>A move goes somewhere else: not into the parent it is already in, nor just before the sibling after it or
+     *       just after the one before it, each of which is the item exactly where it was. A copy may land there.
+     * </ul>
+     *
+     * <p>Only rows the tree has are consulted: an item carried in from another tree has no row here, and is held
+     * to the second and third rule only as far as the rows that exist can say.
+     */
+    private synchronized boolean placeable(T moved, Placement<T> where, DropEffect effect) {
+        if (!offers(effect)) {
+            return false;
+        }
+        Row mine = rowsByItem.get(moved);
+        if (where.isRoot()) {
+            return effect != DropEffect.MOVE || mine == null || mine.parent != null;
+        }
+        T ref = where.reference();
+        Row at = rowsByItem.get(ref);
+        for (Row r = at; r != null; r = r.parent) {
+            if (r.item.equals(moved)) {
+                return false;   // itself, or something under it
+            }
+        }
+        if (ref.equals(moved)) {
+            return false;
+        }
+        boolean into = where.relation() == Placement.Relation.INTO;
+        Row container = into ? at : at == null ? null : at.parent;
+        boolean accepts = into ? at != null && at.acceptsChildren : container == null || container.acceptsChildren;
+        if (!accepts) {
+            return false;
+        }
+        if (effect != DropEffect.MOVE || mine == null || at == null) {
+            return true;
+        }
+        if (into) {
+            return mine.parent != at;
+        }
+        if (mine.parent != at.parent) {
+            return true;
+        }
+        List<Row> siblings = mine.parent == null ? rootRows : mine.parent.children;
+        int from = siblings.indexOf(mine);
+        int to = siblings.indexOf(at);
+        return where.relation() == Placement.Relation.BEFORE ? to != from + 1 : to != from - 1;
     }
 
     /** A seam line at the top or bottom edge of a row, thin enough to read as "between" rather than "on". */
@@ -1744,6 +1843,7 @@ public final class TreeView<T> implements AutoCloseable {
         }
         childrenSub.close();
         marksSub.close();
+        refreshSub.close();
         begin();   // a walk waiting on a level stays waiting; the reply that would resume it no longer arrives
         synchronized (this) {
             for (Row r : rowsByItem.values()) {
@@ -2697,8 +2797,8 @@ public final class TreeView<T> implements AutoCloseable {
      * followed by Escape or by another cut a non-event — rather than a hole in the tree waiting to be filled.
      */
     private void take(T item, DropEffect effect) {
-        if (item == null || reorder == null) {
-            return;   // nothing to take, or a tree that does not accept transfers at all
+        if (item == null || !offers(effect)) {
+            return;   // nothing to take, or a tree that does not take this kind of transfer at all
         }
         gui.transfer(new Transfer(Payload.of(itemType, item), effect));
     }
@@ -2717,9 +2817,9 @@ public final class TreeView<T> implements AutoCloseable {
      * onto a file means "beside this file"; and the two are told apart by the same answer the middle band of a
      * row is offered on.
      *
-     * <p>The application refuses through {@link Reorder} exactly as it does for a drop, so a paste that cannot
-     * happen does nothing rather than doing something unexpected — and a copy of an item a model cannot
-     * duplicate is refused rather than quietly turning into a move.
+     * <p>Offered on the same terms as a drop ({@link #placeable}), so a paste that cannot happen does nothing rather
+     * than doing something unexpected — and a copy in a tree that was not made reorderable with {@code COPY} is
+     * refused rather than quietly turning into a move. What lands is {@link #PLACED}, as a drop is.
      */
     private void paste(T target) {
         Transfer held = gui.transfer();
@@ -2727,19 +2827,15 @@ public final class TreeView<T> implements AutoCloseable {
             return;
         }
         T moved = held.payload().as(itemType).orElse(null);
-        History history = gui.dropHistory();
-        if (moved == null || history == null) {
-            // No history is the same refusal a drop makes: a transfer the user could not take back would be the
-            // one edit in the framework with no way out, and silently so.
+        if (moved == null) {
             return;
         }
         Placement<T> where = target == null ? Placement.intoRoot()
                 : acceptsChildren(target) ? Placement.into(target) : Placement.after(target);
-        Change change = resolve(moved, where, held.effect());
-        if (change == null) {
+        if (!placeable(moved, where, held.effect())) {
             return;
         }
-        history.perform(change);
+        announce(moved, where, held.effect());
         if (held.effect() == DropEffect.MOVE) {
             // A cut lands once. A copy stays in hand, because pasting the same thing into three places is the
             // reason copy exists and making the user press Ctrl+C between each would be answering that with no.

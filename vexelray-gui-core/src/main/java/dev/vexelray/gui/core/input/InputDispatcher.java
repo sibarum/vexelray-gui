@@ -183,7 +183,6 @@ public final class InputDispatcher {
      */
     private final java.util.concurrent.CopyOnWriteArrayList<Watch> dragWatches =
             new java.util.concurrent.CopyOnWriteArrayList<>();
-    private volatile History dropHistory;
     /** The reconciler's index, for judging a node by id (see {@link #nodeLookup}). GUI thread. */
     private java.util.function.LongFunction<RetainedNode> nodes = id -> null;
     /** The history a menu opened on a node records its edits into (see {@link #menuHistory}); any thread. */
@@ -547,12 +546,6 @@ public final class InputDispatcher {
         return DragState.of(s);
     }
 
-    /** Where a completed drop records its change. Until one is set, drops resolve and draw but commit nothing —
-     * which is the right default for a tree that has not said who owns its undo. */
-    public void dropHistory(History history) {
-        this.dropHistory = history;
-    }
-
     /** The drag in flight, or null. For a renderer drawing the ghost and the indicator. */
     public DragSession dragSession() {
         return session != null && !session.ended() ? session : null;
@@ -682,14 +675,13 @@ public final class InputDispatcher {
     }
 
     /**
-     * Put the latched drag down at {@code (x, y)}: the click that ends a carry. Performs the resolved change through
-     * the drop history, and puts focus where the drop landed.
+     * Put the latched drag down at {@code (x, y)}: the click that ends a carry. Lands the resolved drop, and puts
+     * focus where the drop landed.
      */
     private void commitSession(float x, float y) {
         session.moveTo(x, y, this::dropTargetsAt);
         DragState last = stateOf(session);
-        History history = dropHistory;
-        Drop performed = history == null ? Drop.NONE : session.commit(history);
+        Drop performed = session.commit();
         session = null;
         if (performed.accepts()) {
             // Focus follows the drop, and this is load-bearing rather than a nicety. Ctrl+Z resolves by focus

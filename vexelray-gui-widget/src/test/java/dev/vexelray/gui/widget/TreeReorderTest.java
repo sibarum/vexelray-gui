@@ -1,8 +1,6 @@
 package dev.vexelray.gui.widget;
 
 import dev.vexelray.gui.core.drop.Drop;
-import dev.vexelray.gui.core.edit.Change;
-import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.input.InputTopics;
 import dev.vexelray.gui.core.layout.Rect;
 import org.junit.jupiter.api.DisplayName;
@@ -23,8 +21,9 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Reordering a tree by dragging: the seam partition, and the guarantees the requirement asked for by name —
- * nothing commits that the user did not see, everything that commits is undoable, and Escape leaves no trace.
+ * Reordering a tree by dragging: the seam partition, what the tree refuses in the frame, and the guarantees the
+ * requirement asked for by name — nothing lands that the user did not see, and Escape leaves no trace. What lands is
+ * announced on {@code PLACED}; the application's model, and its undo, are not the tree's.
  */
 class TreeReorderTest {
 
@@ -32,7 +31,7 @@ class TreeReorderTest {
             "src", List.of("main", "test"),
             "docs", List.of()));
 
-    private static final class MapSource implements Listing<String> {
+    private static class MapSource implements Listing<String> {
         @Override
         public List<String> roots() {
             return List.of("src", "docs", "notes.txt");
@@ -56,27 +55,16 @@ class TreeReorderTest {
 
     private final List<String> moves = new ArrayList<>();
 
-    /** A reorder that records what it was asked to do, and refuses to drop an item onto itself. */
-    private Reorder<String> recording() {
-        return (moved, where, effect) -> {
-            if (moved.equals(where.reference())) {
-                return null;
+    /** Make {@code tree} reorderable by moves, and write down every placement it announces. */
+    private void recording(HeadlessGui h, TreeView<String> tree) {
+        tree.reorderable(dev.vexelray.gui.core.drop.DropEffect.MOVE);
+        h.bus.subscribe(TreeView.PLACED, p -> {
+            if (p.at().equals(tree.address())) {
+                moves.add(p.item() + " " + p.where().relation() + " "
+                        + (p.where().isRoot() ? "<root>" : p.where().reference())
+                        + (p.effect() == dev.vexelray.gui.core.drop.DropEffect.MOVE ? "" : " (" + p.effect() + ")"));
             }
-            String what = moved + " " + where.relation() + " "
-                    + (where.isRoot() ? "<root>" : where.reference())
-                    + (effect == dev.vexelray.gui.core.drop.DropEffect.MOVE ? "" : " (" + effect + ")");
-            return change(what);
-        };
-    }
-
-    private Change change(String what) {
-        return new Change() {
-            @Override
-            public Change apply() {
-                moves.add(what);
-                return change("undo(" + what + ")");
-            }
-        };
+        });
     }
 
     /** The vertical middle of the row for {@code item}, in absolute px. */
@@ -120,27 +108,97 @@ class TreeReorderTest {
         h.frame();
         click(h, 40f, toY);
         h.frame();
+        h.frame();          // and the announcement is delivered
     }
 
     @Test
-    @DisplayName("a row dropped on the lower edge of another lands after it, and is undoable")
-    void aDropOnASeamReordersAndUndoes() {
+    @DisplayName("a row dropped on the upper edge of another is announced as before it, and moves no row")
+    void aDropOnASeamIsAnnounced() {
         try (HeadlessGui h = new HeadlessGui()) {
-            History history = new History();
-            h.gui.dropHistory(history);
             TreeView<String> tree = Listing.tree(h, new MapSource());
-            tree.reorderable(recording());
+            recording(h, tree);
             h.gui.root().children(tree.node());
             h.frame();
 
             Rect docs = rowRect(tree, "docs");
-            drag(h, midOf(tree, "notes.txt"), docs.y() + docs.h() - 1f);   // the bottom seam of "docs"
+            float notesAt = midOf(tree, "notes.txt");
+            drag(h, notesAt, docs.y() + 1f);   // the top seam of "docs"
 
-            assertEquals(List.of("notes.txt AFTER docs"), moves);
-            assertTrue(history.canUndo(), "a reorder is an edit like any other");
+            assertEquals(List.of("notes.txt BEFORE docs"), moves);
+            assertEquals(notesAt, midOf(tree, "notes.txt"), 0.5f,
+                    "the hierarchy is the application's: the row stays until the tree is told to look again");
+            tree.close();
+        }
+    }
 
-            history.undo();
-            assertEquals(List.of("notes.txt AFTER docs", "undo(notes.txt AFTER docs)"), moves);
+    /** A move that would leave an item exactly where it is changes nothing, and the tree can see that itself. */
+    @Test
+    @DisplayName("a placement that leaves the item where it is is refused in the frame")
+    void aNoOpIsRefusedInTheFrame() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TreeView<String> tree = Listing.tree(h, new MapSource());
+            recording(h, tree);
+            h.gui.root().children(tree.node());
+            h.frame();
+
+            Rect docs = rowRect(tree, "docs");
+            press(h, 40f, midOf(tree, "notes.txt"));
+            move(h, 40f, docs.y() + docs.h() - 1f);   // the bottom seam of "docs": where notes.txt already is
+            h.frame();
+            assertFalse(h.gui.dragSession().drop().accepts(), "notes.txt is already after docs");
+
+            h.bus.publish(h.gui.input(), new InputEvent.KeyPressed(Key.ESCAPE, 0));
+            h.frame();
+            tree.close();
+        }
+    }
+
+    @Test
+    @DisplayName("an item cannot be put under itself")
+    void notUnderItself() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TreeView<String> tree = Listing.tree(h, new MapSource());
+            recording(h, tree);
+            h.gui.root().children(tree.node());
+            tree.expand("src");
+            h.frame();
+            h.frame();
+
+            press(h, 40f, midOf(tree, "src"));
+            move(h, 40f, midOf(tree, "test"));   // beside test, which is inside src
+            h.frame();
+            assertFalse(h.gui.dragSession().drop().accepts(), "src cannot hold itself");
+
+            h.bus.publish(h.gui.input(), new InputEvent.KeyPressed(Key.ESCAPE, 0));
+            h.frame();
+            tree.close();
+        }
+    }
+
+    @Test
+    @DisplayName("refresh, sent as a message, is what moves the rows")
+    void refreshMovesTheRows() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            List<String> roots = new ArrayList<>(List.of("src", "docs", "notes.txt"));
+            TreeView<String> tree = Listing.tree(h, new MapSource() {
+                @Override
+                public List<String> roots() {
+                    return List.copyOf(roots);
+                }
+            });
+            h.gui.root().children(tree.node());
+            h.frame();
+            float docsAt = midOf(tree, "docs");
+
+            roots.remove("notes.txt");
+            roots.add(0, "notes.txt");
+            h.bus.publish(TreeView.REFRESH, new TreeView.Refresh(tree.address()));
+            h.frame();
+            h.frame();
+            h.frame();
+
+            assertTrue(midOf(tree, "notes.txt") < midOf(tree, "src"), "notes.txt is first now");
+            assertTrue(midOf(tree, "docs") > docsAt, "and everything after it moved down");
             tree.close();
         }
     }
@@ -149,9 +207,8 @@ class TreeReorderTest {
     @DisplayName("the middle of a row that can hold children means into it")
     void theMiddleOfABranchMeansInto() {
         try (HeadlessGui h = new HeadlessGui()) {
-            h.gui.dropHistory(new History());
             TreeView<String> tree = Listing.tree(h, new MapSource());
-            tree.reorderable(recording());
+            recording(h, tree);
             h.gui.root().children(tree.node());
             h.frame();
 
@@ -166,9 +223,8 @@ class TreeReorderTest {
     @DisplayName("a leaf has no inside, so its middle is still a seam")
     void aLeafDividesInTwo() {
         try (HeadlessGui h = new HeadlessGui()) {
-            h.gui.dropHistory(new History());
             TreeView<String> tree = Listing.tree(h, new MapSource());
-            tree.reorderable(recording());
+            recording(h, tree);
             h.gui.root().children(tree.node());
             h.frame();
 
@@ -189,9 +245,8 @@ class TreeReorderTest {
     @DisplayName("every point over the rows resolves to a placement")
     void thereAreNoDeadPixels() {
         try (HeadlessGui h = new HeadlessGui()) {
-            h.gui.dropHistory(new History());
             TreeView<String> tree = Listing.tree(h, new MapSource());
-            tree.reorderable(recording());
+            recording(h, tree);
             h.gui.root().children(tree.node());
             h.frame();
             tree.expand("src");
@@ -204,8 +259,8 @@ class TreeReorderTest {
             int top = (int) Math.ceil(first.y());
             int bottom = (int) Math.floor(last.y() + last.h());
 
-            // Drag "docs", which every placement below accepts except the three bands of its own row.
-            press(h, 40f, midOf(tree, "docs"));
+            // Drag "notes.txt", which every placement below accepts but its own row and the one it is already at.
+            press(h, 40f, midOf(tree, "notes.txt"));
             move(h, 40f, top);
             h.frame();
             assertNotNull(h.gui.dragSession(), "the drag is in flight");
@@ -215,7 +270,7 @@ class TreeReorderTest {
                 h.bus.publish(h.gui.input(), new InputEvent.PointerMoved(40, y, 0, 1, 0));
                 h.frame();
                 Drop drop = h.gui.dragSession().drop();
-                if (!drop.accepts() && !overOwnRow(tree, y)) {
+                if (!drop.accepts() && !whereItIs(tree, y)) {
                     dead.add(y);
                 }
             }
@@ -227,19 +282,23 @@ class TreeReorderTest {
         }
     }
 
-    /** The rows of "docs" itself, where the recording reorder legitimately refuses (dropping onto itself). */
-    private static boolean overOwnRow(TreeView<String> tree, int y) {
-        Rect own = rowRect(tree, "docs");
-        return own != null && y >= own.y() && y < own.y() + own.h();
+    /**
+     * Where the tree rightly refuses notes.txt: its own row, and the bottom band of "docs", which is after docs, where
+     * it already is.
+     */
+    private static boolean whereItIs(TreeView<String> tree, int y) {
+        Rect own = rowRect(tree, "notes.txt");
+        Rect docs = rowRect(tree, "docs");
+        return y >= own.y() && y < own.y() + own.h()
+                || y >= docs.y() + docs.h() * 0.75f && y < docs.y() + docs.h();
     }
 
     @Test
     @DisplayName("below the last row is the top level, which is how an item leaves a branch")
     void belowTheLastRowMeansTheRoot() {
         try (HeadlessGui h = new HeadlessGui()) {
-            h.gui.dropHistory(new History());
             TreeView<String> tree = Listing.tree(h, new MapSource());
-            tree.reorderable(recording());
+            recording(h, tree);
             h.gui.root().children(tree.node());
             h.frame();
             tree.expand("src");
@@ -257,9 +316,8 @@ class TreeReorderTest {
     @DisplayName("a refused placement shows as accepting nothing, before the user releases")
     void aRefusalIsVisibleBeforeTheDrop() {
         try (HeadlessGui h = new HeadlessGui()) {
-            h.gui.dropHistory(new History());
             TreeView<String> tree = Listing.tree(h, new MapSource());
-            tree.reorderable(recording());
+            recording(h, tree);
             h.gui.root().children(tree.node());
             h.frame();
 
@@ -282,10 +340,8 @@ class TreeReorderTest {
     @DisplayName("a click that twitched is a click, not a reorder")
     void aFlickDoesNotReorganise() {
         try (HeadlessGui h = new HeadlessGui()) {
-            History history = new History();
-            h.gui.dropHistory(history);
             TreeView<String> tree = Listing.tree(h, new MapSource());
-            tree.reorderable(recording());
+            recording(h, tree);
             h.gui.root().children(tree.node());
             h.frame();
 
@@ -298,7 +354,6 @@ class TreeReorderTest {
             h.frame();          // the whole gesture inside one drain: never drawn
 
             assertEquals(List.of(), moves, "the user saw no drag, so there was no drop");
-            assertFalse(history.canUndo());
             tree.close();
         }
     }
@@ -307,10 +362,8 @@ class TreeReorderTest {
     @DisplayName("Escape abandons the drag and changes nothing")
     void escapeAbandons() {
         try (HeadlessGui h = new HeadlessGui()) {
-            History history = new History();
-            h.gui.dropHistory(history);
             TreeView<String> tree = Listing.tree(h, new MapSource());
-            tree.reorderable(recording());
+            recording(h, tree);
             h.gui.root().children(tree.node());
             h.frame();
 
@@ -326,7 +379,6 @@ class TreeReorderTest {
 
             assertNull(h.gui.dragSession());
             assertEquals(List.of(), moves);
-            assertFalse(history.canUndo());
             tree.close();
         }
     }
@@ -335,9 +387,8 @@ class TreeReorderTest {
     @DisplayName("a row carried and held still owes no frames: the label is written only when it changes")
     void aStillCarryParks() {
         try (HeadlessGui h = new HeadlessGui()) {
-            h.gui.dropHistory(new History());
             TreeView<String> tree = Listing.tree(h, new MapSource());
-            tree.reorderable(recording());
+            recording(h, tree);
             h.gui.root().children(tree.node());
             h.frame();
 
@@ -359,7 +410,6 @@ class TreeReorderTest {
     @DisplayName("a tree with no reorder registered drags nothing")
     void withoutReorderNothingDrags() {
         try (HeadlessGui h = new HeadlessGui()) {
-            h.gui.dropHistory(new History());
             TreeView<String> tree = Listing.tree(h, new MapSource());
             h.gui.root().children(tree.node());
             h.frame();
@@ -377,9 +427,8 @@ class TreeReorderTest {
     @DisplayName("starting a drag selects the row it started on")
     void draggingSelects() {
         try (HeadlessGui h = new HeadlessGui()) {
-            h.gui.dropHistory(new History());
             TreeView<String> tree = Listing.tree(h, new MapSource());
-            tree.reorderable(recording());
+            recording(h, tree);
             h.gui.root().children(tree.node());
             h.frame();
 
@@ -443,9 +492,8 @@ class TreeReorderTest {
     @DisplayName("an empty branch still offers somewhere to drop into")
     void anEmptyBranchIsStillABranch() {
         try (HeadlessGui h = new HeadlessGui()) {
-            h.gui.dropHistory(new History());
             TreeView<String> tree = Listing.tree(h, new BoardSource());
-            tree.reorderable(recording());
+            recording(h, tree);
             h.gui.root().children(tree.node());
             tree.expand("Todo");
             h.frame();
@@ -463,9 +511,8 @@ class TreeReorderTest {
     @DisplayName("a leaf that cannot hold children has no into band")
     void aRealLeafStillDividesInTwo() {
         try (HeadlessGui h = new HeadlessGui()) {
-            h.gui.dropHistory(new History());
             TreeView<String> tree = Listing.tree(h, new BoardSource());
-            tree.reorderable(recording());
+            recording(h, tree);
             h.gui.root().children(tree.node());
             tree.expand("Todo");
             h.frame();

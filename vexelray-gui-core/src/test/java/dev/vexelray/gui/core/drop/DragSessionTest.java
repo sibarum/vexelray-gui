@@ -1,7 +1,5 @@
 package dev.vexelray.gui.core.drop;
 
-import dev.vexelray.gui.core.edit.Change;
-import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.layout.Rect;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -21,15 +19,9 @@ class DragSessionTest {
     private static final PayloadType<String> ROW = PayloadType.of("row");
     private static final PayloadType<List<Path>> FILES = PayloadType.of("files");
 
-    /** A change that appends to a log and reverts by appending the opposite. */
-    private static Change logging(List<String> log, String what) {
-        return new Change() {
-            @Override
-            public Change apply() {
-                log.add(what);
-                return logging(log, "un" + what);
-            }
-        };
+    /** A landing that appends to a log. */
+    private static Runnable logging(List<String> log, String what) {
+        return () -> log.add(what);
     }
 
     private static DragSession.Lookup targets(DropTarget... innermostFirst) {
@@ -100,8 +92,7 @@ class DragSessionTest {
 
         drag.moveTo(1f, 1f, targets(filesOnly));
         drag.seen();
-        History history = new History();
-        drag.commit(history);
+        drag.commit();
 
         assertEquals(List.of("files:1"), log);
     }
@@ -131,66 +122,54 @@ class DragSessionTest {
     @DisplayName("a drop the user never saw does not commit")
     void anUnseenDropIsNotADrop() {
         List<String> log = new ArrayList<>();
-        History history = new History();
         DragSession drag = DragSession.open(Payload.of(ROW, "a"), 0f, 0f);
         drag.moveTo(1f, 1f, targets((p, x, y) -> moveTo(new Rect(0f, 0f, 1f, 1f), log, "moved")));
 
-        Drop performed = drag.commit(history);
+        Drop performed = drag.commit();
 
         assertEquals(Drop.NONE, performed);
         assertEquals(List.of(), log, "nothing was applied");
-        assertFalse(history.canUndo(), "and nothing was recorded to undo");
     }
 
     @Test
-    @DisplayName("a drop the user did see commits once, and is undoable")
-    void aSeenDropCommitsAndIsUndoable() {
+    @DisplayName("a drop the user did see lands")
+    void aSeenDropLands() {
         List<String> log = new ArrayList<>();
-        History history = new History();
         DragSession drag = DragSession.open(Payload.of(ROW, "a"), 0f, 0f);
         drag.moveTo(1f, 1f, targets((p, x, y) -> moveTo(new Rect(0f, 0f, 1f, 1f), log, "moved")));
         drag.seen();
 
-        assertTrue(drag.commit(history).accepts());
+        assertTrue(drag.commit().accepts());
         assertEquals(List.of("moved"), log);
-
-        history.undo();
-        assertEquals(List.of("moved", "unmoved"), log, "the drop's own change is what puts it back");
     }
 
     @Test
-    @DisplayName("committing twice performs once")
+    @DisplayName("committing twice lands once")
     void commitIsIdempotent() {
         List<String> log = new ArrayList<>();
-        History history = new History();
         DragSession drag = DragSession.open(Payload.of(ROW, "a"), 0f, 0f);
         drag.moveTo(1f, 1f, targets((p, x, y) -> moveTo(new Rect(0f, 0f, 1f, 1f), log, "moved")));
         drag.seen();
 
-        drag.commit(history);
-        assertEquals(Drop.NONE, drag.commit(history));
+        drag.commit();
+        assertEquals(Drop.NONE, drag.commit());
         assertEquals(List.of("moved"), log);
     }
 
     /**
-     * A cancel must not record-then-undo: {@code History.record} discards the redo stack, so doing that would
-     * silently destroy redoable work as the price of abandoning a drag.
+     * A cancel must not land-then-undo: a history that discards its redo stack on every new step would silently lose
+     * redoable work as the price of abandoning a drag.
      */
     @Test
-    @DisplayName("a cancelled drag leaves the history exactly as it found it")
-    void cancellingRecordsNothingAndKeepsRedo() {
+    @DisplayName("a cancelled drag lands nothing")
+    void cancellingLandsNothing() {
         List<String> log = new ArrayList<>();
-        History history = new History();
-        history.perform(logging(log, "earlier"));
-        history.undo();
-        assertTrue(history.canRedo(), "precondition: there is redoable work to protect");
-
         DragSession drag = DragSession.open(Payload.of(ROW, "a"), 0f, 0f);
         drag.moveTo(1f, 1f, targets((p, x, y) -> moveTo(new Rect(0f, 0f, 1f, 1f), log, "moved")));
         drag.seen();
         drag.cancel();
 
-        assertTrue(history.canRedo(), "abandoning a drag must not cost the user their redo stack");
+        assertEquals(List.of(), log, "abandoning a drag tells no one anything");
         assertFalse(drag.drop().accepts());
         assertTrue(drag.ended());
     }
@@ -199,7 +178,6 @@ class DragSessionTest {
     @DisplayName("a cancelled session stops resolving and cannot then commit")
     void cancellingIsTerminal() {
         List<String> log = new ArrayList<>();
-        History history = new History();
         DragSession drag = DragSession.open(Payload.of(ROW, "a"), 0f, 0f);
         drag.seen();
         drag.cancel();
@@ -207,33 +185,32 @@ class DragSessionTest {
         drag.moveTo(1f, 1f, targets((p, x, y) -> moveTo(new Rect(0f, 0f, 1f, 1f), log, "moved")));
 
         assertEquals(Drop.NONE, drag.drop());
-        assertEquals(Drop.NONE, drag.commit(history));
+        assertEquals(Drop.NONE, drag.commit());
         assertEquals(List.of(), log);
     }
 
     @Test
-    @DisplayName("a drop cannot promise an effect it has no change for, nor hide one it does")
+    @DisplayName("a drop cannot promise an effect it has no landing for, nor hide one it does")
     void aDropCannotLie() {
         assertThrows(IllegalArgumentException.class,
                 () -> new Drop(DropEffect.MOVE, Rect.ZERO, null),
                 "an accepting drop with nothing to perform would fail only at release");
         assertThrows(IllegalArgumentException.class,
-                () -> new Drop(DropEffect.NONE, Rect.ZERO, () -> null),
-                "a change carried under NONE would run despite the user being told nothing would happen");
+                () -> new Drop(DropEffect.NONE, Rect.ZERO, () -> { }),
+                "a landing carried under NONE would run despite the user being told nothing would happen");
     }
 
     @Test
-    @DisplayName("the indicator and the change come from the same value, so they cannot disagree")
+    @DisplayName("the indicator and the landing come from the same value, so they cannot disagree")
     void theIndicatorIsTheCommittedResolution() {
         List<String> log = new ArrayList<>();
-        History history = new History();
         Rect seam = new Rect(0f, 64f, 200f, 2f);
         DragSession drag = DragSession.open(Payload.of(ROW, "a"), 0f, 0f);
         drag.moveTo(1f, 70f, targets((p, x, y) -> moveTo(seam, log, "into-seam-64")));
         drag.seen();
 
         Drop shown = drag.drop();
-        Drop performed = drag.commit(history);
+        Drop performed = drag.commit();
 
         assertSame(shown, performed, "what was drawn is what happened");
         assertEquals(seam, shown.indicator());

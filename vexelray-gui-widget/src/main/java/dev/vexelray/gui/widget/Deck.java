@@ -1,9 +1,11 @@
 package dev.vexelray.gui.widget;
 
 import dev.vexelray.gui.core.Gui;
+import dev.vexelray.gui.core.drop.DropEffect;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.scroll.Scrollbars;
+import sibarum.atchung.Topic;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -13,15 +15,14 @@ import java.util.List;
  * and out of from the board's other decks.
  *
  * <pre>{@code
- * Deck<Task> todo = board.column()
- *         .items(model.todo())
- *         .reorderable((moved, where, effect) -> model.move(moved, TODO, where));
- * model.onChange(() -> todo.items(model.todo()));
+ * Deck<Task> todo = board.column().name("todo").items(model.todo()).reorderable();
+ * gui.mailbox(Deck.PLACED, todo.address(), p -> logic.send(new Move(p.item(), "todo", p.where())));
+ * // told the logic's new list: todo.items(list);
  * }</pre>
  *
  * <p>A deck holds the application's list and nothing else. It never reorders anything on its own account: a drop
- * asks {@link #reorderable the reorder} for a {@link dev.vexelray.gui.core.edit.Change}, the drop's history performs
- * it, and the application hands the deck its new list. That last step is the same one undo and every other edit
+ * says where the card was put ({@link #PLACED}), the application moves it in its own model, and hands the deck its
+ * new list. Meanwhile the deck shows the card where it was dropped, which the new list confirms. That last step is the same one undo and every other edit
  * take, which is why all of them animate alike — the deck compares the list it is handed with what it is showing
  * and moves the difference into place, whatever caused it.
  *
@@ -44,6 +45,14 @@ import java.util.List;
  */
 public final class Deck<T> {
 
+    /**
+     * A card put in this deck, by a drop or from the keyboard: before or after a card already in it, or into it when
+     * it is empty. Always {@code MOVE}. The deck shows the card there until it is handed a list that says otherwise.
+     * Every one, in order.
+     */
+    public static final Topic<Placed> PLACED = Topic.edge("vexelray.gui.deck.placed", Placed.class);
+
+
     final Board<T> board;
     /** The Scroller's node: the box the cards are seen through, its offset, where drags start and land. */
     final Node node;
@@ -55,8 +64,10 @@ public final class Deck<T> {
     final List<Board.Slot<T>> slots = new ArrayList<>();
     /** The application's list, as last given — or as a committed drop predicts it will be. Guarded by the board. */
     final List<T> items = new ArrayList<>();
-    /** What a placement here means, or null for a deck that cards can be neither dragged from nor into. */
-    volatile Reorder<T> reorder;
+    /** Whether cards can be dragged from this deck and into it. */
+    volatile boolean reorderable;
+    private final Gui gui;
+    private final WidgetName name;
     /** Whether {@link #slots} has changed order since it was last written to {@link #inner}. Guarded by the board. */
     boolean orderDirty;
     /** Whether the deck has been given a list before. Its first is shown as it stands, not animated in. */
@@ -74,6 +85,8 @@ public final class Deck<T> {
         Scrollbars scrolling = Scrollbars.vertical(gui, inner);
         this.node = scrolling.scroller().node();
         this.box = scrolling.node().width(Length.FILL).height(Length.FILL);
+        this.gui = gui;
+        this.name = new WidgetName(gui, "deck", box);
     }
 
     /** The deck's box, with its scrollbar beside it. */
@@ -113,20 +126,44 @@ public final class Deck<T> {
     }
 
     /**
-     * Let this deck's cards be dragged, and cards be dropped into it, with {@code reorder} saying what each
-     * placement means.
+     * Let this deck's cards be dragged, and cards of the same board be dropped into it. Each landing is announced on
+     * {@link #PLACED}.
      *
      * <p>A {@link Placement} here is {@code BEFORE} or {@code AFTER} a card in this deck, never one being carried,
-     * and {@code INTO} a null reference for a deck with no cards in it. Return null to refuse one: the carried card
-     * then shows that releasing would take it home. Asked on the GUI thread, once per frame while the pointer is
-     * over the deck, so it must be cheap; the {@link dev.vexelray.gui.core.edit.Change} it returns is performed
-     * only on release, through the GUI's {@link Gui#dropHistory}, which must be set for anything to commit.
+     * and {@code INTO} the root for a deck with no cards in it. Every slot of a reorderable deck is offered but the
+     * one the card came from, which is drawn as the card going home: decided by the board in the frame, from what it
+     * can see, never by asking the application. A placement only the model can refuse is refused when the
+     * application hears it, by handing the deck the list it had.
      *
      * <p>Alt+Up and Alt+Down move a focused card within its deck, and Alt+Left and Alt+Right to the neighbouring
-     * deck, through the same question and the same history.
+     * deck, through the same placements and the same announcement.
      */
-    public Deck<T> reorderable(Reorder<T> reorder) {
-        this.reorder = java.util.Objects.requireNonNull(reorder, "reorder");
+    public Deck<T> reorderable() {
+        this.reorderable = true;
         return this;
+    }
+
+    /**
+     * Call this deck {@code name} in its GUI, so its address ({@link #address()}) is the GUI's name and this. Unique
+     * among the GUI's named widgets. Until named, a deck is called {@code deck-<id>}.
+     */
+    public Deck<T> name(String name) {
+        this.name.name(name);
+        return this;
+    }
+
+    /** What this deck is called in its GUI. */
+    public String name() {
+        return name.name();
+    }
+
+    /** Where this deck is on the bus: what its {@link #PLACED} carries. */
+    public String address() {
+        return name.address();
+    }
+
+    /** Say that {@code item} was put at {@code where} in this deck. */
+    void announce(T item, Placement<T> where) {
+        gui.bus().publish(PLACED, new Placed(address(), item, where, DropEffect.MOVE));
     }
 }

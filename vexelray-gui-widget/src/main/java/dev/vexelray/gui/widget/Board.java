@@ -10,8 +10,6 @@ import dev.vexelray.gui.core.drop.Drop;
 import dev.vexelray.gui.core.drop.DropEffect;
 import dev.vexelray.gui.core.drop.Payload;
 import dev.vexelray.gui.core.drop.PayloadType;
-import dev.vexelray.gui.core.edit.Change;
-import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.input.ClaimScope;
 import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.layout.Length;
@@ -39,12 +37,14 @@ import java.util.function.Function;
  * <pre>{@code
  * Board<Task> board = new Board<Task>(gui, task -> card(task))   // what a card looks like: any node
  *         .motion(motion.arrival);                              // how long moving takes; none, and it is instant
- * Deck<Task> todo  = board.column().items(model.todo()).reorderable(...);
- * Deck<Task> doing = board.column().items(model.doing()).reorderable(...);
- * gui.dropHistory(history);                                     // until there is one, nothing commits
+ * Deck<Task> todo  = board.column().name("todo").items(model.todo()).reorderable();
+ * Deck<Task> doing = board.column().name("doing").items(model.doing()).reorderable();
+ * gui.mailbox(Deck.PLACED, todo.address(), p -> logic.send(new Move(p.item(), "todo", p.where())));
+ * // and the view, told the logic's new lists: todo.items(lists.todo()); doing.items(lists.doing());
  * }</pre>
  *
- * <p>The application says what a card looks like and what putting one somewhere means. The board does the rest:
+ * <p>The application says what a card looks like and what putting one somewhere means: it hears where each was put
+ * ({@link Deck#PLACED}) and hands the decks their new lists. The board does the rest:
  * the press that becomes a drag, the card lifting off the deck and following the hand, the deck opening a gap where
  * it would land, the drop, and the card settling into place; or Escape, and the card flying back to the gap it
  * left. Undo puts it back the same way, because undo is the application handing a deck its old list.
@@ -658,7 +658,7 @@ public final class Board<T> {
                 .padding(spacing, Length.ZERO).children(face);
         Card<T> card = new Card<>(this, item, carrier, face);
         face.elevation(elevation(0f));
-        // The keyboard's way to the same placements a drag reaches, through the same question and the same history.
+        // The keyboard's way to the same placements a drag reaches, through the same placements and the same announcement.
         // On the face, which is the node the user sees: the focus ring is drawn round the focused node's own box
         // and corners, and round the carrier it would be a square frame standing off the card by its spacing.
         gui.focusable(face, true);
@@ -971,7 +971,7 @@ public final class Board<T> {
 
     /** What a press on {@code deck} picks up: the card under it, or nothing over a gap or the empty space below. */
     private Payload payloadAt(Deck<T> deck, float x, float y) {
-        if (deck.reorder == null) {
+        if (!deck.reorderable) {
             return null;
         }
         synchronized (this) {
@@ -1009,8 +1009,7 @@ public final class Board<T> {
      */
     private Drop resolve(Deck<T> deck, Payload payload, float x, float y) {
         Optional<T> offered = payload.as(itemType);
-        Reorder<T> reorder = deck.reorder;
-        if (offered.isEmpty() || reorder == null) {
+        if (offered.isEmpty() || !deck.reorderable) {
             return Drop.NONE;
         }
         T item = offered.get();
@@ -1043,22 +1042,15 @@ public final class Board<T> {
             where = placementIn(items, k);
             slotRect = new Rect(inner.x(), edge, inner.w(), h.h);
             token = h.token;
+            h.aimDeck = deck;
+            h.aimAt = where;
+            h.aimRect = slotRect;
         }
-        // Outside the lock: the application's code, which may take locks of its own.
-        Change change = reorder.move(item, where, DropEffect.MOVE);
-        if (change == null) {
-            return Drop.NONE;
-        }
-        synchronized (this) {
-            if (held != null && held.token == token) {
-                held.aimDeck = deck;
-                held.aimAt = where;
-                held.aimRect = slotRect;
-            }
-        }
+        // Landing predicts where the card goes, so it settles there at once, and tells the application, whose new
+        // list for the deck confirms the prediction when it comes (Deck.items).
         return Drop.move(slotRect, () -> {
             committed(token, deck, where);
-            return change.apply();
+            deck.announce(item, where);
         });
     }
 
@@ -1308,7 +1300,7 @@ public final class Board<T> {
     /** The card resting under {@code (x, y)} in a deck cards can be picked up from, or null. */
     private Card<T> cardAt(float x, float y) {
         for (Deck<T> deck : decks) {
-            if (deck.reorder == null) {
+            if (!deck.reorderable) {
                 continue;
             }
             for (Slot<T> slot : deck.slots) {
@@ -1345,8 +1337,8 @@ public final class Board<T> {
 
     /**
      * Move a card from the keyboard: within its deck by one ({@code dIndex}), or to the same place in the
-     * neighbouring deck ({@code dDeck}). The same question a drop asks, recorded in the same history, so undo does
-     * not care which way the card was moved.
+     * neighbouring deck ({@code dDeck}). The same placements a drop offers, announced the same way, so the
+     * application does not care which way the card was moved.
      */
     private void nudge(Card<T> card, int dDeck, int dIndex) {
         Deck<T> target;
@@ -1377,16 +1369,10 @@ public final class Board<T> {
                 where = placementIn(theirs, Math.min(i, theirs.size()));
             }
         }
-        Reorder<T> reorder = target.reorder;
-        History history = gui.dropHistory();
-        if (reorder == null || history == null) {
-            return;   // the same refusal a drop makes: nothing the user could not take back
+        if (!target.reorderable) {
+            return;   // the same refusal a drop makes
         }
-        Change change = reorder.move(card.item, where, DropEffect.MOVE);
-        if (change == null) {
-            return;
-        }
-        history.perform(change);
+        target.announce(card.item, where);
         Deck<T> to = target;
         Placement<T> at = where;
         act(() -> {

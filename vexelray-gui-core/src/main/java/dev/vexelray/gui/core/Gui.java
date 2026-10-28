@@ -824,33 +824,6 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
-     * Where a completed drop records its change, so it can be undone.
-     *
-     * <p>Until one is set, drops resolve and draw but commit nothing — deliberately, because a drop that mutated
-     * with no way back would be the one operation in the framework the user could not undo, and silently so.
-     *
-     * <p>A drop also moves focus to what a click at the drop point would focus, which is what keeps Ctrl+Z
-     * pointed at the right history: {@link #history(Node, History, ClaimScope)} resolves by focus, and a drag is
-     * a pointer gesture with no focus relationship of its own.
-     */
-    public Gui dropHistory(History history) {
-        input.dropHistory(java.util.Objects.requireNonNull(history, "history"));
-        transfers.history(history);
-        return this;
-    }
-
-    /**
-     * Where a transfer records its change — the history {@link #dropHistory} set, or null.
-     *
-     * <p>Readable because a drop is not the only way to complete a transfer: a paste makes the same change, from
-     * the keyboard, and must land in the same stack. Two histories would mean Ctrl+Z undoing whichever kind of
-     * transfer the user happened to do last rather than the last thing they did.
-     */
-    public History dropHistory() {
-        return transfers.history();
-    }
-
-    /**
      * What is held for a paste, or {@link Transfer#NONE}.
      *
      * <p>One per {@link Gui}, so two trees in a window can exchange rows and a window can paste what another of

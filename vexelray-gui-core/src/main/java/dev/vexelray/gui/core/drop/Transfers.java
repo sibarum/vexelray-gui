@@ -1,6 +1,5 @@
 package dev.vexelray.gui.core.drop;
 
-import dev.vexelray.gui.core.edit.History;
 import sibarum.atchung.Committer;
 import sibarum.atchung.State;
 
@@ -9,7 +8,7 @@ import sibarum.atchung.State;
  *
  * <p>Small on purpose, and it is the pair that makes it a component rather than two loose fields: a drag and a
  * cut are the same change made two ways, so what is carried under the pointer and what is carried in hand belong
- * in one place and record into one history. {@code docs/reference/transfer.md} is where that reasoning lives.
+ * in one place, and land as the same message. {@code docs/reference/transfer.md} is where that reasoning lives.
  *
  * <p>The recognising, hit-testing and target resolution are not here and are not meant to be — those are the
  * dispatcher's, which owns every pointer gesture. This holds the state that outlives a gesture.
@@ -18,9 +17,6 @@ public final class Transfers {
 
     /** What is held for a paste. */
     private volatile Transfer held = Transfer.NONE;
-
-    /** Where drops and pastes record; the same stack, because they are the same change made two ways. */
-    private volatile History history;
 
     /** The live drag, as a coalesced State — the read-model half of {@link DragSession}. */
     private final State<DragState> dragState;
@@ -45,16 +41,6 @@ public final class Transfers {
     /** Put something in hand for a paste, or {@link Transfer#NONE} to drop what is held. Safe from any thread. */
     public void hold(Transfer transfer) {
         this.held = transfer == null ? Transfer.NONE : transfer;
-    }
-
-    /** Where drops and pastes record, or null if nothing has said. */
-    public History history() {
-        return history;
-    }
-
-    /** Record drops and pastes into {@code history}. */
-    public void history(History history) {
-        this.history = history;
     }
 
     /** The live drag as a coalesced {@code State}, for a renderer drawing the ghost and the drop indicator. */

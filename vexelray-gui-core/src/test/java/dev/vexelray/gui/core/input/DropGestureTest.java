@@ -3,8 +3,6 @@ package dev.vexelray.gui.core.input;
 import dev.vexelray.gui.core.drop.Drop;
 import dev.vexelray.gui.core.drop.Payload;
 import dev.vexelray.gui.core.drop.PayloadType;
-import dev.vexelray.gui.core.edit.Change;
-import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.layout.Rect;
 import dev.vexelray.gui.core.model.RetainedNode;
 import org.junit.jupiter.api.DisplayName;
@@ -39,7 +37,6 @@ class DropGestureTest {
     private final Atchung bus = Atchung.create();
     private final InputDispatcher dispatcher = new InputDispatcher(bus, "test", CLICKS);
     private final List<String> applied = new ArrayList<>();
-    private final History history = new History();
     private RetainedNode root;
     private RetainedNode body;
 
@@ -62,17 +59,10 @@ class DropGestureTest {
         dispatcher.onDrop(7, (payload, x, y) -> payload.as(ROW)
                 .map(row -> Drop.move(new Rect(0f, y, 200f, 2f), change(row + "->" + Math.round(y))))
                 .orElse(Drop.NONE));
-        dispatcher.dropHistory(history);
     }
 
-    private Change change(String what) {
-        return new Change() {
-            @Override
-            public Change apply() {
-                applied.add(what);
-                return change("un:" + what);
-            }
-        };
+    private Runnable change(String what) {
+        return () -> applied.add(what);
     }
 
     private void press(int x, int y) {
@@ -127,10 +117,7 @@ class DropGestureTest {
 
         assertEquals(List.of("row@20->60"), applied);
         assertNull(dispatcher.dragSession(), "the session is over");
-        assertTrue(history.canUndo());
-
-        history.undo();
-        assertEquals(List.of("row@20->60", "un:row@20->60"), applied);
+        assertEquals(1, applied.size(), "landed once");
     }
 
     /**
@@ -151,7 +138,6 @@ class DropGestureTest {
         frame();
 
         assertEquals(List.of(), applied, "the user never saw a drag, so there was no drop");
-        assertFalse(history.canUndo(), "and nothing to undo, which is the point");
         assertNull(dispatcher.dragSession());
     }
 
@@ -169,7 +155,6 @@ class DropGestureTest {
 
         assertNull(dispatcher.dragSession());
         assertEquals(List.of(), applied);
-        assertFalse(history.canUndo());
     }
 
     /**
@@ -222,7 +207,6 @@ class DropGestureTest {
         body.parent = root;
         root.children.add(body);
         dispatcher.onDragSource(7, (x, y) -> null);   // nothing here is draggable
-        dispatcher.dropHistory(history);
 
         press(20, 20);
         move(20, 60, 0, 40);
@@ -244,30 +228,7 @@ class DropGestureTest {
     }
 
     @Test
-    @DisplayName("with no history set, a drop resolves and draws but changes nothing")
-    void noHistoryMeansNoSilentMutation() {
-        root = node(0, 0, 0, 400, 400);
-        body = node(7, 0, 0, 200, 200);
-        body.parent = root;
-        root.children.add(body);
-        dispatcher.onDragSource(7, (x, y) -> Payload.of(ROW, "r"));
-        dispatcher.onDrop(7, (p, x, y) -> Drop.move(new Rect(0f, y, 200f, 2f), change("moved")));
-
-        press(20, 20);
-        move(20, 60, 0, 40);
-        frame();
-        assertTrue(dispatcher.dragSession().drop().accepts(), "it still resolves, so the indicator still draws");
-
-        release(20, 60);
-        press(20, 60);
-        release(20, 60);
-        frame();
-
-        assertEquals(List.of(), applied, "a mutation with no way back must not happen silently");
-    }
-
-    @Test
-    @DisplayName("a drop moves focus, so the next Ctrl+Z reaches the history the drop went to")
+    @DisplayName("a drop moves focus, so the next Ctrl+Z reaches what was dropped on")
     void dropMovesFocus() {
         tree();
         dispatcher.onKey(7, e -> { });   // registering a key handler makes the node focusable
@@ -299,7 +260,6 @@ class DropGestureTest {
 
         assertEquals(List.of("row@20->60"), applied, "the release is the drop");
         assertNull(dispatcher.dragSession(), "nothing stays with the pointer");
-        assertTrue(history.canUndo());
     }
 
     @Test

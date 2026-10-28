@@ -677,6 +677,17 @@ Cues cues = new Cues(gui, Timing.millis(240, Timing.Curve.LINEAR));
 
 One tempo, declared once, handed to every widget that has something to move.
 
+A view that draws something of its own and wants it to move takes a **`Tween`**: a position from rest (0) to
+arrived (1) that eases towards whatever it is sent to and announces each step on `Tween.VALUE`, addressed to it. The
+view sends it somewhere and hears where it is, in its mailbox, where it redraws; the code that runs in the frame is the
+tween's. Sent somewhere new halfway, it turns from where it is, in the part of the timing the distance left needs.
+
+```java
+Tween lift = Tween.of(gui, "lens.lift", Timing.millis(160, Timing.Curve.OUT_CUBIC));
+gui.mailbox(Tween.VALUE, lift.address(), t -> paint(t.value()));
+lift.toward(hovered ? 1f : 0f);
+```
+
 **`vexelray-gui-krono`** attaches [Kronometer](https://github.com/sibarum/kronometer) to the frame
 loop rather than replacing it: `KronoGui.attach(gui)`, ticked from `GuiApp.run`'s `beforeFrame` hook,
 which is the moment a driven clock's batch is complete *before* `Gui.frame` drains — so nothing is

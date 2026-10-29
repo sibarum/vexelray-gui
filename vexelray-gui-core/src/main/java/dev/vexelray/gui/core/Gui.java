@@ -1450,6 +1450,16 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
+     * As {@link #mailbox(Topic, sibarum.atchung.Subscriber, int)}, handed only the messages whose key is in
+     * {@code keys}: a filter a view declares on a state topic (vexelray-framework's {@code docs/threading.md}, T4.8), so
+     * it is never handed a message it would discard. Only a state topic has keys, so a filter on an edge is refused.
+     */
+    public <T> Subscription mailbox(Topic<T> topic, sibarum.atchung.Subscriber<T> stage, int capacity,
+                                    java.util.Set<?> keys) {
+        return widgetInbox.subscribe(topic, stage, capacity, keys);
+    }
+
+    /**
      * A widget's mailbox for the messages on {@code topic} {@link Addressed addressed} to it: as
      * {@link #mailbox(Topic, sibarum.atchung.Subscriber, int)}, routed by address, so a widget is handed only its own.
      * Every widget on a topic shares one route table, and a message for an address nobody answers to is dropped and

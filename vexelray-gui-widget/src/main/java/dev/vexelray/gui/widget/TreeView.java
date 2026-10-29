@@ -816,6 +816,8 @@ public final class TreeView<T> implements AutoCloseable {
     private final List<Row> rootRows = new ArrayList<>();
     /** Whether the roots have arrived; until they have, a walk waits for them as it waits for any level. */
     private boolean rootsListed;
+    /** Whether the roots have been asked for: in the tree's first frame, by the {@link #REFRESH} it sent itself. */
+    private boolean rootsAsked;
     private final List<Walk> rootWaiters = new ArrayList<>(0);
 
     /**
@@ -890,12 +892,14 @@ public final class TreeView<T> implements AutoCloseable {
     private final Unclip unclip;
 
     /**
-     * Build a tree called {@code name} and ask for its roots. On the GUI thread, where every widget is built.
+     * Build a tree called {@code name}, which asks for its roots in its first frame. On the GUI thread, where every
+     * widget is built.
      *
      * <p>The name, qualified by the GUI's, is the tree's {@link #address()}: every message to or from it carries that,
      * so the name is unique among a GUI's trees and chosen by whoever builds the view ("files", "outline"). It is given here
-     * rather than set afterwards because the roots are asked for here, and whoever answers has to know which tree is
-     * asking. Items are compared by {@code equals}, and the items of a tree are its own type: what arrives in a
+     * rather than set afterwards because whoever answers has to know which tree is asking. The roots are asked for in
+     * the first frame and not here because whoever answers may be built after the tree, as an application's view is
+     * built after the widgets it shows. Items are compared by {@code equals}, and the items of a tree are its own type: what arrives in a
      * {@link Children} is taken to be a {@code T}.
      *
      * @throws IllegalStateException when another tree on this GUI already has the name
@@ -964,7 +968,8 @@ public final class TreeView<T> implements AutoCloseable {
         // No find bar until searchable(true) asks for one: a tree nobody searches carries nothing for it.
         root.children(scrolling.node());
 
-        ask(null);
+        // To itself, so it is heard in the first frame, by which time every answerer is subscribed: see refresh().
+        gui.bus().publish(REFRESH, new Refresh(address));
     }
 
     /** The node to place in a layout (size it there — the tree fills whatever box it is given). */
@@ -1121,6 +1126,16 @@ public final class TreeView<T> implements AutoCloseable {
      * next opened, which is when it was going to be read anyway.
      */
     public synchronized TreeView<T> refresh() {
+        if (!rootsAsked) {
+            // The first: the one the tree sent itself when it was built, heard in its first frame. The roots are asked
+            // for here, not in the constructor, because whoever answers may be built after the tree, and a question
+            // published before its answerer subscribes is heard by nobody, and waited on for good.
+            rootsAsked = true;
+            if (!rootsListed) {
+                ask(null);
+            }
+            return this;
+        }
         if (refreshAwaits != null || !rootsListed) {
             refreshAgain = true;   // after the one in flight, or once the roots it would be asking about are here
             return this;

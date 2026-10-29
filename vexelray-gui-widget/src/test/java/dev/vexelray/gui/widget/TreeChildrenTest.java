@@ -55,9 +55,10 @@ class TreeChildrenTest {
             TreeView<String> tree = new TreeView<>(h.gui, "files");
             h.gui.root().children(tree.node());
 
-            assertEquals(List.of(new TreeView.ChildrenWanted(h.gui.address("files"), null)), asked.wanted,
-                    "asked when built");
+            assertEquals(List.of(), asked.wanted, "not asked while built: whoever answers may not exist yet");
             h.frame();
+            assertEquals(List.of(new TreeView.ChildrenWanted(h.gui.address("files"), null)), asked.wanted,
+                    "asked in its first frame");
             assertNull(tree.rowNode("src/"), "and shows nothing it has not been told");
 
             asked.answer("files", null, "src/", "README");

@@ -64,7 +64,8 @@ interface Listing<T> {
             h.bus.publish(TreeView.CHILDREN, new TreeView.Children(wanted.tree(), parent, level));
         });
         TreeView<T> tree = new TreeView<>(h.gui, name);
-        h.frame();
+        h.frame();   // the tree asks for its roots, and this answers from inside the frame
+        h.frame();   // so they land in the next
         return tree;
     }
 }

@@ -17,7 +17,6 @@ import dev.vexelray.gui.widget.Nodes;
 import dev.vexelray.gui.widget.Board;
 import dev.vexelray.gui.widget.Deck;
 import dev.vexelray.gui.widget.Placement;
-import dev.vexelray.gui.widget.Placed;
 import dev.vexelray.text.TextLayout;
 import sibarum.kronometer.Dur;
 import sibarum.kronometer.anim.Ease;
@@ -204,7 +203,7 @@ public final class CardsChapter implements Chapter {
     }
 
     /** A card put at a placement in {@code lane}: moved there, as one step of the history, unless it changes nothing. */
-    private void place(String lane, Placed placed) {
+    private void place(String lane, Deck.Placed placed) {
         Task moved = (Task) placed.item();
         Placement<?> where = placed.where();
         Map<String, List<Task>> next = copy();

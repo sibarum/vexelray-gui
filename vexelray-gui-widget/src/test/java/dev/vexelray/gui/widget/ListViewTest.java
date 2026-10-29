@@ -259,7 +259,7 @@ class ListViewTest {
     void aRightClickSelectsTheRowAndOffersItsMenuForTheItem() {
         try (HeadlessGui h = new HeadlessGui()) {
             ListView<String> list = mountTall(h, 10).action(MenuAction.of("open", "Open"));
-            List<Chosen> chosen = new ArrayList<>();
+            List<ListView.Chosen> chosen = new ArrayList<>();
             h.gui.mailbox(ListView.CHOSEN, list.address(), chosen::add);
             clickRow(h, list, "item00001");
 
@@ -271,7 +271,7 @@ class ListViewTest {
                     "on a presenter the list installed, so it is on screen");
             menu.items().get(0).action().run();
             h.frame();
-            assertEquals(List.of(new Chosen(list.address(), "open", "item00003")), chosen, "about that item");
+            assertEquals(List.of(new ListView.Chosen(list.address(), "open", "item00003")), chosen, "about that item");
         }
     }
 
@@ -387,7 +387,7 @@ class ListViewTest {
             list.node().height(TALL_H);
             h.gui.root().children(list.node());
             list.items(names(3));
-            List<Chosen> chosen = new ArrayList<>();
+            List<ListView.Chosen> chosen = new ArrayList<>();
             h.gui.mailbox(ListView.CHOSEN, list.address(), chosen::add);
             h.frame().frame();
 
@@ -396,7 +396,7 @@ class ListViewTest {
             h.click(button.x + button.w / 2f, button.y + button.h / 2f);
             h.frame();
 
-            assertEquals(List.of(new Chosen(list.address(), "stage", "item00001")), chosen);
+            assertEquals(List.of(new ListView.Chosen(list.address(), "stage", "item00001")), chosen);
         }
     }
 

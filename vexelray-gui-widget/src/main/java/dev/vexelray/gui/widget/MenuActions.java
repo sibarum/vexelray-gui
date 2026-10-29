@@ -11,10 +11,17 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * The {@link MenuAction}s a widget's items carry, kept for it: declared once, ids checked as they come, and offered
- * on an item's menu as lines that publish {@link Chosen}. One copy of what a tree, a list and a tab bar would
+ * on an item's menu as lines that publish the widget's own {@code Chosen} ({@link TreeView.Chosen}, {@link
+ * ListView.Chosen}, {@link Tabs.Chosen}). One copy of what a tree, a list and a tab bar would
  * otherwise each write.
  */
 final class MenuActions {
+
+    /** How a widget makes the message a choice publishes: its own {@code Chosen}'s constructor. */
+    @FunctionalInterface
+    interface Choice<T> {
+        T of(String at, String action, Object item);
+    }
 
     private final Set<String> reserved;
     /** In the order declared. Read on every right click, written at build time. */
@@ -39,7 +46,7 @@ final class MenuActions {
         for (MenuAction had : actions) {
             if (had.id().equals(action.id())) {
                 throw new IllegalArgumentException("two actions with the id '" + action.id() + "' could not be told "
-                        + "apart in what Chosen carries");
+                        + "apart in what the widget's Chosen carries");
             }
         }
         actions.add(action);
@@ -51,13 +58,14 @@ final class MenuActions {
 
     /**
      * Put every action on {@code menu} for {@code item}, but those {@code hidden}, greying those {@code greyed}.
-     * Choosing one runs {@code first} (a tree's walk giving way) and then publishes on {@code topic}.
+     * Choosing one runs {@code first} (a tree's walk giving way) and then publishes on {@code topic} what
+     * {@code choice} makes of it.
      */
-    void offer(MenuSink menu, Gui gui, Topic<Chosen> topic, String at, Object item, Set<String> hidden,
-               Set<String> greyed, Runnable first) {
+    <T> void offer(MenuSink menu, Gui gui, Topic<T> topic, Choice<T> choice, String at, Object item, Set<String> hidden,
+                   Set<String> greyed, Runnable first) {
         for (MenuAction action : actions) {
             if (!hidden.contains(action.id())) {
-                Chosen chosen = new Chosen(at, action.id(), item);
+                T chosen = choice.of(at, action.id(), item);
                 menu.item(new MenuItem(action.icon(), action.label(), () -> {
                     first.run();
                     gui.bus().publish(topic, chosen);

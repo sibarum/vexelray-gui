@@ -16,6 +16,18 @@ package dev.vexelray.gui.core.nav;
  */
 public record Address(String window, String landmark) {
 
+    /**
+     * The navigation channel: an address published here is carried out by whichever window owns the landmark, opening
+     * and raising that window first if it is closed ({@code GuiApp} subscribes on behalf of every window it knows by
+     * name). Named by this type, as every declared channel is.
+     *
+     * <p>Being a topic rather than a method call is the whole of cross-window navigation, and most of macros and
+     * automation with it: the sender needs no handle on the destination, needs not be on the GUI thread, and needs not
+     * even be in this process. A hyperlink in a document, a step in a recorded macro and a test driving the
+     * application all publish the same value.
+     */
+    public static final sibarum.atchung.Topic<Address> NAVIGATE = sibarum.atchung.Topic.edge(Address.class);
+
     /** Separator between the window name and the landmark, in the text form. */
     public static final char SEPARATOR = '/';
 

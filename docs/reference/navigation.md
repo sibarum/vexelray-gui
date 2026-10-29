@@ -87,12 +87,12 @@ An address is `window/landmark`, and it is a value:
 
 ```java
 gui.navigate(Address.of("prefs", "theme.accent"));
-bus.publish(NavTopics.GO, Address.parse("prefs/theme.accent"));   // identical, from anywhere
+bus.publish(Address.NAVIGATE, Address.parse("prefs/theme.accent"));   // identical, from anywhere
 ```
 
 Two halves, deliberately split:
 
-- **`GuiApp` opens windows.** It subscribes to `NavTopics.GO` and calls `show()` on the named window — a tree
+- **`GuiApp` opens windows.** It subscribes to `Address.NAVIGATE` and calls `show()` on the named window — a tree
   cannot make its own window exist, and a link into a closed preferences window has to open it.
 - **`Gui` navigates itself.** Each tree accepts a request naming its own window (`gui.windowKey`) whose landmark
   it actually has, and walks it.

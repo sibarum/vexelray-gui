@@ -66,13 +66,13 @@ public final class Nodes {
     }
 
     /**
-     * A small icon button on the item: a press is announced as {@link Chosen} with {@code action} and the item, on
-     * the widget's own topic ({@link ListView#CHOSEN}), and the view does the work. Whether it is offered at all, its
-     * icon and whether it can be pressed are the face's to decide per item, like everything else it draws.
+     * A small icon button on the item: a press is announced as {@link ListView.Chosen} with {@code action} and the
+     * item, on the widget's own topic ({@link ListView#CHOSEN}), and the view does the work. Whether it is offered at
+     * all, its icon and whether it can be pressed are the face's to decide per item, like everything else it draws.
      *
      * @param icon    what the button shows
      * @param label   its accessible name, and its tip
-     * @param action  what {@link Chosen#action()} carries
+     * @param action  what {@link ListView.Chosen#action()} carries
      * @param enabled whether it can be pressed; a greyed button still says the command lives here
      * @throws IllegalStateException in a widget whose items take no presses yet
      */

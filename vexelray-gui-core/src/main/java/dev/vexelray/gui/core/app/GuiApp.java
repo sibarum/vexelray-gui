@@ -1798,7 +1798,7 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
         // Navigation requests reach the loop here, on the main thread, because the only thing this half of
         // navigation does is open windows — and creating a window belongs to the main thread on every platform.
         this.navSub = gui.bus().subscribeAsync(
-                dev.vexelray.gui.core.nav.NavTopics.GO, this::route, this::post);
+                dev.vexelray.gui.core.nav.Address.NAVIGATE, this::route, this::post);
         wireWake(gui);
         // Map the GUI's desired cursor shape onto the OS window (I-beam over editable text, §8.3).
         Seams.of(gui).onCursorChange(shape -> main.window.setCursor(osCursor(shape)));

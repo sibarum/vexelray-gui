@@ -116,14 +116,14 @@ public final class TreeView<T> implements AutoCloseable {
 
     /** A tree wants a level listed: every request, in order. Answer each with one {@link Children}. */
     public static final Topic<ChildrenWanted> CHILDREN_WANTED =
-            Topic.edge("vexelray.gui.tree.children-wanted", ChildrenWanted.class);
+            Topic.edge(ChildrenWanted.class);
 
     /** A level, listed for the tree that asked: applied on the GUI thread, in the frame it arrives. */
-    public static final Topic<Children> CHILDREN = Topic.edge("vexelray.gui.tree.children", Children.class);
+    public static final Topic<Children> CHILDREN = Topic.edge(Children.class);
 
     /** The selection landing on an item, by a click or the keyboard. The last in a frame. */
     public static final Topic<Selected> SELECTED =
-            Topic.state("vexelray.gui.tree.selected", Selected.class, Selected::tree);
+            Topic.state(Selected.class, Selected::tree);
 
     /**
      * A row clicked: after it is selected, and whether or not it already was. Not the disclosure, which opens and
@@ -131,44 +131,93 @@ public final class TreeView<T> implements AutoCloseable {
      * <em>does</em> something (makes a folder the root, say) would do it at every step of a walk with the keyboard.
      * Here the click is the command and the keys only move; Enter is {@link #ACTIVATED}. Every one, in order.
      */
-    public static final Topic<Clicked> CLICKED = Topic.edge("vexelray.gui.tree.clicked", Clicked.class);
+    public static final Topic<Clicked> CLICKED = Topic.edge(Clicked.class);
 
     /** The selected item activated, by Enter. Every one, in order. */
-    public static final Topic<Activated> ACTIVATED = Topic.edge("vexelray.gui.tree.activated", Activated.class);
+    public static final Topic<Activated> ACTIVATED = Topic.edge(Activated.class);
 
     /**
      * The row the pointer is on, or none when it leaves the rows altogether: for a tree whose rows are previewed before
      * they are chosen. The last in a frame, so moving from one row to the next is heard as the next.
      */
-    public static final Topic<Hovered> HOVERED = Topic.state("vexelray.gui.tree.hovered", Hovered.class, Hovered::tree);
+    public static final Topic<Hovered> HOVERED = Topic.state(Hovered.class, Hovered::tree);
 
     /**
      * A row's box clicked, or Space pressed on the selected row, in a {@link #checkable} tree: after the row is
      * selected. The tree changes no box for it; what is ticked is the application's, and it says so with
      * {@link #MARKS}. Every one, in order.
      */
-    public static final Topic<Toggled> TOGGLED = Topic.edge("vexelray.gui.tree.toggled", Toggled.class);
+    public static final Topic<Toggled> TOGGLED = Topic.edge(Toggled.class);
 
     /** What is ticked, for the tree that is told: applied on the GUI thread, in the frame it arrives. Every one. */
-    public static final Topic<Marks> MARKS = Topic.edge("vexelray.gui.tree.marks", Marks.class);
+    public static final Topic<Marks> MARKS = Topic.edge(Marks.class);
 
     /**
      * An item put somewhere in a {@link #reorderable} tree, by a drop or a paste. The tree moves no row for it: the
      * hierarchy is the application's, and it says when it has changed with {@link #REFRESH}. Every one, in order.
      */
-    public static final Topic<Placed> PLACED = Topic.edge("vexelray.gui.tree.placed", Placed.class);
+    public static final Topic<Placed> PLACED = Topic.edge(Placed.class);
+
+    /**
+     * The user put {@code item} at {@code where} in the tree at {@code at}, meaning {@code effect}: what
+     * {@link #PLACED} carries, addressed to the tree. An announcement, not a request the tree waits on: the
+     * arrangement is the application's, so it makes the move in its own model and then says so: it tells the tree to
+     * look again ({@link #REFRESH}). A type of the tree's own, so it names one channel (vexelray-framework's
+     * threading.md, T4.1).
+     *
+     * @param at     the tree's address
+     * @param item   what was placed
+     * @param where  where, relative to an item already there
+     * @param effect {@code MOVE} for a drag or a cut, {@code COPY} for a copy
+     */
+    public record Placed(String at, Object item, Placement<?> where, dev.vexelray.gui.core.drop.DropEffect effect)
+            implements dev.vexelray.gui.core.Addressed {
+        public Placed {
+            java.util.Objects.requireNonNull(at, "at");
+            java.util.Objects.requireNonNull(item, "item");
+            java.util.Objects.requireNonNull(where, "where");
+            java.util.Objects.requireNonNull(effect, "effect");
+        }
+
+        @Override
+        public Object address() {
+            return at;
+        }
+    }
 
     /**
      * One of the application's {@link MenuAction}s chosen from a row's menu. The tree does nothing else for it: the work
      * is the application's, done where its logic runs. Every one, in order.
      */
-    public static final Topic<Chosen> CHOSEN = Topic.edge("vexelray.gui.tree.chosen", Chosen.class);
+    public static final Topic<Chosen> CHOSEN = Topic.edge(Chosen.class);
+
+    /**
+     * The user chose the {@link MenuAction} {@code action} from the menu of {@code item} in the tree at {@code at}:
+     * what {@link #CHOSEN} carries, addressed to the tree. A type of the tree's own, so it names one channel
+     * (vexelray-framework's threading.md, T4.1).
+     *
+     * @param at     the tree's address
+     * @param action the action's id
+     * @param item   the row's item
+     */
+    public record Chosen(String at, String action, Object item) implements dev.vexelray.gui.core.Addressed {
+        public Chosen {
+            java.util.Objects.requireNonNull(at, "at");
+            java.util.Objects.requireNonNull(action, "action");
+            java.util.Objects.requireNonNull(item, "item");
+        }
+
+        @Override
+        public Object address() {
+            return at;
+        }
+    }
 
     /**
      * A {@link #revealPath} walk ended: at its last item, selected, or short of it where the tree no longer offered the
      * way down. Not for a walk superseded by another. Every one, in order.
      */
-    public static final Topic<Revealed> REVEALED = Topic.edge("vexelray.gui.tree.revealed", Revealed.class);
+    public static final Topic<Revealed> REVEALED = Topic.edge(Revealed.class);
 
     /** The id of the tree's own Expand: everything under the row, opened. For an {@link Entry} to {@link Entry#hides hide}. */
     public static final String EXPAND = "expand";
@@ -190,7 +239,7 @@ public final class TreeView<T> implements AutoCloseable {
      * The hierarchy has changed: the tree that is told asks again for every level it has listed, as
      * {@link #refresh()} does. The last in a frame, since a second in the same frame would ask the same questions.
      */
-    public static final Topic<Refresh> REFRESH = Topic.state("vexelray.gui.tree.refresh", Refresh.class, Refresh::tree);
+    public static final Topic<Refresh> REFRESH = Topic.state(Refresh.class, Refresh::tree);
 
     /** The tree at {@code tree} has {@code item} selected. */
     public record Selected(String tree, Object item) implements Addressed {
@@ -2282,7 +2331,7 @@ public final class TreeView<T> implements AutoCloseable {
                 menu.separator();
             }
         }
-        extraActions.offer(menu, gui, CHOSEN, address, row.item, row.hidden, row.greyed, this::begin);
+        extraActions.offer(menu, gui, CHOSEN, Chosen::new, address, row.item, row.hidden, row.greyed, this::begin);
     }
 
     /**

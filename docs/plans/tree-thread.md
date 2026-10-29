@@ -2,7 +2,7 @@
 
 Status: **Proposed 2026-10-28, not started.** Owner's rules first, then what the code does today, then the design,
 the questions it leaves open, and the order of work. It builds on [frame-loop.md](frame-loop.md) (A and B done) and
-on the 0.2 message model (`ROADMAP.md` beside the `v0.2` checkouts, and vexelray-framework's `threading.md`). It adds
+on the 0.2 message model (vexelray-framework's `ROADMAP.md`, and vexelray-framework's `threading.md`). It adds
 a lane, so T1.1 has to be argued in vexelray-framework's `architecture.md` before any code (step 1).
 
 ## Why

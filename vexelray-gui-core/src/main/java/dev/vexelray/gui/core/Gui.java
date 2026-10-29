@@ -45,7 +45,6 @@ import dev.vexelray.gui.core.input.Trigger;
 import dev.vexelray.gui.core.model.RetainedNode;
 import dev.vexelray.gui.core.model.SemanticNode;
 import dev.vexelray.gui.core.nav.Address;
-import dev.vexelray.gui.core.nav.NavTopics;
 import dev.vexelray.gui.core.nav.Navigation;
 import dev.vexelray.gui.core.nav.Navigator;
 import dev.vexelray.gui.core.nav.Reveal;
@@ -311,8 +310,8 @@ public final class Gui implements AutoCloseable {
      * mutations, its input, its clicks, focus and key routes, its node events — is named by the tree
      * ({@code vexelray.gui.<tree>.mutations}), and every message its widgets publish carries an address qualified by
      * it. So two windows on one bus never hear each other's input or apply each other's edits, and a message can
-     * travel between them with nothing bridging it. Navigation ({@code NavTopics.GO}) is the one topic they share on
-     * purpose: an address names its window, and each tree takes only its own.
+     * travel between them with nothing bridging it. Navigation ({@code Address.NAVIGATE}) is the one topic they share
+     * on purpose: an address names its window, and each tree takes only its own.
      *
      * <p>The tree is named {@code tree<n>}, numbered in the order this process made them; see {@link #name()}.
      */
@@ -402,7 +401,7 @@ public final class Gui implements AutoCloseable {
                 return new Node(id, sink, layoutReader);
             }
         }, bus, this::wake);
-        this.navSub = pump.subscribe(NavTopics.GO, navigator::accept, MUTATION_MAILBOX, Backpressure.BLOCK);
+        this.navSub = pump.subscribe(Address.NAVIGATE, navigator::accept, MUTATION_MAILBOX, Backpressure.BLOCK);
         // Framework input dispatch on the same bus. Every handler runs in the dispatch, on the GUI thread, inside the
         // frame and the cause of the input it answers; the frame that ran one wakes the loop (see frameBody).
         //

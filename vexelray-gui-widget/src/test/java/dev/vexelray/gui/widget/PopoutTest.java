@@ -7,7 +7,6 @@ import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.Rect;
 import dev.vexelray.gui.core.model.RetainedNode;
 import dev.vexelray.gui.core.nav.Address;
-import dev.vexelray.gui.core.nav.NavTopics;
 import dev.vexelray.gui.core.nav.Navigation;
 import org.junit.jupiter.api.Test;
 import sibarum.tactroller.api.InputEvent;
@@ -318,8 +317,8 @@ class PopoutTest {
 
             List<Address> atHost = new CopyOnWriteArrayList<>();
             List<Address> atAway = new CopyOnWriteArrayList<>();
-            h.gui.bus().subscribe(NavTopics.GO, atHost::add);
-            panel.away().bus().subscribe(NavTopics.GO, atAway::add);
+            h.gui.bus().subscribe(Address.NAVIGATE, atHost::add);
+            panel.away().bus().subscribe(Address.NAVIGATE, atAway::add);
 
             // Outbound: a link inside the popped-out panel to another window has to reach the bus GuiApp routes
             // windows from — the host's, for a panel docked in the main window.

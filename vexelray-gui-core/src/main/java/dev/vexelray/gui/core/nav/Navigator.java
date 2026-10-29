@@ -177,7 +177,7 @@ public final class Navigator {
     public Navigation navigate(Address address) {
         if (address.windowNamed() && !address.window().equals(windowKey)) {
             Navigation forwarded = new Navigation(address);
-            bus.publish(NavTopics.GO, address);
+            bus.publish(Address.NAVIGATE, address);
             // Somebody else's destination: this tree cannot say when it arrives, and pretending otherwise would
             // hand back a future that never completes. The request is on the bus, which is the whole promise.
             forwarded.arrival().completeExceptionally(new Navigation.Unreachable(

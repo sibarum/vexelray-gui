@@ -48,7 +48,7 @@ public final class Tabs {
 
     /** The tab selected, including the first. The last in a frame. */
     public static final Topic<Selected> SELECTED =
-            Topic.state("vexelray.gui.tabs.selected", Selected.class, Selected::tabs);
+            Topic.state(Selected.class, Selected::tabs);
 
     /**
      * A tab removed, whoever removed it — the application's own {@link #remove} call, or the <b>Close</b> item the bar
@@ -59,13 +59,35 @@ public final class Tabs {
      * <p>The index is the tab's when it was removed. Tabs are only ever appended, so a view that drops its own entry
      * for each of these in the order they arrive, and adds one for each tab it adds, stays in step with the bar.
      */
-    public static final Topic<Removed> REMOVED = Topic.edge("vexelray.gui.tabs.removed", Removed.class);
+    public static final Topic<Removed> REMOVED = Topic.edge(Removed.class);
 
     /**
      * One of the bar's {@link #action actions} chosen from a tab's menu, with the tab's index as it was when the menu
      * opened. The bar does nothing else for it. Every one, in order.
      */
-    public static final Topic<Chosen> CHOSEN = Topic.edge("vexelray.gui.tabs.chosen", Chosen.class);
+    public static final Topic<Chosen> CHOSEN = Topic.edge(Chosen.class);
+
+    /**
+     * The user chose the {@link MenuAction} {@code action} from the menu of {@code item} in the tab bar at {@code at}:
+     * what {@link #CHOSEN} carries, addressed to the tab bar. A type of the tab bar's own, so it names one channel
+     * (vexelray-framework's threading.md, T4.1).
+     *
+     * @param at     the tab bar's address
+     * @param action the action's id
+     * @param item   the tab's index as it was when the menu opened
+     */
+    public record Chosen(String at, String action, Object item) implements dev.vexelray.gui.core.Addressed {
+        public Chosen {
+            java.util.Objects.requireNonNull(at, "at");
+            java.util.Objects.requireNonNull(action, "action");
+            java.util.Objects.requireNonNull(item, "item");
+        }
+
+        @Override
+        public Object address() {
+            return at;
+        }
+    }
 
     /** The id of the bar's own Close, which no action of the application's may take. */
     public static final String CLOSE = "close";
@@ -405,7 +427,7 @@ public final class Tabs {
             if (closable) {
                 menu.item(dev.vexelray.gui.icons.Icon.CLOSE, "Close", () -> remove(at));
             }
-            actions.offer(menu, gui, CHOSEN, name.address(), at, Set.of(), Set.of(), () -> { });
+            actions.offer(menu, gui, CHOSEN, Chosen::new, name.address(), at, Set.of(), Set.of(), () -> { });
         });
 
         // A hidden page is the plainest kind of concealment there is, so the panel says how to undo it: anything

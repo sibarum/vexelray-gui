@@ -3,6 +3,7 @@ package dev.vexelray.gui.widget;
 import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.gui.core.Gui;
+import dev.vexelray.gui.core.nav.Address;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.WindowControls;
 import dev.vexelray.gui.core.WindowRegion;
@@ -15,7 +16,6 @@ import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.core.layout.Length;
-import dev.vexelray.gui.core.nav.NavTopics;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.icons.Icon;
 import dev.vexelray.gui.icons.IconView;
@@ -105,7 +105,7 @@ public final class Popout {
      * never against a {@code Gui} captured from elsewhere, since a node minted by the wrong tree is a mutation posted
      * to a model that has never heard of it. Published on the host's bus. Every one, in order.
      */
-    public static final Topic<Popped> POPPED = Topic.edge("vexelray.gui.popout.popped", Popped.class);
+    public static final Topic<Popped> POPPED = Topic.edge(Popped.class);
 
     /** The panel at {@code popout} was popped out for the first time. */
     public record Popped(String popout) implements Addressed {
@@ -471,14 +471,14 @@ public final class Popout {
      * it after this runs.
      */
     private void bridgeNavigation() {
-        away.bus().subscribe(NavTopics.GO, address -> {
+        away.bus().subscribe(Address.NAVIGATE, address -> {
             if (address.windowNamed() && !address.window().equals(away.windowKey())) {
-                host.bus().publish(NavTopics.GO, address);
+                host.bus().publish(Address.NAVIGATE, address);
             }
         });
-        host.bus().subscribe(NavTopics.GO, address -> {
+        host.bus().subscribe(Address.NAVIGATE, address -> {
             if (address.windowNamed() && address.window().equals(away.windowKey())) {
-                away.bus().publish(NavTopics.GO, address);
+                away.bus().publish(Address.NAVIGATE, address);
             }
         });
     }

@@ -36,7 +36,7 @@ import java.util.function.Function;
 public final class Breadcrumb<T> {
 
     /** A click on an ancestor, or Enter on a focused one: where to go. Every one, in order. */
-    public static final Topic<Navigated> NAVIGATED = Topic.edge("vexelray.gui.breadcrumb.navigated", Navigated.class);
+    public static final Topic<Navigated> NAVIGATED = Topic.edge(Navigated.class);
 
     /** The bar at {@code breadcrumb} asked to go to {@code item}. */
     public record Navigated(String breadcrumb, Object item) implements Addressed {

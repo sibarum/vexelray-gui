@@ -173,7 +173,7 @@ class TreeActionsTest {
             };
             TreeView<String> tree = Listing.tree(h, source)
                     .action(MenuAction.of("delete", "×", "Delete"));
-            List<Chosen> chosen = hear(h, tree);
+            List<TreeView.Chosen> chosen = hear(h, tree);
             h.gui.root().children(tree.node());
             h.frame();
             tree.expandAll("src");
@@ -192,7 +192,7 @@ class TreeActionsTest {
             assertTrue(enabled(h, "Delete"));
             assertEquals("×", item(h, "Delete").icon(), "and it is drawn with its own mark");
             choose(h, "Delete");
-            assertEquals(List.of(new Chosen(tree.address(), "delete", "App.java")), chosen,
+            assertEquals(List.of(new TreeView.Chosen(tree.address(), "delete", "App.java")), chosen,
                     "announced with the id and the item it was chosen on");
             tree.close();
         }
@@ -328,7 +328,7 @@ class TreeActionsTest {
         try (HeadlessGui h = new HeadlessGui()) {
             Chain source = new Chain();
             TreeView<String> tree = Listing.tree(h, source).action(MenuAction.of("count", "Count"));
-            List<Chosen> chosen = hear(h, tree);
+            List<TreeView.Chosen> chosen = hear(h, tree);
             h.gui.root().children(tree.node());
             h.frame();
 
@@ -353,8 +353,8 @@ class TreeActionsTest {
     }
 
     /** Every {@code Chosen} for {@code tree}, in order. */
-    private static List<Chosen> hear(HeadlessGui h, TreeView<String> tree) {
-        List<Chosen> heard = new ArrayList<>();
+    private static List<TreeView.Chosen> hear(HeadlessGui h, TreeView<String> tree) {
+        List<TreeView.Chosen> heard = new ArrayList<>();
         h.bus.subscribe(TreeView.CHOSEN, c -> {
             if (c.at().equals(tree.address())) {
                 heard.add(c);

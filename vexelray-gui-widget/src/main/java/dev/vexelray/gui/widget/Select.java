@@ -92,13 +92,13 @@ public final class Select<T> implements AutoCloseable {
 
     /** What is chosen as the cursor moves through the options, and as Escape puts it back: the live preview. */
     public static final Topic<Changed> CHANGED =
-            Topic.state("vexelray.gui.select.changed", Changed.class, Changed::select);
+            Topic.state(Changed.class, Changed::select);
 
     /**
      * A choice <b>made</b> — click on a row, or a click away — and an undo or redo. Not
      * published by {@link #value(Object)} or {@link #show}. Every one, in order.
      */
-    public static final Topic<Committed> COMMITTED = Topic.edge("vexelray.gui.select.committed", Committed.class);
+    public static final Topic<Committed> COMMITTED = Topic.edge(Committed.class);
 
     /** The select at {@code select} has {@code chosen} chosen, as the cursor stands. */
     public record Changed(String select, Set<Object> chosen) implements Addressed {

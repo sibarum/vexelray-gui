@@ -84,25 +84,47 @@ public final class ListView<T> implements AutoCloseable {
 
     /** What is selected, whenever it changes. The last in a frame. */
     public static final Topic<Selected> SELECTED =
-            Topic.state("vexelray.gui.list.selected", Selected.class, Selected::list);
+            Topic.state(Selected.class, Selected::list);
 
     /** A row clicked, after the click has changed the selection. Every one, in order. */
-    public static final Topic<Clicked> CLICKED = Topic.edge("vexelray.gui.list.clicked", Clicked.class);
+    public static final Topic<Clicked> CLICKED = Topic.edge(Clicked.class);
 
     /** A row activated: double-clicked, or Enter on a selection of one. Every one, in order. */
-    public static final Topic<Activated> ACTIVATED = Topic.edge("vexelray.gui.list.activated", Activated.class);
+    public static final Topic<Activated> ACTIVATED = Topic.edge(Activated.class);
 
     /**
      * Something dropped on a {@link #droppable} list: on a row, or on the list itself. The list changes nothing for
      * it; what landing means is the application's. Every one, in order.
      */
-    public static final Topic<Landed> LANDED = Topic.edge("vexelray.gui.list.landed", Landed.class);
+    public static final Topic<Landed> LANDED = Topic.edge(Landed.class);
 
     /**
      * One of the list's {@link #action actions} chosen from a row's menu, with the row's item. The list does nothing else
      * for it. Every one, in order.
      */
-    public static final Topic<Chosen> CHOSEN = Topic.edge("vexelray.gui.list.chosen", Chosen.class);
+    public static final Topic<Chosen> CHOSEN = Topic.edge(Chosen.class);
+
+    /**
+     * The user chose the {@link MenuAction} {@code action} from the menu of {@code item} in the list at {@code at}:
+     * what {@link #CHOSEN} carries, addressed to the list. A type of the list's own, so it names one channel
+     * (vexelray-framework's threading.md, T4.1).
+     *
+     * @param at     the list's address
+     * @param action the action's id
+     * @param item   the row's item
+     */
+    public record Chosen(String at, String action, Object item) implements dev.vexelray.gui.core.Addressed {
+        public Chosen {
+            java.util.Objects.requireNonNull(at, "at");
+            java.util.Objects.requireNonNull(action, "action");
+            java.util.Objects.requireNonNull(item, "item");
+        }
+
+        @Override
+        public Object address() {
+            return at;
+        }
+    }
 
     /**
      * {@code held}, the payload, was dropped with {@code effect} on the row of the list at {@code list} showing
@@ -791,8 +813,8 @@ public final class ListView<T> implements AutoCloseable {
         // The second click has already selected the row, so this activates what a click just chose.
         Seams.of(gui).onDoubleClick(row, () -> activated(item));
         Seams.of(gui).onContextClick(row, e -> onRowContextClick(item));
-        Seams.of(gui).onContextMenu(row, menu -> actions.offer(menu, gui, CHOSEN, name.address(), item, Set.of(), Set.of(),
-                () -> { }));
+        Seams.of(gui).onContextMenu(row, menu -> actions.offer(menu, gui, CHOSEN, Chosen::new, name.address(), item,
+                Set.of(), Set.of(), () -> { }));
         Seams.of(gui).onState(row, state -> row.background(look(item).at(state)));
         content.insert(row, at);
         shown.put(item, row);

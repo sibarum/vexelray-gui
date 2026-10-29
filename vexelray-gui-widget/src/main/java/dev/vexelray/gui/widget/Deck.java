@@ -50,7 +50,33 @@ public final class Deck<T> {
      * it is empty. Always {@code MOVE}. The deck shows the card there until it is handed a list that says otherwise.
      * Every one, in order.
      */
-    public static final Topic<Placed> PLACED = Topic.edge("vexelray.gui.deck.placed", Placed.class);
+    public static final Topic<Placed> PLACED = Topic.edge(Placed.class);
+
+    /**
+     * The user put {@code item} at {@code where} in the deck at {@code at}, meaning {@code effect}: what
+     * {@link #PLACED} carries, addressed to the deck. An announcement, not a request the deck waits on: the
+     * arrangement is the application's, so it makes the move in its own model and then says so by handing the deck
+     * its new list. A type of the deck's own, so it names one channel (vexelray-framework's threading.md, T4.1).
+     *
+     * @param at     the deck's address
+     * @param item   what was placed
+     * @param where  where, relative to an item already there
+     * @param effect {@code MOVE} for a drag or a cut, {@code COPY} for a copy
+     */
+    public record Placed(String at, Object item, Placement<?> where, dev.vexelray.gui.core.drop.DropEffect effect)
+            implements dev.vexelray.gui.core.Addressed {
+        public Placed {
+            java.util.Objects.requireNonNull(at, "at");
+            java.util.Objects.requireNonNull(item, "item");
+            java.util.Objects.requireNonNull(where, "where");
+            java.util.Objects.requireNonNull(effect, "effect");
+        }
+
+        @Override
+        public Object address() {
+            return at;
+        }
+    }
 
 
     final Board<T> board;

@@ -74,14 +74,14 @@ public final class ColorPicker implements AutoCloseable {
 
     /** The colour as a drag moves: the live preview. The last in a frame. */
     public static final Topic<Changed> CHANGED =
-            Topic.state("vexelray.gui.colorpicker.changed", Changed.class, Changed::picker);
+            Topic.state(Changed.class, Changed::picker);
 
     /**
      * A colour <b>chosen</b>: a drag released, a hex submitted, a recent clicked, and an undo or redo. The one to
      * make an edit from. Every one, in order.
      */
     public static final Topic<Committed> COMMITTED =
-            Topic.edge("vexelray.gui.colorpicker.committed", Committed.class);
+            Topic.edge(Committed.class);
 
     /** The picker at {@code picker} now shows {@code color}. */
     public record Changed(String picker, Color color) implements Addressed {

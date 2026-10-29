@@ -42,7 +42,7 @@ public final class Segment<T> {
 
     /** The value chosen, when the user (or {@link #select}) chooses one. The last in a frame. */
     public static final Topic<Changed> CHANGED =
-            Topic.state("vexelray.gui.segment.changed", Changed.class, Changed::segment);
+            Topic.state(Changed.class, Changed::segment);
 
     /** The segment at {@code segment} now has {@code value} chosen: the value its option was added with. */
     public record Changed(String segment, Object value) implements Addressed {

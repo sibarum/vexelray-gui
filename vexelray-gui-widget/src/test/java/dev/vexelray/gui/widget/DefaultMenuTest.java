@@ -241,7 +241,7 @@ class DefaultMenuTest {
     @Test
     void anApplicationAddsToTheTabMenuAndIsToldWhichTab() {
         try (HeadlessGui h = new HeadlessGui()) {
-            List<Chosen> chosen = new ArrayList<>();
+            List<Tabs.Chosen> chosen = new ArrayList<>();
             Tabs tabs = new Tabs(h.gui).action(MenuAction.of("duplicate", "Duplicate"));
             h.gui.mailbox(Tabs.CHOSEN, tabs.address(), chosen::add);
             tabs.add("Editor", h.gui.box());
@@ -253,7 +253,7 @@ class DefaultMenuTest {
 
             assertEquals(List.of("Close", "Duplicate"), labels(h));
             choose(h, 1, 2);
-            assertEquals(List.of(new Chosen(tabs.address(), "duplicate", 1)), chosen,
+            assertEquals(List.of(new Tabs.Chosen(tabs.address(), "duplicate", 1)), chosen,
                     "choosing it said which tab the click was on");
         }
     }

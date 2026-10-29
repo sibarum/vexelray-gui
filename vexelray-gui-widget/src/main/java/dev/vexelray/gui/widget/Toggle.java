@@ -44,7 +44,7 @@ public final class Toggle {
 
     /** Whether a switch is on, whenever a flip (the user's, or {@link #on(boolean)}) changes it. The last in a frame. */
     public static final Topic<Changed> CHANGED =
-            Topic.state("vexelray.gui.toggle.changed", Changed.class, Changed::toggle);
+            Topic.state(Changed.class, Changed::toggle);
 
     /** The switch at {@code toggle} is now {@code on}, or not. */
     public record Changed(String toggle, boolean on) implements Addressed {

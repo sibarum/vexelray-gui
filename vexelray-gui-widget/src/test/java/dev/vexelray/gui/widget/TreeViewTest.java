@@ -369,7 +369,7 @@ class TreeViewTest {
     void aContextClickSelectsTheRowAndOffersItsMenuForTheItem() {
         try (HeadlessGui h = new HeadlessGui()) {
             MapSource source = new MapSource();
-            java.util.List<Chosen> chosen = new java.util.ArrayList<>();
+            java.util.List<TreeView.Chosen> chosen = new java.util.ArrayList<>();
             h.bus.subscribe(TreeView.CHOSEN, chosen::add);
             TreeView<String> tree = Listing.tree(h, source).action(MenuAction.of("open", "Open"));
             h.gui.root().children(tree.node());
@@ -387,7 +387,7 @@ class TreeViewTest {
                     "the tree's own two commands, a rule, then what the application declared — and a presenter of "
                             + "the tree's own installing, so the menu is actually on screen");
             menu.items().get(3).action().run();
-            assertEquals(java.util.List.of(new Chosen(tree.address(), "open", "src")), chosen,
+            assertEquals(java.util.List.of(new TreeView.Chosen(tree.address(), "open", "src")), chosen,
                     "choosing it says which item the menu was about");
             tree.close();
         }

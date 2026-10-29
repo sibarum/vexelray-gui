@@ -97,4 +97,25 @@ class TweenTest {
         assertEquals(List.of(new Tween.Tweened(at, 1f, true)), heard, "clamped, and settled at once");
         gui.close();
     }
+
+    @Test
+    void atJumpsThereAndStopsTheRampUnderWay() {
+        Gui gui = new Gui();
+        Steps clock = install(gui);
+        List<Tween.Tweened> heard = new ArrayList<>();
+        gui.bus().subscribe(Tween.VALUE, heard::add);
+        Tween intro = Tween.of(gui, "intro", WHOLE);
+        String at = intro.address();
+
+        intro.toward(1f);
+        clock.progress.get(0).accept(0.6);
+        intro.at(0f);
+        clock.progress.get(0).accept(0.9);   // the ramp it stopped
+        intro.toward(1f);
+
+        assertEquals(List.of(new Tween.Tweened(at, 0.6f, false), new Tween.Tweened(at, 0f, true)), heard,
+                "a jump, announced settled, and nothing from the ramp it stopped");
+        assertEquals(WHOLE, clock.timings.get(1), "played again from the start: the whole timing");
+        gui.close();
+    }
 }

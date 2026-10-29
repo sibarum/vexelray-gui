@@ -99,6 +99,18 @@ public final class Tween {
         });
     }
 
+    /**
+     * Stand at {@code value}, clamped to [0,1], at once: a ramp under way stops announcing, and the jump is announced as
+     * settled. Any thread. For motion that plays from the start each time (an opening), where easing back to the start
+     * would be a second motion nobody asked for.
+     */
+    public void at(float value) {
+        float to = Math.max(0f, Math.min(1f, value));
+        run.incrementAndGet();
+        this.value = to;
+        announce(to, true);
+    }
+
     private void announce(float v, boolean settled) {
         gui.bus().publish(VALUE, new Tweened(address, v, settled));
     }

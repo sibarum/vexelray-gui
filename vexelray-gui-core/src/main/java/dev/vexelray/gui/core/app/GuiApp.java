@@ -181,6 +181,10 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
     private long displayReadAt;
     /** Set by {@link #postWake}, consumed by the park: how a wake is told apart from OS input. */
     private final java.util.concurrent.atomic.AtomicBoolean wakePosted = new java.util.concurrent.atomic.AtomicBoolean();
+    /** The thread running {@link #run}, so a wake can tell the loop asking itself from another thread asking it. */
+    private volatile Thread loopThread;
+    /** The loop asked itself for its next frame this pass: owed at the ceiling's next slot. Loop thread only. */
+    private boolean selfWake;
     /** What the loop has done, as {@link LoopCounters} reports it; this application's methods of that name read it. */
     private final LoopTally tally = new LoopTally();
 
@@ -744,6 +748,19 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                 LOG.warn("a released texture failed to close: " + thing + ": " + e);
             }
         }
+    }
+
+    /** Whether any window has a draw owed that it has not had: a pass inside the ceiling's gap leaves one. */
+    private boolean anyDrawOwed() {
+        if (main.drawOwed()) {
+            return true;
+        }
+        for (int i = 0; i < open.size(); i++) {
+            if (open.get(i).window.drawOwed()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -1470,14 +1487,12 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
      * means "as fast as you can", and on a presenter that does not block that is 140 fps to show a
      * 60 Hz display. This bounds it without involving the presenter.
      *
-     * <p>It bounds the frames a {@link #postWake} earns: a wake is remembered, not dropped, and draws no
-     * sooner than this gap after the previous frame <em>began</em>. A wake that lands together with OS input
-     * is held to the same gap.
-     *
-     * <p>It bounds the frames OS input earns the same way. Input after a quiet spell costs nothing in latency, since
-     * the gap has long run out by then; input arriving faster than the ceiling (a pointer sweeping the window) is
-     * held to it, each frame taking whatever arrived in the gap. It waits at most this gap, and a timed sleep is what
-     * makes it wait ({@code waitEvents} cannot be repeated: it returns at once while a message is unread).
+     * <p><b>It bounds draws, and nothing else.</b> A draw begins no sooner than this gap after the last pass that
+     * was allowed to draw. OS input and a {@link #postWake} from another thread are not held: each runs a pass at once,
+     * which takes the input, drains what arrived and lays out, and draws only if the gap has run out; otherwise its draw
+     * stays owed until it has. So input and messages are answered at their own rate, a pointer sweeping the window
+     * costs an update per batch of mouse messages, and what is on screen trails by at most this gap. A wake the loop
+     * posts to itself (motion still moving, a relayout) is a draw, held to the gap like any other.
      */
     public GuiApp maxFrameRate(long minFrameNanos) {
         this.minFrameNanos = Math.max(0L, minFrameNanos);
@@ -1521,7 +1536,19 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
         }
     }
 
+    /**
+     * Owe the loop a pass. From another thread (a lane, a job, the automation socket) that is an event: the loop runs
+     * a pass at once, to take what arrived, and draws only at the ceiling's next slot. From the loop's own thread it
+     * is the loop asking for its next frame (motion still moving, a relayout, a widget's write): a draw, held to the
+     * slot like any other, and no reason to run a pass before then. Posting the OS message for it would end the next
+     * park at once and spin the loop through the gap.
+     */
     public void postWake() {
+        if (Thread.currentThread() == loopThread) {
+            tally.wake(selfWake);
+            selfWake = true;
+            return;
+        }
         if (Probe.ON) {
             Probe.mark(Lane.FRAME, "wake.post", "nudging the OS message queue");
         }
@@ -1804,6 +1831,12 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
         Seams.of(gui).onCursorChange(shape -> main.window.setCursor(osCursor(shape)));
         int frame = 0;
         boolean running = true;
+        // The ceiling is on draws, not passes: the start of the last pass that was allowed to draw (a slot), and whether
+        // one has been. From the slot and not from a draw, so pacing that always wants a frame and has nothing to draw
+        // still runs at the ceiling and not flat out.
+        long lastSlot = 0L;
+        boolean slotted = false;
+        loopThread = Thread.currentThread();
         main.liveStep(() -> iterationTop(false));
         // Each pass in a new cause of the loop's clock, which the posted tasks, the input and the mailboxes it runs
         // each step out of for their own and back into: what is left in it is what a frame did on its own account,
@@ -1822,13 +1855,23 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                     followDisplay();
                 }
                 wakePosted.set(false);   // a wake from here on was posted during this frame, so it is pending for the next
-                long frameStarted = System.nanoTime();   // the gap the ceiling holds is frame start to frame start
+                selfWake = false;        // and so is the loop's own asking for its next frame
+                long frameStarted = System.nanoTime();
+                // Three clocks, one thread. Every pass takes the input that has arrived and drains what the lanes
+                // sent, so input and messages are answered at their own rate; only presenting waits for the
+                // ceiling, a gap from the start of the last pass that drew. A pass inside the gap updates and leaves
+                // its draw owed for the slot.
+                boolean mayDraw = !slotted || minFrameNanos <= 0L || frameStarted - lastSlot >= minFrameNanos;
+                if (mayDraw) {
+                    lastSlot = frameStarted;
+                    slotted = true;
+                }
                 try (Zone frameZone = Probe.zone(Lane.FRAME, "frame")) {
-                    running = main.frame(beforeFrame) || mainGate.keepAlive(main.window);
+                    running = main.frame(beforeFrame, mayDraw) || mainGate.keepAlive(main.window);
                 }
                 open.removeIf(w -> {
                     // Each window pumps its own input before its own frame: two OS windows, one loop, one GUI.
-                    if (w.window.frame(w.input::pump) || w.gate.keepAlive(w.window.window)) {
+                    if (w.window.frame(w.input::pump, mayDraw) || w.gate.keepAlive(w.window.window)) {
                         return false;
                     }
                     if (w.window.window == modal) {
@@ -1841,7 +1884,9 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                     return true;
                 });
                 frame++;
-                if (tally.drewThisIteration()) {
+                boolean drew = tally.drewThisIteration();
+                boolean drawHeld = !mayDraw && anyDrawOwed();
+                if (drew) {
                     long debugSlow = mainGui == null ? 0L
                             : mainGui.flatShading() ? DEBUG_SLOW_FLAT_FRAME_NANOS : DEBUG_SLOW_FRAME_NANOS;
                     if (debugSlow > 0L) {
@@ -1866,7 +1911,9 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                     // for a message already gone -- forever, when nobody is looking, with every later wake
                     // suppressed because a frame is already owed. Found by vexelray-framework's two-window
                     // witness; TwoWindowsWakeTest in vexelray-gui-harness.
-                    long paced = tasks.isEmpty() && !retireDue() && !wakePosted.get() ? pacing.getAsLong() : 0L;
+                    // Those are events, owed a pass at once whatever the ceiling says; drawing is not.
+                    boolean eventPending = !tasks.isEmpty() || retireDue() || wakePosted.get();
+                    long paced = eventPending ? 0L : pacing.getAsLong();
                     long budget = paced;
                     // Then the two bounds. The floor applies only while someone is looking: an unfocused
                     // window parks on whatever the application asked for, up to forever.
@@ -1875,9 +1922,18 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                         budget = Math.min(budget, maxIdleNanos);
                     }
                     long floored = budget;
-                    // The ceiling applies always. A zero budget means "immediately", which on a presenter
-                    // that does not block is as fast as the machine goes; this is what stops that.
-                    budget = Math.max(budget, minFrameNanos - (System.nanoTime() - frameStarted));
+                    // The ceiling, on draws. A draw this pass was not allowed, or one the loop asked itself for, is
+                    // owed at the next slot; anything that only wants a frame (pacing at zero while something
+                    // animates) waits for it too, since a zero budget on a presenter that does not block is as fast
+                    // as the machine goes. An event is not held: it runs a pass now, and that pass draws if its slot
+                    // has come.
+                    long untilSlot = slotted ? minFrameNanos - (System.nanoTime() - lastSlot) : 0L;
+                    if (drawHeld || selfWake) {
+                        budget = Math.min(budget, Math.max(0L, untilSlot));
+                    }
+                    if (!eventPending) {
+                        budget = Math.max(budget, untilSlot);
+                    }
                     // Counted by whichever bound decided it, the last to move it first (LoopCounters.Park).
                     tally.close();
                     tally.park(budget <= 0L ? LoopCounters.Park.ZERO
@@ -1895,7 +1951,8 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                     // the preceding park is expected, and a gap that is not is a stall whose suspect is the row
                     // above it.
                     if (Probe.ON) {
-                        Probe.mark(Lane.FRAME, "frame.present", "#" + frame);
+                        // A pass that drew presented; one between the ceiling's slots only updated.
+                        Probe.mark(Lane.FRAME, drew ? "frame.present" : "frame.update", "#" + frame);
                         Probe.mark(Lane.FRAME, "loop.park",
                                 budget == Long.MAX_VALUE ? "forever" : budget / 1_000_000 + "ms");
                     }
@@ -1904,21 +1961,13 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                         // application spends most of its life, and a wait total that is small next to the run
                         // time is the signature of a loop that is spinning rather than sleeping.
                         try (Zone waitZone = Probe.idleZone(Lane.FRAME, "wait for events")) {
+                            // OS input and another thread's wake end the park early, and the next pass takes them
+                            // at once: it updates, and draws only if the ceiling's slot has come. Before input and
+                            // drawing had separate clocks, the loop slept out the rest of the gap here, so input that
+                            // landed inside a gap waited for it unread. A pointer sweeping the window now runs an
+                            // update per batch of messages (hit-test, hover, the widgets' messages) and still draws
+                            // no more often than the ceiling.
                             main.window.waitEvents(budget);
-                            // OS input and a posted wake both end the park early, so the ceiling would hold for
-                            // neither: a pointer moving over the window ran a frame per mouse message, about 250 a
-                            // second on a 240 Hz panel. Sleep out what is left of the gap whatever ended it. Nothing
-                            // is lost: the messages stay queued for the next pump, which reads pointer position and
-                            // queued button and key edges, so the motion of a held-back frame arrives summed in the
-                            // next. A plain timed sleep and not waitEvents, which returns at once while a message is
-                            // unread. A loop that parked longer than a gap has none left, so input after a quiet
-                            // spell is answered at once; only input arriving faster than the ceiling waits, at most
-                            // one gap.
-                            long gapEnds = frameStarted + minFrameNanos;
-                            long left;
-                            while (minFrameNanos > 0 && (left = gapEnds - System.nanoTime()) > 0) {
-                                java.util.concurrent.locks.LockSupport.parkNanos(left);
-                            }
                         }
                     }
                 }

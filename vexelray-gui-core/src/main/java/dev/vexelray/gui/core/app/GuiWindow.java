@@ -246,7 +246,7 @@ final class GuiWindow implements AutoCloseable {
         presenter.throttleResize(true);
         try {
             liveStep.run();
-            pull();
+            pull(true);
             if (tally != null) {
                 tally.close();   // a pulled frame is an iteration of its own, so it is tallied as one
             }
@@ -260,6 +260,15 @@ final class GuiWindow implements AutoCloseable {
      * has been asked to close — the host then {@link #close()}es this bundle (the shared device stays up).
      */
     boolean frame(Runnable beforeFrame) {
+        return frame(beforeFrame, true);
+    }
+
+    /**
+     * As {@link #frame(Runnable)}, drawing only if {@code mayDraw}. A pass that may not draw still pumps, takes input,
+     * drains and lays out: input and messages are answered when they arrive, and only presenting waits for the
+     * ceiling's next slot, with the draw kept owed until then ({@link #drawOwed()}).
+     */
+    boolean frame(Runnable beforeFrame, boolean mayDraw) {
         this.beforeFrame = beforeFrame == null ? () -> { } : beforeFrame;
         if (!window.pumpEvents()) {
             return false;
@@ -279,7 +288,12 @@ final class GuiWindow implements AutoCloseable {
             idle();
             return true;
         }
-        return pull();
+        return pull(mayDraw);
+    }
+
+    /** Whether a draw is owed and has not happened: what a pass that was not allowed to draw left for the next slot. */
+    boolean drawOwed() {
+        return drawOwed;
     }
 
     /**
@@ -291,8 +305,11 @@ final class GuiWindow implements AutoCloseable {
      * changed the tree, a layout that moved something, a requested frame, or a window that is not the size it was
      * last drawn at. Before this split, every wake was a full draw and present, so a pointer moving over a still
      * window presented a frame per move.
+     *
+     * <p>{@code mayDraw} false is a pass between the ceiling's slots: the update runs, and a draw it makes owed is
+     * kept for the next pass that may draw. Input and messages run at their own rate; only presenting is capped.
      */
-    private boolean pull() {
+    private boolean pull(boolean mayDraw) {
         // The application edge - on a real app this is the input pump, so its cost is input's, not drawing's.
         try (Zone z = Probe.zone(Lane.FRAME, "before frame")) {
             beforeFrame.run();
@@ -306,6 +323,10 @@ final class GuiWindow implements AutoCloseable {
         }
         if (!drawOwed) {
             Probe.count(Lane.FRAME, "draw skipped", 1);
+            return true;
+        }
+        if (!mayDraw) {
+            Probe.count(Lane.FRAME, "draw held for the ceiling", 1);
             return true;
         }
         if (tally != null) {

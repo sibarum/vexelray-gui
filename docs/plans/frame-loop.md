@@ -34,8 +34,10 @@ Verified in the code on 2026-10-04; the event-storm survey of the same day measu
   `Reconciler.setProp` applies it without comparing, so writing the value a prop already has still dirties.
 - **What is already bounded:** tactroller samples pointer and wheel once per frame (at most one `PointerMoved`
   and one `Scrolled` per frame); `SetProp`/`SetText` fold per (node, key) in the mutation mailbox; the frame
-  ceiling (`maxFrameRateToDisplay`) caps frames at the display rate or 60 Hz, whichever is slower, against OS input
-  as well as wakes; the 200 ms idle floor bounds a missed wake.
+  ceiling (`maxFrameRateToDisplay`) caps draws at the display rate or 60 Hz, whichever is slower; the 200 ms idle
+  floor bounds a missed wake. *Since 2026-10-29 the ceiling caps draws and nothing else: OS input and another
+  thread's wake run an update pass when they arrive (pump, input, drain, layout), and that pass's draw waits for the
+  next slot. Pointer and wheel are sampled once per pass, so at most once per batch of messages.*
 - **During a drag**, the Win32 modal loop's 8 ms timer pulls a full frame through the frame sink on every tick,
   changed or not.
 
@@ -71,8 +73,8 @@ Consequences:
 - The idle floor stays as a safety net, but it becomes an *update* tick: a missed wake still drains, and draws only
   if what drained changed something.
 - The modal-loop timer pulls an update; it draws on the same rules. A move with no resize draws nothing.
-- Rule 2 holds by construction: draws happen at most once per pass, and passes are already held to one per
-  display refresh by the ceiling.
+- Rule 2 holds by construction: draws happen at most once per pass, and draws are held to one per display refresh by
+  the ceiling. (Passes were held too until 2026-10-29; now input and messages run an update when they arrive.)
 
 ### B. The change itself marks dirty
 

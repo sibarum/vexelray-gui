@@ -56,7 +56,7 @@ public final class SplitPane {
 
     /** The sized pane's size, in dp, after a drag ends. The last in a frame. */
     public static final Topic<Resized> RESIZED =
-            Topic.state(Resized.class, Resized::split);
+            Addressed.state(Resized.class, Resized::split);
 
     /** The split at {@code split} has its sized pane {@code dp} across. */
     public record Resized(String split, float dp) implements Addressed {

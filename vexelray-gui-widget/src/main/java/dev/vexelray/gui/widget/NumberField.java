@@ -41,7 +41,7 @@ public final class NumberField {
      * {@code docs/threading.md}, T3.8).
      */
     public static final Topic<Changed> CHANGED =
-            Topic.state(Changed.class, Changed::field);
+            Addressed.state(Changed.class, Changed::field);
 
     /** The number field at {@code field} now holds {@code value}. */
     public record Changed(String field, double value) implements Addressed {

@@ -48,7 +48,7 @@ public final class Tabs {
 
     /** The tab selected, including the first. The last in a frame. */
     public static final Topic<Selected> SELECTED =
-            Topic.state(Selected.class, Selected::tabs);
+            Addressed.state(Selected.class, Selected::tabs);
 
     /**
      * A tab removed, whoever removed it — the application's own {@link #remove} call, or the <b>Close</b> item the bar
@@ -59,13 +59,13 @@ public final class Tabs {
      * <p>The index is the tab's when it was removed. Tabs are only ever appended, so a view that drops its own entry
      * for each of these in the order they arrive, and adds one for each tab it adds, stays in step with the bar.
      */
-    public static final Topic<Removed> REMOVED = Topic.edge(Removed.class);
+    public static final Topic<Removed> REMOVED = Addressed.edge(Removed.class);
 
     /**
      * One of the bar's {@link #action actions} chosen from a tab's menu, with the tab's index as it was when the menu
      * opened. The bar does nothing else for it. Every one, in order.
      */
-    public static final Topic<Chosen> CHOSEN = Topic.edge(Chosen.class);
+    public static final Topic<Chosen> CHOSEN = Addressed.edge(Chosen.class);
 
     /**
      * The user chose the {@link MenuAction} {@code action} from the menu of {@code item} in the tab bar at {@code at}:

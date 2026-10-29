@@ -1,5 +1,7 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.Addressed;
+
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.drop.DropEffect;
 import dev.vexelray.gui.core.Node;
@@ -50,7 +52,7 @@ public final class Deck<T> {
      * it is empty. Always {@code MOVE}. The deck shows the card there until it is handed a list that says otherwise.
      * Every one, in order.
      */
-    public static final Topic<Placed> PLACED = Topic.edge(Placed.class);
+    public static final Topic<Placed> PLACED = Addressed.edge(Placed.class);
 
     /**
      * The user put {@code item} at {@code where} in the deck at {@code at}, meaning {@code effect}: what

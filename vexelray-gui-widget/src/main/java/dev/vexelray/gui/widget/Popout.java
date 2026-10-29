@@ -105,7 +105,7 @@ public final class Popout {
      * never against a {@code Gui} captured from elsewhere, since a node minted by the wrong tree is a mutation posted
      * to a model that has never heard of it. Published on the host's bus. Every one, in order.
      */
-    public static final Topic<Popped> POPPED = Topic.edge(Popped.class);
+    public static final Topic<Popped> POPPED = Addressed.edge(Popped.class);
 
     /** The panel at {@code popout} was popped out for the first time. */
     public record Popped(String popout) implements Addressed {

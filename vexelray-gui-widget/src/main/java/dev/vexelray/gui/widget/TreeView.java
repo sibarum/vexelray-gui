@@ -119,11 +119,11 @@ public final class TreeView<T> implements AutoCloseable {
             Topic.edge(ChildrenWanted.class);
 
     /** A level, listed for the tree that asked: applied on the GUI thread, in the frame it arrives. */
-    public static final Topic<Children> CHILDREN = Topic.edge(Children.class);
+    public static final Topic<Children> CHILDREN = Addressed.edge(Children.class);
 
     /** The selection landing on an item, by a click or the keyboard. The last in a frame. */
     public static final Topic<Selected> SELECTED =
-            Topic.state(Selected.class, Selected::tree);
+            Addressed.state(Selected.class, Selected::tree);
 
     /**
      * A row clicked: after it is selected, and whether or not it already was. Not the disclosure, which opens and
@@ -131,32 +131,32 @@ public final class TreeView<T> implements AutoCloseable {
      * <em>does</em> something (makes a folder the root, say) would do it at every step of a walk with the keyboard.
      * Here the click is the command and the keys only move; Enter is {@link #ACTIVATED}. Every one, in order.
      */
-    public static final Topic<Clicked> CLICKED = Topic.edge(Clicked.class);
+    public static final Topic<Clicked> CLICKED = Addressed.edge(Clicked.class);
 
     /** The selected item activated, by Enter. Every one, in order. */
-    public static final Topic<Activated> ACTIVATED = Topic.edge(Activated.class);
+    public static final Topic<Activated> ACTIVATED = Addressed.edge(Activated.class);
 
     /**
      * The row the pointer is on, or none when it leaves the rows altogether: for a tree whose rows are previewed before
      * they are chosen. The last in a frame, so moving from one row to the next is heard as the next.
      */
-    public static final Topic<Hovered> HOVERED = Topic.state(Hovered.class, Hovered::tree);
+    public static final Topic<Hovered> HOVERED = Addressed.state(Hovered.class, Hovered::tree);
 
     /**
      * A row's box clicked, or Space pressed on the selected row, in a {@link #checkable} tree: after the row is
      * selected. The tree changes no box for it; what is ticked is the application's, and it says so with
      * {@link #MARKS}. Every one, in order.
      */
-    public static final Topic<Toggled> TOGGLED = Topic.edge(Toggled.class);
+    public static final Topic<Toggled> TOGGLED = Addressed.edge(Toggled.class);
 
     /** What is ticked, for the tree that is told: applied on the GUI thread, in the frame it arrives. Every one. */
-    public static final Topic<Marks> MARKS = Topic.edge(Marks.class);
+    public static final Topic<Marks> MARKS = Addressed.edge(Marks.class);
 
     /**
      * An item put somewhere in a {@link #reorderable} tree, by a drop or a paste. The tree moves no row for it: the
      * hierarchy is the application's, and it says when it has changed with {@link #REFRESH}. Every one, in order.
      */
-    public static final Topic<Placed> PLACED = Topic.edge(Placed.class);
+    public static final Topic<Placed> PLACED = Addressed.edge(Placed.class);
 
     /**
      * The user put {@code item} at {@code where} in the tree at {@code at}, meaning {@code effect}: what
@@ -189,7 +189,7 @@ public final class TreeView<T> implements AutoCloseable {
      * One of the application's {@link MenuAction}s chosen from a row's menu. The tree does nothing else for it: the work
      * is the application's, done where its logic runs. Every one, in order.
      */
-    public static final Topic<Chosen> CHOSEN = Topic.edge(Chosen.class);
+    public static final Topic<Chosen> CHOSEN = Addressed.edge(Chosen.class);
 
     /**
      * The user chose the {@link MenuAction} {@code action} from the menu of {@code item} in the tree at {@code at}:
@@ -217,7 +217,7 @@ public final class TreeView<T> implements AutoCloseable {
      * A {@link #revealPath} walk ended: at its last item, selected, or short of it where the tree no longer offered the
      * way down. Not for a walk superseded by another. Every one, in order.
      */
-    public static final Topic<Revealed> REVEALED = Topic.edge(Revealed.class);
+    public static final Topic<Revealed> REVEALED = Addressed.edge(Revealed.class);
 
     /** The id of the tree's own Expand: everything under the row, opened. For an {@link Entry} to {@link Entry#hides hide}. */
     public static final String EXPAND = "expand";
@@ -239,7 +239,7 @@ public final class TreeView<T> implements AutoCloseable {
      * The hierarchy has changed: the tree that is told asks again for every level it has listed, as
      * {@link #refresh()} does. The last in a frame, since a second in the same frame would ask the same questions.
      */
-    public static final Topic<Refresh> REFRESH = Topic.state(Refresh.class, Refresh::tree);
+    public static final Topic<Refresh> REFRESH = Addressed.state(Refresh.class, Refresh::tree);
 
     /** The tree at {@code tree} has {@code item} selected. */
     public record Selected(String tree, Object item) implements Addressed {

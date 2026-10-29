@@ -51,7 +51,7 @@ public final class History {
      * for each history. Published only for a history {@link #announceOn announced} on a bus.
      */
     public static final Topic<Changed> STATUS =
-            Topic.state(Changed.class, Changed::history);
+            Addressed.state(Changed.class, Changed::history);
 
     /** What a tree calls the window's history on the bus: {@code gui.address(History.ADDRESS)}. */
     public static final String ADDRESS = "history";

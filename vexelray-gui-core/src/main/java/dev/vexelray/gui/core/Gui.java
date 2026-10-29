@@ -350,7 +350,7 @@ public final class Gui implements AutoCloseable {
         // One inbox for every widget, so commands to two widgets are applied in the order they were sent.
         this.widgets = bus.tick(() -> wake("widget message"));
         this.widgetInbox = widgets.inbox("widgets");
-        this.routes = new Routes(widgetInbox);
+        this.routes = new Routes(widgetInbox, name);
         // Where nodes come from, and the seam their handles write through. It resolves Node.layout() through a
         // reader that is consulted lazily, which is what lets it be built before the read-model it will read —
         // a handle minted here does not ask about geometry until something reads one.

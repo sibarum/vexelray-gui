@@ -24,15 +24,18 @@ final class Routes {
     private static final int CAPACITY = 4096;
 
     private final Inbox inbox;
+    /** The tree these routes are for: on a scoped topic, the only scope they are offered. */
+    private final java.util.Set<String> tree;
     private final Map<Topic<?>, Table<?>> tables = new HashMap<>();
 
-    Routes(Inbox inbox) {
+    Routes(Inbox inbox, String tree) {
         this.inbox = inbox;
+        this.tree = java.util.Set.of(tree);
     }
 
     <T extends Addressed> Subscription add(Topic<T> topic, Object address, Subscriber<T> stage) {
         @SuppressWarnings("unchecked")
-        Table<T> table = (Table<T>) tables.computeIfAbsent(topic, t -> new Table<>(topic, inbox));
+        Table<T> table = (Table<T>) tables.computeIfAbsent(topic, t -> new Table<>(topic, inbox, tree));
         return table.add(address, stage);
     }
 
@@ -49,9 +52,16 @@ final class Routes {
         private final Topic<T> topic;
         private final Map<Object, Subscriber<T>> routes = new HashMap<>();
 
-        Table(Topic<T> topic, Inbox inbox) {
+        Table(Topic<T> topic, Inbox inbox, java.util.Set<String> tree) {
             this.topic = topic;
-            inbox.subscribe(topic, this::route, CAPACITY);
+            // A widget topic is scoped by tree (Addressed.edge, Addressed.state): on a bus every window shares, this
+            // tree is offered only its own widgets' messages, so while its window is closed and runs no frames it holds
+            // none of another window's.
+            if (topic.hasScope()) {
+                inbox.subscribeIn(topic, this::route, CAPACITY, tree);
+            } else {
+                inbox.subscribe(topic, this::route, CAPACITY);
+            }
         }
 
         private void route(T message) {

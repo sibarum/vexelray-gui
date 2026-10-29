@@ -84,25 +84,25 @@ public final class ListView<T> implements AutoCloseable {
 
     /** What is selected, whenever it changes. The last in a frame. */
     public static final Topic<Selected> SELECTED =
-            Topic.state(Selected.class, Selected::list);
+            Addressed.state(Selected.class, Selected::list);
 
     /** A row clicked, after the click has changed the selection. Every one, in order. */
-    public static final Topic<Clicked> CLICKED = Topic.edge(Clicked.class);
+    public static final Topic<Clicked> CLICKED = Addressed.edge(Clicked.class);
 
     /** A row activated: double-clicked, or Enter on a selection of one. Every one, in order. */
-    public static final Topic<Activated> ACTIVATED = Topic.edge(Activated.class);
+    public static final Topic<Activated> ACTIVATED = Addressed.edge(Activated.class);
 
     /**
      * Something dropped on a {@link #droppable} list: on a row, or on the list itself. The list changes nothing for
      * it; what landing means is the application's. Every one, in order.
      */
-    public static final Topic<Landed> LANDED = Topic.edge(Landed.class);
+    public static final Topic<Landed> LANDED = Addressed.edge(Landed.class);
 
     /**
      * One of the list's {@link #action actions} chosen from a row's menu, with the row's item. The list does nothing else
      * for it. Every one, in order.
      */
-    public static final Topic<Chosen> CHOSEN = Topic.edge(Chosen.class);
+    public static final Topic<Chosen> CHOSEN = Addressed.edge(Chosen.class);
 
     /**
      * The user chose the {@link MenuAction} {@code action} from the menu of {@code item} in the list at {@code at}:

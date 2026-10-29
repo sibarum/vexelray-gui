@@ -31,7 +31,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public final class Tween {
 
     /** Where a tween is: a state topic keyed by its address, so a view hears the last step of a frame. */
-    public static final Topic<Tweened> VALUE = Topic.state(Tweened.class, Tweened::tween);
+    public static final Topic<Tweened> VALUE = Addressed.state(Tweened.class, Tweened::tween);
 
     /** The tween at {@code tween} is at {@code value}, in [0,1]; {@code settled} once it has arrived. */
     public record Tweened(String tween, float value, boolean settled) implements Addressed {

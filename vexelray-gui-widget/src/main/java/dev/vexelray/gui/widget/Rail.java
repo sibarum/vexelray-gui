@@ -72,13 +72,13 @@ public final class Rail {
      * view told after the panel had already been hidden could not have animated a close at all. The last in a frame,
      * carrying the rail's {@link #address() address} (vexelray-framework's {@code docs/threading.md}, T3.8).
      */
-    public static final Topic<Selected> SELECTED = Topic.state(Selected.class, Selected::rail);
+    public static final Topic<Selected> SELECTED = Addressed.state(Selected.class, Selected::rail);
 
     /**
      * A panel shown for the first time: build its page into {@link #page(String) page(key)}. Heard in the widget tick of
      * the frame the panel opened, before it is laid out, so the page is never drawn empty. Every one, in order.
      */
-    public static final Topic<Opened> OPENED = Topic.edge(Opened.class);
+    public static final Topic<Opened> OPENED = Addressed.edge(Opened.class);
 
     /** The rail at {@code rail} shows the panel {@code key}, or none when null. */
     public record Selected(String rail, String key) implements Addressed {

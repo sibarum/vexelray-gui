@@ -1,5 +1,7 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.Addressed;
+
 import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
@@ -91,20 +93,20 @@ public final class TextField implements AutoCloseable {
      * field's address, so a component that ran once a frame sees the last text of the frame and not each keystroke.
      */
     public static final Topic<Changed> CHANGED =
-            Topic.state(Changed.class, Changed::field);
+            Addressed.state(Changed.class, Changed::field);
 
     /**
      * Where a field's caret is: published whenever it moves, by typing, the keys or a click. A state topic keyed by
      * the field's address, so a status line hears where it ended up in a frame, and never runs anything in the field's.
      */
     public static final Topic<Caret> CARET =
-            Topic.state(Caret.class, Caret::field);
+            Addressed.state(Caret.class, Caret::field);
 
     /** Enter in a single-line field: every one, in order. */
-    public static final Topic<Submitted> SUBMITTED = Topic.edge(Submitted.class);
+    public static final Topic<Submitted> SUBMITTED = Addressed.edge(Submitted.class);
 
     /** What the application asks a field to do, applied on the GUI thread in the frame's drain. In order. */
-    public static final Topic<Command> COMMANDS = Topic.edge(Command.class);
+    public static final Topic<Command> COMMANDS = Addressed.edge(Command.class);
 
     /**
      * {@code field} now says {@code text}. {@code version} is its document's version, which a {@link Replace} names
@@ -138,7 +140,7 @@ public final class TextField implements AutoCloseable {
 
     /** A link was followed in {@code field}, to {@code target}: every one, in order. */
     public static final Topic<LinkFollowed> LINK_FOLLOWED =
-            Topic.edge(LinkFollowed.class);
+            Addressed.edge(LinkFollowed.class);
 
     /**
      * A link in {@code field} was followed to {@code target}. The field has navigated to it as an address of this

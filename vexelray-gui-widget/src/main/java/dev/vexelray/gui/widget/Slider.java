@@ -63,13 +63,13 @@ public final class Slider {
 
     /** The value as the thumb moves: the live preview. The last in a frame. */
     public static final Topic<Changed> CHANGED =
-            Topic.state(Changed.class, Changed::slider);
+            Addressed.state(Changed.class, Changed::slider);
 
     /**
      * A value <b>chosen</b>: the end of a drag, a key step, {@link #value(float)}, and an undo or redo — the one an
      * application saves or sends. A drag is one, however many points it crossed. Every one, in order.
      */
-    public static final Topic<Committed> COMMITTED = Topic.edge(Committed.class);
+    public static final Topic<Committed> COMMITTED = Addressed.edge(Committed.class);
 
     /** The slider at {@code slider} now shows {@code value}, 0 to 1. */
     public record Changed(String slider, double value) implements Addressed {

@@ -68,10 +68,10 @@ public final class Inspector implements AutoCloseable {
      * {@code value}. The last in a frame for each row, so a drag along a slider is heard once a frame.
      */
     public static final Topic<Edited> EDITED =
-            Topic.state(Edited.class, e -> List.of(e.inspector(), e.property()));
+            Addressed.state(Edited.class, e -> List.of(e.inspector(), e.property()));
 
     /** What the rows of the inspector at {@code inspector} now hold, by id: shown, never reported back as an edit. */
-    public static final Topic<Values> VALUES = Topic.edge(Values.class);
+    public static final Topic<Values> VALUES = Addressed.edge(Values.class);
 
     /** The row {@code property} of the inspector at {@code inspector} edited to {@code value}. */
     public record Edited(String inspector, String property, Object value) implements Addressed {

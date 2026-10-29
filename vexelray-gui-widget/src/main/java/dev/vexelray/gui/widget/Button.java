@@ -54,11 +54,11 @@ import java.util.function.Consumer;
 public final class Button {
 
     /** A plain button pressed, by a click, Enter or Space: every press, in order. An {@link IconButton}'s too. */
-    public static final Topic<Pressed> PRESSED = Topic.edge(Pressed.class);
+    public static final Topic<Pressed> PRESSED = Addressed.edge(Pressed.class);
 
     /** Whether a chip is pressed, when the user (or {@link #pressed(boolean)}) changes it. The last in a frame. */
     public static final Topic<Toggled> TOGGLED =
-            Topic.state(Toggled.class, Toggled::button);
+            Addressed.state(Toggled.class, Toggled::button);
 
     /** The button at {@code button} was pressed. */
     public record Pressed(String button) implements Addressed {

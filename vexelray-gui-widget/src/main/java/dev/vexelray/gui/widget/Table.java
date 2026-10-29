@@ -84,7 +84,7 @@ public final class Table<T> implements AutoCloseable {
 
     /** What is selected, whenever it changes. The last in a frame. */
     public static final Topic<Selected> SELECTED =
-            Topic.state(Selected.class, Selected::table);
+            Addressed.state(Selected.class, Selected::table);
 
     /**
      * The order, after every change to it, whether the application asked ({@link #sortBy}) or the user clicked a
@@ -92,7 +92,7 @@ public final class Table<T> implements AutoCloseable {
      * just changed it. The last in a frame.
      */
     public static final Topic<Sorted> SORTED =
-            Topic.state(Sorted.class, Sorted::table);
+            Addressed.state(Sorted.class, Sorted::table);
 
     /** The table at {@code table} has {@code chosen} selected. */
     public record Selected(String table, Set<Object> chosen) implements Addressed {

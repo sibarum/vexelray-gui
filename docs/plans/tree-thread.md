@@ -83,7 +83,7 @@ other and nothing is allocated once warm.
 while a frame is being drawn, the main thread draws only the latest.
 
 **A custom widget's `draw` runs during emit, so on the tree thread**, where the widget's state lives. threading.md
-T7.1's drawing exception becomes "drawing runs on the tree thread", which is a simpler statement than the one it
+T7.6's asked half (T7.1's drawing exception until 2026-10-29) becomes "drawing runs on the tree thread", which is a simpler statement than the one it
 replaces: the widget reads only state its own thread owns.
 
 ### B. The main thread keeps and draws

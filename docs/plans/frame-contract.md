@@ -20,7 +20,8 @@ widget libraries.**
 
 ## What happens today
 
-- **T7.1 names two exceptions** to "no application code on the main thread": drawing and presentation (T7.4).
+- **T7.1 named two exceptions** to "no application code on the main thread": drawing and presentation (T7.4).
+  (Restated 2026-10-29 as one, T7.6, by this plan's step 1.)
 - **Presentation is "told".** A `@View`'s `@Subscribe` methods are drained in the widget tick; it hears a message
   and writes its widgets and nodes.
 - **Drawing is "told" too.** A node holds a `Picture` (`Node.picture`), a value a view builds with `Sketch` when it
@@ -174,8 +175,9 @@ Each step lands on its own and leaves the suite green.
 0. **Measure today.** The codec's demo player on a 60 s clip at 24, 30 and 60 fps on a 144 Hz display: intervals
    between shown frames, duplicated and dropped frames, the offset from sound, and the cost of an emit. The number to
    beat, repeated at step 5.
-1. **Argue it in vexelray-framework's `threading.md`:** T7.1 restated with one exception, the part's declared halves;
-   T7.4 and the drawing exception folded into it; T7.3 names the feed.
+1. ~~**Argue it in vexelray-framework's `threading.md`.**~~ **Done 2026-10-29:** T7.1 restated with one exception;
+   T7.6 states the told and asked halves, with T7.4 and the drawing exception folded into it; T7.3 names the feed;
+   the reasons are in vexelray-framework's `architecture.md`, *the message model*.
 2. **The contract in vexelray-gui's host, with the framework as its first user.** `Frame`, `Drawn`, due times and
    parking; `PaintMotion` and `LayoutMotion` moved onto it with no change in behaviour, held by their existing tests.
 3. **The processor's check** (`DrawnCheckTest`) and `@Drawn` on a part, in vexelray-framework.

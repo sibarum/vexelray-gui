@@ -46,8 +46,8 @@ class PaintMotionTest {
         }
 
         @Override
-        public boolean moving() {
-            return moving;
+        public long draw(Frame frame) {
+            return moving ? frame.presentNanos() : Frame.NEVER;
         }
     }
 

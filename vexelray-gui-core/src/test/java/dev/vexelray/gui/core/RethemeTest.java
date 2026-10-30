@@ -51,8 +51,8 @@ class RethemeTest {
         }
 
         @Override
-        public boolean moving() {
-            return false;
+        public long draw(Frame frame) {
+            return Frame.NEVER;
         }
     }
 

@@ -71,8 +71,8 @@ public interface LayoutMotion {
         }
 
         @Override
-        public boolean active() {
-            return false;
+        public long draw(dev.vexelray.gui.core.Frame frame) {
+            return dev.vexelray.gui.core.Frame.NEVER;
         }
 
         @Override
@@ -122,18 +122,16 @@ public interface LayoutMotion {
     }
 
     /**
-     * Whether any node might currently be displaced: false only when every {@link #displacementX} and
-     * {@link #displacementY} would answer zero. Read once per frame, after {@link #moved} has been told this frame's
-     * moves, so a transition started by a move is already in flight when it is asked.
+     * The asked half (vexelray-gui's docs/plans/frame-contract.md): choose every node's displacement for
+     * {@code frame}'s present time, and answer when next to be asked. {@link dev.vexelray.gui.core.Frame#NEVER} only
+     * when every displacement would answer zero; the present time while anything is on its way. Called once per frame
+     * on the GUI thread, after {@link #moved} has been told this frame's moves and before any displacement is read, so
+     * a transition started by a move is already in flight when it is asked.
      *
-     * <p>It lets the frame skip the whole-tree displacement walk while nothing is moving — hover-only frames, idle
-     * wakes — which is the common case for a source that is installed for the occasional reorder. The frame still
-     * walks once more after a source goes quiet, to write the resting positions back. Moves are not detected by the
-     * walk this skips: {@link Displacement#settle} reports them on every layout pass regardless.
-     *
-     * <p>The default says "maybe", which is always correct and never skips anything.
+     * <p>The answer also lets the frame skip the whole-tree displacement walk while nothing is moving — hover-only
+     * frames, idle wakes — which is the common case for a source that is installed for the occasional reorder. The
+     * frame still walks once more after a source goes quiet, to write the resting positions back. Moves are not
+     * detected by the walk this skips: {@link Displacement#settle} reports them on every layout pass regardless.
      */
-    default boolean active() {
-        return true;
-    }
+    long draw(dev.vexelray.gui.core.Frame frame);
 }

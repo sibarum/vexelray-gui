@@ -1,5 +1,6 @@
 package dev.vexelray.gui.krono;
 
+import dev.vexelray.gui.core.Frame;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.model.RetainedNode;
@@ -31,6 +32,12 @@ class TransitionsTest {
 
     private KronoGui headless() {
         return KronoGui.attach(new Gui(Atchung.create()), Kron.driven());
+    }
+
+    /** Step the clock to {@code at} and draw a frame for it, as the tree would: the lags are asked there. */
+    private static void tick(KronoGui krono, Transitions moves, Dur at) {
+        krono.tick(at);
+        moves.draw(new Frame(krono.nanos(), false));
     }
 
     /** A retained node standing in for one the layout pass would have produced. */
@@ -74,14 +81,14 @@ class TransitionsTest {
             assertEquals(0f, moves.displacementY(panel), "a size is not a position");
             assertFalse(moves.settled());
 
-            krono.tick(ms(100));
+            tick(krono, moves, ms(100));
             assertEquals(20f, moves.displacementH(panel), 0.5f, "half the time, half the difference");
 
             moves.resized(panel, 200f, 80f, 200f, 100f);   // grew again mid-shrink
             assertEquals(0f, moves.displacementH(panel), 0.5f,
                     "measured from the size it is drawn at, 100, which is where it is heading now");
 
-            krono.tick(ms(400));
+            tick(krono, moves, ms(400));
             assertEquals(0f, moves.displacementH(panel));
             assertTrue(moves.settled());
         }
@@ -100,10 +107,10 @@ class TransitionsTest {
             assertEquals(-100f, moves.displacementY(row), "drawn where it was, which is 100px above where it is");
             assertFalse(moves.settled());
 
-            krono.tick(ms(100));
+            tick(krono, moves, ms(100));
             assertEquals(-50f, moves.displacementY(row), 0.5f, "half the time, half the distance");
 
-            krono.tick(ms(200));
+            tick(krono, moves, ms(200));
             assertEquals(0f, moves.displacementY(row), "the resting state is zero, not nearly zero");
             assertTrue(moves.settled());
         }
@@ -176,7 +183,7 @@ class TransitionsTest {
             RetainedNode row = retained(handle);
 
             moves.moved(row, 0f, 0f, 0f, 100f);
-            krono.tick(ms(100));
+            tick(krono, moves, ms(100));
             float lagNow = moves.displacementY(row);            // ≈ -50: drawn at 50, belongs at 100
             float drawnAt = 100f + lagNow;
 
@@ -199,11 +206,11 @@ class TransitionsTest {
             RetainedNode row = retained(handle);
 
             moves.moved(row, 0f, 0f, 0f, 100f);
-            krono.tick(ms(100));
+            tick(krono, moves, ms(100));
             moves.moved(row, 0f, 100f, 0f, 200f);
 
             // Long enough for the *first* ramp to have finished several times over.
-            krono.tick(ms(1000));
+            tick(krono, moves, ms(1000));
 
             assertEquals(0f, moves.displacementY(row), "the loser's completion must not zero — or move — anything");
             assertTrue(moves.settled());
@@ -241,7 +248,7 @@ class TransitionsTest {
             assertEquals(0f, moves.displacementY(row));
             assertTrue(moves.settled());
 
-            krono.tick(ms(100));
+            tick(krono, moves, ms(100));
             assertEquals(0f, moves.displacementY(row), "the abandoned ramp has no one left to write to");
         }
     }

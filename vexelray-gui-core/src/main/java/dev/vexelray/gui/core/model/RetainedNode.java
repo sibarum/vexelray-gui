@@ -73,6 +73,10 @@ public final class RetainedNode {
     // rather than chase it (Displacement.settle).
     public long movedFrame = Long.MIN_VALUE;
     public int moveStreak;
+    // The offset an asked half set on this node through Drawn (frame-contract.md), px, added to its displacement and
+    // inherited by its subtree as one is. It stays until the part sets it again.
+    public float drawnX;
+    public float drawnY;
 
     // Arrival and departure (EnterMotion, ExitMotion). `leaving` is the reconciler's: set when a remove was taken by
     // the exit motion, so the node stays where it is, drawn going, until its presence reaches zero. The other two

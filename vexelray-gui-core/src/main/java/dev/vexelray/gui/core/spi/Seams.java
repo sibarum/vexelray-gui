@@ -386,6 +386,16 @@ public abstract class Seams {
     /** The tree's clock, or null before the host installs one. */
     public abstract Clock clock();
 
+    /**
+     * Ask {@code part} what its nodes show on every frame from the next one on, and park the loop only until the
+     * earliest time it says it is due ({@link Asked}). The host's: vexelray-framework registers a view's declared draw
+     * here. GUI thread.
+     */
+    public abstract Seams ask(Asked part);
+
+    /** Stop asking {@code part}; what it last set on its nodes stays set. GUI thread. */
+    public abstract Seams unask(Asked part);
+
     /** One axis of {@code scroller} as a scrollbar's source: vertical when {@code vertical}, else horizontal. */
     public abstract ScrollSource scrollSource(dev.vexelray.gui.core.Scroller scroller, boolean vertical);
 

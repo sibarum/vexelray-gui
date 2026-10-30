@@ -1,0 +1,25 @@
+package dev.vexelray.gui.core.spi;
+
+import dev.vexelray.gui.core.Drawn;
+import dev.vexelray.gui.core.Frame;
+
+/**
+ * A part's asked half, as the host runs it: the frame contract's declared draw (docs/plans/frame-contract.md A, B).
+ *
+ * <p>Registered on a tree by the host ({@link Seams#ask}), never by an application: vexelray-framework's generated
+ * wiring registers a {@code @View}'s {@code @Drawn} function here, closed over the view's state, after the processor has
+ * checked it. It runs on the GUI thread on every frame the tree runs, in the motion stage, after layout and the told
+ * halves, and before publish, so hit-testing reads what it set.
+ *
+ * <p>It chooses and sets numbers; it builds nothing, sends nothing and waits on nothing. What it would report, its told
+ * half derives from a message instead.
+ */
+@FunctionalInterface
+public interface Asked {
+
+    /**
+     * Set what this part's nodes show for {@code frame}'s present time through {@code out}, and answer when it next
+     * needs asking: {@link Frame#NEVER} at rest, a time at or before {@link Frame#presentNanos} for the next frame.
+     */
+    long draw(Frame frame, Drawn out);
+}

@@ -112,9 +112,29 @@ public final class KronoGui implements AutoCloseable {
             registerClock();
         }
         // The tree's clock: what runs a widget's Timing, which a view states and never drives.
-        this.clock = (timing, progress, done) ->
+        // Its time is the tree's present time too: what a frame is drawn for (dev.vexelray.gui.core.Frame), so a fade
+        // or a slide and a widget's Timing advance on the one clock, stepped together by a test or a capture.
+        this.clock = new dev.vexelray.gui.core.spi.Clock() {
+            @Override
+            public void run(dev.vexelray.gui.core.Timing timing, java.util.function.DoubleConsumer progress,
+                            Runnable done) {
                 ramp(new Dur(timing.duration().toNanos()), ease(timing.curve()), progress, done);
+            }
+
+            @Override
+            public long nanos() {
+                return KronoGui.this.nanos();
+            }
+        };
         Seams.of(gui).clock(clock);
+    }
+
+    /**
+     * The present time on this clock, in nanoseconds: logical time as the last tick left it. The tree draws for it
+     * ({@code Frame.presentNanos}), and what is told a change between ticks starts from it.
+     */
+    public long nanos() {
+        return kron.now().nanos();
     }
 
     /** The curve a widget's {@link dev.vexelray.gui.core.Timing.Curve} names, on this clock. */

@@ -61,8 +61,8 @@ class DisplaceWalkTest {
         }
 
         @Override
-        public boolean active() {
-            return dy != 0f;
+        public long draw(Frame frame) {
+            return dy != 0f ? frame.presentNanos() : Frame.NEVER;
         }
     }
 
@@ -151,7 +151,7 @@ class DisplaceWalkTest {
     }
 
     @Test
-    void aSourceThatDoesNotSayIsWalkedEveryFrame() {
+    void aSourceThatIsAlwaysDueIsWalkedEveryFrame() {
         LayoutMotion silent = new LayoutMotion() {
             @Override
             public void moved(RetainedNode node, float fromX, float fromY, float toX, float toY) {
@@ -166,6 +166,11 @@ class DisplaceWalkTest {
             public float displacementY(RetainedNode node) {
                 return 0f;
             }
+
+            @Override
+            public long draw(Frame frame) {
+                return frame.presentNanos();   // due on every frame, whatever it displaces
+            }
         };
         try (Gui gui = new Gui(Atchung.create())) {
             gui.motion(silent);
@@ -174,7 +179,7 @@ class DisplaceWalkTest {
             long before = gui.displaceWalks();
             frame(gui);
             frame(gui);
-            assertEquals(before + 2, gui.displaceWalks(), "the default active() is always true");
+            assertEquals(before + 2, gui.displaceWalks(), "a source due now is walked every frame");
         }
     }
 }

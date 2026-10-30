@@ -1,6 +1,6 @@
 # The frame contract: one way for code to run on the GUI thread
 
-Status: **Proposed 2026-10-29, not started.** Supersedes *pacers.md* (committed as `06f27c2` the same day), which
+Status: **Proposed 2026-10-29; steps 1 and 2 done.** Supersedes *pacers.md* (committed as `06f27c2` the same day), which
 proposed a third exception to T7.1 for video; the author pointed out that pacing is drawing, and that drawing,
 presentation and pacing should be one API. The ask first, then what the code does today, then the design, how each
 guarantee is held, what moves onto it, the questions it leaves open, and the order of work. It answers the second
@@ -180,8 +180,25 @@ application** (ruled 2026-10-30, below): it needs no feed, so it does not wait f
 1. ~~**Argue it in vexelray-framework's `threading.md`.**~~ **Done 2026-10-29:** T7.1 restated with one exception;
    T7.6 states the told and asked halves, with T7.4 and the drawing exception folded into it; T7.3 names the feed;
    the reasons are in vexelray-framework's `architecture.md`, *the message model*.
-2. **The contract in vexelray-gui's host, with the framework as its first user.** `Frame`, `Drawn`, due times and
-   parking; `PaintMotion` and `LayoutMotion` moved onto it with no change in behaviour, held by their existing tests.
+2. ~~**The contract in vexelray-gui's host, with the framework as its first user.**~~ **Done 2026-10-30.**
+   `dev.vexelray.gui.core.Frame` (the present time and reduced motion; scale waits for a witness), `Drawn` (an
+   offset, which is all the Inspector needs), and `spi.Asked`, registered by the host with `Seams.ask`. Every frame
+   the tree runs, its motion stage asks `LayoutMotion.draw(frame)`, then each registered part, then walks the
+   displacement; `PaintMotion.draw(frame)` is asked before emit. Each answers when it is next due, `Frame.NEVER` at
+   rest, replacing `moving()` and `active()`; one due now wakes the loop, one due later bounds `GuiApp`'s park
+   (`Gui.nanosUntilDue`), and capture steps the clock while anything is due. `Fades` and `Transitions` keep a start
+   time instead of a ramp on the timeline, and set themselves for the frame's present time when asked. Held by their
+   existing tests, which now ask a frame after each tick, and by `AskedTest`. Three things decided in the building:
+   - **The present time is the tree's clock** (`spi.Clock.nanos`, `KronoGui`'s logical time), sampled once per frame,
+     not yet the presenter's prediction (tree-thread.md B), which replaces it when it exists. One clock for told and
+     asked means a change starts on the frame that first shows it, and a test or a capture steps both together.
+   - **The layout half is asked in the motion stage, not at emit** (E): a displacement or an offset is hit-tested
+     where it is drawn ("the one rect", `LayoutMotion`), so it has to be in place before publish. Paint is asked
+     before emit, as E says. Both are once per frame, for the same present time.
+   - **An offset stays set until the part sets it again**, and while any part is registered the displacement walk
+     runs on every frame the tree runs, to put offsets back after a layout. A frame runs only when woken, so a still
+     window still costs nothing.
+   Not done here: the budget that freezes a slow asked half (it belongs with the processor's timing, step 3).
 3. **The processor's check** (`DrawnCheckTest`) and `@Drawn` on a part, in vexelray-framework.
 4. **Stamps on `StreamTexture`** (vexelray-vulkan), feeds requested by message, landing a frame ahead.
 5. **The codec on it.** The video and animated-image widgets as parts; `Playback`'s loop deleted. Measure against

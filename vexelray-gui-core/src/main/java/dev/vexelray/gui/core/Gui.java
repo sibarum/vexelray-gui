@@ -257,6 +257,18 @@ public final class Gui implements AutoCloseable {
     /** What colour nodes are drawn in relative to the colour they were given; NONE until a source is attached. */
     private volatile dev.vexelray.gui.core.style.PaintMotion paintMotion =
             dev.vexelray.gui.core.style.PaintMotion.NONE;
+    /** The parts the host registered to be asked every frame (spi.Asked), in registration order. GUI thread. */
+    private final java.util.List<dev.vexelray.gui.core.spi.Asked> asked = new java.util.ArrayList<>();
+    /** The earliest the registered parts said they are due, as they last answered. GUI thread. */
+    private long askedDue = Frame.NEVER;
+    /** What every asked half sets its nodes through: one per tree, so asking allocates nothing. */
+    private final DrawnSink drawnSink = new DrawnSink();
+    /**
+     * When the last frame's asked halves said this tree is next due (Frame.NEVER at rest), and the present time that
+     * frame drew for: the loop parks until then and no longer ({@link #nanosUntilDue}). Written on the GUI thread.
+     */
+    private volatile long due = Frame.NEVER;
+    private volatile long dueFrom;
     /** How much of a node arriving or leaving is drawn; NONE until a source is attached. */
     private volatile EnterMotion enterMotion = EnterMotion.NONE;
     private volatile ExitMotion exitMotion = ExitMotion.NONE;
@@ -1745,6 +1757,48 @@ public final class Gui implements AutoCloseable {
         return paintMotion;
     }
 
+    /** The tree's present time: its clock's ({@link dev.vexelray.gui.core.spi.Clock#nanos}), else the wall's. */
+    long presentNanos() {
+        dev.vexelray.gui.core.spi.Clock c = clock;
+        return c == null ? System.nanoTime() : c.nanos();
+    }
+
+    /**
+     * How long the loop may park before this tree's asked halves are next due: zero when one wants the next frame,
+     * {@link Long#MAX_VALUE} when every one is at rest. A host takes the least of this and its own deadlines, so a part
+     * that changes every second costs one frame a second and a still one none (frame-contract.md B).
+     */
+    public long nanosUntilDue() {
+        long at = due;
+        if (at == Frame.NEVER) {
+            return Long.MAX_VALUE;
+        }
+        // Measured on the tree's clock from the moment the last frame drew for, which is the clock the due time is on.
+        return Math.max(0L, at - Math.max(dueFrom, presentNanos()));
+    }
+
+    /** The one {@link Drawn} of this tree: writes an asked half's offsets onto the nodes, noting whether any changed. */
+    private final class DrawnSink implements Drawn {
+
+        private boolean changed;
+
+        @Override
+        public Drawn offset(Node node, float dx, float dy) {
+            RetainedNode n = reconciler.node(node.id());
+            if (n != null && Displacement.offset(n, dx, dy)) {
+                changed = true;
+            }
+            return this;
+        }
+
+        /** Whether an offset changed since the last call: the frame then owes a publish and a draw. */
+        boolean takeChanged() {
+            boolean was = changed;
+            changed = false;
+            return was;
+        }
+    }
+
     /**
      * Register the clock this tree's animations run on, for a run with no frame loop to tick it — see
      * {@link AnimationClock}. The clock's own module calls this when it is attached; last call wins.
@@ -1866,7 +1920,12 @@ public final class Gui implements AutoCloseable {
             long now = System.nanoTime();
             motionFrame += now - motionFrameNanos > MOTION_FRAME_GAP_NANOS ? 2 : 1;
             motionFrameNanos = now;
-            if (motionNow != LayoutMotion.NONE) {
+            // The moment every asked half draws for (frame-contract.md B), sampled once: the motions below, the
+            // registered parts, and the paint the renderer reads after this frame.
+            Frame frame = new Frame(presentNanos(), reducedMotion());
+            long layoutDue = Frame.NEVER;
+            boolean askedAny = !asked.isEmpty();
+            if (motionNow != LayoutMotion.NONE || askedAny) {
                 // On a layout pass only, not on every frame whose geometry changed: on a frame with no layout (a caret
                 // moved, say) every node still holds where and how big it was *drawn*, and settling that would record
                 // a node mid-flight as where it belongs and leave it there until the next layout. Only layout moves
@@ -1887,12 +1946,22 @@ public final class Gui implements AutoCloseable {
                 // anything displaced, which is the walk that writes the resting positions back. Past that every
                 // node already stands at its recorded position, layout or no layout, so the walk would rewrite
                 // each one with itself: hover frames and idle wakes skip it.
-                if (displaced || motionNow.active()) {
+                // Asked after settle has told it this frame's moves, and before anything is displaced.
+                layoutDue = motionNow.draw(frame);
+                // The registered parts' asked halves, after the told ones have run and layout has placed their nodes.
+                // What they set is an offset, walked in with the displacement; a part's offset stays set, so while
+                // any part is registered the walk runs on every frame, to put it back after a layout.
+                askedDue = Frame.NEVER;
+                for (int i = 0; i < asked.size(); i++) {
+                    askedDue = Math.min(askedDue, asked.get(i).draw(frame, drawnSink));
+                }
+                if (displaced || frame.owes(layoutDue) || askedAny) {
                     displaceWalks++;
                     moving = Displacement.displace(r, motionNow);
                 }
             }
             displaced = moving;
+            boolean offsetMoved = drawnSink.takeChanged();
             // Arrival and departure, in the same stage and for the same reason: everything after this reads what
             // is drawn. Walked only while something is arriving or leaving — an edit that started one says so, and
             // a walk that found one asks for the next — and the walk that finds everything at rest is the one that
@@ -1914,7 +1983,7 @@ public final class Gui implements AutoCloseable {
             // The theme likewise: its focus ring decides ringShown.
             dev.vexelray.gui.core.input.FocusState focusNow = input.focusState();
             boolean focusMoved = !focusNow.equals(publishedFocus) || theme != publishedTheme;
-            if (geometryChanged || moving || focusMoved || departing) {
+            if (geometryChanged || moving || offsetMoved || focusMoved || departing) {
                 // Last of the compute phase, because it is a fact about the rects everything above just
                 // finished writing: displacement moves a node after layout placed it, and a clip resolved
                 // before that would describe a frame nobody sees.
@@ -1932,11 +2001,19 @@ public final class Gui implements AutoCloseable {
                 wake("motion");
             }
             // The same for colour: a fade in progress draws something different next frame, and stops asking when
-            // it arrives.
-            boolean fading = paintMotion.moving();
-            if (fading) {
+            // it arrives. Asked here, after this frame's repaints were told in the drain, for the renderer to read.
+            long paintDue = paintMotion.draw(frame);
+            boolean fading = paintDue != Frame.NEVER;
+            if (frame.owes(paintDue)) {
                 wake("paint motion");
             }
+            // A registered part due now wants the next frame; one due later is the loop's to park until
+            // (nanosUntilDue), and one at rest costs nothing.
+            if (askedAny && frame.owes(askedDue)) {
+                wake("asked");
+            }
+            due = Math.min(Math.min(layoutDue, paintDue), askedAny ? askedDue : Frame.NEVER);
+            dueFrom = frame.presentNanos();
             if (presenting) {
                 wake("presence");
             }
@@ -1951,7 +2028,7 @@ public final class Gui implements AutoCloseable {
             // changed something (equal writes leave it clear); the layout covers a size or zoom change that no
             // edit made; geometry covers a caret that moved without reflowing; motion covers a transition between
             // frames. Taken with |=, because a frame that is run and not drawn keeps what it found for the next.
-            if (reconciler.takeDrawDirty() | layoutRan | geometryChanged | moving | fading | presenting) {
+            if (reconciler.takeDrawDirty() | layoutRan | geometryChanged | moving | fading | presenting | offsetMoved) {
                 drawNeeded = true;
             }
         }
@@ -2007,6 +2084,25 @@ public final class Gui implements AutoCloseable {
         @Override
         public dev.vexelray.gui.core.spi.Clock clock() {
             return Gui.this.clock;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams ask(dev.vexelray.gui.core.spi.Asked part) {
+            java.util.Objects.requireNonNull(part, "part");
+            if (!asked.contains(part)) {
+                asked.add(part);
+                // An offset is drawn from where layout last recorded a node, and nothing is recorded on a tree with
+                // no motion and no parts: so the next frame lays out, which records, and asks it.
+                reconciler.markLayoutDirty();
+                requestFrame();
+            }
+            return this;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams unask(dev.vexelray.gui.core.spi.Asked part) {
+            asked.remove(part);
+            return this;
         }
 
         @Override

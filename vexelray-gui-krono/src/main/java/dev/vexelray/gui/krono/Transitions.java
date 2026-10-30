@@ -1,5 +1,6 @@
 package dev.vexelray.gui.krono;
 
+import dev.vexelray.gui.core.Frame;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.LayoutMotion;
 import dev.vexelray.gui.core.model.RetainedNode;
@@ -63,12 +64,12 @@ import java.util.concurrent.ConcurrentHashMap;
  * setting, and it is why an application can route every enrolment through one duration and turn the whole class
  * of them off in one place.
  *
- * <h2>Threading</h2>
+ * <h2>Told, then asked</h2>
  *
- * <p>{@link #moved} is called on the GUI thread; the ramp that decays a displacement runs on the timeline. The
- * displacement itself is published between them without a lock, because it is two floats that only ever move
- * toward zero — a reader that catches one frame's value late draws the node a pixel behind where it might have
- * been, which is indistinguishable from the animation it is already watching.
+ * <p>A part under the frame contract (vexelray-gui's docs/plans/frame-contract.md). {@link #moved} and
+ * {@link #resized} are its told half: they record a lag and when it began on the tree's clock. {@link #draw} is its
+ * asked half, run once per frame on the GUI thread, which sets every lag for the frame's present time. Nothing runs
+ * on the timeline, so a slide is sampled for the moment it is drawn for and never for whenever a thread woke.
  */
 public final class Transitions implements LayoutMotion {
 
@@ -77,14 +78,53 @@ public final class Transitions implements LayoutMotion {
     }
 
     /**
-     * One node's outstanding lag. Displacements are volatile because they cross from the timeline thread to the
-     * GUI thread; {@code epoch} is what lets a superseded ramp discover it has lost and stop writing, rather
-     * than two ramps fighting over the same two floats and the tree twitching between their answers.
+     * One node's outstanding lag: {@code (startX, startY)} at {@code start} on the tree's clock, decaying to zero over
+     * {@code over}. {@code dx} and {@code dy} are where the last {@link #draw} put it, which is what the displacement
+     * walk reads. A later move replaces the whole lag, so there is never a second writer to lose to.
      */
     private static final class Lag {
+        final float startX;
+        final float startY;
+        final long start;
+        final long over;
+        final Ease ease;
         volatile float dx;
         volatile float dy;
-        volatile int epoch;
+
+        Lag(float startX, float startY, long start, long over, Ease ease) {
+            this.startX = startX;
+            this.startY = startY;
+            this.start = start;
+            this.over = over;
+            this.ease = ease;
+            this.dx = startX;
+            this.dy = startY;
+        }
+
+        /** How much of the lag is left at {@code nanos}: 1 at the start, exactly 0 from the end on. */
+        float remaining(long nanos) {
+            long elapsed = nanos - start;
+            return elapsed <= 0L ? 1f : elapsed >= over ? 0f : 1f - ease.at((float) ((double) elapsed / over));
+        }
+
+        /** Set for {@code nanos}, and answer whether it has arrived. */
+        boolean drawAt(long nanos) {
+            float left = remaining(nanos);
+            // Adding zero normalises the negative zero that a negative start times a zero remainder produces. It
+            // compares equal to zero either way, but the resting displacement is a value other code and tests read,
+            // and it should be the one obvious value rather than the one that prints with a minus sign.
+            dx = startX * left + 0f;
+            dy = startY * left + 0f;
+            return left == 0f;
+        }
+
+        float xAt(long nanos) {
+            return startX * remaining(nanos);
+        }
+
+        float yAt(long nanos) {
+            return startY * remaining(nanos);
+        }
     }
 
     private final KronoGui krono;
@@ -151,12 +191,7 @@ public final class Transitions implements LayoutMotion {
         followedChildren.remove(id);
         followedSubtree.remove(id);
         for (Map<Long, Lag> map : java.util.List.of(lags, sizes)) {
-            Lag lag = map.remove(id);
-            if (lag != null) {
-                lag.epoch++;        // whatever ramp is still running has lost; its writes go nowhere
-                lag.dx = 0f;
-                lag.dy = 0f;
-            }
+            map.remove(id);
         }
         return this;
     }
@@ -184,9 +219,11 @@ public final class Transitions implements LayoutMotion {
             return;
         }
         Lag lag = lags.get(node.id);
+        long now = krono.nanos();
         // Measure from where the node is drawn, not from where layout last put it: mid-flight, those differ by
         // exactly the lag it is still carrying, and ignoring it is what makes an interrupted transition jump.
-        start(lags, node.id, terms, fromX + (lag == null ? 0f : lag.dx) - toX, fromY + (lag == null ? 0f : lag.dy) - toY);
+        start(lags, node.id, terms, now, fromX + (lag == null ? 0f : lag.xAt(now)) - toX,
+                fromY + (lag == null ? 0f : lag.yAt(now)) - toY);
     }
 
     /**
@@ -201,60 +238,54 @@ public final class Transitions implements LayoutMotion {
             return;
         }
         Lag lag = sizes.get(node.id);
-        start(sizes, node.id, terms, fromW + (lag == null ? 0f : lag.dx) - toW, fromH + (lag == null ? 0f : lag.dy) - toH);
-    }
-
-    /** Start {@code id}'s lag in {@code map} at {@code (startX, startY)} and decay it to zero over {@code terms}. */
-    private void start(Map<Long, Lag> map, long id, Terms terms, float startX, float startY) {
-        Lag lag = map.computeIfAbsent(id, k -> new Lag());
-        int epoch = ++lag.epoch;   // GUI thread is the only writer, so this needs no atomic
-        // Paced here, before the lag is written: while motion is reduced the node is drawn where layout put it from
-        // this frame, rather than at its old place for the one frame a snapping ramp would take to arrive.
-        Dur over = krono.paced(terms.over());
-        if (over.nanos() <= 0L || (startX == 0f && startY == 0f)) {
-            lag.dx = 0f;
-            lag.dy = 0f;
-            // Nothing in flight for this node, and the epoch bump above has silenced any ramp that was: forget it,
-            // so the map holds only what is moving and active() stays a scan of the few that are.
-            map.remove(id, lag);
-            return;
-        }
-        lag.dx = startX;
-        lag.dy = startY;
-        krono.ramp(over, terms.ease(),
-                progress -> {
-                    if (lag.epoch != epoch) {
-                        return;   // superseded by a later change; this ramp no longer speaks for this node
-                    }
-                    float remaining = (float) (1d - progress);
-                    // Adding zero normalises the negative zero that a negative start times a zero remainder
-                    // produces. It compares equal to zero either way, so nothing downstream misbehaves — but
-                    // the resting displacement is a value other code and tests read, and it should be the one
-                    // obvious value rather than the one that prints with a minus sign.
-                    lag.dx = startX * remaining + 0f;
-                    lag.dy = startY * remaining + 0f;
-                },
-                () -> {
-                    if (lag.epoch != epoch) {
-                        return;
-                    }
-                    // Land exactly on zero rather than on whatever the last sample rounded to: the resting state
-                    // is a value, not a neighbourhood, and Displacement reports motion on any non-zero at all.
-                    lag.dx = 0f;
-                    lag.dy = 0f;
-                    map.computeIfPresent(id, (k, v) -> v == lag && v.epoch == epoch ? null : v);
-                });
+        long now = krono.nanos();
+        start(sizes, node.id, terms, now, fromW + (lag == null ? 0f : lag.xAt(now)) - toW,
+                fromH + (lag == null ? 0f : lag.yAt(now)) - toH);
     }
 
     /**
-     * Active while some node carries a non-zero lag. A running ramp holds its node's lag away from zero until its
-     * last sample, and the framework walks once more after the frame that last found anything displaced, so
-     * answering from the lags alone loses nothing. A move is reported through {@link #moved} before this is asked,
-     * so a transition it starts counts from the same frame.
+     * Start {@code id}'s lag in {@code map} at {@code (startX, startY)}, told at {@code now}, and decay it to zero over
+     * {@code terms}. It replaces any lag the node carried: the start was measured from where that one had it drawn.
+     */
+    private void start(Map<Long, Lag> map, long id, Terms terms, long now, float startX, float startY) {
+        // Paced here, before the lag is written: while motion is reduced the node is drawn where layout put it from
+        // this frame, rather than at its old place for a frame.
+        Dur over = krono.paced(terms.over());
+        if (over.nanos() <= 0L || (startX == 0f && startY == 0f)) {
+            // Nothing in flight for this node: forget it, so the map holds only what is moving and draw() stays a
+            // scan of the few that are.
+            map.remove(id);
+            return;
+        }
+        map.put(id, new Lag(startX, startY, now, over.nanos(), terms.ease()));
+    }
+
+    /**
+     * The asked half: every lag at the frame's present time. One that has arrived lands exactly on zero, since the
+     * resting state is a value and not a neighbourhood, and is let go. Answers the present time while anything is
+     * still short of where layout put it, and the framework walks once more after the frame that last found anything
+     * displaced, so answering from the lags alone loses nothing. A move is reported through {@link #moved} before this
+     * is asked, so a transition it starts counts from the same frame.
      */
     @Override
-    public boolean active() {
-        return !settled();
+    public long draw(Frame frame) {
+        long now = frame.presentNanos();
+        boolean moving = drawAll(lags, now);
+        moving |= drawAll(sizes, now);
+        return moving ? now : Frame.NEVER;
+    }
+
+    private static boolean drawAll(Map<Long, Lag> map, long now) {
+        if (map.isEmpty()) {
+            return false;
+        }
+        for (Map.Entry<Long, Lag> e : map.entrySet()) {
+            Lag lag = e.getValue();
+            if (lag.drawAt(now)) {
+                map.remove(e.getKey(), lag);
+            }
+        }
+        return !map.isEmpty();
     }
 
     @Override

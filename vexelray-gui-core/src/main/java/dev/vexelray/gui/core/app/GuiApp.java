@@ -757,6 +757,21 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
      * Whether any window has a draw owed that waits for nothing but the ceiling: a pass inside the gap leaves one. A draw
      * held for the GPU is not counted: the presenter wakes the loop for it ({@link GuiWindow#drawDue}).
      */
+    /**
+     * How long until the earliest asked half on any open window is due (Gui#nanosUntilDue), Long.MAX_VALUE when every
+     * one is at rest: the frame contract's park, so a part due later wakes the loop then and not before.
+     */
+    private long untilAskedDue() {
+        long until = main.gui == null ? Long.MAX_VALUE : main.gui.nanosUntilDue();
+        for (int i = 0; i < open.size(); i++) {
+            Gui g = open.get(i).window.gui;
+            if (g != null) {
+                until = Math.min(until, g.nanosUntilDue());
+            }
+        }
+        return until;
+    }
+
     private boolean anyDrawDue() {
         if (main.drawDue()) {
             return true;
@@ -1914,6 +1929,11 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                     // Those are events, owed a pass at once whatever the ceiling says; drawing is not.
                     boolean eventPending = !tasks.isEmpty() || retireDue() || wakePosted.get();
                     long paced = eventPending ? 0L : pacing.getAsLong();
+                    // An asked half due later than this pass is owed a pass then (frame-contract.md B), whatever the
+                    // application's pacing says; one due now has already woken the loop.
+                    if (!eventPending) {
+                        paced = Math.min(paced, untilAskedDue());
+                    }
                     long budget = paced;
                     // Then the two bounds. The floor applies only while someone is looking: an unfocused
                     // window parks on whatever the application asked for, up to forever.
@@ -2146,7 +2166,9 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
     private static void settle(Gui gui, int width, int height, TextFaces faces) {
         for (int round = 0; round < SETTLE_ROUNDS; round++) {
             dev.vexelray.gui.core.AnimationClock clock = gui.animationClock();
-            boolean animating = clock != null && !clock.quiet();
+            // The tree's own asked halves (fades, slides, a view's declared draw) run on its clock too, and are due
+            // until they arrive: the clock is stepped for them as for anything scheduled on it.
+            boolean animating = clock != null && (!clock.quiet() || gui.nanosUntilDue() != Long.MAX_VALUE);
             if (!animating && !gui.frameOwed()) {
                 return;
             }

@@ -32,6 +32,12 @@ import dev.vexelray.canvas.Color;
  * there is in effect for the first frame that would have shown the new colour: a node never shows its destination
  * early, not even for one frame. {@link #drawn} is called by the renderer, which may be on another thread; an
  * implementation publishes what it reads there safely.
+ *
+ * <h2>Told and asked</h2>
+ *
+ * <p>This is a part under the frame contract (vexelray-gui's docs/plans/frame-contract.md): {@link #repainted} is its
+ * told half, and {@link #draw} its asked half, run once per frame for the frame's present time before anything is
+ * emitted. {@link #drawn} reads what {@code draw} chose, and computes nothing of its own.
  */
 public interface PaintMotion {
 
@@ -59,8 +65,8 @@ public interface PaintMotion {
         }
 
         @Override
-        public boolean moving() {
-            return false;
+        public long draw(dev.vexelray.gui.core.Frame frame) {
+            return dev.vexelray.gui.core.Frame.NEVER;
         }
 
         @Override
@@ -83,6 +89,10 @@ public interface PaintMotion {
      */
     Color drawn(long node, Channel channel, Color settled);
 
-    /** Whether anything is still on its way, so the frame after this one has something different to draw. */
-    boolean moving();
+    /**
+     * Choose every colour on its way for {@code frame}'s present time, and answer when next to be asked:
+     * {@link dev.vexelray.gui.core.Frame#NEVER} once nothing is on its way, the present time while something is. Called
+     * on the GUI thread once per frame, after this frame's {@link #repainted} calls and before any {@link #drawn}.
+     */
+    long draw(dev.vexelray.gui.core.Frame frame);
 }

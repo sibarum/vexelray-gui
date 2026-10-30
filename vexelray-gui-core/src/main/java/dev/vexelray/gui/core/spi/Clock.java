@@ -22,4 +22,13 @@ public interface Clock {
      * second-to-last sample.
      */
     void run(Timing timing, DoubleConsumer progress, Runnable done);
+
+    /**
+     * The tree's present time, in nanoseconds: what a frame is drawn for ({@link dev.vexelray.gui.core.Frame}). Only
+     * differences between two readings mean anything. A clock a test or a capture steps by hand answers its own time,
+     * so what is drawn depends on the steps and not on how fast the machine ran them; the default is the wall's.
+     */
+    default long nanos() {
+        return System.nanoTime();
+    }
 }

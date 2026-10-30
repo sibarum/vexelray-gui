@@ -175,8 +175,12 @@ public final class Displacement {
             // would move the node to wherever the uninitialised fields point. Leave it where layout put it.
             return displaceChildren(node, motion, ax, ay);
         }
-        float dx = ax + motion.displacementX(node);
-        float dy = ay + motion.displacementY(node);
+        // The motion's displacement and an asked half's offset (Drawn) together, inherited together. Only the first is
+        // motion: an offset is where its part wants the node for now, and owes no further frame on its own.
+        float mx = motion.displacementX(node);
+        float my = motion.displacementY(node);
+        float dx = ax + mx + node.drawnX;
+        float dy = ay + my + node.drawnY;
         node.x = node.layoutX + dx;
         node.y = node.layoutY + dy;
         node.viewX = node.layoutViewX + dx;
@@ -188,7 +192,8 @@ public final class Displacement {
         node.h = node.layoutH + dh;
         node.viewW = Math.max(0f, node.layoutViewW + dw);
         node.viewH = Math.max(0f, node.layoutViewH + dh);
-        boolean moving = dx != 0f || dy != 0f || dw != 0f || dh != 0f;
+        // Its own motion only: an ancestor's has already said so for its subtree.
+        boolean moving = mx != 0f || my != 0f || dw != 0f || dh != 0f;
         return displaceChildren(node, motion, dx, dy) || moving;
     }
 
@@ -216,6 +221,20 @@ public final class Displacement {
             moving |= present(child, enter, exit, gone);   // not short-circuited: every child is written
         }
         return moving;
+    }
+
+    /**
+     * Record the offset an asked half set on {@code node} through {@code Drawn} (frame-contract.md), for the next
+     * {@link #displace} to add to its displacement; and answer whether it changed. Written here, in the motion stage it
+     * is asked in, so the model has no writer outside the frame's declared stages.
+     */
+    public static boolean offset(RetainedNode node, float dx, float dy) {
+        if (node.drawnX == dx && node.drawnY == dy) {
+            return false;
+        }
+        node.drawnX = dx;
+        node.drawnY = dy;
+        return true;
     }
 
     private static boolean displaceChildren(RetainedNode node, LayoutMotion motion, float ax, float ay) {

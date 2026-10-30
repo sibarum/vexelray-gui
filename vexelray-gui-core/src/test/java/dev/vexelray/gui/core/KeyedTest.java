@@ -125,6 +125,11 @@ class KeyedTest {
                 public float displacementY(RetainedNode node) {
                     return 0f;
                 }
+
+                @Override
+                public long draw(Frame frame) {
+                    return Frame.NEVER;
+                }
             });
             Node list = gui.column();
             gui.root().children(list);

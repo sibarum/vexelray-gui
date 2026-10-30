@@ -192,6 +192,9 @@ application** (ruled 2026-10-30, below): it needs no feed, so it does not wait f
    - **The present time is the tree's clock** (`spi.Clock.nanos`, `KronoGui`'s logical time), sampled once per frame,
      not yet the presenter's prediction (tree-thread.md B), which replaces it when it exists. One clock for told and
      asked means a change starts on the frame that first shows it, and a test or a capture steps both together.
+     *Added the same day, ruled by the author:* `Frame.monoNanos`, the same moment on `System.nanoTime()`'s clock
+     (`spi.Clock.monoNanos`), for a part that lines up with another process's stamps; the Inspector's live timeline
+     needed it, since the tree clock is logical and shares nothing outside the process. Due times stay on the tree clock.
    - **The layout half is asked in the motion stage, not at emit** (E): a displacement or an offset is hit-tested
      where it is drawn ("the one rect", `LayoutMotion`), so it has to be in place before publish. Paint is asked
      before emit, as E says. Both are once per frame, for the same present time.

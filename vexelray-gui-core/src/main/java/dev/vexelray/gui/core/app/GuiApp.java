@@ -78,17 +78,18 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
     /** Watches what each frame costs, and offers simplified graphics to a machine that cannot keep up. */
     private final SlowFrames slowFrames = new SlowFrames(new SlowFramesHost());
     /**
-     * {@code -Dvexelray.debug.slowFrames=<ms>}: add that much to every frame drawn while boxes are shaded — a machine
-     * whose GPU the shading overwhelms, on one that it does not. How the slow-frames offer is tried end to end, prompt,
+     * {@code -Dvexelray.debug.slowFrames=<ms>}: keep the GPU busy that much after every frame drawn while boxes are
+     * shaded — a machine whose GPU the shading overwhelms, on one that it does not. The thread is free meanwhile, as it
+     * is on such a machine ({@link GuiWindow}'s slow GPU). How the slow-frames offer is tried end to end, prompt,
      * judgement and save, on hardware that never needs it. Zero (the default) is off.
      */
-    private static final long DEBUG_SLOW_FRAME_NANOS = Long.getLong("vexelray.debug.slowFrames", 0L) * 1_000_000L;
+    static final long DEBUG_SLOW_FRAME_NANOS = Long.getLong("vexelray.debug.slowFrames", 0L) * 1_000_000L;
     /**
      * {@code -Dvexelray.debug.slowFramesFlat=<ms>}: the same while boxes are flat. Zero (the default) is a machine that
      * flat shading rescues; as much as {@code slowFrames} is one slow for some other reason, which is how the offer is
      * seen to stay quiet when simplified graphics is already on, and to keep a switch that did not help.
      */
-    private static final long DEBUG_SLOW_FLAT_FRAME_NANOS =
+    static final long DEBUG_SLOW_FLAT_FRAME_NANOS =
             Long.getLong("vexelray.debug.slowFramesFlat", 0L) * 1_000_000L;
     /**
      * What makes every OS window this application opens — see {@link #GuiApp(WindowConfig,
@@ -473,6 +474,8 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
         this.main = new GuiWindow(platform, instance, device, fonts, images, null,
                 probe, probeSurface, config.decorations(), presentBackend);
         main.tally(tally);
+        main.gpuWake(this::postWake);
+        main.frameCosts(slowFrames::drawn);
         this.controls = controlsFor(main);
     }
 
@@ -750,13 +753,16 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
         }
     }
 
-    /** Whether any window has a draw owed that it has not had: a pass inside the ceiling's gap leaves one. */
-    private boolean anyDrawOwed() {
-        if (main.drawOwed()) {
+    /**
+     * Whether any window has a draw owed that waits for nothing but the ceiling: a pass inside the gap leaves one. A draw
+     * held for the GPU is not counted: the presenter wakes the loop for it ({@link GuiWindow#drawDue}).
+     */
+    private boolean anyDrawDue() {
+        if (main.drawDue()) {
             return true;
         }
         for (int i = 0; i < open.size(); i++) {
-            if (open.get(i).window.drawOwed()) {
+            if (open.get(i).window.drawDue()) {
                 return true;
             }
         }
@@ -1350,6 +1356,7 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                 spec.standing().place(spec.config(), anchorHandle(spec)), this::create, presentBackend);
         w.liveStep(() -> iterationTop(false));
         w.tally(tally);
+        w.gpuWake(this::postWake);
         WindowInput input = inputs.attach(w.window, spec.gui());
         OpenWindow entry = new OpenWindow(w, input, spec, owner);
         LOG.info("window opened: \"{}\" {}x{}{}", spec.config().title(), spec.config().width(), spec.config().height(),
@@ -1831,11 +1838,12 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
         Seams.of(gui).onCursorChange(shape -> main.window.setCursor(osCursor(shape)));
         int frame = 0;
         boolean running = true;
-        // The ceiling is on draws, not passes: the start of the last pass that was allowed to draw (a slot), and whether
-        // one has been. From the slot and not from a draw, so pacing that always wants a frame and has nothing to draw
-        // still runs at the ceiling and not flat out.
-        long lastSlot = 0L;
-        boolean slotted = false;
+        // The ceiling is on draws: the start of the last pass that drew, and whether one has. Only a draw spends it, so a
+        // pass that took input and drew nothing leaves the next draw free to run at once. Passes nothing posted (pacing
+        // that wants a frame with nothing to draw, the loop asking itself for one) are kept to the same rate from the
+        // last pass, so they cannot spin either (untilPass below).
+        long lastDraw = 0L;
+        boolean drawn = false;
         loopThread = Thread.currentThread();
         main.liveStep(() -> iterationTop(false));
         // Each pass in a new cause of the loop's clock, which the posted tasks, the input and the mailboxes it runs
@@ -1857,15 +1865,11 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                 wakePosted.set(false);   // a wake from here on was posted during this frame, so it is pending for the next
                 selfWake = false;        // and so is the loop's own asking for its next frame
                 long frameStarted = System.nanoTime();
-                // Three clocks, one thread. Every pass takes the input that has arrived and drains what the lanes
-                // sent, so input and messages are answered at their own rate; only presenting waits for the
-                // ceiling, a gap from the start of the last pass that drew. A pass inside the gap updates and leaves
-                // its draw owed for the slot.
-                boolean mayDraw = !slotted || minFrameNanos <= 0L || frameStarted - lastSlot >= minFrameNanos;
-                if (mayDraw) {
-                    lastSlot = frameStarted;
-                    slotted = true;
-                }
+                // Four clocks, one thread. Every pass takes the input that has arrived and drains what the lanes
+                // sent, so input and messages are answered at their own rate; presenting waits for the ceiling, a gap
+                // from the start of the last pass that drew, and for the GPU, which the window does not wait for
+                // either: it holds the draw and the presenter wakes the loop when the GPU is ready (GuiWindow.pull).
+                boolean mayDraw = !drawn || minFrameNanos <= 0L || frameStarted - lastDraw >= minFrameNanos;
                 try (Zone frameZone = Probe.zone(Lane.FRAME, "frame")) {
                     running = main.frame(beforeFrame, mayDraw) || mainGate.keepAlive(main.window);
                 }
@@ -1885,17 +1889,13 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                 });
                 frame++;
                 boolean drew = tally.drewThisIteration();
-                boolean drawHeld = !mayDraw && anyDrawOwed();
                 if (drew) {
-                    long debugSlow = mainGui == null ? 0L
-                            : mainGui.flatShading() ? DEBUG_SLOW_FLAT_FRAME_NANOS : DEBUG_SLOW_FRAME_NANOS;
-                    if (debugSlow > 0L) {
-                        java.util.concurrent.locks.LockSupport.parkNanos(debugSlow);
-                    }
-                    // What this frame cost the machine, start to presented, before the loop parks: a frame drawn is what
-                    // simplified graphics would make cheaper, and an idle park is not slowness.
-                    slowFrames.drawn(frameStarted, System.nanoTime() - frameStarted);
+                    lastDraw = frameStarted;
+                    drawn = true;
                 }
+                // What a frame cost the machine reaches SlowFrames from the window, start to the GPU done with it, when
+                // the next draw finds out (GuiWindow.reportFrameCost): a draw no longer waits for the GPU, so the time
+                // this pass took is not what simplified graphics would make cheaper.
                 if (running) {
                     // After presenting, never before: the frame the application just asked for is not the
                     // one to make it wait for. One call covers every window, because the wait is on this
@@ -1922,17 +1922,24 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                         budget = Math.min(budget, maxIdleNanos);
                     }
                     long floored = budget;
-                    // The ceiling, on draws. A draw this pass was not allowed, or one the loop asked itself for, is
-                    // owed at the next slot; anything that only wants a frame (pacing at zero while something
-                    // animates) waits for it too, since a zero budget on a presenter that does not block is as fast
-                    // as the machine goes. An event is not held: it runs a pass now, and that pass draws if its slot
-                    // has come.
-                    long untilSlot = slotted ? minFrameNanos - (System.nanoTime() - lastSlot) : 0L;
-                    if (drawHeld || selfWake) {
-                        budget = Math.min(budget, Math.max(0L, untilSlot));
-                    }
+                    // The ceiling. An event is not held: it runs a pass now, and that pass draws if the ceiling and the
+                    // GPU allow. Otherwise a draw held for the ceiling runs exactly at its slot. Anything else that
+                    // only wants a pass (pacing at zero while something animates, the loop asking itself for a frame,
+                    // a draw held for the GPU, whose presenter will wake the loop) waits a gap from the last pass,
+                    // since a zero budget on a draw that does not block is as fast as the machine goes.
+                    long now = System.nanoTime();
+                    long untilDraw = drawn ? minFrameNanos - (now - lastDraw) : 0L;
+                    long untilPass = minFrameNanos - (now - frameStarted);
                     if (!eventPending) {
-                        budget = Math.max(budget, untilSlot);
+                        if (!mayDraw && anyDrawDue()) {
+                            // Held this pass, so the next one may draw: at once if the slot opened while this pass ran
+                            // (a park that ended a hair early), and this cannot spin.
+                            budget = Math.max(0L, untilDraw);
+                        } else if (selfWake) {
+                            budget = Math.max(0L, untilPass);
+                        } else {
+                            budget = Math.max(budget, untilPass);
+                        }
                     }
                     // Counted by whichever bound decided it, the last to move it first (LoopCounters.Park).
                     tally.close();

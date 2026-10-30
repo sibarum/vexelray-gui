@@ -131,6 +131,45 @@ class LoopCountersTest {
         }
     }
 
+    /**
+     * Only a draw spends the ceiling's slot: a pass that took a wake and drew nothing leaves the next draw free to run at
+     * once, instead of holding it for a gap that began with a pass that showed nothing (a pointer moving over a still
+     * window, then the logic's answer to an earlier click).
+     */
+    @Test
+    void aPassThatDrewNothingDoesNotSpendTheSlot() {
+        long ceiling = 400_000_000L;
+        AtomicBoolean writing = new AtomicBoolean();
+        Gui gui = new Gui();
+        Node text = gui.text("0");
+        gui.root().append(text);
+        int[] n = {0};
+        try (HarnessApp harness = HarnessApp.start(gui, WindowConfig.of("counters", 400, 300), GuiApp.Compute.SHARED,
+                () -> {
+                    if (writing.getAndSet(false)) {
+                        text.text(String.valueOf(++n[0]));
+                    }
+                })) {
+            configure(harness, Long.MAX_VALUE, 0L, ceiling, false);
+            sleep(ceiling / 1_000_000L + 50L);   // the gap since the last draw has run out
+
+            // A wake that changes nothing: a pass, and no draw.
+            long drawn = harness.app().drawn();
+            long frame = harness.app().frame();
+            harness.app().postWake();
+            assertTrue(harness.await(() -> harness.app().frame() > frame, 2_000), "the wake ran no pass");
+            assertEquals(drawn, harness.app().drawn(), "a pass with nothing to show drew");
+
+            // Then one that writes, well inside the gap that pass would have begun had it spent the slot.
+            long asked = System.nanoTime();
+            writing.set(true);
+            harness.app().postWake();
+            assertTrue(harness.await(() -> harness.app().drawn() > drawn, 2_000), "the write was never drawn");
+            long tookMillis = (System.nanoTime() - asked) / 1_000_000L;
+            assertTrue(tookMillis < 100, "a draw after a pass that drew nothing waited " + tookMillis + " ms");
+        }
+    }
+
     @Test
     void aWakeDuringAFrameIsOwedANoParkAndASecondIsCoalesced() {
         AtomicBoolean armed = new AtomicBoolean();

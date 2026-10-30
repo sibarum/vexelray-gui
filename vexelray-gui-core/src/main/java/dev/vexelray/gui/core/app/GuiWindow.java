@@ -145,6 +145,22 @@ final class GuiWindow implements AutoCloseable {
      * then not drawn would leave the window showing what it showed before, until something else changed.
      */
     private boolean drawOwed = true;
+    /** The last pass found the GPU not ready for the owed draw; the presenter wakes the loop when it is. */
+    private boolean gpuHeld;
+    /** The presenter (or the slow GPU) has been asked to wake the loop and has not yet. Cleared on its thread. */
+    private volatile boolean gpuArmed;
+    /** When that wake came, for the frame's cost; 0 when the last frame was not waited for. */
+    private volatile long gpuReadyAt;
+    private Runnable gpuWake = () -> { };
+    private FrameCosts frameCosts;
+    /** The last draw's start and its time on this thread, until its cost is reported; 0 when there is none to report. */
+    private long costStarted;
+    private long costCpu;
+    /**
+     * The debug instrument's GPU ({@code -Dvexelray.debug.slowFrames}): busy until this after each draw, as a GPU that
+     * slow would be, with the thread free meanwhile. 0 when it is not busy.
+     */
+    private long slowGpuUntil;
     /** The window size the last drawn frame was for. A different size is owed a draw even if the tree is not. */
     private int drawnWidth = -1;
     private int drawnHeight = -1;
@@ -297,6 +313,14 @@ final class GuiWindow implements AutoCloseable {
     }
 
     /**
+     * Whether a draw is owed and is waiting for nothing but the ceiling: not one held for the GPU, which the presenter
+     * wakes the loop for ({@link #gpuWake}), and which no slot would let run sooner.
+     */
+    boolean drawDue() {
+        return drawOwed && !gpuHeld;
+    }
+
+    /**
      * One frame: always the update, and the draw only if it is owed (docs/plans/frame-loop.md). Shared by the
      * host loop and the modal move/resize loop's frame sink.
      *
@@ -321,6 +345,7 @@ final class GuiWindow implements AutoCloseable {
         if (window.width() != drawnWidth || window.height() != drawnHeight) {
             drawOwed = true;   // a resize the tree did not notice is still a swapchain the presenter must rebuild
         }
+        gpuHeld = false;
         if (!drawOwed) {
             Probe.count(Lane.FRAME, "draw skipped", 1);
             return true;
@@ -329,10 +354,100 @@ final class GuiWindow implements AutoCloseable {
             Probe.count(Lane.FRAME, "draw held for the ceiling", 1);
             return true;
         }
+        // The GPU is a clock of its own too. A draw it is not ready for is not waited for here, inside the presenter,
+        // where the thread could take no input and no messages until the GPU finished: it stays owed, and the
+        // presenter tells the loop when to look again (drawDue, armGpuWake).
+        if (!gpuReady()) {
+            Probe.count(Lane.FRAME, "draw held for the GPU", 1);
+            gpuHeld = true;
+            armGpuWake();
+            return true;
+        }
+        reportFrameCost();
         if (tally != null) {
             tally.rendering();
         }
-        return presenter.render(0, this::draw);
+        long started = System.nanoTime();
+        boolean open = presenter.render(0, this::draw);
+        if (!drawOwed) {
+            costStarted = started;
+            costCpu = System.nanoTime() - started;
+            long slow = gui == null ? 0L
+                    : gui.flatShading() ? GuiApp.DEBUG_SLOW_FLAT_FRAME_NANOS : GuiApp.DEBUG_SLOW_FRAME_NANOS;
+            if (slow > 0L) {
+                slowGpuUntil = System.nanoTime() + slow;
+            }
+        }
+        return open;
+    }
+
+    /** {@link WindowPresenter#ready}, behind the debug instrument's slow GPU when there is one. */
+    private boolean gpuReady() {
+        if (slowGpuUntil != 0L) {
+            if (System.nanoTime() < slowGpuUntil) {
+                return false;
+            }
+            slowGpuUntil = 0L;
+        }
+        return presenter.ready();
+    }
+
+    /** Ask the presenter (or the slow GPU) to wake the loop when the held draw can run, unless it is already asked. */
+    private void armGpuWake() {
+        if (gpuArmed) {
+            return;
+        }
+        gpuArmed = true;
+        Runnable wake = () -> {
+            gpuReadyAt = System.nanoTime();
+            gpuArmed = false;
+            gpuWake.run();
+        };
+        long until = slowGpuUntil;
+        if (until != 0L) {
+            Thread t = new Thread(() -> {
+                java.util.concurrent.locks.LockSupport.parkNanos(until - System.nanoTime());
+                wake.run();
+            }, "vexel-slow-gpu");
+            t.setDaemon(true);
+            t.start();
+            return;
+        }
+        presenter.whenReady(wake);
+    }
+
+    /**
+     * What the last frame cost the machine, handed to {@link #frameCosts} when the next draw finds the GPU ready: from
+     * the start of that draw to the GPU being done with it when the loop had to wait for that, and the draw's own time
+     * on this thread when it did not.
+     */
+    private void reportFrameCost() {
+        if (costStarted == 0L) {
+            return;
+        }
+        long readyAt = gpuReadyAt;
+        long cost = readyAt > costStarted ? readyAt - costStarted : costCpu;
+        long started = costStarted;
+        costStarted = 0L;
+        gpuReadyAt = 0L;
+        if (frameCosts != null) {
+            frameCosts.drawn(started, cost);
+        }
+    }
+
+    /** What a frame cost, start to the GPU done with it: {@link SlowFrames#drawn}'s shape. */
+    interface FrameCosts {
+        void drawn(long startNanos, long costNanos);
+    }
+
+    /** Hand each drawn frame's cost to {@code costs}; the main window's go to {@link SlowFrames}. */
+    void frameCosts(FrameCosts costs) {
+        this.frameCosts = costs;
+    }
+
+    /** What wakes the loop, from any thread, when a draw held for the GPU can run: the host's {@code postWake}. */
+    void gpuWake(Runnable wake) {
+        this.gpuWake = wake == null ? () -> { } : wake;
     }
 
     /**

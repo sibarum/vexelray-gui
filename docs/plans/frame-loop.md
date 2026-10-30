@@ -37,7 +37,10 @@ Verified in the code on 2026-10-04; the event-storm survey of the same day measu
   ceiling (`maxFrameRateToDisplay`) caps draws at the display rate or 60 Hz, whichever is slower; the 200 ms idle
   floor bounds a missed wake. *Since 2026-10-29 the ceiling caps draws and nothing else: OS input and another
   thread's wake run an update pass when they arrive (pump, input, drain, layout), and that pass's draw waits for the
-  next slot. Pointer and wheel are sampled once per pass, so at most once per batch of messages.*
+  next slot. Pointer and wheel are sampled once per pass, so at most once per batch of messages. Since fork 8 (the
+  same day) only a pass that drew spends the slot, and a draw does not wait for the GPU either: `GuiWindow` asks the
+  presenter `ready()` first, holds the draw when it is not, and the presenter wakes the loop when the GPU is done
+  (`whenReady`), so a slow GPU no longer keeps the thread from taking input and messages.*
 - **During a drag**, the Win32 modal loop's 8 ms timer pulls a full frame through the frame sink on every tick,
   changed or not.
 
@@ -75,6 +78,8 @@ Consequences:
 - The modal-loop timer pulls an update; it draws on the same rules. A move with no resize draws nothing.
 - Rule 2 holds by construction: draws happen at most once per pass, and draws are held to one per display refresh by
   the ceiling. (Passes were held too until 2026-10-29; now input and messages run an update when they arrive.)
+  Passes nothing posted (pacing that wants a frame, the loop asking itself for one, a draw held for the GPU) are kept
+  to the ceiling's rate from the last pass, so they cannot spin.
 
 ### B. The change itself marks dirty
 

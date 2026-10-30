@@ -162,15 +162,22 @@ them as no offence.
 2. **The timebase.** Sound's played-sample counter as a read-only monotonic value the asked half reads; who corrects
    it for the audio device's latency is the codec's to say.
 3. **What `Drawn` may set.** Picture choice, slot, offset, scale, alpha and paint cover every site above. Anything
-   more (a `Picture` parameter, a shadelet's shared value) is added when a witness needs it, not ahead.
-4. **The budget.** 50 µs per asked half is a guess; step 0 measures the codec's pick inside its loop today.
+   more (a `Picture` parameter, a shadelet's shared value) is added when a witness needs it, not ahead. **The
+   Inspector needs rotation** (its wheels turn); without it, it chooses among pictures built at fixed angles.
+4. **The budget.** 50 µs per asked half is a guess; step 0 measures the codec's pick inside its loop today. The
+   Inspector measures the other end: one part placing a few hundred beads during a storm.
 5. **Order within emit.** Asked halves before `PaintMotion`'s own, or the framework's motion parts are just parts in
    tree order. Leaning tree order, so there is no special case.
 6. **Re-emit per video frame** (E), decided by step 0.
+7. **A clock with history.** The Inspector's show clock stretches a burst and catches up after it, which depends on
+   what came before, and an asked half keeps no state. Its plan: the told half folds what arrived into a schedule
+   from real time to show time, and the asked half only evaluates it. The first test of whether "asked is pure"
+   carries a clock that is not a straight line.
 
 ## Order of work
 
-Each step lands on its own and leaves the suite green.
+Each step lands on its own and leaves the suite green. **Steps 2 and 3 come first, with the Inspector as their
+application** (ruled 2026-10-30, below): it needs no feed, so it does not wait for steps 0, 4 or 5.
 
 0. **Measure today.** The codec's demo player on a 60 s clip at 24, 30 and 60 fps on a 144 Hz display: intervals
    between shown frames, duplicated and dropped frames, the offset from sound, and the cost of an emit. The number to
@@ -191,3 +198,6 @@ Each step lands on its own and leaves the suite green.
 
 - 2026-10-29: the codec's views and vex-suite-common's `suite.view` are widget libraries.
 - 2026-10-29: drawing, presentation and pacing are one contract, not three exceptions (this document).
+- 2026-10-30, by the author: the Inspector's movement (ROADMAP phase 7½) goes onto this contract, with no told-only
+  movement in the meantime. It is the contract's first application and its first witness that is not a video, and
+  it needs steps 2 and 3 only. `vexelray-inspector/docs/design.md` §8 and §9.1.

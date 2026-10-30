@@ -15,12 +15,19 @@ package dev.vexelray.gui.core;
  * A told change and the frame that first shows it read the same clock, so a motion started by a change begins at the
  * frame it is first drawn in.
  *
+ * <p><b>The same moment on the machine's clock</b> ({@link #monoNanos}), sampled with it. The tree's clock is the one
+ * to move by: it steps with a test or a capture, and a due time is on it. But it is logical time, counting from its
+ * own zero and falling behind after a stall, so it cannot be set beside a time stamped elsewhere. A part that lines up
+ * with another process's events reads this instead: the Inspector's live timeline places a target's rows, stamped with
+ * the target's {@code System.nanoTime()}, against it. On one machine the two are one clock.
+ *
  * <p>What it carries is what a witness has needed, and no more: the window's scale is added when one does.
  *
- * @param presentNanos  the moment drawn for, in the tree clock's nanoseconds
+ * @param presentNanos  the moment drawn for, in the tree clock's nanoseconds; due times are on this clock
+ * @param monoNanos     the same moment on the machine's monotonic clock, {@code System.nanoTime()}'s
  * @param reducedMotion whether motion is reduced ({@link Gui#reducedMotion()}): a part that moves lands at once
  */
-public record Frame(long presentNanos, boolean reducedMotion) {
+public record Frame(long presentNanos, long monoNanos, boolean reducedMotion) {
 
     /** The answer of a part with nothing to change until it is told something: never ask again on its own account. */
     public static final long NEVER = Long.MAX_VALUE;

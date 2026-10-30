@@ -34,12 +34,12 @@ class FadesTest {
     /** Step the clock to {@code at} and draw a frame for it, as the tree would: the fades are asked there. */
     private static void tick(KronoGui krono, Fades fades, Dur at) {
         krono.tick(at);
-        fades.draw(new Frame(krono.nanos(), false));
+        fades.draw(new Frame(krono.nanos(), krono.nanos(), false));
     }
 
     /** Whether the fades, asked for the present moment, still want the next frame. */
     private static boolean moving(KronoGui krono, Fades fades) {
-        return fades.draw(new Frame(krono.nanos(), false)) != Frame.NEVER;
+        return fades.draw(new Frame(krono.nanos(), krono.nanos(), false)) != Frame.NEVER;
     }
 
     @Test

@@ -37,7 +37,7 @@ class TransitionsTest {
     /** Step the clock to {@code at} and draw a frame for it, as the tree would: the lags are asked there. */
     private static void tick(KronoGui krono, Transitions moves, Dur at) {
         krono.tick(at);
-        moves.draw(new Frame(krono.nanos(), false));
+        moves.draw(new Frame(krono.nanos(), krono.nanos(), false));
     }
 
     /** A retained node standing in for one the layout pass would have produced. */

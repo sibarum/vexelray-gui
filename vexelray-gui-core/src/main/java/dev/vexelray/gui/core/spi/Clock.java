@@ -31,4 +31,14 @@ public interface Clock {
     default long nanos() {
         return System.nanoTime();
     }
+
+    /**
+     * The same moment on the machine's monotonic clock, {@code System.nanoTime()}'s: what another process on this
+     * machine stamps its own events with ({@link dev.vexelray.gui.core.Frame#monoNanos}). Every clock answers the wall's
+     * unless a test steps it by hand; {@link #nanos} may not, since a logical clock counts from its own zero and falls
+     * behind after a stall.
+     */
+    default long monoNanos() {
+        return System.nanoTime();
+    }
 }

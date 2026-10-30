@@ -35,6 +35,14 @@ class AskedTest {
         public long nanos() {
             return nanos;
         }
+
+        /** The machine's clock, on its own reading: a logical clock's zero is not the machine's. */
+        long mono = 9_000_000_000L;
+
+        @Override
+        public long monoNanos() {
+            return mono;
+        }
     }
 
     private static float noText(RetainedNode n, Axis axis, float px) {
@@ -77,6 +85,27 @@ class AskedTest {
             clock.nanos = 5_000L;
             frame(gui);
             assertEquals(List.of(1_000L, 5_000L), askedAt);
+        }
+    }
+
+    /** A part lining up with another process's stamps reads the machine's clock, sampled in the same frame. */
+    @Test
+    void aFrameCarriesTheMachinesClockBesideTheTreesForStampsMadeElsewhere() {
+        Stepped clock = new Stepped();
+        List<Frame> frames = new ArrayList<>();
+        try (Gui gui = new Gui(Atchung.create())) {
+            Seams.of(gui).clock(clock);
+            gui.root().children(row(gui));
+            Seams.of(gui).ask((frame, out) -> {
+                frames.add(frame);
+                return Frame.NEVER;
+            });
+            frame(gui);
+            clock.nanos += 16_000_000L;
+            clock.mono += 16_000_000L;
+            frame(gui);
+            assertEquals(List.of(new Frame(1_000L, 9_000_000_000L, false),
+                    new Frame(16_001_000L, 9_016_000_000L, false)), frames);
         }
     }
 

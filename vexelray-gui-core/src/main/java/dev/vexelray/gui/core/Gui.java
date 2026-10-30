@@ -1763,6 +1763,12 @@ public final class Gui implements AutoCloseable {
         return c == null ? System.nanoTime() : c.nanos();
     }
 
+    /** The same moment on the machine's monotonic clock ({@link Frame#monoNanos}). */
+    long monoNanos() {
+        dev.vexelray.gui.core.spi.Clock c = clock;
+        return c == null ? System.nanoTime() : c.monoNanos();
+    }
+
     /**
      * How long the loop may park before this tree's asked halves are next due: zero when one wants the next frame,
      * {@link Long#MAX_VALUE} when every one is at rest. A host takes the least of this and its own deadlines, so a part
@@ -1922,7 +1928,7 @@ public final class Gui implements AutoCloseable {
             motionFrameNanos = now;
             // The moment every asked half draws for (frame-contract.md B), sampled once: the motions below, the
             // registered parts, and the paint the renderer reads after this frame.
-            Frame frame = new Frame(presentNanos(), reducedMotion());
+            Frame frame = new Frame(presentNanos(), monoNanos(), reducedMotion());
             long layoutDue = Frame.NEVER;
             boolean askedAny = !asked.isEmpty();
             if (motionNow != LayoutMotion.NONE || askedAny) {

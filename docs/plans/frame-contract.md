@@ -1,6 +1,6 @@
 # The frame contract: one way for code to run on the GUI thread
 
-Status: **Proposed 2026-10-29; steps 1 and 2 done.** Supersedes *pacers.md* (committed as `06f27c2` the same day), which
+Status: **Proposed 2026-10-29; steps 1 to 3 done.** Supersedes *pacers.md* (committed as `06f27c2` the same day), which
 proposed a third exception to T7.1 for video; the author pointed out that pacing is drawing, and that drawing,
 presentation and pacing should be one API. The ask first, then what the code does today, then the design, how each
 guarantee is held, what moves onto it, the questions it leaves open, and the order of work. It answers the second
@@ -62,7 +62,7 @@ exception, not three: the GUI thread runs a part's declared steps and its declar
 ### B. The asked half
 
 ```java
-@Drawn
+@Draw
 static long draw(Player.State s, Frame frame, Drawn out) {
     int slot = s.feed().dueAt(frame.presentNanos(), s.timebase());
     out.slot(s.screen(), slot);
@@ -117,9 +117,9 @@ contract, decided by step 0's numbers, not a second API.
 
 | Guarantee | Held by |
 | --- | --- |
-| Only declared halves run on the GUI thread | the processor: a part's told steps and `@Drawn` function are found from declarations, and the generated wiring calls nothing else (compile time) |
+| Only declared halves run on the GUI thread | the processor: a part's told steps and `@Draw` function are found from declarations, and the generated wiring calls nothing else (compile time) |
 | A told step is a step | the existing step check (`StepCheckTest`) |
-| An asked half is pure and cheap | the same check, plus: static, reads only its parameters, and no `new`, no array or string building, no locks, I/O, logging, `Thread` or bus (`DrawnCheckTest`). After the step check's principle: it never refuses safe code, only what is certainly unsafe |
+| An asked half is pure and cheap | the same check, plus: static, reads only its parameters, and no `new`, no array or string building, no locks, I/O, logging, `Thread` or bus (`DrawCheckTest`). After the step check's principle: it never refuses safe code, only what is certainly unsafe |
 | No application code holds a frame hook | the SPI's host side is in `spi`, reached from no `Gui` method (`GuiSurfaceTest`); a `@View` importing `spi` is refused (owed with `@View`) |
 | A slow draw cannot hold a window | the framework times every asked half against a budget; over it for a run of frames, the part is frozen on what it last drew and reported through `Diagnostics`. A stuck picture, loudly, never a stuck window |
 | The feed is the only shared memory | T7.3's allowlist names it; the architecture test reads the sources |
@@ -199,7 +199,24 @@ application** (ruled 2026-10-30, below): it needs no feed, so it does not wait f
      runs on every frame the tree runs, to put offsets back after a layout. A frame runs only when woken, so a still
      window still costs nothing.
    Not done here: the budget that freezes a slow asked half (it belongs with the processor's timing, step 3).
-3. **The processor's check** (`DrawnCheckTest`) and `@Drawn` on a part, in vexelray-framework.
+3. ~~**The processor's check and `@Draw` on a part, in vexelray-framework.**~~ **Done 2026-10-30.** A `@View` declares
+   `@Draw public static long draw(S state, Frame frame, Drawn out)`; the processor checks the shape (`Declarations.draw`),
+   and the generated wiring registers it with `Views.draw`, which is `Seams.ask` on the view's tree, as
+   `(frame, out) -> View.draw(view.state, frame, out)`. The step check reads its body, and helpers it reaches, with a
+   step's refusals and the frame's besides: `new`, an array, a string that is not a constant, a varargs call, a logger,
+   `Thread`, anything of `sibarum.atchung`, and any call on a `Node`. Held by `DrawCheckTest` and
+   `VexelProcessorTest.aViewsDrawIsAskedWithTheStateItsFieldHoldsOnEachFrame`. Decided in the building:
+   - **The view's state is one field** (ruled 2026-10-30, over views on a ledger): a deeply immutable value its
+     `@Subscribe` methods replace and never change in place, held in exactly one instance field of its type, which the
+     wiring reads on every frame. So a state replaced in a frame's widget tick is drawn in that frame. A view's told
+     half as declared steps stays with `@View`'s checks in phase 4.
+   - **The annotation is `@Draw`, not `@Drawn`**: a draw takes a `Drawn`, and an annotation of the same simple name
+     would collide with it in every file that declares one.
+   - **A `Node` in the state is a handle**, accepted by the state's immutability check (`Shareable.drawnState`) and only
+     there; calling anything on one in the asked half is refused, so all the half can do with it is name it to the
+     `Drawn`.
+   Not done: the budget that freezes a slow asked half. The host has nothing to report one through yet, and its number
+   is step 0's (open question 4).
 4. **Stamps on `StreamTexture`** (vexelray-vulkan), feeds requested by message, landing a frame ahead.
 5. **The codec on it.** The video and animated-image widgets as parts; `Playback`'s loop deleted. Measure against
    step 0.

@@ -162,17 +162,15 @@ them as no offence.
 2. **The timebase.** Sound's played-sample counter as a read-only monotonic value the asked half reads; who corrects
    it for the audio device's latency is the codec's to say.
 3. **What `Drawn` may set.** Picture choice, slot, offset, scale, alpha and paint cover every site above. Anything
-   more (a `Picture` parameter, a shadelet's shared value) is added when a witness needs it, not ahead. **The
-   Inspector needs rotation** (its wheels turn); without it, it chooses among pictures built at fixed angles.
-4. **The budget.** 50 µs per asked half is a guess; step 0 measures the codec's pick inside its loop today. The
-   Inspector measures the other end: one part placing a few hundred beads during a storm.
+   more (a `Picture` parameter, a shadelet's shared value) is added when a witness needs it, not ahead. The
+   Inspector's live timeline needs only an offset.
+4. **The budget.** 50 µs per asked half is a guess; step 0 measures the codec's pick inside its loop today.
 5. **Order within emit.** Asked halves before `PaintMotion`'s own, or the framework's motion parts are just parts in
    tree order. Leaning tree order, so there is no special case.
 6. **Re-emit per video frame** (E), decided by step 0.
-7. **A clock with history.** The Inspector's show clock stretches a burst and catches up after it, which depends on
-   what came before, and an asked half keeps no state. Its plan: the told half folds what arrived into a schedule
-   from real time to show time, and the asked half only evaluates it. The first test of whether "asked is pure"
-   carries a clock that is not a straight line.
+7. **A clock with history.** Only if the Inspector keeps its show clock (its design's §9.6, leaning no): it
+   stretches a burst and catches up after it, which depends on what came before, and an asked half keeps no state.
+   The plan would be a schedule from real time to show time, folded by the told half and evaluated by the asked one.
 
 ## Order of work
 
@@ -198,6 +196,8 @@ application** (ruled 2026-10-30, below): it needs no feed, so it does not wait f
 
 - 2026-10-29: the codec's views and vex-suite-common's `suite.view` are widget libraries.
 - 2026-10-29: drawing, presentation and pacing are one contract, not three exceptions (this document).
-- 2026-10-30, by the author: the Inspector's movement (ROADMAP phase 7½) goes onto this contract, with no told-only
-  movement in the meantime. It is the contract's first application and its first witness that is not a video, and
-  it needs steps 2 and 3 only. `vexelray-inspector/docs/design.md` §8 and §9.1.
+- 2026-10-30, by the author: what moves in the Inspector (ROADMAP phase 7½) goes onto this contract, with nothing
+  told-only in the meantime. It is the contract's first application and its first witness that is not a video, and
+  it needs steps 2 and 3 only. The same day the Inspector dropped its clockwork for plain panels, so what moves is
+  its live timeline's scroll: told builds the marks, asked sets the offset for the present time.
+  `vexelray-inspector/docs/design.md` §8, §9.1 and §9.4.

@@ -100,7 +100,8 @@ class InspectorLinkTest {
         LinkClient client = keep(LinkClient.connect(link.endpoint()));
         Seen seen = new Seen();
         StreamOpened opened = client.open(new StreamOpen(List.of("gpu"), 1, 0), seen::rows, seen.snaps::add);
-        assertEquals(new StreamOpened(List.of("gpu"), 1, 1, 1, 3, Optional.empty()), opened);
+        assertEquals(new StreamOpened(List.of("gpu"), 1, 1, 1, 3, Optional.empty(),
+                Optional.of(sibarum.probe.Probe.originNanos())), opened, "the rows' origin on this machine's clock");
         await(() -> seen.events.size() >= 2, "the backfill");
         write(ring, 6, Lane.GPU);      // 4 and 5 never arrived
         await(() -> seen.events.size() >= 4, "the live row and its gap");

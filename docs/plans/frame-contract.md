@@ -168,9 +168,6 @@ them as no offence.
 5. **Order within emit.** Asked halves before `PaintMotion`'s own, or the framework's motion parts are just parts in
    tree order. Leaning tree order, so there is no special case.
 6. **Re-emit per video frame** (E), decided by step 0.
-7. **A clock with history.** Only if the Inspector keeps its show clock (its design's §9.6, leaning no): it
-   stretches a burst and catches up after it, which depends on what came before, and an asked half keeps no state.
-   The plan would be a schedule from real time to show time, folded by the told half and evaluated by the asked one.
 
 ## Order of work
 

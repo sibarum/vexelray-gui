@@ -5,6 +5,7 @@ import dev.vexelray.gui.core.input.DragEvent;
 import dev.vexelray.gui.core.input.InputDispatcher;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.input.KeyEvent;
+import dev.vexelray.gui.core.input.PinchEvent;
 import dev.vexelray.gui.core.input.PointerEvent;
 import dev.vexelray.gui.core.input.WheelEvent;
 import dev.vexelray.gui.core.layout.NodeLayout;
@@ -123,6 +124,22 @@ public abstract class NodeEvent<E> {
         @Override
         void listen(InputDispatcher input, Gui gui, long id, Consumer<WheelEvent> publish) {
             input.onWheel(id, publish);
+        }
+    };
+
+    /**
+     * The touchpad's fingers spread or pinched with the pointer over the node: the nearest node on the pointer's path
+     * that asked has the whole gesture, start to end, wherever the pointer is by then.
+     */
+    public static final NodeEvent<PinchEvent> PINCH = new NodeEvent<>("pinch", false) {
+        @Override
+        boolean taken(InputDispatcher input, Gui gui, long id) {
+            return input.hasPinch(id);
+        }
+
+        @Override
+        void listen(InputDispatcher input, Gui gui, long id, Consumer<PinchEvent> publish) {
+            input.onPinch(id, publish);
         }
     };
 

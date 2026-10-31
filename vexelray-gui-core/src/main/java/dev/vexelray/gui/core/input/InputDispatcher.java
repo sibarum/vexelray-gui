@@ -162,6 +162,9 @@ public final class InputDispatcher {
     private final Map<Long, Consumer<DragEvent>> dragHandlers = new ConcurrentHashMap<>();
     /** Nodes that take the wheel themselves rather than letting it scroll what they are in. See onWheel. */
     private final Map<Long, Consumer<WheelEvent>> wheelHandlers = new ConcurrentHashMap<>();
+    /** Nodes that take the touchpad's pinch, and the one holding the pinch in flight, or -1. See onPinch. */
+    private final Map<Long, Consumer<PinchEvent>> pinchHandlers = new ConcurrentHashMap<>();
+    private long pinchTaker = -1;
     /** What each node would do with a drag released on it. Unrelated to dragHandlers -- see onDrop. */
     private final Map<Long, DropTarget> dropTargets = new ConcurrentHashMap<>();
     /** What each node offers up when a drag starts on it. */
@@ -486,6 +489,19 @@ public final class InputDispatcher {
     }
 
     /**
+     * Register a pinch handler for {@code nodeId}: the touchpad's fingers spread or pinched with the pointer over the
+     * node (or a descendant) go to it as {@link PinchEvent}s, the nearest such node on the pointer's path holding the
+     * gesture until it ends. Replaces any prior handler for that node; {@code null} removes it.
+     */
+    public void onPinch(long nodeId, Consumer<PinchEvent> handler) {
+        if (handler == null) {
+            pinchHandlers.remove(nodeId);
+        } else {
+            pinchHandlers.put(nodeId, handler);
+        }
+    }
+
+    /**
      * Register a wheel handler for {@code nodeId}: the wheel turned over the node (or a descendant) goes to it as a
      * {@link WheelEvent}, during the dispatch, instead of scrolling the nearest overflowing ancestor. The nearest
      * such node on the pointer's path wins. Replaces any prior handler for that node; {@code null} removes it.
@@ -598,6 +614,7 @@ public final class InputDispatcher {
     private void feedTouchpad(InputEvent event) {
         for (sibarum.tactroller.api.GestureEvent g : touchpad.feed(event)) {
             bus.publish(gestures, g);
+            pinch(g);
             for (Gesture t : gestureTriggers.feed(g)) {
                 Claim claimed = resolveClaim(t);
                 if (claimed == null) {
@@ -887,6 +904,10 @@ public final class InputDispatcher {
         return wheelHandlers.containsKey(nodeId);
     }
 
+    public boolean hasPinch(long nodeId) {
+        return pinchHandlers.containsKey(nodeId);
+    }
+
     /** True if {@code nodeId} has a key handler. */
     public boolean hasKey(long nodeId) {
         return keyHandlers.containsKey(nodeId);
@@ -1111,6 +1132,7 @@ public final class InputDispatcher {
         dragHandlers.remove(nodeId);
         wheelHandlers.remove(nodeId);
         dropTargets.remove(nodeId);
+        pinchHandlers.remove(nodeId);
         dragSources.remove(nodeId);
         dragWatches.removeIf(w -> w.nodeId() == nodeId);
         keyHandlers.remove(nodeId);
@@ -1783,6 +1805,46 @@ public final class InputDispatcher {
 
     private static boolean inRect(float[] r, float x, float y) {
         return x >= r[0] && x < r[0] + r[2] && y >= r[1] && y < r[1] + r[3];
+    }
+
+    /**
+     * A pinch gesture's events to the node holding it: chosen at its start by where the pointer is, which the OS holds
+     * still while two fingers are down, and kept to its end, so a pinch never changes hands part way.
+     */
+    private void pinch(sibarum.tactroller.api.GestureEvent g) {
+        switch (g) {
+            case sibarum.tactroller.api.GestureEvent.GestureStarted s
+                    when s.kind() == sibarum.tactroller.api.GestureEvent.Kind.PINCH -> {
+                pinchTaker = -1;
+                if (pinchHandlers.isEmpty()) {
+                    return;
+                }
+                for (RetainedNode n = HitTest.at(currentRoot, s.x(), s.y()); n != null; n = n.parent) {
+                    if (pinchHandlers.containsKey(n.id)) {
+                        pinchTaker = n.id;
+                        tellPinch(new PinchEvent(PinchEvent.Phase.START, 1f));
+                        return;
+                    }
+                }
+            }
+            case sibarum.tactroller.api.GestureEvent.GestureUpdated u
+                    when u.kind() == sibarum.tactroller.api.GestureEvent.Kind.PINCH && pinchTaker >= 0 ->
+                    tellPinch(new PinchEvent(PinchEvent.Phase.MOVE, (float) u.scale()));
+            case sibarum.tactroller.api.GestureEvent.GestureEnded e
+                    when e.kind() == sibarum.tactroller.api.GestureEvent.Kind.PINCH && pinchTaker >= 0 -> {
+                tellPinch(new PinchEvent(PinchEvent.Phase.END, 1f));
+                pinchTaker = -1;
+            }
+            default -> {
+            }
+        }
+    }
+
+    private void tellPinch(PinchEvent e) {
+        Consumer<PinchEvent> handler = pinchHandlers.get(pinchTaker);
+        if (handler != null) {
+            handled(() -> handler.accept(e));
+        }
     }
 
     /** Nearest ancestor-or-self of {@code hit} with a wheel handler, or null. */

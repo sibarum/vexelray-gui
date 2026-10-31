@@ -1,97 +1,110 @@
 # Rich text: effect spans, a formatted clipboard, a WYSIWYG field and glyph morphs
 
-**Status: proposed 2026-10-30, not started.** One build, several features. `TextField` already is the component:
-a `Document` (text, caret, anchor, spans, last edit) as one value, spans that remap through every edit, real faces
-per character, and a read-only mode that keeps selection and copy. The canvas already has the effects: shadelets
-that reshape and paint a distance, `@PerInstance` values for what animates, and `Effects.FIELD_MORPH`. What is
-missing is the wiring between them, and a clipboard that carries more than a string.
+**Status: proposed 2026-10-30, not started; revised the same day to put the drawing in the engine.** One build,
+several features. `TextField` already is the component: a `Document` (text, caret, anchor, spans, last edit) as one
+value, spans that remap through every edit, real faces per character, and a read-only mode that keeps selection and
+copy. The canvas has the shadelets. The engine work this plan rests on (looks on glyphs and images, inflated glyph
+quads, deformers in a composed vertex stage, a source over a run of glyphs, a glyph morph) is
+**vexelray's `docs/canvas-looks.md`**. This plan is what the GUI does with it, plus the clipboard and editing.
 
 What comes out of it:
 
-| Feature | Steps |
-|---|---|
-| Selectable, copyable formatted text | shipped as `TextField.readOnly(true)`; step 0 fixes the reference |
-| Copy with or without formatting | 3 |
-| Text drawn by any look: outline, glow, shadow, an application's own shadelet | 1 |
-| Animating a parameter of that look | 2 |
-| A WYSIWYG field (`readOnly(false)`, with formatting commands) | 4 |
-| Glyphs morphing between faces | 5 |
+| Feature | Steps | Engine (canvas-looks.md) |
+|---|---|---|
+| Selectable, copyable formatted text | shipped as `TextField.readOnly(true)` | — |
+| Text drawn by any look: outline, glitter, bounce, an application's own shadelet | 1 | §1–§3 |
+| Effects past the glyphs: bloom, smoke, decorations such as a slashed double red underline | 1 | §5 |
+| Animating any of them, from a `Ramp` or from a song's beat | 2 | — |
+| Copy with or without formatting | 3 | — |
+| A WYSIWYG field (`readOnly(false)` with formatting commands) | 4 | — |
+| Glyphs morphing between faces | 5 | §6 |
 
 The measurement that makes each step checkable is a capture: `LookCaptureTest` already compares a look's pixels, and
 every step below ends in one.
 
 ---
 
-## 0. What exists, and one stale sentence
+## 0. What exists
 
 - **Selection without editing is shipped.** `TextField.readOnly(true)` closes the user's edit channel and keeps the
-  caret, selection, Ctrl+C and every motion key. [keyboard-focus-text.md](../reference/keyboard-focus-text.md) §4.1
-  and §8 still list "non-editable selection" as not done. Fix both in the first commit of this plan.
+  caret, selection, Ctrl+C and every motion key. (The reference said otherwise until this plan's first commit.)
 - **Spans** are a fixed record: `fg`, `bg`, `underline`, `weight`, `slope`. Weight and slope are part of measurement;
   colour and underline are a draw.
 - **Span changes are not undoable.** `Edit.SetSpans` produces a document with `lastEdit == null`, and
   `TextField.apply` records history only from a `TextEdit`; anything else is a barrier. Correct for a syntax
   highlighter rewriting its spans, wrong for Ctrl+B.
-- **Glyphs never draw with a look.** `Canvas.text` → `appendGlyphs` → `glyphVert` writes every quad with the core
-  text look. `Canvas.box` and `Canvas.field` take a `Look` and per-instance floats; text has no such overload.
-  `TreeRenderer.drawLineText` splits a line into runs of one face and one colour, and draws each with `canvas.text`.
+- **Text is drawn in runs.** `TreeRenderer.drawLineText` splits a visual line into runs of one face and one colour
+  and draws each with `canvas.text`, which has no look.
 - **The clipboard is a string.** `TextClipboard` is `get()`/`set(String)`; tactroller's Windows backend moves
   `CF_UNICODETEXT` and nothing else.
 - **An application already composes the shader.** `GuiApp` takes a `CanvasShader.Composed` built from
-  `CoreShadelets.composition(type).with(...)`, so an application's own shadelet is already a supported thing. It
-  has nowhere to be used on text.
+  `CoreShadelets.composition(type).with(...)`, and the supirvast plugin precompiles it. An effect library is a jar
+  of shadelets; an application composes the ones it uses.
 
 ## 1. Effect spans
 
-A span may name an **effect**: a `Look` whose source is the text source, so its modifiers and painters act on the
-glyph's distance exactly as they act on a box's or a field's. Every effect in `vexelray-shadelets` that is a
-modifier or a painter works on a glyph unchanged, and so does an application's own.
-
-**Engine (`vexelray-canvas`).** `Canvas.text(..., Look look, float... instance)`: `appendGlyphs` sets the element
-from the look the way `box` does, and grows each glyph quad by the look's reach. A look whose source is not the
-composition's text source (`CoreShadelets.text(type)`) is refused loudly, once: a glyph quad has no box to give a
-box source.
-
-**The reach is the bake's.** A glyph's distance is only true out to its atlas's `distanceRange`. An outline or glow
-wider than that reads a clamped field and comes out as a flat-edged slab. So the effect's reach is clamped to the
-face's range, and the text says so once. A family meant to glow is baked with a wider range in
-vexelray-msdf-maven-plugin's `<families>`. That is a build setting, not a runtime fallback.
-
-**GUI (`vexelray-gui-core`).** `Span` gains one component, `effect`: a key, not a `Look`. The key resolves through
-the node to a `Look` and the instance floats. Keeping the look out of `Span` keeps a `Document` a plain value that
-compares cheaply and holds nothing GPU-side.
+A span may name an **effect** by key. The node maps the key to what draws it:
 
 ```java
-field.effect("hot", look);                    // the node knows what "hot" draws with
-field.spans(List.of(Span.effect(4, 9, "hot")));
+field.effect("hot", Effect.glyphs(bounce).span(bloom, Layer.UNDER));
+field.effect("typo", Effect.span(slashedDoubleRed, Layer.OVER));
+field.spans(List.of(Span.effect(4, 9, "hot"), Span.effect(12, 17, "typo")));
 ```
 
-`drawLineText` splits runs on face, colour **and** effect, and draws an effect run with the new overload. An effect
-is a draw, never measurement: like a colour span, changing one never relays out. That holds even for `WEIGHT`, which
-moves the edge outward. A real weight change is a face change and does relay out (font-families.md §3.3); a shader
-weight is how it looks. The two are different knobs, and the docs say which is which.
+`Span` gains one component, `effect`, a key and not a `Look`: a `Document` stays a plain value that compares cheaply
+and holds nothing GPU-side, and restyling an effect is a node write, not an edit.
 
-Done when: a capture of a field with an outlined span and a glowing span matches a reference, and a capture of the
-same field with the spans' effects swapped differs only inside the spans' quads.
+**An effect has two placements, and may use both.**
+
+- **Per glyph.** Each glyph of the span is drawn with the glyph look (canvas-looks.md §1). It can inflate its quad
+  without resizing the glyph (§2), and move it with a deformer (§3): outline, glitter, a fill, a bounce or a spin per
+  letter, a bend by inverse warp.
+- **Per span.** One quad per span **per visual line** (a wrapped span is two rectangles), grown by its look's reach.
+  Its source is either a **box** (decorations: underline, strike, slashes, squiggle, a highlight), placed from the
+  face's underline metrics where today's underline is drawn, or **the span's text** (canvas-looks.md §5: bloom,
+  smoke, anything that is the word's shape rather than a letter's). Its local coordinates are span space; a span
+  split across faces or lines carries its offset into each piece, so a pattern does not restart.
+
+**Layers.** A span quad is drawn `UNDER` the glyphs (glow, highlight, shadow) or `OVER` them (glitter, strike). A
+glyph look either paints on top of the core glyph draw or **draws the ink itself**, in which case the renderer skips
+the core draw for that run. Without that flag a gradient fill painted over the normal fill leaves a fringe of the
+base colour at every anti-aliased edge.
+
+**Renderer.** `drawLineText` splits runs on face, colour **and** effect, and draws an effect run with
+`canvas.text(..., look, values)`; the span quads are emitted around them in layer order. An effect is a draw, never
+measurement: changing one never relays out. That holds even for a deformer or a shader weight that moves the edge
+outward. A real weight change is a face change and does relay out (font-families.md §3.3).
+
+**Hit-testing is untouched.** Caret, selection and clicks read the read-model, which knows nothing of reach or
+deformation. A bouncing letter is clicked where it rests.
+
+Done when: a field with a glyph effect, a decoration and a bloom matches a reference capture; swapping the effects
+differs only inside the effects' quads; and a click on a deformed glyph lands on its resting offset.
 
 ## 2. Animating an effect
 
-**The instance values are not in the `Document`.** If they were, every frame of an animation would be a new
-document version, a span remap, and a candidate for history. They live on the node, per effect key:
+**The values are not in the `Document`.** If they were, every frame of an animation would be a document version, a
+span remap and a candidate for history. They live on the node, per effect key and per placement:
 
 ```java
-field.effectValues("hot", 0.4f);              // a write, as a field's instance is (ImageField's javadoc)
+field.effectValues("hot", glyphValues, spanValues);   // a write, as ImageField's instance is
 ```
 
-That is a draw-only prop write, which costs what `ImageField`'s per-frame instance costs today: nothing beyond the
-write. Shadelets read no clock (`Effects`' class comment), so the values come from the application's timeline: a
-`Ramp` writes them. A frame stays a function of what was drawn, so captures are reproducible and an idle loop sleeps.
+A draw-only prop write, which costs what `ImageField`'s per-frame instance costs today. Shadelets read no clock, so
+the values come from the application's timeline:
 
-If [frame-contract.md](frame-contract.md) lands first, an effect ramp is a `PaintMotion` like any other, and this
-step uses that rather than a `KronoGui` loop.
+- **A `Ramp`** for a transition. If [frame-contract.md](frame-contract.md) lands first, an effect ramp is a
+  `PaintMotion` like any other.
+- **Kronometer for music.** A beat grid is `Rate.gridLine(n)`, a pure function of time, so it is *predictable* and
+  pulses land on the beat rather than a frame late. Loudness is a live input from `Track.heard()` (up to the last
+  quarter second of samples), and reacts after the fact, which suits "glow with the bass". **Anchor the grid to
+  `Track.position()`**, the audio device's clock, not to wall time: the two drift over a song, and visuals timed on
+  the wrong one slide off the beat. Whether a Kronometer `Tempo` can follow an external clock is unchecked, and a
+  song that changes tempo needs kronometer's animated-tempo.md.
 
-Done when: a capture at three points of a ramp matches three static captures with those values written by hand,
-and a field whose ramp has finished wakes no frames.
+Done when: captures at three points of a ramp match three static captures with those values written by hand; a field
+whose ramp has finished wakes no frames; and a demo pulses a word on the beat of a track with no drift after three
+minutes.
 
 ## 3. A clipboard that carries formatting
 
@@ -118,14 +131,14 @@ target (Notepad, a terminal) gives the plain text; and a paste from a browser ke
 
 Editing is the existing `readOnly(false)` field. What it lacks is formatting as edits.
 
-- **Span changes become history.** A formatting edit produces a `SpanEdit` (the spans before, the spans after, over
-  the selection), and `Document` carries it beside `lastEdit`. `TextField.apply` records it as its own `Change`.
+- **Span changes become history.** A formatting edit produces a `SpanEdit` (the spans before and after, over the
+  selection), and `Document` carries it beside `lastEdit`. `TextField.apply` records it as its own `Change`.
   `SetSpans` stays unrecorded: a highlighter's rewrite is still not the user's act. The distinction is the edit's,
   not the field's: an edit says whether it is the user's.
 - **What typed text looks like.** Typing at the edge of a span must have a rule, and today it is whatever
   `Span.remap` does with an insert at `end`. The field keeps **typing attributes**: taken from the character left of
   the caret when the caret moves, changed by a formatting command with no selection, applied to the next insert.
-  The rule is the same as every word processor's, so nobody has to learn it.
+  Effects are typing attributes too.
 - **Commands.** `TextField.toggle(Attribute)` over the selection, or over the typing attributes when there is no
   selection, claimed at `FOCUSED` as Ctrl+B / Ctrl+I / Ctrl+U. `formatAt(caret)` publishes the attributes in force,
   so a toolbar shows bold as pressed without reading the spans itself.
@@ -140,51 +153,42 @@ ottermate, and the capture after each step matches.
 
 ## 5. Glyph morphs
 
-`Effects.FIELD_MORPH` mixes two cells of one texture by `t`. Glyphs need three things it does not do:
+The engine supplies `GLYPH_MORPH` and a family baked into one atlas (canvas-looks.md §6). The GUI side:
 
-- **The text source.** It mixes `CoreShadelets.FIELD` distances; a glyph is an MSDF median. A `GLYPH_MORPH` source
-  takes the median at both cells, then mixes the two distances. Mixing after the median is what keeps the corners.
-- **A cell transform, not an offset.** Two glyphs' cells differ in size and bearing, so the second cell is an offset
-  *and* a scale from the first (four per-instance floats, not two), and the quad covers the union of both boxes. The
-  reach overload that takes instance values already exists for this ("a morph to a larger box reaches as far as the
-  larger box").
-- **One texture.** Every face is its own atlas, and a morph reads both cells from what is bound. Either the plugin
-  bakes a family's faces into **one** atlas (pages of one texture), or the source samples a second texture. The first
-  needs no new binding and keeps a family's runs together. It is the recommendation, and it is a plugin change.
+- **A morph is an effect** whose glyph look is the morph source, with `t` as a value, so it animates like any other
+  (§2).
+- **The second face** is named on the effect (`Effect.morph(toWeight, toSlope)`) and resolved to the same family's
+  face the way a span's weight and slope are, by `TextFaces`.
+- **Advances stay put in v1.** The layout uses the first face and the morph happens inside each glyph's inflated
+  quad, so a morph is a draw and never a relayout. Interpolating the advances means laying the line out every frame:
+  possible, but a measurement change, and later.
 
-**Advances stay put in v1.** The layout uses the first face, and the morph happens inside each glyph's slot, so a
-morph is a draw and never a relayout. Interpolating the advances too means laying the line out every frame. That is
-possible, but it is a measurement change and comes after.
-
-**What looks good.** Faces of one family (regular → bold, upright → italic, along a variable font's baked
-instances) morph cleanly, because the shapes correspond. Different letters crossfade through blobs. The demo shows
-the first, and the docs say the second plainly rather than promising it.
-
-Done when: a field morphing a word regular → bold matches captures at `t = 0` and `t = 1` against the static faces,
-and at `t = 0.5` has no pixel outside the union of the two.
+Done when: a field morphing a word regular → bold matches captures at `t = 0` and `t = 1` against the static faces.
 
 ---
 
-## 6. Order, and what each step needs
+## 6. Order
 
 | Step | Repos | Size | Needs |
 |---|---|---|---|
-| 0 | vexelray-gui (docs) | trivial | — |
-| 1 | vexelray (canvas), vexelray-gui | medium | — |
-| 2 | vexelray-gui | small | 1 |
+| 1 | vexelray-gui | medium | canvas-looks.md §1 (glyph effects), §5 (text span quads); box span quads need nothing |
+| 2 | vexelray-gui, kronometer for the beat demo | small | 1 |
 | 3 | tactroller, vexelray-gui | medium | — |
 | 4 | vexelray-gui | medium | 3 for paste with formatting; otherwise none |
-| 5 | vexelray (msdf plugin, shadelets), vexelray-gui | medium–large | 1 |
+| 5 | vexelray-gui | small | 1, canvas-looks.md §6 |
 
-1 and 3 are independent and can be built at the same time. 1 gives the most for the least: a moderate change in the
-GUI unlocks shader work that is already built.
+Decorations are the first effect that needs no engine change at all: a box-source span quad. They can land before
+canvas-looks.md starts, and prove the span quad's placement, layering and offsets. 3 is independent of everything
+and can run beside it.
 
 ## 7. Interactions
 
-- **[runtime-themes.md](runtime-themes.md) R3** moves span colours onto paints. An effect span's colours (a glow's
-  colour, an outline's) are instance values today. They should index the same paint table once R3 lands, or a theme
-  swap leaves them stale, which is the stale-pixel count that plan is driving to zero.
+- **[runtime-themes.md](runtime-themes.md) R3** moves span colours onto paints. An effect's colours (a glow's, an
+  underline's) are values today. They should index the same paint table once R3 lands, or a theme swap leaves them
+  stale, which is the stale-pixel count that plan is driving to zero.
 - **Typeset selection** ([todo.md](todo.md), "Selection. Insured, not built") would reuse step 3's HTML writer and
   clipboard, but not the field's selection model: its runs are two-dimensional. Out of scope here.
 - **Selection across nodes** (dragging over several labels the way a web page allows) is a different feature: a
   selection over the tree, not over one document. Out of scope, and not implied by anything above.
+- **Images and video with looks** are canvas-looks.md §4 and reach the GUI through `Node.image`. That is a small
+  follow-on outside this plan, which is about text.

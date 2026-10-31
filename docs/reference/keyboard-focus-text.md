@@ -150,7 +150,7 @@ or on a remote client with no fonts of its own.
 
 ### 4.1 Properties
 - **Selectable** — text can be selected (drag / shift+arrows) and copied, even when not editable.
-  *[selection + clipboard shipped for editable; non-editable selection not yet]*
+  *[shipped: `TextField.readOnly(true)` refuses the user's edits and keeps caret, selection, Ctrl+C and motion]*
 - **Editable** — content can be modified. When false, the widget is read-only (still selectable if
   Selectable). *[shipped]*
 - **Disabled** — no focus, no interaction, dimmed. Distinct from read-only (a disabled field is inert).
@@ -303,7 +303,9 @@ resolves to regular, the nearest face there is. Adding the files to that directo
    vertical scroll, soft tabs, line numbers. **[done — docs/reference/layout-read-model.md §11]**
 7. **Hyperlink / tooltip spans** — hover/click emission with the editable/Control gating; tooltip needs
    the overlay layer (§6). **[not started — the overlay layer is the blocker]**
-8. **Remaining polish** — the text field's disabled look, non-editable selection, hard tabs, Shift+Tab outdent.
+8. **Remaining polish** — the text field's disabled look, hard tabs, Shift+Tab outdent. (Non-editable selection
+   shipped as `TextField.readOnly`; formatting, effect spans and a formatted clipboard are
+   [plans/rich-text.md](../plans/rich-text.md).)
 
 ---
 

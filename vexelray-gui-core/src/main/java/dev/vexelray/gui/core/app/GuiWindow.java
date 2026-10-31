@@ -289,7 +289,7 @@ final class GuiWindow implements AutoCloseable {
         if (!window.pumpEvents()) {
             return false;
         }
-        if (gui != null) {
+        if (gui != null && Seams.of(gui).zoomSizesWindow()) {
             // Before the frame, so the resize it may ask for is pumped by this frame's input and laid out once,
             // rather than drawn a frame at the new zoom in the old size and then again.
             zoomSizing.follow(window, Seams.of(gui).zoom().value());

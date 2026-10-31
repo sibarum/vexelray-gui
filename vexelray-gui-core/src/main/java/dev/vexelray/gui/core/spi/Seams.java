@@ -461,6 +461,9 @@ public abstract class Seams {
      */
     public abstract sibarum.atchung.State<Float> zoom();
 
+    /** Whether the window follows {@link #zoom} as described there: {@code Gui.zoomSizesWindow}, on by default. */
+    public abstract boolean zoomSizesWindow();
+
     /**
      * The display density as a bus {@code State} — the points-to-pixels ratio of the surface being drawn to
      * (1.0 on a conventional display, 2.0 on a Retina-class one).

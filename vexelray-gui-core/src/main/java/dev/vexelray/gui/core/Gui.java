@@ -1173,6 +1173,20 @@ public final class Gui implements AutoCloseable {
         return this;
     }
 
+    /** Whether the window follows the zoom; see {@link #zoomSizesWindow(boolean)}. */
+    private volatile boolean zoomSizesWindow = true;
+
+    /**
+     * Whether this tree's window grows and shrinks with its zoom (on by default; {@link Seams#zoom} says how). Right
+     * for a window sized to its content, where a zoom should keep the composition. Off for one whose content is
+     * whatever room is left — a picture, a map, a canvas — where the zoom sizes the controls around it and a smaller
+     * control should give that room to the content, not take it from the screen.
+     */
+    public Gui zoomSizesWindow(boolean follows) {
+        zoomSizesWindow = follows;
+        return this;
+    }
+
     // ------------------------------------------------------------ graphics choices
     //
     // Two choices, kept apart because each costs the user something different: flat shading gives up depth cues
@@ -2176,6 +2190,11 @@ public final class Gui implements AutoCloseable {
         @Override
         public sibarum.atchung.State<Float> zoom() {
             return metrics.zoom();
+        }
+
+        @Override
+        public boolean zoomSizesWindow() {
+            return zoomSizesWindow;
         }
 
         @Override

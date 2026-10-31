@@ -1,6 +1,7 @@
 # The frame contract: one way for code to run on the GUI thread
 
-Status: **Proposed 2026-10-29; steps 1 to 3 done.** Supersedes *pacers.md* (committed as `06f27c2` the same day), which
+Status: **Proposed 2026-10-29; steps 1 to 4 done** (4 on 2026-10-31, built device-free rather than in the engine:
+see step 4). Supersedes *pacers.md* (committed as `06f27c2` the same day), which
 proposed a third exception to T7.1 for video; the author pointed out that pacing is drawing, and that drawing,
 presentation and pacing should be one API. The ask first, then what the code does today, then the design, how each
 guarantee is held, what moves onto it, the questions it leaves open, and the order of work. It answers the second
@@ -105,6 +106,10 @@ over: single producer, single consumer, fixed slots, no lock in the read. It is 
 - **Pixels never cross the bus.** The told half asks for a feed (a request to the host, like any GPU resource in
   tree-thread.md D) and keeps its handle in its state.
 
+*As built (step 4, 2026-10-31):* the feed is vexelray-gui's `Feed`, not `StreamTexture`: device-free, its slots in the
+heap, made by whoever produces (a job's reply carries the feed it wrote, as a handle), and uploaded by each device
+that draws it. `take` answers `-1`, not null, when the ring is full. Step 4 says what changed and why.
+
 ### E. Where it runs
 
 At emit, where `PaintMotion.drawn` already runs: on the main thread now, and on the tree thread if tree-thread.md
@@ -157,8 +162,9 @@ them as no offence.
 
 ## Open questions
 
-1. **Several windows on one feed.** A slot shown is the feed's. Leaning: a feed belongs to one window, and a second
-   view of the same movie is a second feed from the same decoder.
+1. ~~**Several windows on one feed.**~~ *Answered by step 4's shape:* a feed is device-free, so every device that
+   draws it keeps its own texture and uploads the slot shown. Which slot is shown is still the feed's, one for every
+   node naming it; a second view showing another frame of the same movie is a second feed.
 2. **The timebase.** Sound's played-sample counter as a read-only monotonic value the asked half reads; who corrects
    it for the audio device's latency is the codec's to say.
 3. **What `Drawn` may set.** Picture choice, slot, offset, scale, alpha and paint cover every site above. Anything
@@ -225,7 +231,33 @@ application** (ruled 2026-10-30, below): it needs no feed, so it does not wait f
      `Drawn`.
    Not done: the budget that freezes a slow asked half. The host has nothing to report one through yet, and its number
    is step 0's (open question 4).
-4. **Stamps on `StreamTexture`** (vexelray-vulkan), feeds requested by message, landing a frame ahead.
+4. ~~**Stamps on `StreamTexture`** (vexelray-vulkan), feeds requested by message, landing a frame ahead.~~ **Done
+   2026-10-31, in a different shape, with Pix's still pictures as its first application.** `dev.vexelray.gui.core.Feed`
+   is the ring, and it holds no texture: `Feed.of(width, height, slots, picture)` can be made anywhere, a job included,
+   and its slots are heap memory the producer writes (`take`, `level`, `handOver(slot, stamp)`, `drop`; `write` and
+   `Feed.still` for a picture in hand). A node shows it with `Node.image(Feed)`. Each device's `DeviceImages` uploads
+   the slot shown when it changes (a still into one `AtlasTexture`, once; a feed of several slots into a two-slot
+   `StreamTexture`), the copy queued before the frame that draws it; a hand-over wakes the window through
+   `GuiApp.post`; `close` hands the texture to `GuiApp`'s retiring once no frame in flight samples it. An asked half
+   chooses with `Drawn.show(feed, slot)`, finding the slot with `due(stamp)`; with no choice the newest is shown, so a
+   still needs no asked half. A slot comes free when a newer one is shown in its place. The processor accepts a
+   `Feed` as a handle in a payload and in a view's drawn state (`Shareable.FEED`), so a job answers with the feed it
+   wrote. Held by `FeedTest` and the processor's `aFeedMayCrossInAPayloadThoughItIsMutable` and
+   `aViewsDrawnStateMayHoldAFeed`, and driven in Pix (`Spike/Pix`, `v0.2`): a folder stepped through, every picture a
+   feed a job decoded into. Decided in the building:
+   - **Device-free, not requested by message.** A request and an answer would have cost a round trip per picture, and
+     the size is known only to the producer, after it decodes: a feed requested ahead would have had to be sized for the
+     largest picture, or the picture decoded twice. Device-free also means a producer may start before any window,
+     a headless capture draws a feed as a window does, and open question 1 answers itself. **What it costs:** a slot
+     lives in the heap and is copied to the GPU's staging on the GUI thread when shown, where a `StreamTexture` slot
+     was written in place. For a still that is the copy `GuiApp.picture` made anyway; for video it is a copy per frame,
+     which step 0's numbers weigh.
+   - **No engine change.** `StreamTexture` stays as it was (it refuses fewer than two slots, so a still is an
+     `AtlasTexture`), and the stamps live on the feed, so the engine needed no `v0.2` branch.
+   - **A choice stays chosen** until the next, as everything a `Drawn` sets does, so a feed drawn by two runs or two
+     devices in one frame shows the same slot.
+   - Not done: freeing slots on a seek back (a producer that refills with earlier stamps must `drop` what it holds,
+     or the newer slots wait); that is step 5's, with the codec.
 5. **The codec on it.** The video and animated-image widgets as parts; `Playback`'s loop deleted. Measure against
    step 0.
 6. **A third witness, not a player:** the fluid simulator's field through a feed, its producer on a declared lane,
@@ -240,3 +272,5 @@ application** (ruled 2026-10-30, below): it needs no feed, so it does not wait f
   it needs steps 2 and 3 only. The same day the Inspector dropped its clockwork for plain panels, so what moves is
   its live timeline's scroll: told builds the marks, asked sets the offset for the present time.
   `vexelray-inspector/docs/design.md` §8, §9.1 and §9.4.
+- 2026-10-31, by the author: build the feed (step 4) now, with Pix's still viewer as its first application, ahead
+  of step 0, which only video needs. Built device-free in vexelray-gui (step 4 says why).

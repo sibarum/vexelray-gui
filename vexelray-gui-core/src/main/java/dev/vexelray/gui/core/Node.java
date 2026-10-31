@@ -107,6 +107,18 @@ public final class Node {
     }
 
     /**
+     * Draw whichever slot of {@code feed} is shown across this node's box: a picture handed in from off the GUI thread
+     * (docs/plans/frame-contract.md D). No texture is needed in hand: each device that draws the node uploads the slot
+     * shown when it changes, and a slot handed over later asks for its own frame. Everything {@link #image(SampledImage)}
+     * says about the box still holds. Null clears it, as a null image does. Closing the feed is its owner's, once no node
+     * should show it; a node still naming a closed feed draws nothing.
+     */
+    public Node image(Feed feed) {
+        prop(PropKey.IMAGE_REGION, null);
+        return prop(PropKey.IMAGE, feed);
+    }
+
+    /**
      * Scale this node's image with {@code filter} rather than the sampler's own bilinear: for a picture, where how
      * it is scaled is a choice — square pixels to look at them, a smooth bell to hide them. The filter needs the
      * texture's size in texels, which its handle does not give, so say it here: whoever sets the image knows it.

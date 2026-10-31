@@ -31,4 +31,11 @@ public interface Drawn {
      * no longer in the tree is ignored.
      */
     Drawn stretch(Node node, float factor, float originX);
+
+    /**
+     * Show {@code slot} of {@code feed} in this frame, instead of the newest it was handed: a video's frame due now,
+     * found by {@link Feed#due}. A slot not handed over is ignored, and the feed goes on showing what it showed. Every
+     * node naming the feed shows the same slot; a part that wants two frames at once wants two feeds.
+     */
+    Drawn show(Feed feed, int slot);
 }

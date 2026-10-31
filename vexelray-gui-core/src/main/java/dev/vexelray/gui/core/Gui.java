@@ -1810,6 +1810,14 @@ public final class Gui implements AutoCloseable {
             return this;
         }
 
+        @Override
+        public Drawn show(Feed feed, int slot) {
+            if (feed.choose(slot)) {
+                changed = true;
+            }
+            return this;
+        }
+
         /** Whether an offset changed since the last call: the frame then owes a publish and a draw. */
         boolean takeChanged() {
             boolean was = changed;

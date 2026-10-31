@@ -119,6 +119,8 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
     private final List<StreamTexture> streams = new ArrayList<>();
     /** Textures handed to {@link #release}, waiting for a frame that no longer names them. Main thread. */
     private final List<Retiring> retiring = new ArrayList<>();
+    private final List<AutoCloseable> closedFeeds = new ArrayList<>();
+    private static final SampledImage[] NO_IMAGES = new SampledImage[0];
     /** Loop iterations begun, so a released texture can be held for a whole one after it. Main thread. */
     private long iteration;
     private final List<StorageBuffer> buffers = new ArrayList<>();
@@ -469,7 +471,8 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
         // One placeholder for the device, not one per window: every window's canvas pipeline is built against the
         // same layout, and every span that draws no image binds this same 1x1 white. One canvas shader and one look
         // table too, so every window draws a look alike.
-        this.images = new DeviceImages(device, canvasShader);
+        // A feed handed a slot from any thread asks for a frame through the loop, which owns the windows.
+        this.images = new DeviceImages(device, canvasShader, () -> post(this::requestFrames));
 
         this.main = new GuiWindow(platform, instance, device, fonts, images, null,
                 probe, probeSurface, config.decorations(), presentBackend);
@@ -1822,6 +1825,13 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
         // iteration is presented this iteration, so it must be able to ask for the next one.
         wireAllWakes();
         iteration++;
+        // A closed feed's texture goes the way a released one does: nodes name the feed, never the texture, so no node
+        // holds it, and it waits only for the frames in flight that may sample it.
+        images.closedFeeds(closedFeeds);
+        for (AutoCloseable s : closedFeeds) {
+            retire(s, NO_IMAGES);
+        }
+        closedFeeds.clear();
         if (!retiring.isEmpty()) {
             retire(loop);
         }
@@ -2119,7 +2129,7 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                  VulkanRenderPass rp = new VulkanRenderPass(device, Vk.FORMAT_R8G8B8A8_UNORM,
                          Vk.IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
                  FontAtlases fonts = FontAtlases.upload(device, faces);
-                 DeviceImages images = new DeviceImages(device, canvasShader);
+                 DeviceImages images = new DeviceImages(device, canvasShader, null);
                  ShadeletTables tables = new ShadeletTables(device)) {
                 Canvas canvas = new Canvas(width, height);
                 canvas.looks(images.looks());

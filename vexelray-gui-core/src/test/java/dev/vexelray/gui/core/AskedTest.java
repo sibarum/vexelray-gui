@@ -15,6 +15,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * A part's asked half as the host runs it (docs/plans/frame-contract.md): asked once per frame for the tree clock's
@@ -163,6 +164,41 @@ class AskedTest {
 
             factor[0] = 1f;
             assertEquals(1f, find(frame(gui), strip.id()).drawnStretch, "one is none");
+        }
+    }
+
+    @Test
+    void aScaleIsKeptOnTheNodeAndDrawnWhenItChanges() {
+        Stepped clock = new Stepped();
+        try (Gui gui = new Gui(Atchung.create())) {
+            Seams.of(gui).clock(clock);
+            Node picture = gui.box().width(Length.dp(100)).height(Length.dp(50));
+            gui.root().children(picture);
+            RetainedNode rest = find(frame(gui), picture.id());
+            float restX = rest.x;
+            float restW = rest.w;
+            gui.takeDrawNeeded();
+            float[] factor = {1f};
+            Seams.of(gui).ask((frame, out) -> {
+                out.scale(picture, factor[0]);
+                return Frame.NEVER;
+            });
+
+            factor[0] = 3f;
+            RetainedNode n = find(frame(gui), picture.id());
+            assertEquals(3f, n.drawnScale);
+            assertEquals(restX, n.x, "laid out where it was");
+            assertEquals(restW, n.w, "its box does not grow");
+            assertTrue(gui.takeDrawNeeded(), "a changed scale is drawn");
+
+            frame(gui);
+            assertFalse(gui.takeDrawNeeded(), "the same scale again is nothing to draw");
+
+            factor[0] = 1f;
+            assertEquals(1f, find(frame(gui), picture.id()).drawnScale, "one is none");
+
+            factor[0] = 0f;
+            assertThrows(IllegalArgumentException.class, () -> frame(gui), "the factor is positive");
         }
     }
 

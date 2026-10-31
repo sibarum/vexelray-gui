@@ -1811,6 +1811,18 @@ public final class Gui implements AutoCloseable {
         }
 
         @Override
+        public Drawn scale(Node node, float factor) {
+            if (!(factor > 0f)) {
+                throw new IllegalArgumentException("a node is scaled by a positive factor: " + factor);
+            }
+            RetainedNode n = reconciler.node(node.id());
+            if (n != null && Displacement.scale(n, factor)) {
+                changed = true;
+            }
+            return this;
+        }
+
+        @Override
         public Drawn show(Feed feed, int slot) {
             if (feed.choose(slot)) {
                 changed = true;

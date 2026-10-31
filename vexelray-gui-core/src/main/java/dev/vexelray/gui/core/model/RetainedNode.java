@@ -81,6 +81,9 @@ public final class RetainedNode {
     // in the node's own pixels. The picture only, not the subtree; 1 is none. It stays until the part sets it again.
     public float drawnStretch = 1f;
     public float drawnStretchX;
+    // The scale an asked half set on this node and its subtree through Drawn, about the centre of its box, multiplied
+    // with its own (PropKey.SCALE). 1 is none. It stays until the part sets it again.
+    public float drawnScale = 1f;
 
     // Arrival and departure (EnterMotion, ExitMotion). `leaving` is the reconciler's: set when a remove was taken by
     // the exit motion, so the node stays where it is, drawn going, until its presence reaches zero. The other two

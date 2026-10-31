@@ -250,6 +250,18 @@ public final class Displacement {
         return true;
     }
 
+    /**
+     * Record the scale an asked half set on {@code node} through {@code Drawn}, for the renderer to draw it and its
+     * subtree through; and answer whether it changed. Beside {@link #offset}, for the same reason.
+     */
+    public static boolean scale(RetainedNode node, float factor) {
+        if (node.drawnScale == factor) {
+            return false;
+        }
+        node.drawnScale = factor;
+        return true;
+    }
+
     private static boolean displaceChildren(RetainedNode node, LayoutMotion motion, float ax, float ay) {
         boolean moving = false;
         for (RetainedNode child : node.children) {

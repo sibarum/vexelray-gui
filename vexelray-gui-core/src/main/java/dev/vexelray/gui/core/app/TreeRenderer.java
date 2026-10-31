@@ -442,9 +442,10 @@ public final class TreeRenderer {
                 transY += dy;
             }
             // A turn and a scale, both about the centre of the box where it is drawn: inside the displacement,
-            // around the node and its whole subtree. The two commute, about one centre.
+            // around the node and its whole subtree. The two commute, about one centre. An asked half's scale
+            // (Drawn.scale) multiplies the node's own.
             float turn = node.rotation();
-            float grow = node.scale();
+            float grow = node.scale() * node.drawnScale;
             boolean turned = turn != 0f || grow != 1f;
             if (turn != 0f) {
                 canvas.pushRotate((float) Math.toRadians(turn), node.x + node.w * 0.5f, node.y + node.h * 0.5f);

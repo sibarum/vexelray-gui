@@ -174,7 +174,10 @@ them as no offence.
    originX)` stretches the node's own picture along x through `Picture.stretchX`, positions and box widths only, so a
    picture says what stretches by what it is made of (a fill for a span of time, a line for a pixel-wide tick). A
    true non-uniform scale of a node and its subtree would need the canvas to scale a primitive's frame along one axis,
-   which it cannot yet.
+   which it cannot yet. *2026-10-31:* Pix's picture, looked at closely, needed the uniform **scale** B already named:
+   `Drawn.scale(node, factor)` draws a node and its subtree larger about its box's centre, as the told
+   `Node.scale` does and multiplied with it, so a zoom about any point is a scale and an offset, and nothing is laid
+   out again. A turn is the next one owed (Pix's R), and a mirror after it, which is a non-uniform scale.
 4. **The budget.** 50 µs per asked half is a guess; step 0 measures the codec's pick inside its loop today.
 5. **Order within emit.** Asked halves before `PaintMotion`'s own, or the framework's motion parts are just parts in
    tree order. Leaning tree order, so there is no special case.

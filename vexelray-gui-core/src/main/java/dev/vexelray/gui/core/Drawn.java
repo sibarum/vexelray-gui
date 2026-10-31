@@ -42,6 +42,16 @@ public interface Drawn {
     Drawn scale(Node node, float factor);
 
     /**
+     * Draw {@code node} and everything under it at {@code opacity}, multiplied with its own ({@link Node#opacity}): 1 is
+     * opaque, 0 draws nothing. Unlike {@link Node#opacity}, a node drawn at nothing here is not under the pointer
+     * either, subtree and all, because an asked half cannot say {@link Node#hitInert} and what is clicked is what is
+     * seen: a control faded out from under a resting pointer is not pressed by a click on what looks like the picture.
+     * The pointer still reaches its ancestors, which is how a part hears it come back. Clamped to [0, 1]. A node no
+     * longer in the tree is ignored.
+     */
+    Drawn opacity(Node node, float opacity);
+
+    /**
      * Show {@code slot} of {@code feed} in this frame, instead of the newest it was handed: a video's frame due now,
      * found by {@link Feed#due}. A slot not handed over is ignored, and the feed goes on showing what it showed. Every
      * node naming the feed shows the same slot; a part that wants two frames at once wants two feeds.

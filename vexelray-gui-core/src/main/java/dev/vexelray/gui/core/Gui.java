@@ -1851,6 +1851,15 @@ public final class Gui implements AutoCloseable {
         }
 
         @Override
+        public Drawn opacity(Node node, float opacity) {
+            RetainedNode n = reconciler.node(node.id());
+            if (n != null && Displacement.opacity(n, opacity)) {
+                changed = true;
+            }
+            return this;
+        }
+
+        @Override
         public Drawn show(Feed feed, int slot) {
             if (feed.choose(slot)) {
                 changed = true;

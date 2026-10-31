@@ -262,6 +262,20 @@ public final class Displacement {
         return true;
     }
 
+    /**
+     * Record the opacity an asked half set on {@code node} through {@code Drawn}, for the renderer to draw it and its
+     * subtree through and the hit test to pass over it at nothing; and answer whether it changed. Beside
+     * {@link #offset}, for the same reason.
+     */
+    public static boolean opacity(RetainedNode node, float opacity) {
+        float clamped = Math.max(0f, Math.min(1f, opacity));
+        if (node.drawnOpacity == clamped) {
+            return false;
+        }
+        node.drawnOpacity = clamped;
+        return true;
+    }
+
     private static boolean displaceChildren(RetainedNode node, LayoutMotion motion, float ax, float ay) {
         boolean moving = false;
         for (RetainedNode child : node.children) {

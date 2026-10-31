@@ -203,6 +203,43 @@ class AskedTest {
     }
 
     @Test
+    void anOpacityIsKeptClampedAndANodeAtNothingIsNotUnderThePointer() {
+        Stepped clock = new Stepped();
+        try (Gui gui = new Gui(Atchung.create())) {
+            Seams.of(gui).clock(clock);
+            Node bar = gui.box().width(Length.dp(100)).height(Length.dp(50));
+            Node button = gui.box().width(Length.dp(20)).height(Length.dp(20));
+            Node stage = gui.box().width(Length.dp(200)).height(Length.dp(100)).children(bar.children(button));
+            gui.root().children(stage);
+            frame(gui);
+            gui.takeDrawNeeded();
+            float[] opacity = {1f};
+            Seams.of(gui).ask((frame, out) -> {
+                out.opacity(bar, opacity[0]);
+                return Frame.NEVER;
+            });
+
+            opacity[0] = 0.5f;
+            RetainedNode root = frame(gui);
+            RetainedNode b = find(root, button.id());
+            assertEquals(0.5f, find(root, bar.id()).drawnOpacity);
+            assertTrue(gui.takeDrawNeeded(), "a changed opacity is drawn");
+            assertEquals(button.id(), dev.vexelray.gui.core.input.HitTest.at(root, b.x + 1, b.y + 1).id,
+                    "half faded is still there to press");
+
+            opacity[0] = -1f;
+            root = frame(gui);
+            assertEquals(0f, find(root, bar.id()).drawnOpacity, "clamped");
+            assertEquals(stage.id(), dev.vexelray.gui.core.input.HitTest.at(root, b.x + 1, b.y + 1).id,
+                    "at nothing, the pointer passes to what is behind it");
+            gui.takeDrawNeeded();
+
+            frame(gui);
+            assertFalse(gui.takeDrawNeeded(), "the same opacity again is nothing to draw");
+        }
+    }
+
+    @Test
     void theLoopParksUntilTheEarliestPartIsDue() {
         Stepped clock = new Stepped();
         try (Gui gui = new Gui(Atchung.create())) {

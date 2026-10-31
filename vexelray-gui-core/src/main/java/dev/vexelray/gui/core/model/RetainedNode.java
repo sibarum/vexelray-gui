@@ -84,6 +84,9 @@ public final class RetainedNode {
     // The scale an asked half set on this node and its subtree through Drawn, about the centre of its box, multiplied
     // with its own (PropKey.SCALE). 1 is none. It stays until the part sets it again.
     public float drawnScale = 1f;
+    // The opacity an asked half set on this node and its subtree through Drawn, multiplied with its own
+    // (PropKey.OPACITY). 1 is none; at 0 the subtree is drawn as nothing and is not hit. It stays until set again.
+    public float drawnOpacity = 1f;
 
     // Arrival and departure (EnterMotion, ExitMotion). `leaving` is the reconciler's: set when a remove was taken by
     // the exit motion, so the node stays where it is, drawn going, until its presence reaches zero. The other two

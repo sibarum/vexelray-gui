@@ -7,8 +7,8 @@ package dev.vexelray.gui.core;
  *
  * <p>It addresses nodes the part's told half made, by their handles, and sets only what may change from one frame to
  * the next. It cannot add, remove or restructure a node: that is the told half's, in the widget tick, where layout
- * follows. What it may set grows when a witness needs it (the plan's open question 3); the Inspector's live timeline
- * needs an offset, so an offset is what there is.
+ * follows. What it may set grows when a witness needs it (the plan's open question 3): the Inspector's live timeline
+ * needed an offset to follow the present, and a stretch to zoom without building its picture again on every frame.
  *
  * <p>A value set stays set until it is set again: a part asked on a frame where nothing it shows has changed may leave
  * its nodes as they are.
@@ -21,4 +21,14 @@ public interface Drawn {
      * is clicked is what is seen. Zero is where layout put it. A node no longer in the tree is ignored.
      */
     Drawn offset(Node node, float dx, float dy);
+
+    /**
+     * Draw {@code node}'s own picture ({@link Node#picture}) stretched along x by {@code factor} about {@code originX},
+     * in the node's own pixels ({@code 0} at its left edge): positions along x and a box's width stretch, and nothing
+     * else does ({@link dev.vexelray.gui.draw.Picture#stretchX} says which is which). The node's box, its children,
+     * its hit area and its clip do not stretch: the picture is still clipped to the box, so a picture that will be
+     * stretched past its node's edges needs a node wide enough to show it. One is none; the factor is positive. A node
+     * no longer in the tree is ignored.
+     */
+    Drawn stretch(Node node, float factor, float originX);
 }

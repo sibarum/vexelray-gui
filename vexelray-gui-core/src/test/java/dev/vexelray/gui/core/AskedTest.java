@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -133,6 +134,35 @@ class AskedTest {
 
             dx[0] = 0f;
             assertEquals(restX, find(frame(gui), child.id()).x, "zero is where layout put it");
+        }
+    }
+
+    @Test
+    void aStretchIsKeptOnTheNodeForItsPictureAndDrawnWhenItChanges() {
+        Stepped clock = new Stepped();
+        try (Gui gui = new Gui(Atchung.create())) {
+            Seams.of(gui).clock(clock);
+            Node strip = gui.box().width(Length.dp(100)).height(Length.dp(10));
+            gui.root().children(strip);
+            frame(gui);
+            gui.takeDrawNeeded();
+            float[] factor = {1f};
+            Seams.of(gui).ask((frame, out) -> {
+                out.stretch(strip, factor[0], 40f);
+                return Frame.NEVER;
+            });
+
+            factor[0] = 2.5f;
+            RetainedNode n = find(frame(gui), strip.id());
+            assertEquals(2.5f, n.drawnStretch);
+            assertEquals(40f, n.drawnStretchX);
+            assertTrue(gui.takeDrawNeeded(), "a changed stretch is drawn");
+
+            frame(gui);
+            assertFalse(gui.takeDrawNeeded(), "the same stretch again is nothing to draw");
+
+            factor[0] = 1f;
+            assertEquals(1f, find(frame(gui), strip.id()).drawnStretch, "one is none");
         }
     }
 

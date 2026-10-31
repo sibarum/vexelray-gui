@@ -163,7 +163,12 @@ them as no offence.
    it for the audio device's latency is the codec's to say.
 3. **What `Drawn` may set.** Picture choice, slot, offset, scale, alpha and paint cover every site above. Anything
    more (a `Picture` parameter, a shadelet's shared value) is added when a witness needs it, not ahead. The
-   Inspector's live timeline needs only an offset.
+   Inspector's live timeline needed an offset, then (2026-10-30, approved by the author) a **stretch**: its zoom
+   glides, and a uniform scale was not it (a lane must not grow taller as it zooms), so `Drawn.stretch(node, factor,
+   originX)` stretches the node's own picture along x through `Picture.stretchX`, positions and box widths only, so a
+   picture says what stretches by what it is made of (a fill for a span of time, a line for a pixel-wide tick). A
+   true non-uniform scale of a node and its subtree would need the canvas to scale a primitive's frame along one axis,
+   which it cannot yet.
 4. **The budget.** 50 µs per asked half is a guess; step 0 measures the codec's pick inside its loop today.
 5. **Order within emit.** Asked halves before `PaintMotion`'s own, or the framework's motion parts are just parts in
    tree order. Leaning tree order, so there is no special case.

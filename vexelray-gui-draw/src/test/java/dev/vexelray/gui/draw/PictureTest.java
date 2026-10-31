@@ -75,6 +75,27 @@ class PictureTest {
     }
 
     @Test
+    void aStretchMovesPositionsAndBoxWidthsAlongXAndNothingElse() {
+        // Twice as wide about x = 10: what a zoomed timeline draws through, so a span grows and a tick stays a tick.
+        Picture p = Picture.of(new Picture.Fill(20, 1, 4, 6, 2, 1, INK),
+                new Picture.Outline(0, 1, 4, 6, 2, 2, 1.5, INK, null),
+                new Picture.Line(12, 0, 12, 8, 1, INK, null),
+                new Picture.Line(10, 2, 15, 7, 3, INK, null),
+                new Picture.Text("t", 14, 9, 12, INK, null));
+        Recorder r = new Recorder();
+        p.emitTo(Picture.stretchX(r, 2, 10));
+        assertEquals(List.of("fill 30.0,1.0 8.0x6.0 r2.0/1.0",
+                        "outline -10.0,1.0 8.0x6.0 r2.0/2.0 w1.5",
+                        "line 14.0,0.0->14.0,8.0 w1.0",
+                        "line 10.0,2.0->20.0,7.0 w3.0",
+                        "glyphs \"t\" 18.0,9.0 @12.0"),
+                r.ops);
+        assertSame(r, Picture.stretchX(r, 1, 10), "no stretch: the sink itself");
+        assertThrows(IllegalArgumentException.class, () -> Picture.stretchX(r, 0, 0));
+        assertThrows(IllegalArgumentException.class, () -> Picture.stretchX(r, -1, 0));
+    }
+
+    @Test
     void aCircleIsARoundedBoxWithNothingStraightLeft() {
         // The alphabet has no circle, because the engine's rounded-box SDF already is one at r = half the side.
         assertEquals(List.of("fill 5.0,15.0 10.0x10.0 r5.0/5.0"),

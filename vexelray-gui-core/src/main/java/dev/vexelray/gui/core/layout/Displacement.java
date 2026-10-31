@@ -237,6 +237,19 @@ public final class Displacement {
         return true;
     }
 
+    /**
+     * Record the stretch an asked half set on {@code node}'s picture through {@code Drawn}, for the renderer to draw it
+     * through; and answer whether it changed. Beside {@link #offset}, for the same reason.
+     */
+    public static boolean stretch(RetainedNode node, float factor, float originX) {
+        if (node.drawnStretch == factor && node.drawnStretchX == originX) {
+            return false;
+        }
+        node.drawnStretch = factor;
+        node.drawnStretchX = originX;
+        return true;
+    }
+
     private static boolean displaceChildren(RetainedNode node, LayoutMotion motion, float ax, float ay) {
         boolean moving = false;
         for (RetainedNode child : node.children) {

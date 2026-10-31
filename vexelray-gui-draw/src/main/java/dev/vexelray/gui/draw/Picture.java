@@ -71,6 +71,55 @@ public record Picture(List<Mark> marks) {
         }
     }
 
+    /**
+     * {@code to}, with every mark sent to it stretched along x by {@code factor} about {@code originX}: what a part
+     * zooming a picture along one axis draws through, each frame, without building the picture again.
+     *
+     * <p><b>Positions along x stretch, and a box's width with them. Nothing else does</b>: not a stroke's thickness
+     * or an outline's width, not a radius, not a text's size, and nothing along y. So a picture can say how it wants
+     * to stretch by what it is made of: a fill for an extent that is in the picture's units (a span of time that
+     * should grow as it is zoomed into), a line for a mark that should stay so many pixels wide wherever it lands (a
+     * tick, or the least width a short span is drawn at). A line from one x to another is stretched like a box.
+     *
+     * <p>A {@code factor} of 1 returns {@code to} itself. It must be positive: a picture is not mirrored this way.
+     */
+    public static Sink stretchX(Sink to, double factor, double originX) {
+        if (!(factor > 0)) {
+            throw new IllegalArgumentException("a picture is stretched by a positive factor: " + factor);
+        }
+        return factor == 1 ? to : new StretchX(to, factor, originX);
+    }
+
+    /** {@link #stretchX}'s sink. */
+    private record StretchX(Sink to, double factor, double originX) implements Sink {
+
+        private double x(double x) {
+            return originX + (x - originX) * factor;
+        }
+
+        @Override
+        public void fill(double x, double y, double w, double h, double radiusTop, double radiusBottom, Color color,
+                         String tag) {
+            to.fill(x(x), y, w * factor, h, radiusTop, radiusBottom, color, tag);
+        }
+
+        @Override
+        public void outline(double x, double y, double w, double h, double radiusTop, double radiusBottom,
+                            double width, Color color, String tag) {
+            to.outline(x(x), y, w * factor, h, radiusTop, radiusBottom, width, color, tag);
+        }
+
+        @Override
+        public void line(double x0, double y0, double x1, double y1, double thickness, Color color, String tag) {
+            to.line(x(x0), y0, x(x1), y1, thickness, color, tag);
+        }
+
+        @Override
+        public void glyphs(String text, double x, double y, double sizePx, Color color, String tag) {
+            to.glyphs(text, x(x), y, sizePx, color, tag);
+        }
+    }
+
     /** This picture translated by {@code (dx, dy)} px — how a drawing places a sub-drawing. */
     public Picture shifted(double dx, double dy) {
         if (dx == 0 && dy == 0) {

@@ -77,6 +77,10 @@ public final class RetainedNode {
     // inherited by its subtree as one is. It stays until the part sets it again.
     public float drawnX;
     public float drawnY;
+    // The stretch an asked half set on this node's picture through Drawn: along x by drawnStretch about drawnStretchX,
+    // in the node's own pixels. The picture only, not the subtree; 1 is none. It stays until the part sets it again.
+    public float drawnStretch = 1f;
+    public float drawnStretchX;
 
     // Arrival and departure (EnterMotion, ExitMotion). `leaving` is the reconciler's: set when a remove was taken by
     // the exit motion, so the node stays where it is, drawn going, until its presence reaches zero. The other two

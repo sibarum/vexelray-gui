@@ -1797,6 +1797,18 @@ public final class Gui implements AutoCloseable {
             return this;
         }
 
+        @Override
+        public Drawn stretch(Node node, float factor, float originX) {
+            if (!(factor > 0f)) {
+                throw new IllegalArgumentException("a picture is stretched by a positive factor: " + factor);
+            }
+            RetainedNode n = reconciler.node(node.id());
+            if (n != null && Displacement.stretch(n, factor, originX)) {
+                changed = true;
+            }
+            return this;
+        }
+
         /** Whether an offset changed since the last call: the frame then owes a publish and a draw. */
         boolean takeChanged() {
             boolean was = changed;

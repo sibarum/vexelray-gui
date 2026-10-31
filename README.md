@@ -166,6 +166,7 @@ is declared, each item naming the message it sends:
 gui.mailbox(Button.PRESSED, save.address(), p -> saves.send(new Save()));   // a widget's press
 gui.hear(row, NodeEvent.CLICK, click -> picks.send(new Pick(id)));          // a node's own click
 gui.hear(card, NodeEvent.STATE, s -> card.background(gui.theme().color(Role.PANEL, s)));
+gui.hear(chart, NodeEvent.POINTER, p -> under.send(new Under(p.over(), p.localX())));   // where, over a picture
 gui.shortcut(Shortcut.of(Key.S, Modifier.CONTROL), saves, new Save());      // a global chord
 gui.claim(node, Shortcut.of(Key.LEFT), ClaimScope.FOCUSED, moves, new Move(-1));   // focused-only
 ```

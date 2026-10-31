@@ -46,6 +46,8 @@ import java.util.concurrent.ConcurrentHashMap;
  *       {@link #onState} is told when its {@link InteractionState} changes (NORMAL/HOVER/PRESSED), so it can
  *       restyle. State is computed with ancestor-or-self coverage, so hovering a button's label counts as hovering
  *       the button.</li>
+ *   <li><b>Pointer position</b> — each node registered via {@link #onPointer} is told where the pointer is while it
+ *       is over the node, by the same coverage, and once when it leaves.</li>
  * </ul>
  * Handlers run here, on the GUI thread, during {@link #dispatch}: they are the GUI's own components answering their
  * input, and must not block (vexelray-framework's {@code docs/threading.md}, T1.1, T3.8).
@@ -153,6 +155,10 @@ public final class InputDispatcher {
     // replaces on re-registration; this one accumulates, because state is a fact about the node, not a command
     // channel with a single owner.
     private final Map<Long, java.util.List<Consumer<InteractionState>>> stateHandlers = new ConcurrentHashMap<>();
+    /** Where the pointer is over a node: observers accumulate, as for state, since it is the same fact made finer. */
+    private final Map<Long, java.util.List<Consumer<PointerEvent>>> pointerHandlers = new ConcurrentHashMap<>();
+    /** The nodes last told the pointer is over them, and what they were told: a leave is the same box. GUI thread. */
+    private final Map<Long, PointerEvent> pointerOver = new java.util.HashMap<>();
     private final Map<Long, Consumer<DragEvent>> dragHandlers = new ConcurrentHashMap<>();
     /** Nodes that take the wheel themselves rather than letting it scroll what they are in. See onWheel. */
     private final Map<Long, Consumer<WheelEvent>> wheelHandlers = new ConcurrentHashMap<>();
@@ -458,6 +464,16 @@ public final class InputDispatcher {
         stateHandlers.computeIfAbsent(nodeId, id -> new java.util.concurrent.CopyOnWriteArrayList<>())
                 .add(handler);
         stateGeneration.incrementAndGet();
+    }
+
+    /**
+     * Register an observer of where the pointer is over {@code nodeId}: told on every move while the node or a
+     * descendant is under it (the coverage {@link #onState} judges hover by), and once more, not over, when it
+     * leaves. Observers accumulate and are released with the node. See {@link PointerEvent}.
+     */
+    public void onPointer(long nodeId, Consumer<PointerEvent> handler) {
+        pointerHandlers.computeIfAbsent(nodeId, id -> new java.util.concurrent.CopyOnWriteArrayList<>())
+                .add(handler);
     }
 
     /**
@@ -1090,6 +1106,8 @@ public final class InputDispatcher {
         menuSources.remove(nodeId);
         declaredMenus.remove(nodeId);
         stateHandlers.remove(nodeId);
+        pointerHandlers.remove(nodeId);
+        pointerOver.remove(nodeId);
         dragHandlers.remove(nodeId);
         wheelHandlers.remove(nodeId);
         dropTargets.remove(nodeId);
@@ -1248,7 +1266,7 @@ public final class InputDispatcher {
                 pointerX = m.x();
                 pointerY = m.y();
                 hoverHit = RetainedNode.enabledPart(HitTest.at(currentRoot, m.x(), m.y()));
-                refreshStates();
+                refreshStates(true);
             }
             case InputEvent.ButtonPressed b when b.button() == MouseButton.LEFT -> {
                 pointerX = b.x();
@@ -1825,6 +1843,11 @@ public final class InputDispatcher {
      * observer loop is skipped outright: the ordinary case of a pointer moving within one leaf.
      */
     private void refreshStates() {
+        refreshStates(false);
+    }
+
+    /** As {@link #refreshStates()}, and with {@code moved} the pointer moved, so every node it is over is told where. */
+    private void refreshStates(boolean moved) {
         long generation = stateGeneration.get();   // read before the loop: a registration during it forces the next
         boolean hoverMoved = hoverAncestry.walk(hoverHit);
         boolean pressMoved = pressAncestry.walk(pressHit);
@@ -1833,7 +1856,44 @@ public final class InputDispatcher {
             refreshedLeftDown = leftDown;
             reportStates();
         }
+        reportPointer(moved);
         updateCursor();
+    }
+
+    /**
+     * Tell each observed node on the hover chain where the pointer is (on a move, or when it has just come over the
+     * node), and each node told before and no longer on the chain that the pointer has left. Costs the chain's depth
+     * plus the nodes it is over, and nothing when no node observes the pointer.
+     */
+    private void reportPointer(boolean moved) {
+        if (pointerHandlers.isEmpty() && pointerOver.isEmpty()) {
+            return;
+        }
+        var it = pointerOver.values().iterator();
+        while (it.hasNext()) {
+            PointerEvent last = it.next();
+            if (!hoverAncestry.contains(last.nodeId())) {
+                it.remove();
+                tellPointer(last.left(pointerX, pointerY));
+            }
+        }
+        for (RetainedNode n = hoverHit; n != null; n = n.parent) {
+            if (pointerHandlers.containsKey(n.id) && (moved || !pointerOver.containsKey(n.id))) {
+                PointerEvent now = new PointerEvent(n.id, pointerX, pointerY, n.x, n.y, n.w, n.h, true);
+                pointerOver.put(n.id, now);
+                tellPointer(now);
+            }
+        }
+    }
+
+    private void tellPointer(PointerEvent e) {
+        java.util.List<Consumer<PointerEvent>> observers = pointerHandlers.get(e.nodeId());
+        if (observers == null) {
+            return;
+        }
+        for (Consumer<PointerEvent> observer : observers) {
+            handled(() -> observer.accept(e));
+        }
     }
 
     private void reportStates() {

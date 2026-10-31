@@ -5,6 +5,7 @@ import dev.vexelray.gui.core.input.DragEvent;
 import dev.vexelray.gui.core.input.InputDispatcher;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.input.KeyEvent;
+import dev.vexelray.gui.core.input.PointerEvent;
 import dev.vexelray.gui.core.input.WheelEvent;
 import dev.vexelray.gui.core.layout.NodeLayout;
 
@@ -12,10 +13,11 @@ import java.util.function.Consumer;
 
 /**
  * Something that happens to one node, which a view hears as a message ({@link Gui#hear}): a click, the pointer's
- * hover and press, a drag, the wheel, a key, typed text, a new size.
+ * hover and press, where the pointer is over it, a drag, the wheel, a key, typed text, a new size.
  *
  * <p><b>Two kinds, as every topic has</b> (vexelray-framework's {@code docs/threading.md}, T1.6). Most are
- * <i>edges</i>, each delivered in order: two clicks in a frame are two clicks. {@link #STATE} and {@link #RESIZE} are
+ * <i>edges</i>, each delivered in order: two clicks in a frame are two clicks. {@link #STATE}, {@link #POINTER} and
+ * {@link #RESIZE} are
  * <i>state</i>, kept per node with the last write winning: a pointer that crossed a row and left within one frame
  * reaches the view as where it ended, not as two restyles that were never drawn.
  *
@@ -78,6 +80,23 @@ public abstract class NodeEvent<E> {
         @Override
         void listen(InputDispatcher input, Gui gui, long id, Consumer<InteractionState> publish) {
             input.onState(id, publish);
+        }
+    };
+
+    /**
+     * Where the pointer is over the node, and that it left: state, so only the newest in a frame. What {@link #STATE}
+     * says as {@code HOVER}, with the position, for a node whose owner finds what is under the pointer itself (a
+     * picture's marks, which are not nodes). Still hover: a colour change, never something that appears or moves.
+     */
+    public static final NodeEvent<PointerEvent> POINTER = new NodeEvent<>("pointer", true) {
+        @Override
+        boolean taken(InputDispatcher input, Gui gui, long id) {
+            return false;   // observers accumulate, as for STATE
+        }
+
+        @Override
+        void listen(InputDispatcher input, Gui gui, long id, Consumer<PointerEvent> publish) {
+            input.onPointer(id, publish);
         }
     };
 

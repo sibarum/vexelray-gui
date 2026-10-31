@@ -14,6 +14,7 @@ import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.input.KeyEvent;
 import dev.vexelray.gui.core.input.MenuPresenter;
 import dev.vexelray.gui.core.input.MenuSink;
+import dev.vexelray.gui.core.input.PointerEvent;
 import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.input.Trigger;
 import dev.vexelray.gui.core.layout.Length;
@@ -171,6 +172,13 @@ public abstract class Seams {
      * and press. The handler is invoked in the dispatch on each state change, so it must be short. Hovering a descendant (a button's label) counts as hovering {@code node}.
      */
     public abstract Seams onState(Node node, java.util.function.Consumer<InteractionState> handler);
+
+    /**
+     * Follow where the pointer is over {@code node}: told on every move while it or a descendant is under the
+     * pointer, and once, not over, when it leaves. Observers accumulate, as {@link #onState}'s do, and run in the
+     * dispatch, so they must be short. See {@link PointerEvent}.
+     */
+    public abstract Seams onPointer(Node node, java.util.function.Consumer<PointerEvent> handler);
 
     /**
      * Drag {@code node}: a left press on it (or a descendant) captures the pointer and delivers START/MOVE/END

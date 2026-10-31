@@ -203,6 +203,7 @@ from `onResize`, §4.
 - **Typeset onto a picture.** `Placed.Sink` is `glyphs` + `bar`, and its node projection is axis-aligned — so a
   commutative-diagram arrow is unrepresentable there and expressible here. A picture is the target that unblocks
   it, and the two sinks are close enough that it is a projection rather than a redesign.
-- **Hit-testing a mark.** Nothing here is hit-tested, by design. A picture that wants a hover is a picture with a
-  node over it today; whether a mark should be addressable at all is a real question, and the `tag` is where the
-  answer would attach.
+- **Hit-testing a mark.** Nothing here is hit-tested, by design. A picture that wants a hover hears where the
+  pointer is over its node (`NodeEvent.POINTER`, or `Seams.onPointer` in a widget library) and finds the mark
+  itself, as it does for a click; whether a mark should be addressable at all is a real question, and the `tag` is
+  where the answer would attach.

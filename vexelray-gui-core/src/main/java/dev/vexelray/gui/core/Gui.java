@@ -1496,8 +1496,9 @@ public final class Gui implements AutoCloseable {
      * }
      *
      * <p><b>A message, not a call.</b> The event is queued with every other message for the widgets, under its kind:
-     * every click arrives, in order; for {@link NodeEvent#STATE} and {@link NodeEvent#RESIZE} only the last per node
-     * in a tick, so hovering across a row and off it again within a frame is heard as where the pointer ended.
+     * every click arrives, in order; for {@link NodeEvent#STATE}, {@link NodeEvent#POINTER} and {@link NodeEvent#RESIZE}
+     * only the last per node in a tick, so hovering across a row and off it again within a frame is heard as where the
+     * pointer ended.
      * Hearing a node is what makes it a target, as registering a handler did: a click bubbles to the nearest node that
      * hears clicks, and hearing {@link NodeEvent#KEY} makes a node focusable.
      *
@@ -2220,6 +2221,12 @@ public final class Gui implements AutoCloseable {
         @Override
         public dev.vexelray.gui.core.spi.Seams onState(Node node, java.util.function.Consumer<InteractionState> handler) {
             input.onState(node.id(), handler);
+            return this;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams onPointer(Node node, java.util.function.Consumer<dev.vexelray.gui.core.input.PointerEvent> handler) {
+            input.onPointer(node.id(), handler);
             return this;
         }
 

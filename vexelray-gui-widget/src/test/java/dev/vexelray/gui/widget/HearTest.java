@@ -6,6 +6,7 @@ import dev.vexelray.gui.core.input.ClickEvent;
 import dev.vexelray.gui.core.input.InputTopics;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.input.KeyEvent;
+import dev.vexelray.gui.core.input.PointerEvent;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.NodeLayout;
 import org.junit.jupiter.api.Test;
@@ -16,6 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -90,6 +92,33 @@ class HearTest {
             h.frame();
             assertEquals(List.of(InteractionState.NORMAL), heard,
                     "the dispatcher reported three crossings; the row was told where the pointer ended");
+        }
+    }
+
+    @Test
+    void whereThePointerIsOverANodeIsStateSoTheNewestInAFrameIsHeardAndThenItsLeave() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Node page = page(h);
+            Node chart = h.gui.box().width(Length.dp(100)).height(Length.dp(100));
+            page.children(chart);
+            List<PointerEvent> heard = new ArrayList<>();
+            h.gui.hear(chart, NodeEvent.POINTER, heard::add);
+            h.frame();
+
+            // Three moves over the chart in one frame: the view draws once, so it is told where the pointer ended.
+            h.bus.publish(h.gui.input(), new InputEvent.PointerMoved(10, 10, 0, 0, 0));
+            h.bus.publish(h.gui.input(), new InputEvent.PointerMoved(20, 30, 0, 0, 0));
+            h.bus.publish(h.gui.input(), new InputEvent.PointerMoved(40, 50, 0, 0, 0));
+            h.frame();
+            assertEquals(1, heard.size(), heard.toString());
+            assertTrue(heard.get(0).over());
+            assertEquals(40f, heard.get(0).x());
+            assertEquals(50f, heard.get(0).y());
+            heard.clear();
+
+            h.hover(300f, 300f);
+            assertEquals(1, heard.size(), heard.toString());
+            assertFalse(heard.get(0).over(), "off the chart: its leave");
         }
     }
 

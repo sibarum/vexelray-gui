@@ -101,8 +101,9 @@ class InspectorLinkTest {
         Seen seen = new Seen();
         StreamOpened opened = client.open(new StreamOpen(List.of("gpu"), 1, 0), seen::rows, seen.snaps::add);
         assertEquals(new StreamOpened(List.of("gpu"), 1, 1, 1, 3, Optional.empty(),
-                Optional.of(sibarum.probe.Probe.originNanos()), sibarum.probe.Cause.sources()), opened,
-                "the rows' origin on this machine's clock, and every cause source so far");
+                Optional.of(sibarum.probe.Probe.originNanos()), sibarum.probe.Cause.sources(),
+                InspectorLink.recorded()), opened,
+                "the rows' origin on this machine's clock, every cause source so far, and the lanes recorded");
         await(() -> seen.events.size() >= 2, "the backfill");
         write(ring, 6, Lane.GPU);      // 4 and 5 never arrived
         await(() -> seen.events.size() >= 4, "the live row and its gap");

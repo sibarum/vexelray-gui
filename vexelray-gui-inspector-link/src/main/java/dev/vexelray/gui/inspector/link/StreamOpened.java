@@ -19,10 +19,14 @@ import java.util.Optional;
  * @param sources     every cause source the application has registered, as its {@code cause.source} row says it
  *                    ({@code t07 gui.frame}), so a row's cause can be named though those rows were written before the
  *                    stream began; null from an application older than the field, empty when refused
+ * @param recorded    the lanes the application's probe records, by key ({@code bus}, {@code gpu}, ...), so a reader
+ *                    can tell a lane the run does not record from one where nothing happened; null from an
+ *                    application older than the field, empty when refused
  */
-@IntrabufMessage(name = "inspector.StreamOpened", id = 931, minor = 2, compat = Compat.BACKWARD)
+@IntrabufMessage(name = "inspector.StreamOpened", id = 931, minor = 3, compat = Compat.BACKWARD)
 public record StreamOpened(@Field(nonNull = true) List<String> lanes, long fromSeq, long startSeq, long oldestSeq,
                            long headSeq, @Field(nonNull = true) Optional<String> err,
                            @Field(since = 1, nonNull = true) Optional<Long> originNanos,
-                           @Field(since = 2) List<String> sources) {
+                           @Field(since = 2) List<String> sources,
+                           @Field(since = 3) List<String> recorded) {
 }

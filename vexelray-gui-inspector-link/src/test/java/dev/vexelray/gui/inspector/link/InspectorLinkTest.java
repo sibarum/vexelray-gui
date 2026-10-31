@@ -101,7 +101,8 @@ class InspectorLinkTest {
         Seen seen = new Seen();
         StreamOpened opened = client.open(new StreamOpen(List.of("gpu"), 1, 0), seen::rows, seen.snaps::add);
         assertEquals(new StreamOpened(List.of("gpu"), 1, 1, 1, 3, Optional.empty(),
-                Optional.of(sibarum.probe.Probe.originNanos())), opened, "the rows' origin on this machine's clock");
+                Optional.of(sibarum.probe.Probe.originNanos()), sibarum.probe.Cause.sources()), opened,
+                "the rows' origin on this machine's clock, and every cause source so far");
         await(() -> seen.events.size() >= 2, "the backfill");
         write(ring, 6, Lane.GPU);      // 4 and 5 never arrived
         await(() -> seen.events.size() >= 4, "the live row and its gap");
@@ -112,14 +113,17 @@ class InspectorLinkTest {
     @Test
     void aRowArrivesWithEveryFieldTheRecorderHeld() throws Exception {
         Recorder ring = new Recorder(64, () -> 41);
-        ring.row(9, 90, 63, "main", Lane.GPU, "dxgi wait", "16.61ms\nsecond line");
+        long cause = sibarum.probe.Cause.parse("3f2a1.t07.4f2");
+        ring.row(9, 90, 63, "main", Lane.GPU, "dxgi wait", "16.61ms\nsecond line", cause);
+        ring.row(10, 91, 64, "main", Lane.GPU, "wait fence", "1ms");
         InspectorLink link = keep(InspectorLink.start(socket(), ring, null, READS));
         LinkClient client = keep(LinkClient.connect(link.endpoint()));
         List<Row> rows = new CopyOnWriteArrayList<>();
         client.open(new StreamOpen(List.of(), 0, 0), b -> rows.addAll(b.rows()), s -> { });
-        await(() -> !rows.isEmpty(), "the row");
-        assertEquals(new Row(9, 90, 63, 41, "main", "gpu", "dxgi wait", "16.61ms\nsecond line"), rows.getFirst(),
-                "detail travels raw, newline and all, where the CSV has to flatten it");
+        await(() -> rows.size() >= 2, "the rows");
+        assertEquals(new Row(9, 90, 63, 41, "main", "gpu", "dxgi wait", "16.61ms\nsecond line", "3f2a1.t07.4f2"),
+                rows.getFirst(), "detail travels raw, newline and all, where the CSV has to flatten it; and its cause");
+        assertEquals("", rows.get(1).cause(), "a row nobody wrapped has no cause");
     }
 
     @Test

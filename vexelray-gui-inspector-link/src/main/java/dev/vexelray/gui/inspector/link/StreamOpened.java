@@ -16,9 +16,13 @@ import java.util.Optional;
  * @param originNanos where the rows' {@code tMonoNs} count from, on the application's {@code System.nanoTime()}
  *                    ({@code Probe.originNanos}): a row's time plus this is its moment on the machine's monotonic
  *                    clock. Empty from an application older than the field, and when the stream was refused
+ * @param sources     every cause source the application has registered, as its {@code cause.source} row says it
+ *                    ({@code t07 gui.frame}), so a row's cause can be named though those rows were written before the
+ *                    stream began; null from an application older than the field, empty when refused
  */
-@IntrabufMessage(name = "inspector.StreamOpened", id = 931, minor = 1, compat = Compat.BACKWARD)
+@IntrabufMessage(name = "inspector.StreamOpened", id = 931, minor = 2, compat = Compat.BACKWARD)
 public record StreamOpened(@Field(nonNull = true) List<String> lanes, long fromSeq, long startSeq, long oldestSeq,
                            long headSeq, @Field(nonNull = true) Optional<String> err,
-                           @Field(since = 1, nonNull = true) Optional<Long> originNanos) {
+                           @Field(since = 1, nonNull = true) Optional<Long> originNanos,
+                           @Field(since = 2) List<String> sources) {
 }

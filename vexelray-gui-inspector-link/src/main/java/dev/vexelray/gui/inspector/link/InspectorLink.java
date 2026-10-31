@@ -19,6 +19,7 @@ import sibarum.elektro.queue.transport.PeerListener;
 import sibarum.elektro.queue.transport.Transport;
 import sibarum.elektro.queue.transport.tcp.TcpTransport;
 import sibarum.elektro.queue.transport.uds.UdsTransport;
+import sibarum.probe.Cause;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -248,12 +249,12 @@ public final class InspectorLink implements AutoCloseable {
         StreamOpened o = follower.opened();
         senders.put(peer, new Sender(peer, follower, Math.max(0, open.snapEveryMs())));
         return new dev.vexelray.gui.inspector.link.StreamOpened(o.lanes(), o.fromSeq(), o.startSeq(), o.oldestSeq(),
-                o.headSeq(), Optional.empty(), Optional.of(sibarum.probe.Probe.originNanos()));
+                o.headSeq(), Optional.empty(), Optional.of(sibarum.probe.Probe.originNanos()), Cause.sources());
     }
 
     private static dev.vexelray.gui.inspector.link.StreamOpened refused(StreamOpen open, String why) {
         return new dev.vexelray.gui.inspector.link.StreamOpened(open.lanes(), open.fromSeq(), -1, -1, -1,
-                Optional.of(why), Optional.empty());
+                Optional.of(why), Optional.empty(), List.of());
     }
 
     private void stop(PeerId peer, String why) {
@@ -370,8 +371,9 @@ public final class InspectorLink implements AutoCloseable {
 
         @Override
         public void row(Rows rows, int i) {
+            long cause = rows.cause(i);
             batch.add(new Row(rows.seq(i), rows.monoNanos(i), rows.wallNanos(i), rows.frame(i), rows.thread(i),
-                    rows.lane(i), rows.kind(i), rows.detail(i)));
+                    rows.lane(i), rows.kind(i), rows.detail(i), cause == Cause.NONE ? "" : Cause.format(cause)));
             if (batch.size() >= MAX_BATCH_ROWS) {
                 flush();
             }

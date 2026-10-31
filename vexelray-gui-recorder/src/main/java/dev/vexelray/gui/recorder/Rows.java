@@ -18,6 +18,7 @@ public final class Rows {
     final long[] mono;
     final long[] wall;
     final long[] frame;
+    final long[] cause;
     final String[] thread;
     final Lane[] lane;
     final String[] kind;
@@ -41,6 +42,7 @@ public final class Rows {
         mono = new long[capacity];
         wall = new long[capacity];
         frame = new long[capacity];
+        cause = new long[capacity];
         thread = new String[capacity];
         lane = new Lane[capacity];
         kind = new String[capacity];
@@ -105,6 +107,14 @@ public final class Rows {
     /** The loop's frame in progress when the row was written. */
     public long frame(int i) {
         return frame[start + i];
+    }
+
+    /**
+     * What set the row's work off, as {@code sibarum.probe.Cause} packs it ({@code Cause.format} writes it as the
+     * file's {@code cause} column); {@code Cause.NONE} for work nobody wrapped.
+     */
+    public long cause(int i) {
+        return cause[start + i];
     }
 
     public String thread(int i) {

@@ -446,6 +446,15 @@ public final class Node {
     }
 
     /**
+     * Cut this label, when it is kept to one line and does not fit, between characters at {@code where}, an ellipsis
+     * standing for what was taken out, rather than at its box's edge through a glyph. Only what is drawn is cut: the
+     * text read back, and the accessible name, stay whole. No effect on a label that wraps, or on an editable field.
+     */
+    public Node ellipsis(dev.vexelray.gui.core.text.Ellipsis where) {
+        return prop(PropKey.ELLIPSIS, where);
+    }
+
+    /**
      * Show a gutter of hard-line numbers down the left edge. Numbers count {@code '\n'}s, not wrapped rows, so a
      * line that wraps onto three rows is numbered once. The gutter narrows the text area, and therefore the wrap.
      */

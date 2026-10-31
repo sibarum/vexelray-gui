@@ -223,6 +223,11 @@ public enum PropKey {
     WHITESPACE(false),
     /** A faint mark after each line's last character where a newline ends it (Boolean). Drawn past the text. */
     LINE_ENDS(false),
+    /**
+     * Where a one-line label that does not fit is cut ({@code Ellipsis}; absent is at the box's edge, through a
+     * glyph). Reflows: the cut is made by the layout, at the width it settles on.
+     */
+    ELLIPSIS(true),
     // Layout (border-box: border + padding inset the content, so border width is layout-affecting)
     DIRECTION(true),
     JUSTIFY(true),

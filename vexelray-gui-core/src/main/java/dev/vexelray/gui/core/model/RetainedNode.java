@@ -171,6 +171,10 @@ public final class RetainedNode {
     // line breaks depend only on text, width and text size, none of which can change without a relayout.
     public java.util.List<dev.vexelray.text.TextLayout.LineSpan> lineSpans;
 
+    // The text cut to the width the layout settled on, an ellipsis in it, when the node asks for one and its text
+    // does not fit; null when it is drawn whole. Set by the same pass as lineSpans, which then break this string.
+    public String cutText;
+
     // Width of the line-number gutter, resolved by the layout pass (0 when there is none). It narrows the text
     // area, so it feeds the wrap width as well as the draw position — one value, computed once, read by all three.
     public float gutterPx;
@@ -388,6 +392,19 @@ public final class RetainedNode {
 
     public String textString() {
         return (String) props.get(PropKey.TEXT);
+    }
+
+    /** Where this label is cut when it does not fit ({@code Node.ellipsis}), or null for at its edge. */
+    public dev.vexelray.gui.core.text.Ellipsis ellipsis() {
+        return (dev.vexelray.gui.core.text.Ellipsis) props.get(PropKey.ELLIPSIS);
+    }
+
+    /**
+     * The text as drawn: {@link #cutText} where the layout cut it to fit, else the text. What the compute phase bakes
+     * geometry for and the renderer draws; everything that reads the text as data reads {@link #textString}.
+     */
+    public String drawnText() {
+        return cutText != null ? cutText : textString();
     }
 
     public Length textSize() {

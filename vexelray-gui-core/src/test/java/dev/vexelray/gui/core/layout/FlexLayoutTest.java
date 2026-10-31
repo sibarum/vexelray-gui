@@ -477,6 +477,59 @@ class FlexLayoutTest {
         assertTrue(on.h > off.h + EPS, "the wrapped label is the taller");
     }
 
+    /**
+     * A one-line label with an ellipsis is cut between characters to the width it was given and drawn whole when it
+     * fits; its text, which is what is read back, is never cut.
+     */
+    @Test
+    void anEllipsisCutsWhatIsDrawnToTheRoomAndLeavesTheTextWhole() {
+        String name = "IMG_2024_0412_harbour_at_dusk.jpg";   // 33 characters, 8 px each at 16 px: 264 px
+        RetainedNode col = box(0);
+        col.set(PropKey.DIRECTION, Direction.COLUMN);
+        col.set(PropKey.ALIGN_ITEMS, AlignItems.START);
+        RetainedNode narrow = box(1);
+        narrow.set(PropKey.WIDTH, Length.rem(10));         // 160 px
+        RetainedNode wide = box(2);
+        wide.set(PropKey.WIDTH, Length.rem(20));           // 320 px
+        for (RetainedNode label : new RetainedNode[]{narrow, wide}) {
+            label.set(PropKey.WORD_WRAP, false);
+            label.set(PropKey.ELLIPSIS, dev.vexelray.gui.core.text.Ellipsis.MIDDLE);
+            label.set(PropKey.TEXT, name);
+            add(col, label);
+        }
+
+        FlexLayout.layout(col, 1000f, 1000f, ctx(), GLYPH_TM);
+
+        assertEquals("IMG_2024_…t_dusk.jpg", narrow.drawnText(), "cut in the middle to 160 px, the mark included");
+        assertTrue(narrow.contentW <= 160f + EPS, "and drawn no wider than the room");
+        assertEquals(name, narrow.textString(), "the text itself is whole");
+        assertEquals(null, wide.cutText, "a label that fits is not cut");
+        assertEquals(name, wide.drawnText());
+    }
+
+    // As WRAPPING_TM, with each character's advance, as a measurer over a glyph atlas has.
+    private static final TextMeasurer GLYPH_TM = new TextMeasurer() {
+        @Override
+        public float intrinsic(RetainedNode n, Axis axis, float sizePx) {
+            return WRAPPING_TM.intrinsic(n, axis, sizePx);
+        }
+
+        @Override
+        public java.util.List<dev.vexelray.text.TextLayout.LineSpan> lineSpans(String text, float wrapWidth,
+                                                                               float sizePx) {
+            return WRAPPING_TM.lineSpans(text, wrapWidth, sizePx);
+        }
+
+        @Override
+        public float[] caretAdvances(String text, float sizePx) {
+            float[] adv = new float[text.length() + 1];
+            for (int i = 0; i <= text.length(); i++) {
+                adv[i] = i * sizePx * 0.5f;
+            }
+            return adv;
+        }
+    };
+
     // As TM, and breaking lines at those widths, so wrapped text has a real height-for-width.
     private static final TextMeasurer WRAPPING_TM = new TextMeasurer() {
         @Override

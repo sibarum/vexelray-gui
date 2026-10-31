@@ -954,10 +954,11 @@ public final class TreeRenderer {
             box(canvas, n, fade(border), bw, NO_FILL, null, bevel, null, 0f);
         }
 
-        String s = n.textString();
+        String s = n.drawnText();
         float pad = n.textPadXPx;   // resolved by the layout — the renderer resolves no units of its own
         boolean hasText = s != null && !s.isEmpty();
-        java.util.List<Span> spans = hasText ? n.spans() : java.util.List.of();
+        // A cut label's spans index the whole text, not the string drawn, so it is drawn plain.
+        java.util.List<Span> spans = hasText && n.cutText == null ? n.spans() : java.util.List.of();
 
         drawText(n, s, hasText, spans, pad, canvas, text);
     }

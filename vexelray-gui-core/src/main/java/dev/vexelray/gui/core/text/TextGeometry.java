@@ -32,7 +32,7 @@ public final class TextGeometry {
      */
     public static void resolve(RetainedNode n, TextMeasurer tm) {
         n.textMetrics = null;
-        String s = n.textString();
+        String s = n.drawnText();   // cut where the layout cut it (Ellipsis)
         if (s == null || s.isEmpty()) {
             n.scrollX = 0f;   // a field emptied after scrolling must snap back to its origin
             n.scrollY = 0f;

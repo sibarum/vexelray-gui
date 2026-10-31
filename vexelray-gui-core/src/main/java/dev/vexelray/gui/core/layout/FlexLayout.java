@@ -455,6 +455,14 @@ public final class FlexLayout {
         // the text, which can genuinely push unwrapped text into horizontal overflow — and it cannot recur,
         // because the h-bar takes nothing from the width.
         boolean overX = n.scrollXAllowed() && lines[0] > viewW + EPS;
+        // A one-line label that asks to be cut is drawn shorter rather than past its edge (Ellipsis): cut here, at the
+        // width just settled, and its line broken again over the string that is drawn.
+        n.cutText = null;
+        if (n.ellipsis() != null && !n.editable() && !n.wrapsText() && n.hardLineCount() == 1
+                && lines[0] > viewW + EPS) {
+            lines[0] = cut(n, viewW, px, tm, lines[0]);
+            overX = n.scrollXAllowed() && lines[0] > viewW + EPS;
+        }
 
         n.overflowX = overX;
         n.overflowY = overY;
@@ -473,6 +481,25 @@ public final class FlexLayout {
         // case above draws. Its glyphs are its content and a float takes nothing from them, so a field can carry
         // its own chrome anchored to its own box (a find bar) without a wrapper the application has to know about.
         placeFloating(n, ctx, tm);
+    }
+
+    /**
+     * Cut {@code n}'s text to {@code room} px where its {@link RetainedNode#ellipsis} says, setting what is drawn and
+     * its line; the drawn width. A measurer with no glyph metrics cuts nothing, and {@code widest} stands.
+     */
+    private static float cut(RetainedNode n, float room, float px, TextMeasurer tm, float widest) {
+        String s = n.textString();
+        Styling style = Styling.of(n);
+        float[] adv = tm.caretAdvances(style, s, px);
+        float[] mark = tm.caretAdvances(style, dev.vexelray.gui.core.text.Ellipsis.MARK, px);
+        if (adv == null || mark == null) {
+            return widest;
+        }
+        String cut = n.ellipsis().cut(s, adv, mark[mark.length - 1], room);
+        n.cutText = cut;
+        n.lineSpans = tm.lineSpans(style, cut, 0f, px);
+        float[] drawn = tm.caretAdvances(style, cut, px);
+        return drawn[drawn.length - 1];
     }
 
     /**

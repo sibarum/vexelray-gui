@@ -1471,6 +1471,20 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
+     * As {@link #mailbox(Topic, sibarum.atchung.Subscriber, int, java.util.Set)}, named: each delivery's
+     * {@code receive} row on the probe's bus lane says {@code name} after the widgets' inbox, so a reader following a
+     * message's cause sees which view method it reached and not only that it reached the GUI. A view's generated
+     * wiring names each of its mailboxes {@code Class#method}.
+     *
+     * @param name the mailbox's name, non-empty and holding no space
+     * @param keys the keys it is handed, or {@code null} for every message
+     */
+    public <T> Subscription mailbox(String name, Topic<T> topic, sibarum.atchung.Subscriber<T> stage, int capacity,
+                                    java.util.Set<?> keys) {
+        return widgetInbox.subscribe(java.util.Objects.requireNonNull(name, "name"), topic, stage, capacity, keys);
+    }
+
+    /**
      * A widget's mailbox for the messages on {@code topic} {@link Addressed addressed} to it: as
      * {@link #mailbox(Topic, sibarum.atchung.Subscriber, int)}, routed by address, so a widget is handed only its own.
      * Every widget on a topic shares one route table, and a message for an address nobody answers to is dropped and

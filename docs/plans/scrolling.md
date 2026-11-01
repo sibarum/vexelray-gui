@@ -38,7 +38,9 @@ Undefined for the developer, then, but one fixed behaviour from the framework, a
 nobody planned is visible on screen and in the log, instead of turning into a scrollbar that reads like a style
 choice.
 
-`clip(true)` stays as it is: a mask with no scrolling, for a box that means to cut its content off.
+`clip(true)` stays as it is: a mask with no scrolling, for a box that means to cut its content off. Since it
+cuts its content off, that content is no room anything must make for it: short of room, a clipped box gives way
+like a `Scroller` does (§2.1), which is what keeps a long window title from pushing the close button off the window.
 
 ## 2. `Scroller`: the mask
 

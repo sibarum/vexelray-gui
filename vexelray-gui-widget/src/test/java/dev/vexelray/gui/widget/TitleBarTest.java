@@ -241,6 +241,28 @@ class TitleBarTest {
     }
 
     /**
+     * A title wider than the window gives way, cut with an ellipsis, and the controls stay at the window's edge. The
+     * title had no size smaller than its text, so a long one laid all three buttons out past the right edge.
+     */
+    @Test
+    void aLongTitleGivesWayToTheControls() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Recorder window = new Recorder();
+            String title = "A title far too long for any window it could be shown in ".repeat(6);
+            TitleBar bar = new TitleBar(h.gui, window, title);
+            h.gui.root().children(bar.node());
+            h.frame();
+
+            dev.vexelray.gui.core.model.RetainedNode text = byText(h.retained(bar.node()), title);
+            dev.vexelray.gui.core.layout.Rect r = h.gui.layoutSnapshot().node(text.id).rect();
+            assertTrue(r.x() + r.w() <= VIEW_W - 3 * BUTTON_W, "the title ends before the controls: " + r);
+            h.click(buttonX(2), BAR_H / 2f);
+            h.click(buttonX(0), BAR_H / 2f);
+            assertEquals(List.of("minimize", "close"), window.calls, "and every control is where the window's edge is");
+        }
+    }
+
+    /**
      * A window button is as tall as the bar, so a press at the bar's top edge is a press on the button. The buttons
      * declared {@code height(FILL)} inside a bar that centres its children, and FILL used to read as intrinsic
      * there: the button was its glyph's height, hovered as a letterbox, and its top edge belonged to the caption.

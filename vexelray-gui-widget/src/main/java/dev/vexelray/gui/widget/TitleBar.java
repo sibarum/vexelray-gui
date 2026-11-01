@@ -142,13 +142,22 @@ public final class TitleBar {
         this.titleText = gui.text(title == null ? "" : title)
                 .textSize(TITLE_SIZE)
                 .textColor(Role.DIM)
-                .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
+                .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE)
+                // The title is the first thing to give way when the window is narrow: clipped, it can be narrowed,
+                // and narrowed it ends in an ellipsis rather than half a glyph.
+                .wordWrap(false)
+                .ellipsis(dev.vexelray.gui.core.text.Ellipsis.END)
+                .clip(true);
+        // Clipped too, so the whole identity zone gives way — mark and menus after the title — and the window
+        // controls never do. Unclipped, a long title or a menu bar had no smaller size than its content, and a
+        // narrow window laid the close button out past its own right edge.
         this.leading = gui.row()
                 .height(Length.FILL)
                 .alignItems(AlignItems.CENTER)
                 .gap(Length.dp(8))
                 .padding(Length.ZERO, Length.dp(12))
                 .scroll(false, false)
+                .clip(true)
                 .children(titleText);
 
         // An application's own glyphs, if it gives any (glyphs()); until then the buttons draw their own and these are

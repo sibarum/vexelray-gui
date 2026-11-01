@@ -12,7 +12,7 @@ import java.util.List;
 
 /**
  * The flex layout: rows and columns with border-box sizing, padding, margin, border and gap. Not a full flex
- * implementation — no wrap, and no shrink-below-basis except down to what its {@code Scroller}s can give (see
+ * implementation — no wrap, and no shrink-below-basis except down to what its {@code Scroller}s and clipped boxes can give (see
  * {@code mainSizes}) — but
  * bulletproof: every size is clamped non-negative, every
  * property has a sensible default, and nothing is ever left null or NaN, so a node can never land at an unexpected
@@ -335,8 +335,8 @@ public final class FlexLayout {
      * {@code AUTO} child gives up what it can, down to its <em>least</em> size: its measure with every Scroller in it
      * counted as nothing along the axes it scrolls ({@link #least}). Each gives the same share of what it can give,
      * so Scrollers give way in proportion to their content. This is CSS's {@code flex-shrink} with a min-content
-     * floor (docs/plans/scrolling.md §2.1). A box with no Scroller in it has nothing to give — its least size is its
-     * size — so it holds, as every box did before; a Scroller wrapped in a content-sized box gives way through it.
+     * floor (docs/plans/scrolling.md §2.1). A box with no Scroller or clipped box in it has nothing to give — its
+     * least size is its size — so it holds; a Scroller wrapped in a content-sized box gives way through it.
      * A declared or grow child does not: a declared one said its size, and a grow one is already the room left.
      *
      * <p>{@code holds} says the parent scrolls along this axis ({@link #holdsAlong}), so its room there is unbounded
@@ -396,7 +396,8 @@ public final class FlexLayout {
     /**
      * The least {@code n} can be along {@code axis}: its {@link #measure} with every Scroller in it, itself included,
      * counted as nothing along the axes it scrolls — a Scroller's content is what it scrolls, so none of it is a
-     * size anything must make room for. Equal to the measure for a subtree with no Scroller in it.
+     * size anything must make room for — and every {@code clip(true)} box counted as nothing, for the same reason:
+     * its content is what it cuts off. Equal to the measure for a subtree with neither in it.
      */
     private static float least(RetainedNode n, Axis axis, LayoutContext ctx, TextMeasurer tm, float knownWidth) {
         return measure(n, axis, ctx, tm, knownWidth, true);
@@ -685,8 +686,10 @@ public final class FlexLayout {
         }
         Length padAxis = axis == Axis.HORIZONTAL ? n.paddingX() : n.paddingY();
         float inset = n.borderWidth().scalarPx(own, 0f) + padAxis.scalarPx(own, 0f);
-        if (least && scrollsAlong(n, axis)) {
-            return 2f * inset;   // what it holds along here is what it scrolls, not room it needs
+        if (least && (scrollsAlong(n, axis) || n.clip())) {
+            // What it holds along here is what it scrolls, or what it cuts off, not room it needs (CSS: a box whose
+            // overflow is not visible has a min-content floor of nothing).
+            return 2f * inset;
         }
         if (n.hasText()) {
             float textPx = own.emPx();

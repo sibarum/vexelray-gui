@@ -38,7 +38,7 @@ safe from any thread — and claims its own undo chords at `FOCUSED`, routed thr
 step 4 the window's `GLOBAL` claim took Ctrl+Z from every field, because a claim outranks key delivery. Its
 entries target the field and check that the text still reads what they expect; `text(...)` forgets only this
 field's entries (`History.forget`); leaving the field ends its run. Documents opt out with `history(History)`: the
-template's and Vex's `Buffer`, the gui demo's notes, and MainFrame's three inline editors, whose commit is the
+template's and VexelRay IDE's `Buffer`, the gui demo's notes, and MainFrame's three inline editors, whose commit is the
 step. One rule was added, because the plan's §2 rule 3 alone would have wedged a history: **an entry whose node
 has left the tree fails once and is then discarded** (`History.discard`) — a node id is never reused, so under
 `BLOCK` it would stand in front of every other undo for the rest of the session. A landmark target, or a node

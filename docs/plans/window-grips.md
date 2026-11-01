@@ -30,7 +30,7 @@ to be something nobody deletes the day after generating a project.
 - **Declared, not driven.** Chrome is nodes with a `WindowRegion`; `ChromeRegions` derives `HitRegions` from the
   laid-out tree each frame and pushes it. Grips are more of the same.
 - **`SplitPane`'s divider is the model for the look.** A fixed width that never grows, only its colour changes
-  on hover, the accent held for the whole drag, faded with a linear `Ramp`. The glow on Vex's divider is this.
+  on hover, the accent held for the whole drag, faded with a linear `Ramp`. The glow on VexelRay IDE's divider is this.
 - **`tactroller` already refuses resize bands as pointer targets** (`WindowsInputBackend.isPointerTarget` →
   `inResizeBand`), so a press that starts a resize is never also a click on what is drawn under it.
 

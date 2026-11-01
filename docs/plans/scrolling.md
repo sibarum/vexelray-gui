@@ -361,7 +361,7 @@ until step 5.
 | vexelray-framework | `About` hero | `TactrollerInputBackend` keeps setting `scrollGlide`. `AboutTest` and the acceptance run check for the §1 report instead of the sideways one |
 | mainframe | `OpenDialog` grid; `WorkspacesPage` `scrollIntoView` | gets `Tabs` for free in step 3. `TerminalView` can publish its scrollback as a `ScrollSource` and get a real bar, a later change of its own |
 | vexplore | `Dock`, `RailView` | |
-| text-editor-vexel-demo (Vex) | `Formatted`, `Preview`; `Navigator` `scrollIntoView` | |
+| text-editor-vexel-demo (VexelRay IDE) | `Formatted`, `Preview`; `Navigator` `scrollIntoView` | |
 | calculator-vexel-demo | `SettingsWindow`, the tape (`lock(BOTTOM)` with `scrollToEdge`) | |
 | vexelray-sim-fluid | `ControlPanel`, `Sidebar` | |
 | pontif-framework | `BoxWalker`'s `Scrolls` atom | the atom becomes a `Scroller` with an optional bar. This is a change to its schema |

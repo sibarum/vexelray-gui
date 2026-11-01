@@ -216,7 +216,8 @@ public final class Reconciler implements Mutation.Sink {
     /**
      * Detach {@code gone} — leaving nodes whose presence has reached zero — and release whatever an earlier call
      * detached that nothing has put back since. Returns whether anything is still owed a frame: a node detached now
-     * is released by the next call, so the caller must make sure there is one.
+     * is released by the next call, and a node hidden now leaves a gap the next layout closes, so the caller must make
+     * sure there is one. The dirty bits set here are the next frame's: this frame clears its own after this call.
      *
      * <p><b>Why released a frame late.</b> A reader decides to put a leaving node back from the published snapshot,
      * which is a frame old, and its edit lands at the next drain. A node detached and released in one go could be
@@ -236,6 +237,7 @@ public final class Reconciler implements Mutation.Sink {
             }
             departed.clear();
         }
+        boolean hidden = false;
         for (RetainedNode g : gone) {
             if (g.hiding) {
                 // Hidden, not removed: it stays in the tree, hidden for real now that it has gone, and the rest close up.
@@ -243,8 +245,7 @@ public final class Reconciler implements Mutation.Sink {
                 g.leaving = false;
                 g.set(PropKey.VISIBLE, Boolean.FALSE);
                 exits.left(g);
-                layoutDirty = true;
-                drawDirty = true;
+                hidden = true;
                 continue;
             }
             if (g.parent != null) {
@@ -255,7 +256,7 @@ public final class Reconciler implements Mutation.Sink {
             layoutDirty = true;
             drawDirty = true;
         }
-        return !departed.isEmpty();
+        return hidden || !departed.isEmpty();
     }
 
     /** Nodes asked to be brought into view since the frame last took them (see {@link Mutation.Reveal}). */

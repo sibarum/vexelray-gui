@@ -152,6 +152,31 @@ class PresenceTest {
     }
 
     @Test
+    @DisplayName("a row hidden for real gives up its place, and the next frame closes the gap")
+    void hiddenGivesUpItsPlace() {
+        Scene s = scene();
+        try (KronoGui krono = s.krono()) {
+            Node row = row(krono.gui());
+            Node below = row(krono.gui());
+            s.list().children(row, below);
+            at(krono, 0);
+            at(krono, 100);
+            at(krono, 116);
+            RetainedNode b = find(at(krono, 116), below.id());
+            float under = b.y;
+            assertTrue(under > 0f);
+
+            row.visible(false);
+            at(krono, 116);
+            at(krono, 166);
+            assertEquals(under, b.y, "it keeps its place while it fades");
+            at(krono, 216);   // drawn at nothing, hidden for real
+            at(krono, 232);
+            assertEquals(0f, b.y, "the row below moves up into it");
+        }
+    }
+
+    @Test
     @DisplayName("a row shown again while it is being hidden comes back from where it got to")
     void shownWhileHidingReturns() {
         Scene s = scene();

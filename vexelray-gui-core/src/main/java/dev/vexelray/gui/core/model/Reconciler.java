@@ -855,8 +855,8 @@ public final class Reconciler implements Mutation.Sink {
             }
             return true;   // a second hide while hiding is the same hide
         }
-        if (n.parent == null || n.parent.ownsChildMotion() || n.leaving) {
-            return false;
+        if (n.parent == null || n.parent.ownsChildMotion() || n.leaving || n.paintCuts()) {
+            return false;   // its look is the application's to time, showing and hiding included
         }
         if (!show) {
             if (n.layoutCtx != null && n.visible() && shown(n.parent) && n.opacity() > 0f && exits.leave(n)) {

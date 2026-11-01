@@ -601,9 +601,11 @@ public final class Node {
     }
 
     /**
-     * Say that this node's colours are data rather than state (a cell coloured by its value, a pooled marker
-     * coloured by what it now stands for), so a colour written to it is drawn at once instead of fading from the
-     * last one. A theme change still fades it. See {@link PropKey#PAINT_CUTS}.
+     * Say that this node's look is data rather than state (a cell coloured by its value, a pooled marker coloured by
+     * what it now stands for), or is timed by the application itself (a picture it throws and crossfades on its own, a
+     * thumbnail that slides along with a step), so a colour, an opacity, words or an image written to it is drawn at
+     * once, and it is shown or hidden at once, instead of fading. A theme change still fades it. See
+     * {@link PropKey#PAINT_CUTS}.
      */
     public Node paintCuts(boolean cuts) {
         return prop(PropKey.PAINT_CUTS, cuts ? Boolean.TRUE : null);

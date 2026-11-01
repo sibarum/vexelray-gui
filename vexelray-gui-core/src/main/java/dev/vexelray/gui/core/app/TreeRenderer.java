@@ -975,7 +975,42 @@ public final class TreeRenderer {
         // A cut label's spans index the whole text, not the string drawn, so it is drawn plain.
         java.util.List<Span> spans = hasText && n.cutText == null ? n.spans() : java.util.List.of();
 
-        drawText(n, s, hasText, spans, pad, canvas, text);
+        float up = wordsUp(n);
+        if (up >= 1f) {
+            drawText(n, n.textMetrics, s, hasText, spans, pad, canvas, text);
+            return;
+        }
+        // Words replaced: the old ones fade out where they were in the box, under the new ones fading in.
+        float whole = alpha;
+        alpha = whole * (1f - up);
+        String was = n.wordsBefore;
+        float dx = n.layoutX - n.wordsBeforeX;
+        float dy = n.layoutY - n.wordsBeforeY;
+        boolean shifted = dx != 0f || dy != 0f;
+        if (shifted) {
+            canvas.pushTranslate(dx, dy);
+        }
+        try {
+            drawText(n, n.metricsBefore, was, was != null && !was.isEmpty(), java.util.List.of(), pad, canvas, text);
+        } finally {
+            if (shifted) {
+                canvas.popTranslate();
+            }
+        }
+        alpha = whole * up;
+        drawText(n, n.textMetrics, s, hasText, spans, pad, canvas, text);
+        alpha = whole;
+    }
+
+    /**
+     * How far {@code n}'s new words are up over the ones they replaced ({@code Channel.WORDS}): 1 when nothing is being
+     * crossfaded, which is when it kept no old words or the paint motion has nothing on its way there.
+     */
+    private float wordsUp(RetainedNode n) {
+        if (n.wordsBefore == null) {
+            return 1f;
+        }
+        return paint.drawn(n.id, PaintMotion.Channel.WORDS, Color.WHITE).a();
     }
 
     /**
@@ -989,9 +1024,8 @@ public final class TreeRenderer {
      * feature — the read-model is supposed to describe what is drawn, and the only way to guarantee it is for the
      * drawing to come from the read-model.
      */
-    private void drawText(RetainedNode n, String s, boolean hasText, java.util.List<Span> spans, float pad,
-                                 Canvas canvas, TextLayout text) {
-        TextMetrics m = n.textMetrics;
+    private void drawText(RetainedNode n, TextMetrics m, String s, boolean hasText, java.util.List<Span> spans,
+                          float pad, Canvas canvas, TextLayout text) {
         if (m == null) {
             return;   // not a text node, or a measurer with no glyph metrics resolved none
         }

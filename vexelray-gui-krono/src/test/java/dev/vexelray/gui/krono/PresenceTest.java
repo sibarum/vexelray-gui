@@ -120,6 +120,63 @@ class PresenceTest {
     }
 
     @Test
+    @DisplayName("a row hidden fades where it stands, then is hidden, still in the tree; shown, it comes back up")
+    void hidesAndShows() {
+        Scene s = scene();
+        try (KronoGui krono = s.krono()) {
+            Node row = row(krono.gui());
+            s.list().children(row);
+            at(krono, 0);
+            at(krono, 100);
+            at(krono, 116);   // arrived
+
+            row.visible(false);
+            RetainedNode r = find(at(krono, 116), row.id());
+            assertTrue(r.visible(), "still drawn while it goes");
+            assertTrue(r.hitInert(), "and not taking the pointer");
+            at(krono, 166);
+            assertEquals(0.5f, r.presence, 0.02f);
+
+            at(krono, 216);
+            assertSame(r, find(at(krono, 232), row.id()), "hidden is not removed");
+            assertFalse(r.visible(), "hidden for real once it is drawn at nothing");
+            assertFalse(r.hitInert(), "and its pointer is its own again for when it is shown");
+
+            row.visible(true);
+            at(krono, 232);
+            assertTrue(r.visible());
+            assertEquals(0f, r.presence, "shown, it arrives from nothing");
+            at(krono, 282);
+            assertEquals(0.5f, r.presence, 0.02f);
+        }
+    }
+
+    @Test
+    @DisplayName("a row shown again while it is being hidden comes back from where it got to")
+    void shownWhileHidingReturns() {
+        Scene s = scene();
+        try (KronoGui krono = s.krono()) {
+            Node row = row(krono.gui());
+            s.list().children(row);
+            at(krono, 0);
+            at(krono, 100);
+            at(krono, 116);
+
+            row.visible(false);
+            at(krono, 116);
+            RetainedNode r = find(at(krono, 166), row.id());
+            float mid = r.presence;
+            row.visible(true);
+            at(krono, 166);
+            assertTrue(r.visible());
+            assertEquals(mid, r.presence, 0.05f, "no jump: back up from where it got to");
+            at(krono, 300);
+            at(krono, 316);
+            assertEquals(1f, r.presence);
+        }
+    }
+
+    @Test
     @DisplayName("an interrupted exit followed by re-entry continues from where it is drawn")
     void returnsFromWhereItGot() {
         Scene s = scene();

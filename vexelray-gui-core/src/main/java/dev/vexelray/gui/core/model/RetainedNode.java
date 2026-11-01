@@ -98,6 +98,17 @@ public final class RetainedNode {
     // of its place in the flow and fades out where it stood, over what replaces it (Reconciler.liftReplaced). Laid out
     // as a float at the rectangle it last had, as offsets from its parent's border box.
     public boolean lifted;
+    // A leaving node that was hidden rather than removed (visible(false)): when it has faded it is hidden for real and
+    // stays in the tree, where a removed one would be detached (Reconciler.hide, Reconciler.depart).
+    public boolean hiding;
+
+    // The words this node drew before its text was last replaced, with the metrics they were laid out with and where
+    // its box was then, so the renderer can fade them out under the new ones (Reconciler.retexted,
+    // PaintMotion.Channel.WORDS). Null when nothing is being crossfaded.
+    public String wordsBefore;
+    public dev.vexelray.gui.core.text.TextMetrics metricsBefore;
+    public float wordsBeforeX;
+    public float wordsBeforeY;
     public float liftedX;
     public float liftedY;
     public float liftedW;

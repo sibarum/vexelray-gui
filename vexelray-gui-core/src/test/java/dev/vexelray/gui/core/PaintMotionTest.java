@@ -103,6 +103,33 @@ class PaintMotionTest {
         }
     }
 
+    /**
+     * Words replaced on a label on screen are told as new words coming up from nothing, after a rest that lets go of a
+     * crossfade still under way; the old words are kept for the renderer. A field's words are the user's, and are not.
+     */
+    @Test
+    void wordsReplacedOnALabelAreToldAndAFieldsAreNot() {
+        try (Gui gui = new Gui(Atchung.create())) {
+            List<String> words = new ArrayList<>();
+            gui.paintMotion(new Recording() {
+                @Override
+                public void repainted(long node, Channel channel, Color from, Color to) {
+                    words.add(channel + " " + from.a() + "->" + to.a());
+                }
+            });
+            Node label = gui.text("one");
+            Node field = gui.text("typed").editable(true);
+            gui.root().children(label, field);
+            Seams.of(gui).frame(400f, 300f, PaintMotionTest::noText);
+            assertTrue(words.isEmpty(), "first words have nothing to come up over: " + words);
+
+            label.text("two");
+            field.text("typed more");
+            Seams.of(gui).frame(400f, 300f, PaintMotionTest::noText);
+            assertEquals(List.of("WORDS 0.0->0.0", "WORDS 0.0->1.0"), words);
+        }
+    }
+
     @Test
     void aMotionInProgressAsksForTheNextFrame() {
         try (Gui gui = new Gui(Atchung.create())) {

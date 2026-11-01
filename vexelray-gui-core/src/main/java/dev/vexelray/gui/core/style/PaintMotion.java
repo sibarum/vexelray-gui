@@ -54,7 +54,12 @@ public interface PaintMotion {
          * blends it with no case of its own: white to white is white, and the alpha goes linearly. Only for a node
          * on screen; one given an opacity before it is laid out is drawn at it from its first frame.
          */
-        OPACITY
+        OPACITY,
+        /**
+         * How far a node's new words have come up over the ones they replaced, reported as white from no alpha to full
+         * when its text is replaced; the renderer draws the old words at the rest. Only for a label on screen.
+         */
+        WORDS
     }
 
     /** Nothing fades: every node is drawn in the colour it was given. The default, and reduced motion. */
@@ -84,7 +89,8 @@ public interface PaintMotion {
     /**
      * Node {@code node}'s {@code channel} has just changed from {@code from} to {@code to}, both colours. An
      * implementation that fades starts from the colour the node is drawn in now (which is {@code from} only when the
-     * node was at rest) and ends at {@code to}.
+     * node was at rest) and ends at {@code to}. Told {@code from} equal to {@code to}, the channel is at rest there:
+     * whatever was on its way is let go, so the next change starts from {@code from} itself.
      */
     void repainted(long node, Channel channel, Color from, Color to);
 

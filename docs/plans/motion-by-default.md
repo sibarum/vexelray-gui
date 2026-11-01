@@ -55,7 +55,7 @@ and an asked half's `Drawn.opacity` is its own, set for the frame, not faded. **
 Hiding a node that is on screen is offered to the exit motion, as `remove()` is: it keeps its place, stops taking
 the pointer at once, fades out, and then is hidden for real (where `remove()` would detach it), so the rest close
 up. Showing one is an arrival, offered to the enter motion. A node shown again before it had gone comes back up from
-where it got to. `childMotion(false)` and a node not on screen behave as today.
+where it got to. `childMotion(false)` and a node not on screen behave as today. **Built.**
 
 ### 2.3 Words replaced crossfade
 
@@ -66,7 +66,8 @@ either side is an arrival or a departure of the words, and fades the same way. `
 that are data written on every frame (a clock, a meter's readout); a text written on every frame is followed, as a
 colour is.
 
-The Scheduler's `Motion.Label` and the template's advice to write one go.
+A crossfade replaced by another starts the newest words from nothing over the ones just before. The old words keep
+their place in the box. **Built.** The Scheduler's `Motion.Label` and the template's advice to write one go.
 
 ### 2.4 An image replaced crossfades
 

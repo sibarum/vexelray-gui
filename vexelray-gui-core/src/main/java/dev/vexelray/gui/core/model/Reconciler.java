@@ -237,6 +237,16 @@ public final class Reconciler implements Mutation.Sink {
             departed.clear();
         }
         for (RetainedNode g : gone) {
+            if (g.hiding) {
+                // Hidden, not removed: it stays in the tree, hidden for real now that it has gone, and the rest close up.
+                g.hiding = false;
+                g.leaving = false;
+                g.set(PropKey.VISIBLE, Boolean.FALSE);
+                exits.left(g);
+                layoutDirty = true;
+                drawDirty = true;
+                continue;
+            }
             if (g.parent != null) {
                 g.parent.children.remove(g);
                 g.parent = null;
@@ -489,6 +499,7 @@ public final class Reconciler implements Mutation.Sink {
         boolean returning = ch.leaving;
         if (returning) {
             ch.leaving = false;
+            ch.hiding = false;
             ch.lifted = false;   // back in the flow, wherever it was put
         }
         if (was == null) {
@@ -531,6 +542,10 @@ public final class Reconciler implements Mutation.Sink {
             // fade is a dead pause before its neighbours close up (the Scheduler's Motion.leave, under Presence). Nor is
             // one inside something hidden: nobody sees it go, and a panel rebuilt while hidden (a context menu between
             // openings) would otherwise show its last contents fading out, lifted at a stale place, over the new.
+            if (n.hiding) {
+                n.hiding = false;   // removed while it was being hidden: the fade goes on, and ends in a removal
+                return;
+            }
             if (!n.leaving && n.parent != null && n.layoutCtx != null && shown(n) && !n.parent.ownsChildMotion()
                     && n.opacity() > 0f && exits.leave(n)) {
                 n.leaving = true;
@@ -557,8 +572,14 @@ public final class Reconciler implements Mutation.Sink {
             // The change itself is what says a frame is owed, so a write that changes nothing says nothing: no
             // relayout, no draw. Before this, setting a colour to the colour it already was cost a frame.
             Object before = n.raw(key);
+            if (key == PropKey.VISIBLE && shownOrHidden(n, !Boolean.FALSE.equals(value))) {
+                return;
+            }
             if (unchanged(before, value)) {
                 return;
+            }
+            if (key == PropKey.TEXT) {
+                retexted(n);
             }
             n.set(key, value);
             drawDirty = true;
@@ -593,11 +614,39 @@ public final class Reconciler implements Mutation.Sink {
             if (unchanged(n.raw(PropKey.TEXT), text)) {
                 return;
             }
+            retexted(n);
             n.set(PropKey.TEXT, text);
             layoutDirty = true;
             drawDirty = true;
         }
     }
+
+    /**
+     * {@code n}'s words are about to be replaced: keep the ones drawn now, where they were laid out, and tell the paint
+     * motion that the new ones are coming up over them ({@code Channel.WORDS}), so the renderer crossfades the two.
+     * Only a label on screen: not a field (each keystroke is the user's own, and must show at once), not a node whose
+     * look is data, not one never laid out. Words written on every frame are followed, not faded behind, as a colour
+     * is (the paint motion's own rule), and are then drawn new at once.
+     */
+    private void retexted(RetainedNode n) {
+        n.wordsBefore = null;
+        n.metricsBefore = null;
+        if (n.layoutCtx == null || n.editable() || n.paintCuts() || !shown(n)) {
+            return;
+        }
+        n.wordsBefore = n.drawnText();
+        n.metricsBefore = n.textMetrics;
+        n.wordsBeforeX = n.layoutX;
+        n.wordsBeforeY = n.layoutY;
+        // From nothing every time, not from where a crossfade still under way got to: these new words have not been
+        // seen at all. Told "at rest at nothing" first, which a fading source takes as letting go of what was running.
+        repaints.repainted(n.id, PaintMotion.Channel.WORDS, WORDS_GONE, WORDS_GONE);
+        repaints.repainted(n.id, PaintMotion.Channel.WORDS, WORDS_GONE, WORDS_SHOWN);
+    }
+
+    /** {@link PaintMotion.Channel#WORDS} at its two ends: the new words not up at all, and all the way up. */
+    private static final Color WORDS_GONE = new Color(1f, 1f, 1f, 0f);
+    private static final Color WORDS_SHOWN = Color.WHITE;
 
     @Override
     public void scrollToEdge(long id) {
@@ -679,6 +728,51 @@ public final class Reconciler implements Mutation.Sink {
     /** The theme the tree is drawn in: the last one {@link #retheme} applied, {@link Theme#DARK} before any. */
     public Theme theme() {
         return theme;
+    }
+
+    /**
+     * Hiding and showing go as removing and adding do: a node on screen hidden is offered to the exit motion, keeps its
+     * place while it fades, and is hidden for real when it has gone ({@link #depart}); one shown is an arrival. A node
+     * hidden while it was still going comes back up from where it got to. Answers whether it handled the write, which
+     * is then not applied as it stands. Not offered, as for a removal: a node not laid out, under something hidden,
+     * already at no opacity, or the child of a container that owns its children's motion.
+     */
+    private boolean shownOrHidden(RetainedNode n, boolean show) {
+        if (n.hiding) {
+            if (show) {
+                // Put back before it had gone: still visible underneath, so it only stops leaving.
+                n.hiding = false;
+                n.leaving = false;
+                enters.entered(n);
+                presenceDirty = true;
+                drawDirty = true;
+            }
+            return true;   // a second hide while hiding is the same hide
+        }
+        if (n.parent == null || n.layoutCtx == null || n.parent.ownsChildMotion() || n.leaving) {
+            return false;
+        }
+        if (!show) {
+            if (n.visible() && shown(n.parent) && n.opacity() > 0f && exits.leave(n)) {
+                n.hiding = true;
+                n.leaving = true;
+                presenceDirty = true;
+                drawDirty = true;
+                return true;
+            }
+            return false;
+        }
+        if (!n.visible() && shown(n.parent)) {
+            n.set(PropKey.VISIBLE, Boolean.TRUE);
+            layoutDirty = true;
+            drawDirty = true;
+            if (enters != EnterMotion.NONE) {
+                enters.entered(n);
+                presenceDirty = true;
+            }
+            return true;
+        }
+        return false;
     }
 
     /** An {@link PropKey#OPACITY} value as the paint motion is told it: white at that alpha, 1 when none was set. */

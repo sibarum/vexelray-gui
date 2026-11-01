@@ -213,7 +213,9 @@ public final class IconButton {
         boolean lit = toggle && on;
         // What the icon does under the pointer and when on is the theme's, as the hover fill is.
         IconEffects icons = gui.theme().icons();
-        node.background(s == InteractionState.NORMAL ? (tile ? Role.RAISED : null) : hover);
+        // A press shows at once, as a step past the hover: pressed and hovered alike, a click had no feedback of its own.
+        node.background(s == InteractionState.NORMAL ? (tile ? Role.RAISED : null)
+                : s == InteractionState.PRESSED ? hover.at(s) : hover);
         if (tile) {
             label.textColor(!enabled ? Role.FAINT : s == InteractionState.NORMAL ? Role.DIM : Role.INK);
         }

@@ -99,6 +99,27 @@ class ButtonTest {
         }
     }
 
+    /** An icon button pressed looks pressed, not hovered: a click shows at once, before anything it does. */
+    @Test
+    void anIconButtonPressedLooksOtherThanHovered() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            IconButton i = new IconButton(h.gui, Icon.CHEVRON_RIGHT, "Next");
+            h.gui.root().children(i.node());
+            h.frame();
+            var r = i.node().layout().rect();
+            float x = r.x() + r.w() / 2f;
+            float y = r.y() + r.h() / 2f;
+
+            h.hover(x, y);
+            var hovered = h.retained(i.node()).background(h.gui.drawnTheme());
+            h.press(x, y);
+            var pressed = h.retained(i.node()).background(h.gui.drawnTheme());
+            h.release(x, y);
+            assertFalse(hovered.equals(pressed), "pressed was drawn as hovered");
+            assertEquals(hovered, h.retained(i.node()).background(h.gui.drawnTheme()), "and hovered again after");
+        }
+    }
+
     /** Two quick presses of a button are two presses, and not a double click on what the button is in. */
     @Test
     void aButtonPressedTwiceQuicklyKeepsItsDoubleClickFromWhatItIsIn() {

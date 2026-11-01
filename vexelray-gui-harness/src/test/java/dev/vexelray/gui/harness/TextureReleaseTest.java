@@ -94,7 +94,7 @@ class TextureReleaseTest {
 
             // Once the node lets go, the release that was waiting completes.
             onLoop(harness, () -> {
-                picture.image(null);
+                picture.image((dev.vexelray.vulkan.present.SampledImage) null);
                 return null;
             });
             assertTrue(harness.await(shown::isClosed, 5_000), "the release completes once nothing names it");

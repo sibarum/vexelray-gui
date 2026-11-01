@@ -319,7 +319,7 @@ class ViewVerbsTest {
         try (Gui gui = deterministic()) {
             sibarum.probe.Logging.configure(new sibarum.probe.LogConfig("t", sibarum.probe.Mode.AUTOMATION,
                     sibarum.probe.Level.WARN, sibarum.probe.Level.OFF, java.util.Map.of(), null,
-                    sibarum.probe.LogConfig.Format.TEXT, 1024, 1, null, List.of()));
+                    sibarum.probe.LogConfig.Format.TEXT, 1024, 1, null, false, List.of()));
             Automation automation = new Automation(gui);
 
             String now = automation.command("log");

@@ -810,8 +810,9 @@ public final class Reconciler implements Mutation.Sink {
      * Hiding and showing go as removing and adding do: a node on screen hidden is offered to the exit motion, keeps its
      * place while it fades, and is hidden for real when it has gone ({@link #depart}); one shown is an arrival. A node
      * hidden while it was still going comes back up from where it got to. Answers whether it handled the write, which
-     * is then not applied as it stands. Not offered, as for a removal: a node not laid out, under something hidden,
-     * already at no opacity, or the child of a container that owns its children's motion.
+     * is then not applied as it stands. Not offered, as for a removal or an append: a node hidden that was never laid
+     * out, one under something hidden, one hidden already at no opacity, or the child of a container that owns its
+     * children's motion.
      */
     private boolean shownOrHidden(RetainedNode n, boolean show) {
         if (n.hiding) {
@@ -825,11 +826,11 @@ public final class Reconciler implements Mutation.Sink {
             }
             return true;   // a second hide while hiding is the same hide
         }
-        if (n.parent == null || n.layoutCtx == null || n.parent.ownsChildMotion() || n.leaving) {
+        if (n.parent == null || n.parent.ownsChildMotion() || n.leaving) {
             return false;
         }
         if (!show) {
-            if (n.visible() && shown(n.parent) && n.opacity() > 0f && exits.leave(n)) {
+            if (n.layoutCtx != null && n.visible() && shown(n.parent) && n.opacity() > 0f && exits.leave(n)) {
                 n.hiding = true;
                 n.leaving = true;
                 presenceDirty = true;
@@ -838,7 +839,9 @@ public final class Reconciler implements Mutation.Sink {
             }
             return false;
         }
-        if (!n.visible() && shown(n.parent)) {
+        // Shown is an arrival as an append is: into a parent on screen, though the node itself, built hidden, may never
+        // have been laid out.
+        if (!n.visible() && n.parent.layoutCtx != null && shown(n.parent)) {
             n.set(PropKey.VISIBLE, Boolean.TRUE);
             layoutDirty = true;
             drawDirty = true;

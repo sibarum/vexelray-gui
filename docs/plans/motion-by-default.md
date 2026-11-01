@@ -103,6 +103,13 @@ use `IconView`s too.
 
 ### 2.7 Losing it fails a test
 
+**Built** (`Cuts`, and the template's `ViewTest`). Colours, opacities, words and images given anew and drawn at once, and
+nodes appearing whole or gone without leaving; positions are not watched. A value given anew within 40 ms of the last
+time is being driven and is followed, the paint motion's own rule. On a freshly generated project its first run found
+a node built hidden and shown later appearing whole (fixed in the reconciler: a shown node needs only its parent laid
+out), and every view test passes with it; with the framework's motion taken away, ten of fourteen fail. What follows
+is the plan as written.
+
 The headless harness gets a **cut detector**: between two frames it compares what each node was drawn with (colour
 channels, opacity, position, text, image) and records any that changed by more than a step without a motion source
 carrying it, unless the node said it cuts (`paintCuts`, `childMotion(false)`) or a resize or zoom moved it. The

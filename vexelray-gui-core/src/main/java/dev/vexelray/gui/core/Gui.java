@@ -217,6 +217,19 @@ public final class Gui implements AutoCloseable {
      * the three things a walk needs of the tree.
      */
     private final Navigator navigator;
+
+    /** A watch for what changes in one frame ({@link Cuts}), told each frame; null when nothing watches. */
+    private volatile Cuts cuts;
+
+    /** Watch this tree's frames with {@code watch}, or stop with null ({@link Cuts#watch}). */
+    void cuts(Cuts watch) {
+        this.cuts = watch;
+    }
+
+    /** The landmark {@code id} is reached by, or null: what a {@link Cuts} calls a node it found. */
+    String landmarkName(long id) {
+        return navigator.landmarkName(id);
+    }
     /** The two-press undo every {@link #history} binding and {@link #undo}/{@link #redo} call goes through. */
     private final Undoing undoing;
     /** Which history each node bound, by node id — what {@link #historyFor} walks up through. */
@@ -2084,6 +2097,10 @@ public final class Gui implements AutoCloseable {
             // it arrives. Asked here, after this frame's repaints were told in the drain, for the renderer to read.
             long paintDue = paintMotion.draw(frame);
             reconciler.settleReplaced();   // words or an image all the way up: what they replaced is let go
+            Cuts watching = cuts;
+            if (watching != null) {
+                watching.frame(reconciler.root(), paintMotion, reconciler.theme());   // a test watching for cuts
+            }
             boolean fading = paintDue != Frame.NEVER;
             if (frame.owes(paintDue)) {
                 wake("paint motion");

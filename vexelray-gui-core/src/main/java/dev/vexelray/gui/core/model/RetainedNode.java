@@ -102,9 +102,19 @@ public final class RetainedNode {
     // stays in the tree, where a removed one would be detached (Reconciler.hide, Reconciler.depart).
     public boolean hiding;
 
-    // The words this node drew before its text was last replaced, with the metrics they were laid out with and where
-    // its box was then, so the renderer can fade them out under the new ones (Reconciler.retexted,
-    // PaintMotion.Channel.WORDS). Null when nothing is being crossfaded.
+    // What this node showed before its words or its image were last replaced, so the renderer can fade it out under
+    // what it shows now (Reconciler.replacing, PaintMotion.Channel.REPLACED); let go of once that is all the way up
+    // (Reconciler.settleReplaced). The words with the metrics they were laid out with and where the box was then; the
+    // image with the part of it sampled. `replacing` is whether anything is being crossfaded.
+    public boolean replacing;
+    public boolean imageReplaced;
+    public dev.vexelray.target.ImageHandle imageBefore;
+    public dev.vexelray.gui.core.ImageRegion regionBefore;
+    public dev.vexelray.gui.core.ImageScaling scalingBefore;
+    // The region written last, and the image it was written for: Node.image writes the region first, so an image
+    // replaced finds here the region its old image was drawn with.
+    public dev.vexelray.gui.core.ImageRegion regionOfImage;
+    public dev.vexelray.target.ImageHandle regionOfImageFor;
     public String wordsBefore;
     public dev.vexelray.gui.core.text.TextMetrics metricsBefore;
     public float wordsBeforeX;

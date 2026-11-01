@@ -2079,6 +2079,7 @@ public final class Gui implements AutoCloseable {
             // The same for colour: a fade in progress draws something different next frame, and stops asking when
             // it arrives. Asked here, after this frame's repaints were told in the drain, for the renderer to read.
             long paintDue = paintMotion.draw(frame);
+            reconciler.settleReplaced();   // words or an image all the way up: what they replaced is let go
             boolean fading = paintDue != Frame.NEVER;
             if (frame.owes(paintDue)) {
                 wake("paint motion");

@@ -56,11 +56,24 @@ public interface PaintMotion {
          */
         OPACITY,
         /**
-         * How far a node's new words have come up over the ones they replaced, reported as white from no alpha to full
-         * when its text is replaced; the renderer draws the old words at the rest. Only for a label on screen.
+         * How far what a node shows has come up over what it replaced, its words or its image, reported as white from
+         * no alpha to full when they are replaced; the renderer draws what was there before at the rest. Only for a
+         * node on screen.
          */
-        WORDS
+        REPLACED
     }
+
+    /**
+     * An amount, not a colour, as {@link Channel#OPACITY} and {@link Channel#REPLACED} carry one: white at alpha
+     * {@code a}, so a source that blends colours blends it, and what is read back is its alpha. Never drawn.
+     */
+    static Color amount(float a) {
+        return new Color(1f, 1f, 1f, a);
+    }
+
+    /** {@link #amount} at its two ends. */
+    Color NONE_OF_IT = amount(0f);
+    Color ALL_OF_IT = amount(1f);
 
     /** Nothing fades: every node is drawn in the colour it was given. The default, and reduced motion. */
     PaintMotion NONE = new PaintMotion() {

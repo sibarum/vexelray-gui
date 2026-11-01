@@ -702,6 +702,11 @@ final class GuiWindow implements AutoCloseable {
         return updated != null && GuiApp.names(updated, image);
     }
 
+    /** Whether this window shows {@code image} as a node.s image now, not counting one fading out under its replacement. */
+    boolean showsNow(SampledImage image) {
+        return updated != null && GuiApp.names(updated, image, false);
+    }
+
     /** The raw OS window handle — for attaching input at the application edge. */
     long osHandle() {
         return window.osHandle();

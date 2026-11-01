@@ -580,6 +580,12 @@ public final class Reconciler implements Mutation.Sink {
             }
             if (key == PropKey.TEXT) {
                 retexted(n);
+            } else if (key == PropKey.IMAGE_REGION) {
+                // Written just before the image it goes with (Node.image), so remember which image it was for.
+                n.regionOfImage = (dev.vexelray.gui.core.ImageRegion) before;
+                n.regionOfImageFor = n.image();
+            } else if (key == PropKey.IMAGE) {
+                reimaged(n, (dev.vexelray.target.ImageHandle) before);
             }
             n.set(key, value);
             drawDirty = true;
@@ -623,7 +629,7 @@ public final class Reconciler implements Mutation.Sink {
 
     /**
      * {@code n}'s words are about to be replaced: keep the ones drawn now, where they were laid out, and tell the paint
-     * motion that the new ones are coming up over them ({@code Channel.WORDS}), so the renderer crossfades the two.
+     * motion that the new ones are coming up over them ({@code Channel.REPLACED}), so the renderer crossfades the two.
      * Only a label on screen: not a field (each keystroke is the user's own, and must show at once), not a node whose
      * look is data, not one never laid out. Words written on every frame are followed, not faded behind, as a colour
      * is (the paint motion's own rule), and are then drawn new at once.
@@ -638,15 +644,68 @@ public final class Reconciler implements Mutation.Sink {
         n.metricsBefore = n.textMetrics;
         n.wordsBeforeX = n.layoutX;
         n.wordsBeforeY = n.layoutY;
-        // From nothing every time, not from where a crossfade still under way got to: these new words have not been
-        // seen at all. Told "at rest at nothing" first, which a fading source takes as letting go of what was running.
-        repaints.repainted(n.id, PaintMotion.Channel.WORDS, WORDS_GONE, WORDS_GONE);
-        repaints.repainted(n.id, PaintMotion.Channel.WORDS, WORDS_GONE, WORDS_SHOWN);
+        replacing(n);
     }
 
-    /** {@link PaintMotion.Channel#WORDS} at its two ends: the new words not up at all, and all the way up. */
-    private static final Color WORDS_GONE = new Color(1f, 1f, 1f, 0f);
-    private static final Color WORDS_SHOWN = Color.WHITE;
+    /**
+     * {@code n}'s image is about to be replaced, {@code before} being the one it had (null for none): keep it, with the
+     * part of it that was sampled, so the renderer fades it out under the new one. The image stays named while it fades,
+     * so a texture released at once is not closed under it ({@code GuiApp.release}). The same rules as for words: on
+     * screen, not a node whose look is data, and an image replaced on every frame is followed.
+     */
+    private void reimaged(RetainedNode n, dev.vexelray.target.ImageHandle before) {
+        n.imageBefore = null;
+        n.regionBefore = null;
+        if (n.layoutCtx == null || n.paintCuts() || !shown(n) || n.w <= 0f || n.h <= 0f) {
+            return;
+        }
+        n.imageBefore = before;
+        n.regionBefore = before != null && n.regionOfImageFor == before ? n.regionOfImage : n.imageRegion();
+        n.scalingBefore = n.imageScaling();
+        n.imageReplaced = true;
+        replacing(n);
+    }
+
+    /** Tell the paint motion that what {@code n} shows is coming up over what it showed, and hold it until it has. */
+    private void replacing(RetainedNode n) {
+        n.replacing = true;
+        replaced.add(n);
+        // From nothing every time, not from where a crossfade still under way got to: what is new has not been seen
+        // at all. Told "at rest at nothing" first, which a fading source takes as letting go of what was running.
+        repaints.repainted(n.id, PaintMotion.Channel.REPLACED, PaintMotion.NONE_OF_IT, PaintMotion.NONE_OF_IT);
+        repaints.repainted(n.id, PaintMotion.Channel.REPLACED, PaintMotion.NONE_OF_IT, PaintMotion.ALL_OF_IT);
+    }
+
+    /** Nodes drawing what they showed before under what they show now ({@link #replacing}). GUI thread. */
+    private final java.util.Set<RetainedNode> replaced =
+            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+
+    /**
+     * Let go of what each node showed before, once what it shows now is all the way up, or the node has left the tree:
+     * the old words and the old image are then drawn no more, and an image released while it faded can be closed. GUI
+     * thread, once per frame, after the paint motion has been asked for the frame.
+     */
+    public void settleReplaced() {
+        if (replaced.isEmpty()) {
+            return;
+        }
+        for (java.util.Iterator<RetainedNode> it = replaced.iterator(); it.hasNext(); ) {
+            RetainedNode n = it.next();
+            boolean up = repaints.drawn(n.id, PaintMotion.Channel.REPLACED, PaintMotion.ALL_OF_IT).a() >= 1f;
+            if (index.get(n.id) == n && !up) {
+                continue;
+            }
+            n.replacing = false;
+            n.wordsBefore = null;
+            n.metricsBefore = null;
+            n.imageBefore = null;
+            n.regionBefore = null;
+            n.scalingBefore = null;
+            n.imageReplaced = false;
+            it.remove();
+            drawDirty = true;
+        }
+    }
 
     @Override
     public void scrollToEdge(long id) {
@@ -777,7 +836,7 @@ public final class Reconciler implements Mutation.Sink {
 
     /** An {@link PropKey#OPACITY} value as the paint motion is told it: white at that alpha, 1 when none was set. */
     private static Color alpha(Object opacity) {
-        return new Color(1f, 1f, 1f, opacity instanceof Float f ? f : 1f);
+        return PaintMotion.amount(opacity instanceof Float f ? f : 1f);
     }
 
     /** Tell the paint motion source, for a change from one colour to another that is a change. */

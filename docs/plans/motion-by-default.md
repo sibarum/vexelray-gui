@@ -71,11 +71,12 @@ their place in the box. **Built.** The Scheduler's `Motion.Label` and the templa
 
 ### 2.4 An image replaced crossfades
 
-The same for `Node.image`: the old image fades out in the box as the new one fades in. **The open question** is the
-image's lifetime. `Node.image` says an image must stay valid until a frame that no longer names it has been
-presented; a crossfade names the old one for 120 ms more. So the framework holds the outgoing image for the fade
-and says when it has let go, and an image the framework cannot hold (a handle released at once) is cut, as today.
-Decided when this step is built; until then, images cut.
+The same for `Node.image`: the new image comes up over the old, and the old goes only in the second half, so two
+opaque pictures never let what is behind them show through half-way. The old image stays *named* while it fades
+(`GuiApp.names` counts it), so a texture released the moment it was replaced is held by `GuiApp.release` until the
+fade has let it go, as the release contract already promised; the reconciler lets go of it once the new one is all
+the way up (`settleReplaced`). A feed closed at once is not drawn fading: the new image comes up alone. Words and
+images share one channel, `REPLACED`. **Built.**
 
 ### 2.5 A clickable node answers the pointer
 

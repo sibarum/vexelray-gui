@@ -819,7 +819,7 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                 continue;
             }
             if (shownAny(r.images)) {
-                if (warn && !r.warned) {
+                if (warn && !r.warned && shownNow(r.images)) {   // not one only fading out under its replacement
                     r.warned = true;
                     LOG.warn("a released texture is still shown by a node, so it stays open until no tree names "
                             + "it; give the node another image before releasing: " + r.thing);
@@ -852,6 +852,21 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
         return false;
     }
 
+    /** Whether any window shows one of {@code images} as its image now, not only fading out under its replacement. */
+    private boolean shownNow(SampledImage[] images) {
+        for (SampledImage image : images) {
+            if (main.showsNow(image)) {
+                return true;
+            }
+            for (OpenWindow w : open) {
+                if (w.window.showsNow(image)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     /** Whether any window's tree, as its last update left it, still names {@code image}. */
     private boolean shown(SampledImage image) {
         if (main.shows(image)) {
@@ -865,14 +880,22 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
         return false;
     }
 
-    /** Whether {@code image} is on {@code node} or anywhere under it. */
+    /**
+     * Whether {@code image} is on {@code node} or anywhere under it: shown, or fading out under the image that replaced
+     * it (RetainedNode.imageBefore), which still samples it until the crossfade lets it go.
+     */
     static boolean names(RetainedNode node, dev.vexelray.target.ImageHandle image) {
-        if (node.image() == image) {
+        return names(node, image, true);
+    }
+
+    /** As {@link #names(RetainedNode, dev.vexelray.target.ImageHandle)}, counting one fading out only when {@code fading}. */
+    static boolean names(RetainedNode node, dev.vexelray.target.ImageHandle image, boolean fading) {
+        if (node.image() == image || fading && node.imageBefore == image) {
             return true;
         }
         List<RetainedNode> children = node.children;
         for (int i = 0; i < children.size(); i++) {
-            if (names(children.get(i), image)) {
+            if (names(children.get(i), image, fading)) {
                 return true;
             }
         }

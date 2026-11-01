@@ -887,7 +887,8 @@ public final class TreeRenderer {
             return 1f;
         }
         float set = n.opacity();
-        return paint.drawn(n.id, PaintMotion.Channel.OPACITY, new Color(1f, 1f, 1f, set)).a();
+        return set >= 1f ? paint.drawn(n.id, PaintMotion.Channel.OPACITY, PaintMotion.ALL_OF_IT).a()
+                : paint.drawn(n.id, PaintMotion.Channel.OPACITY, PaintMotion.amount(set)).a();
     }
 
     /**
@@ -924,30 +925,18 @@ public final class TreeRenderer {
         }
         // An image sits between the background and the border: a background shows through anything transparent in
         // it, and a border frames it. It takes the node's own radius, so a viewport rounds with the card it is in.
-        ImageHandle image = n.image();
-        if (image != null && n.w > 0f && n.h > 0f) {
-            // An alpha, not a colour: the tint multiplies the texel, so there is no shade to choose here — only
-            // the subtree opacity this class applies to everything it draws.
-            ImageRegion region = n.imageRegion();
-            dev.vexelray.gui.core.ImageScaling scaling = n.imageScaling();
-            // A texture whose sampler decodes sRGB gives linear light, which the shader must encode again. A feed is
-            // not its texture yet (DeviceImages resolves it later), so a picture feed, uploaded sRGB, says so itself.
-            boolean linear = image instanceof dev.vexelray.vulkan.present.SampledImage s && s.linear()
-                    || image instanceof dev.vexelray.gui.core.Feed f && f.picture();
-            if (scaling != null || linear) {
-                ImageRegion r = region == null ? ImageRegion.WHOLE : region;
-                canvas.image(n.x, n.y, n.w, n.h, rTop, rBottom, image, r.u0(), r.v0(), r.u1(), r.v1(), alpha,
-                        scaling == null ? null : scaling.filter(),
-                        scaling == null ? 0 : scaling.textureWidth(), scaling == null ? 0 : scaling.textureHeight(),
-                        linear);
-            } else if (region == null || region.whole()) {
-                canvas.image(n.x, n.y, n.w, n.h, rTop, rBottom, image, alpha);
-            } else {
-                // One cell of a sheet. Same primitive, same run — only the four texture coordinates differ, which
-                // is why an animation costs no upload and no extra draw.
-                canvas.image(n.x, n.y, n.w, n.h, rTop, rBottom, image,
-                        region.u0(), region.v0(), region.u1(), region.v1(), alpha);
+        float up = replacedUp(n);
+        if (n.imageReplaced && up < 1f) {
+            // An image replaced: the new one comes up over the old, and the old goes only in the second half, so two
+            // opaque pictures never let what is behind them show through half-way.
+            // A feed its owner closed at once is gone, and would draw as the placeholder: the new one comes up alone.
+            if (!(n.imageBefore instanceof dev.vexelray.gui.core.Feed f && f.closed())) {
+                drawImage(n, n.imageBefore, n.regionBefore, n.scalingBefore, alpha * Math.min(1f, 2f * (1f - up)),
+                        rTop, rBottom, canvas);
             }
+            drawImage(n, n.image(), n.imageRegion(), n.imageScaling(), alpha * up, rTop, rBottom, canvas);
+        } else {
+            drawImage(n, n.image(), n.imageRegion(), n.imageScaling(), alpha, rTop, rBottom, canvas);
         }
         // A distance-field shape, over the image: across the box, and out over its margin for a glow or a shadow.
         dev.vexelray.gui.core.ImageField field = n.field();
@@ -975,8 +964,7 @@ public final class TreeRenderer {
         // A cut label's spans index the whole text, not the string drawn, so it is drawn plain.
         java.util.List<Span> spans = hasText && n.cutText == null ? n.spans() : java.util.List.of();
 
-        float up = wordsUp(n);
-        if (up >= 1f) {
+        if (n.wordsBefore == null || up >= 1f) {
             drawText(n, n.textMetrics, s, hasText, spans, pad, canvas, text);
             return;
         }
@@ -1003,14 +991,43 @@ public final class TreeRenderer {
     }
 
     /**
-     * How far {@code n}'s new words are up over the ones they replaced ({@code Channel.WORDS}): 1 when nothing is being
-     * crossfaded, which is when it kept no old words or the paint motion has nothing on its way there.
+     * How far what {@code n} shows is up over what it replaced, its words or its image ({@code Channel.REPLACED}): 1
+     * when nothing is being crossfaded, which is when it kept nothing or the paint motion has nothing on its way there.
      */
-    private float wordsUp(RetainedNode n) {
-        if (n.wordsBefore == null) {
+    private float replacedUp(RetainedNode n) {
+        if (!n.replacing) {
             return 1f;
         }
-        return paint.drawn(n.id, PaintMotion.Channel.WORDS, Color.WHITE).a();
+        return paint.drawn(n.id, PaintMotion.Channel.REPLACED, PaintMotion.ALL_OF_IT).a();
+    }
+
+    /** {@code image} across {@code n}'s box at {@code a}, sampling {@code region} through {@code scaling}; none, nothing. */
+    private void drawImage(RetainedNode n, ImageHandle image, ImageRegion region,
+                           dev.vexelray.gui.core.ImageScaling scaling, float a, float rTop, float rBottom,
+                           Canvas canvas) {
+        if (image == null || n.w <= 0f || n.h <= 0f || a <= 0f) {
+            return;
+        }
+        // An alpha, not a colour: the tint multiplies the texel, so there is no shade to choose here — only the
+        // subtree opacity this class applies to everything it draws.
+        // A texture whose sampler decodes sRGB gives linear light, which the shader must encode again. A feed is not
+        // its texture yet (DeviceImages resolves it later), so a picture feed, uploaded sRGB, says so itself.
+        boolean linear = image instanceof dev.vexelray.vulkan.present.SampledImage s && s.linear()
+                || image instanceof dev.vexelray.gui.core.Feed f && f.picture();
+        if (scaling != null || linear) {
+            ImageRegion r = region == null ? ImageRegion.WHOLE : region;
+            canvas.image(n.x, n.y, n.w, n.h, rTop, rBottom, image, r.u0(), r.v0(), r.u1(), r.v1(), a,
+                    scaling == null ? null : scaling.filter(),
+                    scaling == null ? 0 : scaling.textureWidth(), scaling == null ? 0 : scaling.textureHeight(),
+                    linear);
+        } else if (region == null || region.whole()) {
+            canvas.image(n.x, n.y, n.w, n.h, rTop, rBottom, image, a);
+        } else {
+            // One cell of a sheet. Same primitive, same run — only the four texture coordinates differ, which is why
+            // an animation costs no upload and no extra draw.
+            canvas.image(n.x, n.y, n.w, n.h, rTop, rBottom, image,
+                    region.u0(), region.v0(), region.u1(), region.v1(), a);
+        }
     }
 
     /**

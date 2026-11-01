@@ -126,7 +126,7 @@ class PaintMotionTest {
             label.text("two");
             field.text("typed more");
             Seams.of(gui).frame(400f, 300f, PaintMotionTest::noText);
-            assertEquals(List.of("WORDS 0.0->0.0", "WORDS 0.0->1.0"), words);
+            assertEquals(List.of("REPLACED 0.0->0.0", "REPLACED 0.0->1.0"), words);
         }
     }
 

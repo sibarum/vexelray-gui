@@ -308,6 +308,54 @@ class ImageNodeTest {
         }
     }
 
+    /**
+     * An image replaced on screen crossfades: the old one, with the cell it showed, is kept and still named (so a
+     * texture released at once is not closed under it) until the paint motion says the new one is all the way up.
+     */
+    @Test
+    void anImageReplacedIsKeptAndNamedUntilTheNewOneIsUp() {
+        try (Gui gui = new Gui(Atchung.create())) {
+            boolean[] fading = {true};
+            gui.paintMotion(new dev.vexelray.gui.core.style.PaintMotion() {
+                @Override
+                public void repainted(long node, Channel channel, dev.vexelray.canvas.Color from,
+                                      dev.vexelray.canvas.Color to) {
+                }
+
+                @Override
+                public dev.vexelray.canvas.Color drawn(long node, Channel channel, dev.vexelray.canvas.Color settled) {
+                    return channel == Channel.REPLACED && fading[0]
+                            ? dev.vexelray.canvas.Color.withAlpha(settled, 0.5f) : settled;
+                }
+
+                @Override
+                public long draw(dev.vexelray.gui.core.Frame frame) {
+                    return dev.vexelray.gui.core.Frame.NEVER;
+                }
+            });
+            Node node = gui.box().width(dev.vexelray.gui.core.layout.Length.dp(100))
+                    .height(dev.vexelray.gui.core.layout.Length.dp(50));
+            gui.root().children(node);
+            FakeImage was = new FakeImage(1);
+            ImageRegion cell = ImageRegion.cell(1, 2, 2);
+            node.image(was, cell);
+            Seams.of(gui).frame(W, H, ImageNodeTest::noText);
+
+            node.image(new FakeImage(2));
+            RetainedNode root = Seams.of(gui).frame(W, H, ImageNodeTest::noText);
+            RetainedNode n = find(root, node.id());
+            assertSame(was, n.imageBefore, "the old image is kept while the new one comes up");
+            assertSame(cell, n.regionBefore, "with the cell it showed, written before the new image was");
+            assertEquals(true, GuiApp.names(root, was), "and still named, so a release waits for it");
+            assertEquals(false, GuiApp.names(root, was, false), "though not as what the node shows now");
+
+            fading[0] = false;
+            root = Seams.of(gui).frame(W, H, ImageNodeTest::noText);
+            assertNull(find(root, node.id()).imageBefore, "let go once the new one is all the way up");
+            assertEquals(false, GuiApp.names(root, was));
+        }
+    }
+
     @Test
     void clearingTheImageClearsTheRegionWithIt() {
         try (Gui gui = new Gui(Atchung.create())) {

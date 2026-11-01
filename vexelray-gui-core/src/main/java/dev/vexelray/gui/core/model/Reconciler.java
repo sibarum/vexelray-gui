@@ -617,6 +617,11 @@ public final class Reconciler implements Mutation.Sink {
             if (key == PropKey.OPACITY && n.layoutCtx != null && !n.paintCuts()) {
                 report(id, PaintMotion.Channel.OPACITY, alpha(before), alpha(value));
             }
+            // An icon recoloured is a new field with another tint: its tint is its ink, and fades as a text colour does.
+            if (key == PropKey.FIELD && before instanceof dev.vexelray.gui.core.ImageField was
+                    && value instanceof dev.vexelray.gui.core.ImageField now && !n.paintCuts()) {
+                report(id, PaintMotion.Channel.TEXT, was.tint(), now.tint());
+            }
             if (key.affectsLayout(before, value)) {
                 layoutDirty = true;
             } else if (key.geometryAffecting()) {

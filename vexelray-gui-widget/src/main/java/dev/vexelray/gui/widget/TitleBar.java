@@ -563,8 +563,8 @@ public final class TitleBar {
                 .alignItems(AlignItems.CENTER)
                 .background(Role.NONE)
                 .scroll(false, false)
-                .windowRegion(region)
-                .children(own);
+                .windowRegion(region);
+        b.append(own);   // over the plate and the drawn glyphs the caption put there
         Seams.of(gui).onClick(b, action);
         return b;
     }
@@ -583,15 +583,25 @@ public final class TitleBar {
      * the button, and pressed the plate deepens. Close is the one that warns: its plate is the danger colour and its
      * glyph the colour that reads on it.
      *
-     * <p><b>Nothing appears or grows.</b> The plate is a colour change inside a box that was always the button's —
-     * the hit target is the full button at every state, plate or no plate, so a pointer that lands on a button keeps
-     * landing on it. The plate is drawn into the same picture as the glyph, on the same grid, so a zoom or a move to
-     * another display re-authors both at once.
+     * <p><b>Nothing appears or grows, and nothing changes in a frame.</b> The plate is a colour change inside a box that
+     * was always the button's — the hit target is the full button at every state, plate or no plate, so a pointer that
+     * lands on a button keeps landing on it. The plate is a node with a background, so the framework fades it as it
+     * fades any colour. The glyph is a drawing on the caption grid, which keeps its strokes on the device's pixels,
+     * drawn once for each state in that state's ink over that state's plate; the state shows one and the framework
+     * fades the opacities between them. Drawn per state rather than recoloured because the restore glyph cuts its front
+     * window out of the one behind in the colour of what is under it.
      */
     private final class Caption {
+        /** The plate's inset in the button, and its size: a 40 x 24 plate in a 46 x 32 button, rounded at five. */
+        private static final Length INSET_X = Length.dp(3);
+        private static final Length INSET_Y = Length.dp(4);
+
         final Node node;
         private final boolean danger;
         private final Glyph glyph;
+        /** The plate, and the glyph drawn for each state, in {@link InteractionState}'s order. */
+        private final Node plate;
+        private final Node[] glyphs = new Node[3];
         private volatile dev.vexelray.gui.core.layout.Rect box;
         private volatile InteractionState state = InteractionState.NORMAL;
 
@@ -599,41 +609,60 @@ public final class TitleBar {
             this.node = node;
             this.danger = danger;
             this.glyph = glyph;
+            // Neither takes the pointer: the button is what is clicked and hovered, all of it.
+            this.plate = gui.box().floatAt(INSET_X, INSET_Y).size(Length.dp(40), Length.dp(24)).corner(Length.dp(5))
+                    .background(Role.NONE).hitInert(true).scroll(false, false);
+            node.append(plate);
+            for (int i = 0; i < glyphs.length; i++) {
+                glyphs[i] = gui.box().floatAt(Length.ZERO, Length.ZERO).width(Length.FILL).height(Length.FILL)
+                        .hitInert(true).scroll(false, false).opacity(i == 0 ? 1f : 0f);
+                node.append(glyphs[i]);
+            }
             Seams.of(gui).onResize(node, computed -> {
                 box = computed.rect();
                 paint();
             });
             Seams.of(gui).onState(node, s -> {
                 state = s;
-                paint();
+                show();
             });
         }
 
-        /** Author the picture for the box the layout settled on and the state the pointer left it in. Any thread. */
+        /** The plate and the glyph for the state the pointer left the button in; the framework fades between them. */
+        private void show() {
+            InteractionState s = state;
+            plate.background(plateIn(s));
+            for (int i = 0; i < glyphs.length; i++) {
+                glyphs[i].opacity(i == s.ordinal() ? 1f : 0f);
+            }
+        }
+
+        /** What the plate is painted in, in {@code s}: nothing at rest, raised hovered, deeper pressed. */
+        private dev.vexelray.gui.core.style.Paint plateIn(InteractionState s) {
+            if (s == InteractionState.NORMAL) {
+                return Role.NONE;
+            }
+            if (danger) {
+                return s == InteractionState.PRESSED ? Role.DANGER.mix(Role.CHROME, 0.25f) : Role.DANGER;
+            }
+            return s == InteractionState.PRESSED ? Role.LINE : Role.RAISED;
+        }
+
+        /** Author each state's glyph for the box the layout settled on. Any thread. */
         void paint() {
             dev.vexelray.gui.core.layout.Rect b = box;
             if (b == null) {
                 return;
             }
             Theme theme = gui.theme();
-            Color chrome = theme.color(Role.CHROME);
             CaptionGrid g = CaptionGrid.of(b);
-            InteractionState s = state;
-            if (s == InteractionState.NORMAL) {
-                node.picture(glyph.draw(g, theme.color(Role.DIM), chrome));
-                return;
+            for (InteractionState s : InteractionState.values()) {
+                Color under = s == InteractionState.NORMAL ? theme.color(Role.CHROME) : plateIn(s).in(theme);
+                Color ink = s == InteractionState.NORMAL ? theme.color(Role.DIM)
+                        : theme.color(danger ? Role.ON_DANGER : Role.INK);
+                glyphs[s.ordinal()].picture(glyph.draw(g, ink, under));
             }
-            Color plate = danger ? theme.color(Role.DANGER) : theme.color(Role.RAISED);
-            if (s == InteractionState.PRESSED) {
-                plate = danger ? Color.lerp(plate, chrome, 0.25f) : theme.color(Role.LINE);
-            }
-            Color ink = theme.color(danger ? Role.ON_DANGER : Role.INK);
-            // Inset three units at the sides and four top and bottom: a 40 x 24 plate in a 46 x 32 button, rounded
-            // at five, which keeps a gap between neighbouring plates so two adjacent buttons never read as one bar.
-            java.util.List<Picture.Mark> marks = new java.util.ArrayList<>();
-            marks.add(g.fill(-20, -12, 40, 24, 5, plate));
-            marks.addAll(glyph.draw(g, ink, plate).marks());
-            node.picture(new Picture(marks));
+            show();
         }
     }
 }

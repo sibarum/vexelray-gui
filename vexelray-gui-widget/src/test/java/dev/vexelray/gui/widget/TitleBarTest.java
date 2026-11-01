@@ -263,6 +263,45 @@ class TitleBarTest {
     }
 
     /**
+     * A window button under the pointer changes nothing in a frame: its plate is a node whose colour the framework
+     * fades, and its glyph is drawn once per state, shown by an opacity the framework fades. Close warns.
+     */
+    @Test
+    void aHoveredButtonChangesThroughWhatTheFrameworkFades() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Recorder window = new Recorder();
+            bar(h, window);
+            h.hover(buttonX(0), BAR_H / 2f);
+
+            dev.vexelray.gui.core.model.RetainedNode plate = withBackground(h.retained(h.gui.root()),
+                    dev.vexelray.gui.core.style.Role.DANGER);
+            assertTrue(plate != null, "hovered, close's plate is a node painted in the danger role");
+            var glyphs = plate.parent.children;
+            assertEquals(0f, glyphs.get(1).opacity(), "the glyph at rest is faded out");
+            assertEquals(1f, glyphs.get(2).opacity(), "and the hovered one in");
+            assertTrue(plate.hitInert() && glyphs.get(2).hitInert(), "the button takes the pointer, not its parts");
+
+            h.press(buttonX(0), BAR_H / 2f);
+            assertEquals(1f, glyphs.get(3).opacity(), "pressed, the pressed glyph");
+            h.release(buttonX(0), BAR_H / 2f);
+        }
+    }
+
+    private static dev.vexelray.gui.core.model.RetainedNode withBackground(dev.vexelray.gui.core.model.RetainedNode n,
+                                                                         dev.vexelray.gui.core.style.Paint paint) {
+        if (paint.equals(n.background())) {
+            return n;
+        }
+        for (dev.vexelray.gui.core.model.RetainedNode c : n.children) {
+            dev.vexelray.gui.core.model.RetainedNode hit = withBackground(c, paint);
+            if (hit != null) {
+                return hit;
+            }
+        }
+        return null;
+    }
+
+    /**
      * A window button is as tall as the bar, so a press at the bar's top edge is a press on the button. The buttons
      * declared {@code height(FILL)} inside a bar that centres its children, and FILL used to read as intrinsic
      * there: the button was its glyph's height, hovered as a letterbox, and its top edge belonged to the caption.

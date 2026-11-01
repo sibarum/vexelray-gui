@@ -90,13 +90,16 @@ application still has to paint. **Built.**
 
 ### 2.6 Icons fade, and the title bar is made of nodes
 
-An `IconView`'s tint is a colour channel and fades. The title bar's plates become box nodes with a background, and
-its glyphs `IconView`s, so they fade like everything else. `Picture` is for drawings (plots, diagrams, diagonals),
-not for controls.
+An `IconView` recoloured is a new field in another tint; the tint is its ink, so the reconciler reports it on the
+text colour channel and the renderer draws it through the fade. **Built.**
 
-The title bar drew its own glyphs to land every stroke on the device's pixel grid (`CaptionGrid`): an SDF hairline
-between two pixels is a grey smear. That is an icon's concern, not a drawing's, so the icon renderer takes it on
-(snapping a monochrome icon's straight strokes to the window's device pixels) before the title bar moves to icons.
+The title bar's plates are box nodes with a role background (rest `NONE`, hovered `RAISED`, pressed `LINE`; close in
+`DANGER`), so the framework fades them. Its glyphs stay drawings on the caption grid, which is what keeps a 1 px
+stroke on the device's pixels (`CaptionGrid`): an SDF hairline between two pixels is a grey smear. Each is drawn once
+per state, in that state's ink over that state's plate, and the state shows one by opacity, which fades (2.1).
+Per state rather than recoloured because the restore glyph cuts its front window out in the colour under it.
+**Built.** Later: snapping an icon's straight strokes to device pixels in the icon renderer, so the title bar could
+use `IconView`s too.
 
 ### 2.7 Losing it fails a test
 

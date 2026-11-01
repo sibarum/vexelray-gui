@@ -356,6 +356,42 @@ class ImageNodeTest {
         }
     }
 
+    /** An icon recoloured is a new field in another tint, and the tint is its ink: told as a text colour change. */
+    @Test
+    void anIconsTintChangedIsToldAsItsInk() {
+        try (Gui gui = new Gui(Atchung.create())) {
+            List<String> told = new java.util.ArrayList<>();
+            dev.vexelray.canvas.Color dim = dev.vexelray.canvas.Color.rgb(0.4f, 0.4f, 0.4f);
+            dev.vexelray.canvas.Color ink = dev.vexelray.canvas.Color.rgb(0.9f, 0.9f, 0.9f);
+            gui.paintMotion(new dev.vexelray.gui.core.style.PaintMotion() {
+                @Override
+                public void repainted(long node, Channel channel, dev.vexelray.canvas.Color from,
+                                      dev.vexelray.canvas.Color to) {
+                    told.add(channel + (from.equals(dim) && to.equals(ink) ? " dim->ink" : " ?"));
+                }
+
+                @Override
+                public dev.vexelray.canvas.Color drawn(long node, Channel channel, dev.vexelray.canvas.Color settled) {
+                    return settled;
+                }
+
+                @Override
+                public long draw(dev.vexelray.gui.core.Frame frame) {
+                    return dev.vexelray.gui.core.Frame.NEVER;
+                }
+            });
+            Node icon = gui.box();
+            gui.root().children(icon);
+            FakeImage sheet = new FakeImage(1);
+            icon.field(new dev.vexelray.gui.core.ImageField(sheet, ImageRegion.WHOLE, 32, 4, dim));
+            Seams.of(gui).frame(W, H, ImageNodeTest::noText);
+
+            icon.field(new dev.vexelray.gui.core.ImageField(sheet, ImageRegion.WHOLE, 32, 4, ink));
+            Seams.of(gui).frame(W, H, ImageNodeTest::noText);
+            assertEquals(List.of("TEXT dim->ink"), told);
+        }
+    }
+
     @Test
     void clearingTheImageClearsTheRegionWithIt() {
         try (Gui gui = new Gui(Atchung.create())) {

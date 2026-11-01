@@ -216,7 +216,8 @@ class InstrumentStripTest {
             assertEquals(1, watchers.size(), "the bar watches a live instrument");
 
             watchers.get(0).run();      // the sockets' lamps changed, say
-            assertEquals(laidOut + 1, authored.size(), "and re-authors its mark, against the same box");
+            int states = dev.vexelray.gui.core.input.InteractionState.values().length;
+            assertEquals(laidOut + states, authored.size(), "and re-authors its mark per state, same box");
             assertEquals(authored.get(laidOut - 1), authored.get(laidOut));
 
             bar.instruments(List.of());

@@ -177,6 +177,67 @@ class PresenceTest {
     }
 
     @Test
+    @DisplayName("one view hidden as the one beside it is shown is a swap: the new one takes the place at once")
+    void swapTakesThePlace() {
+        Scene s = scene();
+        try (KronoGui krono = s.krono()) {
+            Node above = row(krono.gui());
+            Node files = row(krono.gui()).height(Length.grow(1f));
+            Node open = row(krono.gui()).height(Length.grow(1f)).visible(false);
+            s.list().height(Length.FILL).children(above, files, open);
+            at(krono, 0);
+            at(krono, 100);
+            at(krono, 116);
+
+            files.visible(false);
+            open.visible(true);
+            RetainedNode root = at(krono, 116);
+            RetainedNode f = find(root, files.id());
+            RetainedNode o = find(root, open.id());
+            assertEquals(20f, o.y, "the one shown has the whole place from the first frame");
+            assertEquals(280f, o.h);
+            assertTrue(f.visible(), "the one hidden is still drawn");
+            assertEquals(20f, f.y, "where it stood");
+            assertEquals(280f, f.h);
+            assertEquals(0f, o.presence, "and the new one waits while the old goes");
+
+            at(krono, 166);
+            assertEquals(0f, f.presence, 0.02f, "gone in half the time, being replaced");
+            at(krono, 216);
+            at(krono, 266);
+            assertFalse(f.visible(), "then hidden for real");
+            assertFalse(f.floating(), "and back in the flow for when it is shown");
+            assertEquals(20f, o.y);
+            assertEquals(280f, o.h);
+            assertEquals(0.5f, o.presence, 0.02f, "while the new one arrives, after it");
+            at(krono, 316);
+            at(krono, 332);
+            assertEquals(1f, o.presence, "and is all there");
+        }
+    }
+
+    @Test
+    @DisplayName("a view hidden with nothing shown beside it keeps its place while it fades, as before")
+    void hideBesideNoArrivalIsNoSwap() {
+        Scene s = scene();
+        try (KronoGui krono = s.krono()) {
+            Node a = row(krono.gui());
+            Node kept = row(krono.gui());
+            Node b = row(krono.gui()).visible(false);
+            s.list().children(a, kept, b);
+            at(krono, 0);
+            at(krono, 100);
+            at(krono, 116);
+
+            a.visible(false);
+            b.visible(true);   // shown, but the kept row stands between them: two edits, not a swap
+            RetainedNode k = find(at(krono, 116), kept.id());
+            assertEquals(20f, k.y, "the hidden one still holds its place");
+            assertFalse(find(at(krono, 116), a.id()).floating());
+        }
+    }
+
+    @Test
     @DisplayName("a row shown again while it is being hidden comes back from where it got to")
     void shownWhileHidingReturns() {
         Scene s = scene();

@@ -57,6 +57,12 @@ the pointer at once, fades out, and then is hidden for real (where `remove()` wo
 up. Showing one is an arrival, offered to the enter motion. A node shown again before it had gone comes back up from
 where it got to. `childMotion(false)` and a node not on screen behave as today. **Built.**
 
+Checking the ported apps found two things. A node hidden for real kept its space until some other change ran a
+layout (MainFrame's tabs opened in half the editor), since the frame that hid it asked for no next one; fixed. And
+one view hidden as the sibling beside it is shown (MainFrame's hint and tabs, the text editor's files and Open)
+squeezed the two into one place for the fade and then slid the new one into it. That is now a swap, lifted as a
+panel rebuilt whole is (`Reconciler.liftReplaced`): the new view takes the place at once, the old fades out over it.
+
 ### 2.3 Words replaced crossfade
 
 A text write to a node on screen, from words to other words, draws the old words fading out where they were and the

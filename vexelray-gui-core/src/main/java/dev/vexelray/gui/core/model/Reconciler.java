@@ -110,6 +110,12 @@ public final class Reconciler implements Mutation.Sink {
      * what makes the common one right anyway. Only a parent that kept nothing (every child leaving or new) counts as
      * replaced; a single removal, or a keyed list's edit, is untouched: what leaves keeps its place, and then the gap
      * closes.
+     *
+     * <p><b>A swap is a replacement too.</b> One view hidden as the sibling beside it is shown — the hint that gives
+     * way to the tabs, the files that give way to Open, a source that gives way to its formatted view — is one thing
+     * put in place of another, though its parent keeps everything else. Holding the hidden one's place would squeeze
+     * the two into it together and then slide the new one into the gap, so it is lifted as a replaced node is. Beside
+     * means next to it with nothing visible between; a hide and a show further apart are two edits, each kept in place.
      */
     public void liftReplaced() {
         if (!lifted.isEmpty()) {
@@ -122,8 +128,11 @@ public final class Reconciler implements Mutation.Sink {
         }
         for (RetainedNode n : beganLeaving) {
             RetainedNode p = n.parent;
-            if (n.leaving && !n.lifted && p != null && gainedArrival.contains(p) && n.layoutCtx != null
-                    && keptNothing(p)) {
+            if (!n.leaving || n.lifted || p == null || !gainedArrival.contains(p) || n.layoutCtx == null) {
+                continue;
+            }
+            RetainedNode in = n.hiding ? arrivedBeside(n, p) : null;
+            if (in != null || !n.hiding && keptNothing(p)) {
                 n.lifted = true;
                 n.liftedX = n.x - p.x;
                 n.liftedY = n.y - p.y;
@@ -132,16 +141,21 @@ public final class Reconciler implements Mutation.Sink {
                 lifted.add(n);
                 layoutDirty = true;
                 exits.replaced(n);
-                replacedParents.add(p);
+                if (in != null) {
+                    swappedIn.add(in);
+                } else {
+                    replacedParents.add(p);
+                }
             }
         }
         // What arrived in a replaced parent waits on what it replaces, so the two are never seen through each other.
         for (RetainedNode a : arrivedNow) {
-            if (a.parent != null && replacedParents.contains(a.parent)) {
+            if (a.parent != null && replacedParents.contains(a.parent) || swappedIn.contains(a)) {
                 enters.replacing(a);
             }
         }
         replacedParents.clear();
+        swappedIn.clear();
         beganLeaving.clear();
         gainedArrival.clear();
         arrivedNow.clear();
@@ -150,6 +164,33 @@ public final class Reconciler implements Mutation.Sink {
     /** Parents found replaced in this {@link #liftReplaced}; scratch, empty between calls. */
     private final java.util.Set<RetainedNode> replacedParents =
             java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+
+    /** Nodes shown in place of a sibling hidden beside them, in this {@link #liftReplaced}; scratch. */
+    private final java.util.Set<RetainedNode> swappedIn =
+            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+
+    /**
+     * The sibling shown in this drain that stands beside hiding {@code n} under {@code p}, with nothing visible between
+     * them, or null: what {@code n} is swapped for. Before it or after it, the nearer side first.
+     */
+    private RetainedNode arrivedBeside(RetainedNode n, RetainedNode p) {
+        int at = p.children.indexOf(n);
+        RetainedNode in = arrivedFrom(p, at, -1);
+        return in != null ? in : arrivedFrom(p, at, 1);
+    }
+
+    private RetainedNode arrivedFrom(RetainedNode p, int at, int step) {
+        for (int i = at + step; i >= 0 && i < p.children.size(); i += step) {
+            RetainedNode c = p.children.get(i);
+            if (arrivedNow.contains(c)) {
+                return c;
+            }
+            if (c.visible()) {
+                return null;   // something kept stands between: two edits, not one view put in place of another
+            }
+        }
+        return null;
+    }
 
     /** Lifted nodes still fading, which a change of size or scale lets go of at once (see {@link #dropLifted}). */
     private final List<RetainedNode> lifted = new java.util.ArrayList<>();
@@ -165,7 +206,11 @@ public final class Reconciler implements Mutation.Sink {
             return;
         }
         for (RetainedNode n : lifted) {
-            if (n.leaving && n.parent != null) {
+            if (n.hiding) {
+                hideNow(n);   // a view swapped out is the application's to keep: hidden, not detached
+                layoutDirty = true;
+                drawDirty = true;
+            } else if (n.leaving && n.parent != null) {
                 n.parent.children.remove(n);
                 n.parent = null;
                 departed.add(n);
@@ -174,6 +219,15 @@ public final class Reconciler implements Mutation.Sink {
             }
         }
         lifted.clear();
+    }
+
+    /** Hide {@code n}, which was fading out to be hidden, for real: back in the flow, not drawn, its place given up. */
+    private void hideNow(RetainedNode n) {
+        n.hiding = false;
+        n.leaving = false;
+        n.lifted = false;
+        n.set(PropKey.VISIBLE, Boolean.FALSE);
+        exits.left(n);
     }
 
     /** Nodes that arrived since {@link #liftReplaced} last ran. */
@@ -241,10 +295,7 @@ public final class Reconciler implements Mutation.Sink {
         for (RetainedNode g : gone) {
             if (g.hiding) {
                 // Hidden, not removed: it stays in the tree, hidden for real now that it has gone, and the rest close up.
-                g.hiding = false;
-                g.leaving = false;
-                g.set(PropKey.VISIBLE, Boolean.FALSE);
-                exits.left(g);
+                hideNow(g);
                 hidden = true;
                 continue;
             }
@@ -847,9 +898,14 @@ public final class Reconciler implements Mutation.Sink {
     private boolean shownOrHidden(RetainedNode n, boolean show) {
         if (n.hiding) {
             if (show) {
-                // Put back before it had gone: still visible underneath, so it only stops leaving.
+                // Put back before it had gone: still visible underneath, so it only stops leaving, back in the flow if it
+                // was swapped out.
                 n.hiding = false;
                 n.leaving = false;
+                if (n.lifted) {
+                    n.lifted = false;
+                    layoutDirty = true;
+                }
                 enters.entered(n);
                 presenceDirty = true;
                 drawDirty = true;
@@ -863,6 +919,7 @@ public final class Reconciler implements Mutation.Sink {
             if (n.layoutCtx != null && n.visible() && shown(n.parent) && n.opacity() > 0f && exits.leave(n)) {
                 n.hiding = true;
                 n.leaving = true;
+                beganLeaving.add(n);   // and lifted, if what is shown beside it is put in its place (liftReplaced)
                 presenceDirty = true;
                 drawDirty = true;
                 return true;
@@ -877,6 +934,8 @@ public final class Reconciler implements Mutation.Sink {
             drawDirty = true;
             if (enters != EnterMotion.NONE) {
                 enters.entered(n);
+                gainedArrival.add(n.parent);
+                arrivedNow.add(n);
                 presenceDirty = true;
             }
             return true;

@@ -5,7 +5,7 @@ see step 4). Supersedes *pacers.md* (committed as `06f27c2` the same day), which
 proposed a third exception to T7.1 for video; the author pointed out that pacing is drawing, and that drawing,
 presentation and pacing should be one API. The ask first, then what the code does today, then the design, how each
 guarantee is held, what moves onto it, the questions it leaves open, and the order of work. It answers the second
-ruling in Pix's port inventory (`Pix/docs/framework-notes.md`, *vexelray-codec: playback has no message form yet*):
+ruling in Rasterware's port inventory (`Pix/docs/framework-notes.md`, *vexelray-codec: playback has no message form yet*):
 how a video is paced in 0.2. It builds on [tree-thread.md](tree-thread.md), [frame-loop.md](frame-loop.md) and
 vexelray-framework's `threading.md` (T7.1 to T7.4, and the declared-step exception under T7.2).
 
@@ -174,10 +174,10 @@ them as no offence.
    originX)` stretches the node's own picture along x through `Picture.stretchX`, positions and box widths only, so a
    picture says what stretches by what it is made of (a fill for a span of time, a line for a pixel-wide tick). A
    true non-uniform scale of a node and its subtree would need the canvas to scale a primitive's frame along one axis,
-   which it cannot yet. *2026-10-31:* Pix's picture, looked at closely, needed the uniform **scale** B already named:
+   which it cannot yet. *2026-10-31:* Rasterware's picture, looked at closely, needed the uniform **scale** B already named:
    `Drawn.scale(node, factor)` draws a node and its subtree larger about its box's centre, as the told
    `Node.scale` does and multiplied with it, so a zoom about any point is a scale and an offset, and nothing is laid
-   out again. A turn is the next one owed (Pix's R), and a mirror after it, which is a non-uniform scale.
+   out again. A turn is the next one owed (Rasterware's R), and a mirror after it, which is a non-uniform scale.
 4. **The budget.** 50 µs per asked half is a guess; step 0 measures the codec's pick inside its loop today.
 5. **Order within emit.** Asked halves before `PaintMotion`'s own, or the framework's motion parts are just parts in
    tree order. Leaning tree order, so there is no special case.
@@ -235,7 +235,7 @@ application** (ruled 2026-10-30, below): it needs no feed, so it does not wait f
    Not done: the budget that freezes a slow asked half. The host has nothing to report one through yet, and its number
    is step 0's (open question 4).
 4. ~~**Stamps on `StreamTexture`** (vexelray-vulkan), feeds requested by message, landing a frame ahead.~~ **Done
-   2026-10-31, in a different shape, with Pix's still pictures as its first application.** `dev.vexelray.gui.core.Feed`
+   2026-10-31, in a different shape, with Rasterware's still pictures as its first application.** `dev.vexelray.gui.core.Feed`
    is the ring, and it holds no texture: `Feed.of(width, height, slots, picture)` can be made anywhere, a job included,
    and its slots are heap memory the producer writes (`take`, `level`, `handOver(slot, stamp)`, `drop`; `write` and
    `Feed.still` for a picture in hand). A node shows it with `Node.image(Feed)`. Each device's `DeviceImages` uploads
@@ -246,7 +246,7 @@ application** (ruled 2026-10-30, below): it needs no feed, so it does not wait f
    still needs no asked half. A slot comes free when a newer one is shown in its place. The processor accepts a
    `Feed` as a handle in a payload and in a view's drawn state (`Shareable.FEED`), so a job answers with the feed it
    wrote. Held by `FeedTest` and the processor's `aFeedMayCrossInAPayloadThoughItIsMutable` and
-   `aViewsDrawnStateMayHoldAFeed`, and driven in Pix (`Spike/Pix`, `v0.2`): a folder stepped through, every picture a
+   `aViewsDrawnStateMayHoldAFeed`, and driven in Rasterware (`Spike/Pix`, `v0.2`): a folder stepped through, every picture a
    feed a job decoded into. Decided in the building:
    - **Device-free, not requested by message.** A request and an answer would have cost a round trip per picture, and
      the size is known only to the producer, after it decodes: a feed requested ahead would have had to be sized for the
@@ -275,5 +275,5 @@ application** (ruled 2026-10-30, below): it needs no feed, so it does not wait f
   it needs steps 2 and 3 only. The same day the Inspector dropped its clockwork for plain panels, so what moves is
   its live timeline's scroll: told builds the marks, asked sets the offset for the present time.
   `vexelray-inspector/docs/design.md` §8, §9.1 and §9.4.
-- 2026-10-31, by the author: build the feed (step 4) now, with Pix's still viewer as its first application, ahead
+- 2026-10-31, by the author: build the feed (step 4) now, with Rasterware's still viewer as its first application, ahead
   of step 0, which only video needs. Built device-free in vexelray-gui (step 4 says why).

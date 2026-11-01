@@ -9,7 +9,7 @@ log), `vexelray` (`@Trace`), `vexelray-framework` (the debug menu) and `vexelray
 
 ## Why
 
-Found the hard way on 2026-10-23. Pix playing a 1080p video, with nobody touching it, posted 400–600 GUI mutations a
+Found the hard way on 2026-10-23. Rasterware playing a 1080p video, with nobody touching it, posted 400–600 GUI mutations a
 second. The Inspector showed the rate and nothing else: no node, no property, no sender, no outcome. Finding the
 cause meant reading code across four repos. `PictureViewer.showTransport` rewrote the whole transport on every
 video frame, about 28 writes, of which the reconciler dropped 23 as changing nothing. The seek bar's spacers and
@@ -106,7 +106,7 @@ cause. The design is now atchung's [correlation.md](../../../atchung/docs/correl
 - **The log carries the cause too.** The recorder stays light because it holds IDs, and the story of a cause is
   its rows joined with its log lines, which is why the export ships both.
 
-For the Pix run: the transport's writes and `showTransport`'s site rows would share the playback clock's causes,
+For the Rasterware run: the transport's writes and `showTransport`'s site rows would share the playback clock's causes,
 and the resize's writes would carry input causes, so "which cause grows when the window is small" is one table.
 
 ### M3. Why layout ran
@@ -177,7 +177,7 @@ computed from those rows alone.
 | `tree.txt` | `tree` as it was at the mark: ids, roles, landmarks, sizes |
 | `frames.txt` | `frames worst 20`, then `why` for the worst five |
 
-For the Pix run, `summary.md`'s first table would have read:
+For the Rasterware run, `summary.md`'s first table would have read:
 
 ```
 cause kind   via                                                                     writes/s  unchanged  laid out
@@ -209,7 +209,7 @@ Each step lands, and is useful, on its own.
 Video was step 8 until 2026-10-24, and is out: the rows, the log and the tree say what happened, and recording
 the screen was the most expensive thing the recorder would have done.
 
-The acceptance test for the whole plan: play a video in Pix built at the commit before `4110c71`, with
+The acceptance test for the whole plan: play a video in Rasterware built at the commit before `4110c71`, with
 `showTransport` annotated `@Trace`, press Ctrl+Shift+E, export, and read a timer cause through
 `PictureViewer.showTransport` off the top of the first table in `summary.md`.
 

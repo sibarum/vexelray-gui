@@ -513,7 +513,7 @@ frame, so turning the corners is exact — rounded corners, antialiasing, glyphs
 does not follow, as with translate. **Clips do not turn**: a clip is an upright box on the screen, so the clips
 around a turned node cut it where it lands, a clip inside it stays upright, and nothing under a turn is culled.
 Turn content that does not clip within itself — a picture, a shape, a label. A turned image is the consumer
-(Pix's free rotation).
+(Rasterware's free rotation).
 
 **`OVERLAY`, as built — and why it had to exist.** A `Picture` painted over the node, its border, its
 text and its whole subtree, in the box's own pixel frame and clipped to it. The same value `PICTURE`

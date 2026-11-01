@@ -4,7 +4,7 @@
 and change gradually with no code of its own, and that should be hard to lose. Two prereleases in, it is still easy
 to lose. This plan says why, and what changes so that it is not.
 
-Context: Pix's UI pass (Pix `docs/framework-notes.md` FN-16 to FN-18, and its retrospective's *A UI pass*), and
+Context: Rasterware's UI pass (Rasterware `docs/framework-notes.md` FN-16 to FN-18, and its retrospective's *A UI pass*), and
 vexelray-framework's `docs/developers/motion.md`, whose *Traps* table is the inventory this plan works through.
 
 ---
@@ -19,10 +19,10 @@ Everything they do not reach, an application has to time itself, and that code i
 
 | Change | Today | What an application writes instead |
 | --- | --- | --- |
-| An opacity the application sets | one frame | Pix's `Shade` |
-| `visible(false)` / `visible(true)` | one frame ("appears where it is") | nothing; Pix's details pop |
+| An opacity the application sets | one frame | Rasterware's `Shade` |
+| `visible(false)` / `visible(true)` | one frame ("appears where it is") | nothing; Rasterware's details pop |
 | Words replaced | one frame | the Scheduler's `Motion.Label`: dip, swap, dip back |
-| An image replaced | one frame | Pix's `Toss.crossfade` |
+| An image replaced | one frame | Rasterware's `Toss.crossfade` |
 | Hover and press on a box with a click handler | the pointer cursor is inferred; the shade is not | `NodeEvent.STATE` heard and `Role.at(state)` written, per node |
 | A picture's colours (the title bar's buttons) | one frame | nothing (Pix FN-17) |
 | `scrollIntoView`, a scrollbar arriving | one frame | "do not reveal by scrolling" |
@@ -61,7 +61,7 @@ where it got to. `childMotion(false)` and a node not on screen behave as today. 
 
 A text write to a node on screen, from words to other words, draws the old words fading out where they were and the
 new fading in, over the colour fade's time. Layout takes the new words at once, so the box's size change is the
-slide that is already there (it is what made Pix's details look smooth, clipped by their row). An empty string on
+slide that is already there (it is what made Rasterware's details look smooth, clipped by their row). An empty string on
 either side is an arrival or a departure of the words, and fades the same way. `paintCuts(true)` cuts it, for words
 that are data written on every frame (a clock, a meter's readout); a text written on every frame is followed, as a
 colour is.
@@ -131,6 +131,6 @@ one of these at its end.
 
 ## 4. Proof
 
-Pix is the first application on it: its `Shade`, `Toss.crossfade` and hand-wired hover go, and its UI pass's
+Rasterware is the first application on it: its `Shade`, `Toss.crossfade` and hand-wired hover go, and its UI pass's
 behaviour stays. motion.md's *Traps* table should end with only what an application can still get wrong by its own
 design (rebuilding nodes it should keep).

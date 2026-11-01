@@ -81,11 +81,12 @@ images share one channel, `REPLACED`. **Built.**
 ### 2.5 A clickable node answers the pointer
 
 The framework already infers that a node with a click handler is clickable, for its cursor. It infers the rest: a
-clickable node whose background, border or text colour is a `Role` is drawn at its pointer state
-(`Role.at(state)`: lifted hovered, deeper pressed) unless it hears `NodeEvent.STATE` itself, which says it shades
-itself. The press is drawn the frame the button goes down. Colours change through `Fades`, so hover comes up
-gradually and press shows at once. `Role.NONE` lifts to a faint surface, so a ghost control is not dead under the
-pointer.
+clickable node whose background or border is a `Role` is drawn at its pointer state (`Role.at(state)`: lifted
+hovered, deeper pressed) unless it hears `NodeEvent.STATE` itself, which says it shades itself. Only the nearest
+clickable under the pointer, as for the cursor. Its words are not shaded: the surface lifts, not the text on it. The
+dispatcher works it out and Gui writes it as `PropKey.POINTER_STATE`; the reconciler reports the colours it changes,
+so it fades as any colour does. A clickable with no role background has nothing to lift, so it is the one case an
+application still has to paint. **Built.**
 
 ### 2.6 Icons fade, and the title bar is made of nodes
 

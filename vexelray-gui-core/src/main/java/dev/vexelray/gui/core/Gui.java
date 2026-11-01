@@ -430,6 +430,10 @@ public final class Gui implements AutoCloseable {
         // Tab reveals what it lands on, exactly as Node.scrollIntoView would: posted during dispatch, drained this
         // frame and answered after this frame's layout, so no frame shows focus out of view.
         this.input.revealSink(id -> sink.post(new Mutation.Reveal(id)));
+        // Whatever is clickable and does not shade itself lifts under the pointer and shows a press (POINTER_STATE).
+        this.input.shadeSink((id, state) -> sink.post(new Mutation.SetProp(id,
+                dev.vexelray.gui.core.model.PropKey.POINTER_STATE,
+                state == dev.vexelray.gui.core.input.InteractionState.NORMAL ? null : state)));
         // Disabled is judged on the tree (an ancestor's counts), so the dispatcher needs to find a node by id.
         this.input.nodeLookup(reconciler::node);
         // A menu's edits go where the right-clicked node's other edits go: the history bound nearest above it.

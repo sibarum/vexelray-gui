@@ -990,6 +990,47 @@ public final class InputDispatcher {
     }
 
     /**
+     * Install the sink told the pointer's state on the node the framework shades: the nearest under the pointer that
+     * answers clicks and hears no {@link InteractionState} of its own (set by Gui, which writes it to the tree as
+     * {@code PropKey.POINTER_STATE}, where the node's role colours take it). The same inference as the pointer cursor's,
+     * so whatever shows the hand also lifts under it and shows a press. Told {@code NORMAL} for the one it leaves.
+     */
+    public void shadeSink(java.util.function.BiConsumer<Long, InteractionState> sink) {
+        this.shadeSink = sink == null ? (id, s) -> { } : sink;
+    }
+
+    private java.util.function.BiConsumer<Long, InteractionState> shadeSink = (id, s) -> { };
+    /** The node {@link #shadeSink} was last told about, and what. */
+    private long shadedId = -1L;
+    private InteractionState shadedState = InteractionState.NORMAL;
+
+    /** Work out which node the framework shades, and tell the sink of a change. GUI thread, with the states. */
+    private void reportShade() {
+        long target = -1L;
+        for (RetainedNode n = hoverHit; n != null; n = n.parent) {
+            if (answersClicks(n.id)) {
+                if (!stateHandlers.containsKey(n.id)) {
+                    target = n.id;   // a node that hears its own state shades itself, as every widget does
+                }
+                break;
+            }
+        }
+        InteractionState now = target < 0 ? InteractionState.NORMAL
+                : leftDown && pressAncestry.contains(target) ? InteractionState.PRESSED : InteractionState.HOVER;
+        if (target == shadedId && now == shadedState) {
+            return;
+        }
+        if (shadedId >= 0 && shadedId != target) {
+            shadeSink.accept(shadedId, InteractionState.NORMAL);
+        }
+        shadedId = target;
+        shadedState = now;
+        if (target >= 0) {
+            shadeSink.accept(target, now);
+        }
+    }
+
+    /**
      * Declare the cursor shape for {@code nodeId} and its descendants, overriding the inferred rules.
      *
      * <p>Needed where the affordance cannot be read off the registrations. A slider and a text field both use the
@@ -1917,6 +1958,7 @@ public final class InputDispatcher {
             refreshedGeneration = generation;
             refreshedLeftDown = leftDown;
             reportStates();
+            reportShade();
         }
         reportPointer(moved);
         updateCursor();

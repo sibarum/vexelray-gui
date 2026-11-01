@@ -274,8 +274,20 @@ public final class RetainedNode {
         return resolve(background(), theme);
     }
 
-    private static Color resolve(Paint paint, Theme theme) {
-        return paint == null ? null : paint.in(theme);
+    /**
+     * {@code paint} in {@code theme}, at the pointer's state when the framework shades this node
+     * ({@link PropKey#POINTER_STATE}) and the paint is a role: a role is what the theme can shade.
+     */
+    private Color resolve(Paint paint, Theme theme) {
+        if (paint == null) {
+            return null;
+        }
+        if (paint instanceof dev.vexelray.gui.core.style.Role role
+                && props.get(PropKey.POINTER_STATE) instanceof dev.vexelray.gui.core.input.InteractionState s
+                && s != dev.vexelray.gui.core.input.InteractionState.NORMAL) {
+            return theme.color(role, s);
+        }
+        return paint.in(theme);
     }
 
     public Length corner() {
@@ -442,7 +454,8 @@ public final class RetainedNode {
 
     /** The declared text colour in {@code theme}, or null when the node never stated one. */
     public Color textColor(Theme theme) {
-        return resolve(textColor(), theme);
+        Paint ink = textColor();   // not shaded: the framework lifts a surface under the pointer, not the words on it
+        return ink == null ? null : ink.in(theme);
     }
 
     public TextLayout.HAlign hAlign() {

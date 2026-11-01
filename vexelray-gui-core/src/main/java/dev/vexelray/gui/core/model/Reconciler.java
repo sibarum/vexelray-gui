@@ -578,6 +578,18 @@ public final class Reconciler implements Mutation.Sink {
             if (unchanged(before, value)) {
                 return;
             }
+            if (key == PropKey.POINTER_STATE) {
+                // The framework shading a clickable node: its role colours change, and fade as any colour does.
+                Color bg = n.background(theme);
+                Color border = n.borderColor(theme);
+                n.set(key, value);
+                drawDirty = true;
+                if (!n.paintCuts()) {
+                    report(id, PaintMotion.Channel.BACKGROUND, bg, n.background(theme));
+                    report(id, PaintMotion.Channel.BORDER, border, n.borderColor(theme));
+                }
+                return;
+            }
             if (key == PropKey.TEXT) {
                 retexted(n);
             } else if (key == PropKey.IMAGE_REGION) {

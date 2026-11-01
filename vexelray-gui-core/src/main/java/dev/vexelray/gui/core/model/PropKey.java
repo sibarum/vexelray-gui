@@ -319,6 +319,13 @@ public enum PropKey {
      */
     VISIBLE(true),
     /**
+     * The pointer's state on a node that answers clicks and does not shade itself (it hears no {@code NodeEvent.STATE}):
+     * written by the framework, never by an application, and drawn as its {@code Role} background and border at that
+     * state ({@code Role.at}). So anything clickable lifts under the pointer and shows a press, with no code of its
+     * own. Absent is {@code NORMAL}.
+     */
+    POINTER_STATE(false),
+    /**
      * What this node is to the <b>window manager</b> ({@link dev.vexelray.gui.core.WindowRegion}) — a title bar
      * to drag the window by, a hole in one for a control drawn on it, or the maximize button. Only meaningful in
      * a window whose chrome the application draws; the host reads these off the laid-out tree each frame and

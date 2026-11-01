@@ -917,8 +917,10 @@ public final class TreeRenderer {
             // the subtree opacity this class applies to everything it draws.
             ImageRegion region = n.imageRegion();
             dev.vexelray.gui.core.ImageScaling scaling = n.imageScaling();
-            // A texture whose sampler decodes sRGB gives linear light, which the shader must encode again.
-            boolean linear = image instanceof dev.vexelray.vulkan.present.SampledImage s && s.linear();
+            // A texture whose sampler decodes sRGB gives linear light, which the shader must encode again. A feed is
+            // not its texture yet (DeviceImages resolves it later), so a picture feed, uploaded sRGB, says so itself.
+            boolean linear = image instanceof dev.vexelray.vulkan.present.SampledImage s && s.linear()
+                    || image instanceof dev.vexelray.gui.core.Feed f && f.picture();
             if (scaling != null || linear) {
                 ImageRegion r = region == null ? ImageRegion.WHOLE : region;
                 canvas.image(n.x, n.y, n.w, n.h, rTop, rBottom, image, r.u0(), r.v0(), r.u1(), r.v1(), alpha,

@@ -73,6 +73,9 @@ public final class IconButton {
         gui.focusable(node, true);
         gui.cursor(node, CursorShape.POINTER);
         Seams.of(gui).onClick(node, this::activate);
+        // A second quick press is a second press, and the double click it also makes is the button's own: left to
+        // bubble, it reached whatever the button sits in (a viewer's stage, which a double click puts full screen).
+        Seams.of(gui).onDoubleClick(node, () -> { });
         Seams.of(gui).onState(node, s -> {
             this.state = s;
             paint();

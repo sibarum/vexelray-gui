@@ -92,7 +92,8 @@ public final class Cuts {
      */
     private record Seen(long parent, boolean parentOwnsChildren, String name, Color givenBackground, Color background,
                         Color givenBorder, Color border, Color givenInk, Color ink, float givenOpacity, float opacity,
-                        float presence, String words, Object image, boolean leaving, long[] changedAt) {
+                        float presence, String words, Object image, boolean leaving, boolean replacing,
+                        long[] changedAt) {
     }
 
     private static final int BACKGROUND = 1;
@@ -167,7 +168,7 @@ public final class Cuts {
         }
         now.put(n.id, new Seen(n.parent == null ? -1L : n.parent.id, ownsMe, name, givenBackground, background,
                 givenBorder, border, givenInk, ink, givenOpacity, opacity, n.presence, words, image, n.leaving,
-                changedAt(changed, before)));
+                n.replacing, changedAt(changed, before)));
         if (before == null) {
             // Arrived this frame (or the first frame watched): what is under it arrived with it.
             for (RetainedNode c : n.children) {
@@ -191,7 +192,8 @@ public final class Cuts {
                 name(n), n.background(theme), drawn(paint, n, PaintMotion.Channel.BACKGROUND, n.background(theme)),
                 n.borderColor(theme), drawn(paint, n, PaintMotion.Channel.BORDER, n.borderColor(theme)),
                 n.textColor(theme), drawn(paint, n, PaintMotion.Channel.TEXT, n.textColor(theme)), n.opacity(),
-                opacity, n.presence, n.textString(), n.image(), n.leaving, changedAt(0, null)));
+                opacity, n.presence, n.textString(), n.image(), n.leaving, n.replacing,
+                changedAt(0, null)));
         for (RetainedNode c : n.children) {
             note(c, paint, theme, now);
         }
@@ -209,10 +211,11 @@ public final class Cuts {
         if (fresh(changed, before, OPACITY) && opacity == givenOpacity && before.opacity != opacity) {
             found.add(new Cut(n.id, name, "opacity " + before.opacity + " -> " + opacity + " in one frame"));
         }
-        if (fresh(changed, before, WORDS) && !n.replacing && !n.editable()) {
+        // Replaced again while the last was still crossfading is a readout being driven, followed at once on purpose.
+        if (fresh(changed, before, WORDS) && !n.replacing && !before.replacing && !n.editable()) {
             found.add(new Cut(n.id, name, "words \"" + before.words + "\" -> \"" + n.textString() + "\" in one frame"));
         }
-        if (fresh(changed, before, IMAGE) && !n.imageReplaced) {
+        if (fresh(changed, before, IMAGE) && !n.imageReplaced && !before.replacing) {
             found.add(new Cut(n.id, name, "image replaced in one frame"));
         }
     }

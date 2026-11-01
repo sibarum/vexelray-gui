@@ -648,10 +648,13 @@ public final class Reconciler implements Mutation.Sink {
      * {@code n}'s words are about to be replaced: keep the ones drawn now, where they were laid out, and tell the paint
      * motion that the new ones are coming up over them ({@code Channel.REPLACED}), so the renderer crossfades the two.
      * Only a label on screen: not a field (each keystroke is the user's own, and must show at once), not a node whose
-     * look is data, not one never laid out. Words written on every frame are followed, not faded behind, as a colour
-     * is (the paint motion's own rule), and are then drawn new at once.
+     * look is data, not one never laid out. Words replaced again before the last ones were all the way up are a
+     * readout being driven (a counter, a meter, a held arrow key), and are followed: drawn new at once ({@link #followed}).
      */
     private void retexted(RetainedNode n) {
+        if (followed(n)) {
+            return;
+        }
         n.wordsBefore = null;
         n.metricsBefore = null;
         if (n.layoutCtx == null || n.editable() || n.paintCuts() || !shown(n)) {
@@ -668,9 +671,12 @@ public final class Reconciler implements Mutation.Sink {
      * {@code n}'s image is about to be replaced, {@code before} being the one it had (null for none): keep it, with the
      * part of it that was sampled, so the renderer fades it out under the new one. The image stays named while it fades,
      * so a texture released at once is not closed under it ({@code GuiApp.release}). The same rules as for words: on
-     * screen, not a node whose look is data, and an image replaced on every frame is followed.
+     * screen, not a node whose look is data, and an image replaced again while it crossfades is followed.
      */
     private void reimaged(RetainedNode n, dev.vexelray.target.ImageHandle before) {
+        if (followed(n)) {
+            return;
+        }
         n.imageBefore = null;
         n.regionBefore = null;
         if (n.layoutCtx == null || n.paintCuts() || !shown(n) || n.w <= 0f || n.h <= 0f) {
@@ -681,6 +687,29 @@ public final class Reconciler implements Mutation.Sink {
         n.scalingBefore = n.imageScaling();
         n.imageReplaced = true;
         replacing(n);
+    }
+
+    /**
+     * Whether {@code n} is replaced again while what it showed before is still fading: then what it shows is being
+     * driven by a clock of its own, faster than a crossfade, and a crossfade begun at each step would never arrive and
+     * would ghost. So it lets go of what it was fading and is drawn as it is, as the paint motion follows a colour
+     * written on every frame. The next replacement after it has come to rest crossfades again.
+     */
+    private boolean followed(RetainedNode n) {
+        if (!n.replacing) {
+            return false;
+        }
+        repaints.repainted(n.id, PaintMotion.Channel.REPLACED, PaintMotion.ALL_OF_IT, PaintMotion.ALL_OF_IT);
+        n.replacing = false;
+        n.wordsBefore = null;
+        n.metricsBefore = null;
+        n.imageBefore = null;
+        n.regionBefore = null;
+        n.scalingBefore = null;
+        n.imageReplaced = false;
+        replaced.remove(n);
+        drawDirty = true;
+        return true;
     }
 
     /** Tell the paint motion that what {@code n} shows is coming up over what it showed, and hold it until it has. */

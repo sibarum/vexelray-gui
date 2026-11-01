@@ -573,6 +573,11 @@ public final class Reconciler implements Mutation.Sink {
                     report(id, PaintMotion.Channel.TEXT, from.in(theme), to.in(theme));
                 }
             }
+            // An opacity is a look like a colour, and fades like one: as white at that alpha (Channel.OPACITY). Only
+            // on screen, so a node built at an opacity is drawn there from its first frame.
+            if (key == PropKey.OPACITY && n.layoutCtx != null && !n.paintCuts()) {
+                report(id, PaintMotion.Channel.OPACITY, alpha(before), alpha(value));
+            }
             if (key.affectsLayout(before, value)) {
                 layoutDirty = true;
             } else if (key.geometryAffecting()) {
@@ -674,6 +679,11 @@ public final class Reconciler implements Mutation.Sink {
     /** The theme the tree is drawn in: the last one {@link #retheme} applied, {@link Theme#DARK} before any. */
     public Theme theme() {
         return theme;
+    }
+
+    /** An {@link PropKey#OPACITY} value as the paint motion is told it: white at that alpha, 1 when none was set. */
+    private static Color alpha(Object opacity) {
+        return new Color(1f, 1f, 1f, opacity instanceof Float f ? f : 1f);
     }
 
     /** Tell the paint motion source, for a change from one colour to another that is a change. */

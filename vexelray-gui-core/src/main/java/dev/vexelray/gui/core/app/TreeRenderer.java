@@ -9,6 +9,7 @@ import dev.vexelray.gui.core.Viewport;
 import dev.vexelray.gui.core.input.FocusCause;
 import dev.vexelray.gui.core.input.FocusState;
 import dev.vexelray.gui.core.layout.LayoutContext;
+import dev.vexelray.gui.core.model.PropKey;
 import dev.vexelray.gui.core.model.RetainedNode;
 import dev.vexelray.gui.core.style.FocusRing;
 import dev.vexelray.gui.core.style.PaintMotion;
@@ -421,7 +422,7 @@ public final class TreeRenderer {
         float inherited = alpha;
         // Presence (EnterMotion, ExitMotion) multiplies the node's own opacity rather than standing in for it: the
         // framework fading a node in or out never overwrites what the application set.
-        alpha = inherited * node.opacity() * node.drawnOpacity * node.presence;
+        alpha = inherited * opacityOf(node) * node.drawnOpacity * node.presence;
         // Fully transparent: skip the subtree exactly as a hidden node does. Not the same as hiding it, though —
         // it was laid out, so its box is real and it is still hit-testable unless it also said hitInert.
         if (alpha > 0f) {
@@ -875,6 +876,18 @@ public final class TreeRenderer {
     /** {@code settled}, the colour {@code n} was given, as the paint motion has it on its way there; null stays null. */
     private Color drawn(RetainedNode n, PaintMotion.Channel channel, Color settled) {
         return settled == null ? null : paint.drawn(n.id, channel, settled);
+    }
+
+    /**
+     * {@code n}'s own opacity on its way to the one it was given ({@code Channel.OPACITY}): asked only of a node that
+     * stated one, since one that never did has never changed it.
+     */
+    private float opacityOf(RetainedNode n) {
+        if (n.raw(PropKey.OPACITY) == null) {
+            return 1f;
+        }
+        float set = n.opacity();
+        return paint.drawn(n.id, PaintMotion.Channel.OPACITY, new Color(1f, 1f, 1f, set)).a();
     }
 
     /**

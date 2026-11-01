@@ -31,7 +31,7 @@ class PaintMotionTest {
     }
 
     /** What it was told, as "channel from->to" lines, and whether it says it is still moving. */
-    private static final class Recording implements PaintMotion {
+    private static class Recording implements PaintMotion {
         final List<String> told = new ArrayList<>();
         boolean moving;
 
@@ -70,6 +70,36 @@ class PaintMotionTest {
             n.background(B);
             Seams.of(gui).frame(400f, 300f, PaintMotionTest::noText);
             assertTrue(paint.told.isEmpty(), "writing the colour it already has changes nothing");
+        }
+    }
+
+    /**
+     * An opacity is a look, told as white at that alpha: from the one drawn to the one set, once the node is on screen.
+     * One given before it was laid out is where it starts, so nothing is told for it.
+     */
+    @Test
+    void anOpacityChangedOnScreenIsReportedAsAnAlpha() {
+        try (Gui gui = new Gui(Atchung.create())) {
+            List<String> alphas = new ArrayList<>();
+            gui.paintMotion(new Recording() {
+                @Override
+                public void repainted(long node, Channel channel, Color from, Color to) {
+                    alphas.add(channel + " " + from.a() + "->" + to.a());
+                }
+            });
+            Node n = gui.box().width(Length.dp(40)).height(Length.dp(20)).opacity(0.5f);
+            gui.root().children(n);
+            Seams.of(gui).frame(400f, 300f, PaintMotionTest::noText);
+            assertTrue(alphas.isEmpty(), "an opacity it was built with is where it starts: " + alphas);
+
+            n.opacity(0f);
+            Seams.of(gui).frame(400f, 300f, PaintMotionTest::noText);
+            assertEquals(List.of("OPACITY 0.5->0.0"), alphas);
+
+            alphas.clear();
+            n.paintCuts(true).opacity(1f);
+            Seams.of(gui).frame(400f, 300f, PaintMotionTest::noText);
+            assertTrue(alphas.isEmpty(), "a node whose look is data cuts its opacity too");
         }
     }
 

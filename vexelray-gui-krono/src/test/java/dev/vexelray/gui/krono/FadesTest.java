@@ -64,6 +64,24 @@ class FadesTest {
     }
 
     @Test
+    @DisplayName("an opacity, told as white at that alpha, fades its alpha linearly and stays white")
+    void anOpacityFadesAsAnAlpha() {
+        try (KronoGui krono = headless()) {
+            Fades fades = Fades.on(krono, OVER, Ease.LINEAR);
+            Color half = new Color(1f, 1f, 1f, 0.5f);
+            Color none = new Color(1f, 1f, 1f, 0f);
+            fades.repainted(7L, Channel.OPACITY, half, none);
+
+            tick(krono, fades, ms(100));
+            Color at = fades.drawn(7L, Channel.OPACITY, none);
+            assertEquals(0.25f, at.a(), 1e-3f, "half way, half the alpha");
+            assertEquals(1f, at.r(), 1e-3f, "and still white");
+            tick(krono, fades, ms(200));
+            assertEquals(0f, fades.drawn(7L, Channel.OPACITY, none).a(), "at the end, the opacity it was given");
+        }
+    }
+
+    @Test
     @DisplayName("another node, and another channel of the same node, are untouched")
     void aFadeIsItsOwnNodesAndChannels() {
         try (KronoGui krono = headless()) {

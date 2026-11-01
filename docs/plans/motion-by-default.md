@@ -47,8 +47,8 @@ alpha: `Fades` then blends it linearly (Oklab between one colour and itself is t
 hue" rule is already right for it, and its check for a value written on every frame lets a hand-driven ramp through
 untouched. `paintCuts(true)` cuts it as it cuts the colours.
 
-What does not change: hit-testing reads the opacity set, not the one drawn, so a node set to 0 stops taking the
-pointer at once (FN-10's rule); and an asked half's `Drawn.opacity` is its own, set for the frame, not faded.
+What does not change: an opacity never decided what is hit (a node faded by hand says `hitInert`, or is removed),
+and an asked half's `Drawn.opacity` is its own, set for the frame, not faded. **Built.**
 
 ### 2.2 `visible()` fades
 

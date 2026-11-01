@@ -48,7 +48,13 @@ public interface PaintMotion {
         /** Its border's colour. */
         BORDER,
         /** Its text's colour, where it states one. Spans that state their own are their own. */
-        TEXT
+        TEXT,
+        /**
+         * Its own opacity ({@code Node.opacity}), reported as white at that alpha, so a source that blends colours
+         * blends it with no case of its own: white to white is white, and the alpha goes linearly. Only for a node
+         * on screen; one given an opacity before it is laid out is drawn at it from its first frame.
+         */
+        OPACITY
     }
 
     /** Nothing fades: every node is drawn in the colour it was given. The default, and reduced motion. */

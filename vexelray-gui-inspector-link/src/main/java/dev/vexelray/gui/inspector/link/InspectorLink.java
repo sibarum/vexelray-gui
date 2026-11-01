@@ -71,6 +71,15 @@ public final class InspectorLink implements AutoCloseable {
     /** The longest {@code AF_UNIX} path, measured on Windows (atchung docs/spikes/elektroq-inspector-stream.md §1). */
     static final int MAX_SOCKET_PATH = 106;
 
+    /**
+     * What an application of this link sends the Inspector, as one number, said in every {@link StreamOpened}. An
+     * Inspector built against the same number is sent everything it reads, because a run with this link open records
+     * every probe lane, traced (atchung's {@code LogConfig.inspected}); one of another number warns that what it shows
+     * may be missing something. Bump it whenever what an application sends changes in a way the Inspector reads: a
+     * lane, a row's kind or detail, a field here.
+     */
+    public static final int VERSION = 1;
+
     /** The system property that switches the link off: {@code -Dautomation.link=off}. */
     public static final String SETTING = "automation.link";
 
@@ -252,7 +261,7 @@ public final class InspectorLink implements AutoCloseable {
         senders.put(peer, new Sender(peer, follower, Math.max(0, open.snapEveryMs())));
         return new dev.vexelray.gui.inspector.link.StreamOpened(o.lanes(), o.fromSeq(), o.startSeq(), o.oldestSeq(),
                 o.headSeq(), Optional.empty(), Optional.of(sibarum.probe.Probe.originNanos()), Cause.sources(),
-                recorded());
+                recorded(), Optional.of(VERSION));
     }
 
     /** The lanes this process's probe records, by key, in the probe's order. */
@@ -262,7 +271,7 @@ public final class InspectorLink implements AutoCloseable {
 
     private static dev.vexelray.gui.inspector.link.StreamOpened refused(StreamOpen open, String why) {
         return new dev.vexelray.gui.inspector.link.StreamOpened(open.lanes(), open.fromSeq(), -1, -1, -1,
-                Optional.of(why), Optional.empty(), List.of(), List.of());
+                Optional.of(why), Optional.empty(), List.of(), List.of(), Optional.empty());
     }
 
     private void stop(PeerId peer, String why) {

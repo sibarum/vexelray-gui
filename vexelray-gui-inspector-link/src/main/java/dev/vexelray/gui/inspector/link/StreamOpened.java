@@ -22,11 +22,15 @@ import java.util.Optional;
  * @param recorded    the lanes the application's probe records, by key ({@code bus}, {@code gpu}, ...), so a reader
  *                    can tell a lane the run does not record from one where nothing happened; null from an
  *                    application older than the field, empty when refused
+ * @param version     the application's {@link InspectorLink#VERSION}: a reader of the same version is sent everything
+ *                    it reads, and one of another may not be. Empty from an application older than the field, which
+ *                    is of another version, and when the stream was refused
  */
-@IntrabufMessage(name = "inspector.StreamOpened", id = 931, minor = 3, compat = Compat.BACKWARD)
+@IntrabufMessage(name = "inspector.StreamOpened", id = 931, minor = 4, compat = Compat.BACKWARD)
 public record StreamOpened(@Field(nonNull = true) List<String> lanes, long fromSeq, long startSeq, long oldestSeq,
                            long headSeq, @Field(nonNull = true) Optional<String> err,
                            @Field(since = 1, nonNull = true) Optional<Long> originNanos,
                            @Field(since = 2) List<String> sources,
-                           @Field(since = 3) List<String> recorded) {
+                           @Field(since = 3) List<String> recorded,
+                           @Field(since = 4) Optional<Integer> version) {
 }

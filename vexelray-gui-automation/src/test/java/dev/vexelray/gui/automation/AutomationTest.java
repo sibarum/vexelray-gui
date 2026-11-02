@@ -384,6 +384,38 @@ class AutomationTest {
     }
 
     /**
+     * Motion longer than the loop's bound: while a tween steps, every frame owes the next, so the loop is still owed
+     * when its two seconds run out. That is the timeline's to wait for, as About's intro is. Frames here stop while
+     * the timeline is busy, which is the same debt seen from settle's side, and resume when it goes quiet.
+     */
+    @Test
+    void settleWaitsOutMotionThatKeepsTheLoopOwedPastItsBound() {
+        try (Gui gui = deterministic()) {
+            Node label = gui.text("before");
+            gui.root().children(label);
+            Seams.of(gui).frame(W, H, NO_TEXT);
+            label.text("moving");
+            assertTrue(gui.frameOwed(), "the precondition: the loop owes a frame");
+
+            long quietAt = System.nanoTime() + 2_400_000_000L;
+            Automation driver = new Automation(gui, null, () -> System.nanoTime() >= quietAt);
+            java.util.concurrent.CompletableFuture<String> answer =
+                    java.util.concurrent.CompletableFuture.supplyAsync(() -> driver.command("settle"));
+            while (System.nanoTime() < quietAt) {
+                Thread.onSpinWait();
+            }
+            long deadline = System.nanoTime() + 5_000_000_000L;
+            while (!answer.isDone() && System.nanoTime() < deadline) {
+                Seams.of(gui).frame(W, H, NO_TEXT);
+                Thread.onSpinWait();
+            }
+
+            String out = answer.getNow("err the driver never answered");
+            assertTrue(out.startsWith("ok"), out);
+        }
+    }
+
+    /**
      * The flake as it was reported: {@code click} then {@code settle} answered {@code ok}, and the next read saw
      * the tree from before the click. The wake flag was all settle asked, and the frame clears it at its top —
      * so a settle landing while that frame dispatched the click, or while the click's handler ran on its worker,

@@ -689,7 +689,8 @@ view`. A row half out of the window is neither: it is clicked on the half that i
 the frame that took it until that frame has published, and every handler the frame dispatched until it has
 returned, so a click's own handler, which posts its mutation after the frame that dispatched it, is waited for
 too. It is woken by the debt being paid, not by a layout commit, because a frame that changed nothing publishes
-nothing (2 s, then `err did not settle`). Then, when the host handed over a `Timeline`, it waits for the
+nothing (2 s, then `err did not settle`, unless the timeline is busy: a tween owes the next frame at every step, so
+motion longer than 2 s keeps the loop owed, and that debt is the timeline's to wait for). Then, when the host handed over a `Timeline`, it waits for the
 timeline to go quiet (10 s; a repeating cue is named rather than waited out), and for the loop once more. So it
 is exact about the frame loop, its handlers and the clock, and never a sleep. It cannot see work the
 application started for itself, on `Gui.async` or a thread of its own: that is not the loop's debt. An agent

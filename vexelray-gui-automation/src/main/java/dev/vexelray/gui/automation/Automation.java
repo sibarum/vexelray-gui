@@ -1004,7 +1004,8 @@ public final class Automation implements Commands {
      * frame owed is not settled, and answering at once is how a panel was photographed part-way through its
      * transition and reported {@code ok}. Then the loop once more, because the tick that finished the motion
      * posted its last frame's worth of mutations. A timeline that never goes quiet — a repeating cue — is
-     * reported by name rather than waited out.
+     * reported by name rather than waited out. A loop still owed at its bound while the timeline is busy goes on to
+     * this wait rather than refusing: motion owes a frame at every step, so motion longer than the bound keeps it owed.
      *
      * <p><b>What it cannot see</b> is work the application started for itself — on {@code Gui.async}, on a
      * thread of its own — which is not the loop's debt ({@link Gui#frameOwed()} says so from the other side).
@@ -1013,11 +1014,12 @@ public final class Automation implements Commands {
      */
     public String settle() {
         String loop = settleLoop();
-        if (loop != null) {
-            return loop;
-        }
+        // A loop still owed when the timeline is busy is owed by the motion: each step of a tween posts the next
+        // frame's mutations, so the debt never reaches zero until the motion ends. That is the timeline's wait, under
+        // the timeline's bound, not a loop that failed to catch up. About's 2.8-second intro used to fail here, and
+        // only when an earlier settle had not already sat through most of it.
         if (timeline.quiet()) {
-            return "ok v" + gui.semanticSnapshot().version();
+            return loop != null ? loop : "ok v" + gui.semanticSnapshot().version();
         }
         String clock = settleTimeline();
         if (clock != null) {

@@ -106,6 +106,15 @@ public interface MenuSink {
     MenuSink separator();
 
     /**
+     * Name the group that follows, as {@code CAPTURE} heads a window's screenshot and recording: a line of small
+     * capitals that runs nothing ({@link MenuItem#heading(String)}). Open the group with a {@link #separator()} first,
+     * as for any group.
+     */
+    default MenuSink heading(String label) {
+        return item(MenuItem.heading(label));
+    }
+
+    /**
      * A line that opens a submenu beside it, filled by {@code items} from a sink of its own: the same vocabulary at
      * any depth, a submenu inside a submenu included. {@link #event()} and {@link #history()} are this sink's, so an
      * {@link #edit} item there is undoable as one here is.

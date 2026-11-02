@@ -157,7 +157,8 @@ titleBar.instruments(List.of(SaveScreenshot.instrument(), KeymapWindow.instrumen
 ```
 
 `WindowInstrument.keymap(tooltip, open)` is core's — the role `instrument-keymap` and a drawn keyboard mark —
-so an agent finds it by one name in every application, as with the screenshot. `KeymapWindow` supplies the
+and `KeymapWindow.instrument` makes it the app menu's *Key bindings…* line, with the icon set's keyboard, so an agent
+finds it by one name in every application (`menu.key-bindings`), as with the screenshot. `KeymapWindow` supplies the
 behaviour: the editor in a window of its own (registered as `app.window("keymap")`, so a second click raises
 it), wearing the main window's theme and client-drawn chrome. Never in `WindowInstrument.standard()`: an
 application without rebindable commands has nothing for it to open.

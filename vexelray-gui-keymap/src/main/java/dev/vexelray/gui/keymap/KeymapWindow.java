@@ -46,7 +46,8 @@ public final class KeymapWindow {
      * {@code main}. Built lazily, so a button nobody clicks costs a closure.
      */
     public static WindowInstrument instrument(GuiApp app, Gui main, Keymap keymap) {
-        return WindowInstrument.keymap("Change key bindings", controls -> window(app, main, keymap).show());
+        return WindowInstrument.keymap("Key bindings…", controls -> window(app, main, keymap).show())
+                .icon(dev.vexelray.gui.icons.Icon.KEYBOARD);
     }
 
     /** {@link WindowInstrument#standard()} with the key-bindings button after the screenshot. */

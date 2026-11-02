@@ -156,7 +156,7 @@ class ContextMenuTest {
             var sub = menu.submenuNode(0).layout().rect();
             assertTrue(sub.x() >= more.x() + more.w(), "beside the row that opened it, not over it");
             // itemRect leaves out the panel's border, which both panels have: within it is level.
-            assertEquals(more.y() - 4f, sub.y(), 2f, "its first line level with that row");
+            assertEquals(more.y() - 6f, sub.y(), 2f, "its first line level with that row");
 
             h.click(sub.x() + sub.w() / 2f, sub.y() + 4f + more.h() / 2f);
             assertTrue(fired[1], "a command in the submenu runs");

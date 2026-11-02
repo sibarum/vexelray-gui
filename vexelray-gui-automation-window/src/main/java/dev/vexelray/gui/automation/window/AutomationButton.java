@@ -50,6 +50,7 @@ public final class AutomationButton {
     public static WindowInstrument instrument(Gui main, Sockets sockets, Consumer<MenuSink> more) {
         return WindowInstrument.debugging("Debug run: remote control and diagnostics",
                 menu -> {
+                    menu.heading("Debug run");
                     ports(menu, sockets);
                     menu.separator();
                     more.accept(menu);

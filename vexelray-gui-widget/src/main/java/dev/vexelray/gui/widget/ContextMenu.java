@@ -11,6 +11,7 @@ import dev.vexelray.gui.core.input.MenuPresenter;
 import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.style.Finish;
+import dev.vexelray.gui.core.style.Paint;
 import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.icons.Icon;
@@ -127,22 +128,30 @@ public final class ContextMenu implements MenuPresenter {
         Seams.of(gui).menus(this);
     }
 
-    /** A panel rows are drawn on: the menu's own, and each submenu's. */
+    /**
+     * A panel rows are drawn on: the menu's own, and each submenu's. A card floating over the page, as Rasterware 0.1's
+     * settings were: the panel's surface, a hairline edge, rounded well inside the rows' own corners.
+     */
     private static Node panel(Gui gui) {
         return gui.column()
                 .role("menu")
                 .visible(false)
                 .background(Role.PANEL)
-                .corner(Length.rem(0.5f))
-                .border(Length.rem(0.1f), Role.LINE)
+                .corner(Length.rem(0.75f))
+                .border(Length.dp(1), Role.LINE)
                 .lit(Finish.LIT)
                 .elevation(gui.theme().elevation(Relief.FLOATING))
                 .padding(Length.dp(PAD_DP))
+                .gap(Length.dp(1))
                 .scroll(false, false);
     }
 
     /** A panel's padding: how far its first row stands below its top edge, which a submenu is raised by. */
-    private static final float PAD_DP = 4f;
+    private static final float PAD_DP = 6f;
+
+    /** A line's icon: a little larger than its words, so its detail reads, in a cell a little larger again. */
+    private static final Length ICON = Length.rem(1.25f);
+    private static final Length ICON_CELL = Length.rem(1.5f);
 
     /**
      * Make sure {@code gui} can show context menus, without disturbing a presenter it already has. Called by every
@@ -190,22 +199,37 @@ public final class ContextMenu implements MenuPresenter {
         opener = where;
         closeSubmenus(0);
         rebuild(menuItems);
-        if (!attached) {
-            attached = true;
-            gui.root().append(menu);
-        }
         float dpi = Math.max(0.0001f, Seams.of(gui).dpi().value());
         menu.floatAt(Length.dp(where.x() / dpi), Length.dp(where.y() / dpi));
-        menu.visible(true);
         if (!shown) {
             shown = true;
+            closing = null;
+            // Faded up rather than shown at once, and faded out rather than hidden at once (hide): the window's motion
+            // fades an opacity as it fades a colour. The first opening is the panel arriving in the tree, which the
+            // window's presence motion fades up and raises into its place. Never removed between openings, because
+            // removing a node releases it and everything keyed by it.
+            if (!attached) {
+                attached = true;
+                gui.root().append(menu.visible(true).opacity(1f).hitInert(false));
+            } else {
+                menu.visible(true).hitInert(false).opacity(1f);
+            }
             // Claimed only while open (and released on hide): a hidden node keeps its claims, and a closed menu
             // owning Escape would shadow whatever the page wants it for.
             Seams.of(gui).claim(menu, ESCAPE, ClaimScope.VISIBLE, this::hide);
         }
     }
 
-    /** Close the menu. Hidden, not removed: the panel keeps its identity, and its rows keep theirs until replaced. */
+    /** How long a closed menu takes to fade out before it is hidden: the window's presence motion, near enough. */
+    static final long FADE_MILLIS = 160L;
+
+    /** What hides the faded panel once its fade is done; replaced by an opening, which keeps it. Guarded by this. */
+    private TimerTask closing;
+
+    /**
+     * Close the menu. It stops taking the pointer at once and fades out where it stands, then is hidden, not removed:
+     * the panel keeps its identity, and its rows keep theirs until replaced.
+     */
     public void hide() {
         if (!shown) {
             return;
@@ -214,8 +238,24 @@ public final class ContextMenu implements MenuPresenter {
         synchronized (this) {
             settle();
             closeSubmenus(0);
+            menu.hitInert(true).opacity(0f);
+            if (timer == null) {
+                timer = new Timer("vexelray-menu", true);
+            }
+            TimerTask faded = new TimerTask() {
+                @Override
+                public void run() {
+                    synchronized (ContextMenu.this) {
+                        if (closing == this) {
+                            closing = null;
+                            menu.visible(false);
+                        }
+                    }
+                }
+            };
+            closing = faded;
+            timer.schedule(faded, FADE_MILLIS);
         }
-        menu.visible(false);
         gui.releaseClaim(menu, ESCAPE);
     }
 
@@ -291,7 +331,7 @@ public final class ContextMenu implements MenuPresenter {
                     Length.dp(l.rect().y() / dpi - PAD_DP));
         }
         level.panel.visible(true);
-        row.background(Role.SELECTION);   // the way to what is open stays lit while it is
+        row.background(Role.RAISED).border(Length.dp(1), Role.EDGE.alpha(0.5f));   // the way to what is open stays lit
         depth = at + 1;
     }
 
@@ -351,7 +391,7 @@ public final class ContextMenu implements MenuPresenter {
             Level level = levels.get(i);
             level.panel.visible(false);
             if (level.opener != null) {
-                level.opener.background((Role) null);
+                level.opener.background(Role.NONE).border(Length.dp(1), Role.NONE);
             }
             level.opener = null;
             level.item = null;
@@ -411,7 +451,7 @@ public final class ContextMenu implements MenuPresenter {
         // which is the only time it can be decided without something moving under the pointer.
         boolean iconColumn = menuItems.stream().anyMatch(MenuItem::marked);
         for (MenuItem item : menuItems) {
-            Node row = item.separator() ? own(rule()) : row(item, iconColumn, at);
+            Node row = item.separator() ? own(rule()) : item.heading() ? own(heading(item)) : row(item, iconColumn, at);
             rows.add(row);
             if (record != null) {
                 record.add(item);
@@ -434,10 +474,13 @@ public final class ContextMenu implements MenuPresenter {
         Node row = own(gui.row()
                 .role("menuitem")
                 .width(Length.FILL)
-                .corner(Length.rem(0.4f))
-                .padding(Length.dp(4), Length.dp(12))
-                .gap(Length.rem(0.5f))
+                .corner(Length.rem(0.5f))
+                .padding(Length.dp(6), Length.dp(10))
+                .gap(Length.rem(0.625f))
+                .alignItems(dev.vexelray.gui.core.layout.LayoutEnums.AlignItems.CENTER)
+                .border(Length.dp(1), Role.NONE)
                 .scroll(false, false));
+        IconView mark = null;
         if (iconColumn) {
             // A cell of fixed width whether or not this item fills it: the column is what aligns the labels, so an
             // item with no mark still takes its share of it instead of sliding its label into the gap. Dimmer than
@@ -445,13 +488,14 @@ public final class ContextMenu implements MenuPresenter {
             // set wins over a glyph; either sits centred in the same cell.
             Role tone = item.enabled() ? Role.DIM : Role.FAINT;
             Node cell = own(gui.row()
-                    .width(Length.rem(1.2f))
-                    .height(Length.rem(1.2f))
+                    .width(ICON_CELL)
+                    .height(ICON_CELL)
                     .justify(dev.vexelray.gui.core.layout.LayoutEnums.Justify.CENTER)
                     .alignItems(dev.vexelray.gui.core.layout.LayoutEnums.AlignItems.CENTER)
                     .scroll(false, false));
             if (item.mark() != null) {
-                cell.append(own(IconView.of(gui, item.mark()).size(Length.rem(1f)).tint(tone).node()));
+                mark = IconView.of(gui, item.mark()).size(ICON).tint(tone);
+                cell.append(own(mark.node()));
             } else if (item.icon() != null) {
                 cell.append(own(gui.text(item.icon())
                         .textSize(Length.rem(1))
@@ -471,6 +515,8 @@ public final class ContextMenu implements MenuPresenter {
             row.append(own(IconView.of(gui, Icon.CHEVRON_RIGHT).size(Length.rem(0.8f))
                     .tint(item.enabled() ? Role.DIM : Role.FAINT).node()));
         }
+        IconView icon = mark;
+        paint(row, icon, item, InteractionState.NORMAL);
         if (!item.enabled()) {
             return row;   // no handlers at all: nothing to hover, nothing to choose
         }
@@ -480,10 +526,10 @@ public final class ContextMenu implements MenuPresenter {
             // opened is open.
             Seams.of(gui).onState(row, state -> {
                 if (state != InteractionState.NORMAL) {
-                    row.background(Role.SELECTION);
+                    paint(row, icon, item, state);
                     hovered(() -> openSubmenu(at, row, item));
                 } else if (!opens(row)) {
-                    row.background((Role) null);
+                    paint(row, icon, item, state);
                 }
             });
             Seams.of(gui).onClick(row, () -> {
@@ -495,7 +541,7 @@ public final class ContextMenu implements MenuPresenter {
             // constant of this widget's: an item is a panel the pointer is on. Pointing at a command closes any
             // submenu opened beside a row at its own depth, once the pointer rests there: it has moved on from it.
             Seams.of(gui).onState(row, state -> {
-                row.background(state == InteractionState.NORMAL ? null : Role.SELECTION);
+                paint(row, icon, item, state);
                 if (state != InteractionState.NORMAL) {
                     hovered(() -> closeSubmenus(at));
                 }
@@ -516,10 +562,44 @@ public final class ContextMenu implements MenuPresenter {
         return s.replaceAll("^-+|-+$", "");
     }
 
+    /**
+     * How a command line looks in {@code state}, as a choice in Rasterware 0.1's settings did. Bare at rest, so a menu
+     * reads as a list of words. Under the pointer the raised surface fills it, an edge closes round it and its icon
+     * lifts off its own shadow; pressed, the fill deepens. A {@link MenuItem#current() current} line is edged in the
+     * accent at every state, its icon glowing in it. Colour only, inside a box that was always the line's, so nothing
+     * moves or grows under the pointer; the window's motion fades between the states.
+     */
+    private static void paint(Node row, IconView icon, MenuItem item, InteractionState state) {
+        boolean lit = state != InteractionState.NORMAL;
+        if (item.current()) {
+            row.background(Role.ACCENT.alpha(lit ? 0.24f : 0.16f)).border(Length.dp(1), Role.ACCENT);
+        } else {
+            row.background(lit ? Paint.of(Role.RAISED, state) : Role.NONE)
+                    .border(Length.dp(1), lit ? Role.EDGE.alpha(0.5f) : Role.NONE);
+        }
+        if (icon != null && item.enabled()) {
+            icon.tint(item.current() ? Role.ACCENT : lit ? Role.INK : Role.DIM)
+                    .glow(item.current() ? 0.2f : 0f)
+                    .shadow(!item.current() && lit ? 0.08f : 0f);
+        }
+    }
+
+    /** A group's heading: small capitals in the secondary ink, standing a little off the line above. */
+    private Node heading(MenuItem item) {
+        return gui.text(item.label().toUpperCase(java.util.Locale.ROOT))
+                .role("heading")
+                .width(Length.FILL)
+                .textSize(Length.rem(0.75f))
+                .textColor(Role.DIM)
+                .wordWrap(false)
+                .padding(Length.dp(6), Length.dp(11))
+                .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
+    }
+
     /** A thin horizontal rule between groups. */
     private Node rule() {
         return gui.box().width(Length.FILL).height(Length.dp(1)).background(Role.LINE)
-                .margin(Length.dp(3)).scroll(false, false);
+                .margin(Length.dp(5)).scroll(false, false);
     }
 
     /**
@@ -530,8 +610,17 @@ public final class ContextMenu implements MenuPresenter {
     private void onAnyClick(ClickEvent e) {
         // Nor the left click that opened it, which a button whose click is a menu (a title-bar instrument's) publishes
         // too, and which may arrive here after the show.
-        if (shown && e.button() == MouseButton.LEFT && !ownIds.contains(e.nodeId()) && !e.equals(opener)) {
+        if (shown && e.button() == MouseButton.LEFT && !ownIds.contains(e.nodeId()) && !opened(e)) {
             hide();
         }
+    }
+
+    /**
+     * Whether {@code e} is the click this menu was opened at. By node, button and count rather than by place, because a
+     * menu hung from its button (the title bar's lockup) is anchored somewhere other than where the click landed.
+     */
+    private boolean opened(ClickEvent e) {
+        ClickEvent o = opener;
+        return o != null && o.nodeId() == e.nodeId() && o.button() == e.button() && o.clicks() == e.clicks();
     }
 }

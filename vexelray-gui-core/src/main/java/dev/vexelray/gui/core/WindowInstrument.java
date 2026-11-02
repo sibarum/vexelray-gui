@@ -29,6 +29,13 @@ import java.util.function.Consumer;
  * carrying a macro-record button it never asked for, so {@link #standard()} is a set to reach for rather than
  * one that arrives by default.
  *
+ * <p><b>In the app menu, and at the right only while it has something to say.</b> Every instrument is a section of the
+ * menu the window's lockup opens (its mark and its name, at the bar's left): its {@code menu}'s lines, or one line of
+ * its {@code icon} and {@code tooltip} that runs its {@code action} ({@link #section}). A button at the bar's right
+ * draws the eye on every glance, so one stands there only for a state a person has to be able to see without asking: a
+ * recording running, a debug run. That is {@code badge}, and while it says so the button is there, its mark showing the
+ * state, its click doing what its section does.
+ *
  * @param role    the {@code Node.role} the instrument's button declares, so an agent can find it by name
  * @param tooltip what it is called, shown on hover of the button (never changing the button's own size)
  * @param mark    its icon, as a function of the button's box <b>and the ink the bar hands it</b>. A function of
@@ -41,11 +48,15 @@ import java.util.function.Consumer;
  *                for a mark that only changes with its box
  * @param menu    what a click opens instead of running {@code action}: a menu, built at each click against what is
  *                true then, for the window the bar is in; {@code null} for an instrument that acts when clicked
+ * @param icon    the icon its line in the app menu wears, from the icon set; {@code null} for none
+ * @param badge   whether its button stands at the bar's right now, read again whenever {@code live} says something
+ *                changed; {@code null} for an instrument that is only ever a line in the app menu
  */
 public record WindowInstrument(String role, String tooltip,
                                java.util.function.BiFunction<Rect, Color, Picture> mark,
                                Consumer<WindowControls> action, Live live,
-                               java.util.function.BiConsumer<WindowControls, dev.vexelray.gui.core.input.MenuSink> menu) {
+                               java.util.function.BiConsumer<WindowControls, dev.vexelray.gui.core.input.MenuSink> menu,
+                               IconSource icon, java.util.function.BooleanSupplier badge) {
 
     /** Where a screenshot goes when nobody said: a timestamped PNG in the working directory. */
     private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
@@ -53,6 +64,13 @@ public record WindowInstrument(String role, String tooltip,
     public WindowInstrument {
         role = role == null ? "" : role;
         tooltip = tooltip == null ? "" : tooltip;
+    }
+
+    /** An instrument with no icon of its own in the app menu, and never a badge. */
+    public WindowInstrument(String role, String tooltip, java.util.function.BiFunction<Rect, Color, Picture> mark,
+                            Consumer<WindowControls> action, Live live,
+                            java.util.function.BiConsumer<WindowControls, dev.vexelray.gui.core.input.MenuSink> menu) {
+        this(role, tooltip, mark, action, live, menu, null, null);
     }
 
     /** An instrument whose mark changes only with its box. */
@@ -65,6 +83,33 @@ public record WindowInstrument(String role, String tooltip,
     public WindowInstrument(String role, String tooltip, java.util.function.BiFunction<Rect, Color, Picture> mark,
                             Consumer<WindowControls> action, Live live) {
         this(role, tooltip, mark, action, live, null);
+    }
+
+    /** This instrument, its line in the app menu wearing {@code icon}. */
+    public WindowInstrument icon(IconSource icon) {
+        return new WindowInstrument(role, tooltip, mark, action, live, menu, icon, badge);
+    }
+
+    /** This instrument, standing at the bar's right while {@code badge} says so. */
+    public WindowInstrument badge(java.util.function.BooleanSupplier badge) {
+        return new WindowInstrument(role, tooltip, mark, action, live, menu, icon, badge);
+    }
+
+    /** Whether its button stands at the bar's right now. */
+    public boolean badged() {
+        return badge != null && badge.getAsBoolean();
+    }
+
+    /**
+     * Write this instrument's section of the app menu into {@code sink}, for the window {@code controls} command: its
+     * menu's lines, or one line that runs its action. The bar does not look inside; it opens each section with a rule.
+     */
+    public void section(WindowControls controls, dev.vexelray.gui.core.input.MenuSink sink) {
+        if (menu != null) {
+            menu.accept(controls, sink);
+        } else if (!tooltip.isEmpty()) {
+            sink.item(icon, tooltip, () -> action.accept(controls));
+        }
     }
 
     /**
@@ -170,6 +215,7 @@ public record WindowInstrument(String role, String tooltip,
      * The automation button of a debug run: a bug in place of the plug, so a debug run is told from a normal one at
      * a glance, with each socket's lamp beside it, read from {@code lamps} whenever {@code live} says they changed. A
      * click opens {@code menu}: the ports, and the way back out. The same role as {@link #automation(String, Consumer)}.
+     * A badge for the whole run: that this run can be driven and inspected is a thing to see without asking.
      */
     public static WindowInstrument debugging(String tooltip, Consumer<dev.vexelray.gui.core.input.MenuSink> menu,
                                              java.util.function.Supplier<Lamps> lamps, Live live) {
@@ -185,7 +231,7 @@ public record WindowInstrument(String role, String tooltip,
             marks.addAll(lampMarks(g, -8.5, l.control(), l.controlColor(), l.used()));
             marks.addAll(lampMarks(g, 8.5, l.diagnostics(), l.diagnosticsColor(), l.used()));
             return Picture.of(marks.toArray(Picture.Mark[]::new));
-        }, c -> { }, live, (controls, sink) -> menu.accept(sink));
+        }, c -> { }, live, (controls, sink) -> menu.accept(sink)).badge(() -> true);   // the whole run long
     }
 
     /**
@@ -202,7 +248,7 @@ public record WindowInstrument(String role, String tooltip,
                                           java.util.function.BooleanSupplier recording, Live live) {
         return new WindowInstrument("instrument-screenshot", tooltip,
                 (box, ink) -> recording.getAsBoolean() ? recordingMark(box, ink) : cameraMark(box, ink),
-                c -> { }, live, menu);
+                c -> { }, live, menu).badge(recording);   // a recording running is seen in every bar
     }
 
     /** One lamp centred in {@code box}, for a panel that shows the same lamp beside a row. */

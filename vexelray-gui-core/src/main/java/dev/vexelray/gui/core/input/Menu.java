@@ -100,6 +100,12 @@ public final class Menu {
             return this;
         }
 
+        /** A heading naming the group that follows ({@link MenuItem#heading(String)}). */
+        public Builder heading(String label) {
+            items.add(MenuItem.heading(label));
+            return this;
+        }
+
         /** A submenu holding {@code menu}'s items, greyed when none of them can be chosen. */
         public Builder submenu(String label, Menu menu) {
             items.add(MenuItem.submenu(label, true, menu.items()));

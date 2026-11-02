@@ -106,14 +106,21 @@ public final class TitleBar {
     /** Built on first use: a bar with no instruments needs no tooltip machinery. */
     private Tooltip instrumentTips;
     private final Node leading;
-    /** The application's mark, first in {@link #leading}; null until given one. */
+    /**
+     * The window's lockup, first in {@link #leading}: its mark and its wordmark, one target, opening the app menu. A
+     * plate behind them lifts under the pointer as a caption button's does, and the wordmark takes the accent.
+     */
+    private final Node lockup;
+    /** The application's mark, first in {@link #lockup}; null until given one. */
     private Node icon;
-    /** What a click on the mark does ({@link #onMark}), read at click time; null while the mark is caption. */
+    /** The application's name as a logo, after the mark in {@link #lockup}; null until given one. */
+    private volatile Wordmark wordmark;
+    /** What the pointer is doing to the lockup, so a wordmark given later is inked for it. */
+    private volatile InteractionState lockupState = InteractionState.NORMAL;
+    /** The About line at the top of the app menu ({@link #onMark}), read at click time; null for none. */
     private volatile Runnable markAction;
-    /** What the mark says under the pointer while it does something; null or blank for nothing. */
+    /** What the About line says. */
     private volatile String markTip;
-    /** The mark's tooltip, built with the first mark. */
-    private Tooltip markTips;
     private final Node titleText;
     /** The hairline between the instruments and the window controls; shown while there are instruments. */
     private final Node divider;
@@ -151,14 +158,33 @@ public final class TitleBar {
         // Clipped too, so the whole identity zone gives way — mark and menus after the title — and the window
         // controls never do. Unclipped, a long title or a menu bar had no smaller size than its content, and a
         // narrow window laid the close button out past its own right edge.
+        // The lockup is one target however many nodes it wears: what is put in it takes no pointer of its own, so
+        // the plate lifts, the menu opens and the landmark answers wherever on it the pointer is. It is caption until
+        // its menu has something on it (lockupRegion), and hidden until it has something to show.
+        this.lockup = gui.row()
+                .role("titlebar-lockup")
+                .height(Length.dp(24))
+                .alignItems(AlignItems.CENTER)
+                .gap(Length.dp(7))
+                .padding(Length.ZERO, Length.dp(8))
+                .corner(Length.dp(5))
+                .background(Role.NONE)
+                .scroll(false, false)
+                .visible(false);
+        Seams.of(gui).onClick(lockup, (dev.vexelray.gui.core.input.ClickEvent e) -> appMenu(e));
+        Seams.of(gui).onState(lockup, s -> {
+            lockupState = s;
+            paintLockup();
+        });
+        gui.landmark(MARK, lockup);
         this.leading = gui.row()
                 .height(Length.FILL)
                 .alignItems(AlignItems.CENTER)
-                .gap(Length.dp(8))
-                .padding(Length.ZERO, Length.dp(12))
+                .gap(Length.dp(6))
+                .padding(Length.ZERO, Length.dp(4))
                 .scroll(false, false)
                 .clip(true)
-                .children(titleText);
+                .children(lockup, titleText);
 
         // An application's own glyphs, if it gives any (glyphs()); until then the buttons draw their own and these are
         // hidden. Maximize and restore share a button and swap with the window's state, which syncMaximized()
@@ -246,36 +272,59 @@ public final class TitleBar {
      * ({@link WindowInstrument#standard()}, or any list an application assembles).
      *
      * <p><b>Opt-in, and replacing rather than appending.</b> A bar has none until asked, so nothing ships a
-     * button it never wanted; calling this again replaces the strip, so "which tools does this window have" has
+     * tool it never wanted; calling this again replaces them, so "which tools does this window have" has
      * one answer rather than a history.
      *
-     * <p>Each becomes a caption-sized button between the draggable caption and the window controls, declaring
+     * <p><b>Each is a section of the app menu</b>, the one the lockup opens ({@link WindowInstrument#section}), in this
+     * order, after the About line. One with a {@link WindowInstrument#badge() badge} also stands at the bar's right
+     * while its badge says so: a caption-sized button between the draggable caption and the window controls, declaring
      * {@link WindowRegion#INTERACTIVE} so its click reaches the button rather than the window manager — the gaps
-     * around them stay caption, as they do for minimize and close. The mark is re-authored whenever the button's
-     * box changes, because a {@link dev.vexelray.gui.draw.Picture} is in pixels and a window can be zoomed.
+     * around it stay caption, as they do for minimize and close. Its mark is re-authored whenever the button's box
+     * changes, because a {@link dev.vexelray.gui.draw.Picture} is in pixels and a window can be zoomed.
      */
     public TitleBar instruments(java.util.List<WindowInstrument> tools) {
-        // Replacing, not appending: the strip is a statement about this window, not a log of what was asked for.
+        // Replacing, not appending: the bar is a statement about this window, not a log of what was asked for.
         for (Node old : mounted) {
             old.remove();
         }
         mounted.clear();
+        java.util.Map<Node, WindowInstrument> standing = new java.util.LinkedHashMap<>();
         unwatch.forEach(Runnable::run);
         unwatch.clear();
         this.tools = tools == null ? java.util.List.of() : java.util.List.copyOf(tools);
-        divider.visible(!this.tools.isEmpty());
-        if (tools == null || tools.isEmpty()) {
-            return this;
-        }
-        if (instrumentTips == null) {
-            instrumentTips = new Tooltip(gui);
-        }
-        for (WindowInstrument tool : tools) {
+        lockupRegion();
+        for (WindowInstrument tool : this.tools) {
+            if (tool.badge() == null) {
+                continue;   // a line in the app menu, and nothing more
+            }
+            if (instrumentTips == null) {
+                instrumentTips = new Tooltip(gui);
+            }
             Node b = instrument(tool);
             mounted.add(b);
+            standing.put(b, tool);
             instruments.append(b);
         }
+        badges = java.util.Map.copyOf(standing);
+        showBadges();
         return this;
+    }
+
+    /** The instruments that stand at the right while their badge says so, by their buttons. */
+    private volatile java.util.Map<Node, WindowInstrument> badges = java.util.Map.of();
+
+    /**
+     * Stand each badge's button at the right while its badge says so, and the hairline before the window controls
+     * while any does. Any thread: a node's setters are thread-safe, and a live instrument calls this from its own.
+     */
+    private void showBadges() {
+        boolean any = false;
+        for (java.util.Map.Entry<Node, WindowInstrument> b : badges.entrySet()) {
+            boolean shown = b.getValue().badged();
+            b.getKey().visible(shown);
+            any |= shown;
+        }
+        divider.visible(any);
     }
 
     /**
@@ -316,7 +365,10 @@ public final class TitleBar {
         WindowInstrument.Live live = tool.live();
         if (live != null) {
             // A live one is re-authored against the last box when what it shows changes, too.
-            unwatch.add(live.watch(caption::paint));
+            unwatch.add(live.watch(() -> {
+                caption.paint();
+                showBadges();
+            }));
             instrumentTips.attach(b, () -> {
                 String now = live.tooltip();
                 return now != null ? now : tool.tooltip();
@@ -373,14 +425,13 @@ public final class TitleBar {
     }
 
     /**
-     * Put the application's mark at the far left, before the title, where the native caption puts a window's
+     * Put the application's mark at the far left, first in the lockup, where the native caption puts a window's
      * icon. {@link #addLeading} cannot: it appends, so a mark added there lands <em>after</em> the title.
      *
      * <p>Replacing rather than appending, like {@link #instruments}: a window wears one mark, and {@code null}
      * takes it off. The node is the caller's to build — a drawn {@link dev.vexelray.gui.draw.Picture}, an image,
-     * anything — and it stays caption unless it declares otherwise, so the window can be dragged by its mark as by
-     * the native one. {@link #icon(GuiApp, Icon)} builds it from the {@link Icon} the window itself wears. Once the
-     * bar has an {@link #onMark} action, any mark it wears does that instead.
+     * anything — and takes no pointer of its own: the lockup it stands in is the target, and opens the app menu.
+     * {@link #icon(GuiApp, Icon)} builds it from the {@link Icon} the window itself wears.
      */
     public TitleBar icon(Node node) {
         if (icon != null) {
@@ -388,37 +439,77 @@ public final class TitleBar {
         }
         icon = node;
         if (node != null) {
-            leading.insert(node, 0);
-            // Wired once per mark, resolving the action at click time, so a mark given before the action (or the
-            // other way round) is the same mark. While there is no action the region below leaves it caption, the
-            // window manager takes the pointer, and neither of these ever hears from it.
-            Seams.of(gui).onClick(node, () -> {
-                Runnable action = markAction;
-                if (action != null) {
-                    action.run();
-                }
-            });
-            gui.landmark(MARK, node);
-            if (markTips == null) {
-                markTips = new Tooltip(gui);
-            }
-            markTips.attach(node, () -> markAction == null ? null : markTip);
-            // Only ever made a hole here: a mark given with no action keeps whatever region it declared itself.
-            if (markAction != null) {
-                node.windowRegion(WindowRegion.INTERACTIVE);
-            }
+            lockup.insert(node.hitInert(true), 0);
         }
+        lockupShown();
         return this;
     }
 
     /**
-     * Have a click on the mark do {@code action} — the About window, as the framework uses it — saying {@code tooltip}
-     * under the pointer. {@code null} puts the mark back to caption.
-     *
-     * <p><b>The mark stops being caption</b> while it has an action: it declares {@link WindowRegion#INTERACTIVE}, as
-     * a caption button does, so the click reaches it rather than starting a drag. That is the trade the native caption
-     * makes too, where a click on a window's icon opens its system menu rather than moving it. The rest of the strip
-     * still drags.
+     * The application's name as a logo, after the mark in the lockup: a typeface the application owns, set as it
+     * would set it anywhere. The framework gives every bar the name in the theme's type ({@link Wordmark#of}) unless
+     * the application gave its own first. Replacing, like {@link #icon(Node)}; {@code null} takes it off.
+     */
+    public TitleBar wordmark(Wordmark mark) {
+        Wordmark old = wordmark;
+        if (old != null) {
+            old.node().remove();
+        }
+        wordmark = mark;
+        if (mark != null) {
+            lockup.insert(mark.node().hitInert(true), icon == null ? 0 : 1);
+            paintLockup();
+        }
+        lockupShown();
+        return this;
+    }
+
+    /** {@code name} as the wordmark, in the bar's type ({@link Wordmark#of}). */
+    public TitleBar wordmark(String name) {
+        return wordmark(Wordmark.of(gui, name));
+    }
+
+    /** The wordmark the lockup wears, or null for none yet. */
+    public Wordmark wordmark() {
+        return wordmark;
+    }
+
+    /**
+     * An application's name drawn as its logo. The node is the application's; the ink is the bar's, handed over as the
+     * pointer comes and goes, so the logo lifts into the accent with the plate behind it as a caption glyph does.
+     */
+    public interface Wordmark {
+
+        /** The logo, as a node of its own size. */
+        Node node();
+
+        /** Draw the logo in {@code ink} from now on: the theme's ink at rest, the accent under the pointer. */
+        void ink(Color ink);
+
+        /** {@code name} in the bar's type, weighted as a name: the wordmark of a bar whose application gave none. */
+        static Wordmark of(Gui gui, String name) {
+            Node text = gui.text(name == null ? "" : name)
+                    .textSize(TITLE_SIZE)
+                    .fontWeight(600)
+                    .wordWrap(false)
+                    .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
+            return new Wordmark() {
+                @Override
+                public Node node() {
+                    return text;
+                }
+
+                @Override
+                public void ink(Color ink) {
+                    text.textColor(ink);
+                }
+            };
+        }
+    }
+
+    /**
+     * Put an About line at the top of the app menu, saying {@code tooltip} and doing {@code action} — the About window,
+     * as the framework uses it. {@code null} takes the line off.
      *
      * <p>Replacing rather than accumulating, like {@link #instruments}, and any time, before the mark or after.
      *
@@ -428,13 +519,13 @@ public final class TitleBar {
     TitleBar onMark(String tooltip, Runnable action) {
         this.markTip = tooltip;
         this.markAction = action;
-        markRegion();
+        lockupRegion();
         return this;
     }
 
     /**
-     * Have a click on the mark send {@code message} through {@code to}, saying {@code tooltip} under the pointer: the
-     * form for an application, as a menu item's is (vexelray-framework's {@code docs/threading.md}, T7.5).
+     * Have the About line send {@code message} through {@code to}, saying {@code tooltip}: the form for an application,
+     * as a menu item's is (vexelray-framework's {@code docs/threading.md}, T7.5).
      */
     public <T> TitleBar onMark(String tooltip, Sender<T> to, T message) {
         java.util.Objects.requireNonNull(to, "to");
@@ -442,12 +533,73 @@ public final class TitleBar {
         return onMark(tooltip, () -> to.send(message));
     }
 
-    /** The mark's region for whether it has an action: a hole in the caption, or the caption itself. */
-    private void markRegion() {
-        Node mark = icon;
+    /**
+     * The lockup's region for whether its menu has anything on it. While it has, it stops being caption: it declares
+     * {@link WindowRegion#INTERACTIVE}, as a caption button does, so the click reaches it rather than starting a drag.
+     * That is the trade the native caption makes too, where a click on a window's icon opens its system menu rather
+     * than moving it. The rest of the strip still drags.
+     */
+    private void lockupRegion() {
+        lockup.windowRegion(hasAppMenu() ? WindowRegion.INTERACTIVE : null);
+    }
+
+    /** Whether the app menu would have a line on it. */
+    private boolean hasAppMenu() {
+        return markAction != null || !tools.isEmpty();
+    }
+
+    /** Show the lockup once it has a mark or a wordmark to show. */
+    private void lockupShown() {
+        lockup.visible(icon != null || wordmark != null);
+    }
+
+    /**
+     * The plate and the wordmark's ink for what the pointer is doing: nothing and the theme's ink at rest; the raised
+     * surface and the accent under the pointer; deeper while pressed. A colour change inside the lockup's own box,
+     * which the window's motion fades, as a caption button's plate is.
+     */
+    private void paintLockup() {
+        InteractionState s = hasAppMenu() ? lockupState : InteractionState.NORMAL;
+        lockup.background(s == InteractionState.NORMAL ? Role.NONE
+                : s == InteractionState.PRESSED ? Role.LINE : Role.RAISED);
+        Wordmark mark = wordmark;
         if (mark != null) {
-            mark.windowRegion(markAction == null ? null : WindowRegion.INTERACTIVE);
+            Theme theme = gui.theme();
+            mark.ink(s == InteractionState.NORMAL ? theme.color(Role.INK)
+                    : dev.vexelray.gui.core.style.Paint.of(Role.ACCENT, s).in(theme));
         }
+    }
+
+    /**
+     * Open the app menu under the lockup, or close it if it is open: the About line, then each instrument's section,
+     * a rule between, built now against what is true now, for the window this bar commands.
+     */
+    private void appMenu(dev.vexelray.gui.core.input.ClickEvent at) {
+        if (!hasAppMenu()) {
+            return;
+        }
+        if (Seams.of(gui).menus() instanceof ContextMenu open && open.isOpen()) {
+            open.hide();
+            return;
+        }
+        // Hung from the lockup's lower left rather than from the pointer, as a menu bar's menus are: the same place
+        // wherever on the lockup it was clicked. The lockup's rect is in pixels, as a click's place is.
+        dev.vexelray.gui.core.layout.NodeLayout l = lockup.layout();
+        float dpi = Math.max(0.0001f, Seams.of(gui).dpi().value());
+        dev.vexelray.gui.core.input.ClickEvent under = !l.present() ? at
+                : new dev.vexelray.gui.core.input.ClickEvent(at.nodeId(), at.button(), l.rect().x(),
+                        l.rect().y() + l.rect().h() + 6 * dpi, at.clicks(), at.modifiers());
+        WindowControls window = this.controls;
+        Seams.of(gui).openMenu(under, sink -> {
+            Runnable about = markAction;
+            if (about != null) {
+                sink.item(dev.vexelray.gui.icons.Icon.INFO, markTip, about);
+            }
+            for (WindowInstrument tool : tools) {
+                sink.separator();
+                tool.section(window, sink);
+            }
+        });
     }
 
     /**

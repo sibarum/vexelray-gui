@@ -2,24 +2,27 @@ package dev.vexelray.gui.widget;
 
 import dev.vexelray.gui.core.WindowControls;
 import dev.vexelray.gui.core.WindowInstrument;
+import dev.vexelray.gui.core.input.MenuItem;
 import dev.vexelray.gui.core.layout.Rect;
 import dev.vexelray.gui.draw.Picture;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The framework's own tools in the caption (docs/reference/automation.md §7).
+ * The framework's own tools in the title bar (docs/reference/automation.md §7).
  *
- * <p>What is worth pinning here is not that a button draws. It is the three properties that make an instrument
- * strip a framework facility rather than a convenience: it is <b>absent</b> unless asked for, it sits
- * <b>between</b> the caption and the window controls rather than displacing them, and its click reaches the
- * <b>window</b> — so a bar in a popup commands the popup.
+ * <p>What is worth pinning here is not that a button draws. It is the properties that make the tools a framework
+ * facility rather than a convenience: they are <b>absent</b> unless asked for; each is a <b>section of the app menu</b>
+ * the lockup opens, after the About line; one stands at the right only while its <b>badge</b> says so, <b>between</b>
+ * the caption and the window controls rather than displacing them; and what it does reaches the <b>window</b>, so a bar
+ * in a popup commands the popup.
  */
 class InstrumentStripTest {
 
@@ -51,13 +54,35 @@ class InstrumentStripTest {
         }
     }
 
+    /** A tool whose line says {@code role} and records it when chosen. */
     private static WindowInstrument marker(String role, List<String> fired) {
-        return new WindowInstrument(role, "", (box, ink) -> Picture.EMPTY, controls -> fired.add(role));
+        return new WindowInstrument(role, role, (box, ink) -> Picture.EMPTY, controls -> fired.add(role));
     }
 
     /** The centre of the nth 46dp button counting from the right edge of the bar. */
     private static float fromRight(int n) {
         return VIEW_W - (n + 0.5f) * BUTTON_W;
+    }
+
+    /** A bar wearing a wordmark, so its lockup is there to click, in the tree and laid out. */
+    private static TitleBar bar(HeadlessGui h, WindowControls controls) {
+        TitleBar bar = new TitleBar(h.gui, controls, "app").wordmark("App");
+        h.gui.root().children(bar.node());
+        h.frame();
+        return bar;
+    }
+
+    /** Click the middle of the node {@code landmark} names, laid out a frame ago. */
+    private static void click(HeadlessGui h, String landmark) {
+        dev.vexelray.gui.core.Node node = h.gui.landmarkNode(landmark).orElseThrow(() ->
+                new AssertionError("no " + landmark));
+        Rect r = h.gui.layoutSnapshot().node(h.retained(node).id).rect();
+        h.click(r.x() + r.w() / 2f, r.y() + r.h() / 2f);
+        h.frame();
+    }
+
+    private static List<String> labels(ContextMenu menu) {
+        return menu.items().stream().map(i -> i.separator() ? "-" : i.label()).toList();
     }
 
     @Test
@@ -67,96 +92,142 @@ class InstrumentStripTest {
             h.gui.root().children(bar.node());
             h.frame();
 
-            // A shipped application must not find itself carrying tools it never asked for. Clicking where an
-            // instrument would be has to reach the caption, which is to say: nothing here answers.
+            // A shipped application must not find itself carrying tools it never asked for.
             assertFalse(h.gui.semanticSnapshot().nodes().values().stream()
                             .anyMatch(n -> n.role().startsWith("instrument-")),
                     "no instrument is present until the application opts in");
+            assertTrue(bar.instruments().isEmpty());
         }
     }
 
     @Test
-    void instrumentsSitBetweenTheCaptionAndTheWindowControls() {
+    void eachToolIsALineOfTheAppMenuAfterAbout() {
         try (HeadlessGui h = new HeadlessGui()) {
             List<String> fired = new ArrayList<>();
-            TitleBar bar = new TitleBar(h.gui, new Recorder(), "app")
-                    .instruments(List.of(marker("instrument-one", fired)));
-            h.gui.root().children(bar.node());
+            ContextMenu menu = new ContextMenu(h.gui);
+            TitleBar bar = bar(h, new Recorder())
+                    .instruments(List.of(marker("One", fired), marker("Two", fired)));
+            bar.onMark("About App", () -> fired.add("about"));
             h.frame();
 
-            // Close, maximize and minimize keep the right edge — an instrument must not push the window controls
-            // off the corner the user aims at without looking.
-            h.click(fromRight(3), 16f);
-            assertEquals(List.of("instrument-one"), fired,
-                    "the fourth slot from the right is the instrument, so the three caption buttons are untouched");
+            assertFalse(h.gui.semanticSnapshot().nodes().values().stream()
+                            .anyMatch(n -> n.role().equals("One") || n.role().equals("Two")),
+                    "a tool with no badge is no button at the right");
+            click(h, TitleBar.MARK);
+            assertTrue(menu.isOpen(), "the lockup's click opens the app menu, and is not taken for a click away");
+            assertEquals(List.of("About App", "-", "One", "-", "Two"), labels(menu));
+            assertTrue(fired.isEmpty(), "opening the menu runs nothing");
+
+            click(h, "menu.two");
+            assertEquals(List.of("Two"), fired);
+            assertFalse(menu.isOpen(), "choosing a line closes the menu");
         }
     }
 
     @Test
-    void anInstrumentCommandsTheWindow() {
+    void theWindowControlsKeepTheCorner() {
         try (HeadlessGui h = new HeadlessGui()) {
             Recorder rec = new Recorder();
-            TitleBar bar = new TitleBar(h.gui, rec, "app")
-                    .instruments(List.of(WindowInstrument.screenshot(() -> "shot.png")));
-            h.gui.root().children(bar.node());
+            List<String> fired = new ArrayList<>();
+            bar(h, rec).instruments(List.of(marker("One", fired).badge(() -> true)));
             h.frame();
 
+            // Close, maximize and minimize keep the right edge: a badge must not push the window controls off the
+            // corner the user aims at without looking.
+            h.click(fromRight(0), 16f);
             h.click(fromRight(3), 16f);
+            assertEquals(List.of("close"), rec.calls);
+            assertEquals(List.of("One"), fired, "the fourth slot from the right is the badge");
+        }
+    }
+
+    @Test
+    void aLineCommandsTheWindow() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            new ContextMenu(h.gui);
+            Recorder rec = new Recorder();
+            bar(h, rec).instruments(List.of(WindowInstrument.screenshot(() -> "shot.png")));
+            h.frame();
+
+            click(h, TitleBar.MARK);
+            click(h, "menu.screenshot-this-window");
             assertEquals(List.of("capture shot.png"), rec.calls,
                     "the instrument asks the window it is in, not the application");
         }
     }
 
     @Test
-    void anInstrumentWithAMenuOpensItAtTheClickAndAScriptCanReachBoth() {
+    void aToolsMenuIsItsSectionAndAScriptCanReachIt() {
         try (HeadlessGui h = new HeadlessGui()) {
             List<String> fired = new ArrayList<>();
             ContextMenu menu = new ContextMenu(h.gui);
-            TitleBar bar = new TitleBar(h.gui, new Recorder(), "app")
-                    .instruments(List.of(WindowInstrument.automation("debug",
-                            m -> m.item("Restart in debug mode", () -> fired.add("restart")))));
-            h.gui.root().children(bar.node());
+            bar(h, new Recorder()).instruments(List.of(WindowInstrument.automation("debug", m -> {
+                m.heading("Debug");
+                m.item("Restart in debug mode", () -> fired.add("restart"));
+            })));
             h.frame();
 
-            h.click(fromRight(3), 16f);
-            h.frame();
-            assertTrue(menu.isOpen(), "the plain click opens the menu, and is not taken for a click away from it");
-            assertEquals(List.of("Restart in debug mode"), menu.items().stream().map(i -> i.label()).toList());
-            assertTrue(fired.isEmpty(), "opening the menu runs nothing");
-            assertTrue(h.gui.landmarkNode("instrument-automation").isPresent(), "the button is reached by its role");
-            assertTrue(h.gui.landmarkNode("menu.restart-in-debug-mode").isPresent(), "the item by what it says");
+            click(h, TitleBar.MARK);
+            assertEquals(List.of("Debug", "Restart in debug mode"), labels(menu));
+            assertTrue(menu.items().get(0).heading(), "a heading names the group and runs nothing");
+            assertFalse(h.gui.landmarkNode("instrument-automation").isPresent(),
+                    "a normal run's plug is a line, not a button");
+            click(h, "menu.restart-in-debug-mode");
+            assertEquals(List.of("restart"), fired);
         }
     }
 
     @Test
-    void theStripIsReplacedRatherThanAppended() {
+    void aBadgeStandsAtTheRightOnlyWhileItSaysSo() {
         try (HeadlessGui h = new HeadlessGui()) {
             List<String> fired = new ArrayList<>();
-            TitleBar bar = new TitleBar(h.gui, new Recorder(), "app")
-                    .instruments(List.of(marker("instrument-one", fired)));
-            h.gui.root().children(bar.node());
+            List<Runnable> watchers = new ArrayList<>();
+            AtomicBoolean recording = new AtomicBoolean();
+            WindowInstrument tool = new WindowInstrument("instrument-camera", "Camera", (box, ink) -> Picture.EMPTY,
+                    controls -> fired.add("camera"), changed -> {
+                        watchers.add(changed);
+                        return () -> watchers.remove(changed);
+                    }).badge(recording::get);
+            bar(h, new Recorder()).instruments(List.of(tool));
             h.frame();
 
-            bar.instruments(List.of(marker("instrument-two", fired)));
+            h.click(fromRight(3), 16f);
+            assertTrue(fired.isEmpty(), "nothing stands there while nothing is going on");
+
+            recording.set(true);
+            watchers.forEach(Runnable::run);   // the recording started, say
+            h.frame();
+            h.click(fromRight(3), 16f);
+            assertEquals(List.of("camera"), fired, "and while it is, the badge does what its line does");
+            assertTrue(h.gui.landmarkNode("instrument-camera").isPresent(), "reached by its role");
+        }
+    }
+
+    @Test
+    void theToolsAreReplacedRatherThanAppended() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            List<String> fired = new ArrayList<>();
+            ContextMenu menu = new ContextMenu(h.gui);
+            TitleBar bar = bar(h, new Recorder())
+                    .instruments(List.of(marker("instrument-one", fired).badge(() -> true)));
+            bar.instruments(List.of(marker("instrument-two", fired).badge(() -> true)));
             h.frame();
 
             long count = h.gui.semanticSnapshot().nodes().values().stream()
                     .filter(n -> n.role().startsWith("instrument-"))
                     .count();
             assertEquals(1L, count, "which tools this window has needs one answer, not a history");
-
-            h.click(fromRight(3), 16f);
-            assertEquals(List.of("instrument-two"), fired);
+            click(h, TitleBar.MARK);
+            assertEquals(List.of("instrument-two"), labels(menu));
         }
     }
 
     @Test
     void aBarInAnyWindowGetsAWorkingScreenshot() {
         try (HeadlessGui h = new HeadlessGui()) {
+            new ContextMenu(h.gui);
             // A bar built before its window, as every bar but the main one is.
-            TitleBar bar = new TitleBar(h.gui, null, "popup")
-                    .instruments(List.of(WindowInstrument.screenshot(() -> "popup.png")));
-            h.gui.root().children(bar.node());
+            TitleBar bar = bar(h, null).instruments(List.of(WindowInstrument.screenshot(() -> "popup.png")));
             h.frame();
 
             // What the host does when it opens the window. The bar must take these rather than mint its own
@@ -168,23 +239,23 @@ class InstrumentStripTest {
                     dev.vexelray.os.WindowConfig.of("popup", 400, 300), h.gui));
             spec.onControls().accept(rec);
 
-            h.click(fromRight(3), 16f);
+            click(h, TitleBar.MARK);
+            click(h, "menu.screenshot-this-window");
             assertEquals(List.of("capture popup.png"), rec.calls,
-                    "the instrument has to reach the window the host supplied, not a no-op");
+                    "the line has to reach the window the host supplied, not a no-op");
         }
     }
 
     @Test
-    void aMarkIsReauthoredForTheBoxItGot() {
+    void aBadgesMarkIsReauthoredForTheBoxItGot() {
         try (HeadlessGui h = new HeadlessGui()) {
             List<Rect> authored = new ArrayList<>();
             WindowInstrument tool = new WindowInstrument("instrument-mark", "", (box, ink) -> {
                 authored.add(box);
                 return Picture.EMPTY;
-            }, controls -> { });
+            }, controls -> { }).badge(() -> true);
 
-            TitleBar bar = new TitleBar(h.gui, new Recorder(), "app").instruments(List.of(tool));
-            h.gui.root().children(bar.node());
+            bar(h, new Recorder()).instruments(List.of(tool));
             h.frame();
             h.frame();
 
@@ -207,10 +278,9 @@ class InstrumentStripTest {
             }, controls -> { }, changed -> {
                 watchers.add(changed);
                 return () -> watchers.remove(changed);
-            });
+            }).badge(() -> true);
 
-            TitleBar bar = new TitleBar(h.gui, new Recorder(), "app").instruments(List.of(tool));
-            h.gui.root().children(bar.node());
+            TitleBar bar = bar(h, new Recorder()).instruments(List.of(tool));
             h.frame();
             int laidOut = authored.size();
             assertEquals(1, watchers.size(), "the bar watches a live instrument");
@@ -221,7 +291,15 @@ class InstrumentStripTest {
             assertEquals(authored.get(laidOut - 1), authored.get(laidOut));
 
             bar.instruments(List.of());
-            assertTrue(watchers.isEmpty(), "a strip taken down stops watching");
+            assertTrue(watchers.isEmpty(), "tools taken down stop watching");
         }
+    }
+
+    @Test
+    void aCurrentLineIsAMarkedCopy() {
+        MenuItem stop = MenuItem.of("Stop recording", () -> { }).current(true);
+        assertTrue(stop.current());
+        assertTrue(stop.enabled(), "current is how it is drawn, not whether it can be chosen");
+        assertFalse(MenuItem.heading("Capture").enabled(), "a heading is never chosen");
     }
 }

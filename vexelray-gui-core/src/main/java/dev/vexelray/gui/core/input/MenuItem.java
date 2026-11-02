@@ -37,13 +37,37 @@ import java.util.function.UnaryOperator;
  * @param action   what choosing it runs, or {@code null} if there is nothing to run
  * @param enabled  whether it can be chosen
  * @param mark     an icon from the set drawn beside the label, or {@code null} for none
+ * <p><b>A heading names the group under it</b> ({@link #heading(String)}): a line of small capitals that runs nothing,
+ * as {@code CAPTURE} heads the screenshot and the recording in a window's app menu. <b>A current line</b>
+ * ({@link #current(boolean)}) is a command about something going on now, Stop recording while one runs, and is drawn
+ * edged in the accent, as a chosen option is, so it is found before it is read.
+ *
  * @param children the lines of the submenu it opens, in order; empty for an item that runs something
+ * @param heading  whether this line is a group's heading rather than a command
+ * @param current  whether this line is about something going on now, and is drawn so
  */
 public record MenuItem(String icon, String label, Runnable action, boolean enabled, IconSource mark,
-                       List<MenuItem> children) {
+                       List<MenuItem> children, boolean heading, boolean current) {
 
     /** A horizontal rule between groups. */
     public static final MenuItem SEPARATOR = new MenuItem(null, null, null, false, null);
+
+    /** A line with no heading or current mark: every line there was before there were either. */
+    public MenuItem(String icon, String label, Runnable action, boolean enabled, IconSource mark,
+                    List<MenuItem> children) {
+        this(icon, label, action, enabled, mark, children, false, false);
+    }
+
+    /** A heading over the lines that follow it: {@code label}, drawn as small capitals, choosing nothing. */
+    public static MenuItem heading(String label) {
+        return new MenuItem(null, java.util.Objects.requireNonNull(label, "label"), null, false, null, List.of(),
+                true, false);
+    }
+
+    /** This line, drawn as about something going on now when {@code current}, everything else as it is. */
+    public MenuItem current(boolean current) {
+        return new MenuItem(icon, label, action, enabled, mark, children, heading, current);
+    }
 
     /** An item marked by a glyph, or by nothing. */
     public MenuItem(String icon, String label, Runnable action, boolean enabled) {
@@ -127,7 +151,7 @@ public record MenuItem(String icon, String label, Runnable action, boolean enabl
 
     /** This line running {@code action} instead, everything else as it is. */
     public MenuItem withAction(Runnable action) {
-        return new MenuItem(icon, label, action, enabled, mark, children);
+        return new MenuItem(icon, label, action, enabled, mark, children, heading, current);
     }
 
     /**
@@ -136,6 +160,7 @@ public record MenuItem(String icon, String label, Runnable action, boolean enabl
      */
     public MenuItem wrapActions(UnaryOperator<Runnable> wrap) {
         List<MenuItem> wrapped = children.stream().map(c -> c.wrapActions(wrap)).toList();
-        return new MenuItem(icon, label, action == null ? null : wrap.apply(action), enabled, mark, wrapped);
+        return new MenuItem(icon, label, action == null ? null : wrap.apply(action), enabled, mark, wrapped, heading,
+                current);
     }
 }

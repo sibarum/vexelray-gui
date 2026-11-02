@@ -29,6 +29,11 @@
             <groupId>dev.vexelray.gui</groupId>
             <artifactId>vexelray-gui-nfd-api</artifactId>
         </dependency>
+        <!-- The camera's lines in the app menu wear the icon set's screenshot, record and stop. -->
+        <dependency>
+            <groupId>dev.vexelray.gui</groupId>
+            <artifactId>vexelray-gui-icons</artifactId>
+        </dependency>
     </dependencies>
 
     <!-- Exactly one OS module, picked by the build host's OS, so every application on this facade gets the NFDe

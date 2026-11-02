@@ -334,33 +334,38 @@ class TitleBarTest {
      * before the mark or after, and taken back with {@code null}.
      */
     @Test
-    void theMarkIsCaptionUntilItHasAnAction() {
+    void theLockupIsCaptionUntilItsMenuHasALine() {
         try (HeadlessGui h = new HeadlessGui()) {
+            ContextMenu menu = new ContextMenu(h.gui);
             TitleBar bar = bar(h, WindowControls.NONE);
-            dev.vexelray.gui.core.Node first = mark(h);
-            bar.icon(first);
+            bar.icon(mark(h)).wordmark("Test");
             h.frame();
-            assertNull(h.retained(first).windowRegion(), "with nothing to do it drags the window, as the bar around it does");
+            dev.vexelray.gui.core.Node lockup = h.gui.landmarkNode(TitleBar.MARK).orElseThrow();
+            assertNull(h.retained(lockup).windowRegion(),
+                    "with nothing to offer it drags the window, as the bar around it does");
 
             List<String> clicks = new java.util.ArrayList<>();
             bar.onMark("About Test", () -> clicks.add("about"));
             h.frame();
-            assertEquals(dev.vexelray.gui.core.WindowRegion.INTERACTIVE, h.retained(first).windowRegion(),
+            assertEquals(dev.vexelray.gui.core.WindowRegion.INTERACTIVE, h.retained(lockup).windowRegion(),
                     "a hole in the caption, so the click reaches it");
-            clickOn(h, first);
+            clickOn(h, lockup);
+            h.frame();
+            assertTrue(menu.isOpen(), "a click anywhere on the lockup opens the app menu");
+            assertEquals("About Test", menu.items().get(0).label(), "About first");
+            clickOn(h, h.gui.landmarkNode("menu.about-test").orElseThrow());
             assertEquals(List.of("about"), clicks);
 
-            // A mark given after the action wears it too.
-            dev.vexelray.gui.core.Node second = mark(h);
-            bar.icon(second);
+            // A mark given after the action is inside the same target.
+            bar.icon(mark(h));
             h.frame();
-            assertEquals(dev.vexelray.gui.core.WindowRegion.INTERACTIVE, h.retained(second).windowRegion());
-            clickOn(h, second);
-            assertEquals(List.of("about", "about"), clicks);
+            clickOn(h, lockup);
+            h.frame();
+            assertTrue(menu.isOpen());
 
             bar.onMark(null, null);
             h.frame();
-            assertNull(h.retained(second).windowRegion(), "null puts it back to caption");
+            assertNull(h.retained(lockup).windowRegion(), "null puts it back to caption");
         }
     }
 

@@ -1,8 +1,10 @@
 # Key bindings — rebindable actions, and the editor that rebinds them
 
 Status: **landed** (`vexelray-gui-keymap`, plus two primitives in `-core`: `Gui.claimAny` and
-`Shortcut.text`/`parse`). Opt-in: nothing in the framework creates a keymap, and a title bar shows the key
-button only when it is handed one.
+`Shortcut.text`/`parse`). Opt-in in this repo: nothing here creates a keymap, and a title bar shows the key
+button only when it is handed one. `vexelray-framework` does both for its applications: it makes the keymap
+(`Shell.keymap()`, a part from `TREE`), persists it to `keys.properties`, and adds the button to every framework
+title bar once an action is declared (its `docs/architecture.md` §5).
 
 ## 1. The action mapper
 

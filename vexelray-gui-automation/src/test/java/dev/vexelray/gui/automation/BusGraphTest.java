@@ -20,17 +20,18 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The declared bus graph (vexelray-inspector docs/bus-circuit.md §1 and §4): refused at the door unless it is
- * version 1, and answered by {@code bus graph} line for line, or with the reason there is none.
+ * The declared bus graph (vexelray-inspector docs/bus-graph.md): refused at the door unless it is version 2, and
+ * answered by {@code bus graph} line for line, or with the reason there is none.
  */
 class BusGraphTest {
 
     static final String GRAPH = String.join("\n",
-            "# vexelray bus graph 1",
-            "component  dev.example.Worker      lane=worker",
-            "publisher  dev.example.Ui          lane=-",
-            "mailbox    dev.example.Worker#onJob  topic=witness.job  type=dev.example.Job  overflow=BLOCK  capacity=8",
-            "publishes  dev.example.Ui           topic=witness.job") + "\n";
+            "# vexelray bus graph 2",
+            "part component dev.example.Worker lane=worker",
+            "part sender dev.example.Ui lane=-",
+            "hears dev.example.Worker#onJob topic=dev.example.Job by=mailbox capacity=8",
+            "sends dev.example.Ui topic=dev.example.Job",
+            "topic dev.example.Job kind=edge") + "\n";
 
     @AfterEach
     void forget() {
@@ -44,17 +45,17 @@ class BusGraphTest {
     }
 
     @Test
-    void aVersionOneGraphIsKeptAsGivenWithoutItsTrailingLineEnd() {
+    void aVersionTwoGraphIsKeptAsGivenWithoutItsTrailingLineEnd() {
         BusGraph.declare(GRAPH);
         assertEquals(Optional.of(GRAPH.stripTrailing()), BusGraph.text());
-        assertEquals(5, BusGraph.lines().size());
+        assertEquals(6, BusGraph.lines().size());
     }
 
     @Test
-    void anythingButVersionOneIsRefusedWhenDeclared() {
+    void anythingButVersionTwoIsRefusedWhenDeclared() {
         for (String bad : new String[]{null, "", "component dev.example.Worker lane=worker\n",
-                "# vexelray bus graph 2\ncomponent dev.example.Worker lane=worker\n", "# vexelray bus graph 1\r\n",
-                "# vexelray bus graph 1\n.\n"}) {
+                "# vexelray bus graph 1\ncomponent dev.example.Worker lane=worker\n", "# vexelray bus graph 2\r\n",
+                "# vexelray bus graph 2\n.\n"}) {
             assertThrows(IllegalArgumentException.class, () -> BusGraph.declare(bad), String.valueOf(bad));
         }
         assertEquals(Optional.empty(), BusGraph.text(), "a refused graph leaves none declared");
@@ -70,7 +71,7 @@ class BusGraphTest {
         assertEquals(Domains.answer("bus"), windows.command("bus tap"));
 
         BusGraph.declare(GRAPH);
-        assertEquals("ok bus graph lines=5\n" + GRAPH.stripTrailing(), windows.command("bus graph"));
+        assertEquals("ok bus graph lines=6\n" + GRAPH.stripTrailing(), windows.command("bus graph"));
         assertEquals(windows.command("bus graph"), windows.command("BUS Graph"));
     }
 
@@ -95,7 +96,7 @@ class BusGraphTest {
 
             BusGraph.declare(GRAPH);
             List<String> reply = ask(in, out, "bus graph");
-            assertEquals("ok bus graph lines=5", reply.getFirst());
+            assertEquals("ok bus graph lines=6", reply.getFirst());
             assertEquals(List.of(GRAPH.split("\n")), reply.subList(1, reply.size()));
         }
     }

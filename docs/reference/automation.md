@@ -582,30 +582,30 @@ socket and ottermate do not depend on that module.
 
 #### The declared bus graph
 
-The program's message graph, as its declarations state it: the components and other publishers, each `@Subscribe`
-mailbox with its topic, payload type, overflow policy and capacity, and each topic a type declares it publishes. The
-format, version 1, is fixed by the Inspector's contract
-([vexelray-inspector docs/bus-circuit.md](../../../vexelray-inspector/docs/bus-circuit.md) §1). The Inspector draws
-the bus as a circuit from it.
+The program's message graph, as its declarations state it: every part and the lane it runs on, every way each hears
+a topic (a mailbox, an inbox, a job's request, a source's start and stop), what each sends, and each topic's kind. The
+format, version 2, is fixed by the Inspector's contract
+([vexelray-inspector docs/bus-graph.md](../../../vexelray-inspector/docs/bus-graph.md)). The Inspector draws its
+graph and flows panels from it.
 
-- **Where it comes from.** vexelray-framework's processor writes it as a `BUS_GRAPH` constant, and the generated
-  wiring hands it to `BusGraph.declare(String)` at startup, the way the build identity reaches `Discovery.build`.
-  `declare` refuses, at once, any text whose first line is not `# vexelray bus graph 1`. An application not built by
-  the processor declares none.
+- **Where it comes from.** vexelray-framework's processor writes it as a `BUS_GRAPH` constant, its topic lines read
+  off each topic's own constant when the wiring loads, and the generated wiring hands it to `BusGraph.declare(String)`
+  at startup, the way the build identity reaches `Discovery.build`. `declare` refuses, at once, any text whose first
+  line is not `# vexelray bus graph 2`. An application not built by the processor declares none.
 - **How to read it.** `bus graph` is a diagnostics read. It answers `ok bus graph lines=<n>`, then the `n` lines as
   declared, header first, or `err no bus graph: <why>` when none was declared. The link answers the same verb as a
   `Query`. `BusGraph.text()` gives it in-process.
 
-The reply's shape, for the contract's sample graph. This is not a transcript: no application declares a graph until
-the framework's processor emits one.
+The reply's shape, cut short:
 
 ```
-$ ottermate --app witness bus graph
-ok bus graph lines=9
-# vexelray bus graph 1
-component  dev.example.Worker      lane=worker
+$ ottermate --app vexelray-inspector bus graph
+ok bus graph lines=95
+# vexelray bus graph 2
+part component dev.sibarum.inspector.core.Bench lane=logic timer
 ...
-publishes  dev.example.Worker       topic=witness.ping
+sends dev.sibarum.inspector.core.ListRuns topic=dev.sibarum.inspector.core.Messages.Runs
+topic dev.sibarum.inspector.core.Messages.Rows kind=edge
 ```
 
 The rest of `bus` (the topic registry and the tap) is still `missing`, and `bus` alone or with any other word

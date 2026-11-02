@@ -202,7 +202,7 @@ class InspectorLinkTest {
         assertFalse(none.ok());
         assertTrue(none.text().startsWith("err no bus graph: "), none.text());
 
-        String graph = "# vexelray bus graph 1\npublishes  dev.example.Ui  topic=witness.job\n";
+        String graph = "# vexelray bus graph 2\nsends dev.example.Ui topic=dev.example.Job\n";
         BusGraph.declare(graph);
         assertEquals(new QueryReply(true, "ok bus graph lines=2\n" + graph.stripTrailing()), client.query("bus graph"));
     }

@@ -5,10 +5,10 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * The declared message graph of this process: which components and publishers there are, which mailbox subscribes
- * to which topic, and who declares publishing it — the text the framework's processor writes as {@code BUS_GRAPH}
- * (vexelray-inspector docs/bus-circuit.md §1, version 1). The Inspector reads it once on attaching, with the read
- * verb {@code bus graph}, and draws the bus as a circuit from it.
+ * The declared message graph of this process: its parts and where they run, every way each hears a topic, what each
+ * sends, and each topic's kind — the text the framework's processor writes as {@code BUS_GRAPH} (vexelray-inspector
+ * docs/bus-graph.md, version 2). The Inspector reads it once on attaching, with the read verb {@code bus graph}, and
+ * draws the graph and its flows from it.
  *
  * <p><b>Handed in, the way the build identity is.</b> The framework's generated wiring passes its constant to
  * {@link #declare(String)} at startup, before any socket opens, as its driver passes {@code BuildInfo.facts()} to
@@ -23,7 +23,7 @@ import java.util.Optional;
 public final class BusGraph {
 
     /** The first line of every graph this build reads: the format and its version. */
-    public static final String HEADER = "# vexelray bus graph 1";
+    public static final String HEADER = "# vexelray bus graph 2";
 
     /** The reply terminator on the automation socket, which no graph line may be. */
     private static final String TERMINATOR = ".";
@@ -82,7 +82,7 @@ public final class BusGraph {
         List<String> l = List.copyOf(Arrays.asList(trimmed.split("\n", -1)));
         if (!l.getFirst().equals(HEADER)) {
             throw new IllegalArgumentException("a bus graph begins '" + HEADER + "', and this one begins '"
-                    + l.getFirst() + "'; this build reads version 1 only");
+                    + l.getFirst() + "'; this build reads version 2 only");
         }
         for (int i = 0; i < l.size(); i++) {
             if (l.get(i).equals(TERMINATOR)) {

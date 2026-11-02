@@ -145,6 +145,11 @@ final class GuiWindow implements AutoCloseable {
      * then not drawn would leave the window showing what it showed before, until something else changed.
      */
     private boolean drawOwed = true;
+    /**
+     * How many draws every window on the loop has made: the number of the last, as its {@code draw.ran} row says it.
+     * One count for all of them, so a number names one draw; the loop's thread alone touches it.
+     */
+    private static long draws;
     /** The last pass found the GPU not ready for the owed draw; the presenter wakes the loop when it is. */
     private boolean gpuHeld;
     /** The presenter (or the slow GPU) has been asked to wake the loop and has not yet. Cleared on its thread. */
@@ -635,6 +640,13 @@ final class GuiWindow implements AutoCloseable {
             Probe.count(Lane.DRAW, "runs", canvas.runs().size());
             emit(canvas.toVertexArray(), canvas.vertexCount(), canvas.runs());
             tables.upload(images.looks(), canvas);
+        }
+        // The draw's own row, after the zone that timed it: its number, apart from the pass's, and the causes of the
+        // edits it is the first to show (Reconciler.takeDrawnCauses), so a tool can follow a click to the draw that
+        // showed what it changed. The draw itself runs in the pass's cause, which says nothing of those.
+        draws++;
+        if (Probe.ON) {
+            Probe.mark(Lane.DRAW, "draw.ran", "#" + draws + (gui == null ? "" : gui.takeDrawnCauses()));
         }
     }
 

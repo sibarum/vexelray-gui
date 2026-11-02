@@ -7,6 +7,7 @@ import dev.vexelray.gui.core.style.Paint;
 import dev.vexelray.gui.core.style.PaintMotion;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
+import sibarum.probe.Cause;
 import sibarum.probe.Lane;
 import sibarum.probe.Probe;
 
@@ -400,6 +401,54 @@ public final class Reconciler implements Mutation.Sink {
 
     /** The sink {@link #apply} hands a mutation while the layout lane is traced: this one, saying what each did. */
     private final Traced traced = new Traced();
+
+    /** The most causes {@link #takeDrawnCauses} names; the rest are counted. */
+    public static final int DRAWN_CAUSES = 16;
+
+    // The causes of the edits that changed what is drawn since the last take, each once, in the order first seen; and
+    // how many more there were. Kept while the layout lane is traced, by the traced sink. GUI thread only.
+    private final long[] drawnCauses = new long[DRAWN_CAUSES];
+    private int drawn;
+    private int drawnOver;
+
+    private void drew(long cause) {
+        if (cause == Cause.NONE) {
+            return;
+        }
+        for (int i = 0; i < drawn; i++) {
+            if (drawnCauses[i] == cause) {
+                return;
+            }
+        }
+        if (drawn < DRAWN_CAUSES) {
+            drawnCauses[drawn++] = cause;
+        } else {
+            drawnOver++;
+        }
+    }
+
+    /**
+     * The causes of the edits that changed what is drawn since the last call, and clear them: each once, as the probe
+     * writes a cause, after a space, at most {@link #DRAWN_CAUSES}, then {@code +<n>} for how many more there were;
+     * empty when there were none. A cause is counted again once it has been taken, so an edit left owed by a held draw
+     * is named by the draw that shows it. Read by the host as it draws; kept only while the layout lane is traced, so
+     * empty otherwise. GUI thread only, like everything here.
+     */
+    public String takeDrawnCauses() {
+        if (drawn == 0) {
+            return "";
+        }
+        StringBuilder s = new StringBuilder();
+        for (int i = 0; i < drawn; i++) {
+            s.append(' ').append(Cause.format(drawnCauses[i]));
+        }
+        if (drawnOver > 0) {
+            s.append(" +").append(drawnOver);
+        }
+        drawn = 0;
+        drawnOver = 0;
+        return s.toString();
+    }
 
     // --- Mutation.Sink: the only place a RetainedNode field is written ------------------------------------
 
@@ -995,6 +1044,9 @@ public final class Reconciler implements Mutation.Sink {
                     : reveals.size() > wasReveals ? "mutation queued"
                     : !present ? "mutation missing"
                     : "mutation unchanged";
+            if (layoutDirty || geometryDirty || drawDirty) {
+                drew(Cause.current());
+            }
             layoutDirty |= wasLayout;
             geometryDirty |= wasGeometry;
             drawDirty |= wasDraw;

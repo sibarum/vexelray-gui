@@ -146,6 +146,13 @@ With both, the rule is mechanical: **a gap preceded by a `loop.park` that covers
 not is a stall**, and the last row before it is the suspect. This is why the frame loop must be instrumented in
 A2 even though it is not something the agent drives.
 
+A pass is not a draw: most passes take input and draw nothing. Each draw writes a row of its own on the `draw` lane,
+after its `emit canvas` zone: **`draw.ran`**, `#<n> [<cause> ...] [+<more>]`. The number counts the draws of every
+window on the loop, apart from the pass's. The causes are those of the tree edits it is the first to show (an edit
+that changed layout, geometry or drawing, each cause once, at most 16, then how many more), written while the
+`layout` lane is traced. A draw runs in its pass's cause, so this is what links a click's widget writes to the draw
+that showed them. atchung's tick writes the same kind of row, `tick.ran` (atchung `docs/probe.md`).
+
 `frame` and `version` stay in the schema, but as *causality* columns rather than ordering ones — once the
 timestamp sort has shown you where to look, they answer "did this land before or after that layout", which
 timestamps across threads cannot.

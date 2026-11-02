@@ -1411,6 +1411,15 @@ public final class Gui implements AutoCloseable {
         return was;
     }
 
+    /**
+     * The causes of the tree's edits that changed what is drawn since the last call, and clear them, as
+     * {@link Reconciler#takeDrawnCauses} says them: for the host's row of the draw that shows them. GUI thread, as it
+     * draws.
+     */
+    public String takeDrawnCauses() {
+        return reconciler.takeDrawnCauses();
+    }
+
     /** Install the clipboard implementation text widgets use (default: an in-memory, process-local one). */
     public Gui clipboard(TextClipboard clipboard) {
         this.clipboard = clipboard == null ? new TextClipboard.InMemory() : clipboard;

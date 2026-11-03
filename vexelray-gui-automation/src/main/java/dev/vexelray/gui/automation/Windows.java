@@ -53,7 +53,8 @@ import java.util.function.Supplier;
  * <p>The flight recorder's verbs ({@code recorder}, {@code rows}, {@code gaps}, {@code frames}, {@code why}, and
  * {@code stream}, which the server runs through {@link #streaming}) are
  * answered here too, before any window is asked for: the ring is the process's, not a window's. See
- * {@link RecorderVerbs}. So is {@code bus graph}, the graph the program declared ({@link BusGraph}).
+ * {@link RecorderVerbs}. So is {@code bus graph}, the graph the program declared ({@link BusGraph}), and {@code replay}
+ * ({@link Replays}).
  */
 public final class Windows implements Commands {
 
@@ -70,7 +71,8 @@ public final class Windows implements Commands {
             "window <name|number>     choose the window the other commands act on (default: the main one)",
             "<verb> <window>/<landmark> ...",
             "                         a target naming its window acts there, this command only (click viewport/home)",
-            "bus graph                the declared message graph: components, mailboxes, who publishes what");
+            "bus graph                the declared message graph: components, mailboxes, who publishes what",
+            "replay                   run what the logic took in again, and say which of its sends differ");
 
     private final Supplier<List<WindowView>> source;
     private final Timeline timeline;
@@ -152,7 +154,7 @@ public final class Windows implements Commands {
     @Override
     public Capability needs(String line) {
         String verb = (line == null ? "" : line.trim()).split("\\s+", 2)[0].toLowerCase(Locale.ROOT);
-        if (RecorderVerbs.owns(verb) || verb.equals("stream") || Domains.owns(verb)) {
+        if (RecorderVerbs.owns(verb) || verb.equals("stream") || verb.equals("replay") || Domains.owns(verb)) {
             return Capability.DIAGNOSTICS;
         }
         return Automation.verbNeeds(verb);
@@ -215,6 +217,10 @@ public final class Windows implements Commands {
             // The declared graph is the program's, landed ahead of the bus domain it belongs to (the registry and tap).
             if (verb.equals("bus") && rest.equalsIgnoreCase("graph")) {
                 return BusGraph.answer();
+            }
+            // The replay is the program's too, and the framework's to answer (Replays).
+            if (verb.equals("replay")) {
+                return Replays.answer();
             }
             if (Domains.owns(verb)) {
                 return Domains.answer(verb);

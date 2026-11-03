@@ -11,8 +11,9 @@ import java.util.function.Supplier;
  * any socket opens, and nothing declared means a program that cannot replay, which {@code replay} says.
  *
  * <p>The answer is the framework's text: {@code ok replay ticks=<n> sends=<n> differ=<n>}, {@code full} when the
- * recording stopped at its bound, then one line for each difference listed; or {@code err replay: ...}. A replay runs
- * on the asking connection's thread and takes as long as the run's logic did, or less.
+ * recording stopped at its bound, then each difference listed: its own line, {@code   now ...} under it for what the
+ * replay sent there, and {@code   was ...} for what the run sent when it kept its sends; or {@code err replay: ...}.
+ * The asking connection waits while the replay runs on a thread of its own, as long as the run's logic took, or less.
  */
 public final class Replays {
 

@@ -2219,10 +2219,9 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
     /**
      * Map a requested {@link dev.vexelray.gui.core.input.CursorShape} onto the window API.
      *
-     * <p><b>The engine offers the arrow, the I-beam and the two resize arrows</b> — the shapes every desktop has a
-     * system cursor for. The hand shapes — pointer over anything clickable, open and closed hands over anything
-     * grabbable — fall back to the arrow: Windows has a pointing hand but no open or closed one, so a grab hand
-     * would mean shipping cursor images. The rule that decides them is framework-side and fully exercised
+     * <p><b>The engine offers the arrow, the I-beam, the pointing hand and the two resize arrows</b> — the shapes
+     * every desktop has a system cursor for. The grab hands — open and closed, over anything grabbable — fall back
+     * to the arrow: Windows has no open or closed hand, so they would mean shipping cursor images. The rule that decides them is framework-side and fully exercised
      * ({@code CursorRuleTest}). Degrading to the arrow is the right fallback: a wrong-looking cursor is a cosmetic
      * loss, where guessing at a shape the platform has no standard for would not be.
      */
@@ -2234,6 +2233,7 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
     private static final java.util.Map<dev.vexelray.gui.core.input.CursorShape, NativeWindow.Cursor> OS_CURSORS =
             java.util.Map.of(
                     dev.vexelray.gui.core.input.CursorShape.TEXT, NativeWindow.Cursor.TEXT,
+                    dev.vexelray.gui.core.input.CursorShape.POINTER, NativeWindow.Cursor.POINTER,
                     dev.vexelray.gui.core.input.CursorShape.RESIZE_HORIZONTAL, NativeWindow.Cursor.RESIZE_HORIZONTAL,
                     dev.vexelray.gui.core.input.CursorShape.RESIZE_VERTICAL, NativeWindow.Cursor.RESIZE_VERTICAL);
 

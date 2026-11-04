@@ -813,8 +813,9 @@ public final class TitleBar {
 
     /**
      * Open the application's menu {@code name} under its target, as a click on it would, or close the menu that is
-     * open: for a key that drops it (F10, a function key of the application's). Nothing for a name not declared, an
-     * empty menu, or a target not laid out yet. Called where the GUI's own handlers run.
+     * open: for a key that drops it (F10, a function key of the application's). Opened so, its first line is under the
+     * keyboard, and the arrows and Enter go on from there ({@link ContextMenu#markFirst}). Nothing for a name not
+     * declared, an empty menu, or a target not laid out yet. Called where the GUI's own handlers run.
      */
     public void open(String name) {
         AppMenu m;
@@ -823,6 +824,9 @@ public final class TitleBar {
         }
         if (m != null) {
             m.show(null);
+            if (Seams.of(gui).menus() instanceof ContextMenu menu && menu.isOpen()) {
+                menu.markFirst();
+            }
         }
     }
 

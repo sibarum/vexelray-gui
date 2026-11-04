@@ -107,6 +107,7 @@ class TitleBarMenuTest {
             bar.open("run");
             h.frame();
             assertTrue(menu.isOpen(), "a key can drop the menu");
+            assertEquals("0.0", menu.marked(), "with its first line under the keyboard");
             bar.open("run");
             h.frame();
             assertFalse(menu.isOpen(), "and the same key puts it away");

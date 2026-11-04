@@ -757,18 +757,22 @@ placement one.
 
 ### Chrome belongs to the framework
 
-A title bar is window chrome, and chrome belongs to whoever owns the window. An application contributes
-**identity** — its title, and an icon only as identity. It never contributes **controls** there; a control an
-application needs belongs in the application's own UI.
+The app menu, the badges and the window controls are window chrome, and chrome belongs to whoever owns the window.
+An application contributes **identity** there — its title, and an icon only as identity — and never a button.
 
 This is what makes a utility free everywhere. The moment one app puts its own button in the caption, the strip
 is app-addressable, and no framework instrument can rely on the space existing or on its meaning being the same
 from one window to the next. "Screenshot this window" is only free if the framework owns the place it lives.
 
+An application's own commands go in **its menus** (`TitleBar.menu`): a menu bar after the lockup, the place a desktop
+application's menu bar has always been. They never reach the caption's slack, the badges or the window controls, so
+those still mean the same in every window. *Ruled 2026-11-03 by the author, with VexelRay IDE's Run menu as the
+witness; until then an application had no controls in the bar at all, and its commands lived over its content.*
+
 ### Four zones
 
 ```
-[ lockup | title | caption (flex, DRAG) | badges | window controls ]
+[ lockup | app's menus | title | caption (flex, DRAG) | badges | window controls ]
 ```
 
 - **lockup** — the application's identity: its mark and its name as a logo (`TitleBar.icon`, `TitleBar.wordmark`),
@@ -778,6 +782,11 @@ from one window to the next. "Screenshot this window" is only free if the framew
   `WindowRegion.INTERACTIVE` only while the menu has a line, and a script reaches it as the landmark `titlebar-mark`.
   An application gives its logo while it builds its tree, as identity; the framework sets the name in the theme's
   type on any bar still without one.
+- **app's menus** — the application's own (`TitleBar.menu(name, label, Menu)`), in the order first declared, each a
+  label that wears the lockup's plate and accent under the pointer and hangs its `Menu` from its lower left. A `Menu`
+  is data, each item a message to send, declared again when its facts change; `TitleBar.open(name)` drops one from a
+  key. One that is empty stays, greyed and caption. A script reaches each as `titlebar-menu.<name>`, and its items as
+  any menu's are (`menu.<label>`).
 - **title** and **caption** — what the window shows, then the flexing drag region, still `WindowRegion.DRAG`.
 - **badges** — an instrument's button stands here only while its state must be seen without asking (a recording, a
   debug run), each `WindowRegion.INTERACTIVE`, with the gaps between them left draggable exactly as the caption

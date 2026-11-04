@@ -13,6 +13,8 @@ import dev.vexelray.gui.core.WindowRegion;
 import dev.vexelray.gui.core.app.GuiApp;
 import dev.vexelray.gui.core.app.WindowSpec;
 import dev.vexelray.gui.core.input.InteractionState;
+import dev.vexelray.gui.core.input.Menu;
+import dev.vexelray.gui.core.input.MenuItem;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.core.layout.Length;
@@ -692,6 +694,136 @@ public final class TitleBar {
     public TitleBar addLeading(Node node) {
         leading.append(node);
         return this;
+    }
+
+    // -------------------------------------------------------------------- the application's menus
+
+    /** The landmark of the application's menu named {@code name}: {@code titlebar-menu.<name>}. */
+    public static String menuLandmark(String name) {
+        return "titlebar-menu." + name;
+    }
+
+    /** One of the application's menus: its target after the lockup, its label, and what it holds now. */
+    private final class AppMenu {
+        final String name;
+        final Node target;
+        volatile Menu menu = Menu.NONE;
+        volatile InteractionState state = InteractionState.NORMAL;
+
+        AppMenu(String name) {
+            this.name = name;
+            // The lockup's shape and the lockup's behaviour: one target, a plate that lifts under the pointer, the
+            // label taking the accent, and the menu hung from its lower left. Its siblings, so they read as one bar.
+            this.target = gui.text("")
+                    .role("titlebar-menu")
+                    .height(Length.dp(24))
+                    .padding(Length.ZERO, Length.dp(8))
+                    .corner(Length.dp(5))
+                    .textSize(TITLE_SIZE)
+                    .fontWeight(500)
+                    .wordWrap(false)
+                    .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE)
+                    .background(Role.NONE)
+                    .scroll(false, false);
+            Seams.of(gui).onClick(target, (dev.vexelray.gui.core.input.ClickEvent e) -> show(e));
+            Seams.of(gui).onState(target, s -> {
+                state = s;
+                paint();
+            });
+            gui.landmark(menuLandmark(name), target);
+            paint();
+        }
+
+        /** Hold {@code next}: caption while it is empty, as the lockup is while its menu is, and a target once it is not. */
+        void declare(String label, Menu next) {
+            menu = next == null ? Menu.NONE : next;
+            target.text(label == null ? name : label);
+            target.windowRegion(menu.isEmpty() ? null : WindowRegion.INTERACTIVE);
+            paint();
+        }
+
+        /** The plate and the label's ink for what the pointer is doing, as {@link #paintLockup} paints the lockup's. */
+        void paint() {
+            InteractionState s = menu.isEmpty() ? InteractionState.NORMAL : state;
+            target.background(s == InteractionState.NORMAL ? Role.NONE
+                    : s == InteractionState.PRESSED ? Role.LINE : Role.RAISED);
+            target.textColor(menu.isEmpty() ? Role.FAINT
+                    : s == InteractionState.NORMAL ? Role.DIM
+                    : dev.vexelray.gui.core.style.Paint.of(Role.ACCENT, s));
+        }
+
+        /** Open the menu under the target, or close whichever menu is open; {@code at} is the click, or null for a key. */
+        void show(dev.vexelray.gui.core.input.ClickEvent at) {
+            Menu now = menu;
+            if (now.isEmpty()) {
+                return;
+            }
+            if (Seams.of(gui).menus() instanceof ContextMenu open && open.isOpen()) {
+                open.hide();
+                return;
+            }
+            dev.vexelray.gui.core.layout.NodeLayout l = target.layout();
+            if (!l.present()) {
+                return;   // not laid out: nowhere to hang it from
+            }
+            float dpi = Math.max(0.0001f, Seams.of(gui).dpi().value());
+            dev.vexelray.gui.core.input.ClickEvent under = new dev.vexelray.gui.core.input.ClickEvent(target.id(),
+                    at == null ? sibarum.tactroller.api.MouseButton.LEFT : at.button(),
+                    l.rect().x(), l.rect().y() + l.rect().h() + 6 * dpi, 1,
+                    at == null ? java.util.Set.of() : at.modifiers());
+            Seams.of(gui).openMenu(under, sink -> {
+                for (MenuItem item : now.items()) {
+                    sink.item(item);
+                }
+            });
+        }
+    }
+
+    /** The application's menus by name, in the order first declared, which is their order in the bar. */
+    private final java.util.Map<String, AppMenu> menus = new java.util.LinkedHashMap<>();
+
+    /**
+     * Declare the application's menu {@code name}: a target labelled {@code label} after the lockup, opening
+     * {@code menu} hung from its lower left, as the lockup opens the app menu. The first declaration of a name places
+     * it, after the menus declared before it; a later one replaces its label and what it holds, in place.
+     *
+     * <p><b>Application menus, beside the framework's.</b> The app menu is the window's: About and the framework's
+     * instruments ({@link WindowInstrument}), the same in every window. These are the application's own commands,
+     * the menu bar a desktop application has always had, and they sit where a menu bar sits, after the window's
+     * identity. They never reach the caption's slack or the instruments and window controls at the right, so those
+     * still mean the same thing in every window.
+     *
+     * <p><b>A menu is data</b> ({@link Menu}): each item sends a message when chosen, and nothing runs at the click.
+     * When the facts behind it change, declare it again. One that is {@link Menu#NONE} stays, greyed and inert, and
+     * is caption: a menu that comes and goes teaches nothing about where it is.
+     *
+     * <p>Reached by a script as {@link #menuLandmark}{@code (name)}. Any thread.
+     */
+    public synchronized TitleBar menu(String name, String label, Menu menu) {
+        java.util.Objects.requireNonNull(name, "name");
+        AppMenu m = menus.get(name);
+        if (m == null) {
+            m = new AppMenu(name);
+            menus.put(name, m);
+            leading.insert(m.target, menus.size());   // after the lockup and the menus before it, before the title
+        }
+        m.declare(label, menu);
+        return this;
+    }
+
+    /**
+     * Open the application's menu {@code name} under its target, as a click on it would, or close the menu that is
+     * open: for a key that drops it (F10, a function key of the application's). Nothing for a name not declared, an
+     * empty menu, or a target not laid out yet. Called where the GUI's own handlers run.
+     */
+    public void open(String name) {
+        AppMenu m;
+        synchronized (this) {
+            m = menus.get(name);
+        }
+        if (m != null) {
+            m.show(null);
+        }
     }
 
     /** Point the maximize button's glyph at what the window actually is right now. */

@@ -570,7 +570,8 @@ The controls themselves:
   and never interprets, so a module it has never heard of can contribute one. Opt-in, and
   *framework*-owned on purpose: the moment an application puts its own button in a caption, the strip
   is application-addressable and no instrument can rely on the space existing from one window to the
-  next. An application contributes identity to a title bar, never controls.
+  next. An application contributes identity to a title bar, and its own commands only as **menus** after the lockup
+  (`TitleBar.menu`, a `Menu` of messages), a menu bar that never reaches the caption, the badges or the controls.
 - **`Popout`** — a panel docked against one edge of the window, collapsible to a rail and poppable out into a
   window of its own. Docked, it is an ordinary child of the host tree: the host's content shrinks by exactly
   its width, and it clips and scrolls with the window. Popping out is **not** a reparent — a `Node` belongs to

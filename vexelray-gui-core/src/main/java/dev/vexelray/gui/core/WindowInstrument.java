@@ -13,12 +13,13 @@ import java.util.function.Consumer;
  * One framework-owned tool in a window's title bar — a screenshot, later a macro recorder (docs/reference/automation.md
  * §7). A value: what to draw, what to call it, and what to ask the window when it is clicked.
  *
- * <p><b>Why the framework owns these and an application does not put its own buttons here.</b> A title bar is
- * window chrome, and chrome belongs to whoever owns the window. An application contributes identity — its title,
- * an icon as identity — and never controls; a control an application needs belongs in the application's own UI.
- * That is not tidiness. It is the only thing that makes a utility free everywhere: the moment one application
- * puts its own button in the caption, the strip is application-addressable, and no framework instrument can rely
- * on the space existing or meaning the same thing from one window to the next.
+ * <p><b>Why the framework owns these and an application does not put its own buttons here.</b> The app menu and the
+ * right of the bar, where a badge stands beside the window controls, are window chrome, and chrome belongs to whoever
+ * owns the window. That is not tidiness. It is the only thing that makes a utility free everywhere: the moment one
+ * application puts its own button there, the space is application-addressable, and no framework instrument can rely on
+ * it existing or meaning the same thing from one window to the next. An application's own commands go in its own
+ * menus instead ({@code TitleBar.menu}): a menu bar after the lockup, which never reaches the caption's slack, the
+ * badges or the window controls.
  *
  * <p><b>Rendered, never interpreted.</b> {@code TitleBar} draws whatever list it is handed and branches on
  * nothing here — so a module this one has never heard of (the automation module, an inspector) can contribute an

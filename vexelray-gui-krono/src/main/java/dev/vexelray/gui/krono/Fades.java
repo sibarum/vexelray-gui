@@ -120,7 +120,7 @@ public final class Fades implements PaintMotion {
     @Override
     public void repainted(long node, Channel channel, Color from, Color to) {
         Key key = new Key(node, channel);
-        if (from.equals(to)) {
+        if (PaintMotion.same(from, to)) {
             fades.remove(key);   // told it is at rest where it is: whatever was running there is let go
             return;
         }
@@ -133,7 +133,8 @@ public final class Fades implements PaintMotion {
         long now = krono.nanos();
         // From where it is drawn at this moment, if it is on its way: the present time, not the last frame's sample.
         Color start = running == null ? from : running.colour(running.at(now));
-        if (start.equals(to)) {
+        // Already there, or both no alpha: nothing on screen would change, so there is nothing to fade.
+        if (PaintMotion.same(start, to)) {
             fades.remove(key);
             return;
         }

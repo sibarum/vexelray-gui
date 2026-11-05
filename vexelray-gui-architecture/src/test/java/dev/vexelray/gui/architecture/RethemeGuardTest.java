@@ -29,9 +29,10 @@ class RethemeGuardTest {
      * ({@code Role.ACTION.at(state)}), or a paint built from them ({@code .alpha(...)}, {@code .mix(...)}).
      */
     private static final Set<String> ALLOWED = Set.of(
-            // The theme itself: its withers (focusRing, icons) answer lit() and letterpress() by asking the theme
-            // they wrap, which is a theme delegating, not a node being written.
+            // The theme itself: its derivations (focusRing, icons, map, all one DerivedTheme) answer lit() and
+            // letterpress() by asking the theme they wrap, which is a theme delegating, not a node being written.
             "dev/vexelray/gui/core/style/Theme",
+            "dev/vexelray/gui/core/style/DerivedTheme",
             // The one widget whose subject is colour: a swatch shows the colour the user chose, which is the same in
             // every theme by definition. Its own chrome writes roles like everything else.
             "dev/vexelray/gui/widget/ColorPicker");

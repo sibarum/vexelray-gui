@@ -222,7 +222,8 @@ public final class Cuts {
 
     private void colour(RetainedNode n, String name, String which, Seen before, int changed, int bit, Color was,
                         Color drawn, Color given) {
-        if (fresh(changed, before, bit) && was != null && drawn != null && !was.equals(drawn) && drawn.equals(given)) {
+        if (fresh(changed, before, bit) && was != null && drawn != null && !PaintMotion.same(was, drawn)
+                && drawn.equals(given)) {
             found.add(new Cut(n.id, name, which + " " + was + " -> " + drawn + " in one frame"));
         }
     }

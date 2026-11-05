@@ -999,7 +999,7 @@ public final class Reconciler implements Mutation.Sink {
 
     /** Tell the paint motion source, for a change from one colour to another that is a change. */
     private void report(long id, PaintMotion.Channel channel, Color from, Color to) {
-        if (from != null && to != null && !from.equals(to)) {
+        if (from != null && to != null && !PaintMotion.same(from, to)) {
             repaints.repainted(id, channel, from, to);
         }
     }

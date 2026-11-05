@@ -71,6 +71,15 @@ public interface PaintMotion {
         return new Color(1f, 1f, 1f, a);
     }
 
+    /**
+     * Whether {@code a} and {@code b} look the same on screen: equal, or both at no alpha, which leaves no hue to tell
+     * them apart. {@code Role.NONE} is transparent black, and a colour faded out is that colour at no alpha; the two
+     * are the same nothing, so neither a fade nor a watch for cuts may treat the step from one to the other as a change.
+     */
+    static boolean same(Color a, Color b) {
+        return a.equals(b) || (a.a() <= 0f && b.a() <= 0f);
+    }
+
     /** {@link #amount} at its two ends. */
     Color NONE_OF_IT = amount(0f);
     Color ALL_OF_IT = amount(1f);

@@ -104,4 +104,27 @@ class CutsTest {
             assertEquals(6, cuts.found().size(), "the row hidden, and the label removed, are each gone: " + found);
         }
     }
+
+    @Test
+    @DisplayName("a fill that comes up from Role.NONE and is cleared again before the clock moves is no cut")
+    void clearedBeforeItCameUpIsNoCut() throws InterruptedException {
+        // IDE FN-4: the fade's first frame draws the colour at no alpha, and cleared there it was told to go from that
+        // to transparent black, two nothings, which the watch called a change. Real time passes between the writes,
+        // as it does in a test that does work between frames, so neither is mistaken for a driven value.
+        Scene s = scene(true);
+        try (KronoGui krono = s.krono()) {
+            Node ghost = krono.gui().box().size(Length.dp(20), Length.dp(20)).background(Role.NONE);
+            s.list().append(ghost);   // born clear, as a tab header at rest is
+            at(s, 200);
+            Cuts cuts = Cuts.watch(krono.gui());
+            at(s, 200);
+            Thread.sleep(50);
+            ghost.background(Role.RAISED);
+            at(s, 200);   // the clock has not moved: the fade is at its first frame, RAISED at no alpha
+            Thread.sleep(50);
+            ghost.background(Role.NONE);
+            at(s, 200);
+            assertEquals(List.of(), cuts.found());
+        }
+    }
 }

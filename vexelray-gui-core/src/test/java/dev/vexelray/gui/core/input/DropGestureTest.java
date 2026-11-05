@@ -141,6 +141,50 @@ class DropGestureTest {
         assertNull(dispatcher.dragSession());
     }
 
+    /**
+     * The one test here on the real clock, because the hold is what it is about. A driver's path is shorter than the
+     * hold and then stops: no further event comes to carry the drag over its threshold, so only a frame's tick can,
+     * and a loop that parks gets no frame unless the tree says one is owed.
+     */
+    @Test
+    @DisplayName("a press gone far enough is pending until its hold passes, and then the tick starts the drag")
+    void aHoldStillAheadIsPendingUntilATickStartsTheDrag() throws InterruptedException {
+        tree();
+        long pressed = System.nanoTime();
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonPressed(MouseButton.LEFT, 20, 20, pressed));
+        bus.publish(InputTopics.input("test"), new InputEvent.PointerMoved(20, 60, 0, 40, pressed));
+        frame();
+        org.junit.jupiter.api.Assumptions.assumeTrue(System.nanoTime() - pressed < 60_000_000L,
+                "the frame came after most of the hold had passed; nothing to observe on a machine this busy");
+
+        assertNull(dispatcher.dragSession(), "travelled, but not yet held long enough");
+        assertTrue(dispatcher.dragHoldPending(), "so the loop owes the frame whose tick will start it");
+
+        Thread.sleep(100);
+        frame();
+
+        assertNotNull(dispatcher.dragSession(), "the tick started it, with no event to carry it");
+        assertFalse(dispatcher.dragHoldPending(), "and nothing is owed for it any more");
+    }
+
+    @Test
+    @DisplayName("a press held still, or one that has not travelled far enough, owes no frames")
+    void aPressThatIsStillAClickIsNotPending() {
+        tree();
+        long pressed = System.nanoTime();
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonPressed(MouseButton.LEFT, 20, 20, pressed));
+        frame();
+        assertFalse(dispatcher.dragHoldPending(), "held still: a click so far");
+
+        bus.publish(InputTopics.input("test"), new InputEvent.PointerMoved(23, 22, 3, 2, pressed));
+        frame();
+        assertFalse(dispatcher.dragHoldPending(), "inside the deadzone: still a click");
+
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonReleased(MouseButton.LEFT, 23, 22, pressed));
+        frame();
+        assertFalse(dispatcher.dragHoldPending());
+    }
+
     @Test
     @DisplayName("Escape cancels the drag and commits nothing")
     void escapeCancels() {

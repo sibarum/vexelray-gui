@@ -2130,6 +2130,11 @@ public final class Gui implements AutoCloseable {
             if (frame.owes(paintDue)) {
                 wake("paint motion");
             }
+            // A press gone far enough to be a drag becomes one on a frame's tick when its hold passes, and on nothing
+            // else once the pointer stops: so until then the next frame has work too (InputDispatcher#dragHoldPending).
+            if (input.dragHoldPending()) {
+                wake("drag hold");
+            }
             // A registered part due now wants the next frame; one due later is the loop's to park until
             // (nanosUntilDue), and one at rest costs nothing.
             if (askedAny && frame.owes(askedDue)) {

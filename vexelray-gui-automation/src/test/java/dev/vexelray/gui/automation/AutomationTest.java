@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import sibarum.tactroller.api.Key;
 import sibarum.tactroller.api.Modifier;
 
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -243,6 +244,54 @@ class AutomationTest {
             Seams.of(gui).frame(W, H, NO_TEXT);
             assertTrue(gui.dragSession() == null, "put down");
         }
+    }
+
+    /**
+     * {@code drag} is a move from one place to another. Under the default {@code DragRelease.KEEP} letting go keeps the
+     * carry in hand, so a drag that only released left every script's row in the air over its target.
+     */
+    @Test
+    void aDragPutsDownWhatItCarriedWhereItLetGo() {
+        try (Gui gui = deterministic()) {
+            List<String> dropped = new java.util.ArrayList<>();
+            Node body = dropZone(gui, dropped);
+
+            String out = drivenWithFramesRunning(gui, driver -> driver.command("drag 20,20 20,150"));
+
+            assertTrue(out.startsWith("ok 20,150"), out);
+            assertEquals(List.of("r@150"), dropped, "put down once, where the drag let go");
+            assertTrue(gui.dragSession() == null, "and nothing is left in hand");
+        }
+    }
+
+    /** Under {@code DROP} the release is the drop, and there is nothing left in hand to click for. */
+    @Test
+    void aDragUnderDropIsPutDownByItsRelease() {
+        try (Gui gui = deterministic()) {
+            gui.dragRelease(dev.vexelray.gui.core.drop.DragRelease.DROP);
+            List<String> dropped = new java.util.ArrayList<>();
+            dropZone(gui, dropped);
+
+            String out = drivenWithFramesRunning(gui, driver -> driver.command("drag 20,20 20,150"));
+
+            assertTrue(out.startsWith("ok 20,150"), out);
+            assertEquals(List.of("r@150"), dropped, "put down once, by the release");
+            assertTrue(gui.dragSession() == null);
+        }
+    }
+
+    /** A 200x200 box that offers a row and takes one, noting where each drop landed. */
+    private static Node dropZone(Gui gui, List<String> dropped) {
+        dev.vexelray.gui.core.drop.PayloadType<String> row = dev.vexelray.gui.core.drop.PayloadType.of("row");
+        Node body = gui.box().size(Length.dp(200), Length.dp(200));
+        Seams.of(gui).onDragSource(body, (x, y) -> dev.vexelray.gui.core.drop.Payload.of(row, "r"));
+        Seams.of(gui).onDrop(body, (payload, x, y) -> payload.as(row)
+                .map(r -> dev.vexelray.gui.core.drop.Drop.move(new dev.vexelray.gui.core.layout.Rect(0f, y, 200f, 2f),
+                        () -> dropped.add(r + "@" + Math.round(y))))
+                .orElse(dev.vexelray.gui.core.drop.Drop.NONE));
+        gui.root().children(body);
+        Seams.of(gui).frame(W, H, NO_TEXT);
+        return body;
     }
 
     @Test

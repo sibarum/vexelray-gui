@@ -177,6 +177,15 @@ public final class InputDispatcher {
     private final sibarum.tactroller.api.DragGesture drags =
             new sibarum.tactroller.api.DragGesture(DRAG_DISTANCE_PX, DRAG_HOLD_MS, Set.of(MouseButton.LEFT));
     /**
+     * When and where the press {@link #drags} is holding went down, and where the pointer has got to since: what
+     * {@link #dragHoldPending} reads, since the recogniser does not say whether it is waiting out its hold. GUI thread.
+     */
+    private long holdPressNanos;
+    private int holdPressX;
+    private int holdPressY;
+    private int holdX;
+    private int holdY;
+    /**
      * Recognises the touchpad's gestures in its contacts: one recogniser per window, fed the whole stream, so the
      * pans and pinches published on {@link #gestures()} and the swipes and taps that reach claims are one
      * reading of the same fingers. GUI thread only.
@@ -606,6 +615,15 @@ public final class InputDispatcher {
                 || event instanceof InputEvent.ButtonReleased
                 || event instanceof InputEvent.PointerMoved)) {
             return;
+        }
+        if (event instanceof InputEvent.ButtonPressed p && p.button() == MouseButton.LEFT
+                && drags.activeButton() == null) {
+            holdPressNanos = p.timestampNanos();
+            holdPressX = holdX = p.x();
+            holdPressY = holdY = p.y();
+        } else if (event instanceof InputEvent.PointerMoved m) {
+            holdX = m.x();
+            holdY = m.y();
         }
         for (sibarum.tactroller.api.DragEvent d : drags.feed(event)) {
             onDragGesture(d);
@@ -1355,6 +1373,35 @@ public final class InputDispatcher {
             onDragGesture(d);
         }
     }
+
+    /**
+     * Whether a press has travelled far enough to be a drag and is waiting only for its hold to pass: the state in
+     * which the drag begins on a frame's tick and on nothing else, so the loop owes this tree frames until it does.
+     *
+     * <p>A loop that parks once input stops never ticks again, and the drag then begins only with the next event —
+     * the release, if the pointer was held still. A hand on a mouse nearly always moves again, and its moves carry
+     * their own time, so this was all but invisible to one; a driver that travels for less than the hold and then
+     * stops, to look, saw no drag at all until it let go. Asked after this frame's dispatch, so the frame whose tick
+     * started the drag reports false.
+     *
+     * <p>Bounded both ways, because this reads the press's stamp and its own idea of the distance rather than the
+     * recogniser's: a press stamped later than now, or one this and the recogniser disagree about, would otherwise
+     * keep the loop drawing for as long as the button was down. Past the hold it stays true a little while, for the
+     * frame whose tick ran a moment before the hold passed.
+     */
+    public boolean dragHoldPending() {
+        if (drags.activeButton() == null || drags.isDragging()) {
+            return false;
+        }
+        if (Math.abs(holdX - holdPressX) < DRAG_DISTANCE_PX && Math.abs(holdY - holdPressY) < DRAG_DISTANCE_PX) {
+            return false;   // still a click: no hold to wait out, and a press held still owes nothing
+        }
+        long held = System.nanoTime() - holdPressNanos;
+        return held >= 0 && held < DRAG_HOLD_PENDING_NANOS;
+    }
+
+    /** How long after a press {@link #dragHoldPending} may say so: the hold, and a few frames' grace past it. */
+    private static final long DRAG_HOLD_PENDING_NANOS = (DRAG_HOLD_MS + 100L) * 1_000_000L;
 
     /**
      * Re-resolve the live drag against the tree as it now stands, then count the frame as seen.

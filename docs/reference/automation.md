@@ -62,7 +62,7 @@ Consequences, all deliberate:
 
 The same rule generalises: `type` publishes per-character key down/up and `CharTyped` through the ordinary path
 (never a text-set shortcut, and never auto-repeat for single characters — that is command-keys-only by design);
-`scroll` publishes wheel deltas; `drag` is press, path, release with the button held.
+`scroll` publishes wheel deltas; `drag` is press, path, release with the button held, then the click that puts a latched carry down.
 
 ---
 
@@ -641,7 +641,7 @@ whether the run succeeded.
 | `go <landmark>` | The framework's own navigation: reveal whatever conceals it, scroll it into view, focus it. |
 | `move <ref\|landmark\|x,y>` | Travel there. Hover happens on the way, and is recorded. |
 | `click` / `rightclick <target>` | Travel there, then press and release. |
-| `drag <target> <target>` | Press, travel, release. |
+| `drag <target> <target>` | Press, travel, release, and put down: under the default `DragRelease.KEEP` a release keeps the carry in hand (transfer.md §13), so `drag` then clicks where it let go, as a hand would. `down`/`up` do not, so a latched carry can still be photographed. |
 | `down <target>` / `up [target]` | A drag held open: travel there and press; then `move` and `shot` as often as wanted; then let go, where the pointer is or after travelling. `drag` is over before anything could photograph it, and the middle of a gesture — a card half-carried, a gap half-open — is often what needs looking at. |
 | `scroll <target> <dx> <dy>` | Wheel notches there. |
 | `touch <target> <n> <dx> <dy> [scale] [turn] [ms]` | `n` fingers on the touchpad, the pointer there: they land in a ring, then over `ms` (200) their centre moves `dx`, `dy` mm, their spread grows by `scale` and they turn `turn` degrees, and they lift. A swipe is `touch @x 3 -30 0`; a pinch, `touch @x 2 0 0 2`. Published as the touchpad's driver path publishes contacts, so the recognizer, the dispatcher's claims and the widget are all exercised. |

@@ -247,8 +247,10 @@ public final class Cursor {
         x = nx;
         y = ny;
         // The deltas are real deltas. A backend that reports relative motion is what a captured pointer reads
-        // during a drag, and zeroes there would be a lie the framework is entitled to believe.
-        publish(new InputEvent.PointerMoved(nx, ny, dx, dy, 0), "pointer.move", nx + "," + ny);
+        // during a drag, and zeroes there would be a lie the framework is entitled to believe. Stamped with the real
+        // time as a press is: the drag recogniser starts a drag on a move once the hold has passed since the press,
+        // and a move stamped zero is never past it, so the drag waited for a frame's tick or for the release.
+        publish(new InputEvent.PointerMoved(nx, ny, dx, dy, System.nanoTime()), "pointer.move", nx + "," + ny);
     }
 
     /** Publish one edge on the ordinary input topic, wake whoever has to dispatch it, and record it. */

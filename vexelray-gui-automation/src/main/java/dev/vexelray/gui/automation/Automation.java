@@ -626,7 +626,37 @@ public final class Automation implements Commands {
         int[] to = target(args[1]);
         cursor.moveTo(from[0], from[1]);
         cursor.drag(to[0], to[1], MouseButton.LEFT);
-        return "ok " + cursor.x() + "," + cursor.y();
+        String down = putDown();
+        return down != null ? down : "ok " + cursor.x() + "," + cursor.y();
+    }
+
+    /**
+     * Put down what the release just let go of, if it is still in hand: the end of a {@code drag}, which is a move
+     * from one place to another and not a pick-up.
+     *
+     * <p>Under {@code DragRelease.KEEP}, the default, letting go of the button keeps the thing with the pointer and the
+     * next left click puts it down (docs/reference/transfer.md §13), so a {@code drag} that only released left every
+     * script's carry in the air. This is that click, where the release was, as a person's hand would make it. Under
+     * {@code DROP} the release already put it down and nothing is in hand to click for. Waits for the frame that
+     * dispatched the release first, since that frame decides which it was, and is the frame that shows the carry: a
+     * drop with no frame between it and the pick-up is one the user never saw, and commits nothing.
+     *
+     * <p>{@code down} and {@code up} do not do this. They are for looking at a gesture part-way, and a latched carry is
+     * one of the parts.
+     *
+     * @return {@code null} once nothing is in hand, or the refusal if the loop would not catch up
+     */
+    private String putDown() {
+        String loop = settleLoop();
+        if (loop != null) {
+            return loop;
+        }
+        dev.vexelray.gui.core.drop.DragState held = Seams.of(gui).drag().value();
+        if (!held.active() || !held.latched()) {
+            return null;
+        }
+        cursor.click(cursor.x(), cursor.y());
+        return settleLoop();
     }
 
     /**
@@ -1578,7 +1608,7 @@ public final class Automation implements Commands {
             "move <ref|x,y>           travel there (hover happens on the way)",
             "click <ref|x,y>          travel there, then press and release",
             "rightclick <ref|x,y>     the same, with the right button",
-            "drag <ref|x,y> <ref|x,y> press, travel, release",
+            "drag <ref|x,y> <ref|x,y> press, travel, release, and put down",
             "down <ref|x,y>           travel there and press, and hold: move and shot keep it held",
             "up [ref|x,y]             let go, where the pointer is or after travelling there",
             "scroll <ref|x,y> dx dy   wheel notches there",

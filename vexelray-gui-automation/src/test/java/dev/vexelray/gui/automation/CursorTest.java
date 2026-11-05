@@ -177,11 +177,43 @@ class CursorTest {
         }
     }
 
-    /** Collect the input events {@code action} publishes, in order, as their simple class names plus position. */
+    /**
+     * Every edge carries the time it happened, as a device stamps it. The drag recogniser starts a drag on the move
+     * that comes after its hold, measured from the press's stamp: moves stamped zero were never after it, so a
+     * {@code down} and a short {@code move} showed no drag until the button came up.
+     */
+    @Test
+    void movesAreStampedWithTheTimeLikeThePress() {
+        try (Gui gui = deterministic()) {
+            List<Long> stamps = new ArrayList<>();
+            long before = System.nanoTime();
+            try (var sub = gui.bus().subscribe(gui.input(), e -> stamps.add(switch (e) {
+                case sibarum.tactroller.api.InputEvent.PointerMoved m -> m.timestampNanos();
+                case sibarum.tactroller.api.InputEvent.ButtonPressed p -> p.timestampNanos();
+                case sibarum.tactroller.api.InputEvent.ButtonReleased r -> r.timestampNanos();
+                default -> -1L;
+            }))) {
+                new Cursor(gui, 40, 40).drag(300, 40, MouseButton.LEFT);
+            }
+
+            assertTrue(stamps.size() > 4);
+            assertTrue(stamps.get(0) >= before, "the press, on the machine's clock");
+            for (int i = 1; i < stamps.size(); i++) {
+                assertTrue(stamps.get(i) >= stamps.get(i - 1), "each edge no earlier than the one before: " + stamps);
+            }
+            assertTrue(stamps.get(stamps.size() - 2) - stamps.get(0) >= Cursor.STEP_MILLIS * 1_000_000L,
+                    "and the moves after it carry the time the path took");
+        }
+    }
+
+    /**
+     * Collect the input events {@code action} publishes, in order, as their simple class names plus position. Without
+     * their stamps: two runs of one path are the same edges at different times, and the stamps have a test of their own.
+     */
     private static List<String> record(Gui gui, Runnable action) {
         List<String> seen = new ArrayList<>();
-        try (var sub = gui.bus().subscribe(gui.input(),
-                e -> seen.add(e.getClass().getSimpleName() + " " + e))) {
+        try (var sub = gui.bus().subscribe(gui.input(), e -> seen.add(e.getClass().getSimpleName() + " "
+                + e.toString().replaceAll(", timestampNanos=-?\\d+", "")))) {
             action.run();
         }
         assertNotEquals(0, seen.size(), "the cursor must publish on the ordinary input topic");

@@ -637,6 +637,19 @@ public final class RetainedNode {
         return Boolean.TRUE.equals(props.get(PropKey.DISABLED));
     }
 
+    /**
+     * Whether this node and every ancestor are {@link #visible()}: whether the person can see it at all, which a node's
+     * own {@code visible()} does not say once something above it is hidden. Ancestors are walked on each call.
+     */
+    public boolean shownInTree() {
+        for (RetainedNode n = this; n != null; n = n.parent) {
+            if (!n.visible()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     /** Whether this node or any ancestor is disabled — which is what decides whether the user can act on it. */
     public boolean disabledInTree() {
         for (RetainedNode n = this; n != null; n = n.parent) {

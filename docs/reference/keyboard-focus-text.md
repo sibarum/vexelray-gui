@@ -96,6 +96,18 @@ keyboard has.
   publishes `focusCause` and `ringShown`, and `ottermate tree` prints `ring` after `focused` when it is up.
   [plans/focus-ring.md](../plans/focus-ring.md) has the reasoning; the demo's Focus chapter shows each case.
 - A **disabled** node is never focusable and drops out of the Tab order.
+- **Release:** `Gui.blur()` gives the keyboard to nothing. A node **hidden while it has the keyboard** hands it
+  on by itself, at the start of the next frame's dispatch and before its input: to the next shown, enabled
+  focusable node in Tab order after the hidden one's place (wrapping), or to nothing if there is none. Hidden
+  means it or any ancestor (`RetainedNode.shownInTree`). A node *given* the keyboard while hidden keeps it until it
+  has been seen shown, so a view may call `focus` and `visible(true)` in either order. Tested in `FocusHandOnTest`.
+- **Keys after a chord's message wait a frame.** A chord declared with a sender (`Gui.shortcut(chord, to, msg)`,
+  `Gui.claim(..., to, msg)`) is heard after this frame's input is dispatched, so a view that moves the keyboard on
+  it does so after the keys typed straight behind it were routed. The dispatcher therefore holds back the rest of
+  that frame's input (`InputDispatcher.holdRest`) and delivers it first thing next frame, in order, where the
+  message has put the keyboard. A chord run as a command (Tab, a claim's `Runnable`) holds nothing. One frame
+  covers a message heard on the GUI thread; one answered from another lane before the view moves focus is not
+  covered.
 
 ---
 

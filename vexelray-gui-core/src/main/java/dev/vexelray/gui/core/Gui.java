@@ -858,6 +858,15 @@ public final class Gui implements AutoCloseable {
         return this;
     }
 
+    /**
+     * Take the keyboard from whatever has it, and give it to nothing: keys typed next reach claims and shortcuts only.
+     * A node hidden while it has the keyboard hands it on by itself; this is for letting go of it on purpose.
+     */
+    public Gui blur() {
+        input.focus(-1);
+        return this;
+    }
+
     // --- navigation (docs/reference/navigation.md) ---
 
     /**
@@ -964,11 +973,18 @@ public final class Gui implements AutoCloseable {
         return this;
     }
 
-    /** What a declared binding runs: the send it names, and nothing else. */
-    private static <T> Runnable sends(sibarum.atchung.Sender<T> to, T message) {
+    /**
+     * What a declared binding runs: the send it names, and the input after it held back for the next frame, by when
+     * whoever heard the message has acted on it. Without the hold, keys typed straight after a chord that moves the
+     * keyboard went where the keyboard had been (InputDispatcher#holdRest).
+     */
+    private <T> Runnable sends(sibarum.atchung.Sender<T> to, T message) {
         java.util.Objects.requireNonNull(to, "to");
         java.util.Objects.requireNonNull(message, "message");
-        return () -> to.send(message);
+        return () -> {
+            to.send(message);
+            input.holdRest();
+        };
     }
 
     /** Drop every claim {@code node} holds on {@code chord}. */

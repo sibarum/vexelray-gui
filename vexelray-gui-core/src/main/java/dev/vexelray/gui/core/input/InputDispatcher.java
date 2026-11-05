@@ -261,6 +261,12 @@ public final class InputDispatcher {
      */
     private Consumer<Set<Modifier>> modifierSink = m -> { };
     private long focusedId = -1;
+    /** Whether {@link #focusedId} has been seen shown since it got the keyboard: see {@link #handOnHiddenFocus}. */
+    private boolean focusSeenShown;
+    /** Whether the rest of this frame's input is being held back for the next ({@link #holdRest}). GUI thread. */
+    private boolean holding;
+    /** What {@link #holdRest} held back, oldest first. GUI thread. */
+    private final java.util.ArrayDeque<InputEvent> heldInput = new java.util.ArrayDeque<>();
     /** How {@link #focusedId} was last asked for: the focus ring's visibility rule reads it. */
     private FocusCause focusCause = FocusCause.PROGRAM;
     /** Whether the window holds OS focus, from tactroller's focus edges. The ring dims while it does not. */
@@ -1216,6 +1222,10 @@ public final class InputDispatcher {
     public boolean dispatch(RetainedNode root) {
         this.currentRoot = root;
         dropDisabledFocus();
+        handOnHiddenFocus();
+        // What the last frame held back behind a chord's message goes first, in the order it arrived, and ahead of
+        // anything newer: by now whoever heard the message has acted on it (see holdRest).
+        deliverHeld();
         pump.drain();
         pumpKeyRepeat();
         pumpDragGesture();
@@ -1232,7 +1242,96 @@ public final class InputDispatcher {
         showArmed();
         boolean ran = ranHandler;
         ranHandler = false;
-        return ran;
+        // Input held back owes the next frame, whatever else did or did not run: it is delivered there and nowhere else.
+        return ran || !heldInput.isEmpty();
+    }
+
+    /**
+     * Hold back the rest of this frame's input, to be delivered at the start of the next frame's dispatch: what a
+     * chord that sends a message calls ({@code Gui.shortcut}, {@code Gui.claim} with a sender).
+     *
+     * <p>A chord's message is heard after this frame's input has been dispatched, by a view draining its mailbox on
+     * this thread, and what it does there (move the keyboard to a field it shows) lands then. The keys typed straight
+     * after the chord are in the same frame's input, so without this they were routed to wherever the keyboard was
+     * before the chord: Vexplore's Ctrl+L and a fast path typed after it put its first letters in the list (its v0.2
+     * FN-5). Held, they reach the keyboard where the chord's message put it. Every event after the chord is held, not
+     * only keys, so a click or a modifier's release keeps its order among them. A frame's delay, and nothing to
+     * declare: a chord that moves nothing costs the keys after it one frame.
+     *
+     * <p>One frame covers a message heard on this thread. A chord whose message goes to a part on another lane, which
+     * answers before the view moves the keyboard, is not covered: the answer can take more than a frame to come back.
+     */
+    public void holdRest() {
+        holding = true;
+    }
+
+    /** Deliver what {@link #holdRest} held, once each, in order; a chord among them holds what follows it again. */
+    private void deliverHeld() {
+        holding = false;
+        for (int n = heldInput.size(); n > 0; n--) {
+            handle(heldInput.pollFirst());
+        }
+    }
+
+    /**
+     * Hand the keyboard on from a node that has been hidden since it had it, before this frame's input is delivered:
+     * a hidden field that kept it would take the next keys typed, unseen (Vexplore v0.2 FN-3). It goes to the next
+     * focusable node in Tab order after the hidden one's place, as Tab from there would take it, or nowhere if there
+     * is none.
+     *
+     * <p>Only a node hidden <em>while</em> it had the keyboard gives it up. One given the keyboard while hidden keeps
+     * it until it has been seen shown, so a view may focus a field in the same breath as it shows it, in either order.
+     * Allocation-free while nothing is hidden: it runs every frame.
+     */
+    private void handOnHiddenFocus() {
+        if (focusedId == -1) {
+            return;
+        }
+        RetainedNode n = nodes.apply(focusedId);
+        if (n == null) {
+            return;
+        }
+        if (n.shownInTree()) {
+            focusSeenShown = true;
+            return;
+        }
+        if (!focusSeenShown) {
+            return;
+        }
+        List<RetainedNode> order = new ArrayList<>();
+        collectFocusOrder(currentRoot, focusedId, order);
+        int at = -1;
+        for (int i = 0; i < order.size(); i++) {
+            if (order.get(i).id == focusedId) {
+                at = i;
+                break;
+            }
+        }
+        long next = -1;
+        for (int k = 1; at >= 0 && k < order.size(); k++) {
+            RetainedNode c = order.get((at + k) % order.size());
+            if (c.shownInTree() && !c.disabledInTree()) {
+                next = c.id;
+                break;
+            }
+        }
+        setFocus(next, FocusCause.PROGRAM);
+    }
+
+    /**
+     * Every focusable node in tree (DFS pre-order), hidden and disabled ones included, and {@code keep} wherever it
+     * is: the places Tab order is cut from, so a hidden node's place in it can be found.
+     */
+    private void collectFocusOrder(RetainedNode n, long keep, List<RetainedNode> out) {
+        if (n == null) {
+            return;
+        }
+        if (n.id == keep || focusable.contains(n.id)) {
+            out.add(n);
+        }
+        for (RetainedNode c : n.children) {
+            collectFocusOrder(c, keep, out);
+        }
     }
 
     /**
@@ -1298,6 +1397,11 @@ public final class InputDispatcher {
     // --- delivered on the GUI thread during dispatch() ---
 
     private void handle(InputEvent e) {
+        // Behind a chord that sent a message, the rest waits for the next frame (holdRest), and is sequenced then.
+        if (holding) {
+            heldInput.addLast(e);
+            return;
+        }
         // Sequence every edge, not just the ones that publish an observation: a consumer that only ever sees key
         // routes still needs the gaps between them to be countable.
         current = conduit.next();
@@ -1731,6 +1835,8 @@ public final class InputDispatcher {
         long old = focusedId;
         ringFade.moved(old, focusCause, id);
         focusedId = id;
+        RetainedNode gained = id == -1 ? null : nodes.apply(id);
+        focusSeenShown = gained != null && gained.shownInTree();
         focusCause = cause;
         focusStateSink.run();
         if (focusTopic != null) {

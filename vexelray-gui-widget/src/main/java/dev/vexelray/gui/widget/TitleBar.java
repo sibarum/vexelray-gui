@@ -18,6 +18,7 @@ import dev.vexelray.gui.core.input.MenuItem;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.style.Paint;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
 import dev.vexelray.gui.draw.Picture;
@@ -479,14 +480,21 @@ public final class TitleBar {
     /**
      * An application's name drawn as its logo. The node is the application's; the ink is the bar's, handed over as the
      * pointer comes and goes, so the logo lifts into the accent with the plate behind it as a caption glyph does.
+     *
+     * <p>The ink is a {@link Paint}, not a colour: the theme decides what it looks like when the frame is drawn, so a
+     * theme swapped later reaches the logo as it reaches everything else.
      */
     public interface Wordmark {
 
         /** The logo, as a node of its own size. */
         Node node();
 
-        /** Draw the logo in {@code ink} from now on: the theme's ink at rest, the accent under the pointer. */
-        void ink(Color ink);
+        /**
+         * Draw the logo in {@code ink} from now on: {@link Role#INK} at rest, {@link Role#ACCENT} in the pointer's state
+         * under it. A text node holds it as it is ({@code textColor(ink)}); a logo that must bake a colour asks
+         * {@code ink.in(theme)} and is then the application's to bake again when the theme changes.
+         */
+        void ink(Paint ink);
 
         /** {@code name} in the bar's type, weighted as a name: the wordmark of a bar whose application gave none. */
         static Wordmark of(Gui gui, String name) {
@@ -502,7 +510,7 @@ public final class TitleBar {
                 }
 
                 @Override
-                public void ink(Color ink) {
+                public void ink(Paint ink) {
                     text.textColor(ink);
                 }
             };
@@ -566,9 +574,7 @@ public final class TitleBar {
                 : s == InteractionState.PRESSED ? Role.LINE : Role.RAISED);
         Wordmark mark = wordmark;
         if (mark != null) {
-            Theme theme = gui.theme();
-            mark.ink(s == InteractionState.NORMAL ? theme.color(Role.INK)
-                    : dev.vexelray.gui.core.style.Paint.of(Role.ACCENT, s).in(theme));
+            mark.ink(s == InteractionState.NORMAL ? Role.INK : Paint.of(Role.ACCENT, s));
         }
     }
 

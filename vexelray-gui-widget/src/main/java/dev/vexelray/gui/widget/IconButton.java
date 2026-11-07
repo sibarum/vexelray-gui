@@ -6,7 +6,9 @@ import dev.vexelray.gui.core.IconSource;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.ClaimScope;
 import dev.vexelray.gui.core.input.CursorShape;
+import dev.vexelray.gui.core.input.ClickEvent;
 import dev.vexelray.gui.core.input.InteractionState;
+import dev.vexelray.gui.core.input.Menu;
 import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
@@ -52,6 +54,8 @@ public final class IconButton {
     private volatile Role ink = Role.DIM;
     private volatile InteractionState state = InteractionState.NORMAL;
     private volatile Runnable onPress = () -> { };
+    /** What a press drops, or {@link Menu#NONE} for a button that publishes {@link Button#PRESSED}. */
+    private volatile Menu menu = Menu.NONE;
     private final WidgetName address;
     private Tooltip tooltip;
     private volatile String tipText;
@@ -72,7 +76,7 @@ public final class IconButton {
         this.address = new WidgetName(gui, "iconbutton", node);
         gui.focusable(node, true);
         gui.cursor(node, CursorShape.POINTER);
-        Seams.of(gui).onClick(node, this::activate);
+        Seams.of(gui).onClick(node, (ClickEvent e) -> activate(e));
         // A second quick press is a second press, and the double click it also makes is the button's own: left to
         // bubble, it reached whatever the button sits in (a viewer's stage, which a double click puts full screen).
         Seams.of(gui).onDoubleClick(node, () -> { });
@@ -80,8 +84,8 @@ public final class IconButton {
             this.state = s;
             paint();
         });
-        Seams.of(gui).claim(node, ENTER, ClaimScope.FOCUSED, this::activate);
-        Seams.of(gui).claim(node, SPACE, ClaimScope.FOCUSED, this::activate);
+        Seams.of(gui).claim(node, ENTER, ClaimScope.FOCUSED, () -> activate(null));
+        Seams.of(gui).claim(node, SPACE, ClaimScope.FOCUSED, () -> activate(null));
         paint();
     }
 
@@ -201,8 +205,21 @@ public final class IconButton {
         return this;
     }
 
-    private void activate() {
-        if (enabled) {
+    /**
+     * Make this a menu button, as {@link Button#menu} does: a click, Enter or Space drops {@code menu} from the button,
+     * each line sends its own message, and a press publishes no {@link Button#PRESSED}. {@link Menu#NONE} undoes it.
+     */
+    public IconButton menu(Menu menu) {
+        this.menu = java.util.Objects.requireNonNull(menu, "menu");
+        return this;
+    }
+
+    /** A press: {@code at} is the click, or null for a key. */
+    private void activate(ClickEvent at) {
+        Menu drops = menu;
+        if (enabled && !drops.isEmpty()) {
+            ContextMenu.drop(gui, node, at, drops);
+        } else if (enabled) {
             onPress.run();
             gui.bus().publish(Button.PRESSED, new Button.Pressed(address()));
         }

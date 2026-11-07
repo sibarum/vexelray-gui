@@ -277,6 +277,37 @@ public final class ContextMenu implements MenuPresenter {
         }
     }
 
+    /**
+     * Drop {@code menu} from {@code target}'s lower left, as a menu bar's menu drops, or close whichever menu is open:
+     * the one behaviour of everything whose plain press is a menu (a title-bar menu, a {@link Button#menu menu
+     * button}). {@code at} is the click, or null for a key, which puts the keyboard on the first line
+     * ({@link #markFirst}). Nothing for an empty menu or a target not laid out yet. In the dispatch, as a click's is.
+     */
+    static void drop(Gui gui, Node target, ClickEvent at, dev.vexelray.gui.core.input.Menu menu) {
+        if (menu.isEmpty()) {
+            return;
+        }
+        if (Seams.of(gui).menus() instanceof ContextMenu open && open.isOpen()) {
+            open.hide();
+            return;
+        }
+        dev.vexelray.gui.core.layout.NodeLayout l = target.layout();
+        if (!l.present()) {
+            return;   // not laid out: nowhere to hang it from
+        }
+        float dpi = Math.max(0.0001f, Seams.of(gui).dpi().value());
+        ClickEvent under = new ClickEvent(target.id(), at == null ? MouseButton.LEFT : at.button(),
+                l.rect().x(), l.rect().y() + l.rect().h() + 6 * dpi, 1, at == null ? Set.of() : at.modifiers());
+        Seams.of(gui).openMenu(under, sink -> {
+            for (MenuItem item : menu.items()) {
+                sink.item(item);
+            }
+        });
+        if (at == null && Seams.of(gui).menus() instanceof ContextMenu open && open.isOpen()) {
+            open.markFirst();
+        }
+    }
+
     /** The line under the keyboard as {@code depth.index}, or null for none. For tests. */
     synchronized String marked() {
         return keyAt < 0 ? null : keyDepth + "." + keyAt;

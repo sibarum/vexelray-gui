@@ -760,28 +760,7 @@ public final class TitleBar {
 
         /** Open the menu under the target, or close whichever menu is open; {@code at} is the click, or null for a key. */
         void show(dev.vexelray.gui.core.input.ClickEvent at) {
-            Menu now = menu;
-            if (now.isEmpty()) {
-                return;
-            }
-            if (Seams.of(gui).menus() instanceof ContextMenu open && open.isOpen()) {
-                open.hide();
-                return;
-            }
-            dev.vexelray.gui.core.layout.NodeLayout l = target.layout();
-            if (!l.present()) {
-                return;   // not laid out: nowhere to hang it from
-            }
-            float dpi = Math.max(0.0001f, Seams.of(gui).dpi().value());
-            dev.vexelray.gui.core.input.ClickEvent under = new dev.vexelray.gui.core.input.ClickEvent(target.id(),
-                    at == null ? sibarum.tactroller.api.MouseButton.LEFT : at.button(),
-                    l.rect().x(), l.rect().y() + l.rect().h() + 6 * dpi, 1,
-                    at == null ? java.util.Set.of() : at.modifiers());
-            Seams.of(gui).openMenu(under, sink -> {
-                for (MenuItem item : now.items()) {
-                    sink.item(item);
-                }
-            });
+            ContextMenu.drop(gui, target, at, menu);
         }
     }
 
@@ -830,9 +809,6 @@ public final class TitleBar {
         }
         if (m != null) {
             m.show(null);
-            if (Seams.of(gui).menus() instanceof ContextMenu menu && menu.isOpen()) {
-                menu.markFirst();
-            }
         }
     }
 

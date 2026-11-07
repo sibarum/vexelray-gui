@@ -9,6 +9,7 @@ import dev.vexelray.gui.core.input.ClaimScope;
 import dev.vexelray.gui.core.input.ClickEvent;
 import dev.vexelray.gui.core.input.CursorShape;
 import dev.vexelray.gui.core.input.InteractionState;
+import dev.vexelray.gui.core.input.Menu;
 import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.NodeLayout;
@@ -50,6 +51,9 @@ import java.util.function.Consumer;
  * each carrying the button's {@link #address() address}; a view hears them in the frame they happened
  * ({@code gui.mailbox(Button.PRESSED, save.address(), p -> ...)}), and logic hears them like any other message
  * (vexelray-framework's {@code docs/threading.md}, T3.8).
+ *
+ * <p><b>A menu button</b> ({@link #menu}) drops a declared menu instead: <em>Open with</em>, <em>Sort by</em>, an
+ * overflow. Each line sends what it was declared with, as a context menu's does.
  */
 public final class Button {
 
@@ -95,6 +99,8 @@ public final class Button {
     private volatile boolean enabled = true;
     private volatile boolean toggle;
     private volatile boolean pressed;
+    /** What a press drops, or {@link Menu#NONE} for a button that publishes {@link #PRESSED}. */
+    private volatile Menu menu = Menu.NONE;
     private volatile InteractionState state = InteractionState.NORMAL;
     private final WidgetName name;
     /** The widget library's own hook on a press, for a widget built from buttons; see {@link #onPress}. */
@@ -126,7 +132,7 @@ public final class Button {
             if (at.present()) {
                 inkFrom(e.x() - at.rect().x(), e.y() - at.rect().y());
             }
-            activate();
+            activate(e);
         });
         // A second quick press is a second press, and the double click it also makes is the button's own: left to
         // bubble, it reached whatever the button sits in (a viewer's stage, which a double click puts full screen).
@@ -199,6 +205,18 @@ public final class Button {
         return this;
     }
 
+    /**
+     * Make this a menu button: a click, Enter or Space drops {@code menu} from the button's lower left, as a menu bar's
+     * menu drops, and a second press closes it. The menu is declared as a context menu is ({@link Gui#menu}): each
+     * line sends its own message, so a press publishes no {@link #PRESSED}. A key opens it with its first line under
+     * the keyboard. Declare it again when what it holds changes; {@link Menu#NONE} makes it a plain button again.
+     * Ignored on a chip, whose press is its value.
+     */
+    public Button menu(Menu menu) {
+        this.menu = java.util.Objects.requireNonNull(menu, "menu");
+        return this;
+    }
+
     /** Make this a chip: a button that stays pressed, and says so on {@link #TOGGLED}. */
     public Button toggle(boolean toggle) {
         this.toggle = toggle;
@@ -253,7 +271,7 @@ public final class Button {
         if (at.present()) {
             inkFrom(at.rect().w() * 0.5f, at.rect().h() * 0.5f);
         }
-        activate();
+        activate(null);
     }
 
     /** A ripple from {@code (x, y)} in the button's own frame, if ripples are on and the button can be pressed. */
@@ -266,12 +284,16 @@ public final class Button {
         cues.play(node, Cue.ripple(Color.withAlpha(ink, ink.a() * RIPPLE_STRENGTH), x, y));
     }
 
-    private void activate() {
+    /** A press: {@code at} is the click, or null for a key. */
+    private void activate(ClickEvent at) {
         if (!enabled) {
             return;
         }
+        Menu drops = menu;
         if (toggle) {
             flip(!pressed);
+        } else if (!drops.isEmpty()) {
+            ContextMenu.drop(gui, node, at, drops);
         } else {
             onPress.run();
             gui.bus().publish(PRESSED, new Pressed(address()));

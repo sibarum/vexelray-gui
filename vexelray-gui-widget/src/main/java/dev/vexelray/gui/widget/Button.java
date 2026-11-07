@@ -11,6 +11,7 @@ import dev.vexelray.gui.core.input.CursorShape;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.input.Menu;
 import dev.vexelray.gui.core.input.Shortcut;
+import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.NodeLayout;
 import dev.vexelray.gui.core.style.Role;
@@ -95,6 +96,10 @@ public final class Button {
 
     private final Gui gui;
     private final Node node;
+    /** The words, inside {@link #node}. */
+    private final Node label;
+    /** The badge at the far end, hidden while empty. */
+    private final Node badge;
     private volatile Kind kind = Kind.SECONDARY;
     private volatile boolean enabled = true;
     private volatile boolean toggle;
@@ -119,11 +124,20 @@ public final class Button {
         this.gui = gui;
         // Padding and a hairline border are on every kind, filled or not, so switching kind or pressing a chip
         // never moves the label by the width of a border that appeared.
-        this.node = gui.text(label).role("button")
-                .textSize(Length.rem(0.8125f))
-                .wordWrap(false)
+        // A row holding the words and the badge, so the badge is inside what is pressed, lit and focused. The words
+        // grow, so a button wider than its words keeps its badge at the far end. Both are the button's own: nothing
+        // outside styles their text, and how big a button's words are is the theme's.
+        this.label = gui.text(label).textSize(Length.rem(0.8125f)).wordWrap(false).hitInert(true)
+                .width(Length.grow(1f));
+        this.badge = gui.text("").textSize(Length.rem(0.6875f)).wordWrap(false).hitInert(true)
+                .padding(Length.rem(0.1f), Length.rem(0.45f)).corner(Length.rem(0.6f)).visible(false);
+        this.node = gui.row().role("button")
+                .alignItems(AlignItems.CENTER)
+                .gap(Length.rem(0.5f))
+                .scroll(false, false)
                 .padding(Length.rem(0.35f), Length.rem(0.8f))
-                .corner(Length.rem(0.4f));
+                .corner(Length.rem(0.4f))
+                .children(this.label, this.badge);
         this.name = new WidgetName(gui, "button", node);
         gui.focusable(node, true);
         gui.cursor(node, CursorShape.POINTER);
@@ -172,7 +186,17 @@ public final class Button {
 
     /** Change the label. */
     public Button label(String label) {
-        node.text(label);
+        this.label.text(label);
+        return this;
+    }
+
+    /**
+     * Show {@code badge} at the button's far end: a count, a number, a short state, on a small pill that is part of
+     * the button, pressed, lit and focused with it, and accent while a chip is pressed. Empty takes it away.
+     */
+    public Button badge(String badge) {
+        String text = badge == null ? "" : badge;
+        this.badge.text(text).visible(!text.isEmpty());
         return this;
     }
 
@@ -349,7 +373,10 @@ public final class Button {
             ink = Role.INK;
         }
         node.background(fill.at(s));
-        node.textColor(ink);
+        label.textColor(ink);
+        boolean picked = enabled && toggle && pressed;
+        badge.background(picked ? Role.ACCENT : Role.LINE);
+        badge.textColor(!enabled ? Role.FAINT : picked ? Role.PAGE : Role.DIM);
         this.inkRole = ink;
         node.border(Length.dp(1), edge);
     }

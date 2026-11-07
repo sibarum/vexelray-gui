@@ -55,7 +55,6 @@ public final class Breadcrumb<T> {
     private IconButton overflow;
     private final WidgetName name;
     private volatile int maxSegments = 6;
-    private volatile int face = 0;
     private List<T> chain = List.of();
 
     /** An empty breadcrumb; {@code label} says how an item reads. */
@@ -72,12 +71,6 @@ public final class Breadcrumb<T> {
     /** The node to place in a layout. */
     public Node node() {
         return bar;
-    }
-
-    /** The font face for every segment (the application's own face index). */
-    public Breadcrumb<T> font(int face) {
-        this.face = face;
-        return this;
     }
 
     /** How many segments show before the oldest collapse into an ellipsis. At least two. */
@@ -148,7 +141,7 @@ public final class Breadcrumb<T> {
         for (int i = hidden; i < n; i++) {
             T item = chain.get(i);
             if (i == n - 1) {
-                add(gui.text(label.apply(item)).font(face)
+                add(gui.text(label.apply(item))
                         .textSize(Length.rem(0.875f))
                         .textColor(Role.INK)
                         .padding(Length.rem(0.35f), Length.rem(0.5f))
@@ -162,7 +155,6 @@ public final class Breadcrumb<T> {
 
     private Node button(String text, T target) {
         Button b = new Button(gui, text).kind(Button.Kind.GHOST).onPress(() -> navigated(target));
-        b.node().font(face);
         buttons.add(b);
         return b.node();
     }

@@ -23,12 +23,14 @@ import java.util.Objects;
  * @param label the text shown
  * @param shortcut the chord that does the same, said at the line's right ({@link MenuItem#shortcut(Shortcut)}),
  *                 or null
+ * @param command  the command it does, by the name it is bound by ({@link MenuItem#command(String)}), whose chord
+ *                 as it is now the line says; or null
  */
-public record MenuAction(String id, String icon, IconSource mark, String label, Shortcut shortcut) {
+public record MenuAction(String id, String icon, IconSource mark, String label, Shortcut shortcut, String command) {
 
     /** A command with no chord said beside it. */
     public MenuAction(String id, String icon, IconSource mark, String label) {
-        this(id, icon, mark, label, null);
+        this(id, icon, mark, label, null, null);
     }
 
     public MenuAction {
@@ -59,6 +61,14 @@ public record MenuAction(String id, String icon, IconSource mark, String label, 
      * chords are. It binds nothing.
      */
     public MenuAction shortcut(Shortcut chord) {
-        return new MenuAction(id, icon, mark, label, chord);
+        return new MenuAction(id, icon, mark, label, chord, command);
+    }
+
+    /**
+     * This command as doing {@code bound}, the command it is bound by: its line says that command's chord as it is now
+     * ({@link MenuItem#command(String)}), following a rebind. It binds nothing.
+     */
+    public MenuAction command(String bound) {
+        return new MenuAction(id, icon, mark, label, shortcut, bound);
     }
 }

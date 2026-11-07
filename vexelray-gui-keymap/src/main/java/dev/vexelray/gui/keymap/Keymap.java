@@ -5,6 +5,7 @@ import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.app.Settings;
 import dev.vexelray.gui.core.input.ClaimScope;
+import dev.vexelray.gui.core.input.Commands;
 import dev.vexelray.gui.core.input.Gesture;
 import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.input.Trigger;
@@ -109,6 +110,14 @@ public final class Keymap {
     private Subscription persisting;
     private volatile boolean paused;
 
+    /** What a menu asks for a named action's chords: this keymap's, as they are now (see {@link #attach}). */
+    private final Commands commands = new Commands() {
+        @Override
+        public List<Trigger> triggers(String command) {
+            return action(command).map(Keymap.this::chords).orElse(List.of());
+        }
+    };
+
     /** A keymap whose application-wide actions apply in {@code gui}. {@link #attach} adds more windows. */
     public Keymap(Gui gui) {
         State.Builder<Overrides> builder = State.of(Overrides.NONE);
@@ -168,6 +177,8 @@ public final class Keymap {
             // take those with it.
             anchors.put(gui, gui.box().role("keymap"));
             sync();
+            // A menu line naming one of these actions says its chord as it is now, rebinds and all.
+            Seams.of(gui).commands(commands);
         }
         return this;
     }

@@ -48,14 +48,18 @@ import java.util.function.UnaryOperator;
  * @param shortcut the chord that does the same from the keyboard, drawn dim at the line's right
  *                 ({@link #shortcut(Shortcut)}), or {@code null} for none. Said, not bound: the chord is declared
  *                 where chords are, and a line only tells the person it exists (IDE framework-notes FN-6)
+ * @param command  the command this line does, by the name it is bound by ({@link #command(String)}), or {@code null}:
+ *                 when set, the line says that command's chord as the tree's {@link Commands} has it now, so a
+ *                 rebound chord is what the menu says, and {@code shortcut} is only what it says when none answers
  */
 public record MenuItem(String icon, String label, Runnable action, boolean enabled, IconSource mark,
-                       List<MenuItem> children, boolean heading, boolean current, Shortcut shortcut) {
+                       List<MenuItem> children, boolean heading, boolean current, Shortcut shortcut,
+                       String command) {
 
-    /** A line with no shortcut said beside it. */
+    /** A line with no chord said beside it. */
     public MenuItem(String icon, String label, Runnable action, boolean enabled, IconSource mark,
                     List<MenuItem> children, boolean heading, boolean current) {
-        this(icon, label, action, enabled, mark, children, heading, current, null);
+        this(icon, label, action, enabled, mark, children, heading, current, null, null);
     }
 
     /** A horizontal rule between groups. */
@@ -75,7 +79,7 @@ public record MenuItem(String icon, String label, Runnable action, boolean enabl
 
     /** This line, drawn as about something going on now when {@code current}, everything else as it is. */
     public MenuItem current(boolean current) {
-        return new MenuItem(icon, label, action, enabled, mark, children, heading, current, shortcut);
+        return new MenuItem(icon, label, action, enabled, mark, children, heading, current, shortcut, command);
     }
 
     /** An item marked by a glyph, or by nothing. */
@@ -160,7 +164,7 @@ public record MenuItem(String icon, String label, Runnable action, boolean enabl
 
     /** This line running {@code action} instead, everything else as it is. */
     public MenuItem withAction(Runnable action) {
-        return new MenuItem(icon, label, action, enabled, mark, children, heading, current, shortcut);
+        return new MenuItem(icon, label, action, enabled, mark, children, heading, current, shortcut, command);
     }
 
     /**
@@ -170,7 +174,7 @@ public record MenuItem(String icon, String label, Runnable action, boolean enabl
     public MenuItem wrapActions(UnaryOperator<Runnable> wrap) {
         List<MenuItem> wrapped = children.stream().map(c -> c.wrapActions(wrap)).toList();
         return new MenuItem(icon, label, action == null ? null : wrap.apply(action), enabled, mark, wrapped, heading,
-                current, shortcut);
+                current, shortcut, command);
     }
 
     /**
@@ -178,6 +182,14 @@ public record MenuItem(String icon, String label, Runnable action, boolean enabl
      * of opening the menu. It binds nothing; the chord is the application's to declare as it declares every chord.
      */
     public MenuItem shortcut(Shortcut chord) {
-        return new MenuItem(icon, label, action, enabled, mark, children, heading, current, chord);
+        return new MenuItem(icon, label, action, enabled, mark, children, heading, current, chord, command);
+    }
+
+    /**
+     * This line as doing {@code id}, the command it is bound by: the menu says that command's chord as it is now
+     * ({@link Commands}), following a rebind. It binds nothing, and runs what it ran.
+     */
+    public MenuItem command(String id) {
+        return new MenuItem(icon, label, action, enabled, mark, children, heading, current, shortcut, id);
     }
 }

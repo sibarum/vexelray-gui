@@ -314,4 +314,20 @@ class KeymapTest {
             assertEquals(List.of("paste"), log, "and on its new chord");
         }
     }
+
+    /** A menu line naming an action says its chord as it is now: the keymap answers the tree's {@code Commands}. */
+    @Test
+    void aMenuAskingForAnActionsChordHearsItAsRebound() {
+        try (Headless h = new Headless(); Headless other = new Headless()) {
+            Keymap keys = new Keymap(h.gui).attach(other.gui);
+            Action save = keys.action("file.save", "Save", CTRL_S).on(() -> { });
+            assertEquals(List.of(CTRL_S), Seams.of(h.gui).commands().triggers("file.save"));
+            keys.bind(save, List.of(CTRL_K));
+            assertEquals(List.of(CTRL_K), Seams.of(h.gui).commands().triggers("file.save"), "rebound");
+            assertEquals(List.of(CTRL_K), Seams.of(other.gui).commands().triggers("file.save"), "in every window");
+            keys.unbind(save);
+            assertEquals(List.of(), Seams.of(h.gui).commands().triggers("file.save"), "unbound says none");
+            assertEquals(List.of(), Seams.of(h.gui).commands().triggers("file.nope"), "nor does one not declared");
+        }
+    }
 }

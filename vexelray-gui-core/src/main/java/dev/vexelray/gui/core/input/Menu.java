@@ -104,6 +104,17 @@ public final class Menu {
             return this;
         }
 
+        /**
+         * Name the command the line added last does, as it is bound ({@link MenuItem#command(String)}): the line says
+         * that command's chord as it is now. After no line, or after a separator or a heading, it names nothing.
+         */
+        public Builder command(String id) {
+            if (!items.isEmpty() && !items.getLast().separator() && !items.getLast().heading()) {
+                items.set(items.size() - 1, items.getLast().command(id));
+            }
+            return this;
+        }
+
         /** A line between groups of items. */
         public Builder separator() {
             if (!items.isEmpty() && !items.getLast().separator()) {

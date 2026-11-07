@@ -168,6 +168,16 @@ public abstract class Seams {
     public abstract MenuPresenter menus();
 
     /**
+     * Install what says a named command's chords to a menu line that names one ({@link
+     * dev.vexelray.gui.core.input.MenuItem#command}): {@code vexelray-gui-keymap}'s {@code Keymap} installs itself on
+     * each tree it is attached to. {@code null} puts back {@link dev.vexelray.gui.core.input.Commands#NONE}.
+     */
+    public abstract Seams commands(dev.vexelray.gui.core.input.Commands commands);
+
+    /** What says a named command's chords on this tree; {@link dev.vexelray.gui.core.input.Commands#NONE} until set. */
+    public abstract dev.vexelray.gui.core.input.Commands commands();
+
+    /**
      * React to {@code node}'s pointer-interaction state (NORMAL/HOVER/PRESSED) — e.g. to restyle a button on hover
      * and press. The handler is invoked in the dispatch on each state change, so it must be short. Hovering a descendant (a button's label) counts as hovering {@code node}.
      */

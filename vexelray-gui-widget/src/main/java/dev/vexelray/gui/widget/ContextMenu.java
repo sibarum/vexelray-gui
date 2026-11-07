@@ -5,10 +5,12 @@ import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.ClaimScope;
 import dev.vexelray.gui.core.input.ClickEvent;
+import dev.vexelray.gui.core.input.Commands;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.input.MenuItem;
 import dev.vexelray.gui.core.input.MenuPresenter;
 import dev.vexelray.gui.core.input.Shortcut;
+import dev.vexelray.gui.core.input.Trigger;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.style.Finish;
 import dev.vexelray.gui.core.style.Paint;
@@ -678,6 +680,19 @@ public final class ContextMenu implements MenuPresenter {
      * One command row: full-width, hover-shaded while it can be chosen, dimmed and inert when it cannot. {@code at} is
      * the depth of the panel it is on, the menu's own being 0.
      */
+    /**
+     * What {@code item} says at its right: its command's first trigger as the tree's {@link Commands} has it now, so a
+     * rebound chord is what the menu shows; or, naming no command, the chord it states; or nothing. A command that is
+     * named and has no trigger now says nothing, rather than a chord the keyboard no longer has.
+     */
+    private String chord(MenuItem item) {
+        if (item.command() != null) {
+            List<Trigger> now = Seams.of(gui).commands().triggers(item.command());
+            return now.isEmpty() ? "" : now.getFirst().text();
+        }
+        return item.shortcut() == null ? "" : item.shortcut().text();
+    }
+
     private Node row(MenuItem item, boolean iconColumn, int at) {
         Node row = own(gui.row()
                 .role("menuitem")
@@ -717,10 +732,11 @@ public final class ContextMenu implements MenuPresenter {
                 .textSize(Length.rem(1))
                 .textColor(item.enabled() ? Role.INK : Role.FAINT)
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE)));
-        if (item.shortcut() != null) {
+        String chord = chord(item);
+        if (!chord.isEmpty()) {
             // The chord that does the same, dim at the line's end: said here so a person learns it from the menu, and
             // bound where every chord is, not by this line.
-            row.append(own(gui.text(item.shortcut().text())
+            row.append(own(gui.text(chord)
                     .textSize(Length.rem(0.9f))
                     .wordWrap(false)
                     .textColor(item.enabled() ? Role.DIM : Role.FAINT)

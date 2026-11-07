@@ -546,6 +546,8 @@ public final class Gui implements AutoCloseable {
 
     /** What runs a widget's Timing: the host's, installed through Seams.clock, or null for none. */
     private volatile dev.vexelray.gui.core.spi.Clock clock;
+    /** What says a named command's chords to a menu ({@code Seams.commands}): the keymap, once one is attached. */
+    private volatile dev.vexelray.gui.core.input.Commands commands = dev.vexelray.gui.core.input.Commands.NONE;
 
     /** The thread frames run on, from the first frame; null before it. */
     private volatile Thread frameThread;
@@ -2330,6 +2332,17 @@ public final class Gui implements AutoCloseable {
         @Override
         public MenuPresenter menus() {
             return input.menuPresenter();
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams commands(dev.vexelray.gui.core.input.Commands commands) {
+            Gui.this.commands = commands == null ? dev.vexelray.gui.core.input.Commands.NONE : commands;
+            return this;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.input.Commands commands() {
+            return Gui.this.commands;
         }
 
         @Override

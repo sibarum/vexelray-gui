@@ -1,9 +1,11 @@
 package dev.vexelray.gui.widget;
 
 import dev.vexelray.gui.core.Node;
+import dev.vexelray.gui.core.input.Commands;
 import dev.vexelray.gui.core.input.Menu;
 import dev.vexelray.gui.core.input.MenuItem;
 import dev.vexelray.gui.core.input.Shortcut;
+import dev.vexelray.gui.core.input.Trigger;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.model.RetainedNode;
 import dev.vexelray.gui.core.spi.Seams;
@@ -64,6 +66,33 @@ class MenuShortcutTest {
             assertSame(save.parent, chord.parent, "the chord is on the Save line");
             assertEquals(1, all.stream().filter(n -> n.textString().startsWith("Ctrl")).count(),
                     "Rename has none");
+        }
+    }
+
+    @Test
+    void aLineNamingACommandSaysItsChordAsItIsNowAndNothingWhenItHasNone() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Shortcut rebound = Shortcut.of(Key.K, Modifier.CONTROL, Modifier.ALT);
+            Seams.of(h.gui).commands(new Commands() {
+                @Override
+                public List<Trigger> triggers(String command) {
+                    return command.equals("file.save") ? List.of(rebound) : List.of();
+                }
+            });
+            Node target = h.gui.box().width(Length.FILL).height(Length.FILL);
+            new ContextMenu(h.gui);
+            Seams.of(h.gui).onContextMenu(target, m -> m
+                    .item(MenuItem.of("Save", () -> { }).shortcut(SAVE).command("file.save"))
+                    .item(MenuItem.of("Close", () -> { }).shortcut(SAVE).command("file.close")));
+            h.gui.root().children(target);
+            h.frame();
+            h.rightClick(200f, 150f);
+            h.frame();
+
+            List<RetainedNode> all = new ArrayList<>();
+            texts(h.retained(h.gui.root()), all);
+            assertSame(text(all, "Save").parent, text(all, "Ctrl+Alt+K").parent, "the chord the person set");
+            assertNull(text(all, "Ctrl+S"), "not the one the code started with, and none for an unbound command");
         }
     }
 

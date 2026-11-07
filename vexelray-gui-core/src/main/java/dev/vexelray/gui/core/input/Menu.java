@@ -92,6 +92,18 @@ public final class Menu {
             return this;
         }
 
+        /**
+         * Say {@code chord} at the right of the line added last: the chord that does the same. It binds nothing; the
+         * chord is declared where chords are ({@code gui.shortcut}). After no line, or after a separator or a
+         * heading, it says nothing.
+         */
+        public Builder shortcut(Shortcut chord) {
+            if (!items.isEmpty() && !items.getLast().separator() && !items.getLast().heading()) {
+                items.set(items.size() - 1, items.getLast().shortcut(chord));
+            }
+            return this;
+        }
+
         /** A line between groups of items. */
         public Builder separator() {
             if (!items.isEmpty() && !items.getLast().separator()) {

@@ -69,7 +69,7 @@ final class MenuActions {
                 menu.item(new MenuItem(action.icon(), action.label(), () -> {
                     first.run();
                     gui.bus().publish(topic, chosen);
-                }, !greyed.contains(action.id()), action.mark()));
+                }, !greyed.contains(action.id()), action.mark()).shortcut(action.shortcut()));
             }
         }
     }

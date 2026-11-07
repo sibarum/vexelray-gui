@@ -717,6 +717,15 @@ public final class ContextMenu implements MenuPresenter {
                 .textSize(Length.rem(1))
                 .textColor(item.enabled() ? Role.INK : Role.FAINT)
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE)));
+        if (item.shortcut() != null) {
+            // The chord that does the same, dim at the line's end: said here so a person learns it from the menu, and
+            // bound where every chord is, not by this line.
+            row.append(own(gui.text(item.shortcut().text())
+                    .textSize(Length.rem(0.9f))
+                    .wordWrap(false)
+                    .textColor(item.enabled() ? Role.DIM : Role.FAINT)
+                    .align(TextLayout.HAlign.RIGHT, TextLayout.VAlign.MIDDLE)));
+        }
         if (item.submenu()) {
             // The sign that this line goes further rather than doing something: a chevron at its end, where the
             // submenu will stand.

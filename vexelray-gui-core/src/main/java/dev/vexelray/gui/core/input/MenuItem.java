@@ -45,9 +45,18 @@ import java.util.function.UnaryOperator;
  * @param children the lines of the submenu it opens, in order; empty for an item that runs something
  * @param heading  whether this line is a group's heading rather than a command
  * @param current  whether this line is about something going on now, and is drawn so
+ * @param shortcut the chord that does the same from the keyboard, drawn dim at the line's right
+ *                 ({@link #shortcut(Shortcut)}), or {@code null} for none. Said, not bound: the chord is declared
+ *                 where chords are, and a line only tells the person it exists (IDE framework-notes FN-6)
  */
 public record MenuItem(String icon, String label, Runnable action, boolean enabled, IconSource mark,
-                       List<MenuItem> children, boolean heading, boolean current) {
+                       List<MenuItem> children, boolean heading, boolean current, Shortcut shortcut) {
+
+    /** A line with no shortcut said beside it. */
+    public MenuItem(String icon, String label, Runnable action, boolean enabled, IconSource mark,
+                    List<MenuItem> children, boolean heading, boolean current) {
+        this(icon, label, action, enabled, mark, children, heading, current, null);
+    }
 
     /** A horizontal rule between groups. */
     public static final MenuItem SEPARATOR = new MenuItem(null, null, null, false, null);
@@ -66,7 +75,7 @@ public record MenuItem(String icon, String label, Runnable action, boolean enabl
 
     /** This line, drawn as about something going on now when {@code current}, everything else as it is. */
     public MenuItem current(boolean current) {
-        return new MenuItem(icon, label, action, enabled, mark, children, heading, current);
+        return new MenuItem(icon, label, action, enabled, mark, children, heading, current, shortcut);
     }
 
     /** An item marked by a glyph, or by nothing. */
@@ -151,7 +160,7 @@ public record MenuItem(String icon, String label, Runnable action, boolean enabl
 
     /** This line running {@code action} instead, everything else as it is. */
     public MenuItem withAction(Runnable action) {
-        return new MenuItem(icon, label, action, enabled, mark, children, heading, current);
+        return new MenuItem(icon, label, action, enabled, mark, children, heading, current, shortcut);
     }
 
     /**
@@ -161,6 +170,14 @@ public record MenuItem(String icon, String label, Runnable action, boolean enabl
     public MenuItem wrapActions(UnaryOperator<Runnable> wrap) {
         List<MenuItem> wrapped = children.stream().map(c -> c.wrapActions(wrap)).toList();
         return new MenuItem(icon, label, action == null ? null : wrap.apply(action), enabled, mark, wrapped, heading,
-                current);
+                current, shortcut);
+    }
+
+    /**
+     * This line with {@code chord} said at its right, everything else as it is: the chord a person could press instead
+     * of opening the menu. It binds nothing; the chord is the application's to declare as it declares every chord.
+     */
+    public MenuItem shortcut(Shortcut chord) {
+        return new MenuItem(icon, label, action, enabled, mark, children, heading, current, chord);
     }
 }

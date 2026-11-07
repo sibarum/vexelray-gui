@@ -1,6 +1,8 @@
 package dev.vexelray.gui.widget;
 
 import dev.vexelray.gui.core.IconSource;
+import dev.vexelray.gui.core.input.MenuItem;
+import dev.vexelray.gui.core.input.Shortcut;
 
 import java.util.Objects;
 
@@ -19,8 +21,15 @@ import java.util.Objects;
  * @param icon  the glyph drawn beside the label, or null
  * @param mark  the icon from the set drawn beside the label, or null
  * @param label the text shown
+ * @param shortcut the chord that does the same, said at the line's right ({@link MenuItem#shortcut(Shortcut)}),
+ *                 or null
  */
-public record MenuAction(String id, String icon, IconSource mark, String label) {
+public record MenuAction(String id, String icon, IconSource mark, String label, Shortcut shortcut) {
+
+    /** A command with no chord said beside it. */
+    public MenuAction(String id, String icon, IconSource mark, String label) {
+        this(id, icon, mark, label, null);
+    }
 
     public MenuAction {
         Objects.requireNonNull(id, "id");
@@ -43,5 +52,13 @@ public record MenuAction(String id, String icon, IconSource mark, String label) 
     /** A command marked with {@code mark}, an icon from the set. */
     public static MenuAction of(String id, IconSource mark, String label) {
         return new MenuAction(id, null, mark, label);
+    }
+
+    /**
+     * This command with {@code chord} said at its line's right: the chord that does the same, which is declared where
+     * chords are. It binds nothing.
+     */
+    public MenuAction shortcut(Shortcut chord) {
+        return new MenuAction(id, icon, mark, label, chord);
     }
 }

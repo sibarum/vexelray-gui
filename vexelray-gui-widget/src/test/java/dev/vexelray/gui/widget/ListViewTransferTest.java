@@ -7,7 +7,10 @@ import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.Rect;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import dev.vexelray.gui.core.spi.Seams;
 import sibarum.tactroller.api.InputEvent;
+import sibarum.tactroller.api.Key;
+import sibarum.tactroller.api.Modifier;
 import sibarum.tactroller.api.MouseButton;
 
 import java.util.ArrayList;
@@ -145,5 +148,52 @@ class ListViewTransferTest {
             drag(h, midX(last), below, midX(from), midY(from));   // nothing there to pick up
             assertEquals(List.of(), drops);
         }
+    }
+
+    @Test
+    @DisplayName("Control held makes a move a copy, shown before the release and told on landing")
+    void controlCopies() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Two t = two(h);
+            List<DropEffect> effects = new ArrayList<>();
+            h.bus.subscribe(ListView.LANDED, l -> effects.add(l.effect()));
+            Rect from = rect(t.left(), "a.txt");
+            Rect to = rect(t.right(), "x.txt");
+            float tx = midX(to);
+            float ty = midY(to);
+            press(h, midX(from), midY(from));
+            move(h, (midX(from) + tx) / 2f, (midY(from) + ty) / 2f);
+            h.frame();
+            move(h, tx, ty);
+            h.frame();
+            release(h, tx, ty);    // latched: carried with the hand free
+            h.frame();
+            assertEquals(DropEffect.MOVE, Seams.of(h.gui).drag().value().effect(), "the declared effect, no key held");
+
+            h.down(Key.LEFT_CONTROL).frame();
+            assertEquals(DropEffect.COPY, Seams.of(h.gui).drag().value().effect(),
+                    "Control shows a copy before the release");
+            press(h, tx, ty);
+            release(h, tx, ty);
+            h.frame();
+            h.frame();
+            h.up(Key.LEFT_CONTROL).frame();
+            assertEquals(List.of(DropEffect.COPY), effects, "and the drop lands as the copy it showed");
+        }
+    }
+
+    @Test
+    @DisplayName("the keys a desktop reads: Control copies, Shift moves, both or neither keep the declared effect")
+    void byKeys() {
+        Set<Modifier> none = Set.of();
+        Set<Modifier> control = Set.of(Modifier.CONTROL);
+        Set<Modifier> shift = Set.of(Modifier.SHIFT);
+        Set<Modifier> both = Set.of(Modifier.CONTROL, Modifier.SHIFT);
+        assertEquals(DropEffect.MOVE, DropEffect.MOVE.byKeys(none));
+        assertEquals(DropEffect.COPY, DropEffect.MOVE.byKeys(control));
+        assertEquals(DropEffect.MOVE, DropEffect.COPY.byKeys(shift));
+        assertEquals(DropEffect.COPY, DropEffect.COPY.byKeys(both));
+        assertEquals(DropEffect.LINK, DropEffect.LINK.byKeys(control), "a link is not a copy or a move");
+        assertEquals(DropEffect.NONE, DropEffect.NONE.byKeys(shift), "and nothing stays nothing");
     }
 }

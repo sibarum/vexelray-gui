@@ -127,8 +127,9 @@ public final class ListView<T> implements AutoCloseable {
     }
 
     /**
-     * {@code held}, the payload, was dropped with {@code effect} on the row of the list at {@code list} showing
-     * {@code onto}, or on the list itself when {@code onto} is null: below the last row. A row whose item cannot take
+     * {@code held}, the payload, was dropped with {@code effect} (the declared one, or what the keys held made it) on
+     * the row of the list at {@code list} showing {@code onto}, or on the list itself when {@code onto} is null: below
+     * the last row. A row whose item cannot take
      * it is the application's to treat as the list, the way a file dropped on a file in an explorer pane lands in the
      * folder the pane shows (transfer.md §4).
      */
@@ -541,6 +542,10 @@ public final class ListView<T> implements AutoCloseable {
      * last one on the list itself. Every point in the list resolves, so there is no crack between two rows where a
      * drop silently fails. Which drops are offered is declared here, by type, and decided in the frame; what landing
      * means is the application's, told on {@link #LANDED} (vexelray-framework's threading.md, T7.5).
+     *
+     * <p>A copy or a move follows the keys held, as a desktop's file drop does ({@link DropEffect#byKeys}): Control
+     * copies and Shift moves, shown before the release, and {@link Landed#effect} is what the drop became. So an
+     * application reads the effect it is told rather than the one it declared.
      */
     public <P> ListView<T> droppable(PayloadType<P> type, DropEffect effect) {
         Objects.requireNonNull(type, "type");
@@ -568,7 +573,8 @@ public final class ListView<T> implements AutoCloseable {
             return Drop.NONE;
         }
         Object on = row == null ? null : onto;
-        return new Drop(effect, at, () -> gui.bus().publish(LANDED, new Landed(name.address(), held, on, effect)));
+        DropEffect chosen = effect.byKeys(Seams.of(gui).modifiers().value());
+        return new Drop(chosen, at, () -> gui.bus().publish(LANDED, new Landed(name.address(), held, on, chosen)));
     }
 
     /**

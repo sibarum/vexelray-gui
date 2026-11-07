@@ -34,9 +34,9 @@ import java.util.regex.Pattern;
  * keys.action("file.save-as", "Save As", Shortcut.of(Key.S, Modifier.CONTROL, Modifier.SHIFT)).sends(commands, new SaveAs());
  * }
  *
- * That is the whole of the integration. Each line replaces a {@code gui.shortcut(...)}: the action is claimed on
- * the bus exactly as that shortcut was, at {@link ClaimScope#GLOBAL} unless {@link Action#within} narrows it, so
- * a focused field still outranks it and Ctrl+S still means save. What changes is that the chord is no longer the
+ * That is the whole of the integration, and the one way an application binds a window-wide chord: the action is
+ * claimed on the bus as a shortcut always was, at {@link ClaimScope#GLOBAL} unless {@link Action#within} narrows it,
+ * so a focused field still outranks it and Ctrl+S still means save. What changes is that the chord is no longer the
  * code's to fix. A {@link KeymapEditor} rebinds it, the claim moves, and the handler never hears about it.
  *
  * <h2>One chord, one action, per place</h2>

@@ -121,7 +121,7 @@ ahead of time, that it takes that chord:
 
 ```java
 gui.claim(node, Shortcut.of(Key.TAB), ClaimScope.FOCUSED, editor::indent);
-gui.shortcut(Shortcut.of(Key.S, Modifier.CONTROL), app::save);   // == a GLOBAL claim owned by no node
+Seams.of(gui).shortcut(Shortcut.of(Key.S, Modifier.CONTROL), app::save);   // == a GLOBAL claim owned by no node
 ```
 
 - **Scopes, most specific first:** `FOCUSED` (only while the claiming node holds focus) → `VISIBLE` (while

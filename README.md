@@ -167,7 +167,7 @@ gui.mailbox(Button.PRESSED, save.address(), p -> saves.send(new Save()));   // a
 gui.hear(row, NodeEvent.CLICK, click -> picks.send(new Pick(id)));          // a node's own click
 gui.hear(card, NodeEvent.STATE, s -> card.background(gui.theme().color(Role.PANEL, s)));
 gui.hear(chart, NodeEvent.POINTER, p -> under.send(new Under(p.over(), p.localX())));   // where, over a picture
-gui.shortcut(Shortcut.of(Key.S, Modifier.CONTROL), saves, new Save());      // a global chord
+keys.action("file.save", "Save", Shortcut.of(Key.S, Modifier.CONTROL)).sends(saves, new Save());   // window-wide
 gui.claim(node, Shortcut.of(Key.LEFT), ClaimScope.FOCUSED, moves, new Move(-1));   // focused-only
 ```
 
@@ -364,8 +364,8 @@ keys.action("file.save", "Save", Shortcut.of(Key.S, Modifier.CONTROL)).sends(com
 titleBar.instruments(List.of(SaveScreenshot.instrument(), KeymapWindow.instrument(app, gui, keys)));
 ```
 
-Opt-in, in `vexelray-gui-keymap`. Each action replaces a `gui.shortcut(...)` and is the same `GLOBAL`
-claim, but the chord is the user's: the key button beside the screenshot opens a `KeymapEditor` (also a
+In `vexelray-gui-keymap`, and the one way an application binds a window-wide chord (`Gui.shortcut` went on
+2026-11-07). Each action is a `GLOBAL` claim, but the chord is the user's: the key button beside the screenshot opens a `KeymapEditor` (also a
 plain node, to embed anywhere), where pressing a new chord rebinds it — recorded through `gui.claimAny`,
 so Ctrl+S is recorded rather than saving. Within one place a chord reaches one action, and a rebind takes
 it from whoever had it and says so. Only what changed is stored, as text (`keys.text()`), so later

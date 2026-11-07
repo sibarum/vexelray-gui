@@ -146,22 +146,6 @@ class DeclarationsTest {
     }
 
     @Test
-    void aShortcutDeclaredWithAMessageSendsIt() {
-        try (HeadlessGui h = new HeadlessGui()) {
-            View view = new View(h);
-            List<Save> heard = new ArrayList<>();
-            h.bus.subscribe(SAVE, heard::add);
-            page(h);
-            h.gui.shortcut(Shortcut.of(Key.S, Modifier.CONTROL), view.save, new Save());
-            h.frame();
-
-            h.chord(Key.S, Key.LEFT_CONTROL);
-
-            assertEquals(List.of(new Save()), heard);
-        }
-    }
-
-    @Test
     void aClaimDeclaredWithAMessageSendsItWhileItApplies() {
         try (HeadlessGui h = new HeadlessGui()) {
             View view = new View(h);

@@ -94,7 +94,7 @@ public final class Menu {
 
         /**
          * Say {@code chord} at the right of the line added last: the chord that does the same. It binds nothing; the
-         * chord is declared where chords are ({@code gui.shortcut}). After no line, or after a separator or a
+         * chord is declared where chords are (the keymap). After no line, or after a separator or a
          * heading, it says nothing.
          */
         public Builder shortcut(Shortcut chord) {

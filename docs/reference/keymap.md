@@ -18,7 +18,8 @@ keys.action("file.save-as", "Save As", Shortcut.of(Key.S, Modifier.CONTROL, Modi
 keys.action("view.zen", "Zen mode").on(ui::toggleZen);          // no default: the user may give it one
 ```
 
-Each line replaces a `gui.shortcut(...)`, and is the same thing on the bus: a `GLOBAL` claim (§3 of
+Each line is a window-wide command, the one way an application declares one (`Gui.shortcut` went on 2026-11-07),
+and it is on the bus what a shortcut always was: a `GLOBAL` claim (§3 of
 [keyboard-focus-text.md](keyboard-focus-text.md)), so a focused field still outranks it. Rebinding releases one
 claim and makes another; the handler never hears about it.
 

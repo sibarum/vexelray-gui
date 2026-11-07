@@ -941,16 +941,6 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
-     * Bind {@code shortcut} to a message: pressing it sends {@code message} through {@code to}. The form for an
-     * application's shortcuts (vexelray-framework's {@code docs/threading.md}, T7.5): the binding is declared, the
-     * dispatcher decides on the GUI thread who the chord reaches, and what leaves is the message.
-     */
-    public <T> Gui shortcut(Shortcut shortcut, sibarum.atchung.Sender<T> to, T message) {
-        seams.shortcut(shortcut, sends(to, message));
-        return this;
-    }
-
-    /**
      * Claim {@code chord} for {@code node} at {@code scope}, and send {@code message} through {@code to} when it is
      * pressed: {@link #claim(Node, Trigger, ClaimScope, Runnable)}'s preemption, with a message where the command was.
      * The form for an application's claims (vexelray-framework's {@code docs/threading.md}, T7.5).

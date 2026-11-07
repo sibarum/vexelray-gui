@@ -10,10 +10,8 @@ import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.model.RetainedNode;
 import dev.vexelray.gui.core.spi.Seams;
 import org.junit.jupiter.api.Test;
-import sibarum.atchung.Atchung;
 import sibarum.atchung.Sender;
 import sibarum.atchung.Topic;
-import sibarum.probe.Cause;
 import sibarum.tactroller.api.Key;
 import sibarum.tactroller.api.Modifier;
 
@@ -98,8 +96,8 @@ class MenuShortcutTest {
 
     @Test
     void aBuilderSaysTheChordOfTheLineBeforeItAndOnlyALine() {
-        Sender<String> to = Sender.outside(Atchung.create(), Topic.of("test.menu", String.class),
-                Cause.source("test.menu", Cause.Kind.IO));
+        List<String> sent = new ArrayList<>();
+        Sender<String> to = Sender.collecting(Topic.of("test.menu", String.class), sent);
         Menu menu = Menu.builder()
                 .shortcut(SAVE)                       // no line yet: nothing to say it of
                 .item("Save", to, "save").shortcut(SAVE)
@@ -109,5 +107,7 @@ class MenuShortcutTest {
         assertEquals(SAVE, menu.items().get(0).shortcut());
         assertNull(menu.items().get(1).shortcut());
         assertNull(menu.items().get(2).shortcut());
+        menu.items().get(0).action().run();
+        assertEquals(List.of("save"), sent, "saying a chord changes nothing a line does");
     }
 }

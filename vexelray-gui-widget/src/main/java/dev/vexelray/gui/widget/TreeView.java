@@ -1666,6 +1666,16 @@ public final class TreeView<T> implements AutoCloseable {
     }
 
     /**
+     * Frame the tree in a well, the default, or {@link Framing#FLUSH flush} with what is around it: for a tree set into
+     * a card that is already its edge, as a navigator's is. Either way the tree takes the same room.
+     */
+    public TreeView<T> frame(Framing framing) {
+        Framing f = framing == null ? Framing.WELL : framing;
+        root.background(f.fill()).border(Length.rem(0.1f), f.edge());
+        return this;
+    }
+
+    /**
      * Let Ctrl+F search the tree, or stop it. Off by default: the bar is a feature an application chooses, the
      * way a field chooses it by being {@link TextField#multiline multiline}.
      *

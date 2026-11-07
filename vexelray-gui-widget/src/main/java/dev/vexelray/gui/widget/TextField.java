@@ -562,6 +562,16 @@ public final class TextField implements AutoCloseable {
     }
 
     /**
+     * Frame the field in a well, the default, or {@link Framing#FLUSH flush} with what is around it: for a field that
+     * is the whole of a card, whose card is already its edge. Either way the field takes the same room.
+     */
+    public TextField frame(Framing framing) {
+        Framing f = framing == null ? Framing.WELL : framing;
+        node.background(f.fill()).border(Length.rem(0.1f), f.edge());
+        return this;
+    }
+
+    /**
      * Close the <b>user's</b> edit channel: typing, Backspace/Delete, Enter, cut, paste, undo and redo stop
      * arriving, while the caret, selection, Ctrl+C and every motion key keep working — a field to read out of
      * rather than write into (a log, a transcript, a computed result).

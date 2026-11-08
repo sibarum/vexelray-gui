@@ -230,6 +230,9 @@ public final class ContextMenu implements MenuPresenter {
      */
     @Override
     public synchronized void present(ClickEvent where, List<MenuItem> menuItems) {
+        // Whatever opened the menu before has lost it: this opening is someone else's (or its own again, which says so
+        // after this returns).
+        hidden();
         opener = where;
         closeSubmenus(0);
         keyAt = -1;
@@ -305,6 +308,50 @@ public final class ContextMenu implements MenuPresenter {
         });
         if (at == null && Seams.of(gui).menus() instanceof ContextMenu open && open.isOpen()) {
             open.markFirst();
+        }
+    }
+
+    /**
+     * {@link #drop(Gui, Node, ClickEvent, dev.vexelray.gui.core.input.Menu)}, and {@code onOpen} told {@code true} when
+     * the menu opens from {@code target} and {@code false} when it closes, however it closes (a line chosen, a click
+     * away, Escape, another menu opening in its place): what lets a target stay lit while its menu is open, as a menu
+     * bar's open menu is.
+     */
+    static void drop(Gui gui, Node target, ClickEvent at, dev.vexelray.gui.core.input.Menu menu,
+                     java.util.function.Consumer<Boolean> onOpen) {
+        drop(gui, target, at, menu);
+        whileOpen(gui, onOpen);
+    }
+
+    /**
+     * If a menu is open on {@code gui} now, tell {@code onOpen} {@code true}, and {@code false} once it closes or is
+     * replaced: called right after something opens a menu, by the thing that opened it. Nothing if none is open.
+     */
+    static void whileOpen(Gui gui, java.util.function.Consumer<Boolean> onOpen) {
+        if (Seams.of(gui).menus() instanceof ContextMenu open && open.isOpen()) {
+            open.untilHidden(() -> onOpen.accept(false));
+            onOpen.accept(true);
+        }
+    }
+
+    /** What to run when the menu next hides or is opened again: one at a time, the latest opener's. Guarded by this. */
+    private Runnable onHidden;
+
+    /** Run {@code r} once, when the menu next hides or opens again; replaces one not yet run, running it first. */
+    synchronized void untilHidden(Runnable r) {
+        hidden();
+        onHidden = r;
+    }
+
+    /** Tell whoever is waiting that the menu is no longer theirs. */
+    private void hidden() {
+        Runnable r;
+        synchronized (this) {
+            r = onHidden;
+            onHidden = null;
+        }
+        if (r != null) {
+            r.run();
         }
     }
 
@@ -497,6 +544,7 @@ public final class ContextMenu implements MenuPresenter {
         for (Shortcut key : WALK) {
             gui.releaseClaim(menu, key);
         }
+        hidden();
     }
 
     /** Release the menu's subscription, registrations and nodes. */

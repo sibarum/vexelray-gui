@@ -496,6 +496,17 @@ public final class TitleBar {
          */
         void ink(Paint ink);
 
+        /**
+         * The lockup is in {@code pointer}'s state, and its app menu is {@code open} or not: called whenever either
+         * changes. By default the logo is inked as the bar inks a menu's label: {@link Role#INK} at rest, the accent
+         * shaded for the pointer, and the accent while the menu is open, wherever the pointer has gone ({@link #ink}).
+         * A logo that wants its own look for each, glowing under the pointer and lit only once open, say, overrides
+         * this rather than guessing from the paint.
+         */
+        default void state(InteractionState pointer, boolean open) {
+            ink(lockupInk(pointer, open));
+        }
+
         /** {@code name} in the bar's type, weighted as a name: the wordmark of a bar whose application gave none. */
         static Wordmark of(Gui gui, String name) {
             Node text = gui.text(name == null ? "" : name)
@@ -569,13 +580,35 @@ public final class TitleBar {
      * which the window's motion fades, as a caption button's plate is.
      */
     private void paintLockup() {
-        InteractionState s = hasAppMenu() ? lockupState : InteractionState.NORMAL;
-        lockup.background(s == InteractionState.NORMAL ? Role.NONE
-                : s == InteractionState.PRESSED ? Role.LINE : Role.RAISED);
+        boolean menu = hasAppMenu();
+        InteractionState s = menu ? lockupState : InteractionState.NORMAL;
+        boolean open = menu && lockupOpen;
+        lockup.background(plate(s, open));
         Wordmark mark = wordmark;
         if (mark != null) {
-            mark.ink(s == InteractionState.NORMAL ? Role.INK : Paint.of(Role.ACCENT, s));
+            mark.state(s, open);
         }
+    }
+
+    /** Whether the app menu the lockup opened is open now: the lockup stays lit until it closes. */
+    private volatile boolean lockupOpen;
+
+    /** The plate under a target that opens a menu: none at rest, raised under the pointer and while open, deeper pressed. */
+    private static Paint plate(InteractionState s, boolean open) {
+        return s == InteractionState.PRESSED ? Role.LINE
+                : s == InteractionState.HOVER || open ? Role.RAISED : Role.NONE;
+    }
+
+    /** A menu target's ink: {@link Role#INK} at rest, the accent for the pointer, and the accent's hover shade while open. */
+    static Paint lockupInk(InteractionState s, boolean open) {
+        return s == InteractionState.NORMAL && !open ? Role.INK
+                : Paint.of(Role.ACCENT, s == InteractionState.NORMAL ? InteractionState.HOVER : s);
+    }
+
+    /** The app menu has opened or closed. */
+    private void lockupOpen(boolean open) {
+        lockupOpen = open;
+        paintLockup();
     }
 
     /**
@@ -608,6 +641,7 @@ public final class TitleBar {
                 tool.section(window, sink);
             }
         });
+        ContextMenu.whileOpen(gui, this::lockupOpen);
     }
 
     /**
@@ -715,6 +749,8 @@ public final class TitleBar {
         final Node target;
         volatile Menu menu = Menu.NONE;
         volatile InteractionState state = InteractionState.NORMAL;
+        /** Whether the menu this target dropped is open now: it stays lit until it closes. */
+        volatile boolean open;
 
         AppMenu(String name) {
             this.name = name;
@@ -748,19 +784,26 @@ public final class TitleBar {
             paint();
         }
 
-        /** The plate and the label's ink for what the pointer is doing, as {@link #paintLockup} paints the lockup's. */
+        /**
+         * The plate and the label's ink for what the pointer is doing and whether its menu is open, as
+         * {@link #paintLockup} paints the lockup's.
+         */
         void paint() {
-            InteractionState s = menu.isEmpty() ? InteractionState.NORMAL : state;
-            target.background(s == InteractionState.NORMAL ? Role.NONE
-                    : s == InteractionState.PRESSED ? Role.LINE : Role.RAISED);
-            target.textColor(menu.isEmpty() ? Role.FAINT
-                    : s == InteractionState.NORMAL ? Role.DIM
-                    : dev.vexelray.gui.core.style.Paint.of(Role.ACCENT, s));
+            boolean live = !menu.isEmpty();
+            InteractionState s = live ? state : InteractionState.NORMAL;
+            boolean lit = live && open;
+            target.background(plate(s, lit));
+            target.textColor(!live ? Role.FAINT
+                    : s == InteractionState.NORMAL && !lit ? Role.DIM
+                    : lockupInk(s, lit));
         }
 
         /** Open the menu under the target, or close whichever menu is open; {@code at} is the click, or null for a key. */
         void show(dev.vexelray.gui.core.input.ClickEvent at) {
-            ContextMenu.drop(gui, target, at, menu);
+            ContextMenu.drop(gui, target, at, menu, now -> {
+                open = now;
+                paint();
+            });
         }
     }
 

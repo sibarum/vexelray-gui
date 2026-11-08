@@ -369,6 +369,62 @@ class TitleBarTest {
         }
     }
 
+    /**
+     * The lockup stays lit while its menu is open, wherever the pointer goes, and its wordmark is told so: open on the
+     * click, still open with the pointer gone into the menu, closed once a line is chosen. A wordmark that keeps the
+     * default is inked in the accent all the while.
+     */
+    @Test
+    void theLockupStaysLitWhileItsMenuIsOpenAndTellsTheWordmark() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            ContextMenu menu = new ContextMenu(h.gui);
+            TitleBar bar = bar(h, WindowControls.NONE);
+            List<String> states = new java.util.ArrayList<>();
+            List<dev.vexelray.gui.core.style.Paint> inks = new java.util.ArrayList<>();
+            dev.vexelray.gui.core.Node logo = mark(h);
+            bar.wordmark(new TitleBar.Wordmark() {
+                @Override
+                public dev.vexelray.gui.core.Node node() {
+                    return logo;
+                }
+
+                @Override
+                public void ink(dev.vexelray.gui.core.style.Paint ink) {
+                    inks.add(ink);
+                }
+
+                @Override
+                public void state(dev.vexelray.gui.core.input.InteractionState pointer, boolean open) {
+                    states.add(pointer + (open ? " open" : ""));
+                    TitleBar.Wordmark.super.state(pointer, open);
+                }
+            });
+            bar.onMark("About Test", () -> { });
+            h.frame();
+            dev.vexelray.gui.core.Node lockup = h.gui.landmarkNode(TitleBar.MARK).orElseThrow();
+
+            clickOn(h, lockup);
+            h.frame();
+            assertTrue(menu.isOpen());
+            assertTrue(states.get(states.size() - 1).endsWith(" open"), "told on opening: " + states);
+
+            dev.vexelray.gui.core.layout.Rect about = h.gui.layoutSnapshot()
+                    .node(h.retained(h.gui.landmarkNode("menu.about-test").orElseThrow()).id).rect();
+            h.hover(about.x() + about.w() / 2f, about.y() + about.h() / 2f);
+            h.frame();
+            assertEquals("NORMAL open", states.get(states.size() - 1), "the pointer gone into the menu: still open");
+            assertEquals(dev.vexelray.gui.core.style.Paint.of(dev.vexelray.gui.core.style.Role.ACCENT,
+                            dev.vexelray.gui.core.input.InteractionState.HOVER), inks.get(inks.size() - 1),
+                    "lit in the accent while open, by default");
+            assertEquals(dev.vexelray.gui.core.style.Role.RAISED, h.retained(lockup).background(), "and the plate stays raised");
+
+            clickOn(h, h.gui.landmarkNode("menu.about-test").orElseThrow());
+            h.frame();
+            assertEquals("NORMAL", states.get(states.size() - 1), "told once a line closes it");
+            assertEquals(dev.vexelray.gui.core.style.Role.INK, inks.get(inks.size() - 1));
+        }
+    }
+
     private static void clickOn(HeadlessGui h, dev.vexelray.gui.core.Node node) {
         dev.vexelray.gui.core.layout.Rect r = h.gui.layoutSnapshot().node(h.retained(node).id).rect();
         h.click(r.x() + r.w() / 2f, r.y() + r.h() / 2f);

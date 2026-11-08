@@ -20,11 +20,20 @@ enum Contender {
             return SdgRender.render(art.sdg(), side, side).rgba();
         }
     },
-    SDG_C("SDG, C", "the drawing by sdg-signed-distance-graphics' C rasterizer (native, one thread, /O2): SdgRender's "
-            + "algorithm, bit for bit, called through the foreign-function API") {
+    SDG_C("SDG, C", "the drawing by sdg-signed-distance-graphics' C rasterizer (native, one thread, /O2), called through "
+            + "the foreign-function API: SdgRender's pixels, byte for byte, with the work it can skip skipped (tiles "
+            + "wholly in or out of a shape, texel taps once a row and a column)") {
         @Override
         byte[] draw(Corpus.Art art, int side) {
-            return NativeSdg.render(art, side);
+            return NativeSdg.render(art, side, 1);
+        }
+    },
+    SDG_C_THREADS("SDG, C, all cores", "the same C rasterizer on one thread a processor ("
+            + Runtime.getRuntime().availableProcessors() + " here), the picture cut into bands of rows: the same "
+            + "pixels; every other contender here is one thread") {
+        @Override
+        byte[] draw(Corpus.Art art, int side) {
+            return NativeSdg.render(art, side, 0);
         }
     },
     SVG_IMAGELIB("SVG, imagelib", "the SVG rasterised by imagelib (native, built from Rust), parse included, as Ico.java made icons") {
@@ -62,9 +71,10 @@ enum Contender {
 
     abstract byte[] draw(Corpus.Art art, int side);
 
-    /** Every contender that can run here: the C one only where its library was built. */
+    /** Every contender that can run here: the C ones only where its library was built. */
     static List<Contender> all() {
-        return java.util.Arrays.stream(values()).filter(c -> c != SDG_C || NativeSdg.available()).toList();
+        return java.util.Arrays.stream(values())
+                .filter(c -> (c != SDG_C && c != SDG_C_THREADS) || NativeSdg.available()).toList();
     }
 
     /** Bilinear scaling of straight RGBA, through premultiplied colour, so a transparent neighbour never darkens. */

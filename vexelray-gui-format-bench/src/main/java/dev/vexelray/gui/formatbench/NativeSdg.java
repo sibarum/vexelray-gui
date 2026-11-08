@@ -20,7 +20,7 @@ import static java.lang.foreign.ValueLayout.JAVA_LONG;
 
 /**
  * The C rasterizer of sdg-signed-distance-graphics ({@code c/}), called through the foreign-function API: the same
- * algorithm as {@code SdgRender}, bit for bit (its conformance set), compiled native, one thread. Found as the shared
+ * pixels as {@code SdgRender}, byte for byte (its conformance set), compiled native. Found as the shared
  * library in {@code -Dsdg.native.dir} (by default that repository's {@code c/build}); without it, the comparison
  * leaves it out and says so.
  */
@@ -46,9 +46,9 @@ final class NativeSdg {
                         FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_LONG, ADDRESS, JAVA_LONG));
                 close = linker.downcallHandle(sdg.find("sdg_close").orElseThrow(),
                         FunctionDescriptor.ofVoid(ADDRESS));
-                render = linker.downcallHandle(sdg.find("sdg_render").orElseThrow(),
+                render = linker.downcallHandle(sdg.find("sdg_render_threaded").orElseThrow(),
                         FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT, JAVA_INT, JAVA_DOUBLE, JAVA_DOUBLE,
-                                JAVA_DOUBLE, ADDRESS, ADDRESS, ADDRESS));
+                                JAVA_DOUBLE, ADDRESS, ADDRESS, JAVA_INT, ADDRESS));
             }
         } catch (RuntimeException e) {
             why = e.toString();
@@ -94,8 +94,11 @@ final class NativeSdg {
         });
     }
 
-    /** {@code art} drawn by the C library, fitted into {@code side} square, as SdgRender fits it: straight RGBA. */
-    static byte[] render(Corpus.Art art, int side) {
+    /**
+     * {@code art} drawn by the C library, fitted into {@code side} square, as SdgRender fits it, on {@code threads}
+     * threads (0: one a processor): straight RGBA.
+     */
+    static byte[] render(Corpus.Art art, int side, int threads) {
         MemorySegment d = drawing(art);
         double w = art.sdg().width(), h = art.sdg().height();
         double upp = Math.max(w / side, h / side);
@@ -103,7 +106,7 @@ final class NativeSdg {
         try (Arena a = Arena.ofConfined()) {
             MemorySegment out = a.allocate((long) side * side * 4);
             int rc = (int) RENDER.invokeExact(d, side, side, ox, oy, upp, MemorySegment.NULL, MemorySegment.NULL,
-                    out);
+                    threads, out);
             if (rc != 0) {
                 throw new IllegalStateException("the C library ran out of memory");
             }

@@ -38,5 +38,12 @@
             <artifactId>vexelray-shadelets</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Test scope only, for SdgCaptureTest: drawings made by SDG's encoders, checked against its CPU reference. -->
+        <dependency>
+            <groupId>dev.vexelray.fields</groupId>
+            <artifactId>vexelray-fields-sdg</artifactId>
+            <version>${vexelray-fields.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>

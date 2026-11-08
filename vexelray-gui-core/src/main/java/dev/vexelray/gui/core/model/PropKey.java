@@ -58,6 +58,12 @@ public enum PropKey {
      */
     FIELD(false),
     /**
+     * A drawing in signed distance graphics ({@code ImageSdg}): full-colour layers, each a distance field and a paint,
+     * fitted into the box with its aspect kept, sharp at any size. Not layout-affecting, as an image is not: a box
+     * that paints takes its size from the box.
+     */
+    SDG(false),
+    /**
      * A {@code Picture} drawn inside this node's box: an ordered list of marks in the box's own pixel frame, with
      * {@code (0, 0)} at its top-left corner. A plot, a diagram, a sparkline — anything an application wants to put
      * marks on the screen for, without one laid-out node per mark.

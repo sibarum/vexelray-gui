@@ -104,6 +104,8 @@ public final class TreeRenderer {
     // What every node's paint and finish resolve against this frame, and the focus ring's role with them. Focus is
     // the dispatcher's, handed in as a value; the ring's lengths resolve against the frame's context like any other.
     private final Theme theme;
+    /** An SDG paint's role, in this frame's theme ({@link dev.vexelray.gui.core.style.SdgRoles}). */
+    private final Canvas.Roles sdgRoles;
     /** The colour each node is drawn in on its way to the one it was given. */
     private PaintMotion paint = PaintMotion.NONE;
     /**
@@ -135,6 +137,7 @@ public final class TreeRenderer {
     private TreeRenderer(Theme theme, TextFaces faces, FocusState focus, LayoutContext ctx) {
         this.faces = faces;
         this.theme = theme;
+        this.sdgRoles = (role, stored) -> dev.vexelray.gui.core.style.SdgRoles.rgba(theme, role, stored);
         this.focus = focus == null ? FocusState.NONE : focus;
         this.ctx = ctx == null ? LayoutContext.of(0f, 0f) : ctx;
         this.scrollEdge = theme.color(Role.EDGE);
@@ -916,7 +919,8 @@ public final class TreeRenderer {
         // An image, a field and a picture sit between the background and the border, so a border over any of them is
         // drawn after them, on its own; without them, the box is one element: border, fill and shadow in one quad.
         Picture picture = n.picture();
-        boolean between = n.image() != null || n.field() != null || (picture != null && !picture.isEmpty());
+        boolean between = n.image() != null || n.field() != null || n.sdg() != null
+                || (picture != null && !picture.isEmpty());
         boolean borderNow = hasBorder && !between;
         int fill = bg == null ? NO_FILL : n.lit(theme) ? LIT_FILL : PLAIN_FILL;
         if (borderNow || fill != NO_FILL || hasShadow) {
@@ -952,6 +956,12 @@ public final class TreeRenderer {
                         fade(drawn(n, PaintMotion.Channel.TEXT, field.tint())), field.look(),
                         field.instance());
             }
+        }
+        // An SDG drawing, over the image and the field: fitted into the box, its aspect kept, each page uploaded by
+        // DeviceImages as any Pixels are, and each role in this tree's theme.
+        dev.vexelray.gui.core.ImageSdg sdg = n.sdg();
+        if (sdg != null && n.w > 0f && n.h > 0f && alpha > 0f) {
+            canvas.sdg(sdg.drawing(), sdg.pages().toArray(new ImageHandle[0]), n.x, n.y, n.w, n.h, sdgRoles, alpha);
         }
         // A drawing goes over the image and under the border: an application's own marks belong inside the frame
         // the node draws around them.

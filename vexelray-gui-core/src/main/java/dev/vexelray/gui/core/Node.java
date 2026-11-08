@@ -141,6 +141,16 @@ public final class Node {
     }
 
     /**
+     * Draw a drawing in signed distance graphics across this node's box: full colour, every edge sharp at any size,
+     * fitted with its aspect kept and centred. A paint that names a role takes the theme's colour of that name, so one
+     * drawing follows the light and the dark theme. Drawn over the node's own image and field, under its border. Null
+     * clears it.
+     */
+    public Node sdg(ImageSdg drawing) {
+        return prop(PropKey.SDG, drawing);
+    }
+
+    /**
      * {@link #field(ImageField)} from its parts: {@code side} is the texture's size in texels and {@code spread} the
      * margin round the shape's square. A null texture clears it.
      */

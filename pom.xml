@@ -97,6 +97,9 @@
         <!-- VexelRay: the Vulkan engine we build on. Installed to the local .m2 by `mvn install` in the
              sibling vexelray repo (which in turn requires SupirVast installed first). -->
         <vexelray.version>0.2.0-SNAPSHOT</vexelray.version>
+        <!-- vexelray-fields: SDG's encoders and CPU reference, for the harness's SDG capture (test scope). The format
+             itself comes through vexelray-canvas. -->
+        <vexelray-fields.version>0.2.0-SNAPSHOT</vexelray-fields.version>
         <!-- SupirVast: transitive via VexelRay; pinned for any incidental direct use. Must match vexelray's own
              supirvast.version: this pin is in dependencyManagement, so it wins over the transitive one here. -->
         <supirvast.version>0.2.3-SNAPSHOT</supirvast.version>

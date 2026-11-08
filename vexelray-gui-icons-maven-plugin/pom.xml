@@ -47,6 +47,12 @@
             <groupId>sibarum.imagelib</groupId>
             <artifactId>imagelib-wrapper</artifactId>
         </dependency>
+        <!-- The pair goal: a mark's drawing as an SDG, and its art pair and icon converted from it. -->
+        <dependency>
+            <groupId>dev.vexelray.fields</groupId>
+            <artifactId>vexelray-fields-convert</artifactId>
+            <version>${vexelray-fields.version}</version>
+        </dependency>
         <!-- DistanceField: the one place a mask becomes a field, which the run time's icon path also uses. -->
         <dependency>
             <groupId>dev.vexelray</groupId>

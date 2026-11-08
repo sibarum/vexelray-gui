@@ -105,7 +105,7 @@ public class PairMojo extends AbstractMojo {
         Path stampFile = workDirectory.toPath().resolve(name.replace('/', '.') + ".stamp");
         String stamp;
         try {
-            Output.Stamp st = new Output.Stamp().add(Convert.class.getName()).add(art)
+            Output.Stamp st = new Output.Stamp().addCode(Convert.class, ArtPair.class, Sdg.class, Svg.class).add(art)
                     .add(p.pair + " " + p.drawing + " " + p.texels + " " + Arrays.toString(sizes) + " " + p.field
                             + " " + p.margin + " " + p.lift + " " + p.icon + " " + Arrays.toString(iconSizes)
                             + " " + smallSides + " " + p.roles);

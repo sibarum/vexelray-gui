@@ -109,6 +109,33 @@ final class Output {
             return s.hex();
         }
 
+        /**
+         * The code a bake calls into from another artifact, by the bytes of the jar each class is in (or the class
+         * itself, from a folder): a conversion that changes in a library makes again, as the plugin's own change does.
+         * Its class name alone did not, and a fixed art pair route left stale pairs in place.
+         */
+        Stamp addCode(Class<?>... classes) {
+            for (Class<?> c : classes) {
+                add(c.getName());
+                try {
+                    var source = c.getProtectionDomain().getCodeSource();
+                    Path at = source == null ? null : Path.of(source.getLocation().toURI());
+                    if (at != null && Files.isRegularFile(at)) {
+                        add(at);
+                    } else {
+                        try (InputStream in = c.getResourceAsStream(c.getSimpleName() + ".class")) {
+                            if (in != null) {
+                                digest.update(in.readAllBytes());
+                            }
+                        }
+                    }
+                } catch (IOException | java.net.URISyntaxException | RuntimeException e) {
+                    add("unreadable");
+                }
+            }
+            return this;
+        }
+
         Stamp add(String s) {
             byte[] b = s.getBytes(StandardCharsets.UTF_8);
             digest.update(length(b.length));

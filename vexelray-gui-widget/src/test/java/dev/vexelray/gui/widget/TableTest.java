@@ -487,8 +487,8 @@ class TableTest {
     }
 
     /** The sort indicator on a column, or null when it carries none. It is the header cell's reserved slot. */
-    private static dev.vexelray.gui.core.ImageField markOf(HeadlessGui h, Table<Person> table, int column) {
-        return h.retained(table.headerCell(column)).children.get(1).children.get(0).field();
+    private static dev.vexelray.gui.core.ImageSdg markOf(HeadlessGui h, Table<Person> table, int column) {
+        return h.retained(table.headerCell(column)).children.get(1).children.get(0).sdg();
     }
 
     private static Rect boxOf(dev.vexelray.gui.core.model.RetainedNode n) {

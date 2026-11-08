@@ -20,6 +20,14 @@ public interface LayeredIcon extends IconSource {
     /** The layers back to front, each a field in its own colour, drawn {@code px} pixels square on a dark or light theme. */
     List<ImageField> layers(float px, boolean dark);
 
+    /**
+     * The layers as one drawing, each in its own colour, drawn {@code px} pixels square on a dark or light theme: how a
+     * layered icon is drawn, in one node. Its effects are its bottom layer's, as they always were.
+     */
+    default ImageSdg sdg(float px, boolean dark) {
+        return ImageSdg.ofFields(layers(px, dark), null);
+    }
+
     /** A theme is dark when its ink is light: which of an icon's two rows of colours it is drawn with. */
     static boolean dark(Theme theme) {
         Color ink = theme.color(Role.INK);

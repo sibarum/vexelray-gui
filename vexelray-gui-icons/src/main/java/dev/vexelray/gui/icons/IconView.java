@@ -6,6 +6,7 @@ import dev.vexelray.canvas.shadelet.Look;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.IconSource;
 import dev.vexelray.gui.core.ImageField;
+import dev.vexelray.gui.core.ImageSdg;
 import dev.vexelray.gui.core.LayeredIcon;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.Length;
@@ -16,7 +17,6 @@ import dev.vexelray.shadelets.OutlineStyleLayout;
 import dev.vexelray.shadelets.WeightStyle;
 import dev.vexelray.shadelets.WeightStyleLayout;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -33,8 +33,9 @@ import java.util.List;
  * shares of the drawn size, so they scale with it. Changing the icon, the colour or an effect rewrites one prop;
  * the atlas is uploaded once per device by the renderer, and nothing here holds a texture.
  *
- * <p><b>An icon in colours of its own</b> (a {@link LayeredIcon}) is drawn as its layers, one over the other in the
- * box, in the theme's row of its colours; the tint is for an icon of one colour and leaves it alone. Its effects are
+ * <p><b>Drawn as SDG.</b> The icon is one drawing in signed distance graphics on the node ({@link Node#sdg}), over the
+ * atlas cell it was baked into: an icon of one colour is one layer in the tint; an icon in colours of its own (a
+ * {@link LayeredIcon}) is its layers in the theme's row of its colours, and the tint leaves it alone. Its effects are
  * the bottom layer's.
  *
  * <p><b>Decorative by default.</b> An icon beside a word adds nothing for a screen reader, so the node has no role.
@@ -58,8 +59,6 @@ public final class IconView {
     private volatile IconSize forced;
     private volatile float px;
     private volatile Length side = Length.rem(1f);
-    /** The layers above the first of a {@link LayeredIcon}, floated over the node; kept, and emptied, between icons. */
-    private final List<Node> above = new ArrayList<>();
 
     private IconView(Gui gui, IconSource icon) {
         this.gui = gui;
@@ -101,11 +100,6 @@ public final class IconView {
     public IconView size(Length side) {
         this.side = side;
         node.size(side, side);
-        synchronized (above) {
-            for (Node layer : above) {
-                layer.size(side, side);
-            }
-        }
         return this;
     }
 
@@ -184,35 +178,18 @@ public final class IconView {
         IconSource i = icon;
         float side = px;
         if (i == null || side <= 0f) {
-            node.field(null);
-            layers(List.of());
+            node.sdg(null);
             return;
         }
+        Look effects = ImageSdg.sdgLook(look(side));
         if (i instanceof LayeredIcon layered) {
-            List<ImageField> fields = layered.layers(side, LayeredIcon.dark(gui.theme()));
-            node.field(fields.isEmpty() ? null : fields.getFirst().look(look(side)));
-            layers(fields.isEmpty() ? List.of() : fields.subList(1, fields.size()));
+            node.sdg(layered.sdg(side, LayeredIcon.dark(gui.theme())).look(effects));
             return;
         }
-        layers(List.of());
         Color c = color != null ? color : gui.theme().color(role);
-        ImageField field = forced != null && i instanceof BakedIcon set ? set.field(forced, c) : i.field(side, c);
-        node.field(field.look(look(side)));
-    }
-
-    /** {@code fields} on the nodes over this one, in order, making what is missing and emptying what is left over. */
-    private void layers(List<ImageField> fields) {
-        synchronized (above) {
-            while (above.size() < fields.size()) {
-                Node layer = gui.box().size(side, side).scroll(false, false)
-                        .floatAt(Length.ZERO, Length.ZERO).hitInert(true);
-                node.append(layer);
-                above.add(layer);
-            }
-            for (int k = 0; k < above.size(); k++) {
-                above.get(k).field(k < fields.size() ? fields.get(k) : null);
-            }
-        }
+        ImageSdg drawing = forced != null && i instanceof BakedIcon set ? ImageSdg.ofField(set.field(forced, c))
+                : i.sdg(side, c);
+        node.sdg(drawing.tint(c).look(effects));
     }
 
     /**

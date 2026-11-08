@@ -38,6 +38,13 @@
             <artifactId>vexelray-shadelets</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Test scope only, for IconSdgCaptureTest: a layered icon drawn as SDG against its old stacked fields. -->
+        <dependency>
+            <groupId>dev.vexelray.gui</groupId>
+            <artifactId>vexelray-gui-file-icons</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
         <!-- Test scope only, for SdgCaptureTest: drawings made by SDG's encoders, checked against its CPU reference. -->
         <dependency>
             <groupId>dev.vexelray.fields</groupId>

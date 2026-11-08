@@ -150,11 +150,11 @@ class TreeCheckTest {
             settle(h);
 
             assertEquals(List.of("notes.txt"), ticks.clicks);
-            assertNotNull(markOf(h, tree, "notes.txt").field(), "the answer ticked it");
+            assertNotNull(markOf(h, tree, "notes.txt").sdg(), "the answer ticked it");
 
             click(h, at[0], at[1]);
             settle(h);
-            assertNull(markOf(h, tree, "notes.txt").field(), "and again unticked it");
+            assertNull(markOf(h, tree, "notes.txt").sdg(), "and again unticked it");
             tree.close();
         }
     }
@@ -176,7 +176,7 @@ class TreeCheckTest {
             settle(h);
 
             assertEquals(List.of("docs"), heard);
-            assertNull(markOf(h, tree, "docs").field(), "nothing answered, so nothing is ticked");
+            assertNull(markOf(h, tree, "docs").sdg(), "nothing answered, so nothing is ticked");
             tree.close();
         }
     }
@@ -215,7 +215,7 @@ class TreeCheckTest {
             settle(h);
 
             assertEquals(List.of("docs"), ticks.clicks, "the chord acts on the selection, which is the tree's");
-            assertNotNull(markOf(h, tree, "docs").field());
+            assertNotNull(markOf(h, tree, "docs").sdg());
             tree.close();
         }
     }
@@ -272,17 +272,17 @@ class TreeCheckTest {
             float[] child = boxOf(tree, "main");
             click(h, child[0], child[1]);
             settle(h);
-            var tick = markOf(h, tree, "main").field().region();
-            var mixed = markOf(h, tree, "src").field();
+            var tick = markOf(h, tree, "main").sdg().drawing().layers().getFirst().stencil();
+            var mixed = markOf(h, tree, "src").sdg();
             assertNotNull(mixed, "one of two children ticked, and the folder says so");
-            assertNotEquals(tick, mixed.region(), "as a bar, not a tick");
+            assertNotEquals(tick, mixed.drawing().layers().getFirst().stencil(), "as a bar, not a tick");
 
             float[] folder = boxOf(tree, "src");
             click(h, folder[0], folder[1]);
             settle(h);
 
-            assertEquals(tick, markOf(h, tree, "src").field().region(), "ticking a mixed folder fills it");
-            assertEquals(tick, markOf(h, tree, "test").field().region(), "and everything under it");
+            assertEquals(tick, markOf(h, tree, "src").sdg().drawing().layers().getFirst().stencil(), "ticking a mixed folder fills it");
+            assertEquals(tick, markOf(h, tree, "test").sdg().drawing().layers().getFirst().stencil(), "and everything under it");
             tree.close();
         }
     }
@@ -302,7 +302,7 @@ class TreeCheckTest {
             ticks.tell(h, tree, List.of("docs"));
             settle(h);
 
-            assertNotNull(markOf(h, tree, "docs").field());
+            assertNotNull(markOf(h, tree, "docs").sdg());
             assertTrue(ticks.clicks.isEmpty(), "nothing was clicked; the tree was only told");
             tree.close();
         }
@@ -324,7 +324,7 @@ class TreeCheckTest {
 
             tree.expand("src");
             settle(h);
-            assertNotNull(markOf(h, tree, "test").field(), "its row is built ticked");
+            assertNotNull(markOf(h, tree, "test").sdg(), "its row is built ticked");
             tree.close();
         }
     }
@@ -346,18 +346,18 @@ class TreeCheckTest {
             h.frame();
 
             var off = markOf(h, tree, "docs");
-            assertNull(off.field(), "nothing is drawn inside an unticked box");
+            assertNull(off.sdg(), "nothing is drawn inside an unticked box");
 
             mark(h, tree, "docs", TreeView.Check.ON);
             var on = markOf(h, tree, "docs");
-            assertNotNull(on.field(), "ticked draws the tick");
+            assertNotNull(on.sdg(), "ticked draws the tick");
             float onW = on.w;
-            var tick = on.field().region();
+            var tick = on.sdg().drawing().layers().getFirst().stencil();
 
             mark(h, tree, "docs", TreeView.Check.MIXED);
             var bar = markOf(h, tree, "docs");
-            assertNotNull(bar.field(), "mixed draws a mark too");
-            assertNotEquals(tick, bar.field().region(),
+            assertNotNull(bar.sdg(), "mixed draws a mark too");
+            assertNotEquals(tick, bar.sdg().drawing().layers().getFirst().stencil(),
                     "mixed is a bar, told apart by shape rather than by size");
             assertEquals(onW, bar.w, 0.5f, "in the same box, so only the shape differs");
             tree.close();

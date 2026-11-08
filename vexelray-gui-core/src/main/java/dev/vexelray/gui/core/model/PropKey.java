@@ -59,8 +59,8 @@ public enum PropKey {
     FIELD(false),
     /**
      * A drawing in signed distance graphics ({@code ImageSdg}): full-colour layers, each a distance field and a paint,
-     * fitted into the box with its aspect kept, sharp at any size. Not layout-affecting, as an image is not: a box
-     * that paints takes its size from the box.
+     * fitted into the box with its aspect kept, sharp at any size; an icon's tint and effects with it. Not
+     * layout-affecting, as an image is not: a box that paints takes its size from the box.
      */
     SDG(false),
     /**

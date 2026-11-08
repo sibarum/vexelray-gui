@@ -723,6 +723,12 @@ public final class Reconciler implements Mutation.Sink {
                     && value instanceof dev.vexelray.gui.core.ImageField now && !n.paintCuts()) {
                 report(id, PaintMotion.Channel.TEXT, was.tint(), now.tint());
             }
+            // An icon drawn as SDG likewise: its tint, the colour of its paints in the tint role.
+            if (key == PropKey.SDG && before instanceof dev.vexelray.gui.core.ImageSdg was
+                    && value instanceof dev.vexelray.gui.core.ImageSdg now && was.tint() != null && now.tint() != null
+                    && !n.paintCuts()) {
+                report(id, PaintMotion.Channel.TEXT, was.tint(), now.tint());
+            }
             if (key.affectsLayout(before, value)) {
                 layoutDirty = true;
             } else if (key.geometryAffecting()) {

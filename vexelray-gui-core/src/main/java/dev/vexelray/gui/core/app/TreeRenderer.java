@@ -104,8 +104,36 @@ public final class TreeRenderer {
     // What every node's paint and finish resolve against this frame, and the focus ring's role with them. Focus is
     // the dispatcher's, handed in as a value; the ring's lengths resolve against the frame's context like any other.
     private final Theme theme;
-    /** An SDG paint's role, in this frame's theme ({@link dev.vexelray.gui.core.style.SdgRoles}). */
-    private final Canvas.Roles sdgRoles;
+    /** An SDG paint's role, in this frame's theme, and the tint role in the node's tint (see {@link SdgTint}). */
+    private final SdgTint sdgRoles;
+
+    /**
+     * The roles of the SDG drawing being drawn: {@code tint} in the node's tint as its paint motion has it, every other
+     * name in this frame's theme ({@link dev.vexelray.gui.core.style.SdgRoles}). One for the walk, its tint set per
+     * node, so a frame of icons makes no resolver per icon.
+     */
+    private static final class SdgTint implements Canvas.Roles {
+        private final Theme theme;
+        private Color tint;
+
+        SdgTint(Theme theme) {
+            this.theme = theme;
+        }
+
+        @Override
+        public int rgba(String role, int stored) {
+            if (role.equals(dev.vexelray.gui.core.ImageSdg.TINT)) {
+                Color c = tint != null ? tint : theme.color(Role.INK);
+                return byte8(c.r()) << 24 | byte8(c.g()) << 16 | byte8(c.b()) << 8
+                        | byte8(c.a() * ((stored & 0xFF) / 255f));
+            }
+            return dev.vexelray.gui.core.style.SdgRoles.rgba(theme, role, stored);
+        }
+
+        private static int byte8(float v) {
+            return Math.round(Math.clamp(v, 0f, 1f) * 255f);
+        }
+    }
     /** The colour each node is drawn in on its way to the one it was given. */
     private PaintMotion paint = PaintMotion.NONE;
     /**
@@ -137,7 +165,7 @@ public final class TreeRenderer {
     private TreeRenderer(Theme theme, TextFaces faces, FocusState focus, LayoutContext ctx) {
         this.faces = faces;
         this.theme = theme;
-        this.sdgRoles = (role, stored) -> dev.vexelray.gui.core.style.SdgRoles.rgba(theme, role, stored);
+        this.sdgRoles = new SdgTint(theme);
         this.focus = focus == null ? FocusState.NONE : focus;
         this.ctx = ctx == null ? LayoutContext.of(0f, 0f) : ctx;
         this.scrollEdge = theme.color(Role.EDGE);
@@ -961,7 +989,11 @@ public final class TreeRenderer {
         // DeviceImages as any Pixels are, and each role in this tree's theme.
         dev.vexelray.gui.core.ImageSdg sdg = n.sdg();
         if (sdg != null && n.w > 0f && n.h > 0f && alpha > 0f) {
-            canvas.sdg(sdg.drawing(), sdg.pages().toArray(new ImageHandle[0]), n.x, n.y, n.w, n.h, sdgRoles, alpha);
+            // An icon's tint fades as a field's did (Channel.TEXT); the subtree's opacity is the drawing's.
+            sdgRoles.tint = sdg.tint() == null ? null : drawn(n, PaintMotion.Channel.TEXT, sdg.tint());
+            canvas.sdg(sdg.drawing(), sdg.pages().toArray(new ImageHandle[0]), n.x, n.y, n.w, n.h, sdgRoles, alpha,
+                    sdg.look(), sdg.instanceUnsafe());
+            sdgRoles.tint = null;
         }
         // A drawing goes over the image and under the border: an application's own marks belong inside the frame
         // the node draws around them.

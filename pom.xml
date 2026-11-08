@@ -96,7 +96,7 @@
 
         <!-- VexelRay: the Vulkan engine we build on. Installed to the local .m2 by `mvn install` in the
              sibling vexelray repo (which in turn requires SupirVast installed first). -->
-        <vexelray.version>0.1.3-SNAPSHOT</vexelray.version>
+        <vexelray.version>0.2.0-SNAPSHOT</vexelray.version>
         <!-- SupirVast: transitive via VexelRay; pinned for any incidental direct use. Must match vexelray's own
              supirvast.version: this pin is in dependencyManagement, so it wins over the transitive one here. -->
         <supirvast.version>0.2.3-SNAPSHOT</supirvast.version>

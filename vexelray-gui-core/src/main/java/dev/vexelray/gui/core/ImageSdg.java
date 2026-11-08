@@ -24,7 +24,9 @@ import java.util.Map;
  * the atlas is still the one texture every icon draws from.
  *
  * <p>{@code tint} is the colour a paint in the role {@value #TINT} is drawn in: what a widget gives an icon of one
- * colour, its state's ink. Null draws such a paint as the theme's ink. {@code look} draws the back-most layer with
+ * colour, its state's ink. Null takes the node's own text colour ({@link Node#textColor}), a paint resolved in the
+ * theme each frame, so a mark lit in {@value #TINT} follows the theme and the pointer as text does; with neither, such a
+ * paint is drawn in the theme's ink. {@code look} draws the back-most layer with
  * effects (a glow, a shadow, a weight, an outline), as a field's look does, its source
  * {@link CoreShadelets#SDG_STENCIL} and its fill {@link CoreShadelets#SDG_PAINT}; {@code instance} is its other parts'
  * per-instance values. Null and empty for none.

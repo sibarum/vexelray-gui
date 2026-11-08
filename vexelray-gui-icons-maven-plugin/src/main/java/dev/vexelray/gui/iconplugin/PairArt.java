@@ -39,6 +39,13 @@ public class PairArt {
     /** Whether to make the drawing, {@code <name>.sdgb}. */
     boolean drawing = true;
 
+    /**
+     * Theme roles for the drawing's layers, each {@code <id>=<role>}: the layers made from the element {@code id} are
+     * drawn in the theme's {@code role} ({@code ink}, {@code accent}, or {@code tint}, the node's own colour), their
+     * colour in the SVG kept for a reader with no such role. Refused if no layer has the id.
+     */
+    List<String> roles = new ArrayList<>();
+
     /** The drawing's texels across its longer side: what its stencils are made at. */
     int texels = 128;
 

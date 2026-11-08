@@ -990,8 +990,11 @@ public final class TreeRenderer {
         // DeviceImages as any Pixels are, and each role in this tree's theme.
         dev.vexelray.gui.core.ImageSdg sdg = n.sdg();
         if (sdg != null && n.w > 0f && n.h > 0f && alpha > 0f) {
-            // An icon's tint fades as a field's did (Channel.TEXT); the subtree's opacity is the drawing's.
-            sdgRoles.tint = sdg.tint() == null ? null : drawn(n, PaintMotion.Channel.TEXT, sdg.tint());
+            // An icon's tint fades as a field's did (Channel.TEXT); the subtree's opacity is the drawing's. A drawing with no
+            // tint of its own takes the node's text colour as one, a paint resolved in this frame's theme, so a mark lit in
+            // "tint" follows a theme swap and the pointer as a text wordmark does.
+            Color tint = sdg.tint() != null ? sdg.tint() : n.textColor(theme);
+            sdgRoles.tint = tint == null ? null : drawn(n, PaintMotion.Channel.TEXT, tint);
             canvas.sdg(sdg.drawing(), sdg.pages().toArray(new ImageHandle[0]), n.x, n.y, n.w, n.h, sdgRoles, alpha,
                     sdg.look(), sdg.instanceUnsafe());
             sdgRoles.tint = null;

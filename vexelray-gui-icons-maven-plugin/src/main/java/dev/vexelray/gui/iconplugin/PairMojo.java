@@ -108,7 +108,7 @@ public class PairMojo extends AbstractMojo {
             Output.Stamp st = new Output.Stamp().add(Convert.class.getName()).add(art)
                     .add(p.pair + " " + p.drawing + " " + p.texels + " " + Arrays.toString(sizes) + " " + p.field
                             + " " + p.margin + " " + p.lift + " " + p.icon + " " + Arrays.toString(iconSizes)
-                            + " " + smallSides);
+                            + " " + smallSides + " " + p.roles);
             for (Path s : smallArt) {
                 st.add(s);
             }
@@ -125,6 +125,17 @@ public class PairMojo extends AbstractMojo {
             // The drawing as an SDG when anything here is made from one; an icon alone is drawn from the SVG itself, which
             // may composite (a group's opacity, a clip) as an SDG cannot.
             Sdg sdg = p.pair || p.drawing ? Convert.svgToSdg(p.texels).apply(svg) : null;
+            if (sdg != null && !p.roles.isEmpty()) {
+                java.util.Map<String, String> roles = new java.util.LinkedHashMap<>();
+                for (String r : p.roles) {
+                    int eq = r.indexOf('=');
+                    if (eq < 1) {
+                        throw new MojoFailureException("a <role> of " + name + " is <id>=<role>, not " + r);
+                    }
+                    roles.put(r.substring(0, eq).strip(), r.substring(eq + 1).strip());
+                }
+                sdg = sdg.withRoles(roles);
+            }
             List<String> made = new ArrayList<>();
             if (p.drawing) {
                 Path file = out.resolveSibling(out.getFileName() + ".sdgb");
@@ -175,7 +186,7 @@ public class PairMojo extends AbstractMojo {
             Files.createDirectories(stampFile.getParent());
             Files.writeString(stampFile, stamp);
             getLog().info(name + ": " + String.join("; ", made));
-        } catch (IOException | RuntimeException e) {
+        } catch (IOException | RuntimeException | MojoFailureException e) {
             throw new MojoExecutionException("making the mark " + name + " from " + art + " failed: "
                     + e.getMessage(), e);
         }

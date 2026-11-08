@@ -677,6 +677,18 @@ public final class TitleBar {
         return icon(node);
     }
 
+    /**
+     * The mark as a drawing: {@code drawing} shown {@value #ICON_DP}dp square, as {@link #icon(GuiApp, Icon)} shows
+     * the taskbar's raster, but sharp at every scale from the one drawing, with nothing chosen per display. What the
+     * framework shows when the application's mark has an SDG beside its {@code .ico}. {@code null} takes the mark off.
+     */
+    public TitleBar icon(dev.vexelray.gui.core.ImageSdg drawing) {
+        if (drawing == null) {
+            return icon((Node) null);
+        }
+        return icon(gui.box().size(Length.dp(ICON_DP), Length.dp(ICON_DP)).scroll(false, false).sdg(drawing));
+    }
+
     /** {@code image}'s straight {@code 0xAARRGGBB} pixels as the straight RGBA8 bytes a texture takes. */
     static byte[] rgba(Icon.Image image) {
         int[] argb = image.argb();

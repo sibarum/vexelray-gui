@@ -225,8 +225,9 @@ in the compute phase (§2.1) — after displacement, so it describes the frame t
 
 `node.layout()` reads a `volatile` reference to an immutable snapshot — **no lock, no poll into the live model**.
 It is **one frame stale**, which is exactly the latency the input dispatcher already embraces on purpose
-(hit-testing uses the previous frame's rects; "invisible in practice", InputDispatcher). Widgets may also
-`gui.bus().subscribe(gui.layout(), ...)` to react to layout changes instead of reading on demand.
+(hit-testing uses the previous frame's rects; "invisible in practice", InputDispatcher). The widget library may also
+subscribe to `Seams.of(gui).layout()`, the snapshot as a bus `State`, to react to layout changes instead of reading on
+demand; it is on `Seams` because its listener runs in the frame (vexelray-framework's threading.md, T7.2).
 
 **Discipline:** `Node` stays write-only *for mutations*. `layout()` is a read of a *published snapshot*, never a
 live reach into `RetainedNode`. The single-writer model is untouched.

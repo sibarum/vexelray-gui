@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Node;
 import org.junit.jupiter.api.Test;
 
@@ -73,14 +74,17 @@ class RailTransitionTest {
 
         Two(HeadlessGui h) {
             this.rail = new Rail(h.gui)
-                    .item("layers", h.gui.text("L"), "Layers", (g, into) -> {
+                    .item("layers", h.gui.text("L"), "Layers")
+                    .item("colour", h.gui.text("C"), "Colour");
+            InspectorTest.pages(h, rail, java.util.Map.of(
+                    "layers", into -> {
                         layers.set(into);
-                        into.append(g.text("layer rows"));
-                    })
-                    .item("colour", h.gui.text("C"), "Colour", (g, into) -> {
+                        into.append(h.gui.text("layer rows"));
+                    },
+                    "colour", into -> {
                         colour.set(into);
-                        into.append(g.text("colour rows"));
-                    });
+                        into.append(h.gui.text("colour rows"));
+                    }));
             h.gui.root().children(rail.node(), rail.panel());
         }
     }
@@ -159,22 +163,26 @@ class RailTransitionTest {
      * happened before — a handler learning of a close could only ever have been looking at a panel already gone.
      */
     @Test
-    void theSelectionIsToldBeforeThePanelIsMoved() {
+    void theSelectionIsHeardWhileThePanelItIsAboutIsStillOnShow() {
         try (HeadlessGui h = new HeadlessGui()) {
-            List<String> order = new ArrayList<>();
+            List<String> heard = new ArrayList<>();
+            List<Runnable> finishes = new ArrayList<>();
             Two two = new Two(h);
-            two.rail.transition((change, done) -> {
-                order.add(change.closing() ? "moved: closing" : "moved: opening");
-                done.run();
-            });
-            two.rail.onSelect(k -> order.add("told: " + k));
+            two.rail.transition((change, done) -> finishes.add(done));   // the motion takes its time
+            h.gui.mailbox(Rail.SELECTED, two.rail.address(),
+                    s -> heard.add(s.key() != null ? s.key()
+                            : "closed, panel " + (showing(h, two.rail.panel()) ? "on show" : "gone")));
+            two.rail.select("layers");
+            h.frame();
+            finishes.forEach(Runnable::run);
+            finishes.clear();
             h.frame();
 
-            two.rail.select("layers");
             two.rail.close();
             h.frame();
 
-            assertEquals(List.of("told: layers", "moved: opening", "told: null", "moved: closing"), order);
+            assertEquals(List.of("layers", "closed, panel on show"), heard,
+                    "a view hears a close while the panel it is closing is still there to animate");
         }
     }
 
@@ -321,7 +329,7 @@ class RailTransitionTest {
             two.rail.select("layers");
             motion.finish();
             h.frame();
-            h.gui.onClick(two.layers.get(), () -> hit[0] = true);
+            Seams.of(h.gui).onClick(two.layers.get(), () -> hit[0] = true);
             h.frame();
 
             dev.vexelray.gui.core.layout.Rect r = two.layers.get().layout().rect();

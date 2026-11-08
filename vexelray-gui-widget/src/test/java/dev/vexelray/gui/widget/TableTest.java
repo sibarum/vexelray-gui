@@ -472,23 +472,23 @@ class TableTest {
         float x = cell.x() + cell.w() - 2f;
         float y = cell.y() + cell.h() / 2f;
 
-        h.bus.publish(dev.vexelray.gui.core.input.InputTopics.INPUT,
+        h.bus.publish(h.gui.input(),
                 new sibarum.tactroller.api.InputEvent.ButtonPressed(
                         sibarum.tactroller.api.MouseButton.LEFT, (int) x, (int) y, 0));
         h.frame();
-        h.bus.publish(dev.vexelray.gui.core.input.InputTopics.INPUT,
+        h.bus.publish(h.gui.input(),
                 new sibarum.tactroller.api.InputEvent.PointerMoved(
                         (int) (x + dx), (int) y, (int) dx, 0, 0));
         h.frame();
-        h.bus.publish(dev.vexelray.gui.core.input.InputTopics.INPUT,
+        h.bus.publish(h.gui.input(),
                 new sibarum.tactroller.api.InputEvent.ButtonReleased(
                         sibarum.tactroller.api.MouseButton.LEFT, (int) (x + dx), (int) y, 0));
         h.frame().frame();
     }
 
     /** The sort indicator on a column, or null when it carries none. It is the header cell's reserved slot. */
-    private static dev.vexelray.gui.core.ImageField markOf(HeadlessGui h, Table<Person> table, int column) {
-        return h.retained(table.headerCell(column)).children.get(1).children.get(0).field();
+    private static dev.vexelray.gui.core.ImageSdg markOf(HeadlessGui h, Table<Person> table, int column) {
+        return h.retained(table.headerCell(column)).children.get(1).children.get(0).sdg();
     }
 
     private static Rect boxOf(dev.vexelray.gui.core.model.RetainedNode n) {

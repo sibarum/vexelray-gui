@@ -1,5 +1,6 @@
 package dev.vexelray.gui.keymap;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.app.Settings;
 import dev.vexelray.gui.core.edit.History;
@@ -37,6 +38,24 @@ class KeymapTest {
             h.frame().chord(Key.S, Key.LEFT_CONTROL);
 
             assertEquals(List.of("save"), log);
+        }
+    }
+
+    record Save() { }
+
+    @Test
+    void anActionThatSendsAMessageSendsItOnItsChord() {
+        try (Headless h = new Headless()) {
+            sibarum.atchung.Topic<Save> saves = sibarum.atchung.Topic.edge("test.keymap.save", Save.class);
+            List<Save> heard = new ArrayList<>();
+            h.bus.subscribe(saves, heard::add);
+            sibarum.atchung.Sender<Save> save = h.bus.tick(() -> { }).inbox("view").sender(saves);
+            Keymap keys = new Keymap(h.gui);
+            keys.action("file.save", "Save", CTRL_S).sends(save, new Save());
+
+            h.frame().chord(Key.S, Key.LEFT_CONTROL);
+
+            assertEquals(List.of(new Save()), heard, "the chord sent the message the action names (T7.5)");
         }
     }
 
@@ -157,7 +176,7 @@ class KeymapTest {
             List<String> log = new ArrayList<>();
             Keymap keys = new Keymap(h.gui);
             keys.action("file.save", "Save", CTRL_S);
-            h.gui.shortcut(CTRL_S, () -> log.add("shortcut"));
+            Seams.of(h.gui).shortcut(CTRL_S, () -> log.add("shortcut"));
 
             h.frame().chord(Key.S, Key.LEFT_CONTROL);
 
@@ -273,26 +292,42 @@ class KeymapTest {
         }
     }
 
+    /**
+     * Every action runs in the frame that dispatched its chord, in the order the chords arrived. In 0.1 only an
+     * action marked ordered did and the rest waited for a worker; 0.2 has no worker (vexelray-framework's
+     * {@code docs/threading.md}, T1.1), so there is no mark.
+     */
     @Test
-    void anOrderedActionRunsOnTheGuiThreadAndTheRestOnAWorker() {
-        List<Runnable> held = new ArrayList<>();
-        try (Headless h = new Headless(held::add)) {
+    void everyActionRunsInTheFrameThatDispatchedIt() {
+        try (Headless h = new Headless()) {
             List<String> log = new ArrayList<>();
             Keymap keys = new Keymap(h.gui);
             keys.action("file.save", "Save", CTRL_S).on(() -> log.add("save"));
-            Action paste = keys.action("edit.paste", "Paste", CTRL_K).on(() -> log.add("paste")).ordered();
+            Action paste = keys.action("edit.paste", "Paste", CTRL_K).on(() -> log.add("paste"));
 
             h.frame().chord(Key.S, Key.LEFT_CONTROL).chord(Key.K, Key.LEFT_CONTROL);
-            assertEquals(List.of("paste"), log, "run inline, in the frame that dispatched it");
-
-            List.copyOf(held).forEach(Runnable::run);
-            assertTrue(log.contains("save"), "the other waited for a worker");
+            assertEquals(List.of("save", "paste"), log, "both, inline, in the order their chords arrived");
 
             log.clear();
-            held.clear();
             keys.bind(paste, List.of(CTRL_O));
             h.frame().chord(Key.O, Key.LEFT_CONTROL);
-            assertEquals(List.of("paste"), log, "still ordered on its new chord");
+            assertEquals(List.of("paste"), log, "and on its new chord");
+        }
+    }
+
+    /** A menu line naming an action says its chord as it is now: the keymap answers the tree's {@code Commands}. */
+    @Test
+    void aMenuAskingForAnActionsChordHearsItAsRebound() {
+        try (Headless h = new Headless(); Headless other = new Headless()) {
+            Keymap keys = new Keymap(h.gui).attach(other.gui);
+            Action save = keys.action("file.save", "Save", CTRL_S).on(() -> { });
+            assertEquals(List.of(CTRL_S), Seams.of(h.gui).commands().triggers("file.save"));
+            keys.bind(save, List.of(CTRL_K));
+            assertEquals(List.of(CTRL_K), Seams.of(h.gui).commands().triggers("file.save"), "rebound");
+            assertEquals(List.of(CTRL_K), Seams.of(other.gui).commands().triggers("file.save"), "in every window");
+            keys.unbind(save);
+            assertEquals(List.of(), Seams.of(h.gui).commands().triggers("file.save"), "unbound says none");
+            assertEquals(List.of(), Seams.of(h.gui).commands().triggers("file.nope"), "nor does one not declared");
         }
     }
 }

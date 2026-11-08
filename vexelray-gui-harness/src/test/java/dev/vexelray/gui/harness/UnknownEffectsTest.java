@@ -1,5 +1,6 @@
 package dev.vexelray.gui.harness;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.canvas.CanvasShader;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.canvas.shadelet.CoreShadelets;
@@ -182,7 +183,7 @@ class UnknownEffectsTest {
 
     private static Hovered hoveredButton() {
         Atchung bus = Atchung.create();
-        Gui gui = new Gui(bus, Runnable::run);
+        Gui gui = new Gui(bus);
         IconButton button = new IconButton(gui, Icon.SAVE, "Save").size(Length.dp(96), Length.dp(64));
         gui.root().append(gui.row().padding(Length.dp(24)).children(button.node()));
         return new Hovered(gui, bus, button.node());
@@ -219,9 +220,9 @@ class UnknownEffectsTest {
     /** The button, the pointer first moved onto it if {@code hover}, else left at rest. */
     private BufferedImage capture(Hovered h, CanvasShader.Composed shader, boolean hover) throws Exception {
         if (hover) {
-            RetainedNode root = h.gui.frame(W, H, new TextFaces(FONTS));
+            RetainedNode root = Seams.of(h.gui).frame(W, H, new TextFaces(FONTS));
             RetainedNode n = find(root, h.node.id());
-            h.bus.publish(InputTopics.INPUT,
+            h.bus.publish(h.gui.input(),
                     new InputEvent.PointerMoved((int) (n.x + n.w / 2), (int) (n.y + n.h / 2), 0, 0, 0));
         }
         return capture(h.gui, shader);

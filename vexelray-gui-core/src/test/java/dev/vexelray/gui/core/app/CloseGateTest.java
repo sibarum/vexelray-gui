@@ -7,7 +7,6 @@ import org.junit.jupiter.api.Test;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.Executor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -80,27 +79,11 @@ class CloseGateTest {
         }
     }
 
-    /** Runs handlers when told to, so a test can hold a request open the way a real dialog does. */
-    private static final class Later implements Executor {
-        private final List<Runnable> queued = new ArrayList<>();
-
-        @Override
-        public void execute(Runnable command) {
-            queued.add(command);
-        }
-
-        void runAll() {
-            List<Runnable> now = List.copyOf(queued);
-            queued.clear();
-            now.forEach(Runnable::run);
-        }
-    }
-
     @Test
     void withNoHandlerACloseCloses() {
         CloseGate gate = new CloseGate();
         FakeWindow window = new FakeWindow();
-        assertFalse(gate.keepAlive(window, Runnable::run), "nothing installed: the window closes");
+        assertFalse(gate.keepAlive(window), "nothing installed: the window closes");
         assertEquals(0, window.cancelCalls, "and the OS close is not even withdrawn");
     }
 
@@ -110,12 +93,10 @@ class CloseGateTest {
         FakeWindow window = new FakeWindow();
         List<CloseRequest> asked = new ArrayList<>();
         gate.handler(asked::add);
-        Later later = new Later();
 
-        assertTrue(gate.keepAlive(window, later), "the window keeps running while the question is out");
+        assertTrue(gate.keepAlive(window), "the window keeps running while the question is out");
         assertEquals(1, window.cancelCalls, "the OS-level close was withdrawn");
-        later.runAll();
-        assertEquals(1, asked.size(), "the application was asked, on the handler executor");
+        assertEquals(1, asked.size(), "the application was asked, in the frame the close arrived");
         assertFalse(asked.getFirst().answered());
     }
 
@@ -126,12 +107,12 @@ class CloseGateTest {
         List<CloseRequest> asked = new ArrayList<>();
         gate.handler(asked::add);
 
-        gate.keepAlive(window, Runnable::run);
+        gate.keepAlive(window);
         asked.getFirst().proceed();
         assertEquals(1, window.closeRequests, "proceeding re-issues the close through the ordinary route");
         assertNull(gate.pending(), "and nothing is outstanding any more");
 
-        assertFalse(gate.keepAlive(window, Runnable::run), "the close that follows is let through");
+        assertFalse(gate.keepAlive(window), "the close that follows is let through");
         assertEquals(1, asked.size(), "an application that agreed to close is not asked twice");
         assertFalse(gate.intercepts(), "the gate is spent");
     }
@@ -143,12 +124,12 @@ class CloseGateTest {
         List<CloseRequest> asked = new ArrayList<>();
         gate.handler(asked::add);
 
-        gate.keepAlive(window, Runnable::run);
+        gate.keepAlive(window);
         asked.getFirst().cancel();
         assertEquals(0, window.closeRequests, "cancelling asks the window for nothing");
         assertNull(gate.pending());
 
-        assertTrue(gate.keepAlive(window, Runnable::run), "the window is still alive to be closed again");
+        assertTrue(gate.keepAlive(window), "the window is still alive to be closed again");
         assertEquals(2, asked.size(), "and the next attempt is a fresh question");
     }
 
@@ -159,8 +140,8 @@ class CloseGateTest {
         List<CloseRequest> asked = new ArrayList<>();
         gate.handler(asked::add);
 
-        assertTrue(gate.keepAlive(window, Runnable::run));
-        assertTrue(gate.keepAlive(window, Runnable::run), "hammering the close button keeps the window alive");
+        assertTrue(gate.keepAlive(window));
+        assertTrue(gate.keepAlive(window), "hammering the close button keeps the window alive");
         assertEquals(1, asked.size(), "one conversation, however many times the user clicks");
         assertSame(asked.getFirst(), gate.pending());
     }
@@ -173,7 +154,7 @@ class CloseGateTest {
         List<CloseRequest> asked = new ArrayList<>();
         gate.handler(asked::add);
 
-        assertFalse(gate.keepAlive(window, Runnable::run), "the window is already gone: let it go");
+        assertFalse(gate.keepAlive(window), "the window is already gone: let it go");
         assertEquals(List.of(), asked, "and do not ask a question nobody can act on");
     }
 
@@ -183,7 +164,7 @@ class CloseGateTest {
         FakeWindow window = new FakeWindow();
         List<CloseRequest> asked = new ArrayList<>();
         gate.handler(asked::add);
-        gate.keepAlive(window, Runnable::run);
+        gate.keepAlive(window);
 
         CloseRequest request = asked.getFirst();
         request.cancel();
@@ -201,7 +182,7 @@ class CloseGateTest {
 
         gate.handler(null);
         assertFalse(gate.intercepts());
-        assertFalse(gate.keepAlive(window, Runnable::run));
+        assertFalse(gate.keepAlive(window));
         assertNotNull(window, "and the window closes as it did before interception existed");
     }
 }

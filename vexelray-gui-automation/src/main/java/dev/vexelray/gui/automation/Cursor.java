@@ -1,6 +1,6 @@
 package dev.vexelray.gui.automation;
 
-import dev.vexelray.gui.core.input.InputTopics;
+import dev.vexelray.gui.core.Gui;
 import sibarum.atchung.Atchung;
 import sibarum.probe.Lane;
 import sibarum.probe.Probe;
@@ -25,7 +25,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * crossing an unrelated widget is a bug a teleporting driver cannot reproduce and, worse, reports a clean run
  * for. The evidence exists only if the pointer really travelled.
  *
- * <p><b>Everything goes out on the ordinary Tactroller topic</b> ({@link InputTopics#INPUT}), which is the same
+ * <p><b>Everything goes out on the tree's ordinary input topic</b> ({@link Gui#input()}), which is the same
  * path a real device's events take. There is no automation mode for the application to behave differently in,
  * and nothing here can drift out of step with the real one, because there is no other one.
  *
@@ -65,7 +65,9 @@ public final class Cursor {
     private static final int MAX_STEPS = 64;
 
     private final Atchung bus;
-    /** Run after every publish. See {@link #Cursor(Atchung, Runnable)}. */
+    /** The tree's input topic: what a device would publish on for this window. */
+    private final sibarum.atchung.Topic<sibarum.tactroller.api.InputEvent> input;
+    /** Run after every publish. See {@link #Cursor(Gui, Runnable)}. */
     private final Runnable wake;
     // Volatile because every connection may read the pointer (`where`) while only the one holding the hand moves
     // it: one writer, any number of readers, and a reader must see where it is now.
@@ -75,8 +77,8 @@ public final class Cursor {
     private final Set<MouseButton> held = ConcurrentHashMap.newKeySet();
 
     /** A cursor resting at the origin, publishing to a loop that does not need waking. */
-    public Cursor(Atchung bus) {
-        this(bus, null, 0, 0);
+    public Cursor(Gui gui) {
+        this(gui, null, 0, 0);
     }
 
     /**
@@ -88,18 +90,19 @@ public final class Cursor {
      * parking, and every command here answers {@code ok} while no click ever lands. Pass
      * {@code gui::wakeForInput}, which is what that method exists for.
      */
-    public Cursor(Atchung bus, Runnable wake) {
-        this(bus, wake, 0, 0);
+    public Cursor(Gui gui, Runnable wake) {
+        this(gui, wake, 0, 0);
     }
 
     /** A cursor resting at {@code (x, y)} — where the pointer already is, if that is known. */
-    public Cursor(Atchung bus, int x, int y) {
-        this(bus, null, x, y);
+    public Cursor(Gui gui, int x, int y) {
+        this(gui, null, x, y);
     }
 
     /** A waking cursor resting at {@code (x, y)}. */
-    public Cursor(Atchung bus, Runnable wake, int x, int y) {
-        this.bus = java.util.Objects.requireNonNull(bus, "bus");
+    public Cursor(Gui gui, Runnable wake, int x, int y) {
+        this.bus = gui.bus();
+        this.input = gui.input();
         this.wake = wake == null ? () -> { } : wake;
         this.x = x;
         this.y = y;
@@ -244,13 +247,15 @@ public final class Cursor {
         x = nx;
         y = ny;
         // The deltas are real deltas. A backend that reports relative motion is what a captured pointer reads
-        // during a drag, and zeroes there would be a lie the framework is entitled to believe.
-        publish(new InputEvent.PointerMoved(nx, ny, dx, dy, 0), "pointer.move", nx + "," + ny);
+        // during a drag, and zeroes there would be a lie the framework is entitled to believe. Stamped with the real
+        // time as a press is: the drag recogniser starts a drag on a move once the hold has passed since the press,
+        // and a move stamped zero is never past it, so the drag waited for a frame's tick or for the release.
+        publish(new InputEvent.PointerMoved(nx, ny, dx, dy, System.nanoTime()), "pointer.move", nx + "," + ny);
     }
 
     /** Publish one edge on the ordinary input topic, wake whoever has to dispatch it, and record it. */
     private void publish(InputEvent event, String kind, String detail) {
-        bus.publish(InputTopics.INPUT, event);
+        bus.publish(input, event);
         // Every edge, not once per gesture: a path is dispatched step by step, and a loop woken only at the end
         // of one would dispatch a teleport -- which is the fidelity §2 of automation.md is entirely about. The
         // wake collapses to nothing when a frame is already owed, so this is not a wake per event.

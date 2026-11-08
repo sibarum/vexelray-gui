@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
 import dev.vexelray.gui.core.layout.LayoutMotion;
 import dev.vexelray.gui.core.layout.Length;
@@ -22,7 +23,7 @@ class DisplaceWalkTest {
     }
 
     private static RetainedNode frame(Gui gui) {
-        return gui.frame(400f, 300f, DisplaceWalkTest::noText);
+        return Seams.of(gui).frame(400f, 300f, DisplaceWalkTest::noText);
     }
 
     private static RetainedNode find(RetainedNode from, long id) {
@@ -60,8 +61,8 @@ class DisplaceWalkTest {
         }
 
         @Override
-        public boolean active() {
-            return dy != 0f;
+        public long draw(Frame frame) {
+            return dy != 0f ? frame.presentNanos() : Frame.NEVER;
         }
     }
 
@@ -72,7 +73,7 @@ class DisplaceWalkTest {
     @Test
     void aStillTreeWithAQuietSourceWalksNothing() {
         Scripted s = new Scripted();
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             gui.motion(s);
             gui.root().children(gui.column().children(row(gui), row(gui)));
             frame(gui);
@@ -87,7 +88,7 @@ class DisplaceWalkTest {
     @Test
     void anActiveSourceIsWalkedAndTheFrameAfterItWritesTheRestBack() {
         Scripted s = new Scripted();
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             gui.motion(s);
             Node a = row(gui);
             gui.root().children(gui.column().children(a));
@@ -113,7 +114,7 @@ class DisplaceWalkTest {
     @Test
     void aMoveIsReportedWhileTheWalkIsSkipped() {
         Scripted s = new Scripted();
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             gui.motion(s);
             Node a = row(gui);
             Node b = row(gui);
@@ -134,7 +135,7 @@ class DisplaceWalkTest {
     @Test
     void aResizeMovesNothing() {
         Scripted s = new Scripted();
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             gui.motion(s);
             Node half = gui.box().width(Length.percent(50)).height(Length.dp(20));
             Node after = row(gui);
@@ -142,7 +143,7 @@ class DisplaceWalkTest {
             frame(gui);
             float x = find(frame(gui), after.id()).x;
 
-            RetainedNode wider = gui.frame(600f, 300f, DisplaceWalkTest::noText);
+            RetainedNode wider = Seams.of(gui).frame(600f, 300f, DisplaceWalkTest::noText);
 
             assertTrue(find(wider, after.id()).x > x, "the resize did move it");
             assertEquals(0, s.moves, "and nothing was told it moved");
@@ -150,7 +151,7 @@ class DisplaceWalkTest {
     }
 
     @Test
-    void aSourceThatDoesNotSayIsWalkedEveryFrame() {
+    void aSourceThatIsAlwaysDueIsWalkedEveryFrame() {
         LayoutMotion silent = new LayoutMotion() {
             @Override
             public void moved(RetainedNode node, float fromX, float fromY, float toX, float toY) {
@@ -165,15 +166,20 @@ class DisplaceWalkTest {
             public float displacementY(RetainedNode node) {
                 return 0f;
             }
+
+            @Override
+            public long draw(Frame frame) {
+                return frame.presentNanos();   // due on every frame, whatever it displaces
+            }
         };
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             gui.motion(silent);
             gui.root().children(row(gui));
             frame(gui);
             long before = gui.displaceWalks();
             frame(gui);
             frame(gui);
-            assertEquals(before + 2, gui.displaceWalks(), "the default active() is always true");
+            assertEquals(before + 2, gui.displaceWalks(), "a source due now is walked every frame");
         }
     }
 }

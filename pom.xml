@@ -6,7 +6,7 @@
 
     <groupId>dev.vexelray.gui</groupId>
     <artifactId>vexelray-gui</artifactId>
-    <version>0.1.3-SNAPSHOT</version>
+    <version>0.2.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>vexelray-gui</name>
@@ -66,6 +66,8 @@
         <!-- Drives a real GuiApp loop under a test's control: synthetic input, an observable frame
              budget, and a wait that ends only when something asks for a frame. See docs/render-on-demand. -->
         <module>vexelray-gui-harness</module>
+        <!-- SDG against SVG and a shipped raster: size, load, draw (CPU and GPU) and error, published from a run. -->
+        <module>vexelray-gui-format-bench</module>
         <!-- The flight recorder: a ring of the probe's recent rows inside the application, and the questions asked
              of it, each answered as a plain record with its text reply a pure function of it. On atchung-probe
              only: no GUI or bus type, so the answers can travel any transport. See docs/plans/flight-recorder.md. -->
@@ -96,15 +98,18 @@
 
         <!-- VexelRay: the Vulkan engine we build on. Installed to the local .m2 by `mvn install` in the
              sibling vexelray repo (which in turn requires SupirVast installed first). -->
-        <vexelray.version>0.1.3-SNAPSHOT</vexelray.version>
+        <vexelray.version>0.2.0-SNAPSHOT</vexelray.version>
+        <!-- vexelray-fields: SDG's encoders and CPU reference, for the harness's SDG capture (test scope). The format
+             itself comes through vexelray-canvas. -->
+        <vexelray-fields.version>0.2.0-SNAPSHOT</vexelray-fields.version>
         <!-- SupirVast: transitive via VexelRay; pinned for any incidental direct use. Must match vexelray's own
              supirvast.version: this pin is in dependencyManagement, so it wins over the transitive one here. -->
         <supirvast.version>0.2.3-SNAPSHOT</supirvast.version>
         <!-- Atchung: the message bus the model + threading are built on (core to -core). -->
-        <atchung.version>1.3-SNAPSHOT</atchung.version>
+        <atchung.version>1.4-SNAPSHOT</atchung.version>
         <!-- elektro-Q and intrabuf: the Inspector link's wire (vexelray-gui-inspector-link only). elektro-Q lives in
              the atchung checkout, under elektroq/. -->
-        <elektroq.version>1.3-SNAPSHOT</elektroq.version>
+        <elektroq.version>1.4-SNAPSHOT</elektroq.version>
         <intrabuf.version>0.1.3-SNAPSHOT</intrabuf.version>
         <!-- Tactroller: keyboard/mouse/pointer/clipboard input, delivered as Atchung traffic. Enters at
              the application edge (the demo), not in -core. -->
@@ -131,7 +136,7 @@
             <dependency>
                 <groupId>sibarum.atchung</groupId>
                 <artifactId>atchung-probe</artifactId>
-                <version>1.3-SNAPSHOT</version>
+                <version>${atchung.version}</version>
             </dependency>
             <!-- Reactor-internal modules: children reference these without a version. -->
             <dependency>

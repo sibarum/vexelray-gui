@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.model.Mutation;
 import dev.vexelray.gui.core.model.PropKey;
@@ -77,12 +78,12 @@ class MutationFoldTest {
         try (Gui gui = new Gui(Atchung.create())) {
             Node box = gui.box().width(Length.rem(1)).height(Length.rem(1));
             gui.root().append(box);
-            gui.frame(400f, 100f, MutationFoldTest::noText);
+            Seams.of(gui).frame(400f, 100f, MutationFoldTest::noText);
 
             for (int i = 1; i <= 10_000; i++) {
                 box.width(Length.rem(i));
             }
-            gui.frame(400f, 100f, MutationFoldTest::noText);
+            Seams.of(gui).frame(400f, 100f, MutationFoldTest::noText);
 
             assertEquals(160_000f, box.layout().rect().w(), 0.5f,
                     "ten thousand writes to one property are the last of them, and cost one slot to say so");
@@ -95,7 +96,7 @@ class MutationFoldTest {
             Node keep = gui.box().width(Length.rem(1)).height(Length.rem(1));
             Node doomed = gui.box().width(Length.rem(1)).height(Length.rem(1));
             gui.root().direction(dev.vexelray.gui.core.layout.LayoutEnums.Direction.ROW).children(keep, doomed);
-            gui.frame(400f, 100f, MutationFoldTest::noText);
+            Seams.of(gui).frame(400f, 100f, MutationFoldTest::noText);
 
             // Write, destroy, write again. Folding moves the surviving write to the position of the *latest*
             // write, which is after the removal — so it lands on a node that is gone and does nothing, exactly
@@ -103,7 +104,7 @@ class MutationFoldTest {
             doomed.width(Length.rem(2));
             doomed.remove();
             doomed.width(Length.rem(3));
-            gui.frame(400f, 100f, MutationFoldTest::noText);
+            Seams.of(gui).frame(400f, 100f, MutationFoldTest::noText);
 
             assertTrue(gui.layoutSnapshot().node(keep.id()).present(), "the survivor is still there");
             assertFalse(gui.layoutSnapshot().node(doomed.id()).present(),

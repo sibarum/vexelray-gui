@@ -1,6 +1,7 @@
 package dev.vexelray.gui.core;
 
 import dev.vexelray.gui.core.layout.LayoutEnums.ScrollLock;
+import dev.vexelray.gui.core.spi.ScrollSource;
 
 /**
  * A box that masks one child and scrolls it: the whole of scrolling, with no scrollbar in it
@@ -34,7 +35,7 @@ public final class Scroller {
         this.node = node;
         this.content = content;
         node.children(content);
-        this.axes = gui.scrollAxes(node);
+        this.axes = new ScrollAxes(gui, node);
     }
 
     /** The node to place in a layout. */
@@ -75,13 +76,13 @@ public final class Scroller {
         return this;
     }
 
-    /** The horizontal axis, for a bar or anything else that shows and moves it. */
-    public ScrollSource x() {
+    /** The horizontal axis, for a bar or anything else that shows and moves it: the library's, by {@code Seams.scrollSource}. */
+    ScrollSource x() {
         return axes.x();
     }
 
     /** The vertical axis. */
-    public ScrollSource y() {
+    ScrollSource y() {
         return axes.y();
     }
 

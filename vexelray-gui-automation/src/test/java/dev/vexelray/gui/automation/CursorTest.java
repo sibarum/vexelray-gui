@@ -1,5 +1,6 @@
 package dev.vexelray.gui.automation;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.InteractionState;
@@ -36,7 +37,7 @@ class CursorTest {
 
     /** A GUI whose handlers run on the calling thread, so a published edge is handled inside the next frame. */
     private static Gui deterministic() {
-        return new Gui(sibarum.atchung.Atchung.create(), Runnable::run);
+        return new Gui(sibarum.atchung.Atchung.create());
     }
 
     /** Text metrics are irrelevant here; nothing in these trees has text. */
@@ -80,14 +81,14 @@ class CursorTest {
         try (Gui gui = deterministic()) {
             Strip s = strip(gui);
             List<String> middleStates = new ArrayList<>();
-            gui.onState(s.middle(), state -> middleStates.add(state.name()));
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).onState(s.middle(), state -> middleStates.add(state.name()));
+            Seams.of(gui).frame(W, H, NO_TEXT);
 
             // Start left of everything, finish on the right box. The middle box is not the start, not the
             // target, and is never named — it is simply in the way, which is the whole point.
-            Cursor cursor = new Cursor(gui.bus(), 10, 50);
+            Cursor cursor = new Cursor(gui, 10, 50);
             cursor.moveTo(250, 50);
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
 
             assertTrue(middleStates.contains("HOVER"),
                     "the box between start and target must have been hovered in passing, got " + middleStates);
@@ -101,15 +102,15 @@ class CursorTest {
         try (Gui gui = deterministic()) {
             Strip s = strip(gui);
             List<String> middleStates = new ArrayList<>();
-            gui.onState(s.middle(), state -> middleStates.add(state.name()));
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).onState(s.middle(), state -> middleStates.add(state.name()));
+            Seams.of(gui).frame(W, H, NO_TEXT);
 
             // The control for the test above: the same start and target, published as one edge the way a
             // teleporting driver would. If this ever starts reporting a hover, the test above has stopped
             // proving anything and something else is generating the transitions.
-            gui.bus().publish(dev.vexelray.gui.core.input.InputTopics.INPUT,
+            gui.bus().publish(gui.input(),
                     new sibarum.tactroller.api.InputEvent.PointerMoved(250, 50, 240, 0, 0));
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
 
             assertTrue(middleStates.stream().noneMatch("HOVER"::equals),
                     "one jump cannot hover what it flew over, got " + middleStates);
@@ -119,7 +120,7 @@ class CursorTest {
     @Test
     void theCursorKnowsWhereItIsAndArrivesExactly() {
         try (Gui gui = deterministic()) {
-            Cursor cursor = new Cursor(gui.bus(), 10, 20);
+            Cursor cursor = new Cursor(gui, 10, 20);
             assertEquals(10, cursor.x());
             assertEquals(20, cursor.y());
 
@@ -137,8 +138,8 @@ class CursorTest {
     @Test
     void theSamePathTwiceIsTheSameEvents() {
         try (Gui gui = deterministic()) {
-            List<String> first = record(gui, () -> new Cursor(gui.bus(), 5, 5).moveTo(300, 200));
-            List<String> second = record(gui, () -> new Cursor(gui.bus(), 5, 5).moveTo(300, 200));
+            List<String> first = record(gui, () -> new Cursor(gui, 5, 5).moveTo(300, 200));
+            List<String> second = record(gui, () -> new Cursor(gui, 5, 5).moveTo(300, 200));
 
             // An instrument that is not reproducible cannot be used to bisect anything, which is why there is
             // no jitter here however human it might look.
@@ -150,7 +151,7 @@ class CursorTest {
     @Test
     void aClickIsAJourneyThatEndsInAPressAndRelease() {
         try (Gui gui = deterministic()) {
-            List<String> events = record(gui, () -> new Cursor(gui.bus(), 0, 0).click(120, 60));
+            List<String> events = record(gui, () -> new Cursor(gui, 0, 0).click(120, 60));
 
             assertEquals("ButtonReleased", kind(events.get(events.size() - 1)));
             assertEquals("ButtonPressed", kind(events.get(events.size() - 2)));
@@ -164,7 +165,7 @@ class CursorTest {
     @Test
     void aDragHoldsTheButtonForTheWholePath() {
         try (Gui gui = deterministic()) {
-            Cursor cursor = new Cursor(gui.bus(), 40, 40);
+            Cursor cursor = new Cursor(gui, 40, 40);
             List<String> events = record(gui, () -> cursor.drag(300, 40, MouseButton.LEFT));
 
             assertEquals("ButtonPressed", kind(events.get(0)), "press first, where the pointer already was");
@@ -176,11 +177,43 @@ class CursorTest {
         }
     }
 
-    /** Collect the input events {@code action} publishes, in order, as their simple class names plus position. */
+    /**
+     * Every edge carries the time it happened, as a device stamps it. The drag recogniser starts a drag on the move
+     * that comes after its hold, measured from the press's stamp: moves stamped zero were never after it, so a
+     * {@code down} and a short {@code move} showed no drag until the button came up.
+     */
+    @Test
+    void movesAreStampedWithTheTimeLikeThePress() {
+        try (Gui gui = deterministic()) {
+            List<Long> stamps = new ArrayList<>();
+            long before = System.nanoTime();
+            try (var sub = gui.bus().subscribe(gui.input(), e -> stamps.add(switch (e) {
+                case sibarum.tactroller.api.InputEvent.PointerMoved m -> m.timestampNanos();
+                case sibarum.tactroller.api.InputEvent.ButtonPressed p -> p.timestampNanos();
+                case sibarum.tactroller.api.InputEvent.ButtonReleased r -> r.timestampNanos();
+                default -> -1L;
+            }))) {
+                new Cursor(gui, 40, 40).drag(300, 40, MouseButton.LEFT);
+            }
+
+            assertTrue(stamps.size() > 4);
+            assertTrue(stamps.get(0) >= before, "the press, on the machine's clock");
+            for (int i = 1; i < stamps.size(); i++) {
+                assertTrue(stamps.get(i) >= stamps.get(i - 1), "each edge no earlier than the one before: " + stamps);
+            }
+            assertTrue(stamps.get(stamps.size() - 2) - stamps.get(0) >= Cursor.STEP_MILLIS * 1_000_000L,
+                    "and the moves after it carry the time the path took");
+        }
+    }
+
+    /**
+     * Collect the input events {@code action} publishes, in order, as their simple class names plus position. Without
+     * their stamps: two runs of one path are the same edges at different times, and the stamps have a test of their own.
+     */
     private static List<String> record(Gui gui, Runnable action) {
         List<String> seen = new ArrayList<>();
-        try (var sub = gui.bus().subscribe(dev.vexelray.gui.core.input.InputTopics.INPUT,
-                e -> seen.add(e.getClass().getSimpleName() + " " + e))) {
+        try (var sub = gui.bus().subscribe(gui.input(), e -> seen.add(e.getClass().getSimpleName() + " "
+                + e.toString().replaceAll(", timestampNanos=-?\\d+", "")))) {
             action.run();
         }
         assertNotEquals(0, seen.size(), "the cursor must publish on the ordinary input topic");

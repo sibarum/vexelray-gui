@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.layout.EnterMotion;
 import dev.vexelray.gui.core.layout.ExitMotion;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
@@ -35,7 +36,7 @@ class KeyedTest {
     }
 
     private static RetainedNode frame(Gui gui) {
-        return gui.frame(400f, 300f, KeyedTest::noText);
+        return Seams.of(gui).frame(400f, 300f, KeyedTest::noText);
     }
 
     private static RetainedNode find(RetainedNode from, long id) {
@@ -68,7 +69,7 @@ class KeyedTest {
 
     @Test
     void aKeyStillPresentKeepsItsNodeAndTheRestFollowTheItemsOrder() {
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Node list = gui.column();
             gui.root().children(list);
             List<Integer> built = new ArrayList<>();
@@ -91,7 +92,7 @@ class KeyedTest {
 
     @Test
     void updateChangesKeptNodesInPlace() {
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Node list = gui.column();
             gui.root().children(list);
             Keyed<Item> rows = list.keyed(Item::id, item -> gui.text(""));
@@ -107,7 +108,7 @@ class KeyedTest {
 
     @Test
     void aReorderedRowIsMovedSoALayoutMotionSeesItTravel() {
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             List<Long> moved = new ArrayList<>();
             gui.motion(new LayoutMotion() {
                 @Override
@@ -123,6 +124,11 @@ class KeyedTest {
                 @Override
                 public float displacementY(RetainedNode node) {
                     return 0f;
+                }
+
+                @Override
+                public long draw(Frame frame) {
+                    return Frame.NEVER;
                 }
             });
             Node list = gui.column();
@@ -169,7 +175,7 @@ class KeyedTest {
             }
         }
         Leaving motion = new Leaving();
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             gui.enterMotion(motion).exitMotion(motion);
             Node list = gui.column();
             gui.root().children(list);
@@ -194,7 +200,7 @@ class KeyedTest {
 
     @Test
     void twoItemsWithOneKeyAreRefused() {
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Node list = gui.column();
             Keyed<Item> rows = rows(gui, list, new ArrayList<>());
             assertThrows(IllegalArgumentException.class,

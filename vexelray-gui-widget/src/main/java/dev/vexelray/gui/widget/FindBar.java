@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.ClaimScope;
@@ -46,9 +47,9 @@ final class FindBar implements AutoCloseable {
     private static final Shortcut STEP_BACK = Shortcut.of(Key.ENTER, Modifier.SHIFT);
 
     /**
-     * What the thing being searched has to be able to do. All four run on the handler executor, because a search
-     * is an application-sized piece of work — the tree's walks the filesystem — and none of them may assume it
-     * is the only one in flight: a bar that supersedes searches is a bar whose owner can be asked twice.
+     * What the thing being searched has to be able to do. All four run on the GUI thread, and none may block: a
+     * search that needs more than a frame walks a step at a time (the tree's waits on each level). None of them may
+     * assume it is the only one in flight: a bar that supersedes searches is a bar whose owner can be asked twice.
      */
     interface Search {
 
@@ -137,11 +138,11 @@ final class FindBar implements AutoCloseable {
         // Shift+Enter cannot arrive as a submit — a submit carries no modifiers — so it is a claim, like the two
         // below. Claims rather than key handlers throughout: they preempt, so Escape here never also reaches the
         // field as a keystroke, and the query field keeps Enter for stepping instead of for anything else.
-        gui.claim(field.node(), STEP_BACK, ClaimScope.FOCUSED, () -> search.previous(query()));
-        gui.claim(field.node(), ESCAPE, ClaimScope.FOCUSED, this::dismiss);
+        Seams.of(gui).claim(field.node(), STEP_BACK, ClaimScope.FOCUSED, () -> search.previous(query()));
+        Seams.of(gui).claim(field.node(), ESCAPE, ClaimScope.FOCUSED, this::dismiss);
         // Ctrl+F again, with the caret already in the bar, selects the query rather than opening a second bar:
         // the chord means "search for something", and the something you would type replaces what is there.
-        gui.claim(field.node(), FIND, ClaimScope.FOCUSED, () -> field.select(0, field.text().length()));
+        Seams.of(gui).claim(field.node(), FIND, ClaimScope.FOCUSED, () -> field.select(0, field.text().length()));
         // A bar belongs to the conversation between its owner and its query: focus anywhere else is the user
         // having left both, and a bar left up over a field nobody is in is chrome covering text for no one.
         this.focusSub = gui.bus().subscribe(gui.focusEvents(), e -> left());
@@ -154,7 +155,7 @@ final class FindBar implements AutoCloseable {
      * keyboarded — an application's own Ctrl+F keeps working everywhere else, and this outranks nothing.
      */
     FindBar openOn(Supplier<String> seed) {
-        gui.claim(owner, FIND, ClaimScope.FOCUSED, () -> open(seed == null ? "" : seed.get()));
+        Seams.of(gui).claim(owner, FIND, ClaimScope.FOCUSED, () -> open(seed == null ? "" : seed.get()));
         return this;
     }
 

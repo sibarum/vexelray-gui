@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.app.Settings;
 import dev.vexelray.gui.core.layout.Length;
 import org.junit.jupiter.api.Test;
@@ -25,7 +26,7 @@ class GraphicsChoicesTest {
     }
 
     private static Gui gui() {
-        return new Gui(Atchung.create(), Runnable::run);
+        return new Gui(Atchung.create());
     }
 
     @Test
@@ -146,15 +147,15 @@ class GraphicsChoicesTest {
             gui.root().append(a).append(b);
             gui.focusable(a, true).focusable(b, true);
             gui.focusFade(Duration.ofMillis(500)).reducedMotion(true);
-            gui.frame(400f, 100f, GraphicsChoicesTest::noText);
+            Seams.of(gui).frame(400f, 100f, GraphicsChoicesTest::noText);
 
             gui.focus(a);
-            gui.frame(400f, 100f, GraphicsChoicesTest::noText);
+            Seams.of(gui).frame(400f, 100f, GraphicsChoicesTest::noText);
             assertEquals(1f, gui.focusState().shown(), "no fade: the ring is whole the frame focus arrives");
 
             gui.reducedMotion(false).flatShading(true);   // the fade the application asked for comes back
             gui.focus(b);
-            gui.frame(400f, 100f, GraphicsChoicesTest::noText);
+            Seams.of(gui).frame(400f, 100f, GraphicsChoicesTest::noText);
             assertTrue(gui.focusState().shown() < 1f, "flat shading does not stop the fade: " + gui.focusState());
         }
     }

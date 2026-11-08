@@ -2,6 +2,7 @@ package dev.vexelray.gui.nfd;
 
 import dev.vexelray.gui.core.WindowControls;
 import dev.vexelray.gui.core.WindowInstrument;
+import dev.vexelray.gui.icons.Icon;
 import dev.vexelray.gui.core.WindowRecorder;
 
 import java.nio.file.Path;
@@ -57,7 +58,7 @@ public final class SaveScreenshot {
 
     /** The screenshot button alone, whatever is on the class path. */
     public static WindowInstrument screenshotOnly() {
-        return WindowInstrument.screenshot("Save a screenshot of this window", SaveScreenshot::ask);
+        return WindowInstrument.screenshot("Take screenshot…", SaveScreenshot::ask).icon(Icon.SCREENSHOT);
     }
 
     static void ask(WindowControls controls) {

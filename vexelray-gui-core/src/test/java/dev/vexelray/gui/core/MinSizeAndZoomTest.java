@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.layout.Length;
 import org.junit.jupiter.api.Test;
 import sibarum.atchung.Atchung;
@@ -34,7 +35,7 @@ class MinSizeAndZoomTest {
             gui.root().scroll(false, false);   // the canvas alone, without scrollbars narrowing the window
             Node content = filler(gui);
             gui.minSize(Length.rem(50), Length.rem(30));   // 800 x 480 at 1x
-            gui.frame(400f, 200f, MinSizeAndZoomTest::noText);
+            Seams.of(gui).frame(400f, 200f, MinSizeAndZoomTest::noText);
 
             assertEquals(800f, content.layout().rect().w(), 0.5f,
                     "the window is 400 wide, but the UI is laid out on the 800 it needs");
@@ -52,7 +53,7 @@ class MinSizeAndZoomTest {
         try (Gui gui = new Gui(Atchung.create())) {
             Node content = filler(gui);
             gui.minSize(Length.rem(50), Length.rem(30));
-            gui.frame(400f, 200f, MinSizeAndZoomTest::noText);
+            Seams.of(gui).frame(400f, 200f, MinSizeAndZoomTest::noText);
 
             assertEquals(400f, gui.root().layout().rect().w(), 0.5f, "the root is the window");
             assertEquals(200f, gui.root().layout().rect().h(), 0.5f);
@@ -69,7 +70,7 @@ class MinSizeAndZoomTest {
             gui.root().scroll(false, false).children(bar, content);
             gui.minSize(Length.rem(50), Length.rem(30));
             gui.zoom(2f);
-            gui.frame(900f, 560f, MinSizeAndZoomTest::noText);
+            Seams.of(gui).frame(900f, 560f, MinSizeAndZoomTest::noText);
 
             assertEquals(900f, bar.layout().rect().w(), 0.5f, "the bar is as wide as the window");
             assertEquals(1600f, content.layout().rect().w(), 0.5f, "while the content is as wide as the canvas");
@@ -82,7 +83,7 @@ class MinSizeAndZoomTest {
         try (Gui gui = new Gui(Atchung.create())) {
             Node content = filler(gui);
             gui.minSize(Length.rem(50), Length.rem(30));
-            gui.frame(1200f, 900f, MinSizeAndZoomTest::noText);
+            Seams.of(gui).frame(1200f, 900f, MinSizeAndZoomTest::noText);
 
             assertEquals(1200f, gui.root().layout().rect().w(), 0.5f, "the minimum is a floor, not a size");
             assertEquals(900f, gui.root().layout().rect().h(), 0.5f);
@@ -99,7 +100,7 @@ class MinSizeAndZoomTest {
             Node content = filler(gui);
             gui.minSize(Length.rem(50), Length.rem(30));
             gui.zoom(2f);
-            gui.frame(900f, 560f, MinSizeAndZoomTest::noText);
+            Seams.of(gui).frame(900f, 560f, MinSizeAndZoomTest::noText);
 
             assertEquals(1600f, content.layout().rect().w(), 0.5f,
                     "at 2x the same 50em minimum is 1600px, so a 900px window is below it");
@@ -112,7 +113,7 @@ class MinSizeAndZoomTest {
     void thereIsNoMinimumByDefault() {
         try (Gui gui = new Gui(Atchung.create())) {
             Node content = filler(gui);
-            gui.frame(300f, 150f, MinSizeAndZoomTest::noText);
+            Seams.of(gui).frame(300f, 150f, MinSizeAndZoomTest::noText);
             assertEquals(300f, gui.root().layout().rect().w(), 0.5f);
             assertEquals(150f, gui.root().layout().rect().h(), 0.5f);
             assertEquals(300f, content.layout().rect().w(), 0.5f);
@@ -128,22 +129,22 @@ class MinSizeAndZoomTest {
             gui.zoomRange(0.5f, 2f, 1.25f);
 
             gui.zoomIn();
-            assertEquals(1.25f, gui.zoom().value(), 0.001f, "a step is a factor, not an increment");
+            assertEquals(1.25f, Seams.of(gui).zoom().value(), 0.001f, "a step is a factor, not an increment");
             gui.zoomIn();
-            assertEquals(1.5625f, gui.zoom().value(), 0.001f);
+            assertEquals(1.5625f, Seams.of(gui).zoom().value(), 0.001f);
 
             for (int i = 0; i < 20; i++) {
                 gui.zoomIn();
             }
-            assertEquals(2f, gui.zoom().value(), 0.001f, "clamped to the configured maximum");
+            assertEquals(2f, Seams.of(gui).zoom().value(), 0.001f, "clamped to the configured maximum");
 
             for (int i = 0; i < 40; i++) {
                 gui.zoomOut();
             }
-            assertEquals(0.5f, gui.zoom().value(), 0.001f, "and to the minimum");
+            assertEquals(0.5f, Seams.of(gui).zoom().value(), 0.001f, "and to the minimum");
 
             gui.resetZoom();
-            assertEquals(1f, gui.zoom().value(), 0.001f);
+            assertEquals(1f, Seams.of(gui).zoom().value(), 0.001f);
         }
     }
 
@@ -152,10 +153,33 @@ class MinSizeAndZoomTest {
     void narrowingTheRangeReclampsTheCurrentFactor() {
         try (Gui gui = new Gui(Atchung.create())) {
             gui.zoom(3f);
-            assertEquals(3f, gui.zoom().value(), 0.001f, "allowed by the default range");
+            assertEquals(3f, Seams.of(gui).zoom().value(), 0.001f, "allowed by the default range");
 
             gui.zoomRange(0.5f, 1.5f, 1.25f);
-            assertEquals(1.5f, gui.zoom().value(), 0.001f, "pulled back into the new range at once");
+            assertEquals(1.5f, Seams.of(gui).zoom().value(), 0.001f, "pulled back into the new range at once");
+        }
+    }
+
+    /**
+     * A zoom set from another thread once frames run is committed at the top of the next frame, on the frame's
+     * thread: the zoom's listeners restyle widgets, and would otherwise run on the caller's thread, in the logic.
+     */
+    @Test
+    void aZoomFromAnotherThreadIsCommittedOnTheFrameThread() throws InterruptedException {
+        try (Gui gui = new Gui(Atchung.create())) {
+            Seams.of(gui).frame(400f, 200f, MinSizeAndZoomTest::noText);
+            java.util.List<Thread> committedOn = new java.util.concurrent.CopyOnWriteArrayList<>();
+            Seams.of(gui).zoom().onCommit(v -> committedOn.add(Thread.currentThread()));
+
+            Thread logic = new Thread(() -> gui.zoom(2f), "logic");
+            logic.start();
+            logic.join();
+            assertEquals(1f, Seams.of(gui).zoom().value(), 1e-6f, "not yet: it waits for the frame");
+            assertEquals(java.util.List.of(), committedOn);
+
+            Seams.of(gui).frame(400f, 200f, MinSizeAndZoomTest::noText);
+            assertEquals(2f, Seams.of(gui).zoom().value(), 1e-6f);
+            assertEquals(java.util.List.of(Thread.currentThread()), committedOn, "committed on the frame's thread");
         }
     }
 }

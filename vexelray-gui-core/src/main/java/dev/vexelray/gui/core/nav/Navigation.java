@@ -60,7 +60,7 @@ public final class Navigation {
     /**
      * Completes with the landmark's node once it is revealed, scrolled into view and focused; completes
      * exceptionally with {@link Unreachable} if it cannot be. Completed by the GUI thread, so anything chained
-     * onto it directly runs there — hand work off to {@code Gui.handlers()} if it is not trivial.
+     * onto it directly runs there, so it must be short: anything more is a message to the application's logic.
      */
     public CompletableFuture<Node> arrival() {
         return arrival;

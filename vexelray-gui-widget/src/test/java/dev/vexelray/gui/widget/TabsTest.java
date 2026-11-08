@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.draw.Picture;
@@ -57,7 +58,7 @@ class TabsTest {
     void theIndicatorSitsUnderTheSelectedHeaderAndGlidesToTheNext() {
         try (HeadlessGui h = new HeadlessGui()) {
             Manual ramp = new Manual();
-            Tabs tabs = new Tabs(h.gui).indicator(ramp);
+            Tabs tabs = new Tabs(h.gui).indicator(TestClocks.drive(h, ramp));
             tabs.add("One", page(h, "one"));
             tabs.add("A longer second", page(h, "two"));
             tabs.add("Three", page(h, "three"));
@@ -95,7 +96,7 @@ class TabsTest {
     void aSelectionMidGlideTurnsRoundFromWhereTheIndicatorIs() {
         try (HeadlessGui h = new HeadlessGui()) {
             Manual ramp = new Manual();
-            Tabs tabs = new Tabs(h.gui).indicator(ramp);
+            Tabs tabs = new Tabs(h.gui).indicator(TestClocks.drive(h, ramp));
             tabs.add("One", page(h, "one"));
             tabs.add("Two", page(h, "two"));
             tabs.add("Three", page(h, "three"));
@@ -248,8 +249,8 @@ class TabsTest {
             Tabs tabs = new Tabs(h.gui);
             tabs.add("One", one);
             tabs.add("Two", two);
-            h.gui.onClick(one, () -> hit[0] = true);
-            h.gui.onClick(two, () -> hit[1] = true);
+            Seams.of(h.gui).onClick(one, () -> hit[0] = true);
+            Seams.of(h.gui).onClick(two, () -> hit[1] = true);
             h.gui.root().children(tabs.node());
             h.frame();
 
@@ -386,41 +387,40 @@ class TabsTest {
     void selectionIsReported() {
         try (HeadlessGui h = new HeadlessGui()) {
             int[] seen = {-1};
-            Tabs tabs = new Tabs(h.gui).onSelect(i -> seen[0] = i);
+            Tabs tabs = new Tabs(h.gui);
+            h.gui.mailbox(Tabs.SELECTED, tabs.address(), s -> seen[0] = s.index());
             tabs.add("One", page(h, "one"));
             tabs.add("Two", page(h, "two"));
             h.gui.root().children(tabs.node());
             h.frame();
 
             tabs.select(1);
+            h.frame();
             assertEquals(1, seen[0]);
         }
     }
 
     /**
-     * Removal is reported while the panel is consistent: both of the bar's lists have already lost the tab, and
-     * the selection has not moved yet. An owner told any later than that would be resolving the index against a
-     * bar that had moved on; told any earlier, it would be shrinking its own list a moment before the bar shrank
-     * its own. Neither is a state the two can be compared in, which is why this is a fixed point rather than a
-     * detail — and why it is inline, not on the handler executor: a deferred notice is a desync with a timer.
+     * A removal is heard with the index the tab had, in order, so a view that keeps a list beside the bar and drops
+     * an entry for each stays the same as the bar however many go in one frame.
      */
     @Test
-    void removalIsReportedWhileTheTwoStructuresAgree() {
+    void removalsAreHeardInOrderWithTheIndexEachTabHad() {
         try (HeadlessGui h = new HeadlessGui()) {
-            List<String> seen = new ArrayList<>();
+            List<String> documents = new ArrayList<>(List.of("One", "Two", "Three"));
             Tabs tabs = new Tabs(h.gui);
-            tabs.onRemove(i -> seen.add(i + " of " + tabs.count() + " selected=" + tabs.selected()));
-            tabs.add("One", page(h, "one"));
-            tabs.add("Two", page(h, "two"));
-            tabs.add("Three", page(h, "three"));
+            h.gui.mailbox(Tabs.REMOVED, tabs.address(), r -> documents.remove(r.index()));
+            documents.forEach(title -> tabs.add(title, page(h, title)));
             h.gui.root().children(tabs.node());
             h.frame();
             tabs.select(2);
 
             tabs.remove(1);
+            tabs.remove(0);
+            h.frame();
 
-            assertEquals(List.of("1 of 2 selected=-1"), seen, "the tab is gone from the bar, the selection pending");
-            assertEquals(1, tabs.selected(), "which then moves to follow the tab that was showing");
+            assertEquals(List.of("Three"), documents, "each removal applied against the bar as it then was");
+            assertEquals(0, tabs.selected(), "and the selection followed the tab that was showing");
         }
     }
 
@@ -428,31 +428,32 @@ class TabsTest {
     @Test
     void aRemovalThatDoesNothingIsNotReported() {
         try (HeadlessGui h = new HeadlessGui()) {
-            int[] count = {0};
-            Tabs tabs = new Tabs(h.gui).onRemove(i -> count[0]++);
+            Tabs tabs = new Tabs(h.gui);
+            List<Tabs.Removed> heard = h.heard(Tabs.REMOVED, tabs.address());
             tabs.add("One", page(h, "one"));
             h.gui.root().children(tabs.node());
             h.frame();
 
             tabs.remove(-1);
             tabs.remove(7);
-            assertEquals(0, count[0], "neither index named a tab");
+            h.frame();
+            assertEquals(0, heard.size(), "neither index named a tab");
 
             tabs.remove(0);
-            assertEquals(1, count[0], "this one did");
+            h.frame();
+            assertEquals(1, heard.size(), "this one did");
         }
     }
 
     /**
-     * The editor's rule — never be left with no document — said in the widget's terms: the handler adds a
-     * replacement, and because the panel is unselected at that moment the new tab is selected by {@code add}
-     * itself rather than left blank behind a bar with nothing lit.
+     * The editor's rule — never be left with no document — said in the widget's terms: the view adds a replacement
+     * when it hears the last tab go, in the widget tick of the frame it went, so no frame is drawn with nothing lit.
      */
     @Test
-    void theHandlerMayReplaceTheLastTabAsItGoes() {
+    void aViewMayReplaceTheLastTabAsItGoes() {
         try (HeadlessGui h = new HeadlessGui()) {
             Tabs tabs = new Tabs(h.gui);
-            tabs.onRemove(i -> {
+            h.gui.mailbox(Tabs.REMOVED, tabs.address(), r -> {
                 if (tabs.count() == 0) {
                     tabs.add("Untitled", page(h, "empty"));
                 }

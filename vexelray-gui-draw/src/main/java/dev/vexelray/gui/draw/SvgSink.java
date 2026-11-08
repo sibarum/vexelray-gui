@@ -118,6 +118,70 @@ public final class SvgSink implements Picture.Sink {
         out.append('>').append(escape(text)).append("</text>\n");
     }
 
+    /**
+     * A drawing as an {@code <image>}: SVG has no distance fields, so it is drawn here by the format's reference
+     * renderer ({@code SdgRender}), at twice the box's size so it stays crisp on a dense screen, fitted with its aspect
+     * kept as on screen, and embedded as a PNG. Pixels, unlike every other mark in the file; but never a blank where
+     * the drawing was.
+     */
+    @Override
+    public void drawing(double x, double y, double w, double h, dev.vexelray.fields.sdg.Sdg drawing,
+                        java.util.List<? extends dev.vexelray.target.ImageHandle> pages, String tag) {
+        if (!(w > 0) || !(h > 0)) {
+            return;
+        }
+        double k = Math.min(w / drawing.width(), h / drawing.height());
+        double bw = drawing.width() * k, bh = drawing.height() * k;
+        double bx = x + (w - bw) / 2, by = y + (h - bh) / 2;
+        int pw = (int) Math.ceil(bw * 2), ph = (int) Math.ceil(bh * 2);
+        dev.vexelray.fields.art.Raster r = dev.vexelray.fields.sdg.SdgRender.render(drawing, pw, ph);
+        out.append(indent).append("<image x=\"").append(num(bx)).append("\" y=\"").append(num(by))
+                .append("\" width=\"").append(num(bw)).append("\" height=\"").append(num(bh))
+                .append("\" href=\"data:image/png;base64,")
+                .append(java.util.Base64.getEncoder().encodeToString(png(r.rgba(), pw, ph))).append('"');
+        cssClass(tag);
+        out.append("/>\n");
+    }
+
+    /**
+     * Straight RGBA8 as a PNG: one IDAT, every row unfiltered, deflated. Written here, with {@code java.util.zip}
+     * alone, because the GUI never reaches AWT (ImageIO would bring its native libraries into a native image).
+     */
+    static byte[] png(byte[] rgba, int w, int h) {
+        byte[] raw = new byte[h * (w * 4 + 1)];
+        for (int y = 0; y < h; y++) {
+            System.arraycopy(rgba, y * w * 4, raw, y * (w * 4 + 1) + 1, w * 4);   // filter byte 0: none
+        }
+        java.util.zip.Deflater deflater = new java.util.zip.Deflater(java.util.zip.Deflater.BEST_COMPRESSION);
+        deflater.setInput(raw);
+        deflater.finish();
+        java.io.ByteArrayOutputStream z = new java.io.ByteArrayOutputStream();
+        byte[] buf = new byte[1 << 16];
+        while (!deflater.finished()) {
+            z.write(buf, 0, deflater.deflate(buf));
+        }
+        deflater.end();
+        java.nio.ByteBuffer ihdr = java.nio.ByteBuffer.allocate(13).putInt(w).putInt(h)
+                .put((byte) 8).put((byte) 6).put((byte) 0).put((byte) 0).put((byte) 0);   // 8 bits, RGBA
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        out.writeBytes(new byte[]{(byte) 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'});
+        chunk(out, "IHDR", ihdr.array());
+        chunk(out, "IDAT", z.toByteArray());
+        chunk(out, "IEND", new byte[0]);
+        return out.toByteArray();
+    }
+
+    private static void chunk(java.io.ByteArrayOutputStream out, String tag, byte[] data) {
+        byte[] t = tag.getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+        crc.update(t);
+        crc.update(data);
+        out.writeBytes(java.nio.ByteBuffer.allocate(4).putInt(data.length).array());
+        out.writeBytes(t);
+        out.writeBytes(data);
+        out.writeBytes(java.nio.ByteBuffer.allocate(4).putInt((int) crc.getValue()).array());
+    }
+
     // --- internals ------------------------------------------------------------------------------------------
 
     /**

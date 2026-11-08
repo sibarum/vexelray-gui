@@ -35,7 +35,7 @@ public interface WindowInput extends AutoCloseable {
 
     /**
      * Deliver whatever the backend has observed since the last frame — typically publishing it onto the window's
-     * bus, where the GUI's dispatch picks it up during {@link Gui#frame}. Called once per frame, before the tree
+     * bus, where the GUI's dispatch picks it up during {@link dev.vexelray.gui.core.spi.Seams#frame}. Called once per frame, before the tree
      * is laid out and drawn.
      */
     void pump();

@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.edit.Change;
 import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.edit.Outcome;
@@ -30,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class UndoingTest {
 
-    private final Gui gui = new Gui(Atchung.create(), Runnable::run);
+    private final Gui gui = new Gui(Atchung.create());
     private final Node page = gui.box().width(Length.dp(200)).height(Length.dp(40)).visible(false);
     private final Node field = gui.box().width(Length.dp(100)).height(Length.dp(20));
     private final Node elsewhere = gui.box().width(Length.dp(100)).height(Length.dp(20));
@@ -42,11 +43,11 @@ class UndoingTest {
         gui.root().children(page.children(field), elsewhere);
         gui.focusable(field, true);
         gui.focusable(elsewhere, true);
-        gui.reveals(page, id -> {
+        Seams.of(gui).reveals(page, id -> {
             page.visible(true);
             return true;
         });
-        gui.onUndo(events::add);
+        Seams.of(gui).onUndo(events::add);
         frames(1);
         gui.focus(elsewhere);
         frames(1);
@@ -78,7 +79,7 @@ class UndoingTest {
 
     private void frames(int n) {
         for (int i = 0; i < n; i++) {
-            gui.frame(400f, 300f, (RetainedNode node, dev.vexelray.gui.core.layout.LayoutEnums.Axis axis, float px) -> 0f);
+            Seams.of(gui).frame(400f, 300f, (RetainedNode node, dev.vexelray.gui.core.layout.LayoutEnums.Axis axis, float px) -> 0f);
         }
     }
 

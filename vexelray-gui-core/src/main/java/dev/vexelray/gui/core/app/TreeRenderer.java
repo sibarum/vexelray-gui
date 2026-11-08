@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core.app;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.canvas.Canvas;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
@@ -8,6 +9,7 @@ import dev.vexelray.gui.core.Viewport;
 import dev.vexelray.gui.core.input.FocusCause;
 import dev.vexelray.gui.core.input.FocusState;
 import dev.vexelray.gui.core.layout.LayoutContext;
+import dev.vexelray.gui.core.model.PropKey;
 import dev.vexelray.gui.core.model.RetainedNode;
 import dev.vexelray.gui.core.style.FocusRing;
 import dev.vexelray.gui.core.style.PaintMotion;
@@ -102,6 +104,36 @@ public final class TreeRenderer {
     // What every node's paint and finish resolve against this frame, and the focus ring's role with them. Focus is
     // the dispatcher's, handed in as a value; the ring's lengths resolve against the frame's context like any other.
     private final Theme theme;
+    /** An SDG paint's role, in this frame's theme, and the tint role in the node's tint (see {@link SdgTint}). */
+    private final SdgTint sdgRoles;
+
+    /**
+     * The roles of the SDG drawing being drawn: {@code tint} in the node's tint as its paint motion has it, every other
+     * name in this frame's theme ({@link dev.vexelray.gui.core.style.SdgRoles}). One for the walk, its tint set per
+     * node, so a frame of icons makes no resolver per icon.
+     */
+    private static final class SdgTint implements Canvas.Roles {
+        private final Theme theme;
+        private Color tint;
+
+        SdgTint(Theme theme) {
+            this.theme = theme;
+        }
+
+        @Override
+        public int rgba(String role, int stored) {
+            if (role.equals(dev.vexelray.gui.core.ImageSdg.TINT)) {
+                Color c = tint != null ? tint : theme.color(Role.INK);
+                return byte8(c.r()) << 24 | byte8(c.g()) << 16 | byte8(c.b()) << 8
+                        | byte8(c.a() * ((stored & 0xFF) / 255f));
+            }
+            return dev.vexelray.gui.core.style.SdgRoles.rgba(theme, role, stored);
+        }
+
+        private static int byte8(float v) {
+            return Math.round(Math.clamp(v, 0f, 1f) * 255f);
+        }
+    }
     /** The colour each node is drawn in on its way to the one it was given. */
     private PaintMotion paint = PaintMotion.NONE;
     /**
@@ -133,6 +165,7 @@ public final class TreeRenderer {
     private TreeRenderer(Theme theme, TextFaces faces, FocusState focus, LayoutContext ctx) {
         this.faces = faces;
         this.theme = theme;
+        this.sdgRoles = new SdgTint(theme);
         this.focus = focus == null ? FocusState.NONE : focus;
         this.ctx = ctx == null ? LayoutContext.of(0f, 0f) : ctx;
         this.scrollEdge = theme.color(Role.EDGE);
@@ -179,8 +212,8 @@ public final class TreeRenderer {
      * destination and then fade to it from where it was.
      */
     public static void emit(RetainedNode node, Canvas canvas, TextFaces faces, Gui gui) {
-        Viewport v = gui.viewport().value();
-        LayoutContext ctx = new LayoutContext(gui.rootEmPx(), gui.zoom().value(), gui.dpi().value(),
+        Viewport v = Seams.of(gui).viewport().value();
+        LayoutContext ctx = new LayoutContext(gui.rootEmPx(), Seams.of(gui).zoom().value(), Seams.of(gui).dpi().value(),
                 v == null ? 0f : v.width(), v == null ? 0f : v.height());
         emit(node, canvas, faces, gui.drawnTheme(), gui.focusState(), ctx, gui.paintMotion(),
                 gui.flatShading());
@@ -431,7 +464,7 @@ public final class TreeRenderer {
         float inherited = alpha;
         // Presence (EnterMotion, ExitMotion) multiplies the node's own opacity rather than standing in for it: the
         // framework fading a node in or out never overwrites what the application set.
-        alpha = inherited * node.opacity() * node.presence;
+        alpha = inherited * opacityOf(node) * node.drawnOpacity * node.presence;
         // Fully transparent: skip the subtree exactly as a hidden node does. Not the same as hiding it, though —
         // it was laid out, so its box is real and it is still hit-testable unless it also said hitInert.
         if (alpha > 0f) {
@@ -452,9 +485,10 @@ public final class TreeRenderer {
                 transY += dy;
             }
             // A turn and a scale, both about the centre of the box where it is drawn: inside the displacement,
-            // around the node and its whole subtree. The two commute, about one centre.
+            // around the node and its whole subtree. The two commute, about one centre. An asked half's scale
+            // (Drawn.scale) multiplies the node's own.
             float turn = node.rotation();
-            float grow = node.scale();
+            float grow = node.scale() * node.drawnScale;
             boolean turned = turn != 0f || grow != 1f;
             if (turn != 0f) {
                 canvas.pushRotate((float) Math.toRadians(turn), node.x + node.w * 0.5f, node.y + node.h * 0.5f);
@@ -765,7 +799,9 @@ public final class TreeRenderer {
         }
         canvas.pushClip(n.x + transX, n.y + transY, n.w, n.h, Math.max(n.cornerPx, n.cornerBottomPx));
         canvas.pushTranslate(n.x, n.y);
-        picture.emitTo(new CanvasSink(canvas, text, alpha));
+        // Stretched along x if an asked half said so (Drawn.stretch): the marks, not the clip or the box.
+        picture.emitTo(Picture.stretchX(new CanvasSink(canvas, text, alpha, sdgRoles), n.drawnStretch,
+                n.drawnStretchX));
         canvas.popTranslate();
         canvas.popClip();
     }
@@ -886,6 +922,19 @@ public final class TreeRenderer {
     }
 
     /**
+     * {@code n}'s own opacity on its way to the one it was given ({@code Channel.OPACITY}): asked only of a node that
+     * stated one, since one that never did has never changed it.
+     */
+    private float opacityOf(RetainedNode n) {
+        if (n.raw(PropKey.OPACITY) == null) {
+            return 1f;
+        }
+        float set = n.opacity();
+        return set >= 1f ? paint.drawn(n.id, PaintMotion.Channel.OPACITY, PaintMotion.ALL_OF_IT).a()
+                : paint.drawn(n.id, PaintMotion.Channel.OPACITY, PaintMotion.amount(set)).a();
+    }
+
+    /**
      * {@code n}'s text colour on its way, the theme's ink when it never stated one. The ink fades too: it only ever
      * changes when the theme does, and a theme swap reports it (Reconciler.retheme).
      */
@@ -910,7 +959,8 @@ public final class TreeRenderer {
         // An image, a field and a picture sit between the background and the border, so a border over any of them is
         // drawn after them, on its own; without them, the box is one element: border, fill and shadow in one quad.
         Picture picture = n.picture();
-        boolean between = n.image() != null || n.field() != null || (picture != null && !picture.isEmpty());
+        boolean between = n.image() != null || n.field() != null || n.sdg() != null
+                || (picture != null && !picture.isEmpty());
         boolean borderNow = hasBorder && !between;
         int fill = bg == null ? NO_FILL : n.lit(theme) ? LIT_FILL : PLAIN_FILL;
         if (borderNow || fill != NO_FILL || hasShadow) {
@@ -919,28 +969,18 @@ public final class TreeRenderer {
         }
         // An image sits between the background and the border: a background shows through anything transparent in
         // it, and a border frames it. It takes the node's own radius, so a viewport rounds with the card it is in.
-        ImageHandle image = n.image();
-        if (image != null && n.w > 0f && n.h > 0f) {
-            // An alpha, not a colour: the tint multiplies the texel, so there is no shade to choose here — only
-            // the subtree opacity this class applies to everything it draws.
-            ImageRegion region = n.imageRegion();
-            dev.vexelray.gui.core.ImageScaling scaling = n.imageScaling();
-            // A texture whose sampler decodes sRGB gives linear light, which the shader must encode again.
-            boolean linear = image instanceof dev.vexelray.vulkan.present.SampledImage s && s.linear();
-            if (scaling != null || linear) {
-                ImageRegion r = region == null ? ImageRegion.WHOLE : region;
-                canvas.image(n.x, n.y, n.w, n.h, rTop, rBottom, image, r.u0(), r.v0(), r.u1(), r.v1(), alpha,
-                        scaling == null ? null : scaling.filter(),
-                        scaling == null ? 0 : scaling.textureWidth(), scaling == null ? 0 : scaling.textureHeight(),
-                        linear);
-            } else if (region == null || region.whole()) {
-                canvas.image(n.x, n.y, n.w, n.h, rTop, rBottom, image, alpha);
-            } else {
-                // One cell of a sheet. Same primitive, same run — only the four texture coordinates differ, which
-                // is why an animation costs no upload and no extra draw.
-                canvas.image(n.x, n.y, n.w, n.h, rTop, rBottom, image,
-                        region.u0(), region.v0(), region.u1(), region.v1(), alpha);
+        float up = replacedUp(n);
+        if (n.imageReplaced && up < 1f) {
+            // An image replaced: the new one comes up over the old, and the old goes only in the second half, so two
+            // opaque pictures never let what is behind them show through half-way.
+            // A feed its owner closed at once is gone, and would draw as the placeholder: the new one comes up alone.
+            if (!(n.imageBefore instanceof dev.vexelray.gui.core.Feed f && f.closed())) {
+                drawImage(n, n.imageBefore, n.regionBefore, n.scalingBefore, alpha * Math.min(1f, 2f * (1f - up)),
+                        rTop, rBottom, canvas);
             }
+            drawImage(n, n.image(), n.imageRegion(), n.imageScaling(), alpha * up, rTop, rBottom, canvas);
+        } else {
+            drawImage(n, n.image(), n.imageRegion(), n.imageScaling(), alpha, rTop, rBottom, canvas);
         }
         // A distance-field shape, over the image: across the box, and out over its margin for a glow or a shadow.
         dev.vexelray.gui.core.ImageField field = n.field();
@@ -948,12 +988,27 @@ public final class TreeRenderer {
             dev.vexelray.gui.core.ImageRegion cell = field.region();
             if (field.look() == null) {
                 canvas.field(n.x, n.y, n.w, n.h, field.texture(), cell.u0(), cell.v0(), cell.u1(), cell.v1(),
-                        field.side(), field.spread(), field.margin(), fade(field.tint()));
+                        field.side(), field.spread(), field.margin(),
+                        fade(drawn(n, PaintMotion.Channel.TEXT, field.tint())));
             } else {
                 canvas.field(n.x, n.y, n.w, n.h, field.texture(), cell.u0(), cell.v0(), cell.u1(), cell.v1(),
-                        field.side(), field.spread(), field.margin(), fade(field.tint()), field.look(),
+                        field.side(), field.spread(), field.margin(),
+                        fade(drawn(n, PaintMotion.Channel.TEXT, field.tint())), field.look(),
                         field.instance());
             }
+        }
+        // An SDG drawing, over the image and the field: fitted into the box, its aspect kept, each page uploaded by
+        // DeviceImages as any Pixels are, and each role in this tree's theme.
+        dev.vexelray.gui.core.ImageSdg sdg = n.sdg();
+        if (sdg != null && n.w > 0f && n.h > 0f && alpha > 0f) {
+            // An icon's tint fades as a field's did (Channel.TEXT); the subtree's opacity is the drawing's. A drawing with no
+            // tint of its own takes the node's text colour as one, a paint resolved in this frame's theme, so a mark lit in
+            // "tint" follows a theme swap and the pointer as a text wordmark does.
+            Color tint = sdg.tint() != null ? sdg.tint() : n.textColor(theme);
+            sdgRoles.tint = tint == null ? null : drawn(n, PaintMotion.Channel.TEXT, tint);
+            canvas.sdg(sdg.drawing(), sdg.pages().toArray(new ImageHandle[0]), n.x, n.y, n.w, n.h, sdgRoles, alpha,
+                    sdg.look(), sdg.instanceUnsafe());
+            sdgRoles.tint = null;
         }
         // A drawing goes over the image and under the border: an application's own marks belong inside the frame
         // the node draws around them.
@@ -962,12 +1017,76 @@ public final class TreeRenderer {
             box(canvas, n, fade(border), bw, NO_FILL, null, bevel, null, 0f);
         }
 
-        String s = n.textString();
+        String s = n.drawnText();
         float pad = n.textPadXPx;   // resolved by the layout — the renderer resolves no units of its own
         boolean hasText = s != null && !s.isEmpty();
-        java.util.List<Span> spans = hasText ? n.spans() : java.util.List.of();
+        // A cut label's spans index the whole text, not the string drawn, so it is drawn plain.
+        java.util.List<Span> spans = hasText && n.cutText == null ? n.spans() : java.util.List.of();
 
-        drawText(n, s, hasText, spans, pad, canvas, text);
+        if (n.wordsBefore == null || up >= 1f) {
+            drawText(n, n.textMetrics, s, hasText, spans, pad, canvas, text);
+            return;
+        }
+        // Words replaced: the old ones fade out where they were in the box, under the new ones fading in.
+        float whole = alpha;
+        alpha = whole * (1f - up);
+        String was = n.wordsBefore;
+        float dx = n.layoutX - n.wordsBeforeX;
+        float dy = n.layoutY - n.wordsBeforeY;
+        boolean shifted = dx != 0f || dy != 0f;
+        if (shifted) {
+            canvas.pushTranslate(dx, dy);
+        }
+        try {
+            drawText(n, n.metricsBefore, was, was != null && !was.isEmpty(), java.util.List.of(), pad, canvas, text);
+        } finally {
+            if (shifted) {
+                canvas.popTranslate();
+            }
+        }
+        alpha = whole * up;
+        drawText(n, n.textMetrics, s, hasText, spans, pad, canvas, text);
+        alpha = whole;
+    }
+
+    /**
+     * How far what {@code n} shows is up over what it replaced, its words or its image ({@code Channel.REPLACED}): 1
+     * when nothing is being crossfaded, which is when it kept nothing or the paint motion has nothing on its way there.
+     */
+    private float replacedUp(RetainedNode n) {
+        if (!n.replacing) {
+            return 1f;
+        }
+        return paint.drawn(n.id, PaintMotion.Channel.REPLACED, PaintMotion.ALL_OF_IT).a();
+    }
+
+    /** {@code image} across {@code n}'s box at {@code a}, sampling {@code region} through {@code scaling}; none, nothing. */
+    private void drawImage(RetainedNode n, ImageHandle image, ImageRegion region,
+                           dev.vexelray.gui.core.ImageScaling scaling, float a, float rTop, float rBottom,
+                           Canvas canvas) {
+        if (image == null || n.w <= 0f || n.h <= 0f || a <= 0f) {
+            return;
+        }
+        // An alpha, not a colour: the tint multiplies the texel, so there is no shade to choose here — only the
+        // subtree opacity this class applies to everything it draws.
+        // A texture whose sampler decodes sRGB gives linear light, which the shader must encode again. A feed is not
+        // its texture yet (DeviceImages resolves it later), so a picture feed, uploaded sRGB, says so itself.
+        boolean linear = image instanceof dev.vexelray.vulkan.present.SampledImage s && s.linear()
+                || image instanceof dev.vexelray.gui.core.Feed f && f.picture();
+        if (scaling != null || linear) {
+            ImageRegion r = region == null ? ImageRegion.WHOLE : region;
+            canvas.image(n.x, n.y, n.w, n.h, rTop, rBottom, image, r.u0(), r.v0(), r.u1(), r.v1(), a,
+                    scaling == null ? null : scaling.filter(),
+                    scaling == null ? 0 : scaling.textureWidth(), scaling == null ? 0 : scaling.textureHeight(),
+                    linear);
+        } else if (region == null || region.whole()) {
+            canvas.image(n.x, n.y, n.w, n.h, rTop, rBottom, image, a);
+        } else {
+            // One cell of a sheet. Same primitive, same run — only the four texture coordinates differ, which is why
+            // an animation costs no upload and no extra draw.
+            canvas.image(n.x, n.y, n.w, n.h, rTop, rBottom, image,
+                    region.u0(), region.v0(), region.u1(), region.v1(), a);
+        }
     }
 
     /**
@@ -981,9 +1100,8 @@ public final class TreeRenderer {
      * feature — the read-model is supposed to describe what is drawn, and the only way to guarantee it is for the
      * drawing to come from the read-model.
      */
-    private void drawText(RetainedNode n, String s, boolean hasText, java.util.List<Span> spans, float pad,
-                                 Canvas canvas, TextLayout text) {
-        TextMetrics m = n.textMetrics;
+    private void drawText(RetainedNode n, TextMetrics m, String s, boolean hasText, java.util.List<Span> spans,
+                          float pad, Canvas canvas, TextLayout text) {
         if (m == null) {
             return;   // not a text node, or a measurer with no glyph metrics resolved none
         }

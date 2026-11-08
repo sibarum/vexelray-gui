@@ -1,5 +1,6 @@
 package dev.vexelray.gui.demo;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.InteractionState;
@@ -77,7 +78,7 @@ public final class Ui {
     /** A quiet button: panel fill, bordered — for anything that is not the main thing on the page. */
     public static Node button(Gui gui, String text, Runnable onClick) {
         Node b = shell(gui, text, Role.DIM, Role.PANEL, true);
-        gui.onClick(b, onClick);
+        Seams.of(gui).onClick(b, onClick);
         return b;
     }
 
@@ -85,7 +86,7 @@ public final class Ui {
     public static Node action(Gui gui, String text, Runnable onClick) {
         Node b = shell(gui, text, Role.ON_ACTION, Role.ACTION, false)
                 .textSunken(Finish.LETTERPRESS);
-        gui.onClick(b, onClick);
+        Seams.of(gui).onClick(b, onClick);
         return b;
     }
 
@@ -114,11 +115,11 @@ public final class Ui {
                     .elevation(gui.theme().elevation(Relief.CONTROL, state));
         };
         restyle.run();
-        gui.onState(t, state -> {
+        Seams.of(gui).onState(t, state -> {
             last.set(state);
             restyle.run();
         });
-        gui.onClick(t, () -> {
+        Seams.of(gui).onClick(t, () -> {
             boolean now = !value.get();
             value.set(now);
             restyle.run();
@@ -156,7 +157,7 @@ public final class Ui {
         if (bordered) {
             b.border(Length.rem(0.1f), Role.LINE);
         }
-        gui.onState(b, state -> b.background(fill.at(state))
+        Seams.of(gui).onState(b, state -> b.background(fill.at(state))
                 .elevation(gui.theme().elevation(Relief.CONTROL, state)));
         return b;
     }

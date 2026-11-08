@@ -1,5 +1,8 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.Addressed;
+
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.ScrollAxes;
@@ -32,6 +35,7 @@ import dev.vexelray.text.TextLayout;
 import sibarum.atchung.Committer;
 import sibarum.atchung.State;
 import sibarum.atchung.Subscription;
+import sibarum.atchung.Topic;
 import sibarum.atchung.Versioned;
 import sibarum.tactroller.api.Key;
 import sibarum.tactroller.api.Modifier;
@@ -49,12 +53,12 @@ import java.util.function.Consumer;
  * get a coherent snapshot lock-free; a concurrent programmatic change costs a CAS retry rather than a lost edit;
  * and the three-property mirror that could previously be split by a frame boundary is now a single atomic value.
  *
- * <p><b>Edits are committed on the GUI thread's drain; notifications are delivered asynchronously.</b> Those are
- * two different requirements and the field now treats them as such. Applying a keystroke to a document depends on
- * arrival order and is bounded model work, so it runs as an ordered stage ({@link Gui#onCharUi},
- * {@link Gui#onKeyUi}, {@link Gui#onDragUi}, {@link Gui#claimUi}) where a total order already exists. Telling the
- * application what changed has no ordering requirement at all, so it goes to the handler executor carrying its
- * version — a late delivery is detectably stale rather than silently out of sequence. Handing each input event to
+ * <p><b>Edits are committed in the dispatch; the application is told by message.</b> Those are two different
+ * requirements and the field treats them as such. Applying a keystroke to a document depends on arrival order and is
+ * bounded model work, so it runs as an ordered stage ({@link dev.vexelray.gui.core.spi.Seams#onChar}, {@link dev.vexelray.gui.core.spi.Seams#onKey},
+ * {@link dev.vexelray.gui.core.spi.Seams#onDrag}, {@link Gui#claim}) where a total order already exists. Telling the application what changed
+ * is a message ({@link #CHANGED}) carrying the document's version, so a reply computed from an older text is
+ * detectably stale rather than silently out of sequence. Handing each input event to
  * a worker pool separately, as this widget used to, orders the invocations but not their effects: a typed burst
  * could apply scrambled, and because every individual edit stayed coherent the result read as a dropped keystroke
  * (see {@code HandlerOrderingTest}).
@@ -78,6 +82,148 @@ import java.util.function.Consumer;
  * subscriptions, claims and blink registration when it is removed from the tree.
  */
 public final class TextField implements AutoCloseable {
+
+    // ------------------------------------------------------------------------------------------- on the bus
+
+    /*
+     * The message model (vexelray-framework docs/threading.md, T3.8 and T3.9): a field is a component of the GUI's
+     * own kind. Typing, the caret, selection and undo stay in here, on the GUI thread, and cost no message. What the
+     * application must know leaves as a message (CHANGED, SUBMITTED); what the application wants done arrives as one
+     * (COMMANDS), applied in the frame's drain. A field is addressed by its address (#address: the tree's name and the
+     * field's), which is what every record on these topics carries first.
+     */
+
+    /**
+     * What a field now says: published whenever its document changes, typed or written. A state topic keyed by the
+     * field's address, so a component that ran once a frame sees the last text of the frame and not each keystroke.
+     */
+    public static final Topic<Changed> CHANGED =
+            Addressed.state(Changed.class, Changed::field);
+
+    /**
+     * Where a field's caret is: published whenever it moves, by typing, the keys or a click. A state topic keyed by
+     * the field's address, so a status line hears where it ended up in a frame, and never runs anything in the field's.
+     */
+    public static final Topic<Caret> CARET =
+            Addressed.state(Caret.class, Caret::field);
+
+    /** Enter in a single-line field: every one, in order. */
+    public static final Topic<Submitted> SUBMITTED = Addressed.edge(Submitted.class);
+
+    /** What the application asks a field to do, applied on the GUI thread in the frame's drain. In order. */
+    public static final Topic<Command> COMMANDS = Addressed.edge(Command.class);
+
+    /**
+     * {@code field} now says {@code text}. {@code version} is its document's version, which a {@link Replace} names
+     * to say which text it was computed from.
+     */
+    public record Changed(String field, String text, long version) implements dev.vexelray.gui.core.Addressed {
+        @Override
+        public Object address() {
+            return field;
+        }
+    }
+
+    /**
+     * The caret in {@code field} is at character {@code offset}: on line {@code line} and column {@code column},
+     * both counted from 1.
+     */
+    public record Caret(String field, int offset, int line, int column) implements dev.vexelray.gui.core.Addressed {
+        @Override
+        public Object address() {
+            return field;
+        }
+    }
+
+    /** Enter was pressed in {@code field}, which said {@code text}. */
+    public record Submitted(String field, String text) implements dev.vexelray.gui.core.Addressed {
+        @Override
+        public Object address() {
+            return field;
+        }
+    }
+
+    /** A link was followed in {@code field}, to {@code target}: every one, in order. */
+    public static final Topic<LinkFollowed> LINK_FOLLOWED =
+            Addressed.edge(LinkFollowed.class);
+
+    /**
+     * A link in {@code field} was followed to {@code target}. The field has navigated to it as an address of this
+     * application already; a target that is anything else (a URL, a file) is the application's to act on.
+     */
+    public record LinkFollowed(String field, String target) implements dev.vexelray.gui.core.Addressed {
+        @Override
+        public Object address() {
+            return field;
+        }
+    }
+
+    /**
+     * Something the application asks of a field. Each kind says what it does to the field itself, so the field never
+     * switches over the kinds (vexelray-gui's style rule).
+     */
+    public sealed interface Command extends dev.vexelray.gui.core.Addressed
+            permits SetText, Replace, Insert, Select, ReadOnly {
+        /** The address of the field this is for. */
+        String field();
+
+        /** Routed by the field's address: see {@link Gui#mailbox(Topic, Object, sibarum.atchung.Subscriber)}. */
+        @Override
+        default Object address() {
+            return field();
+        }
+
+        /** Do it, on the GUI thread. */
+        void applyTo(TextField target);
+    }
+
+    /** {@link #text(String)}: content the field has no past with, a file loaded or a reset. */
+    public record SetText(String field, String text) implements Command {
+        @Override
+        public void applyTo(TextField target) {
+            target.text(text);
+        }
+    }
+
+    /**
+     * {@link #replace(String)}: an edit, undoable, computed from what the field said at {@code basedOn}. If the field
+     * has changed since (the person kept typing while the logic worked), the replacement is stale and is dropped,
+     * and the field says again what it says now, so the logic can compute from that instead. A {@code basedOn} of
+     * {@link #ANY} replaces whatever is there.
+     */
+    public record Replace(String field, String text, long basedOn) implements Command {
+        @Override
+        public void applyTo(TextField target) {
+            target.replaceIfCurrent(text, basedOn);
+        }
+    }
+
+    /** The version that matches any: a {@link Replace} that is not computed from the field's text. */
+    public static final long ANY = -1;
+
+    /** {@link #insert(String)}: as if typed at the caret. */
+    public record Insert(String field, String text) implements Command {
+        @Override
+        public void applyTo(TextField target) {
+            target.insert(text);
+        }
+    }
+
+    /** {@link #select(int, int)}. */
+    public record Select(String field, int start, int end) implements Command {
+        @Override
+        public void applyTo(TextField target) {
+            target.select(start, end);
+        }
+    }
+
+    /** {@link #readOnly(boolean)}. */
+    public record ReadOnly(String field, boolean readOnly) implements Command {
+        @Override
+        public void applyTo(TextField target) {
+            target.readOnly(readOnly);
+        }
+    }
 
     /** Cap on retained undo history, so a long editing session can't grow the stacks without bound. */
     private static final int UNDO_LIMIT = 1000;
@@ -151,7 +297,7 @@ public final class TextField implements AutoCloseable {
      */
     private volatile List<Link> links = List.of();
     private volatile boolean linksArmed;
-    private volatile Consumer<Link> onLink;
+
 
     private volatile boolean multiline;
     /** Whether the field grows over its neighbours while focused. See {@link #overhang}. */
@@ -167,9 +313,16 @@ public final class TextField implements AutoCloseable {
     private volatile boolean autoIndent;
     private volatile boolean readOnly;
     private volatile boolean focused;
-    private volatile Consumer<MenuSink> contextMenu = menu -> { };
-    private volatile Consumer<String> onChange = s -> { };
-    private volatile Consumer<String> onSubmit = s -> { };
+    /** The widget library's hooks start as nothing: see {@link #onChange}. */
+    private static final Consumer<String> NONE = s -> { };
+    private volatile Consumer<String> onChange = NONE;
+    private volatile Consumer<String> onSubmit = NONE;
+    private volatile Consumer<KeyEvent> keys = e -> { };
+
+    /** What this field is called on the bus: see {@link #name(String)}. */
+    private final WidgetName name;
+    /** This field's mailbox for {@link #COMMANDS}, routed by its address; replaced when the name is. GUI thread. */
+    private Subscription commandsSub;
 
     /** Build an empty text field on {@code gui}. Size it via {@link #node()} (e.g. {@code .width(...)}). */
     public TextField(Gui gui) {
@@ -199,37 +352,90 @@ public final class TextField implements AutoCloseable {
 
         // The edit path, all of it ordered: typed text, edit commands, and pointer caret placement are the three
         // ways this document changes from input, and all three must sequence against each other.
-        gui.onCharUi(node, this::onCodePoint);
-        gui.onKeyUi(node, this::onKey);
-        gui.onDragUi(node, this::onPointer);
+        Seams.of(gui).onChar(node, this::onCodePoint);
+        Seams.of(gui).onKey(node, e -> {
+            onKey(e);
+            keys.accept(e);   // a node has one key handler, so a widget built on the field hears its keys here
+        });
+        Seams.of(gui).onDrag(node, this::onPointer);
         // Undo is claimed, not heard as a key: the window's history holds Ctrl+Z as a claim, and a claim outranks
         // delivery, so a field that only listened for the key would have its own Ctrl+Z taken by the window's.
         // FOCUSED outranks it in turn, and routes to whichever history this field records into.
-        gui.claim(node, Shortcut.of(Key.Z, Modifier.CONTROL), ClaimScope.FOCUSED, this::undo);
-        gui.claim(node, Shortcut.of(Key.Z, Modifier.CONTROL, Modifier.SHIFT), ClaimScope.FOCUSED, this::redo);
-        gui.claim(node, Shortcut.of(Key.Y, Modifier.CONTROL), ClaimScope.FOCUSED, this::redo);
+        Seams.of(gui).claim(node, Shortcut.of(Key.Z, Modifier.CONTROL), ClaimScope.FOCUSED, this::undo);
+        Seams.of(gui).claim(node, Shortcut.of(Key.Z, Modifier.CONTROL, Modifier.SHIFT), ClaimScope.FOCUSED, this::redo);
+        Seams.of(gui).claim(node, Shortcut.of(Key.Y, Modifier.CONTROL), ClaimScope.FOCUSED, this::redo);
 
         // Clipboard actions on the right button, and a presenter to show them: a field with no menu is a field
         // that answers the keyboard and not the mouse, which is not a decision an application should have to make.
         ContextMenu.presentOn(gui);
-        gui.onContextMenu(node, this::defaultMenu);
+        Seams.of(gui).onContextMenu(node, this::defaultMenu);
 
         // Links are armed by a held modifier, and a held modifier is a condition rather than an event, so this
         // watches the state rather than the key edges. It is also why this is the only place the field asks
         // about the keyboard outside its own focus: a document shows its links whether or not it is the focused
         // field, exactly as every editor and browser does — you hold Ctrl and look.
-        this.onLink = target -> gui.navigate(Address.parse(target.target()));
-        this.modifierSub = gui.modifiers().onCommit(held -> armLinks(held.value()));
+
+        this.modifierSub = Seams.of(gui).modifiers().onCommit(held -> armLinks(held.value()));
 
         this.focusSub = gui.bus().subscribe(gui.focusEvents(), this::onFocus);
         // A press that focused the field grows it on release (see onFocus): the release is the state leaving PRESSED.
-        gui.onState(node, state -> {
+        Seams.of(gui).onState(node, state -> {
             if (state != InteractionState.PRESSED && growOnRelease) {
                 growOnRelease = false;
                 node.overhang(focused && overhang);
             }
         });
         this.blink = CaretBlink.register(gui, node, () -> focused);
+
+        this.name = new WidgetName(gui, "textfield", node);
+        this.commandsSub = gui.mailbox(COMMANDS, name.address(), this::command);
+    }
+
+    /**
+     * Call this field {@code name} in its tree ("path", "search"): its {@link #address()} is the tree's name and this,
+     * which {@link #COMMANDS} are routed by and its {@link #CHANGED} and {@link #SUBMITTED} carry. Until it is given
+     * one it is {@code textfield-<node id>}. On the GUI thread, where the field was built.
+     *
+     * @throws IllegalStateException when another field of this tree already has the name
+     */
+    public TextField name(String name) {
+        java.util.Objects.requireNonNull(name, "name");
+        if (!name.equals(this.name.name())) {
+            Subscription next = gui.mailbox(COMMANDS, gui.address(name), this::command);
+            commandsSub.close();
+            commandsSub = next;
+            this.name.name(name);
+        }
+        return this;
+    }
+
+    /** Where this field is on the bus: {@code "<tree>.<name>"}, which its messages carry and its commands name. */
+    public String address() {
+        return name.address();
+    }
+
+    /** A command from {@link #COMMANDS} for this field, on the GUI thread. */
+    private void command(Command c) {
+        c.applyTo(this);
+    }
+
+    /**
+     * {@link #replace(String)} if the document is still at {@code basedOn} (or {@code basedOn} is {@link #ANY});
+     * otherwise drop it and say again what the field says now, so whoever computed it computes from that. On the
+     * GUI thread, where nothing else edits the document between the check and the edit.
+     */
+    private void replaceIfCurrent(String text, long basedOn) {
+        Versioned<Document> now = document.current();
+        if (basedOn != ANY && now.version() != basedOn) {
+            announce(now.value(), now.version());
+            return;
+        }
+        replace(text);
+    }
+
+    /** Tell the bus what the field says, at which version. */
+    private void announce(Document d, long version) {
+        gui.bus().publish(CHANGED, new Changed(address(), d.text(), version));
     }
 
     /** The node to place in a layout (style/size it further through this handle). */
@@ -238,11 +444,10 @@ public final class TextField implements AutoCloseable {
     }
 
     /**
-     * The document as a versioned bus {@code State} — subscribe with {@code field.document().onCommit(...)} to
-     * observe every change with the version and the diff that produced it, or read {@code .value()} for a
-     * coherent snapshot from any thread without a lock.
+     * The document as a versioned bus {@code State}: the widget library's, since its listeners run on whoever commits,
+     * in the frame (vexelray-framework's threading.md, T7.2). A view hears {@link #CHANGED} and {@link #CARET}.
      */
-    public State<Document> document() {
+    State<Document> document() {
         return document;
     }
 
@@ -368,9 +573,23 @@ public final class TextField implements AutoCloseable {
         return this;
     }
 
-    /** React to content edits (typing, deletion, paste, programmatic set). Runs on the handler executor. */
-    public TextField onChange(Consumer<String> handler) {
-        this.onChange = handler == null ? s -> { } : handler;
+    /**
+     * The widget library's hook on the text changing, for a widget built from a field (a find bar, a number field):
+     * run on the GUI thread as the change is made, and as well as {@link #CHANGED} rather than instead.
+     * Package-private, because an application hears a field by its messages.
+     */
+    TextField onChange(Consumer<String> handler) {
+        this.onChange = handler == null ? NONE : handler;
+        return this;
+    }
+
+    /**
+     * Frame the field in a well, the default, or {@link Framing#FLUSH flush} with what is around it: for a field that
+     * is the whole of a card, whose card is already its edge. Either way the field takes the same room.
+     */
+    public TextField frame(Framing framing) {
+        Framing f = framing == null ? Framing.WELL : framing;
+        node.background(f.fill()).border(Length.rem(0.1f), f.edge());
         return this;
     }
 
@@ -397,19 +616,19 @@ public final class TextField implements AutoCloseable {
         return readOnly;
     }
 
-    /**
-     * Add to the field's context menu. The clipboard actions come first, then this — sources accumulate, so an
-     * application contributes what only it knows (Look up, Insert snippet) without restating Copy/Cut/Paste.
-     * Open the group with {@code menu.separator()}; a rule that would land at either end is dropped.
-     */
-    public TextField onContextMenu(Consumer<MenuSink> source) {
-        this.contextMenu = source == null ? menu -> { } : source;
+    /** The widget library's hook on Enter in a single-line field, as {@link #onChange} is on a change. */
+    TextField onSubmit(Consumer<String> handler) {
+        this.onSubmit = handler == null ? NONE : handler;
         return this;
     }
 
-    /** React to Enter being pressed in the field. Runs on the handler executor. Never fires on a multiline field. */
-    public TextField onSubmit(Consumer<String> handler) {
-        this.onSubmit = handler == null ? s -> { } : handler;
+    /**
+     * The widget library's hook on every key the field hears, after the field has done what it does with it: for a
+     * widget built on a field that adds keys of its own (a number field's arrows). A node has one key handler, and
+     * this field's is the field's.
+     */
+    TextField keys(Consumer<KeyEvent> handler) {
+        this.keys = handler == null ? e -> { } : handler;
         return this;
     }
 
@@ -427,7 +646,7 @@ public final class TextField implements AutoCloseable {
         node.multiline(multiline);
         if (multiline) {
             // Seeded from the selection: a user who selected a word and asked to find has said which word.
-            gui.claim(node, FindBar.FIND, ClaimScope.FOCUSED, this::openFind);
+            Seams.of(gui).claim(node, FindBar.FIND, ClaimScope.FOCUSED, this::openFind);
         } else {
             gui.releaseClaim(node, FindBar.FIND);
             FindBar bar = find;
@@ -441,7 +660,7 @@ public final class TextField implements AutoCloseable {
         // Ordered, because indenting edits the same document typing does.
         Shortcut tab = Shortcut.of(Key.TAB);
         if (multiline) {
-            gui.claimUi(node, tab, ClaimScope.FOCUSED, this::insertSoftTab);
+            Seams.of(gui).claim(node, tab, ClaimScope.FOCUSED, this::insertSoftTab);
         } else {
             gui.releaseClaim(node, tab);
         }
@@ -486,7 +705,7 @@ public final class TextField implements AutoCloseable {
     /**
      * Give a multi-line field the scrollbars its text can need, and take them away from one that is not: a vertical
      * bar docked inside its right edge, and a horizontal one along its bottom when it does not wrap. Each is a real
-     * {@link Scrollbar} bound to the text node's own scroll ({@link Gui#scrollAxes}), floating, so {@link #node()}
+     * {@link Scrollbar} bound to the text node's own scroll ({@code Seams.scrollAxes}), floating, so {@link #node()}
      * stays the text node, and docked, so the text stops short of it. They take no room until the text overflows
      * (collapsing): a field still growing over its neighbours (overhang) has nothing to scroll, and one stopped at
      * the room's edge has (docs/plans/scrolling.md §7.3). A single-line field never has a bar.
@@ -495,7 +714,7 @@ public final class TextField implements AutoCloseable {
         boolean wantY = multiline;
         boolean wantX = multiline && !wrap;
         if ((wantY || wantX) && axes == null) {
-            axes = gui.scrollAxes(node);
+            axes = Seams.of(gui).scrollAxes(node);
         }
         vbar = bar(vbar, wantY, true);
         hbar = bar(hbar, wantX, false);
@@ -547,6 +766,7 @@ public final class TextField implements AutoCloseable {
     /** Release this field's subscriptions, claims and blink registration. Call when removing it from the tree. */
     @Override
     public void close() {
+        commandsSub.close();
         focusSub.close();
         modifierSub.close();
         blink.close();
@@ -647,23 +867,6 @@ public final class TextField implements AutoCloseable {
         return null;
     }
 
-    /**
-     * What following a link does. The default navigates: the target is read as an
-     * {@link Address} and {@code Gui.navigate} takes the user there, so a link to
-     * {@code "prefs/theme.accent"} opens the preferences window, selects the tab the swatch is on, scrolls to it
-     * and focuses it — the whole of part one, reached from a word in a document.
-     *
-     * <p>Replace it for targets that are not places in this application: a URL to hand to the OS, a file to open,
-     * an identifier in the application's own model. Nothing here interprets a target beyond handing it on, which
-     * is what keeps a document unable to make the framework do anything by containing the right string.
-     *
-     * <p>Runs on the handler executor, like every other application callback here.
-     */
-    public TextField onLinkActivate(Consumer<Link> handler) {
-        this.onLink = handler == null ? link -> { } : handler;
-        return this;
-    }
-
     /** The modifier state changed: arm or disarm the links, and redraw them if that changed anything. */
     private void armLinks(java.util.Set<Modifier> held) {
         boolean armed = held.contains(Modifier.CONTROL) || held.contains(Modifier.SUPER);
@@ -683,10 +886,17 @@ public final class TextField implements AutoCloseable {
         gui.cursor(node, linksArmed && !links.isEmpty() ? CursorShape.POINTER : null);
     }
 
-    /** Follow {@code link}, on the handler executor. */
+    /**
+     * Follow {@code link}: the target is read as an {@link Address} and {@code Gui.navigate} takes the user there, so
+     * a link to {@code "prefs/theme.accent"} opens the preferences window, selects the tab the swatch is on, scrolls to
+     * it and focuses it. And it is published on {@link #LINK_FOLLOWED}, which is where an application acts on a target
+     * that is not a place in it: a URL to hand to the OS, a file to open, an identifier in its own model. Nothing here
+     * interprets a target beyond handing it on, which is what keeps a document unable to make the framework do
+     * anything by containing the right string.
+     */
     private void activate(Link link) {
-        Consumer<Link> handler = onLink;
-        gui.handlers().execute(() -> handler.accept(link));
+        gui.navigate(Address.parse(link.target()));
+        gui.bus().publish(LINK_FOLLOWED, new LinkFollowed(address(), link.target()));
     }
 
     /** The underline the armed links are drawn with — one span each, derived fresh on every mirror. */
@@ -800,7 +1010,8 @@ public final class TextField implements AutoCloseable {
                     barrier();
                 } else {
                     String current = d.text();
-                    gui.handlers().execute(() -> onSubmit.accept(current));
+                    onSubmit.accept(current);
+                    gui.bus().publish(SUBMITTED, new Submitted(address(), current));
                 }
             }
             // Escape lets go of a selection. Anything that owns Escape for itself — a find bar, a dialog — claims
@@ -1258,8 +1469,10 @@ public final class TextField implements AutoCloseable {
      * action greyed when it cannot apply — Copy and Cut without a selection, Paste with an empty clipboard. A
      * read-only field offers Copy alone, because the other two are exactly the channel it closed.
      *
-     * <p>Runs on a worker thread at the moment of the click, which is what lets it read the selection and the
+     * <p>Runs on the GUI thread at the moment of the click, which is what lets it read the selection and the
      * clipboard rather than guess: the menu is a statement about the field as it is right now.
+     * It is the widget library's, so it may (T7.5). An application adds to it by declaring the node's menu,
+     * {@code gui.menu(field.node(), menu)}, whose lines follow these behind a rule and each send a message.
      */
     private void defaultMenu(MenuSink menu) {
         boolean hasSelection = !document.value().selectedText().isEmpty();
@@ -1269,7 +1482,6 @@ public final class TextField implements AutoCloseable {
             menu.item(dev.vexelray.gui.icons.Icon.CUT, "Cut", hasSelection, this::cut)
                     .item(dev.vexelray.gui.icons.Icon.PASTE, "Paste", clip != null && !clip.isEmpty(), this::paste);
         }
-        contextMenu.accept(menu);
     }
 
     // --- clipboard (I/O kept off the commit) ---
@@ -1482,13 +1694,37 @@ public final class TextField implements AutoCloseable {
      *
      * <p>The mirror is one atomic value going onto three node props — the node model still carries them
      * separately, but they are written from a single immutable snapshot, so they can no longer describe different
-     * versions of the document. The notification goes to the handler executor: it has no ordering requirement, and
-     * putting it there is what keeps a slow application callback from running on the frame loop.
+     * versions of the document. The notification is a message: whatever the application does about it runs where its
+     * logic runs, never in the frame.
      */
     private void published() {
         Document d = mirror();   // the document the node was just given, so the notification carries that one
-        Consumer<String> handler = onChange;
-        gui.handlers().execute(() -> handler.accept(d.text()));
+        // The version read after the mirror can be newer than d when another writer committed in between, which
+        // only makes a Replace computed from this text stale sooner: it is never older than the text it is sent with.
+        announce(d, document.version());
+        onChange.accept(d.text());
+        if (d.caret() != lastCaret) {
+            lastCaret = d.caret();
+            gui.bus().publish(CARET, caret(address(), d));
+        }
+    }
+
+    /** Where the caret was last announced, so a commit that moved nothing of it announces nothing. */
+    private volatile int lastCaret = -1;
+
+    /** {@code d}'s caret, as line and column counted from 1. */
+    static Caret caret(String field, Document d) {
+        String text = d.text();
+        int at = Math.min(d.caret(), text.length());
+        int line = 1;
+        int lineStart = 0;
+        for (int i = 0; i < at; i++) {
+            if (text.charAt(i) == '\n') {
+                line++;
+                lineStart = i + 1;
+            }
+        }
+        return new Caret(field, at, line, at - lineStart + 1);
     }
 
     /**

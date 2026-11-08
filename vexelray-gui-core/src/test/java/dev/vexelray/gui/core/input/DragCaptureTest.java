@@ -32,7 +32,7 @@ class DragCaptureTest {
     @Test
     void dragTracksOffNodeUntilRelease() {
         Atchung bus = Atchung.create();
-        InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS, Runnable::run);
+        InputDispatcher dispatcher = new InputDispatcher(bus, "test", CLICKS);
 
         RetainedNode root = node(0, 0, 0, 300, 100);
         RetainedNode track = node(7, 10, 0, 100, 20); // x in [10,110)
@@ -42,10 +42,10 @@ class DragCaptureTest {
         List<String> log = new ArrayList<>();
         dispatcher.onDrag(7, e -> log.add(e.phase() + ":" + Math.round(e.fractionX() * 100)));
 
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, 60, 10, 0)); // START @ 50%
-        bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(200, 10, 140, 0, 0));            // off right -> 100%
-        bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(10, 10, -190, 0, 0));            // left edge -> 0%
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, 10, 10, 0)); // END
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonPressed(MouseButton.LEFT, 60, 10, 0)); // START @ 50%
+        bus.publish(InputTopics.input("test"), new InputEvent.PointerMoved(200, 10, 140, 0, 0));            // off right -> 100%
+        bus.publish(InputTopics.input("test"), new InputEvent.PointerMoved(10, 10, -190, 0, 0));            // left edge -> 0%
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonReleased(MouseButton.LEFT, 10, 10, 0)); // END
         dispatcher.dispatch(root);
 
         assertEquals(List.of("START:50", "MOVE:100", "MOVE:0", "END:0"), log,

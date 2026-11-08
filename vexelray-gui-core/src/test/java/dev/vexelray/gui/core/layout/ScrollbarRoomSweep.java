@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core.layout;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
@@ -97,7 +98,7 @@ class ScrollbarRoomSweep {
         Map<String, int[]> summary = new LinkedHashMap<>();
         Map<String, String> example = new LinkedHashMap<>();
         try (PrintWriter csv = new PrintWriter(Files.newBufferedWriter(out.resolve("sweep.csv")));
-             Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+             Gui gui = new Gui(Atchung.create())) {
             csv.println("orient,sCross,sPad,sBorder,sMargin,declared,child,textRem,zoom,pGap,pPad,pClip,sibling,"
                     + "bar,spill,lossPx,lossFrac,cascade,slackPx,marginObscures,marginClipped,obscured");
             for (Case c : cases) {
@@ -178,7 +179,7 @@ class ScrollbarRoomSweep {
             parent.children(before, scroller);
         }
         gui.root().children(parent);
-        RetainedNode root = gui.frame(800f, 600f, ScrollbarRoomSweep::text);
+        RetainedNode root = Seams.of(gui).frame(800f, 600f, ScrollbarRoomSweep::text);
         RetainedNode s = find(root, scroller.id());
         RetainedNode p = find(root, parent.id());
 

@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.InteractionState;
@@ -39,6 +40,8 @@ public final class Tooltip implements AutoCloseable {
     private volatile long delayMillis = 500L;
     private volatile boolean attachedToRoot;
     private volatile boolean shown;
+    /** What each target attached by text says, by node id: the latest text it was attached with. */
+    private final java.util.Map<Long, String> texts = new java.util.concurrent.ConcurrentHashMap<>();
 
     /** The source of the causes the delay's firings begin. */
     private static final sibarum.probe.Cause.Source TIMER =
@@ -75,13 +78,22 @@ public final class Tooltip implements AutoCloseable {
      * Show {@code text} for {@code target}: after the pointer rests on it for the delay, the bubble appears just
      * below the target's box (clamped on-screen by the float layout), and hides on leave or press. Registration
      * is an added state observer, so the target's own hover styling keeps working.
+     *
+     * <p><b>Attach again to change what it says</b>: the target keeps its one observer and the bubble shows the latest
+     * text, so a button that says why it is unavailable <em>now</em> is told so when that changes, as a label is.
+     * Null or blank says nothing. The text is data rather than a function asked at hover, which would be the caller's
+     * code run in the frame (vexelray-framework's threading.md, T7.2).
      */
     public Tooltip attach(Node target, String text) {
-        return attach(target, () -> text);
+        boolean first = texts.put(target.id(), text == null ? "" : text) == null;
+        if (first) {
+            attach(target, () -> texts.get(target.id()));
+        }
+        return this;
     }
 
     /**
-     * The same, for a target whose help is a fact about the moment rather than about the control — a swatch that
+     * The widget library's form, for a target whose help is a fact about the moment rather than about the control — a swatch that
      * says which colour it currently holds, a button that says why it is unavailable <em>now</em>. The supplier is
      * asked once per hover, at the moment the bubble would show, exactly as a context menu's source is asked once
      * per click and for the same reason: only the caller knows what is true, and it is true at hover time or not
@@ -93,12 +105,12 @@ public final class Tooltip implements AutoCloseable {
      * <p>Attach <b>once</b> per target: each call adds a state observer, so re-attaching to say something new is
      * a leak. This overload exists so that there is never a reason to.
      */
-    public Tooltip attach(Node target, java.util.function.Supplier<String> text) {
+    Tooltip attach(Node target, java.util.function.Supplier<String> text) {
         // Only a *fresh* entry arms the bubble: HOVER reached from NORMAL. HOVER reached from PRESSED is the
         // release half of a click — the user just acted on the control, and a tooltip popping up over the result
         // would be help arriving after the decision. It stays away until the pointer leaves and comes back.
         var last = new java.util.concurrent.atomic.AtomicReference<>(InteractionState.NORMAL);
-        gui.onState(target, state -> {
+        Seams.of(gui).onState(target, state -> {
             InteractionState previous = last.getAndSet(state);
             if (state == InteractionState.HOVER && previous == InteractionState.NORMAL) {
                 arm(() -> showFor(target, text));
@@ -186,7 +198,7 @@ public final class Tooltip implements AutoCloseable {
             attachedToRoot = true;
             gui.root().append(bubble);
         }
-        float dpi = Math.max(0.0001f, gui.dpi().value());
+        float dpi = Math.max(0.0001f, Seams.of(gui).dpi().value());
         bubble.text(text);
         bubble.floatAt(Length.dp(rect.x() / dpi), Length.dp((rect.y() + rect.h() + GAP_PX) / dpi));
         bubble.visible(true);

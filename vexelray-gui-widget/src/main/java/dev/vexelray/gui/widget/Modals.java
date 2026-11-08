@@ -1,5 +1,7 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
+import sibarum.atchung.Sender;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.WindowControls;
@@ -57,7 +59,7 @@ import java.util.function.Consumer;
  * closes. Nothing is dropped and nothing is stacked.
  *
  * <p><b>No class per question.</b> A dialog is a {@link Modal} value — title, message, buttons with actions —
- * so asking costs an expression, not a type. Actions run on the dialog's own handler executor after its window
+ * so asking costs an expression, not a type. Actions run after its window
  * has been asked to close, so an action may put up the next dialog immediately.
  *
  * <p>The dialog needs input to be clickable, which means the application must have supplied
@@ -146,11 +148,11 @@ public final class Modals implements AutoCloseable {
         // Registered once, not per dialog: a global claim has no node to release it with, so a dialog that
         // claimed Escape on the way up would leave that claim behind on the way down. These read the dialog that
         // is up when the key arrives, which is the same thing and stays one registration.
-        gui.shortcut(Key.ESCAPE, () -> {
+        Seams.of(gui).shortcut(Key.ESCAPE, () -> {
             Live current = live.get();
             dismiss(current == null ? null : current.modal().cancelButton());
         });
-        gui.shortcut(Key.ENTER, () -> {
+        Seams.of(gui).shortcut(Key.ENTER, () -> {
             Live current = live.get();
             dismiss(current == null ? null : current.modal().defaultButton());
         });
@@ -206,25 +208,24 @@ public final class Modals implements AutoCloseable {
 
     /** A message with one "OK" button — the "your export finished" dialog. */
     public static void info(String title, String message) {
-        show(Modal.of(title, message).severity(Modal.Severity.INFO).defaultButton("OK", () -> { }));
+        show(Modal.of(title, message).severity(Modal.Severity.INFO).defaultButton("OK"));
     }
 
     /** Something went wrong, with one "OK" button — the "could not save the file" dialog. */
     public static void error(String title, String message) {
-        show(Modal.of(title, message).severity(Modal.Severity.ERROR).defaultButton("OK", () -> { }));
+        show(Modal.of(title, message).severity(Modal.Severity.ERROR).defaultButton("OK"));
     }
 
     /**
-     * A yes/no question. {@code onConfirm} runs if the user takes the affirmative button, {@code onCancel} if
-     * they take Cancel, press Escape, or close the dialog — so "the user did not answer" is answered too, which
-     * is the case an application that only handles the yes leaves hanging.
+     * A yes/no question answered by message: {@code yes} is sent through {@code to} if the user takes the affirmative
+     * button, {@code no} if they take Cancel, press Escape, or close the dialog, so "the user did not answer" is
+     * answered too, which is the case an application that only handles the yes leaves hanging.
      */
-    public static void confirm(String title, String message, String confirmLabel,
-                               Runnable onConfirm, Runnable onCancel) {
+    public static <T> void confirm(String title, String message, String confirmLabel, Sender<T> to, T yes, T no) {
         show(Modal.of(title, message)
                 .severity(Modal.Severity.QUESTION)
-                .defaultButton(confirmLabel, onConfirm)
-                .cancelButton("Cancel", onCancel));
+                .defaultButton(confirmLabel, to, yes)
+                .cancelButton("Cancel", to, no));
     }
 
     /** Show {@code modal} on this instance, or queue it. Callable from any thread. */
@@ -330,13 +331,12 @@ public final class Modals implements AutoCloseable {
     }
 
     /**
-     * Run a chosen button's action, off the GUI thread like every other application callback here — and after
-     * the dialog's close has been asked for, so an action that puts up the next dialog does not race its own
-     * window's teardown.
+     * Send a chosen button's message, after the dialog's close has been asked for, so whoever puts up the next dialog
+     * on hearing it does not race this window's teardown.
      */
     private void run(Modal.Button chosen) {
         if (chosen != null) {
-            gui.async(chosen.action());
+            chosen.press();
         }
     }
 
@@ -355,11 +355,11 @@ public final class Modals implements AutoCloseable {
                 .textSize(Length.rem(0.95f)).textColor(label)
                 .align(TextLayout.HAlign.CENTER, TextLayout.VAlign.MIDDLE)
                 .lit(Finish.LIT).elevation(gui.theme().elevation(Relief.CONTROL));
-        gui.onState(b, state -> {
+        Seams.of(gui).onState(b, state -> {
             b.background(fill.at(state));
             b.elevation(gui.theme().elevation(Relief.CONTROL, state));
         });
-        gui.onClick(b, () -> dismiss(spec));
+        Seams.of(gui).onClick(b, () -> dismiss(spec));
         return b;
     }
 

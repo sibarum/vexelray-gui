@@ -1,5 +1,7 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.Gui;
+import dev.vexelray.gui.core.Timing;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.draw.Picture;
 
@@ -54,18 +56,24 @@ public final class Cues {
     /** The cue currently on each node, by node id. Only holds an entry while something is playing. */
     private final Map<Long, Play> playing = new ConcurrentHashMap<>();
 
+    /** The tree whose clock runs the cues, or null for a {@link #none()}. */
+    private final Gui gui;
+
     /**
-     * Cues timed by {@code ramp} — one duration and one curve for every cue played through this.
+     * Cues in {@code gui}'s tree, timed by {@code timing} — one duration and one curve for every cue played through
+     * this, on the tree's clock.
      *
      * <p>Give it a linear ramp unless the cues you play are all arriving somewhere. Most are not: a sweep
      * travels through and a flash rises and falls, and easing either one spends most of the duration with
      * nothing visibly happening.
      */
-    public Cues(Ramp ramp) {
-        this.ramp = Objects.requireNonNull(ramp, "ramp");
+    public Cues(Gui gui, Timing timing) {
+        this.gui = Objects.requireNonNull(gui, "gui");
+        this.ramp = Ramp.of(gui, Objects.requireNonNull(timing, "timing"));
     }
 
     private Cues() {
+        this.gui = null;
         this.ramp = null;
     }
 
@@ -89,7 +97,11 @@ public final class Cues {
      * often an error, which wants longer than an acknowledgement because it is asking to be read rather than
      * noticed. A {@link #none()} plays nothing whatever ramp is handed to it.
      */
-    public Cues play(Node node, Cue cue, Ramp with) {
+    public Cues play(Node node, Cue cue, Timing timing) {
+        return play(node, cue, gui == null ? null : Ramp.of(gui, timing));
+    }
+
+    private Cues play(Node node, Cue cue, Ramp with) {
         Objects.requireNonNull(node, "node");
         Objects.requireNonNull(cue, "cue");
         if (ramp == null || with == null) {

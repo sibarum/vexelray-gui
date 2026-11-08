@@ -281,4 +281,25 @@ class KronoGuiTest {
             assertEquals(sibarum.kronometer.Moment.FOREVER, derived.horizon());
         }
     }
+
+    /** Every curve a widget's timing can name is one this clock knows: a missing one would ease by nothing. */
+    @Test
+    @DisplayName("every Timing curve maps to an Ease")
+    void everyCurveHasAnEase() {
+        for (dev.vexelray.gui.core.Timing.Curve curve : dev.vexelray.gui.core.Timing.Curve.values()) {
+            assertTrue(KronoGui.ease(curve) != null, curve + " has no ease");
+        }
+    }
+
+    /** Attaching is what gives the tree a clock, and closing takes it away again, so a widget's timing lands at once. */
+    @Test
+    @DisplayName("attaching installs the tree's clock and closing removes it")
+    void attachingInstallsTheClock() {
+        Gui gui = new Gui(Atchung.create());
+        KronoGui krono = KronoGui.attach(gui, Kron.driven());
+        assertTrue(dev.vexelray.gui.core.spi.Seams.of(gui).clock() != null, "a widget's timing now runs on krono");
+        krono.close();
+        assertEquals(null, dev.vexelray.gui.core.spi.Seams.of(gui).clock());
+        gui.close();
+    }
 }

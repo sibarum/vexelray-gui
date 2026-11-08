@@ -1,5 +1,6 @@
 package dev.vexelray.gui.scroll;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.InputTopics;
@@ -23,7 +24,7 @@ final class Headless implements AutoCloseable {
     static final float H = 300f;
 
     final Atchung bus = Atchung.create();
-    final Gui gui = new Gui(bus, Runnable::run);
+    final Gui gui = new Gui(bus);
     private RetainedNode root;
 
     private static float noText(RetainedNode n, Axis axis, float px) {
@@ -31,7 +32,7 @@ final class Headless implements AutoCloseable {
     }
 
     Headless frame() {
-        root = gui.frame(W, H, Headless::noText);
+        root = Seams.of(gui).frame(W, H, Headless::noText);
         return this;
     }
 
@@ -41,23 +42,23 @@ final class Headless implements AutoCloseable {
     }
 
     Headless press(float x, float y) {
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, (int) x, (int) y, 0));
+        bus.publish(gui.input(), new InputEvent.ButtonPressed(MouseButton.LEFT, (int) x, (int) y, 0));
         return settle();
     }
 
     Headless move(float x, float y) {
-        bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved((int) x, (int) y, 0, 0, 0));
+        bus.publish(gui.input(), new InputEvent.PointerMoved((int) x, (int) y, 0, 0, 0));
         return settle();
     }
 
     Headless release(float x, float y) {
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, (int) x, (int) y, 0));
+        bus.publish(gui.input(), new InputEvent.ButtonReleased(MouseButton.LEFT, (int) x, (int) y, 0));
         return settle();
     }
 
     /** {@code notches} of the wheel with the pointer at (x, y); negative is down, as the OS reports it. */
     Headless wheel(double notches, float x, float y) {
-        bus.publish(InputTopics.INPUT, new InputEvent.Scrolled(0, notches, (int) x, (int) y, 0));
+        bus.publish(gui.input(), new InputEvent.Scrolled(0, notches, (int) x, (int) y, 0));
         return settle();
     }
 

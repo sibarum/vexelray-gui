@@ -1,5 +1,6 @@
 package dev.vexelray.gui.demo.chapter;
 
+import dev.vexelray.gui.core.Timing;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.drop.DragRelease;
@@ -12,10 +13,10 @@ import dev.vexelray.gui.demo.Chapter;
 import dev.vexelray.gui.demo.Console;
 import dev.vexelray.gui.demo.Stage;
 import dev.vexelray.gui.demo.Ui;
+import dev.vexelray.gui.widget.Nodes;
 import dev.vexelray.gui.widget.Board;
 import dev.vexelray.gui.widget.Deck;
 import dev.vexelray.gui.widget.Placement;
-import dev.vexelray.gui.widget.Reorder;
 import dev.vexelray.text.TextLayout;
 import sibarum.kronometer.Dur;
 import sibarum.kronometer.anim.Ease;
@@ -71,12 +72,9 @@ public final class CardsChapter implements Chapter {
     public Node build(Stage stage) {
         Gui gui = stage.gui();
         this.console = stage.console();
-        // One history for every transfer in a window, so Ctrl+Z undoes the last thing moved whichever widget it
-        // was moved in. Another chapter may have set it already; a drop and a paste land in the same stack.
-        if (gui.dropHistory() == null) {
-            gui.dropHistory(new History());
-        }
-        this.history = gui.dropHistory();
+        // The lanes are ours, so moving a card is our edit, recorded in our history like adding one: the board says
+        // where a card was put and changes nothing itself.
+        this.history = new History();
 
         lanes.put(LANES[0], new ArrayList<>(List.of(
                 task("Sketch the onboarding flow", "design", false),
@@ -91,12 +89,13 @@ public final class CardsChapter implements Chapter {
 
         // What a card looks like, and how long anything takes to move. The board owns the card's elevation —
         // that is how a card shows it has been picked up — and everything else about it is ours.
-        Board<Task> board = new Board<Task>(gui, task -> card(gui, task))
-                .motion((progress, done) -> stage.krono().ramp(Dur.ms(200), Ease.OUT_CUBIC, progress, done));
+        Board<Task> board = new Board<Task>(gui, CardsChapter::card)
+                .motion(Timing.millis(200, Timing.Curve.OUT_CUBIC));
 
         Node row = gui.row().width(Length.FILL).height(Length.FILL).gap(Ui.GAP);
         for (String lane : LANES) {
-            Deck<Task> deck = board.column().reorderable(placeIn(lane));
+            Deck<Task> deck = board.column().name(lane).reorderable();
+            gui.mailbox(Deck.PLACED, deck.address(), placed -> place(lane, placed));
             // Room either side for a card's shadow: the deck scrolls, and a scroller clips to its own box.
             deck.node().width(Length.FILL).height(Length.grow(1)).padding(Length.ZERO, Length.dp(8));
             decks.put(lane, deck);
@@ -151,7 +150,7 @@ public final class CardsChapter implements Chapter {
     }
 
     /** A card: a lit panel with the task's title, and a tag under it. */
-    private static Node card(Gui gui, Task task) {
+    private static Node card(Nodes gui, Task task) {
         Role tagInk = task.urgent() ? Role.ACCENT : Role.DIM;
         Node tag = gui.text(task.tag()).width(Length.AUTO).height(Length.rem(1.25f))
                 .padding(Length.ZERO, Length.rem(0.5f)).corner(Length.rem(0.625f))
@@ -203,22 +202,24 @@ public final class CardsChapter implements Chapter {
         return next;
     }
 
-    /** What putting a task at a placement in {@code lane} means — or null, where it would change nothing. */
-    private Reorder<Task> placeIn(String lane) {
-        return (moved, where, effect) -> {
-            Map<String, List<Task>> next = copy();
-            for (List<Task> tasks : next.values()) {
-                tasks.remove(moved);
-            }
-            List<Task> into = next.get(lane);
-            int at = into.size();
-            if (where.reference() != null) {
-                int ref = into.indexOf(where.reference());
-                at = where.relation() == Placement.Relation.BEFORE ? ref : ref + 1;
-            }
-            into.add(at, moved);
-            return next.equals(lanes) ? null : set(next);
-        };
+    /** A card put at a placement in {@code lane}: moved there, as one step of the history, unless it changes nothing. */
+    private void place(String lane, Deck.Placed placed) {
+        Task moved = (Task) placed.item();
+        Placement<?> where = placed.where();
+        Map<String, List<Task>> next = copy();
+        for (List<Task> tasks : next.values()) {
+            tasks.remove(moved);
+        }
+        List<Task> into = next.get(lane);
+        int at = into.size();
+        if (where.reference() != null) {
+            int ref = into.indexOf(where.reference());
+            at = where.relation() == Placement.Relation.BEFORE ? ref : ref + 1;
+        }
+        into.add(at, moved);
+        if (!next.equals(lanes)) {
+            history.perform(set(next));
+        }
     }
 
     private void addCard() {

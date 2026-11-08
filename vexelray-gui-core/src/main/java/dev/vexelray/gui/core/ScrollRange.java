@@ -5,7 +5,7 @@ package dev.vexelray.gui.core;
  * starts. In px, with {@code 0 <= offset <= content - view} and {@code content >= view}.
  *
  * <p>This is all a scrollbar shows, which is the point of it being a type: a bar reads a range and asks its
- * {@link ScrollSource} to move, and neither knows whether what moves is a {@link Scroller}'s child, a 3D view's
+ * {@link dev.vexelray.gui.core.spi.ScrollSource} to move, and neither knows whether what moves is a {@link Scroller}'s child, a 3D view's
  * camera, or a terminal's scrollback (docs/plans/scrolling.md §3).
  *
  * <p>Virtualisation reads it too: {@link #view} is how much a list can show, the question every list asks to know

@@ -156,8 +156,7 @@ class SlowFramesTest {
     @Test
     void worthOfferingUntilBothChoicesAreOn(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) {
         SuiteGraphics none = SuiteGraphics.at(dir.resolve("none.properties"));
-        try (dev.vexelray.gui.core.Gui gui = new dev.vexelray.gui.core.Gui(sibarum.atchung.Atchung.create(),
-                Runnable::run)) {
+        try (dev.vexelray.gui.core.Gui gui = new dev.vexelray.gui.core.Gui(sibarum.atchung.Atchung.create())) {
             assertTrue(SlowFrames.worthOffering(none, gui), "nothing on: offered");
             gui.flatShading(true);
             assertTrue(SlowFrames.worthOffering(none, gui), "flat only: motion still has load to take off");

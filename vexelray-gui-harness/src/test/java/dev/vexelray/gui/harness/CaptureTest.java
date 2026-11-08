@@ -1,5 +1,6 @@
 package dev.vexelray.gui.harness;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
@@ -53,7 +54,7 @@ class CaptureTest {
             // differ by the frame and by display density, and it is the former that the picture must match or
             // the geometry in a snapshot will not line up with the pixels beside it.
             BufferedImage img = ImageIO.read(out);
-            var viewport = gui.viewport().value();
+            var viewport = Seams.of(gui).viewport().value();
             assertEquals(viewport.width(), img.getWidth(),
                     "captured at the extent the tree was laid out for, not some fixed size");
             assertEquals(viewport.height(), img.getHeight());

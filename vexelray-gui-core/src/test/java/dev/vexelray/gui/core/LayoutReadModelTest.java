@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.NodeLayout;
 import org.junit.jupiter.api.Test;
@@ -29,7 +30,7 @@ class LayoutReadModelTest {
 
             assertFalse(a.layout().present(), "no computed layout before the first frame");
 
-            gui.frame(200f, 100f, LayoutReadModelTest::noText);
+            Seams.of(gui).frame(200f, 100f, LayoutReadModelTest::noText);
 
             NodeLayout la = a.layout();
             assertTrue(la.present(), "laid out after a frame");
@@ -49,11 +50,11 @@ class LayoutReadModelTest {
     void snapshotIsPublishedAsBusState() {
         try (Gui gui = new Gui(Atchung.create())) {
             long[] seen = {0};
-            gui.layout().onCommit(s -> seen[0] = s.version());
+            Seams.of(gui).layout().onCommit(s -> seen[0] = s.version());
 
             Node a = gui.box().width(Length.rem(1)).height(Length.rem(1));
             gui.root().children(a);
-            gui.frame(50f, 50f, LayoutReadModelTest::noText);
+            Seams.of(gui).frame(50f, 50f, LayoutReadModelTest::noText);
 
             assertTrue(seen[0] >= 1, "observers receive the computed-layout snapshot via the State");
         }
@@ -68,12 +69,12 @@ class LayoutReadModelTest {
         try (Gui gui = new Gui(Atchung.create())) {
             Node a = gui.box().width(Length.percent(50)).height(Length.rem(1));
             gui.root().children(a);
-            gui.frame(200f, 100f, LayoutReadModelTest::noText);
+            Seams.of(gui).frame(200f, 100f, LayoutReadModelTest::noText);
 
             long v1 = gui.layoutSnapshot().version();
             assertEquals(100f, a.layout().rect().w(), 0.5f, "50% of a 200px viewport");
 
-            gui.frame(400f, 100f, LayoutReadModelTest::noText);   // resize only — no mutation, tree is clean
+            Seams.of(gui).frame(400f, 100f, LayoutReadModelTest::noText);   // resize only — no mutation, tree is clean
 
             assertTrue(gui.layoutSnapshot().version() > v1, "a resize republishes the read-model");
             assertEquals(200f, a.layout().rect().w(), 0.5f, "and the republished box reflects the new viewport");
@@ -85,10 +86,10 @@ class LayoutReadModelTest {
     void staticFramePublishesNothing() {
         try (Gui gui = new Gui(Atchung.create())) {
             gui.root().children(gui.box().width(Length.rem(1)).height(Length.rem(1)));
-            gui.frame(200f, 100f, LayoutReadModelTest::noText);
+            Seams.of(gui).frame(200f, 100f, LayoutReadModelTest::noText);
 
             long v = gui.layoutSnapshot().version();
-            gui.frame(200f, 100f, LayoutReadModelTest::noText);
+            Seams.of(gui).frame(200f, 100f, LayoutReadModelTest::noText);
 
             assertEquals(v, gui.layoutSnapshot().version(), "nothing changed, so nothing is republished");
         }

@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.drop.Drop;
 import dev.vexelray.gui.core.edit.Change;
@@ -74,7 +75,7 @@ class BoardTest {
         }
     }
 
-    /** The application: named columns of strings, changed only through undoable changes. */
+    /** The application: named columns of strings, changed only through undoable changes in its own history. */
     private static final class Model {
         Map<String, List<String>> columns = new LinkedHashMap<>();
         final Map<String, Deck<String>> decks = new LinkedHashMap<>();
@@ -95,8 +96,14 @@ class BoardTest {
             };
         }
 
-        Reorder<String> into(String column) {
-            return (moved, where, effect) -> {
+        /** Hear where cards are put in {@code deck}, and move them there as one step of {@code history}. */
+        void hear(HeadlessGui h, Deck<String> deck, String column, History history) {
+            h.bus.subscribe(Deck.PLACED, placed -> {
+                if (!placed.at().equals(deck.address())) {
+                    return;
+                }
+                String moved = (String) placed.item();
+                Placement<?> where = placed.where();
                 asked.add(moved + " " + where.relation() + " " + where.reference() + " in " + column);
                 Map<String, List<String>> next = new LinkedHashMap<>();
                 for (Map.Entry<String, List<String>> e : columns.entrySet()) {
@@ -111,8 +118,10 @@ class BoardTest {
                     at = where.relation() == Placement.Relation.BEFORE ? ref : ref + 1;
                 }
                 to.add(at, moved);
-                return next.equals(columns) ? null : set(next);
-            };
+                if (!next.equals(columns)) {
+                    history.perform(set(next));
+                }
+            });
         }
     }
 
@@ -122,14 +131,14 @@ class BoardTest {
 
     /** One column, or several side by side, each holding the listed cards. */
     private Board<String> board(HeadlessGui h, Map<String, List<String>> columns) {
-        h.gui.dropHistory(history);
         Board<String> board = new Board<String>(h.gui,
-                s -> h.gui.box().width(Length.FILL).height(Length.dp(40)))
-                .spacing(Length.dp(5)).motion(hand);
+                (n, s) -> n.box().width(Length.FILL).height(Length.dp(40)))
+                .spacing(Length.dp(5)).motion(TestClocks.drive(h, hand));
         Node row = h.gui.row().width(Length.FILL).height(Length.FILL);
         model.columns = new LinkedHashMap<>(columns);
         for (String name : columns.keySet()) {
-            Deck<String> deck = board.column().reorderable(model.into(name));
+            Deck<String> deck = board.column().name(name).reorderable();
+            model.hear(h, deck, name, history);
             deck.node().width(Length.grow(1));
             model.decks.put(name, deck);
             row.append(deck.node());
@@ -153,18 +162,18 @@ class BoardTest {
     private void press(HeadlessGui h, float x, float y) {
         lastX = (int) x;
         lastY = (int) y;
-        h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, (int) x, (int) y, 0));
+        h.bus.publish(h.gui.input(), new InputEvent.ButtonPressed(MouseButton.LEFT, (int) x, (int) y, 0));
     }
 
     private void move(HeadlessGui h, float x, float y) {
-        h.bus.publish(InputTopics.INPUT,
+        h.bus.publish(h.gui.input(),
                 new InputEvent.PointerMoved((int) x, (int) y, (int) x - lastX, (int) y - lastY, 0));
         lastX = (int) x;
         lastY = (int) y;
     }
 
     private void release(HeadlessGui h, float x, float y) {
-        h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, (int) x, (int) y, 0));
+        h.bus.publish(h.gui.input(), new InputEvent.ButtonReleased(MouseButton.LEFT, (int) x, (int) y, 0));
     }
 
     /**
@@ -173,8 +182,8 @@ class BoardTest {
      */
     private void putDown(HeadlessGui h) {
         h.frame();
-        h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, lastX, lastY, 0));
-        h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, lastX, lastY, 0));
+        h.bus.publish(h.gui.input(), new InputEvent.ButtonPressed(MouseButton.LEFT, lastX, lastY, 0));
+        h.bus.publish(h.gui.input(), new InputEvent.ButtonReleased(MouseButton.LEFT, lastX, lastY, 0));
     }
 
     /** Finish every motion and let the frames that follow lay the result out. */
@@ -321,7 +330,7 @@ class BoardTest {
             hand.finish();
             h.frame();
 
-            h.bus.publish(InputTopics.INPUT, new InputEvent.KeyPressed(Key.ESCAPE, 0));
+            h.bus.publish(h.gui.input(), new InputEvent.KeyPressed(Key.ESCAPE, 0));
             h.frame();
             rest(h);
 
@@ -460,24 +469,24 @@ class BoardTest {
     @DisplayName("a card taken by something that is not a deck fades where it was let go, and its slot closes")
     void takenElsewhere() {
         try (HeadlessGui h = new HeadlessGui()) {
-            h.gui.dropHistory(history);
             Board<String> board = new Board<String>(h.gui,
-                    s -> h.gui.box().width(Length.FILL).height(Length.dp(40)))
-                    .spacing(Length.dp(5)).motion(hand);
+                    (n, s) -> n.box().width(Length.FILL).height(Length.dp(40)))
+                    .spacing(Length.dp(5)).motion(TestClocks.drive(h, hand));
             model.columns = new LinkedHashMap<>(Map.of("todo", List.of("a", "b")));
-            Deck<String> deck = board.column().reorderable(model.into("todo"));
+            Deck<String> deck = board.column().name("todo").reorderable();
+            model.hear(h, deck, "todo", history);
             deck.node().width(Length.rem(20));
             model.decks.put("todo", deck);
             List<String> binned = new ArrayList<>();
             Node bin = h.gui.box().width(Length.grow(1)).height(Length.FILL);
-            h.gui.onDrop(bin, (payload, x, y) -> payload.as(board.itemType())
+            Seams.of(h.gui).onDrop(bin, (payload, x, y) -> payload.as(board.itemType())
                     .map(item -> Drop.move(bin.layout().rect(), () -> {
                         binned.add(item);
                         Map<String, List<String>> next = new LinkedHashMap<>(model.columns);
                         List<String> l = new ArrayList<>(next.get("todo"));
                         l.remove(item);
                         next.put("todo", l);
-                        return model.set(next).apply();
+                        history.perform(model.set(next));
                     }))
                     .orElse(Drop.NONE));
             h.gui.root().children(h.gui.row().width(Length.FILL).height(Length.FILL).children(deck.node(), bin));
@@ -686,7 +695,7 @@ class BoardTest {
             float scrolled = deck.view().layout().scrollY();
             assertTrue(scrolled > 0f, "the wheel works while carrying");
 
-            h.bus.publish(InputTopics.INPUT, new InputEvent.KeyPressed(Key.ESCAPE, 0));
+            h.bus.publish(h.gui.input(), new InputEvent.KeyPressed(Key.ESCAPE, 0));
             h.frame();
             hand.at(0.5);
             h.frame();

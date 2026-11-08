@@ -4,7 +4,9 @@ import dev.vexelray.gui.core.WindowControls;
 import dev.vexelray.gui.core.WindowInstrument;
 import dev.vexelray.gui.core.WindowRecorder;
 import dev.vexelray.gui.core.WindowRecording;
+import dev.vexelray.gui.core.input.MenuItem;
 import dev.vexelray.gui.core.input.MenuSink;
+import dev.vexelray.gui.icons.Icon;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -16,7 +18,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 
 /**
- * The camera as a menu, where a module records video: <i>Take screenshot…</i>, and <i>Record video to file…</i>,
+ * The camera as a menu, where a module records video: <i>Take screenshot…</i>, and <i>Record video…</i>,
  * which asks where the file goes in a native save dialog parented to the window whose camera was clicked, or, while a
  * recording runs, <i>Stop recording</i>. The recording itself is {@link WindowRecording}'s, which this only starts and
  * stops; the automation socket's {@code record} verb starts and stops the same one, told rather than asked where.
@@ -44,12 +46,13 @@ public final class SaveRecording {
 
     static void menu(WindowRecorder recorder, WindowControls controls, MenuSink sink) {
         boolean recording = WindowRecording.recording();
+        sink.heading("Capture");
         if (recording) {
-            sink.item("Stop recording", SaveRecording::stop);
+            sink.item(MenuItem.of(Icon.STOP, "Stop recording", SaveRecording::stop).current(true));
         }
-        sink.item("Take screenshot…", () -> SaveScreenshot.ask(controls));
+        sink.item(Icon.SCREENSHOT, "Take screenshot…", () -> SaveScreenshot.ask(controls));
         if (!recording) {
-            sink.item("Record video to file…", !WindowRecording.starting(),
+            sink.item(Icon.RECORD, "Record video…", !WindowRecording.starting(),
                     () -> start(recorder, controls, (guiThread, parent, folder, name) -> FileDialog.saveAsync(
                             guiThread, parent, List.of(FileDialog.Filter.of(recorder.fileType(), recorder.extension())),
                             folder, name)));

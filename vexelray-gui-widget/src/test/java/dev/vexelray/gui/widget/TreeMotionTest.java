@@ -29,7 +29,7 @@ class TreeMotionTest {
             "test", List.of("AppTest.java"),
             "docs", List.of());
 
-    private static final class MapSource implements TreeView.Source<String> {
+    private static final class MapSource implements Listing<String> {
         @Override
         public List<String> roots() {
             return List.of("src", "docs");
@@ -80,7 +80,7 @@ class TreeMotionTest {
     void openingSlidesTheRowsBelowRatherThanJumpingThem() {
         try (HeadlessGui h = new HeadlessGui()) {
             Steps ramp = new Steps();
-            TreeView<String> tree = new TreeView<>(h.gui, new MapSource()).motion(ramp);
+            TreeView<String> tree = Listing.tree(h, new MapSource()).motion(TestClocks.drive(h, ramp));
             h.gui.root().children(tree.node());
             h.frame();
             float shut = docsY(h, tree);
@@ -119,7 +119,7 @@ class TreeMotionTest {
     void aSettledSubtreeIsSizedByItsContentAgain() {
         try (HeadlessGui h = new HeadlessGui()) {
             Steps ramp = new Steps();
-            TreeView<String> tree = new TreeView<>(h.gui, new MapSource()).motion(ramp);
+            TreeView<String> tree = Listing.tree(h, new MapSource()).motion(TestClocks.drive(h, ramp));
             h.gui.root().children(tree.node());
             h.frame();
 
@@ -149,7 +149,7 @@ class TreeMotionTest {
     void collapsingReturnsTheRowsBelowToWhereTheyStarted() {
         try (HeadlessGui h = new HeadlessGui()) {
             Steps ramp = new Steps();
-            TreeView<String> tree = new TreeView<>(h.gui, new MapSource()).motion(ramp);
+            TreeView<String> tree = Listing.tree(h, new MapSource()).motion(TestClocks.drive(h, ramp));
             h.gui.root().children(tree.node());
             h.frame();
             float shut = docsY(h, tree);
@@ -186,7 +186,7 @@ class TreeMotionTest {
     void togglingMidAnimationReversesFromWhereItGotTo() {
         try (HeadlessGui h = new HeadlessGui()) {
             Steps ramp = new Steps();
-            TreeView<String> tree = new TreeView<>(h.gui, new MapSource()).motion(ramp);
+            TreeView<String> tree = Listing.tree(h, new MapSource()).motion(TestClocks.drive(h, ramp));
             h.gui.root().children(tree.node());
             h.frame();
             float shut = docsY(h, tree);
@@ -219,7 +219,7 @@ class TreeMotionTest {
     @Test
     void withNoMotionInstalledExpandingIsStillInstant() {
         try (HeadlessGui h = new HeadlessGui()) {
-            TreeView<String> tree = new TreeView<>(h.gui, new MapSource());
+            TreeView<String> tree = Listing.tree(h, new MapSource());
             h.gui.root().children(tree.node());
             h.frame();
             float shut = docsY(h, tree);

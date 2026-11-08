@@ -149,7 +149,7 @@ its pixel extent at all. All three are genuine *rendering / OS-loop* concerns no
 |---|-----|--------|-------|
 | E2 | **Idle-blocking loop** — `waitEvents(timeoutMillis)` + `postWake()` | `vexelray-os` | Block at 0% CPU until an OS message or timeout (`MsgWaitForMultipleObjectsEx`); `postWake()` posts a message-only wake. Lets the GUI wake exactly on input, a mutation, or an animation deadline. |
 | E3 | **Canvas clip rectangle** | `vexelray-canvas` | A clip-rect stack (`pushClip/popClip`); the current clip is stamped per-vertex into the fat vertex and the fragment zeroes coverage outside it. Stays single-draw — no scissor state. Needed for scroll/overflow. |
-| E5 | **Cursor shapes** | `vexelray-os` | `NativeWindow.Cursor` offers only `ARROW` and `TEXT`. The pointer rule (§8.3) also asks for a hand over anything clickable and open/closed hands over anything grabbable; those fall back to the arrow until the enum and its OS handles exist. Cosmetic, unlike E2-E4, and the rule that decides them is framework-side and already tested. |
+| E5 | **Cursor shapes** | `vexelray-os` | `NativeWindow.Cursor` offers `ARROW`, `TEXT`, `POINTER` (the pointing hand over anything clickable; nothing yet on macOS, whose `setCursor` is still the no-op default) and the two resize arrows. The pointer rule (§8.3) also asks for open/closed hands over anything grabbable; those fall back to the arrow, since Windows has no system cursor for them. Cosmetic, unlike E2-E4, and the rule that decides them is framework-side and already tested. |
 | E4 | **Framebuffer extent + content scale** | `vexelray-os` | `framebufferWidth()/Height()` (pixels) alongside `width()/height()` (points), and `contentScale()`. Both must track live monitor changes — dragging a window between a dense and a conventional display changes the factor while running. |
 
 **E4 is the one that breaks a framework rather than merely limiting it.** `NativeWindow` currently exposes a
@@ -515,7 +515,7 @@ frame, so turning the corners is exact — rounded corners, antialiasing, glyphs
 does not follow, as with translate. **Clips do not turn**: a clip is an upright box on the screen, so the clips
 around a turned node cut it where it lands, a clip inside it stays upright, and nothing under a turn is culled.
 Turn content that does not clip within itself — a picture, a shape, a label. A turned image is the consumer
-(Pix's free rotation).
+(Rasterware's free rotation).
 
 **`OVERLAY`, as built — and why it had to exist.** A `Picture` painted over the node, its border, its
 text and its whole subtree, in the box's own pixel frame and clipped to it. The same value `PICTURE`
@@ -907,10 +907,10 @@ exists as siblings, so those steps are *integration*, not construction.
     only three places to put one are the delivery, a reorder buffer at the consumer, or the transition
     itself. The first two are the same queue — and building it inside the dispatcher would re-implement the
     bus's own delivery machinery (§0) while spending exactly the asynchrony §5 exists to provide. So the
-    transition moves to the stage that is *already* a total order. `onCharUi`/`onKeyUi`/`onDragUi`/`claimUi`
-    are that seam; a stage must be bounded model work, never application logic. Everything without an
-    ordering requirement — `onChange`, app handlers, anything slow — stays on the worker executor, where it
-    still cannot stall rendering. Landed after a text field applied a 64-character burst scrambled: each
+    transition moves to the stage that is *already* a total order. In 0.1 `onCharUi`/`onKeyUi`/`onDragUi`/
+    `claimUi` were that seam, beside worker-pool twins for everything without an ordering requirement. In 0.2
+    every handler runs in the dispatch, so the twins merged into `onChar`/`onKey`/`onDrag`/`claim`: one
+    registration per node and kind, bounded model work, never application logic, which hears a widget by message. Landed after a text field applied a 64-character burst scrambled: each
     edit was individually coherent, so the result read as a dropped keystroke rather than a race
     (`HandlerOrderingTest`, the module's only test that runs handlers on a real pool).
 11. **Widget state is a `State<T>`, not a private buffer behind a lock (§4).** A widget holding its own

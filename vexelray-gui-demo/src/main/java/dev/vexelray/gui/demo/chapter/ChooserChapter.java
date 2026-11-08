@@ -1,5 +1,7 @@
 package dev.vexelray.gui.demo.chapter;
 
+import dev.vexelray.gui.core.Timing;
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
@@ -10,7 +12,6 @@ import dev.vexelray.gui.demo.Console;
 import dev.vexelray.gui.demo.Stage;
 import dev.vexelray.gui.demo.Ui;
 import dev.vexelray.gui.widget.Lattice;
-import dev.vexelray.gui.widget.Ramp;
 import dev.vexelray.gui.widget.Segment;
 import dev.vexelray.gui.widget.Select;
 import dev.vexelray.gui.widget.SelectionModel;
@@ -83,14 +84,15 @@ public final class ChooserChapter implements Chapter {
         for (Shading s : Shading.values()) {
             shading.option(word(s.name()), s);
         }
-        shading.onChange(s -> console.good("shading: " + word(s.name())));
+        gui.mailbox(Segment.CHANGED, shading.address(),
+                s -> console.good("shading: " + word(((Shading) s.value()).name())));
 
         // ---- one of a handful, behind a chevron -------------------------------------------------------------
 
         Select<String> size = new Select<>(gui, s -> s);
         size.options(SIZES).placeholder("Pick a size").show("Medium");
-        size.selection().onChange(chosen -> console.note("size preview: " + oneOf(chosen)));
-        size.onCommit(chosen -> console.good("size chosen: " + oneOf(chosen)));
+        gui.mailbox(Select.CHANGED, size.address(), c -> console.note("size preview: " + oneOf(c.chosen())));
+        gui.mailbox(Select.COMMITTED, size.address(), c -> console.good("size chosen: " + oneOf(c.chosen())));
 
         // ---- one of ten thousand, at the same cost ----------------------------------------------------------
 
@@ -100,14 +102,14 @@ public final class ChooserChapter implements Chapter {
         }
         Select<String> deep = new Select<>(gui, s -> s);
         deep.options(many).placeholder("Pick a swatch").show("swatch-06000");
-        deep.onCommit(chosen -> console.good("swatch chosen: " + oneOf(chosen)));
+        gui.mailbox(Select.COMMITTED, deep.address(), c -> console.good("swatch chosen: " + oneOf(c.chosen())));
 
         Node counter = gui.text("").width(Length.FILL).height(Length.rem(1.5f))
                 .textSize(Length.rem(0.9375f)).textColor(Role.DIM)
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
         // Read on every published layout, written only when it changed — a text write invalidates the layout that
         // produced it, so a counter that wrote unconditionally would relayout for ever.
-        gui.layout().onCommit(snapshot -> {
+        Seams.of(gui).layout().onCommit(snapshot -> {
             String now = many.size() + " options  ·  " + deep.list().realizedRows() + " rows exist  ·  "
                     + (deep.isOpen() ? "open" : "shut");
             if (!now.equals(lastCount)) {
@@ -125,9 +127,9 @@ public final class ChooserChapter implements Chapter {
         tags.summary(chosen -> chosen.size() <= 2
                 ? String.join(", ", chosen)
                 : chosen.size() + " tags");
-        tags.selection().onChange(chosen -> console.note("tags now: " + (chosen.isEmpty() ? "none"
-                : String.join(", ", chosen))));
-        tags.onCommit(chosen -> console.good("tags committed: " + chosen.size()));
+        gui.mailbox(Select.CHANGED, tags.address(), c -> console.note("tags now: " + (c.chosen().isEmpty() ? "none"
+                : String.join(", ", c.chosen().stream().map(String::valueOf).toList()))));
+        gui.mailbox(Select.COMMITTED, tags.address(), c -> console.good("tags committed: " + c.chosen().size()));
 
         Node choosers = gui.row().width(Length.FILL).height(Length.AUTO).gap(Ui.GAP)
                 .alignItems(AlignItems.START).scroll(false, false)
@@ -170,7 +172,7 @@ public final class ChooserChapter implements Chapter {
 
         // ---- a number on a lattice ---------------------------------------------------------------------------
 
-        Ramp settle = (progress, done) -> stage.krono().ramp(Dur.ms(140), Ease.OUT_CUBIC, progress, done);
+        Timing settle = Timing.millis(140, Timing.Curve.OUT_CUBIC);
         // Four zooms an octave apart: the lattice is four points across the whole card, and the track says so.
         Node zoom = lattice(gui, console, "Zoom", Lattice.intervals(3), settle, 2f / 3f,
                 f -> Math.round(25 * Math.pow(2, f * 3)) + "%");
@@ -205,14 +207,15 @@ public final class ChooserChapter implements Chapter {
     }
 
     /** A captioned slider on {@code lattice}, with its value read out beside it in the caller's words. */
-    private static Node lattice(Gui gui, Console console, String caption, Lattice lattice, Ramp settle,
+    private static Node lattice(Gui gui, Console console, String caption, Lattice lattice, Timing settle,
                                 float initial, DoubleFunction<String> text) {
         Node readout = gui.text("").width(Length.rem(4)).height(Length.rem(1.5f))
                 .textSize(Length.rem(0.875f))
                 .align(TextLayout.HAlign.RIGHT, TextLayout.VAlign.MIDDLE);
         Slider slider = new Slider(gui, initial).lattice(lattice).transition(settle);
         readout.text(text.apply(slider.value()));
-        slider.onChange(f -> {
+        gui.mailbox(Slider.CHANGED, slider.address(), c -> {
+            float f = (float) c.value();
             readout.text(text.apply(f));
             console.note(caption.toLowerCase(java.util.Locale.ROOT) + ": " + text.apply(f));
         });
@@ -251,8 +254,8 @@ public final class ChooserChapter implements Chapter {
     }
 
     /** The one thing in a set, or a word for none — the read-out a single-choice console line wants. */
-    private static String oneOf(Set<String> chosen) {
-        return chosen.isEmpty() ? "nothing" : chosen.iterator().next();
+    private static String oneOf(Set<?> chosen) {
+        return chosen.isEmpty() ? "nothing" : String.valueOf(chosen.iterator().next());
     }
 
     /** {@code EXTRA_LARGE} as {@code Extra large}: an enum constant is not a label until somebody says so. */

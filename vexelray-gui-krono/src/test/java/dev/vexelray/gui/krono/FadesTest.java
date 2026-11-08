@@ -1,6 +1,7 @@
 package dev.vexelray.gui.krono;
 
 import dev.vexelray.canvas.Color;
+import dev.vexelray.gui.core.Frame;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.style.PaintMotion.Channel;
 import org.junit.jupiter.api.DisplayName;
@@ -30,6 +31,17 @@ class FadesTest {
         return KronoGui.attach(new Gui(Atchung.create()), Kron.driven());
     }
 
+    /** Step the clock to {@code at} and draw a frame for it, as the tree would: the fades are asked there. */
+    private static void tick(KronoGui krono, Fades fades, Dur at) {
+        krono.tick(at);
+        fades.draw(new Frame(krono.nanos(), krono.nanos(), false));
+    }
+
+    /** Whether the fades, asked for the present moment, still want the next frame. */
+    private static boolean moving(KronoGui krono, Fades fades) {
+        return fades.draw(new Frame(krono.nanos(), krono.nanos(), false)) != Frame.NEVER;
+    }
+
     @Test
     @DisplayName("a colour change starts where it was and arrives exactly")
     void aFadeRunsFromTheOldColourToTheNew() {
@@ -38,16 +50,34 @@ class FadesTest {
             fades.repainted(7L, Channel.BACKGROUND, GREY, LIGHT);
 
             assertEquals(GREY, fades.drawn(7L, Channel.BACKGROUND, LIGHT), "nothing has elapsed: the old colour");
-            assertTrue(fades.moving());
+            assertTrue(moving(krono, fades));
 
-            krono.tick(ms(100));
+            tick(krono, fades, ms(100));
             Color half = fades.drawn(7L, Channel.BACKGROUND, LIGHT);
             assertTrue(half.r() > GREY.r() && half.r() < LIGHT.r(), "half way, between the two: " + half);
 
-            krono.tick(ms(200));
+            tick(krono, fades, ms(200));
             assertEquals(LIGHT, fades.drawn(7L, Channel.BACKGROUND, LIGHT), "at the end, the colour it was given");
-            krono.tick(ms(216));   // the ramp lets go a frame after its last value is on screen
-            assertFalse(fades.moving(), "and then it stops asking for frames");
+            tick(krono, fades, ms(216));   // past the end, it has let go
+            assertFalse(moving(krono, fades), "and then it stops asking for frames");
+        }
+    }
+
+    @Test
+    @DisplayName("an opacity, told as white at that alpha, fades its alpha linearly and stays white")
+    void anOpacityFadesAsAnAlpha() {
+        try (KronoGui krono = headless()) {
+            Fades fades = Fades.on(krono, OVER, Ease.LINEAR);
+            Color half = new Color(1f, 1f, 1f, 0.5f);
+            Color none = new Color(1f, 1f, 1f, 0f);
+            fades.repainted(7L, Channel.OPACITY, half, none);
+
+            tick(krono, fades, ms(100));
+            Color at = fades.drawn(7L, Channel.OPACITY, none);
+            assertEquals(0.25f, at.a(), 1e-3f, "half way, half the alpha");
+            assertEquals(1f, at.r(), 1e-3f, "and still white");
+            tick(krono, fades, ms(200));
+            assertEquals(0f, fades.drawn(7L, Channel.OPACITY, none).a(), "at the end, the opacity it was given");
         }
     }
 
@@ -69,7 +99,7 @@ class FadesTest {
         try (KronoGui krono = headless()) {
             Fades fades = Fades.on(krono, OVER, Ease.LINEAR);
             fades.repainted(7L, Channel.BACKGROUND, GREY, LIGHT);
-            krono.tick(ms(100));
+            tick(krono, fades, ms(100));
             Color midway = fades.drawn(7L, Channel.BACKGROUND, LIGHT);
 
             // The pointer left before the hover finished: back to grey, from where it got to, not from light.
@@ -98,7 +128,7 @@ class FadesTest {
         try (KronoGui krono = headless()) {
             Fades fades = Fades.on(krono, OVER, Ease.LINEAR);
             fades.repainted(7L, Channel.BACKGROUND, Color.TRANSPARENT, LIGHT);
-            krono.tick(ms(100));
+            tick(krono, fades, ms(100));
             Color half = fades.drawn(7L, Channel.BACKGROUND, LIGHT);
             assertEquals(LIGHT.r(), half.r(), 1e-3f, "the hue is the destination's all the way");
             assertEquals(0.5f, half.a(), 0.02f, "and only the alpha is on its way");
@@ -112,7 +142,7 @@ class FadesTest {
             Fades fades = Fades.on(krono, Dur.ZERO, Ease.LINEAR);
             fades.repainted(7L, Channel.BACKGROUND, GREY, LIGHT);
             assertEquals(LIGHT, fades.drawn(7L, Channel.BACKGROUND, LIGHT));
-            assertFalse(fades.moving());
+            assertFalse(moving(krono, fades));
         }
     }
 
@@ -127,7 +157,7 @@ class FadesTest {
             }
             assertEquals(LIGHT, fades.drawn(7L, Channel.BACKGROUND, LIGHT),
                     "the third write running is drawn where the ramp put it");
-            assertFalse(fades.moving());
+            assertFalse(moving(krono, fades));
         }
     }
 }

@@ -1,5 +1,7 @@
 package dev.vexelray.gui.demo.chapter;
 
+import dev.vexelray.gui.widget.spi.WidgetSeams;
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.app.AppWindow;
@@ -79,7 +81,7 @@ public final class WindowChapter implements Chapter {
                         WindowConfig.of("VexelRay popup", 460, 320).decorations(Decorations.CLIENT), popupGui));
             });
             popup.set(window);
-            gui.shortcut(Key.GRAVE_ACCENT, () -> {
+            Seams.of(gui).shortcut(Key.GRAVE_ACCENT, () -> {
                 window.toggle();
                 console.note("popup toggled by Ctrl+`");
             }, Modifier.CONTROL);
@@ -113,28 +115,31 @@ public final class WindowChapter implements Chapter {
                 Ui.controls(gui,
                         // A dialog is a value, from any thread, with no class behind it. While it is up, every
                         // other window of this application is disabled by the window manager and dimmed.
-                        Ui.action(gui, "Ask a question", () -> Modals.show(
+                        // The gallery's dialogs run code on an answer, so they are built through the host's door
+                        // (WidgetSeams); an application's send a message ({@code Modal.button(label, sender, message)}).
+                        Ui.action(gui, "Ask a question", () -> Modals.show(host(
                                 Modal.of("A real window",
                                                 "This dialog is an OS window of its own, owned by the main "
                                                         + "window and drawn with the same chrome. The "
                                                         + "application behind it is disabled and dimmed until "
                                                         + "you answer.\n\nAsk twice and the second question "
                                                         + "waits its turn.")
-                                        .defaultButton("Ask again", () -> Modals.info("Second question",
-                                                "Queued behind the first, and presented when it closed."))
-                                        .cancelButton("Close", () -> console.note("dialog closed")))),
+                                        , "Ask again", () -> Modals.info("Second question",
+                                                "Queued behind the first, and presented when it closed."),
+                                        "Close", () -> console.note("dialog closed")))),
                         Ui.button(gui, "Two at once", () -> {
                             Modals.info("First", "Raised first, answered first.");
                             Modals.info("Second", "Was queued while the first was up.");
                             console.note("two dialogs asked for at once; they queue");
                         }),
-                        Ui.button(gui, "Confirm", () -> Modals.confirm("Confirm something",
-                                "Nothing is going to happen either way.", "Do it",
-                                () -> console.good("confirmed"),
+                        Ui.button(gui, "Confirm", () -> Modals.show(host(Modal.of("Confirm something",
+                                        "Nothing is going to happen either way.").severity(Modal.Severity.QUESTION),
+                                "Do it", () -> console.good("confirmed"),
+                                "Cancel",
                                 // The cancel arm is not optional, and that is the point of the shape: taking
                                 // Cancel, pressing Escape and closing the dialog all land here, so "the user
                                 // did not answer" is answered too.
-                                () -> console.note("declined")))));
+                                () -> console.note("declined"))))));
 
         Node files = Ui.strip(gui,
                 Ui.heading(gui, "The OS file picker"),
@@ -201,5 +206,12 @@ public final class WindowChapter implements Chapter {
         // inset from the window edge is a title bar with a gap the window manager still treats as caption.
         Node body = p.column().width(Length.FILL).height(Length.FILL).padding(Length.dp(16)).children(card);
         p.root().background(Role.PAGE).children(bar.node(), body);
+    }
+
+    /** {@code modal} with a default and a cancel button that run code: the host's form, which the gallery is. */
+    private static Modal host(Modal modal, String yes, Runnable onYes, String no, Runnable onNo) {
+        WidgetSeams seams = WidgetSeams.get();
+        seams.defaultButton(modal, yes, onYes);
+        return seams.cancelButton(modal, no, onNo);
     }
 }

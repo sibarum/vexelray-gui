@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.model.RetainedNode;
@@ -57,12 +58,12 @@ class ScrollIntoViewTest {
         try (Gui gui = new Gui(Atchung.create())) {
             Node column = scroller(gui);
             List<Node> rows = rows(gui, column, 20);
-            gui.frame(400f, 300f, ScrollIntoViewTest::noText);
+            Seams.of(gui).frame(400f, 300f, ScrollIntoViewTest::noText);
             assertTrue(column.layout().overflowY(), "the content is taller than the box");
             assertEquals(0f, column.layout().scrollY(), 0.5f, "and it opens at the top");
 
             rows.get(6).scrollIntoView();   // rows 0-4 are in view; row 6 sits 40px past the bottom edge
-            gui.frame(400f, 300f, ScrollIntoViewTest::noText);
+            Seams.of(gui).frame(400f, 300f, ScrollIntoViewTest::noText);
 
             assertEquals(40f, column.layout().scrollY(), 0.5f, "it came up by the shortfall and no further");
             assertEquals(column.layout().rect().y() + VIEW, bottom(rows.get(6)), 0.5f,
@@ -78,10 +79,10 @@ class ScrollIntoViewTest {
         try (Gui gui = new Gui(Atchung.create())) {
             Node column = scroller(gui);
             List<Node> rows = rows(gui, column, 20);
-            gui.frame(400f, 300f, ScrollIntoViewTest::noText);
+            Seams.of(gui).frame(400f, 300f, ScrollIntoViewTest::noText);
 
             rows.get(1).scrollIntoView();
-            gui.frame(400f, 300f, ScrollIntoViewTest::noText);
+            Seams.of(gui).frame(400f, 300f, ScrollIntoViewTest::noText);
 
             assertEquals(0f, column.layout().scrollY(), 0.5f, "nothing moved");
         }
@@ -93,13 +94,13 @@ class ScrollIntoViewTest {
         try (Gui gui = new Gui(Atchung.create())) {
             Node column = scroller(gui);
             List<Node> rows = rows(gui, column, 20);
-            gui.frame(400f, 300f, ScrollIntoViewTest::noText);
+            Seams.of(gui).frame(400f, 300f, ScrollIntoViewTest::noText);
             rows.get(19).scrollIntoView();
-            gui.frame(400f, 300f, ScrollIntoViewTest::noText);
+            Seams.of(gui).frame(400f, 300f, ScrollIntoViewTest::noText);
             assertEquals(300f, column.layout().scrollY(), 0.5f, "at the end of the content");
 
             rows.get(2).scrollIntoView();
-            gui.frame(400f, 300f, ScrollIntoViewTest::noText);
+            Seams.of(gui).frame(400f, 300f, ScrollIntoViewTest::noText);
 
             assertEquals(40f, column.layout().scrollY(), 0.5f, "back by exactly what it takes to see row 2");
             assertEquals(column.layout().rect().y(), rows.get(2).layout().rect().y(), 0.5f,
@@ -118,10 +119,10 @@ class ScrollIntoViewTest {
             rows(gui, column, 5);
             Node tall = gui.box().width(Length.FILL).height(px(300));
             column.append(tall);
-            gui.frame(400f, 300f, ScrollIntoViewTest::noText);
+            Seams.of(gui).frame(400f, 300f, ScrollIntoViewTest::noText);
 
             tall.scrollIntoView();
-            gui.frame(400f, 300f, ScrollIntoViewTest::noText);
+            Seams.of(gui).frame(400f, 300f, ScrollIntoViewTest::noText);
 
             assertEquals(100f, column.layout().scrollY(), 0.5f, "stopped where the tall box's top reached the edge");
             assertEquals(column.layout().rect().y(), tall.layout().rect().y(), 0.5f, "which is where it is drawn");
@@ -143,11 +144,11 @@ class ScrollIntoViewTest {
             outer.children(firstPane, secondPane);
             rows(gui, firstPane, 10);
             List<Node> deep = rows(gui, secondPane, 10);
-            gui.frame(400f, 300f, ScrollIntoViewTest::noText);
+            Seams.of(gui).frame(400f, 300f, ScrollIntoViewTest::noText);
             assertTrue(outer.layout().overflowY() && secondPane.layout().overflowY(), "both scroll");
 
             deep.get(9).scrollIntoView();   // last row of the second pane: off both viewports
-            gui.frame(400f, 300f, ScrollIntoViewTest::noText);
+            Seams.of(gui).frame(400f, 300f, ScrollIntoViewTest::noText);
 
             assertEquals(100f, secondPane.layout().scrollY(), 0.5f, "the pane scrolled to its own end");
             assertEquals(100f, outer.layout().scrollY(), 0.5f, "and the outer one brought the pane into view");

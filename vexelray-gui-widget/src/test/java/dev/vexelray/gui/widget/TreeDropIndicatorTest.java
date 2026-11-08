@@ -1,6 +1,5 @@
 package dev.vexelray.gui.widget;
 
-import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.input.InputTopics;
 import dev.vexelray.gui.core.layout.Rect;
 import dev.vexelray.gui.draw.Picture;
@@ -27,7 +26,7 @@ class TreeDropIndicatorTest {
 
     private static final Map<String, List<String>> KIDS = Map.of("src", List.of("main"));
 
-    private static final class MapSource implements TreeView.Source<String> {
+    private static final class MapSource implements Listing<String> {
         @Override
         public List<String> roots() {
             return List.of("src", "notes.txt");
@@ -53,14 +52,13 @@ class TreeDropIndicatorTest {
     private final List<Rect> painted = new ArrayList<>();
 
     private TreeView<String> tree(HeadlessGui h) {
-        TreeView<String> tree = new TreeView<>(h.gui, new MapSource());
-        tree.reorderable((moved, where, effect) -> moved.equals(where.reference()) ? null : () -> null);
+        TreeView<String> tree = Listing.tree(h, new MapSource());
+        tree.reorderable(dev.vexelray.gui.core.drop.DropEffect.MOVE);
         tree.dropIndicator((where, effect) -> {
             painted.add(where);
             return Picture.of(new Picture.Fill(where.x(), where.y(), where.w(), where.h(), 0, 0,
                     h.gui.theme().color(dev.vexelray.gui.core.style.Role.ACCENT)));
         });
-        h.gui.dropHistory(new History());
         h.gui.root().children(tree.node());
         h.frame();
         return tree;
@@ -72,11 +70,11 @@ class TreeDropIndicatorTest {
     }
 
     private static void press(HeadlessGui h, float y) {
-        h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, 40, (int) y, 0));
+        h.bus.publish(h.gui.input(), new InputEvent.ButtonPressed(MouseButton.LEFT, 40, (int) y, 0));
     }
 
     private static void move(HeadlessGui h, float y) {
-        h.bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(40, (int) y, 0, 40, 0));
+        h.bus.publish(h.gui.input(), new InputEvent.PointerMoved(40, (int) y, 0, 40, 0));
     }
 
     @Test
@@ -163,7 +161,7 @@ class TreeDropIndicatorTest {
             assertFalse(painted.isEmpty());
 
             int before = painted.size();
-            h.bus.publish(InputTopics.INPUT, new InputEvent.KeyPressed(Key.ESCAPE, 0));
+            h.bus.publish(h.gui.input(), new InputEvent.KeyPressed(Key.ESCAPE, 0));
             h.frame();
             h.frame();
 

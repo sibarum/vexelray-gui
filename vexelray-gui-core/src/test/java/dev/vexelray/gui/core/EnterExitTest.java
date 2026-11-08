@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.layout.EnterMotion;
 import dev.vexelray.gui.core.layout.ExitMotion;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
@@ -68,7 +69,7 @@ class EnterExitTest {
     }
 
     private static RetainedNode frame(Gui gui) {
-        return gui.frame(400f, 300f, EnterExitTest::noText);
+        return Seams.of(gui).frame(400f, 300f, EnterExitTest::noText);
     }
 
     private static RetainedNode find(RetainedNode from, long id) {
@@ -89,7 +90,7 @@ class EnterExitTest {
     }
 
     private static Gui withScripted(Scripted s) {
-        Gui gui = new Gui(Atchung.create(), Runnable::run);
+        Gui gui = new Gui(Atchung.create());
         gui.enterMotion(s).exitMotion(s);
         return gui;
     }
@@ -236,7 +237,7 @@ class EnterExitTest {
 
     @Test
     void anArrivalWithNoEnterMotionWalksNothing() {
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             gui.exitMotion(new Scripted());   // an exit motion alone does not make an arrival owe a walk
             Node list = gui.column();
             gui.root().children(list.children(row(gui)));
@@ -271,7 +272,7 @@ class EnterExitTest {
     @Test
     void aReturningNodeIsPresentedEvenWithNoEnterMotion() {
         Scripted s = new Scripted();
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             gui.exitMotion(s);
             Node list = gui.column();
             Node a = row(gui);
@@ -293,7 +294,7 @@ class EnterExitTest {
 
     @Test
     void withNoSourcesARemovalIsImmediateAndEveryNodeIsFullyPresent() {
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Node list = gui.column();
             Node a = row(gui);
             gui.root().children(list);

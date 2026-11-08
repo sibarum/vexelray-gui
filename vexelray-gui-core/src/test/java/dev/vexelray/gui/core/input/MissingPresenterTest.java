@@ -30,7 +30,7 @@ class MissingPresenterTest {
     private static final Topic<ClickEvent> CLICKS = Topic.of("test.missing-presenter.clicks", ClickEvent.class);
 
     private final Atchung bus = Atchung.create();
-    private final InputDispatcher d = new InputDispatcher(bus, CLICKS, Runnable::run);
+    private final InputDispatcher d = new InputDispatcher(bus, "test", CLICKS);
     private final Map<Long, RetainedNode> index = new HashMap<>();
     private final RetainedNode root = node(0, 0, 0, 200, 200, null);
     private final RetainedNode panel = node(1, 0, 0, 100, 100, root);
@@ -60,8 +60,8 @@ class MissingPresenterTest {
     }
 
     private void rightClick(int x, int y) {
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.RIGHT, x, y, 0));
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.RIGHT, x, y, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonPressed(MouseButton.RIGHT, x, y, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonReleased(MouseButton.RIGHT, x, y, 0));
         d.dispatch(root);
     }
 

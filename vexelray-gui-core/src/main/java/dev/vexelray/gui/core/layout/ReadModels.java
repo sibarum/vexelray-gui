@@ -88,7 +88,6 @@ public final class ReadModels {
     }
 
     private final Meanings meanings;
-    private final java.util.concurrent.Executor handlers;
 
     private final State<LayoutSnapshot> layoutState;
     private final Committer<LayoutSnapshot, LayoutSnapshot> setLayout;
@@ -111,12 +110,9 @@ public final class ReadModels {
 
     /**
      * @param meanings what the semantic half needs beyond the tree; {@link Meanings#NONE} is enough for geometry
-     * @param handlers where an unordered resize observer is run — the worker pool, so a handler that computes
-     *                 does not sit on the frame
      */
-    public ReadModels(Meanings meanings, java.util.concurrent.Executor handlers) {
+    public ReadModels(Meanings meanings) {
         this.meanings = meanings == null ? Meanings.NONE : meanings;
-        this.handlers = handlers == null ? Runnable::run : handlers;
 
         State.Builder<LayoutSnapshot> lb = State.of(LayoutSnapshot.EMPTY);
         this.setLayout = lb.mutation("set", (current, next) -> next);
@@ -216,16 +212,16 @@ public final class ReadModels {
     // --- geometry observers -------------------------------------------------------------------------------
 
     /**
-     * Watch a node's box. {@code ordered} delivers on the GUI thread inside the layout pass that produced the
-     * change — for a handler that only mutates the tree; anything that computes goes on the worker pool.
+     * Watch a node's box, delivered on the GUI thread inside the publish after the layout that changed it, so the
+     * handler must be short.
      * A {@code null} handler forgets the watch.
      */
-    public void onResize(long id, Consumer<NodeLayout> handler, boolean ordered) {
+    public void onResize(long id, Consumer<NodeLayout> handler) {
         if (handler == null) {
             resizeWatches.remove(id);
             return;
         }
-        resizeWatches.put(id, new ResizeWatch(handler, ordered));
+        resizeWatches.put(id, new ResizeWatch(handler));
     }
 
     /**
@@ -240,6 +236,11 @@ public final class ReadModels {
             return;
         }
         scrollWatches.put(id, new ScrollWatch(handler));
+    }
+
+    /** True if {@code id}'s geometry is watched: one watch per node, which a second must not replace unasked. */
+    public boolean watchesResize(long id) {
+        return resizeWatches.containsKey(id);
     }
 
     /** Drop the watches on a node that has left the tree. */
@@ -304,15 +305,11 @@ public final class ReadModels {
             if (computed.rect().equals(watch.box) && computed.content().equals(watch.content)) {
                 continue;
             }
-            // Recorded before delivery, not after: an ordered handler may mutate, and a mutation that lands in
+            // Recorded before delivery, not after: a handler may mutate, and a mutation that lands in
             // this same frame must not be able to make the next pass look like a change we already announced.
             watch.box = computed.rect();
             watch.content = computed.content();
-            if (watch.ordered) {
-                watch.handler.accept(computed);
-            } else {
-                handlers.execute(() -> watch.handler.accept(computed));
-            }
+            watch.handler.accept(computed);
         }
     }
 
@@ -322,13 +319,11 @@ public final class ReadModels {
      */
     private static final class ResizeWatch {
         private final Consumer<NodeLayout> handler;
-        private final boolean ordered;
         private Rect box;
         private Rect content;
 
-        ResizeWatch(Consumer<NodeLayout> handler, boolean ordered) {
+        ResizeWatch(Consumer<NodeLayout> handler) {
             this.handler = handler;
-            this.ordered = ordered;
         }
     }
 

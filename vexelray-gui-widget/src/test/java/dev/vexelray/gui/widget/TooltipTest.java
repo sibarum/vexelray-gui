@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.layout.Length;
@@ -89,7 +90,7 @@ class TooltipTest {
             Node page = h.gui.column().width(Length.FILL).height(Length.FILL);
             Node button = h.gui.box().width(Length.vw(25)).height(Length.rem(6.25f));
             page.append(button);
-            h.gui.onClick(page, () -> pageClicked[0] = true);
+            Seams.of(h.gui).onClick(page, () -> pageClicked[0] = true);
             tip.delayMillis(0).attach(button, "hint");
             h.gui.root().children(page);
             h.frame();
@@ -118,7 +119,7 @@ class TooltipTest {
             var seen = new java.util.ArrayList<InteractionState>();
             Tooltip tip = new Tooltip(h.gui);
             Node button = h.gui.box().width(Length.vw(25)).height(Length.rem(6.25f));
-            h.gui.onState(button, seen::add);          // the widget's own restyle, registered first
+            Seams.of(h.gui).onState(button, seen::add);          // the widget's own restyle, registered first
             tip.delayMillis(0).attach(button, "hint"); // the tooltip's observer, added second
             h.gui.root().children(button);
             h.frame();
@@ -168,6 +169,23 @@ class TooltipTest {
             assertEquals(first.x(), second.x(), 0.01f, "same anchor, same place");
             assertEquals(first.y(), second.y(), 0.01f);
             assertTrue(tip.isOpen());
+            tip.close();
+        }
+    }
+
+    /** Attached again, a target says the new text, on the one observer it already had. */
+    @Test
+    void attachingAgainChangesWhatItSays() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Tooltip tip = new Tooltip(h.gui);
+            Node button = target(h, tip, "stage");
+            tip.attach(button, "nothing to stage");
+
+            h.hover(100f, 50f);
+            h.frame();
+
+            assertTrue(tip.isOpen(), "one observer still shows it");
+            assertEquals("nothing to stage", h.retained(tip.node()).textString(), "and it says the latest text");
             tip.close();
         }
     }

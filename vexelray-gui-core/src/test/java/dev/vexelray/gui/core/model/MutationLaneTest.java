@@ -3,6 +3,7 @@ package dev.vexelray.gui.core.model;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import sibarum.probe.Cause;
 import sibarum.probe.Lane;
 import sibarum.probe.LiveSink;
 import sibarum.probe.Probe;
@@ -102,6 +103,29 @@ class MutationLaneTest {
         r.apply(new Mutation.SetText(CHILD, "laid out"));
         assertFalse(r.layoutDirty(), "and an unchanged one on a clean frame owes nothing");
         assertFalse(r.takeDrawDirty());
+    }
+
+    @Test
+    void theEditsThatChangedTheDrawingNameTheirCausesOnceEachForTheDrawThatShowsThem() {
+        r.takeDrawnCauses();
+        Cause.Source click = Cause.source("lane.click", Cause.Kind.INPUT);
+        long first = click.next();
+        long second = click.next();
+        Cause.within(first, () -> {
+            r.apply(new Mutation.SetText(CHILD, "one"));
+            r.apply(new Mutation.SetProp(CHILD, PropKey.TRANSLATE_X, 4f));
+        });
+        Cause.within(second, () -> r.apply(new Mutation.SetText(CHILD, "one")));
+        assertEquals(" " + Cause.format(first), r.takeDrawnCauses(),
+                "each cause once, and an unchanged edit draws nothing");
+        assertEquals("", r.takeDrawnCauses(), "taken by the draw that shows them");
+        for (int i = 0; i < Reconciler.DRAWN_CAUSES + 3; i++) {
+            String text = "n" + i;
+            Cause.within(click.next(), () -> r.apply(new Mutation.SetText(CHILD, text)));
+        }
+        String many = r.takeDrawnCauses();
+        assertEquals(Reconciler.DRAWN_CAUSES + 1, many.trim().split(" ").length, many);
+        assertTrue(many.endsWith(" +3"), many);
     }
 
     @Test

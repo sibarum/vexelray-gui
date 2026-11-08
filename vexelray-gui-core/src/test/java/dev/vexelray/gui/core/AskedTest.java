@@ -1,0 +1,272 @@
+package dev.vexelray.gui.core;
+
+import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
+import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.model.RetainedNode;
+import dev.vexelray.gui.core.spi.Asked;
+import dev.vexelray.gui.core.spi.Clock;
+import dev.vexelray.gui.core.spi.Seams;
+import org.junit.jupiter.api.Test;
+import sibarum.atchung.Atchung;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+/**
+ * A part's asked half as the host runs it (docs/plans/frame-contract.md): asked once per frame for the tree clock's
+ * present time, its offsets drawn and inherited, and the loop parked until the earliest time it says it is due.
+ */
+class AskedTest {
+
+    /** A tree clock a test steps by hand; Timings land at once. */
+    private static final class Stepped implements Clock {
+        long nanos = 1_000L;
+
+        @Override
+        public void run(Timing timing, java.util.function.DoubleConsumer progress, Runnable done) {
+            progress.accept(1d);
+            done.run();
+        }
+
+        @Override
+        public long nanos() {
+            return nanos;
+        }
+
+        /** The machine's clock, on its own reading: a logical clock's zero is not the machine's. */
+        long mono = 9_000_000_000L;
+
+        @Override
+        public long monoNanos() {
+            return mono;
+        }
+    }
+
+    private static float noText(RetainedNode n, Axis axis, float px) {
+        return 0f;
+    }
+
+    private static RetainedNode frame(Gui gui) {
+        return Seams.of(gui).frame(400f, 300f, AskedTest::noText);
+    }
+
+    private static RetainedNode find(RetainedNode from, long id) {
+        if (from.id == id) {
+            return from;
+        }
+        for (RetainedNode c : from.children) {
+            RetainedNode hit = find(c, id);
+            if (hit != null) {
+                return hit;
+            }
+        }
+        return null;
+    }
+
+    private static Node row(Gui gui) {
+        return gui.box().width(Length.dp(40)).height(Length.dp(20));
+    }
+
+    @Test
+    void aPartIsAskedForThePresentTimeOnEveryFrame() {
+        Stepped clock = new Stepped();
+        List<Long> askedAt = new ArrayList<>();
+        try (Gui gui = new Gui(Atchung.create())) {
+            Seams.of(gui).clock(clock);
+            gui.root().children(row(gui));
+            Seams.of(gui).ask((frame, out) -> {
+                askedAt.add(frame.presentNanos());
+                return Frame.NEVER;
+            });
+            frame(gui);
+            clock.nanos = 5_000L;
+            frame(gui);
+            assertEquals(List.of(1_000L, 5_000L), askedAt);
+        }
+    }
+
+    /** A part lining up with another process's stamps reads the machine's clock, sampled in the same frame. */
+    @Test
+    void aFrameCarriesTheMachinesClockBesideTheTreesForStampsMadeElsewhere() {
+        Stepped clock = new Stepped();
+        List<Frame> frames = new ArrayList<>();
+        try (Gui gui = new Gui(Atchung.create())) {
+            Seams.of(gui).clock(clock);
+            gui.root().children(row(gui));
+            Seams.of(gui).ask((frame, out) -> {
+                frames.add(frame);
+                return Frame.NEVER;
+            });
+            frame(gui);
+            clock.nanos += 16_000_000L;
+            clock.mono += 16_000_000L;
+            frame(gui);
+            assertEquals(List.of(new Frame(1_000L, 9_000_000_000L, false),
+                    new Frame(16_001_000L, 9_016_000_000L, false)), frames);
+        }
+    }
+
+    @Test
+    void anOffsetMovesTheNodeAndItsSubtreeAndSurvivesALayout() {
+        Stepped clock = new Stepped();
+        try (Gui gui = new Gui(Atchung.create())) {
+            Seams.of(gui).clock(clock);
+            Node child = row(gui);
+            Node strip = gui.column().children(child);
+            gui.root().children(strip);
+            float restX = find(frame(gui), child.id()).x;
+            float[] dx = {0f};
+            Seams.of(gui).ask((frame, out) -> {
+                out.offset(strip, dx[0], 0f);
+                return Frame.NEVER;
+            });
+
+            dx[0] = -30f;
+            assertEquals(restX - 30f, find(frame(gui), child.id()).x, "carried by its parent's offset");
+            assertTrue(gui.takeDrawNeeded(), "a changed offset is drawn");
+
+            strip.children(child, row(gui));   // a layout: the offset is put back on what it lays out
+            assertEquals(restX - 30f, find(frame(gui), child.id()).x);
+
+            dx[0] = 0f;
+            assertEquals(restX, find(frame(gui), child.id()).x, "zero is where layout put it");
+        }
+    }
+
+    @Test
+    void aStretchIsKeptOnTheNodeForItsPictureAndDrawnWhenItChanges() {
+        Stepped clock = new Stepped();
+        try (Gui gui = new Gui(Atchung.create())) {
+            Seams.of(gui).clock(clock);
+            Node strip = gui.box().width(Length.dp(100)).height(Length.dp(10));
+            gui.root().children(strip);
+            frame(gui);
+            gui.takeDrawNeeded();
+            float[] factor = {1f};
+            Seams.of(gui).ask((frame, out) -> {
+                out.stretch(strip, factor[0], 40f);
+                return Frame.NEVER;
+            });
+
+            factor[0] = 2.5f;
+            RetainedNode n = find(frame(gui), strip.id());
+            assertEquals(2.5f, n.drawnStretch);
+            assertEquals(40f, n.drawnStretchX);
+            assertTrue(gui.takeDrawNeeded(), "a changed stretch is drawn");
+
+            frame(gui);
+            assertFalse(gui.takeDrawNeeded(), "the same stretch again is nothing to draw");
+
+            factor[0] = 1f;
+            assertEquals(1f, find(frame(gui), strip.id()).drawnStretch, "one is none");
+        }
+    }
+
+    @Test
+    void aScaleIsKeptOnTheNodeAndDrawnWhenItChanges() {
+        Stepped clock = new Stepped();
+        try (Gui gui = new Gui(Atchung.create())) {
+            Seams.of(gui).clock(clock);
+            Node picture = gui.box().width(Length.dp(100)).height(Length.dp(50));
+            gui.root().children(picture);
+            RetainedNode rest = find(frame(gui), picture.id());
+            float restX = rest.x;
+            float restW = rest.w;
+            gui.takeDrawNeeded();
+            float[] factor = {1f};
+            Seams.of(gui).ask((frame, out) -> {
+                out.scale(picture, factor[0]);
+                return Frame.NEVER;
+            });
+
+            factor[0] = 3f;
+            RetainedNode n = find(frame(gui), picture.id());
+            assertEquals(3f, n.drawnScale);
+            assertEquals(restX, n.x, "laid out where it was");
+            assertEquals(restW, n.w, "its box does not grow");
+            assertTrue(gui.takeDrawNeeded(), "a changed scale is drawn");
+
+            frame(gui);
+            assertFalse(gui.takeDrawNeeded(), "the same scale again is nothing to draw");
+
+            factor[0] = 1f;
+            assertEquals(1f, find(frame(gui), picture.id()).drawnScale, "one is none");
+
+            factor[0] = 0f;
+            assertThrows(IllegalArgumentException.class, () -> frame(gui), "the factor is positive");
+        }
+    }
+
+    @Test
+    void anOpacityIsKeptClampedAndANodeAtNothingIsNotUnderThePointer() {
+        Stepped clock = new Stepped();
+        try (Gui gui = new Gui(Atchung.create())) {
+            Seams.of(gui).clock(clock);
+            Node bar = gui.box().width(Length.dp(100)).height(Length.dp(50));
+            Node button = gui.box().width(Length.dp(20)).height(Length.dp(20));
+            Node stage = gui.box().width(Length.dp(200)).height(Length.dp(100)).children(bar.children(button));
+            gui.root().children(stage);
+            frame(gui);
+            gui.takeDrawNeeded();
+            float[] opacity = {1f};
+            Seams.of(gui).ask((frame, out) -> {
+                out.opacity(bar, opacity[0]);
+                return Frame.NEVER;
+            });
+
+            opacity[0] = 0.5f;
+            RetainedNode root = frame(gui);
+            RetainedNode b = find(root, button.id());
+            assertEquals(0.5f, find(root, bar.id()).drawnOpacity);
+            assertTrue(gui.takeDrawNeeded(), "a changed opacity is drawn");
+            assertEquals(button.id(), dev.vexelray.gui.core.input.HitTest.at(root, b.x + 1, b.y + 1).id,
+                    "half faded is still there to press");
+
+            opacity[0] = -1f;
+            root = frame(gui);
+            assertEquals(0f, find(root, bar.id()).drawnOpacity, "clamped");
+            assertEquals(stage.id(), dev.vexelray.gui.core.input.HitTest.at(root, b.x + 1, b.y + 1).id,
+                    "at nothing, the pointer passes to what is behind it");
+            gui.takeDrawNeeded();
+
+            frame(gui);
+            assertFalse(gui.takeDrawNeeded(), "the same opacity again is nothing to draw");
+        }
+    }
+
+    @Test
+    void theLoopParksUntilTheEarliestPartIsDue() {
+        Stepped clock = new Stepped();
+        try (Gui gui = new Gui(Atchung.create())) {
+            Seams.of(gui).clock(clock);
+            gui.root().children(row(gui));
+            long[] due = {Frame.NEVER};
+            Asked part = (frame, out) -> due[0];
+            Seams.of(gui).ask(part);
+
+            frame(gui);
+            assertEquals(Long.MAX_VALUE, gui.nanosUntilDue(), "at rest: no deadline of its own");
+
+            due[0] = clock.nanos + 1_000_000_000L;
+            frame(gui);
+            assertEquals(1_000_000_000L, gui.nanosUntilDue(), "due in a second: park a second");
+
+            clock.nanos += 400_000_000L;
+            assertEquals(600_000_000L, gui.nanosUntilDue(), "measured on the tree's clock");
+
+            due[0] = clock.nanos;
+            frame(gui);
+            assertEquals(0L, gui.nanosUntilDue(), "due now: the next frame at once");
+            assertTrue(gui.frameOwed(), "and the frame is owed");
+
+            Seams.of(gui).unask(part);
+            frame(gui);
+            assertEquals(Long.MAX_VALUE, gui.nanosUntilDue(), "no longer asked, no longer due");
+        }
+    }
+}

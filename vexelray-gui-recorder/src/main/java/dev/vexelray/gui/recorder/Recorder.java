@@ -1,5 +1,6 @@
 package dev.vexelray.gui.recorder;
 
+import sibarum.probe.Cause;
 import sibarum.probe.Lane;
 import sibarum.probe.LiveSink;
 import sibarum.probe.Probe;
@@ -83,6 +84,7 @@ public final class Recorder implements LiveSink, AutoCloseable {
     private final long[] monos;
     private final long[] walls;
     private final long[] stamps;
+    private final long[] causes;
     private final String[] threads;
     private final Lane[] lanes;
     private final String[] kinds;
@@ -124,6 +126,7 @@ public final class Recorder implements LiveSink, AutoCloseable {
         this.monos = new long[capacity];
         this.walls = new long[capacity];
         this.stamps = new long[capacity];
+        this.causes = new long[capacity];
         this.threads = new String[capacity];
         this.lanes = new Lane[capacity];
         this.kinds = new String[capacity];
@@ -171,6 +174,13 @@ public final class Recorder implements LiveSink, AutoCloseable {
 
     @Override
     public void row(long seq, long tMonoNs, long tWallNs, String thread, Lane lane, String kind, String detail) {
+        row(seq, tMonoNs, tWallNs, thread, lane, kind, detail, Cause.NONE);
+    }
+
+    /** One row, with the cause it was written in, which the ring keeps beside it: what set the work off. */
+    @Override
+    public void row(long seq, long tMonoNs, long tWallNs, String thread, Lane lane, String kind, String detail,
+                    long cause) {
         // Writers are serialised by the probe's lock, so the writer's own reads of these fields are plain.
         if (lastSeq != 0 && seq != lastSeq + 1) {
             LOST.setRelease(this, (long) LOST.get(this) + (seq - lastSeq - 1));
@@ -184,6 +194,7 @@ public final class Recorder implements LiveSink, AutoCloseable {
         monos[i] = tMonoNs;
         walls[i] = tWallNs;
         stamps[i] = frames.getAsLong();
+        causes[i] = cause;
         threads[i] = thread;
         lanes[i] = lane;
         kinds[i] = kind;
@@ -212,6 +223,7 @@ public final class Recorder implements LiveSink, AutoCloseable {
             into.mono[k] = monos[i];
             into.wall[k] = walls[i];
             into.frame[k] = stamps[i];
+            into.cause[k] = causes[i];
             into.thread[k] = threads[i];
             into.lane[k] = lanes[i];
             into.kind[k] = kinds[i];

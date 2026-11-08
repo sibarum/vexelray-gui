@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core.app;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
@@ -41,7 +42,7 @@ class DrawOnChangeTest {
 
     /** Run one frame and answer whether it has anything new to show. */
     private static boolean frameDraws(Gui gui) {
-        gui.frame(W, H, DrawOnChangeTest::noText);
+        Seams.of(gui).frame(W, H, DrawOnChangeTest::noText);
         return gui.takeDrawNeeded();
     }
 
@@ -91,7 +92,7 @@ class DrawOnChangeTest {
         try (Gui gui = new Gui(Atchung.create())) {
             gui.root().children(gui.box().width(Length.FILL).height(Length.FILL));
             frameDraws(gui);
-            gui.frame(W + 50f, H, DrawOnChangeTest::noText);
+            Seams.of(gui).frame(W + 50f, H, DrawOnChangeTest::noText);
             assertTrue(gui.takeDrawNeeded(), "a resize relays out, and a relayout is owed a draw");
         }
     }
@@ -127,8 +128,8 @@ class DrawOnChangeTest {
             frameDraws(gui);
 
             box.background(gui.theme().color(Role.DANGER));
-            gui.frame(W, H, DrawOnChangeTest::noText);   // run, but the host did not ask (a minimized window)
-            gui.frame(W, H, DrawOnChangeTest::noText);
+            Seams.of(gui).frame(W, H, DrawOnChangeTest::noText);   // run, but the host did not ask (a minimized window)
+            Seams.of(gui).frame(W, H, DrawOnChangeTest::noText);
             assertTrue(gui.takeDrawNeeded(), "the change is still owed to the first frame that is drawn");
         }
     }
@@ -193,7 +194,7 @@ class DrawOnChangeTest {
             gui.root().children(text);
             Object lock = new Object();
             boolean[] posted = {false};
-            gui.onWork(() -> {
+            Seams.of(gui).onWork(() -> {
                 synchronized (lock) {
                     posted[0] = true;
                     lock.notifyAll();
@@ -213,7 +214,7 @@ class DrawOnChangeTest {
                         }
                         posted[0] = false;
                     }
-                    RetainedNode root = gui.frame(W, H, DrawOnChangeTest::noText);
+                    RetainedNode root = Seams.of(gui).frame(W, H, DrawOnChangeTest::noText);
                     if (gui.takeDrawNeeded() && root != null && !root.children.isEmpty()) {
                         drawn.set(root.children.get(0).spans());
                     }

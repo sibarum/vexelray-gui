@@ -113,24 +113,28 @@ public final class FocusChapter implements Chapter {
         Segment<Role> colour = new Segment<>(gui);
         colour.option("Accent", Role.ACCENT).option("Ink", Role.INK).option("Danger", Role.DANGER)
                 .option("Action", Role.ACTION).show(Role.ACCENT);
-        colour.onChange(r -> {
+        gui.mailbox(Segment.CHANGED, colour.address(), c -> {
+            Role r = (Role) c.value();
             color = r;
             apply(gui, console);
         });
 
         Slider width = new Slider(gui, (widthRem - MIN_WIDTH) / (MAX_WIDTH - MIN_WIDTH));
-        width.onChange(f -> {
+        gui.mailbox(Slider.CHANGED, width.address(), c -> {
+            double f = c.value();
             widthRem = MIN_WIDTH + (float) f * (MAX_WIDTH - MIN_WIDTH);
             apply(gui, console);
         });
         Toggle hair = new Toggle(gui, false);
-        hair.onChange(on -> {
+        gui.mailbox(Toggle.CHANGED, hair.address(), c -> {
+            boolean on = c.on();
             hairline = on;
             apply(gui, console);
         });
 
         Slider offset = new Slider(gui, offsetAt);
-        offset.onChange(f -> {
+        gui.mailbox(Slider.CHANGED, offset.address(), c -> {
+            double f = c.value();
             offsetAt = (float) f;
             apply(gui, console);
         });
@@ -138,17 +142,19 @@ public final class FocusChapter implements Chapter {
         Segment<FocusRing.Visibility> visibility = new Segment<>(gui);
         visibility.option("Always", FocusRing.Visibility.ALWAYS)
                 .option("Keyboard only", FocusRing.Visibility.KEYBOARD).show(FocusRing.Visibility.ALWAYS);
-        visibility.onChange(v -> {
+        gui.mailbox(Segment.CHANGED, visibility.address(), c -> {
+            FocusRing.Visibility v = (FocusRing.Visibility) c.value();
             when = v;
             apply(gui, console);
         });
 
-        Button none = new Button(gui, "No ring").kind(Button.Kind.SECONDARY).onPress(() -> {
+        Button none = new Button(gui, "No ring").kind(Button.Kind.SECONDARY);
+        gui.mailbox(Button.PRESSED, none.address(), p -> {
             gui.theme(gui.theme().focusRing(FocusRing.NONE));
             console.note("no ring: Tab now moves focus somewhere you can't see, as it did for ten of these");
         });
-        Button back = new Button(gui, "Dialled ring").kind(Button.Kind.SECONDARY)
-                .onPress(() -> apply(gui, console));
+        Button back = new Button(gui, "Dialled ring").kind(Button.Kind.SECONDARY);
+        gui.mailbox(Button.PRESSED, back.address(), p -> apply(gui, console));
 
         Node tuning = gui.column().width(Length.FILL).height(Length.AUTO).gap(Ui.GAP).scroll(false, false)
                 .children(

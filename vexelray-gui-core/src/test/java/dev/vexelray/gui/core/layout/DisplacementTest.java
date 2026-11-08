@@ -41,6 +41,11 @@ class DisplacementTest {
             return o == null ? 0f : o[1];
         }
 
+        @Override
+        public long draw(dev.vexelray.gui.core.Frame frame) {
+            return frame.presentNanos();   // holds whatever it is told, so it is asked on every frame
+        }
+
         final List<String> resizes = new ArrayList<>();
         final Map<Long, float[]> grown = new HashMap<>();
 

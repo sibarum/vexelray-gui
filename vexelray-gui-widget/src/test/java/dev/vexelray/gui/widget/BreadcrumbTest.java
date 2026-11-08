@@ -16,7 +16,8 @@ class BreadcrumbTest {
     void everyAncestorIsReachableAndTheCurrentPlaceIsNot() {
         try (HeadlessGui h = new HeadlessGui()) {
             List<String> went = new ArrayList<>();
-            Breadcrumb<String> crumbs = new Breadcrumb<String>(h.gui, s -> s).onNavigate(went::add);
+            Breadcrumb<String> crumbs = new Breadcrumb<String>(h.gui, s -> s);
+            h.gui.mailbox(Breadcrumb.NAVIGATED, crumbs.address(), n -> went.add((String) n.item()));
             h.gui.root().children(crumbs.node());
             crumbs.path(List.of("This PC", "Users", "james", "Downloads"));
             h.frame();
@@ -32,7 +33,8 @@ class BreadcrumbTest {
     void aLongPathCollapsesFromTheLeftAndTheEllipsisGoesToTheNearestHiddenAncestor() {
         try (HeadlessGui h = new HeadlessGui()) {
             List<String> went = new ArrayList<>();
-            Breadcrumb<String> crumbs = new Breadcrumb<String>(h.gui, s -> s).maxSegments(3).onNavigate(went::add);
+            Breadcrumb<String> crumbs = new Breadcrumb<String>(h.gui, s -> s).maxSegments(3);
+            h.gui.mailbox(Breadcrumb.NAVIGATED, crumbs.address(), n -> went.add((String) n.item()));
             h.gui.root().children(crumbs.node());
             crumbs.path(List.of("a", "b", "c", "d", "e"));
             h.frame();

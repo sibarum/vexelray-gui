@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.model.RetainedNode;
@@ -39,7 +40,7 @@ class ReparentTest {
 
     /** The ids of {@code parent}'s children, in order — the tree as the renderer will walk it. */
     private static List<Long> childIds(Gui gui, Node parent) {
-        RetainedNode r = find(gui.frame(400f, 200f, ReparentTest::noText), parent.id());
+        RetainedNode r = find(Seams.of(gui).frame(400f, 200f, ReparentTest::noText), parent.id());
         List<Long> ids = new ArrayList<>();
         for (RetainedNode c : r.children) {
             ids.add(c.id);
@@ -85,10 +86,10 @@ class ReparentTest {
             Node moved = gui.text("row").width(Length.rem(4)).height(Length.rem(2));
             gui.root().direction(Direction.ROW).children(left, right);
             left.append(moved);
-            RetainedNode before = find(gui.frame(400f, 200f, ReparentTest::noText), moved.id());
+            RetainedNode before = find(Seams.of(gui).frame(400f, 200f, ReparentTest::noText), moved.id());
 
             right.append(moved);
-            RetainedNode after = find(gui.frame(400f, 200f, ReparentTest::noText), moved.id());
+            RetainedNode after = find(Seams.of(gui).frame(400f, 200f, ReparentTest::noText), moved.id());
 
             assertSame(before, after, "the node survives the move rather than being rebuilt as a copy");
             assertEquals("row", after.textString(), "and so does everything written on it");

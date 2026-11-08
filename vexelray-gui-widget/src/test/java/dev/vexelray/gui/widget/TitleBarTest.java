@@ -241,6 +241,67 @@ class TitleBarTest {
     }
 
     /**
+     * A title wider than the window gives way, cut with an ellipsis, and the controls stay at the window's edge. The
+     * title had no size smaller than its text, so a long one laid all three buttons out past the right edge.
+     */
+    @Test
+    void aLongTitleGivesWayToTheControls() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Recorder window = new Recorder();
+            String title = "A title far too long for any window it could be shown in ".repeat(6);
+            TitleBar bar = new TitleBar(h.gui, window, title);
+            h.gui.root().children(bar.node());
+            h.frame();
+
+            dev.vexelray.gui.core.model.RetainedNode text = byText(h.retained(bar.node()), title);
+            dev.vexelray.gui.core.layout.Rect r = h.gui.layoutSnapshot().node(text.id).rect();
+            assertTrue(r.x() + r.w() <= VIEW_W - 3 * BUTTON_W, "the title ends before the controls: " + r);
+            h.click(buttonX(2), BAR_H / 2f);
+            h.click(buttonX(0), BAR_H / 2f);
+            assertEquals(List.of("minimize", "close"), window.calls, "and every control is where the window's edge is");
+        }
+    }
+
+    /**
+     * A window button under the pointer changes nothing in a frame: its plate is a node whose colour the framework
+     * fades, and its glyph is drawn once per state, shown by an opacity the framework fades. Close warns.
+     */
+    @Test
+    void aHoveredButtonChangesThroughWhatTheFrameworkFades() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Recorder window = new Recorder();
+            bar(h, window);
+            h.hover(buttonX(0), BAR_H / 2f);
+
+            dev.vexelray.gui.core.model.RetainedNode plate = withBackground(h.retained(h.gui.root()),
+                    dev.vexelray.gui.core.style.Role.DANGER);
+            assertTrue(plate != null, "hovered, close's plate is a node painted in the danger role");
+            var glyphs = plate.parent.children;
+            assertEquals(0f, glyphs.get(1).opacity(), "the glyph at rest is faded out");
+            assertEquals(1f, glyphs.get(2).opacity(), "and the hovered one in");
+            assertTrue(plate.hitInert() && glyphs.get(2).hitInert(), "the button takes the pointer, not its parts");
+
+            h.press(buttonX(0), BAR_H / 2f);
+            assertEquals(1f, glyphs.get(3).opacity(), "pressed, the pressed glyph");
+            h.release(buttonX(0), BAR_H / 2f);
+        }
+    }
+
+    private static dev.vexelray.gui.core.model.RetainedNode withBackground(dev.vexelray.gui.core.model.RetainedNode n,
+                                                                         dev.vexelray.gui.core.style.Paint paint) {
+        if (paint.equals(n.background())) {
+            return n;
+        }
+        for (dev.vexelray.gui.core.model.RetainedNode c : n.children) {
+            dev.vexelray.gui.core.model.RetainedNode hit = withBackground(c, paint);
+            if (hit != null) {
+                return hit;
+            }
+        }
+        return null;
+    }
+
+    /**
      * A window button is as tall as the bar, so a press at the bar's top edge is a press on the button. The buttons
      * declared {@code height(FILL)} inside a bar that centres its children, and FILL used to read as intrinsic
      * there: the button was its glyph's height, hovered as a letterbox, and its top edge belonged to the caption.
@@ -273,33 +334,94 @@ class TitleBarTest {
      * before the mark or after, and taken back with {@code null}.
      */
     @Test
-    void theMarkIsCaptionUntilItHasAnAction() {
+    void theLockupIsCaptionUntilItsMenuHasALine() {
         try (HeadlessGui h = new HeadlessGui()) {
+            ContextMenu menu = new ContextMenu(h.gui);
             TitleBar bar = bar(h, WindowControls.NONE);
-            dev.vexelray.gui.core.Node first = mark(h);
-            bar.icon(first);
+            bar.icon(mark(h)).wordmark("Test");
             h.frame();
-            assertNull(h.retained(first).windowRegion(), "with nothing to do it drags the window, as the bar around it does");
+            dev.vexelray.gui.core.Node lockup = h.gui.landmarkNode(TitleBar.MARK).orElseThrow();
+            assertNull(h.retained(lockup).windowRegion(),
+                    "with nothing to offer it drags the window, as the bar around it does");
 
             List<String> clicks = new java.util.ArrayList<>();
             bar.onMark("About Test", () -> clicks.add("about"));
             h.frame();
-            assertEquals(dev.vexelray.gui.core.WindowRegion.INTERACTIVE, h.retained(first).windowRegion(),
+            assertEquals(dev.vexelray.gui.core.WindowRegion.INTERACTIVE, h.retained(lockup).windowRegion(),
                     "a hole in the caption, so the click reaches it");
-            clickOn(h, first);
+            clickOn(h, lockup);
+            h.frame();
+            assertTrue(menu.isOpen(), "a click anywhere on the lockup opens the app menu");
+            assertEquals("About Test", menu.items().get(0).label(), "About first");
+            clickOn(h, h.gui.landmarkNode("menu.about-test").orElseThrow());
             assertEquals(List.of("about"), clicks);
 
-            // A mark given after the action wears it too.
-            dev.vexelray.gui.core.Node second = mark(h);
-            bar.icon(second);
+            // A mark given after the action is inside the same target.
+            bar.icon(mark(h));
             h.frame();
-            assertEquals(dev.vexelray.gui.core.WindowRegion.INTERACTIVE, h.retained(second).windowRegion());
-            clickOn(h, second);
-            assertEquals(List.of("about", "about"), clicks);
+            clickOn(h, lockup);
+            h.frame();
+            assertTrue(menu.isOpen());
 
             bar.onMark(null, null);
             h.frame();
-            assertNull(h.retained(second).windowRegion(), "null puts it back to caption");
+            assertNull(h.retained(lockup).windowRegion(), "null puts it back to caption");
+        }
+    }
+
+    /**
+     * The lockup stays lit while its menu is open, wherever the pointer goes, and its wordmark is told so: open on the
+     * click, still open with the pointer gone into the menu, closed once a line is chosen. A wordmark that keeps the
+     * default is inked in the accent all the while.
+     */
+    @Test
+    void theLockupStaysLitWhileItsMenuIsOpenAndTellsTheWordmark() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            ContextMenu menu = new ContextMenu(h.gui);
+            TitleBar bar = bar(h, WindowControls.NONE);
+            List<String> states = new java.util.ArrayList<>();
+            List<dev.vexelray.gui.core.style.Paint> inks = new java.util.ArrayList<>();
+            dev.vexelray.gui.core.Node logo = mark(h);
+            bar.wordmark(new TitleBar.Wordmark() {
+                @Override
+                public dev.vexelray.gui.core.Node node() {
+                    return logo;
+                }
+
+                @Override
+                public void ink(dev.vexelray.gui.core.style.Paint ink) {
+                    inks.add(ink);
+                }
+
+                @Override
+                public void state(dev.vexelray.gui.core.input.InteractionState pointer, boolean open) {
+                    states.add(pointer + (open ? " open" : ""));
+                    TitleBar.Wordmark.super.state(pointer, open);
+                }
+            });
+            bar.onMark("About Test", () -> { });
+            h.frame();
+            dev.vexelray.gui.core.Node lockup = h.gui.landmarkNode(TitleBar.MARK).orElseThrow();
+
+            clickOn(h, lockup);
+            h.frame();
+            assertTrue(menu.isOpen());
+            assertTrue(states.get(states.size() - 1).endsWith(" open"), "told on opening: " + states);
+
+            dev.vexelray.gui.core.layout.Rect about = h.gui.layoutSnapshot()
+                    .node(h.retained(h.gui.landmarkNode("menu.about-test").orElseThrow()).id).rect();
+            h.hover(about.x() + about.w() / 2f, about.y() + about.h() / 2f);
+            h.frame();
+            assertEquals("NORMAL open", states.get(states.size() - 1), "the pointer gone into the menu: still open");
+            assertEquals(dev.vexelray.gui.core.style.Paint.of(dev.vexelray.gui.core.style.Role.ACCENT,
+                            dev.vexelray.gui.core.input.InteractionState.HOVER), inks.get(inks.size() - 1),
+                    "lit in the accent while open, by default");
+            assertEquals(dev.vexelray.gui.core.style.Role.RAISED, h.retained(lockup).background(), "and the plate stays raised");
+
+            clickOn(h, h.gui.landmarkNode("menu.about-test").orElseThrow());
+            h.frame();
+            assertEquals("NORMAL", states.get(states.size() - 1), "told once a line closes it");
+            assertEquals(dev.vexelray.gui.core.style.Role.INK, inks.get(inks.size() - 1));
         }
     }
 

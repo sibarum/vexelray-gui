@@ -7,7 +7,7 @@ package dev.vexelray.gui.core.input;
  * three-finger swipe at once, rebound in one place.
  *
  * <p>A gesture that goes on — a pan, a pinch — is not a trigger. It is direct manipulation, read off
- * {@link InputTopics#GESTURE}, and there is nothing to rebind about it.
+ * {@link InputTopics#gestures}, and there is nothing to rebind about it.
  *
  * <p><b>One spelling.</b> {@link #text()} is what is shown and what a settings file stores, and {@link #parse}
  * reads it back. No spelling has a space in it, so a list of triggers is words separated by spaces.

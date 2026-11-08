@@ -1,5 +1,6 @@
 package dev.vexelray.gui.keymap;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.ClaimScope;
@@ -33,7 +34,7 @@ import java.util.Set;
  * {@link KeymapWindow} is the same control in a window of its own, behind a title-bar instrument.
  *
  * <p><b>Recording takes every key.</b> Clicking a chip (or Enter on it) arms a recorder that holds a
- * {@link Gui#claimAny wildcard claim} while it has focus, so the next chord is <em>recorded</em> rather than
+ * {@link dev.vexelray.gui.core.spi.Seams#claimAny wildcard claim} while it has focus, so the next chord is <em>recorded</em> rather than
  * performed: Ctrl+S records Ctrl+S instead of saving, and Tab records Tab instead of moving on. Escape alone
  * cancels, and so does focus going anywhere else — a recorder nobody is looking at must not eat the next key.
  * The modifiers being held show as they are pressed, so the person can see the chord forming.
@@ -90,6 +91,9 @@ public final class KeymapEditor implements AutoCloseable {
     private final Subscription mapSub;
     private final Subscription heldSub;
     private final Subscription focusSub;
+    /** The editor's mailboxes for its own controls, and for the rows' (replaced with the rows on every render). */
+    private final List<Subscription> widgetSubs = new ArrayList<>();
+    private final List<Subscription> rowSubs = new ArrayList<>();
 
     private volatile String query = "";
     /** What {@link #cancel} goes back to: the bindings as they were at the last {@link #checkpoint}. */
@@ -103,15 +107,18 @@ public final class KeymapEditor implements AutoCloseable {
     public KeymapEditor(Gui gui, Keymap keymap) {
         this.gui = gui;
         this.keymap = keymap;
-        this.filter = new TextField(gui).onChange(text -> {
-            query = text.strip().toLowerCase(Locale.ROOT);
+        this.filter = new TextField(gui);
+        // The editor hears its own controls as any view does, by their messages, in the frame they happened.
+        widgetSubs.add(gui.mailbox(TextField.CHANGED, filter.address(), changed -> {
+            query = changed.text().strip().toLowerCase(Locale.ROOT);
             render();
-        });
+        }));
         filter.node().role("keymap-filter").width(Length.FILL);
-        Button resetAll = new Button(gui, "Reset all").onPress(() -> {
+        Button resetAll = new Button(gui, "Reset all");
+        widgetSubs.add(gui.mailbox(Button.PRESSED, resetAll.address(), pressed -> {
             keymap.resetAll();
             say("Every action is back on its default chords.");
-        });
+        }));
         Node header = gui.row().width(Length.FILL).gap(Length.rem(0.5f)).alignItems(AlignItems.CENTER)
                 .children(gui.text("Filter").textSize(TEXT).wordWrap(false).textColor(Role.DIM),
                         filter.node(), resetAll.node());
@@ -124,10 +131,11 @@ public final class KeymapEditor implements AutoCloseable {
                 .textSize(Length.rem(0.75f)).textColor(Role.DIM);
         // Always present and only enabled once something has changed, like each row's reset.
         this.opened = keymap.overrides().value();
-        this.cancel = new Button(gui, "Cancel").enabled(false).onPress(() -> {
+        this.cancel = new Button(gui, "Cancel").enabled(false);
+        widgetSubs.add(gui.mailbox(Button.PRESSED, cancel.address(), pressed -> {
             cancel();
             onCancel.run();
-        });
+        }));
         cancel.node().role("keymap-cancel");
         Node footer = gui.row().width(Length.FILL).gap(Length.rem(0.5f)).alignItems(AlignItems.CENTER)
                 .children(status, cancel.node());
@@ -135,7 +143,7 @@ public final class KeymapEditor implements AutoCloseable {
                 .padding(Length.rem(0.75f)).gap(Length.rem(0.5f))
                 .children(header, actions, footer);
         this.mapSub = keymap.overrides().onCommitLatest(committed -> render());
-        this.heldSub = gui.modifiers().onCommit(committed -> showHeld(committed.value()));
+        this.heldSub = Seams.of(gui).modifiers().onCommit(committed -> showHeld(committed.value()));
         this.focusSub = gui.bus().subscribe(gui.focusEvents(), this::focusMoved);
         render();
     }
@@ -174,8 +182,11 @@ public final class KeymapEditor implements AutoCloseable {
         render();
     }
 
-    /** Run {@code then} after the Cancel button has reverted — to close the window the editor is in, say. */
-    public KeymapEditor onCancel(Runnable then) {
+    /**
+     * Run {@code then} after the Cancel button has reverted — to close the window the editor is in. The keymap
+     * module's own ({@link KeymapWindow}): code a view would run in the frame (vexelray-framework's threading.md, T7.2).
+     */
+    KeymapEditor onCancel(Runnable then) {
         this.onCancel = then == null ? () -> { } : then;
         return this;
     }
@@ -195,6 +206,8 @@ public final class KeymapEditor implements AutoCloseable {
         mapSub.close();
         heldSub.close();
         focusSub.close();
+        widgetSubs.forEach(Subscription::close);
+        rowSubs.forEach(Subscription::close);
         filter.close();
         synchronized (this) {
             disarm();
@@ -207,6 +220,8 @@ public final class KeymapEditor implements AutoCloseable {
         for (Node row : rows) {
             row.remove();
         }
+        rowSubs.forEach(Subscription::close);
+        rowSubs.clear();
         rows.clear();
         chips.clear();
         capture = null;
@@ -278,13 +293,13 @@ public final class KeymapEditor implements AutoCloseable {
         // actions are changed and changed back.
         IconButton reset = new IconButton(gui, Icon.RESET, "Reset " + a.label())
                 .tip("Back to " + (a.defaults().isEmpty() ? "unbound" : texts(a.defaults())))
-                .enabled(a.customized())
-                .onPress(() -> {
-                    Keymap.Bound b = keymap.reset(a);
-                    say(a.label() + " is back on " + (a.defaults().isEmpty() ? "no chord" : texts(a.defaults()))
-                            + "." + moved(b));
-                    renderFocusing(new Slot(a, -1));
-                });
+                .enabled(a.customized());
+        rowSubs.add(gui.mailbox(Button.PRESSED, reset.address(), pressed -> {
+            Keymap.Bound b = keymap.reset(a);
+            say(a.label() + " is back on " + (a.defaults().isEmpty() ? "no chord" : texts(a.defaults()))
+                    + "." + moved(b));
+            renderFocusing(new Slot(a, -1));
+        }));
         return gui.row().role("keymap-row").width(Length.FILL).alignItems(AlignItems.CENTER)
                 .gap(Length.rem(0.5f)).padding(Length.rem(0.2f), Length.rem(0.3f))
                 .children(name, chords, reset.node());
@@ -295,12 +310,12 @@ public final class KeymapEditor implements AutoCloseable {
             // A node of its own rather than the chip in another state: the chip claims Enter and Delete by name,
             // and a named claim outranks a wildcard at one scope — so recording on the chip could never record
             // Enter. A fresh node has no claims but the one that records.
-            capture = gui.text(Shortcut.prefix(gui.modifiers().value()) + "…").role("keymap-recording")
+            capture = gui.text(Shortcut.prefix(Seams.of(gui).modifiers().value()) + "…").role("keymap-recording")
                     .wordWrap(false).textSize(TEXT).padding(Length.rem(0.15f), Length.rem(0.5f))
                     .corner(Length.rem(0.3f)).background(Role.SELECTION)
                     .border(Length.rem(0.1f), Role.ACCENT).textColor(Role.INK);
             gui.focusable(capture, true);
-            gui.claimAny(capture, ClaimScope.FOCUSED, this::recorded);
+            Seams.of(gui).claimAny(capture, ClaimScope.FOCUSED, this::recorded);
             return capture;
         }
         Node chip;
@@ -311,21 +326,21 @@ public final class KeymapEditor implements AutoCloseable {
         } else {
             Node remove = gui.text("×").role("keymap-remove").wordWrap(false).textSize(TEXT)
                     .textColor(Role.DIM);
-            gui.onClick(remove, () -> remove(s));
+            Seams.of(gui).onClick(remove, () -> remove(s));
             gui.cursor(remove, CursorShape.POINTER);
             chip = gui.row().role("keymap-chord").alignItems(AlignItems.CENTER).gap(Length.rem(0.4f))
                     .padding(Length.rem(0.15f), Length.rem(0.5f)).corner(Length.rem(0.3f))
                     .background(Role.RAISED).border(Length.rem(0.1f), Role.LINE)
                     .children(gui.text(chord.text()).wordWrap(false).textSize(TEXT)
                             .textColor(Role.INK), remove);
-            gui.claim(chip, DELETE, ClaimScope.FOCUSED, () -> remove(s));
-            gui.claim(chip, BACKSPACE, ClaimScope.FOCUSED, () -> remove(s));
+            Seams.of(gui).claim(chip, DELETE, ClaimScope.FOCUSED, () -> remove(s));
+            Seams.of(gui).claim(chip, BACKSPACE, ClaimScope.FOCUSED, () -> remove(s));
         }
         gui.focusable(chip, true);
         gui.cursor(chip, CursorShape.POINTER);
-        gui.onClick(chip, () -> record(s));
-        gui.claim(chip, ENTER, ClaimScope.FOCUSED, () -> record(s));
-        gui.claim(chip, SPACE, ClaimScope.FOCUSED, () -> record(s));
+        Seams.of(gui).onClick(chip, () -> record(s));
+        Seams.of(gui).claim(chip, ENTER, ClaimScope.FOCUSED, () -> record(s));
+        Seams.of(gui).claim(chip, SPACE, ClaimScope.FOCUSED, () -> record(s));
         chips.put(s, chip);
         return chip;
     }

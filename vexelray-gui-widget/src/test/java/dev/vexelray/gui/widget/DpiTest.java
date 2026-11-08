@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.Length;
 import org.junit.jupiter.api.Test;
@@ -148,8 +149,8 @@ class DpiTest {
         s.first = h.gui.box().width(Length.rem(4)).height(Length.rem(4));
         s.second = h.gui.box().width(Length.rem(4)).height(Length.rem(4));
         h.gui.root().children(s.first, s.second);
-        h.gui.onClick(s.first, () -> s.hit = 0);
-        h.gui.onClick(s.second, () -> s.hit = 1);
+        Seams.of(h.gui).onClick(s.first, () -> s.hit = 0);
+        Seams.of(h.gui).onClick(s.second, () -> s.hit = 1);
         h.frame();
         return s;
     }

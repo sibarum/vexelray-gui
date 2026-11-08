@@ -1,5 +1,8 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
+import sibarum.atchung.Topic;
+import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.ClaimScope;
@@ -64,9 +67,10 @@ import java.util.stream.Collectors;
  *
  * <h2>Committing, and taking it back</h2>
  *
- * Moving through the options is not choosing: the selection changes as the cursor moves (watch
- * {@code selection().onChange} for the live preview), and {@link #onCommit} fires once, when the popup closes on
- * a choice. Escape restores the selection the popup opened with. This is the pair {@link ColorPicker} settled on
+ * Moving through the options is not choosing: the selection changes as the cursor moves, published on
+ * {@link #CHANGED} (the live preview, the last in a frame), and {@link #COMMITTED} is published once, when the popup
+ * closes on a choice. Both carry the select's {@link #address() address} (vexelray-framework's
+ * {@code docs/threading.md}, T3.8). Escape restores the selection the popup opened with. This is the pair {@link ColorPicker} settled on
  * and for the same reason — collapsing them makes either every arrow key an undo entry or the control impossible
  * to preview.
  *
@@ -85,6 +89,40 @@ import java.util.stream.Collectors;
  * @param <T> the value type — anything with equality; the label is a function of it, never a parallel list
  */
 public final class Select<T> implements AutoCloseable {
+
+    /** What is chosen as the cursor moves through the options, and as Escape puts it back: the live preview. */
+    public static final Topic<Changed> CHANGED =
+            Addressed.state(Changed.class, Changed::select);
+
+    /**
+     * A choice <b>made</b> — click on a row, or a click away — and an undo or redo. Not
+     * published by {@link #value(Object)} or {@link #show}. Every one, in order.
+     */
+    public static final Topic<Committed> COMMITTED = Addressed.edge(Committed.class);
+
+    /** The select at {@code select} has {@code chosen} chosen, as the cursor stands. */
+    public record Changed(String select, Set<Object> chosen) implements Addressed {
+        public Changed {
+            chosen = Set.copyOf(chosen);
+        }
+
+        @Override
+        public Object address() {
+            return select;
+        }
+    }
+
+    /** The select at {@code select} was set to {@code chosen}. */
+    public record Committed(String select, Set<Object> chosen) implements Addressed {
+        public Committed {
+            chosen = Set.copyOf(chosen);
+        }
+
+        @Override
+        public Object address() {
+            return select;
+        }
+    }
 
     /** How many rows the popup shows before it scrolls. Beyond this the list virtualises, so the cost is flat. */
     private static final int VISIBLE_ROWS = 8;
@@ -118,7 +156,7 @@ public final class Select<T> implements AutoCloseable {
 
     private volatile String placeholder = "";
     private volatile Function<Set<T>, String> summary;
-    private volatile Consumer<Set<T>> onCommit = chosen -> { };
+    private final WidgetName name;
 
     private volatile boolean attached;
     private volatile boolean open;
@@ -168,12 +206,13 @@ public final class Select<T> implements AutoCloseable {
                 .alignItems(AlignItems.CENTER)
                 .scroll(false, false)
                 .children(valueText, chevron());
+        this.name = new WidgetName(gui, "select", control);
         gui.focusable(control, true);
         gui.cursor(control, CursorShape.POINTER);
-        gui.onClick(control, this::toggleOpen);
-        gui.onState(control, state -> control.background(Role.WELL.at(state)));
+        Seams.of(gui).onClick(control, this::toggleOpen);
+        Seams.of(gui).onState(control, state -> control.background(Role.WELL.at(state)));
 
-        this.list = new ListView<>(gui, ROW_REM, (g, item) -> g.text(label.apply(item))
+        this.list = new ListView<>(gui, ROW_REM, (n, item) -> n.text(label.apply(item))
                         .width(Length.FILL)
                         .wordWrap(false)
                         .padding(Length.ZERO, Length.rem(0.5f))
@@ -198,7 +237,10 @@ public final class Select<T> implements AutoCloseable {
                         commit();
                     }
                 });
-        list.selection().onChange(chosen -> readOut());
+        list.selection().onChange(chosen -> {
+            readOut();
+            gui.bus().publish(CHANGED, new Changed(name.address(), Set.copyOf(chosen)));
+        });
         list.selection().onLeadChange(lead -> readOut());
 
         this.popup = gui.column()
@@ -214,16 +256,16 @@ public final class Select<T> implements AutoCloseable {
         // The popup follows the control: a page that scrolls, a window that resizes or a row that reflows all move
         // the thing this is anchored to, and an overlay that stayed put would be pointing at nothing. Read from the
         // same published layout the list virtualises against — no frame callback of this widget's own.
-        subs.add(gui.layout().onCommit(snapshot -> reanchor(true)));
+        subs.add(Seams.of(gui).layout().onCommit(snapshot -> reanchor(true)));
         subs.add(gui.bus().subscribe(gui.clicks(), this::onAnyClick));
 
         armClosed();
         readOut();
-        // A choice is a step; moving through the options is not, which is the onCommit/selection split again.
+        // A choice is a step; moving through the options is not, which is the COMMITTED/CHANGED split again.
         this.undo = new ValueUndo<>(gui, control, () -> Set.copyOf(selection.selection()), chosen -> {
             selection.set(chosen);
             readOut();
-            onCommit.accept(Set.copyOf(chosen));
+            committed(Set.copyOf(chosen));
         }, false);
     }
 
@@ -295,7 +337,7 @@ public final class Select<T> implements AutoCloseable {
     }
 
     /**
-     * Show {@code value} as the application rather than the user: no {@link #onCommit}, because nobody chose.
+     * Show {@code value} as the application rather than the user: no {@link #COMMITTED}, because nobody chose.
      *
      * <p>A sync is not an edit, and this is the sync — the name every control here uses for it. See
      * {@link Toggle#show} for what goes wrong when one is reported as the other. It is not a question about
@@ -307,14 +349,20 @@ public final class Select<T> implements AutoCloseable {
         return this;
     }
 
-    /**
-     * React to a choice being <b>made</b> — the popup closing on Enter, a click on a row, or a click away — with
-     * what is chosen. Not fired while the cursor moves through the options (watch {@code selection().onChange} for
-     * that), and not fired by {@link #value(Object)}. Runs on a worker thread.
-     */
-    public Select<T> onCommit(Consumer<Set<T>> handler) {
-        this.onCommit = handler == null ? chosen -> { } : handler;
+    /** Call this select {@code name} in its tree ("size"): its {@link #address()} is the tree's name and this. */
+    public Select<T> name(String name) {
+        this.name.name(name);
         return this;
+    }
+
+    /** Where this select is on the bus: what its messages carry. */
+    public String address() {
+        return name.address();
+    }
+
+    /** A choice made. */
+    private void committed(Set<T> chosen) {
+        gui.bus().publish(COMMITTED, new Committed(name.address(), Set.copyOf(chosen)));
     }
 
     // ------------------------------------------------------------------ opening and shutting
@@ -349,13 +397,13 @@ public final class Select<T> implements AutoCloseable {
         }
         shut();
         Set<T> chosen = Set.copyOf(selection.selection());
-        onCommit.accept(chosen);
+        committed(chosen);
         undo.edited(opened, chosen);
     }
 
     /**
      * Shut the popup and put back the selection it opened with — Escape. Nothing is announced, because taking a
-     * choice back is not making one; the live preview reverts through {@code selection().onChange} like any other
+     * choice back is not making one; the live preview reverts through {@link #CHANGED} like any other
      * change, which is what makes the preview honest rather than something the application has to undo.
      */
     public void cancel() {
@@ -395,15 +443,15 @@ public final class Select<T> implements AutoCloseable {
      * model that degrades too. None of this is a branch on the mode.
      */
     private void armOpen() {
-        gui.claim(popup, DOWN, ClaimScope.VISIBLE, () -> step(1, false));
-        gui.claim(popup, UP, ClaimScope.VISIBLE, () -> step(-1, false));
-        gui.claim(popup, SHIFT_DOWN, ClaimScope.VISIBLE, () -> step(1, true));
-        gui.claim(popup, SHIFT_UP, ClaimScope.VISIBLE, () -> step(-1, true));
-        gui.claim(popup, HOME, ClaimScope.VISIBLE, () -> stepTo(0, false));
-        gui.claim(popup, END, ClaimScope.VISIBLE, () -> stepTo(Integer.MAX_VALUE, false));
-        gui.claim(popup, SPACE, ClaimScope.VISIBLE, this::toggleLead);
-        gui.claim(popup, ENTER, ClaimScope.VISIBLE, this::commit);
-        gui.claim(popup, ESCAPE, ClaimScope.VISIBLE, this::cancel);
+        Seams.of(gui).claim(popup, DOWN, ClaimScope.VISIBLE, () -> step(1, false));
+        Seams.of(gui).claim(popup, UP, ClaimScope.VISIBLE, () -> step(-1, false));
+        Seams.of(gui).claim(popup, SHIFT_DOWN, ClaimScope.VISIBLE, () -> step(1, true));
+        Seams.of(gui).claim(popup, SHIFT_UP, ClaimScope.VISIBLE, () -> step(-1, true));
+        Seams.of(gui).claim(popup, HOME, ClaimScope.VISIBLE, () -> stepTo(0, false));
+        Seams.of(gui).claim(popup, END, ClaimScope.VISIBLE, () -> stepTo(Integer.MAX_VALUE, false));
+        Seams.of(gui).claim(popup, SPACE, ClaimScope.VISIBLE, this::toggleLead);
+        Seams.of(gui).claim(popup, ENTER, ClaimScope.VISIBLE, this::commit);
+        Seams.of(gui).claim(popup, ESCAPE, ClaimScope.VISIBLE, this::cancel);
     }
 
     private void disarmOpen() {
@@ -420,8 +468,8 @@ public final class Select<T> implements AutoCloseable {
      * popup instead of letting the list move, and the bug would look like an arrow key that does nothing.
      */
     private void armClosed() {
-        gui.claim(control, DOWN, ClaimScope.FOCUSED, this::open);
-        gui.claim(control, ENTER, ClaimScope.FOCUSED, this::open);
+        Seams.of(gui).claim(control, DOWN, ClaimScope.FOCUSED, this::open);
+        Seams.of(gui).claim(control, ENTER, ClaimScope.FOCUSED, this::open);
     }
 
     private void disarmClosed() {
@@ -489,13 +537,13 @@ public final class Select<T> implements AutoCloseable {
         }
         anchoredTo = r;
 
-        float dpi = Math.max(0.0001f, gui.dpi().value());
+        float dpi = Math.max(0.0001f, Seams.of(gui).dpi().value());
         float bodyPx = rowPx() * Math.clamp(list.count(), 1, VISIBLE_ROWS);
         // The panel is its rows plus its own border, top and bottom. Flipping on the rows alone puts a panel that
         // opens upwards two pixels *over* the control it belongs to, which is the sort of miss that looks like a
         // rounding error and is a missing term.
         float panelPx = bodyPx + 2f * BORDER_DP * dpi;
-        float viewportH = gui.viewport().value().height();
+        float viewportH = Seams.of(gui).viewport().value().height();
         boolean above = r.y() + r.h() + panelPx > viewportH && r.y() - panelPx >= 0f;
         float y = above ? r.y() - panelPx : r.y() + r.h();
 
@@ -507,8 +555,8 @@ public final class Select<T> implements AutoCloseable {
     /** One row in pixels at the current basis — what turns a count of options into a height. */
     private float rowPx() {
         return Length.rem(ROW_REM).scalarPx(
-                new LayoutContext(gui.rootEmPx(), gui.zoom().value(), gui.dpi().value(),
-                        gui.viewport().value().width(), gui.viewport().value().height()),
+                new LayoutContext(gui.rootEmPx(), Seams.of(gui).zoom().value(), Seams.of(gui).dpi().value(),
+                        Seams.of(gui).viewport().value().width(), Seams.of(gui).viewport().value().height()),
                 0f);
     }
 

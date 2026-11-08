@@ -96,6 +96,18 @@ keyboard has.
   publishes `focusCause` and `ringShown`, and `ottermate tree` prints `ring` after `focused` when it is up.
   [plans/focus-ring.md](../plans/focus-ring.md) has the reasoning; the demo's Focus chapter shows each case.
 - A **disabled** node is never focusable and drops out of the Tab order.
+- **Release:** `Gui.blur()` gives the keyboard to nothing. A node **hidden while it has the keyboard** hands it
+  on by itself, at the start of the next frame's dispatch and before its input: to the next shown, enabled
+  focusable node in Tab order after the hidden one's place (wrapping), or to nothing if there is none. Hidden
+  means it or any ancestor (`RetainedNode.shownInTree`). A node *given* the keyboard while hidden keeps it until it
+  has been seen shown, so a view may call `focus` and `visible(true)` in either order. Tested in `FocusHandOnTest`.
+- **Keys after a chord's message wait a frame.** A chord declared with a sender (`Gui.shortcut(chord, to, msg)`,
+  `Gui.claim(..., to, msg)`) is heard after this frame's input is dispatched, so a view that moves the keyboard on
+  it does so after the keys typed straight behind it were routed. The dispatcher therefore holds back the rest of
+  that frame's input (`InputDispatcher.holdRest`) and delivers it first thing next frame, in order, where the
+  message has put the keyboard. A chord run as a command (Tab, a claim's `Runnable`) holds nothing. One frame
+  covers a message heard on the GUI thread; one answered from another lane before the view moves focus is not
+  covered.
 
 ---
 
@@ -109,7 +121,7 @@ ahead of time, that it takes that chord:
 
 ```java
 gui.claim(node, Shortcut.of(Key.TAB), ClaimScope.FOCUSED, editor::indent);
-gui.shortcut(Shortcut.of(Key.S, Modifier.CONTROL), app::save);   // == a GLOBAL claim owned by no node
+Seams.of(gui).shortcut(Shortcut.of(Key.S, Modifier.CONTROL), app::save);   // == a GLOBAL claim owned by no node
 ```
 
 - **Scopes, most specific first:** `FOCUSED` (only while the claiming node holds focus) → `VISIBLE` (while
@@ -121,7 +133,7 @@ gui.shortcut(Shortcut.of(Key.S, Modifier.CONTROL), app::save);   // == a GLOBAL 
 - Commands run on the worker executor like other handlers. The framework's own claims run inline on the
   GUI thread because they mutate dispatch state (focus); that variant is internal, not offered to apps.
 - Claims do **not** arm auto-repeat (§8.4), so a held Tab inserts one soft tab rather than a stream.
-- **A claim on every chord** — `gui.claimAny(node, scope, chord -> ...)` — is the same mechanism with a
+- **A claim on every chord** — `Seams.of(gui).claimAny(node, scope, chord -> ...)` — is the same mechanism with a
   wildcard match, for a control whose subject is the chord: a key-binding recorder holds one at `FOCUSED`
   and so records Ctrl+S and Tab instead of performing them. At one scope a named claim outranks the
   wildcard. See [keymap.md](keymap.md) §3.
@@ -150,7 +162,7 @@ or on a remote client with no fonts of its own.
 
 ### 4.1 Properties
 - **Selectable** — text can be selected (drag / shift+arrows) and copied, even when not editable.
-  *[selection + clipboard shipped for editable; non-editable selection not yet]*
+  *[shipped: `TextField.readOnly(true)` refuses the user's edits and keeps caret, selection, Ctrl+C and motion]*
 - **Editable** — content can be modified. When false, the widget is read-only (still selectable if
   Selectable). *[shipped]*
 - **Disabled** — no focus, no interaction, dimmed. Distinct from read-only (a disabled field is inert).
@@ -303,7 +315,9 @@ resolves to regular, the nearest face there is. Adding the files to that directo
    vertical scroll, soft tabs, line numbers. **[done — docs/reference/layout-read-model.md §11]**
 7. **Hyperlink / tooltip spans** — hover/click emission with the editable/Control gating; tooltip needs
    the overlay layer (§6). **[not started — the overlay layer is the blocker]**
-8. **Remaining polish** — the text field's disabled look, non-editable selection, hard tabs, Shift+Tab outdent.
+8. **Remaining polish** — the text field's disabled look, hard tabs, Shift+Tab outdent. (Non-editable selection
+   shipped as `TextField.readOnly`; formatting, effect spans and a formatted clipboard are
+   [plans/rich-text.md](../plans/rich-text.md).)
 
 ---
 

@@ -1,5 +1,6 @@
 package dev.vexelray.gui.harness;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.Length;
@@ -29,7 +30,7 @@ class ClickWakesTheLoopTest {
         AtomicInteger clicks = new AtomicInteger();
         Node button = gui.box().size(Length.dp(200), Length.dp(120));
         gui.root().append(button);
-        gui.onClick(gui.root(), clicks::incrementAndGet);
+        Seams.of(gui).onClick(gui.root(), clicks::incrementAndGet);
 
         try (HarnessApp harness = HarnessApp.start(gui, WindowConfig.of("harness", 400, 300))) {
             harness.settle();

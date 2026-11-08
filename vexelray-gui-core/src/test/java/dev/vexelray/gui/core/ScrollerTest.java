@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.input.InputTopics;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
 import dev.vexelray.gui.core.layout.Length;
@@ -41,7 +42,7 @@ class ScrollerTest {
     }
 
     private static void frame(Gui gui) {
-        gui.frame(W, H, ScrollerTest::noText);
+        Seams.of(gui).frame(W, H, ScrollerTest::noText);
     }
 
     /** The window's whole area as a column, to build in. */
@@ -354,7 +355,7 @@ class ScrollerTest {
             page(gui).children(scroller.node());
             frame(gui);
 
-            bus.publish(InputTopics.INPUT, new InputEvent.Scrolled(0, -1, 50, 50, 0));
+            bus.publish(gui.input(), new InputEvent.Scrolled(0, -1, 50, 50, 0));
             frame(gui);
             frame(gui);
             assertTrue(scroller.y().range().value().offset() > 0f, "a notch down moved the view down");

@@ -19,11 +19,13 @@ class TableOnSortTest {
                     Table.Column.of("Name", Length.grow(1), (g, s) -> g.text(s), Comparator.<String>naturalOrder())));
             h.gui.root().children(table.node());
             List<String> seen = new ArrayList<>();
-            table.onSort((column, direction) -> seen.add(column + ":" + direction));
+            h.gui.mailbox(Table.SORTED, table.address(), s -> seen.add(s.column() + ":" + s.direction()));
             table.items(List.of("b", "a"));
 
             table.sortBy(0, Table.Sort.DESCENDING);
+            h.frame();   // the order is state, heard as it stands at each frame
             table.sortBy(0, Table.Sort.NONE);
+            h.frame();
 
             assertEquals(List.of("0:DESCENDING", "-1:NONE"), seen);
         }

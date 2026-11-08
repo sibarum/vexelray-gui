@@ -135,14 +135,14 @@ class SliderTest {
             List<Double> seen = new ArrayList<>();
             s.onChange(seen::add);
             int y = (int) yOf(s);
-            h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, (int) xAt(s, 0f), y, 0));
+            h.bus.publish(h.gui.input(), new InputEvent.ButtonPressed(MouseButton.LEFT, (int) xAt(s, 0f), y, 0));
             h.frame();
             for (int k = 1; k <= 20; k++) {
                 int x = (int) xAt(s, k * 0.03f);
-                h.bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(x, y, 1, 0, 0));
+                h.bus.publish(h.gui.input(), new InputEvent.PointerMoved(x, y, 1, 0, 0));
                 h.frame();
             }
-            h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, (int) xAt(s, 0.6f), y, 0));
+            h.bus.publish(h.gui.input(), new InputEvent.ButtonReleased(MouseButton.LEFT, (int) xAt(s, 0.6f), y, 0));
             h.frame().frame();
 
             assertEquals(List.of((double) (1f / 3f), (double) (2f / 3f)), seen,

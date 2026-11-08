@@ -107,6 +107,18 @@ public final class Node {
     }
 
     /**
+     * Draw whichever slot of {@code feed} is shown across this node's box: a picture handed in from off the GUI thread
+     * (docs/plans/frame-contract.md D). No texture is needed in hand: each device that draws the node uploads the slot
+     * shown when it changes, and a slot handed over later asks for its own frame. Everything {@link #image(SampledImage)}
+     * says about the box still holds. Null clears it, as a null image does. Closing the feed is its owner's, once no node
+     * should show it; a node still naming a closed feed draws nothing.
+     */
+    public Node image(Feed feed) {
+        prop(PropKey.IMAGE_REGION, null);
+        return prop(PropKey.IMAGE, feed);
+    }
+
+    /**
      * Scale this node's image with {@code filter} rather than the sampler's own bilinear: for a picture, where how
      * it is scaled is a choice — square pixels to look at them, a smooth bell to hide them. The filter needs the
      * texture's size in texels, which its handle does not give, so say it here: whoever sets the image knows it.
@@ -126,6 +138,16 @@ public final class Node {
      */
     public Node field(ImageField field) {
         return prop(PropKey.FIELD, field);
+    }
+
+    /**
+     * Draw a drawing in signed distance graphics across this node's box: full colour, every edge sharp at any size,
+     * fitted with its aspect kept and centred. A paint that names a role takes the theme's colour of that name, so one
+     * drawing follows the light and the dark theme. Drawn over the node's own image and field, under its border. Null
+     * clears it.
+     */
+    public Node sdg(ImageSdg drawing) {
+        return prop(PropKey.SDG, drawing);
     }
 
     /**
@@ -434,6 +456,15 @@ public final class Node {
     }
 
     /**
+     * Cut this label, when it is kept to one line and does not fit, between characters at {@code where}, an ellipsis
+     * standing for what was taken out, rather than at its box's edge through a glyph. Only what is drawn is cut: the
+     * text read back, and the accessible name, stay whole. No effect on a label that wraps, or on an editable field.
+     */
+    public Node ellipsis(dev.vexelray.gui.core.text.Ellipsis where) {
+        return prop(PropKey.ELLIPSIS, where);
+    }
+
+    /**
      * Show a gutter of hard-line numbers down the left edge. Numbers count {@code '\n'}s, not wrapped rows, so a
      * line that wraps onto three rows is numbered once. The gutter narrows the text area, and therefore the wrap.
      */
@@ -589,9 +620,11 @@ public final class Node {
     }
 
     /**
-     * Say that this node's colours are data rather than state (a cell coloured by its value, a pooled marker
-     * coloured by what it now stands for), so a colour written to it is drawn at once instead of fading from the
-     * last one. A theme change still fades it. See {@link PropKey#PAINT_CUTS}.
+     * Say that this node's look is data rather than state (a cell coloured by its value, a pooled marker coloured by
+     * what it now stands for), or is timed by the application itself (a picture it throws and crossfades on its own, a
+     * thumbnail that slides along with a step), so a colour, an opacity, words or an image written to it is drawn at
+     * once, and it is shown or hidden at once, instead of fading. A theme change still fades it. See
+     * {@link PropKey#PAINT_CUTS}.
      */
     public Node paintCuts(boolean cuts) {
         return prop(PropKey.PAINT_CUTS, cuts ? Boolean.TRUE : null);

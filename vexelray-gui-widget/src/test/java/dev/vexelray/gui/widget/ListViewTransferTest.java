@@ -1,15 +1,16 @@
 package dev.vexelray.gui.widget;
 
-import dev.vexelray.gui.core.drop.Drop;
+import dev.vexelray.gui.core.drop.DropEffect;
 import dev.vexelray.gui.core.drop.PayloadType;
-import dev.vexelray.gui.core.edit.Change;
-import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.input.InputTopics;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.Rect;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import dev.vexelray.gui.core.spi.Seams;
 import sibarum.tactroller.api.InputEvent;
+import sibarum.tactroller.api.Key;
+import sibarum.tactroller.api.Modifier;
 import sibarum.tactroller.api.MouseButton;
 
 import java.util.ArrayList;
@@ -21,8 +22,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Dragging rows between two lists told about the same payload type: what is carried, where it lands, and that a
- * row refusing a drop hands it to the list rather than leaving a hole.
+ * Dragging rows between two lists told about the same payload type: what is carried, and where it lands, announced on
+ * {@code LANDED}. What landing means, a row that will not take it included, is the application's.
  */
 class ListViewTransferTest {
 
@@ -30,28 +31,13 @@ class ListViewTransferTest {
 
     private final List<String> drops = new ArrayList<>();
 
-    /** Lands on a row ending in "/" (a folder) as "into", anywhere else on the list as "here"; never on its own rows. */
-    private ListView.Receiver<String, List<String>> receiver(List<String> own) {
-        return (held, onto) -> {
-            if (own.containsAll(held)) {
-                return onto != null && onto.endsWith("/") && !held.contains(onto)
-                        ? Drop.move(Rect.ZERO, change(held + " into " + onto)) : Drop.NONE;
+    /** Write down what lands on {@code list}, and where. */
+    private void recording(HeadlessGui h, ListView<String> list) {
+        h.bus.subscribe(ListView.LANDED, l -> {
+            if (l.list().equals(list.address())) {
+                drops.add(l.held() + " onto " + (l.onto() == null ? "the list" : l.onto()));
             }
-            if (onto == null) {
-                return Drop.copy(Rect.ZERO, change(held + " here"));
-            }
-            return onto.endsWith("/") ? Drop.move(Rect.ZERO, change(held + " into " + onto)) : Drop.NONE;
-        };
-    }
-
-    private Change change(String what) {
-        return new Change() {
-            @Override
-            public Change apply() {
-                drops.add(what);
-                return change("undo(" + what + ")");
-            }
-        };
+        });
     }
 
     private static final List<String> LEFT = List.of("a.txt", "b.txt", "c.txt");
@@ -67,8 +53,10 @@ class ListViewTransferTest {
             l.draggable(NAMES, held -> held.size() == 1 ? held.get(0) : held.size() + " items");
             l.node().width(Length.grow(1f));
         }
-        left.droppable(NAMES, receiver(LEFT));
-        right.droppable(NAMES, receiver(RIGHT));
+        left.droppable(NAMES, DropEffect.MOVE);
+        right.droppable(NAMES, DropEffect.MOVE);
+        recording(h, left);
+        recording(h, right);
         left.items(LEFT);
         right.items(RIGHT);
         h.gui.root().children(h.gui.row().width(Length.FILL).height(Length.FILL)
@@ -85,15 +73,15 @@ class ListViewTransferTest {
     }
 
     private static void press(HeadlessGui h, float x, float y) {
-        h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, (int) x, (int) y, 0));
+        h.bus.publish(h.gui.input(), new InputEvent.ButtonPressed(MouseButton.LEFT, (int) x, (int) y, 0));
     }
 
     private static void move(HeadlessGui h, float x, float y) {
-        h.bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved((int) x, (int) y, 0, 40, 0));
+        h.bus.publish(h.gui.input(), new InputEvent.PointerMoved((int) x, (int) y, 0, 40, 0));
     }
 
     private static void release(HeadlessGui h, float x, float y) {
-        h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, (int) x, (int) y, 0));
+        h.bus.publish(h.gui.input(), new InputEvent.ButtonReleased(MouseButton.LEFT, (int) x, (int) y, 0));
     }
 
     /** Picked up, let go (which latches), and put down with a click, over frames the user would have seen. */
@@ -108,6 +96,7 @@ class ListViewTransferTest {
         press(h, tx, ty);
         release(h, tx, ty);
         h.frame();
+        h.frame();          // and what landed is delivered
     }
 
     private static float midX(Rect r) {
@@ -119,32 +108,28 @@ class ListViewTransferTest {
     }
 
     @Test
-    @DisplayName("a row dropped on a folder row of the other list lands in it, and undoes")
+    @DisplayName("a row dropped on a row of the other list lands on it")
     void ontoARow() {
         try (HeadlessGui h = new HeadlessGui()) {
-            History history = new History();
-            h.gui.dropHistory(history);
             Two t = two(h);
             Rect from = rect(t.left(), "b.txt");
             Rect to = rect(t.right(), "y/");
             drag(h, midX(from), midY(from), midX(to), midY(to));
-            assertEquals(List.of("[b.txt] into y/"), drops);
+            assertEquals(List.of("[b.txt] onto y/"), drops);
             assertEquals(Set.of("b.txt"), t.left().selection().selection(), "what was grabbed is the selection");
-            assertTrue(history.canUndo());
         }
     }
 
     @Test
-    @DisplayName("a row that refuses hands the drop to the list, and the whole selection is carried in order")
-    void refusalBubbles() {
+    @DisplayName("the whole selection is carried, in order")
+    void theSelectionIsCarried() {
         try (HeadlessGui h = new HeadlessGui()) {
-            h.gui.dropHistory(new History());
             Two t = two(h);
             t.left().selection().set(Set.of("c.txt", "a.txt"));
             Rect from = rect(t.left(), "c.txt");
-            Rect to = rect(t.right(), "x.txt");   // a file: refuses, so the list takes it
+            Rect to = rect(t.right(), "x.txt");   // a file: what landing on it means is the application's
             drag(h, midX(from), midY(from), midX(to), midY(to));
-            assertEquals(List.of("[a.txt, c.txt] here"), drops);
+            assertEquals(List.of("[a.txt, c.txt] onto x.txt"), drops);
         }
     }
 
@@ -152,17 +137,63 @@ class ListViewTransferTest {
     @DisplayName("below the last row is the list itself, for a drop and never for a pick-up")
     void belowTheRows() {
         try (HeadlessGui h = new HeadlessGui()) {
-            h.gui.dropHistory(new History());
             Two t = two(h);
             Rect from = rect(t.left(), "a.txt");
             Rect last = rect(t.right(), "y/");
             float below = last.y() + last.h() * 3f;
             drag(h, midX(from), midY(from), midX(last), below);
-            assertEquals(List.of("[a.txt] here"), drops);
+            assertEquals(List.of("[a.txt] onto the list"), drops);
 
             drops.clear();
             drag(h, midX(last), below, midX(from), midY(from));   // nothing there to pick up
             assertEquals(List.of(), drops);
         }
+    }
+
+    @Test
+    @DisplayName("Control held makes a move a copy, shown before the release and told on landing")
+    void controlCopies() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Two t = two(h);
+            List<DropEffect> effects = new ArrayList<>();
+            h.bus.subscribe(ListView.LANDED, l -> effects.add(l.effect()));
+            Rect from = rect(t.left(), "a.txt");
+            Rect to = rect(t.right(), "x.txt");
+            float tx = midX(to);
+            float ty = midY(to);
+            press(h, midX(from), midY(from));
+            move(h, (midX(from) + tx) / 2f, (midY(from) + ty) / 2f);
+            h.frame();
+            move(h, tx, ty);
+            h.frame();
+            release(h, tx, ty);    // latched: carried with the hand free
+            h.frame();
+            assertEquals(DropEffect.MOVE, Seams.of(h.gui).drag().value().effect(), "the declared effect, no key held");
+
+            h.down(Key.LEFT_CONTROL).frame();
+            assertEquals(DropEffect.COPY, Seams.of(h.gui).drag().value().effect(),
+                    "Control shows a copy before the release");
+            press(h, tx, ty);
+            release(h, tx, ty);
+            h.frame();
+            h.frame();
+            h.up(Key.LEFT_CONTROL).frame();
+            assertEquals(List.of(DropEffect.COPY), effects, "and the drop lands as the copy it showed");
+        }
+    }
+
+    @Test
+    @DisplayName("the keys a desktop reads: Control copies, Shift moves, both or neither keep the declared effect")
+    void byKeys() {
+        Set<Modifier> none = Set.of();
+        Set<Modifier> control = Set.of(Modifier.CONTROL);
+        Set<Modifier> shift = Set.of(Modifier.SHIFT);
+        Set<Modifier> both = Set.of(Modifier.CONTROL, Modifier.SHIFT);
+        assertEquals(DropEffect.MOVE, DropEffect.MOVE.byKeys(none));
+        assertEquals(DropEffect.COPY, DropEffect.MOVE.byKeys(control));
+        assertEquals(DropEffect.MOVE, DropEffect.COPY.byKeys(shift));
+        assertEquals(DropEffect.COPY, DropEffect.COPY.byKeys(both));
+        assertEquals(DropEffect.LINK, DropEffect.LINK.byKeys(control), "a link is not a copy or a move");
+        assertEquals(DropEffect.NONE, DropEffect.NONE.byKeys(shift), "and nothing stays nothing");
     }
 }

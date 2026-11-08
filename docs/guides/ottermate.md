@@ -166,10 +166,9 @@ ok v1
 > tree
 ok v1
 15 titlebar "Calculator" [0,0 700x32]
-  3 box "Calculator" [0,0 113x32]
-    2 text "Calculator" [36,7 65x19]
-  27 instrument-screenshot [470,0 46x32]
-  28 instrument-automation [516,0 46x32]
+  27 titlebar-lockup @titlebar-mark [4,4 132x24]
+  3 box "Calculator" [140,0 113x32]
+    2 text "Calculator" [146,7 65x19]
 16 box @tape [0,32 768x403] clipped to [0,32 673x403]
 17 text @error [22,446 723x30] clipped to [22,446 650x30]
 18 textfield @entry [22,482 659x80] clipped to [22,482 650x80] focused ring

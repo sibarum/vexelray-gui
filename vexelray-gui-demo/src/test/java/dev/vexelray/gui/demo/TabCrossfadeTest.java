@@ -1,5 +1,7 @@
 package dev.vexelray.gui.demo;
 
+import dev.vexelray.gui.core.Timing;
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
@@ -60,12 +62,11 @@ class TabCrossfadeTest {
         try (KronoGui krono = KronoGui.attach(gui, Kron.driven())) {
             Node one = gui.text("one").width(Length.FILL).height(Length.FILL);
             Node two = gui.text("two").width(Length.FILL).height(Length.FILL);
-            Tabs tabs = new Tabs(gui).transition(Tabs.crossfade(
-                    (progress, done) -> krono.ramp(Dur.ms(100), Ease.LINEAR, progress, done)));
+            Tabs tabs = new Tabs(gui).crossfade(Timing.millis(100, Timing.Curve.LINEAR));   // on the clock KronoGui installed
             tabs.add("One", one);
             tabs.add("Two", two);
             gui.root().children(tabs.node());
-            gui.frame(W, H, TM);
+            Seams.of(gui).frame(W, H, TM);
 
             tabs.select(1);
 
@@ -76,7 +77,7 @@ class TabCrossfadeTest {
             List<Float> incoming = new ArrayList<>();
             for (int frame = 1; frame <= 12; frame++) {
                 krono.tick(Dur.ms(10).times(frame));
-                RetainedNode root = gui.frame(W, H, TM);
+                RetainedNode root = Seams.of(gui).frame(W, H, TM);
                 outgoing.add(find(root, one.id()).opacity());
                 incoming.add(find(root, two.id()).opacity());
             }
@@ -114,13 +115,12 @@ class TabCrossfadeTest {
                     gui.text("one").width(Length.FILL).height(Length.FILL),
                     gui.text("two").width(Length.FILL).height(Length.FILL),
                     gui.text("three").width(Length.FILL).height(Length.FILL));
-            Tabs tabs = new Tabs(gui).transition(Tabs.crossfade(
-                    (progress, done) -> krono.ramp(Dur.ms(100), Ease.LINEAR, progress, done)));
+            Tabs tabs = new Tabs(gui).crossfade(Timing.millis(100, Timing.Curve.LINEAR));   // on the clock KronoGui installed
             tabs.add("One", pages.get(0));
             tabs.add("Two", pages.get(1));
             tabs.add("Three", pages.get(2));
             gui.root().children(tabs.node());
-            gui.frame(W, H, TM);
+            Seams.of(gui).frame(W, H, TM);
 
             long elapsed = 0;
             int previous = 0;
@@ -138,7 +138,7 @@ class TabCrossfadeTest {
                 for (int frame = 1; frame <= 12; frame++) {
                     elapsed += 10;
                     krono.tick(Dur.ms(elapsed));
-                    root = gui.frame(W, H, TM);
+                    root = Seams.of(gui).frame(W, H, TM);
                     share.add(find(root, arriving.id()).opacity());
                 }
                 assertEquals(0.5f, share.get(4), 0.15f,

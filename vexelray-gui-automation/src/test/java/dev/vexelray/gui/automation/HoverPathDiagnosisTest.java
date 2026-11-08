@@ -1,5 +1,6 @@
 package dev.vexelray.gui.automation;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
@@ -79,15 +80,15 @@ class HoverPathDiagnosisTest {
             // A row: a start pad, the offender, and the target. The offender is 100px wide at rest.
             Node offender = gui.box().role("button").size(Length.dp(100), Length.dp(100));
             Node target = gui.box().role("button").size(Length.dp(100), Length.dp(100));
-            gui.onClick(target, targetClicks::incrementAndGet);
+            Seams.of(gui).onClick(target, targetClicks::incrementAndGet);
             // The defect, in one line, and it is a plausible one — a control that "helpfully" grows to show
             // more of itself when the pointer arrives. It moves everything to its right while doing so.
-            gui.onState(offender, state -> offender.size(
+            Seams.of(gui).onState(offender, state -> offender.size(
                     Length.dp(state == dev.vexelray.gui.core.input.InteractionState.HOVER ? 300 : 100),
                     Length.dp(100)));
             gui.root().children(gui.row().width(Length.FILL).height(Length.dp(100)).scroll(false, false)
                     .children(gui.box().size(Length.dp(100), Length.dp(100)), offender, target));
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
 
             Probe.mark(sibarum.probe.Lane.APP, "agent.mark", "A5: travelling to the target across the offender");
 
@@ -95,7 +96,7 @@ class HoverPathDiagnosisTest {
             String out = drivenWithFramesRunning(gui, driver -> driver.command("click " + target.id()));
             long deadline = System.nanoTime() + 500_000_000L;
             while (System.nanoTime() < deadline) {
-                gui.frame(W, H, NO_TEXT);        // let any click handler land before counting
+                Seams.of(gui).frame(W, H, NO_TEXT);        // let any click handler land before counting
             }
 
             assertTrue(out.startsWith("ok"), out);
@@ -140,7 +141,7 @@ class HoverPathDiagnosisTest {
         driver.start();
         long deadline = System.nanoTime() + 10_000_000_000L;
         while (!answer.isDone() && System.nanoTime() < deadline) {
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
             Thread.onSpinWait();
         }
         return answer.getNow("err the driver never answered");
@@ -151,10 +152,10 @@ class HoverPathDiagnosisTest {
         // The control, and the point of the whole module. Publishing the click as a single edge — what a
         // teleporting driver does — produces a log in which nothing was ever hovered, so a reader would
         // correctly conclude that nothing crossed anything. The bug would still be there, and invisible.
-        try (Gui gui = new Gui(sibarum.atchung.Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(sibarum.atchung.Atchung.create())) {
             Node offender = gui.box().role("button").size(Length.dp(100), Length.dp(100));
             AtomicInteger hovers = new AtomicInteger();
-            gui.onState(offender, state -> {
+            Seams.of(gui).onState(offender, state -> {
                 if (state == dev.vexelray.gui.core.input.InteractionState.HOVER) {
                     hovers.incrementAndGet();
                 }
@@ -162,11 +163,11 @@ class HoverPathDiagnosisTest {
             gui.root().children(gui.row().width(Length.FILL).height(Length.dp(100)).scroll(false, false)
                     .children(gui.box().size(Length.dp(100), Length.dp(100)), offender,
                             gui.box().size(Length.dp(100), Length.dp(100))));
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
 
-            gui.bus().publish(dev.vexelray.gui.core.input.InputTopics.INPUT,
+            gui.bus().publish(gui.input(),
                     new sibarum.tactroller.api.InputEvent.PointerMoved(250, 50, 240, 0, 0));
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
 
             assertEquals(0, hovers.get(),
                     "a jump hovers nothing on the way, which is why a teleporting driver reports a clean run");

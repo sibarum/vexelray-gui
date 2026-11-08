@@ -1,7 +1,9 @@
 package dev.vexelray.gui.core;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.model.RetainedNode;
 import dev.vexelray.gui.core.style.PaintMotion;
 import org.junit.jupiter.api.Test;
 import sibarum.atchung.Atchung;
@@ -30,7 +32,7 @@ class PaintMotionTest {
     }
 
     /** What it was told, as "channel from->to" lines, and whether it says it is still moving. */
-    private static final class Recording implements PaintMotion {
+    private static class Recording implements PaintMotion {
         final List<String> told = new ArrayList<>();
         boolean moving;
 
@@ -45,43 +47,146 @@ class PaintMotionTest {
         }
 
         @Override
-        public boolean moving() {
-            return moving;
+        public long draw(Frame frame) {
+            return moving ? frame.presentNanos() : Frame.NEVER;
         }
     }
 
     @Test
     void aColourChangedIsReportedAndAFirstColourIsNot() {
-        try (Gui gui = new Gui(Atchung.create(), SAME_THREAD)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Recording paint = new Recording();
             gui.paintMotion(paint);
             Node n = gui.text("x").width(Length.dp(40)).height(Length.dp(20));
             gui.root().children(n);
             n.background(A).border(Length.dp(1), A).textColor(A);
-            gui.frame(400f, 300f, PaintMotionTest::noText);
+            Seams.of(gui).frame(400f, 300f, PaintMotionTest::noText);
             assertTrue(paint.told.isEmpty(), "a first colour has nowhere to come from: " + paint.told);
 
             n.background(B).border(Length.dp(1), B).textColor(B);
-            gui.frame(400f, 300f, PaintMotionTest::noText);
+            Seams.of(gui).frame(400f, 300f, PaintMotionTest::noText);
             assertEquals(List.of("BACKGROUND A->B", "BORDER A->B", "TEXT A->B"), paint.told);
 
             paint.told.clear();
             n.background(B);
-            gui.frame(400f, 300f, PaintMotionTest::noText);
+            Seams.of(gui).frame(400f, 300f, PaintMotionTest::noText);
             assertTrue(paint.told.isEmpty(), "writing the colour it already has changes nothing");
         }
     }
 
+    /**
+     * An opacity is a look, told as white at that alpha: from the one drawn to the one set, once the node is on screen.
+     * One given before it was laid out is where it starts, so nothing is told for it.
+     */
+    @Test
+    void anOpacityChangedOnScreenIsReportedAsAnAlpha() {
+        try (Gui gui = new Gui(Atchung.create())) {
+            List<String> alphas = new ArrayList<>();
+            gui.paintMotion(new Recording() {
+                @Override
+                public void repainted(long node, Channel channel, Color from, Color to) {
+                    alphas.add(channel + " " + from.a() + "->" + to.a());
+                }
+            });
+            Node n = gui.box().width(Length.dp(40)).height(Length.dp(20)).opacity(0.5f);
+            gui.root().children(n);
+            Seams.of(gui).frame(400f, 300f, PaintMotionTest::noText);
+            assertTrue(alphas.isEmpty(), "an opacity it was built with is where it starts: " + alphas);
+
+            n.opacity(0f);
+            Seams.of(gui).frame(400f, 300f, PaintMotionTest::noText);
+            assertEquals(List.of("OPACITY 0.5->0.0"), alphas);
+
+            alphas.clear();
+            n.paintCuts(true).opacity(1f);
+            Seams.of(gui).frame(400f, 300f, PaintMotionTest::noText);
+            assertTrue(alphas.isEmpty(), "a node whose look is data cuts its opacity too");
+        }
+    }
+
+    /**
+     * Words replaced on a label on screen are told as new words coming up from nothing, after a rest that lets go of a
+     * crossfade still under way; the old words are kept for the renderer. A field's words are the user's, and are not.
+     */
+    @Test
+    void wordsReplacedOnALabelAreToldAndAFieldsAreNot() {
+        try (Gui gui = new Gui(Atchung.create())) {
+            List<String> words = new ArrayList<>();
+            gui.paintMotion(new Recording() {
+                @Override
+                public void repainted(long node, Channel channel, Color from, Color to) {
+                    words.add(channel + " " + from.a() + "->" + to.a());
+                }
+            });
+            Node label = gui.text("one");
+            Node field = gui.text("typed").editable(true);
+            gui.root().children(label, field);
+            Seams.of(gui).frame(400f, 300f, PaintMotionTest::noText);
+            assertTrue(words.isEmpty(), "first words have nothing to come up over: " + words);
+
+            label.text("two");
+            field.text("typed more");
+            Seams.of(gui).frame(400f, 300f, PaintMotionTest::noText);
+            assertEquals(List.of("REPLACED 0.0->0.0", "REPLACED 0.0->1.0"), words);
+        }
+    }
+
+    /**
+     * Words replaced again while the last were still coming up are a readout being driven: the crossfade is let go and
+     * the new words are drawn at once, rather than a crossfade begun at each step that never arrives and ghosts.
+     */
+    @Test
+    void wordsReplacedMidCrossfadeAreFollowed() {
+        try (Gui gui = new Gui(Atchung.create())) {
+            List<String> words = new ArrayList<>();
+            gui.paintMotion(new Recording() {
+                @Override
+                public void repainted(long node, Channel channel, Color from, Color to) {
+                    words.add(channel + " " + from.a() + "->" + to.a());
+                }
+
+                @Override
+                public Color drawn(long node, Channel channel, Color settled) {
+                    return channel == Channel.REPLACED ? Color.withAlpha(settled, 0.5f) : settled;   // never arrives
+                }
+            });
+            Node label = gui.text("1");
+            gui.root().children(label);
+            Seams.of(gui).frame(400f, 300f, PaintMotionTest::noText);
+            label.text("2");
+            Seams.of(gui).frame(400f, 300f, PaintMotionTest::noText);
+            words.clear();
+
+            label.text("3");
+            RetainedNode n = find(Seams.of(gui).frame(400f, 300f, PaintMotionTest::noText), label.id());
+            assertEquals(List.of("REPLACED 1.0->1.0"), words, "told it rests all the way up, and no new crossfade");
+            assertEquals(false, n.replacing, "so the new words are drawn as they are");
+        }
+    }
+
+    private static RetainedNode find(RetainedNode from, long id) {
+        if (from.id == id) {
+            return from;
+        }
+        for (RetainedNode c : from.children) {
+            RetainedNode hit = find(c, id);
+            if (hit != null) {
+                return hit;
+            }
+        }
+        return null;
+    }
+
     @Test
     void aMotionInProgressAsksForTheNextFrame() {
-        try (Gui gui = new Gui(Atchung.create(), SAME_THREAD)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Recording paint = new Recording();
             gui.paintMotion(paint);
-            gui.frame(400f, 300f, PaintMotionTest::noText);
+            Seams.of(gui).frame(400f, 300f, PaintMotionTest::noText);
             gui.takeDrawNeeded();
 
             paint.moving = true;
-            gui.frame(400f, 300f, PaintMotionTest::noText);
+            Seams.of(gui).frame(400f, 300f, PaintMotionTest::noText);
             assertTrue(gui.takeDrawNeeded(), "a fade on its way draws a different frame next");
         }
     }
@@ -89,16 +194,16 @@ class PaintMotionTest {
     /** A node whose colour is data is repainted at once, so a pooled marker never shows its last owner's colour. */
     @Test
     void aNodeWhoseColoursAreDataIsNotReported() {
-        try (Gui gui = new Gui(Atchung.create(), SAME_THREAD)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Recording paint = new Recording();
             gui.paintMotion(paint);
             Node n = gui.text("x").width(Length.dp(40)).height(Length.dp(20)).paintCuts(true);
             gui.root().children(n);
             n.background(A).textColor(A);
-            gui.frame(400f, 300f, PaintMotionTest::noText);
+            Seams.of(gui).frame(400f, 300f, PaintMotionTest::noText);
 
             n.background(B).textColor(B);
-            gui.frame(400f, 300f, PaintMotionTest::noText);
+            Seams.of(gui).frame(400f, 300f, PaintMotionTest::noText);
 
             assertTrue(paint.told.isEmpty(), "nothing to fade: " + paint.told);
         }

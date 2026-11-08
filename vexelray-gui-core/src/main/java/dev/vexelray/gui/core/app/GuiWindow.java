@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core.app;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.canvas.Canvas;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.canvas.CanvasShader;
@@ -120,6 +121,8 @@ final class GuiWindow implements AutoCloseable {
     private final ShadeletTables tables;
     private final GraphicsPipeline pipeline;
     private final WindowPresenter presenter;
+    /** The passes for SDG groups drawn apart, recorded before each frame's own (and each capture's). */
+    private final GroupPasses groupPasses;
     private final Canvas canvas;
     /** Bound at the image set for every span that draws no image -- see {@link AtlasTexture#placeholder}. */
     private final DeviceImages images;
@@ -144,6 +147,27 @@ final class GuiWindow implements AutoCloseable {
      * then not drawn would leave the window showing what it showed before, until something else changed.
      */
     private boolean drawOwed = true;
+    /**
+     * How many draws every window on the loop has made: the number of the last, as its {@code draw.ran} row says it.
+     * One count for all of them, so a number names one draw; the loop's thread alone touches it.
+     */
+    private static long draws;
+    /** The last pass found the GPU not ready for the owed draw; the presenter wakes the loop when it is. */
+    private boolean gpuHeld;
+    /** The presenter (or the slow GPU) has been asked to wake the loop and has not yet. Cleared on its thread. */
+    private volatile boolean gpuArmed;
+    /** When that wake came, for the frame's cost; 0 when the last frame was not waited for. */
+    private volatile long gpuReadyAt;
+    private Runnable gpuWake = () -> { };
+    private FrameCosts frameCosts;
+    /** The last draw's start and its time on this thread, until its cost is reported; 0 when there is none to report. */
+    private long costStarted;
+    private long costCpu;
+    /**
+     * The debug instrument's GPU ({@code -Dvexelray.debug.slowFrames}): busy until this after each draw, as a GPU that
+     * slow would be, with the thread free meanwhile. 0 when it is not busy.
+     */
+    private long slowGpuUntil;
     /** The window size the last drawn frame was for. A different size is owed a draw even if the tree is not. */
     private int drawnWidth = -1;
     private int drawnHeight = -1;
@@ -205,6 +229,7 @@ final class GuiWindow implements AutoCloseable {
         this.canvas = new Canvas(initialWidth, initialHeight);
         this.vertexBuffer = new VertexBuffer(device, CAPACITY_FLOATS);
         this.tables = new ShadeletTables(device);
+        this.groupPasses = new GroupPasses(device, images, fonts.first(), fonts.textures(), tables);
         canvas.looks(images.looks());
         ComposedShader vs = CanvasShader.vertex();
         ComposedShader fs = images.fragment();
@@ -245,7 +270,7 @@ final class GuiWindow implements AutoCloseable {
         presenter.throttleResize(true);
         try {
             liveStep.run();
-            pull();
+            pull(true);
             if (tally != null) {
                 tally.close();   // a pulled frame is an iteration of its own, so it is tallied as one
             }
@@ -259,14 +284,23 @@ final class GuiWindow implements AutoCloseable {
      * has been asked to close — the host then {@link #close()}es this bundle (the shared device stays up).
      */
     boolean frame(Runnable beforeFrame) {
+        return frame(beforeFrame, true);
+    }
+
+    /**
+     * As {@link #frame(Runnable)}, drawing only if {@code mayDraw}. A pass that may not draw still pumps, takes input,
+     * drains and lays out: input and messages are answered when they arrive, and only presenting waits for the
+     * ceiling's next slot, with the draw kept owed until then ({@link #drawOwed()}).
+     */
+    boolean frame(Runnable beforeFrame, boolean mayDraw) {
         this.beforeFrame = beforeFrame == null ? () -> { } : beforeFrame;
         if (!window.pumpEvents()) {
             return false;
         }
-        if (gui != null) {
+        if (gui != null && Seams.of(gui).zoomSizesWindow()) {
             // Before the frame, so the resize it may ask for is pumped by this frame's input and laid out once,
             // rather than drawn a frame at the new zoom in the old size and then again.
-            zoomSizing.follow(window, gui.zoom().value());
+            zoomSizing.follow(window, Seams.of(gui).zoom().value());
         }
         if (window.isMinimized()) {
             // A minimized window is 0x0: there is nothing to present to, and a swapchain acquired against a
@@ -278,7 +312,20 @@ final class GuiWindow implements AutoCloseable {
             idle();
             return true;
         }
-        return pull();
+        return pull(mayDraw);
+    }
+
+    /** Whether a draw is owed and has not happened: what a pass that was not allowed to draw left for the next slot. */
+    boolean drawOwed() {
+        return drawOwed;
+    }
+
+    /**
+     * Whether a draw is owed and is waiting for nothing but the ceiling: not one held for the GPU, which the presenter
+     * wakes the loop for ({@link #gpuWake}), and which no slot would let run sooner.
+     */
+    boolean drawDue() {
+        return drawOwed && !gpuHeld;
     }
 
     /**
@@ -290,8 +337,11 @@ final class GuiWindow implements AutoCloseable {
      * changed the tree, a layout that moved something, a requested frame, or a window that is not the size it was
      * last drawn at. Before this split, every wake was a full draw and present, so a pointer moving over a still
      * window presented a frame per move.
+     *
+     * <p>{@code mayDraw} false is a pass between the ceiling's slots: the update runs, and a draw it makes owed is
+     * kept for the next pass that may draw. Input and messages run at their own rate; only presenting is capped.
      */
-    private boolean pull() {
+    private boolean pull(boolean mayDraw) {
         // The application edge - on a real app this is the input pump, so its cost is input's, not drawing's.
         try (Zone z = Probe.zone(Lane.FRAME, "before frame")) {
             beforeFrame.run();
@@ -303,14 +353,109 @@ final class GuiWindow implements AutoCloseable {
         if (window.width() != drawnWidth || window.height() != drawnHeight) {
             drawOwed = true;   // a resize the tree did not notice is still a swapchain the presenter must rebuild
         }
+        gpuHeld = false;
         if (!drawOwed) {
             Probe.count(Lane.FRAME, "draw skipped", 1);
             return true;
         }
+        if (!mayDraw) {
+            Probe.count(Lane.FRAME, "draw held for the ceiling", 1);
+            return true;
+        }
+        // The GPU is a clock of its own too. A draw it is not ready for is not waited for here, inside the presenter,
+        // where the thread could take no input and no messages until the GPU finished: it stays owed, and the
+        // presenter tells the loop when to look again (drawDue, armGpuWake).
+        if (!gpuReady()) {
+            Probe.count(Lane.FRAME, "draw held for the GPU", 1);
+            gpuHeld = true;
+            armGpuWake();
+            return true;
+        }
+        reportFrameCost();
         if (tally != null) {
             tally.rendering();
         }
-        return presenter.render(0, this::draw);
+        long started = System.nanoTime();
+        boolean open = presenter.render(0, this::draw);
+        if (!drawOwed) {
+            costStarted = started;
+            costCpu = System.nanoTime() - started;
+            long slow = gui == null ? 0L
+                    : gui.flatShading() ? GuiApp.DEBUG_SLOW_FLAT_FRAME_NANOS : GuiApp.DEBUG_SLOW_FRAME_NANOS;
+            if (slow > 0L) {
+                slowGpuUntil = System.nanoTime() + slow;
+            }
+        }
+        return open;
+    }
+
+    /** {@link WindowPresenter#ready}, behind the debug instrument's slow GPU when there is one. */
+    private boolean gpuReady() {
+        if (slowGpuUntil != 0L) {
+            if (System.nanoTime() < slowGpuUntil) {
+                return false;
+            }
+            slowGpuUntil = 0L;
+        }
+        return presenter.ready();
+    }
+
+    /** Ask the presenter (or the slow GPU) to wake the loop when the held draw can run, unless it is already asked. */
+    private void armGpuWake() {
+        if (gpuArmed) {
+            return;
+        }
+        gpuArmed = true;
+        Runnable wake = () -> {
+            gpuReadyAt = System.nanoTime();
+            gpuArmed = false;
+            gpuWake.run();
+        };
+        long until = slowGpuUntil;
+        if (until != 0L) {
+            Thread t = new Thread(() -> {
+                java.util.concurrent.locks.LockSupport.parkNanos(until - System.nanoTime());
+                wake.run();
+            }, "vexel-slow-gpu");
+            t.setDaemon(true);
+            t.start();
+            return;
+        }
+        presenter.whenReady(wake);
+    }
+
+    /**
+     * What the last frame cost the machine, handed to {@link #frameCosts} when the next draw finds the GPU ready: from
+     * the start of that draw to the GPU being done with it when the loop had to wait for that, and the draw's own time
+     * on this thread when it did not.
+     */
+    private void reportFrameCost() {
+        if (costStarted == 0L) {
+            return;
+        }
+        long readyAt = gpuReadyAt;
+        long cost = readyAt > costStarted ? readyAt - costStarted : costCpu;
+        long started = costStarted;
+        costStarted = 0L;
+        gpuReadyAt = 0L;
+        if (frameCosts != null) {
+            frameCosts.drawn(started, cost);
+        }
+    }
+
+    /** What a frame cost, start to the GPU done with it: {@link SlowFrames#drawn}'s shape. */
+    interface FrameCosts {
+        void drawn(long startNanos, long costNanos);
+    }
+
+    /** Hand each drawn frame's cost to {@code costs}; the main window's go to {@link SlowFrames}. */
+    void frameCosts(FrameCosts costs) {
+        this.frameCosts = costs;
+    }
+
+    /** What wakes the loop, from any thread, when a draw held for the GPU can run: the host's {@code postWake}. */
+    void gpuWake(Runnable wake) {
+        this.gpuWake = wake == null ? () -> { } : wake;
     }
 
     /**
@@ -435,9 +580,11 @@ final class GuiWindow implements AutoCloseable {
         tables.upload(images.looks(), canvas);
 
         Color page = gui.drawnTheme().color(Role.PAGE);
+        dev.vexelray.vulkan.present.Recorder groups = groupPasses.prepare(canvas, vertexCount, vertexBuffer.handle());
         byte[] rgba = OffscreenDraw.toRgba(device, capturePass.handle(), capturePipeline, w, h,
                 vertexBuffer.handle(), fonts.first().descriptorSet(), tables.buffer().descriptorSet(),
-                GuiApp.bind(canvas.runs(), vertexCount, images, fonts.textures()), page.r(), page.g(), page.b(), 1f);
+                GuiApp.bind(canvas.runs(), vertexCount, images, fonts.textures()), page.r(), page.g(), page.b(), 1f,
+                groups);
 
         // The vertex buffer now holds the capture's geometry and the presenter's run list still describes the
         // last presented frame. Nothing reads either until the next frame rewrites both, but leaving the two
@@ -499,6 +646,13 @@ final class GuiWindow implements AutoCloseable {
             emit(canvas.toVertexArray(), canvas.vertexCount(), canvas.runs());
             tables.upload(images.looks(), canvas);
         }
+        // The draw's own row, after the zone that timed it: its number, apart from the pass's, and the causes of the
+        // edits it is the first to show (Reconciler.takeDrawnCauses), so a tool can follow a click to the draw that
+        // showed what it changed. The draw itself runs in the pass's cause, which says nothing of those.
+        draws++;
+        if (Probe.ON) {
+            Probe.mark(Lane.DRAW, "draw.ran", "#" + draws + (gui == null ? "" : gui.takeDrawnCauses()));
+        }
     }
 
     /**
@@ -522,6 +676,8 @@ final class GuiWindow implements AutoCloseable {
             vertexCount = room;
         }
         vertexBuffer.update(vertices, vertexCount * CanvasVertex.FLOATS_PER_VERTEX);
+        // groups first: their targets are given here, and the frame's own runs read them
+        presenter.prePass(groupPasses.prepare(canvas, vertexCount, vertexBuffer.handle()));
         presenter.setRuns(GuiApp.bind(runs, vertexCount, images, fonts.textures()));
     }
 
@@ -550,7 +706,7 @@ final class GuiWindow implements AutoCloseable {
         // Everything between a mutation and a drawable node: dispatch, drain, reconcile, layout, publish. The
         // LAYOUT lane names the pieces; this is their sum, and the one number to compare against DRAW and GPU.
         try (Zone z = Probe.zone(Lane.LAYOUT, "tree update")) {
-            root = gui == null ? null : gui.frame(canvas.width(), canvas.height(), measurer);
+            root = gui == null ? null : Seams.of(gui).frame(canvas.width(), canvas.height(), measurer);
         }
         if (clientChrome) {
             // The tree's own declarations, plus how far into its dead space it hands over a resize grip — both
@@ -563,6 +719,11 @@ final class GuiWindow implements AutoCloseable {
     /** Whether the tree as the last update left it names {@code image} anywhere — see {@code GuiApp.release}. */
     boolean shows(SampledImage image) {
         return updated != null && GuiApp.names(updated, image);
+    }
+
+    /** Whether this window shows {@code image} as a node.s image now, not counting one fading out under its replacement. */
+    boolean showsNow(SampledImage image) {
+        return updated != null && GuiApp.names(updated, image, false);
     }
 
     /** The raw OS window handle — for attaching input at the application edge. */
@@ -583,6 +744,7 @@ final class GuiWindow implements AutoCloseable {
         // finished now, whole, rather than left for a shutdown hook a killed process never runs.
         dev.vexelray.gui.core.WindowRecording.windowClosed(window.osHandle());
         closeCapture();
+        groupPasses.close();   // after the presenter has waited the device idle: no frame reads its targets now
         pipeline.close();
         vertexBuffer.close();
         tables.close();

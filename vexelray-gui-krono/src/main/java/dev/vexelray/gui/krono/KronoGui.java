@@ -8,6 +8,7 @@ import sibarum.kronometer.Cell;
 import sibarum.kronometer.Clock;
 import sibarum.kronometer.Curve;
 import sibarum.kronometer.Driven;
+import dev.vexelray.gui.core.spi.Seams;
 import sibarum.kronometer.Dur;
 import sibarum.kronometer.Effect;
 import sibarum.kronometer.Interp;
@@ -42,7 +43,7 @@ import java.util.function.Supplier;
  *      KronoGui krono = KronoGui.attach(gui)) {
  *
  *     krono.bind(card, Node::elevation, krono.lift());       // a signal drives a property
- *     gui.onClick(button, () -> krono.animate(               // callable from a worker thread
+ *     Seams.of(gui).onClick(button, () -> krono.animate(               // callable from a worker thread
  *             card, Node::elevation, dp(2), dp(8), ms(200), Ease.OUT_CUBIC));
  *
  *     app.run(gui, 0, krono::tick);                          // one tick per presented frame
@@ -52,7 +53,7 @@ import java.util.function.Supplier;
  * <h2>Where it attaches, and why there</h2>
  *
  * {@code GuiApp.run}'s {@code beforeFrame} hook is documented as the app-edge place to pump input onto
- * the bus <em>before</em> {@link Gui#frame} drains and dispatches. That is exactly the right moment for
+ * the bus <em>before</em> {@link dev.vexelray.gui.core.spi.Seams#frame} drains and dispatches. That is exactly the right moment for
  * {@link #tick()}: a {@linkplain Driven.Mode#INLINE driven} clock returns with its batch complete, so
  * every mutation an animation posts this frame is already on the bus when the reconciler runs. Nothing
  * is drawn out of phase with what was computed, and the frame that presents it is the frame that
@@ -92,6 +93,9 @@ public final class KronoGui implements AutoCloseable {
     /** {@link #whyBusy()} as the last tick that was asked for it left it. */
     private volatile java.util.List<String> busyAtLastTick = java.util.List.of();
 
+    /** This clock as the tree's, installed at attach and taken away at close. */
+    private final dev.vexelray.gui.core.spi.Clock clock;
+
     private KronoGui(Gui gui, Kron kron) {
         this.gui = gui;
         this.kron = kron;
@@ -107,7 +111,43 @@ public final class KronoGui implements AutoCloseable {
         if (kron.clock() instanceof sibarum.kronometer.Driven) {
             registerClock();
         }
+        // The tree's clock: what runs a widget's Timing, which a view states and never drives.
+        // Its time is the tree's present time too: what a frame is drawn for (dev.vexelray.gui.core.Frame), so a fade
+        // or a slide and a widget's Timing advance on the one clock, stepped together by a test or a capture.
+        this.clock = new dev.vexelray.gui.core.spi.Clock() {
+            @Override
+            public void run(dev.vexelray.gui.core.Timing timing, java.util.function.DoubleConsumer progress,
+                            Runnable done) {
+                ramp(new Dur(timing.duration().toNanos()), ease(timing.curve()), progress, done);
+            }
+
+            @Override
+            public long nanos() {
+                return KronoGui.this.nanos();
+            }
+        };
+        Seams.of(gui).clock(clock);
     }
+
+    /**
+     * The present time on this clock, in nanoseconds: logical time as the last tick left it. The tree draws for it
+     * ({@code Frame.presentNanos}), and what is told a change between ticks starts from it.
+     */
+    public long nanos() {
+        return kron.now().nanos();
+    }
+
+    /** The curve a widget's {@link dev.vexelray.gui.core.Timing.Curve} names, on this clock. */
+    static Ease ease(dev.vexelray.gui.core.Timing.Curve curve) {
+        return CURVES.get(curve);
+    }
+
+    /** Every curve a timing can name. {@code KronoGuiTest} holds that none is missing. */
+    private static final java.util.Map<dev.vexelray.gui.core.Timing.Curve, Ease> CURVES = new java.util.EnumMap<>(
+            java.util.Map.of(
+                    dev.vexelray.gui.core.Timing.Curve.LINEAR, Ease.LINEAR,
+                    dev.vexelray.gui.core.Timing.Curve.OUT_CUBIC, Ease.OUT_CUBIC,
+                    dev.vexelray.gui.core.Timing.Curve.IN_OUT_CUBIC, Ease.IN_OUT_CUBIC));
 
     private void registerClock() {
         gui.animationClock(new dev.vexelray.gui.core.AnimationClock() {
@@ -149,7 +189,7 @@ public final class KronoGui implements AutoCloseable {
      * {@code GuiApp.run(gui, maxFrames, beforeFrame)}.
      *
      * <p>Returns with the batch complete, so the mutations this frame's animations produce are on the bus
-     * before {@link Gui#frame} reconciles.
+     * before {@link dev.vexelray.gui.core.spi.Seams#frame} reconciles.
      */
     public void tick() {
         // Read before the tick, so a post that lands during it counts as unseen: this tick may or may not place
@@ -505,6 +545,9 @@ public final class KronoGui implements AutoCloseable {
 
     @Override
     public void close() {
+        if (Seams.of(gui).clock() == clock) {
+            Seams.of(gui).clock(null);   // a later attach installed its own: that one stays
+        }
         kron.close();
     }
 

@@ -4,7 +4,7 @@ package dev.vexelray.gui.core.drop;
  * What a node offers up when a drag begins on it.
  *
  * <pre>{@code
- * gui.onDragSource(treeBody, (x, y) -> rowAt(y) instanceof TreeRow r ? Payload.of(ROW, r) : null);
+ * Seams.of(gui).onDragSource(treeBody, (x, y) -> rowAt(y) instanceof TreeRow r ? Payload.of(ROW, r) : null);
  * }</pre>
  *
  * <p>Asked once, at the moment the gesture is recognised as a drag rather than a click — which is later than

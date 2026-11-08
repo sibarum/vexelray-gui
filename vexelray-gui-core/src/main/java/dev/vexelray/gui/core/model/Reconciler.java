@@ -7,6 +7,7 @@ import dev.vexelray.gui.core.style.Paint;
 import dev.vexelray.gui.core.style.PaintMotion;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
+import sibarum.probe.Cause;
 import sibarum.probe.Lane;
 import sibarum.probe.Probe;
 
@@ -110,6 +111,12 @@ public final class Reconciler implements Mutation.Sink {
      * what makes the common one right anyway. Only a parent that kept nothing (every child leaving or new) counts as
      * replaced; a single removal, or a keyed list's edit, is untouched: what leaves keeps its place, and then the gap
      * closes.
+     *
+     * <p><b>A swap is a replacement too.</b> One view hidden as the sibling beside it is shown — the hint that gives
+     * way to the tabs, the files that give way to Open, a source that gives way to its formatted view — is one thing
+     * put in place of another, though its parent keeps everything else. Holding the hidden one's place would squeeze
+     * the two into it together and then slide the new one into the gap, so it is lifted as a replaced node is. Beside
+     * means next to it with nothing visible between; a hide and a show further apart are two edits, each kept in place.
      */
     public void liftReplaced() {
         if (!lifted.isEmpty()) {
@@ -122,8 +129,11 @@ public final class Reconciler implements Mutation.Sink {
         }
         for (RetainedNode n : beganLeaving) {
             RetainedNode p = n.parent;
-            if (n.leaving && !n.lifted && p != null && gainedArrival.contains(p) && n.layoutCtx != null
-                    && keptNothing(p)) {
+            if (!n.leaving || n.lifted || p == null || !gainedArrival.contains(p) || n.layoutCtx == null) {
+                continue;
+            }
+            RetainedNode in = n.hiding ? arrivedBeside(n, p) : null;
+            if (in != null || !n.hiding && keptNothing(p)) {
                 n.lifted = true;
                 n.liftedX = n.x - p.x;
                 n.liftedY = n.y - p.y;
@@ -132,16 +142,21 @@ public final class Reconciler implements Mutation.Sink {
                 lifted.add(n);
                 layoutDirty = true;
                 exits.replaced(n);
-                replacedParents.add(p);
+                if (in != null) {
+                    swappedIn.add(in);
+                } else {
+                    replacedParents.add(p);
+                }
             }
         }
         // What arrived in a replaced parent waits on what it replaces, so the two are never seen through each other.
         for (RetainedNode a : arrivedNow) {
-            if (a.parent != null && replacedParents.contains(a.parent)) {
+            if (a.parent != null && replacedParents.contains(a.parent) || swappedIn.contains(a)) {
                 enters.replacing(a);
             }
         }
         replacedParents.clear();
+        swappedIn.clear();
         beganLeaving.clear();
         gainedArrival.clear();
         arrivedNow.clear();
@@ -150,6 +165,33 @@ public final class Reconciler implements Mutation.Sink {
     /** Parents found replaced in this {@link #liftReplaced}; scratch, empty between calls. */
     private final java.util.Set<RetainedNode> replacedParents =
             java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+
+    /** Nodes shown in place of a sibling hidden beside them, in this {@link #liftReplaced}; scratch. */
+    private final java.util.Set<RetainedNode> swappedIn =
+            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+
+    /**
+     * The sibling shown in this drain that stands beside hiding {@code n} under {@code p}, with nothing visible between
+     * them, or null: what {@code n} is swapped for. Before it or after it, the nearer side first.
+     */
+    private RetainedNode arrivedBeside(RetainedNode n, RetainedNode p) {
+        int at = p.children.indexOf(n);
+        RetainedNode in = arrivedFrom(p, at, -1);
+        return in != null ? in : arrivedFrom(p, at, 1);
+    }
+
+    private RetainedNode arrivedFrom(RetainedNode p, int at, int step) {
+        for (int i = at + step; i >= 0 && i < p.children.size(); i += step) {
+            RetainedNode c = p.children.get(i);
+            if (arrivedNow.contains(c)) {
+                return c;
+            }
+            if (c.visible()) {
+                return null;   // something kept stands between: two edits, not one view put in place of another
+            }
+        }
+        return null;
+    }
 
     /** Lifted nodes still fading, which a change of size or scale lets go of at once (see {@link #dropLifted}). */
     private final List<RetainedNode> lifted = new java.util.ArrayList<>();
@@ -165,7 +207,11 @@ public final class Reconciler implements Mutation.Sink {
             return;
         }
         for (RetainedNode n : lifted) {
-            if (n.leaving && n.parent != null) {
+            if (n.hiding) {
+                hideNow(n);   // a view swapped out is the application's to keep: hidden, not detached
+                layoutDirty = true;
+                drawDirty = true;
+            } else if (n.leaving && n.parent != null) {
                 n.parent.children.remove(n);
                 n.parent = null;
                 departed.add(n);
@@ -174,6 +220,15 @@ public final class Reconciler implements Mutation.Sink {
             }
         }
         lifted.clear();
+    }
+
+    /** Hide {@code n}, which was fading out to be hidden, for real: back in the flow, not drawn, its place given up. */
+    private void hideNow(RetainedNode n) {
+        n.hiding = false;
+        n.leaving = false;
+        n.lifted = false;
+        n.set(PropKey.VISIBLE, Boolean.FALSE);
+        exits.left(n);
     }
 
     /** Nodes that arrived since {@link #liftReplaced} last ran. */
@@ -216,7 +271,8 @@ public final class Reconciler implements Mutation.Sink {
     /**
      * Detach {@code gone} — leaving nodes whose presence has reached zero — and release whatever an earlier call
      * detached that nothing has put back since. Returns whether anything is still owed a frame: a node detached now
-     * is released by the next call, so the caller must make sure there is one.
+     * is released by the next call, and a node hidden now leaves a gap the next layout closes, so the caller must make
+     * sure there is one. The dirty bits set here are the next frame's: this frame clears its own after this call.
      *
      * <p><b>Why released a frame late.</b> A reader decides to put a leaving node back from the published snapshot,
      * which is a frame old, and its edit lands at the next drain. A node detached and released in one go could be
@@ -236,7 +292,14 @@ public final class Reconciler implements Mutation.Sink {
             }
             departed.clear();
         }
+        boolean hidden = false;
         for (RetainedNode g : gone) {
+            if (g.hiding) {
+                // Hidden, not removed: it stays in the tree, hidden for real now that it has gone, and the rest close up.
+                hideNow(g);
+                hidden = true;
+                continue;
+            }
             if (g.parent != null) {
                 g.parent.children.remove(g);
                 g.parent = null;
@@ -245,7 +308,7 @@ public final class Reconciler implements Mutation.Sink {
             layoutDirty = true;
             drawDirty = true;
         }
-        return !departed.isEmpty();
+        return hidden || !departed.isEmpty();
     }
 
     /** Nodes asked to be brought into view since the frame last took them (see {@link Mutation.Reveal}). */
@@ -338,6 +401,54 @@ public final class Reconciler implements Mutation.Sink {
 
     /** The sink {@link #apply} hands a mutation while the layout lane is traced: this one, saying what each did. */
     private final Traced traced = new Traced();
+
+    /** The most causes {@link #takeDrawnCauses} names; the rest are counted. */
+    public static final int DRAWN_CAUSES = 16;
+
+    // The causes of the edits that changed what is drawn since the last take, each once, in the order first seen; and
+    // how many more there were. Kept while the layout lane is traced, by the traced sink. GUI thread only.
+    private final long[] drawnCauses = new long[DRAWN_CAUSES];
+    private int drawn;
+    private int drawnOver;
+
+    private void drew(long cause) {
+        if (cause == Cause.NONE) {
+            return;
+        }
+        for (int i = 0; i < drawn; i++) {
+            if (drawnCauses[i] == cause) {
+                return;
+            }
+        }
+        if (drawn < DRAWN_CAUSES) {
+            drawnCauses[drawn++] = cause;
+        } else {
+            drawnOver++;
+        }
+    }
+
+    /**
+     * The causes of the edits that changed what is drawn since the last call, and clear them: each once, as the probe
+     * writes a cause, after a space, at most {@link #DRAWN_CAUSES}, then {@code +<n>} for how many more there were;
+     * empty when there were none. A cause is counted again once it has been taken, so an edit left owed by a held draw
+     * is named by the draw that shows it. Read by the host as it draws; kept only while the layout lane is traced, so
+     * empty otherwise. GUI thread only, like everything here.
+     */
+    public String takeDrawnCauses() {
+        if (drawn == 0) {
+            return "";
+        }
+        StringBuilder s = new StringBuilder();
+        for (int i = 0; i < drawn; i++) {
+            s.append(' ').append(Cause.format(drawnCauses[i]));
+        }
+        if (drawnOver > 0) {
+            s.append(" +").append(drawnOver);
+        }
+        drawn = 0;
+        drawnOver = 0;
+        return s.toString();
+    }
 
     // --- Mutation.Sink: the only place a RetainedNode field is written ------------------------------------
 
@@ -489,6 +600,7 @@ public final class Reconciler implements Mutation.Sink {
         boolean returning = ch.leaving;
         if (returning) {
             ch.leaving = false;
+            ch.hiding = false;
             ch.lifted = false;   // back in the flow, wherever it was put
         }
         if (was == null) {
@@ -531,6 +643,10 @@ public final class Reconciler implements Mutation.Sink {
             // fade is a dead pause before its neighbours close up (the Scheduler's Motion.leave, under Presence). Nor is
             // one inside something hidden: nobody sees it go, and a panel rebuilt while hidden (a context menu between
             // openings) would otherwise show its last contents fading out, lifted at a stale place, over the new.
+            if (n.hiding) {
+                n.hiding = false;   // removed while it was being hidden: the fade goes on, and ends in a removal
+                return;
+            }
             if (!n.leaving && n.parent != null && n.layoutCtx != null && shown(n) && !n.parent.ownsChildMotion()
                     && n.opacity() > 0f && exits.leave(n)) {
                 n.leaving = true;
@@ -557,8 +673,32 @@ public final class Reconciler implements Mutation.Sink {
             // The change itself is what says a frame is owed, so a write that changes nothing says nothing: no
             // relayout, no draw. Before this, setting a colour to the colour it already was cost a frame.
             Object before = n.raw(key);
+            if (key == PropKey.VISIBLE && shownOrHidden(n, !Boolean.FALSE.equals(value))) {
+                return;
+            }
             if (unchanged(before, value)) {
                 return;
+            }
+            if (key == PropKey.POINTER_STATE) {
+                // The framework shading a clickable node: its role colours change, and fade as any colour does.
+                Color bg = n.background(theme);
+                Color border = n.borderColor(theme);
+                n.set(key, value);
+                drawDirty = true;
+                if (!n.paintCuts()) {
+                    report(id, PaintMotion.Channel.BACKGROUND, bg, n.background(theme));
+                    report(id, PaintMotion.Channel.BORDER, border, n.borderColor(theme));
+                }
+                return;
+            }
+            if (key == PropKey.TEXT) {
+                retexted(n);
+            } else if (key == PropKey.IMAGE_REGION) {
+                // Written just before the image it goes with (Node.image), so remember which image it was for.
+                n.regionOfImage = (dev.vexelray.gui.core.ImageRegion) before;
+                n.regionOfImageFor = n.image();
+            } else if (key == PropKey.IMAGE) {
+                reimaged(n, (dev.vexelray.target.ImageHandle) before);
             }
             n.set(key, value);
             drawDirty = true;
@@ -572,6 +712,22 @@ public final class Reconciler implements Mutation.Sink {
                 } else if (key == PropKey.TEXT_COLOR) {
                     report(id, PaintMotion.Channel.TEXT, from.in(theme), to.in(theme));
                 }
+            }
+            // An opacity is a look like a colour, and fades like one: as white at that alpha (Channel.OPACITY). Only
+            // on screen, so a node built at an opacity is drawn there from its first frame.
+            if (key == PropKey.OPACITY && n.layoutCtx != null && !n.paintCuts()) {
+                report(id, PaintMotion.Channel.OPACITY, alpha(before), alpha(value));
+            }
+            // An icon recoloured is a new field with another tint: its tint is its ink, and fades as a text colour does.
+            if (key == PropKey.FIELD && before instanceof dev.vexelray.gui.core.ImageField was
+                    && value instanceof dev.vexelray.gui.core.ImageField now && !n.paintCuts()) {
+                report(id, PaintMotion.Channel.TEXT, was.tint(), now.tint());
+            }
+            // An icon drawn as SDG likewise: its tint, the colour of its paints in the tint role.
+            if (key == PropKey.SDG && before instanceof dev.vexelray.gui.core.ImageSdg was
+                    && value instanceof dev.vexelray.gui.core.ImageSdg now && was.tint() != null && now.tint() != null
+                    && !n.paintCuts()) {
+                report(id, PaintMotion.Channel.TEXT, was.tint(), now.tint());
             }
             if (key.affectsLayout(before, value)) {
                 layoutDirty = true;
@@ -588,8 +744,118 @@ public final class Reconciler implements Mutation.Sink {
             if (unchanged(n.raw(PropKey.TEXT), text)) {
                 return;
             }
+            retexted(n);
             n.set(PropKey.TEXT, text);
             layoutDirty = true;
+            drawDirty = true;
+        }
+    }
+
+    /**
+     * {@code n}'s words are about to be replaced: keep the ones drawn now, where they were laid out, and tell the paint
+     * motion that the new ones are coming up over them ({@code Channel.REPLACED}), so the renderer crossfades the two.
+     * Only a label on screen: not a field (each keystroke is the user's own, and must show at once), not a node whose
+     * look is data, not one never laid out. Words replaced again before the last ones were all the way up are a
+     * readout being driven (a counter, a meter, a held arrow key), and are followed: drawn new at once ({@link #followed}).
+     */
+    private void retexted(RetainedNode n) {
+        if (followed(n)) {
+            return;
+        }
+        n.wordsBefore = null;
+        n.metricsBefore = null;
+        if (n.layoutCtx == null || n.editable() || n.paintCuts() || !shown(n)) {
+            return;
+        }
+        n.wordsBefore = n.drawnText();
+        n.metricsBefore = n.textMetrics;
+        n.wordsBeforeX = n.layoutX;
+        n.wordsBeforeY = n.layoutY;
+        replacing(n);
+    }
+
+    /**
+     * {@code n}'s image is about to be replaced, {@code before} being the one it had (null for none): keep it, with the
+     * part of it that was sampled, so the renderer fades it out under the new one. The image stays named while it fades,
+     * so a texture released at once is not closed under it ({@code GuiApp.release}). The same rules as for words: on
+     * screen, not a node whose look is data, and an image replaced again while it crossfades is followed.
+     */
+    private void reimaged(RetainedNode n, dev.vexelray.target.ImageHandle before) {
+        if (followed(n)) {
+            return;
+        }
+        n.imageBefore = null;
+        n.regionBefore = null;
+        if (n.layoutCtx == null || n.paintCuts() || !shown(n) || n.w <= 0f || n.h <= 0f) {
+            return;
+        }
+        n.imageBefore = before;
+        n.regionBefore = before != null && n.regionOfImageFor == before ? n.regionOfImage : n.imageRegion();
+        n.scalingBefore = n.imageScaling();
+        n.imageReplaced = true;
+        replacing(n);
+    }
+
+    /**
+     * Whether {@code n} is replaced again while what it showed before is still fading: then what it shows is being
+     * driven by a clock of its own, faster than a crossfade, and a crossfade begun at each step would never arrive and
+     * would ghost. So it lets go of what it was fading and is drawn as it is, as the paint motion follows a colour
+     * written on every frame. The next replacement after it has come to rest crossfades again.
+     */
+    private boolean followed(RetainedNode n) {
+        if (!n.replacing) {
+            return false;
+        }
+        repaints.repainted(n.id, PaintMotion.Channel.REPLACED, PaintMotion.ALL_OF_IT, PaintMotion.ALL_OF_IT);
+        n.replacing = false;
+        n.wordsBefore = null;
+        n.metricsBefore = null;
+        n.imageBefore = null;
+        n.regionBefore = null;
+        n.scalingBefore = null;
+        n.imageReplaced = false;
+        replaced.remove(n);
+        drawDirty = true;
+        return true;
+    }
+
+    /** Tell the paint motion that what {@code n} shows is coming up over what it showed, and hold it until it has. */
+    private void replacing(RetainedNode n) {
+        n.replacing = true;
+        replaced.add(n);
+        // From nothing every time, not from where a crossfade still under way got to: what is new has not been seen
+        // at all. Told "at rest at nothing" first, which a fading source takes as letting go of what was running.
+        repaints.repainted(n.id, PaintMotion.Channel.REPLACED, PaintMotion.NONE_OF_IT, PaintMotion.NONE_OF_IT);
+        repaints.repainted(n.id, PaintMotion.Channel.REPLACED, PaintMotion.NONE_OF_IT, PaintMotion.ALL_OF_IT);
+    }
+
+    /** Nodes drawing what they showed before under what they show now ({@link #replacing}). GUI thread. */
+    private final java.util.Set<RetainedNode> replaced =
+            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+
+    /**
+     * Let go of what each node showed before, once what it shows now is all the way up, or the node has left the tree:
+     * the old words and the old image are then drawn no more, and an image released while it faded can be closed. GUI
+     * thread, once per frame, after the paint motion has been asked for the frame.
+     */
+    public void settleReplaced() {
+        if (replaced.isEmpty()) {
+            return;
+        }
+        for (java.util.Iterator<RetainedNode> it = replaced.iterator(); it.hasNext(); ) {
+            RetainedNode n = it.next();
+            boolean up = repaints.drawn(n.id, PaintMotion.Channel.REPLACED, PaintMotion.ALL_OF_IT).a() >= 1f;
+            if (index.get(n.id) == n && !up) {
+                continue;
+            }
+            n.replacing = false;
+            n.wordsBefore = null;
+            n.metricsBefore = null;
+            n.imageBefore = null;
+            n.regionBefore = null;
+            n.scalingBefore = null;
+            n.imageReplaced = false;
+            it.remove();
             drawDirty = true;
         }
     }
@@ -676,9 +942,70 @@ public final class Reconciler implements Mutation.Sink {
         return theme;
     }
 
+    /**
+     * Hiding and showing go as removing and adding do: a node on screen hidden is offered to the exit motion, keeps its
+     * place while it fades, and is hidden for real when it has gone ({@link #depart}); one shown is an arrival. A node
+     * hidden while it was still going comes back up from where it got to. Answers whether it handled the write, which
+     * is then not applied as it stands. Not offered, as for a removal or an append: a node hidden that was never laid
+     * out, one under something hidden, one hidden already at no opacity, or the child of a container that owns its
+     * children's motion.
+     */
+    private boolean shownOrHidden(RetainedNode n, boolean show) {
+        if (n.hiding) {
+            if (show) {
+                // Put back before it had gone: still visible underneath, so it only stops leaving, back in the flow if it
+                // was swapped out.
+                n.hiding = false;
+                n.leaving = false;
+                if (n.lifted) {
+                    n.lifted = false;
+                    layoutDirty = true;
+                }
+                enters.entered(n);
+                presenceDirty = true;
+                drawDirty = true;
+            }
+            return true;   // a second hide while hiding is the same hide
+        }
+        if (n.parent == null || n.parent.ownsChildMotion() || n.leaving || n.paintCuts()) {
+            return false;   // its look is the application's to time, showing and hiding included
+        }
+        if (!show) {
+            if (n.layoutCtx != null && n.visible() && shown(n.parent) && n.opacity() > 0f && exits.leave(n)) {
+                n.hiding = true;
+                n.leaving = true;
+                beganLeaving.add(n);   // and lifted, if what is shown beside it is put in its place (liftReplaced)
+                presenceDirty = true;
+                drawDirty = true;
+                return true;
+            }
+            return false;
+        }
+        // Shown is an arrival as an append is: into a parent on screen, though the node itself, built hidden, may never
+        // have been laid out.
+        if (!n.visible() && n.parent.layoutCtx != null && shown(n.parent)) {
+            n.set(PropKey.VISIBLE, Boolean.TRUE);
+            layoutDirty = true;
+            drawDirty = true;
+            if (enters != EnterMotion.NONE) {
+                enters.entered(n);
+                gainedArrival.add(n.parent);
+                arrivedNow.add(n);
+                presenceDirty = true;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /** An {@link PropKey#OPACITY} value as the paint motion is told it: white at that alpha, 1 when none was set. */
+    private static Color alpha(Object opacity) {
+        return PaintMotion.amount(opacity instanceof Float f ? f : 1f);
+    }
+
     /** Tell the paint motion source, for a change from one colour to another that is a change. */
     private void report(long id, PaintMotion.Channel channel, Color from, Color to) {
-        if (from != null && to != null && !from.equals(to)) {
+        if (from != null && to != null && !PaintMotion.same(from, to)) {
             repaints.repainted(id, channel, from, to);
         }
     }
@@ -723,6 +1050,9 @@ public final class Reconciler implements Mutation.Sink {
                     : reveals.size() > wasReveals ? "mutation queued"
                     : !present ? "mutation missing"
                     : "mutation unchanged";
+            if (layoutDirty || geometryDirty || drawDirty) {
+                drew(Cause.current());
+            }
             layoutDirty |= wasLayout;
             geometryDirty |= wasGeometry;
             drawDirty |= wasDraw;

@@ -34,7 +34,7 @@ class TreeRefreshTest {
     private final List<String> roots = new ArrayList<>();
     private final AtomicInteger fetches = new AtomicInteger();
 
-    private final TreeView.Source<String> source = new TreeView.Source<>() {
+    private final Listing<String> source = new Listing<>() {
 
         @Override
         public List<String> roots() {
@@ -97,7 +97,7 @@ class TreeRefreshTest {
     @Test
     void aMovedItemIsShownUnderItsNewParent() {
         try (HeadlessGui h = new HeadlessGui()) {
-            TreeView<String> tree = new TreeView<>(h.gui, source);
+            TreeView<String> tree = Listing.tree(h, source);
             h.gui.root().children(tree.node());
             tree.expand("src");
             h.frame();
@@ -116,7 +116,7 @@ class TreeRefreshTest {
     @Test
     void reorderingSiblingsReordersTheRows() {
         try (HeadlessGui h = new HeadlessGui()) {
-            TreeView<String> tree = new TreeView<>(h.gui, source);
+            TreeView<String> tree = Listing.tree(h, source);
             h.gui.root().children(tree.node());
             tree.expand("src");
             h.frame();
@@ -137,7 +137,7 @@ class TreeRefreshTest {
     @Test
     void aRowSurvivesTheMoveRatherThanBeingRebuilt() {
         try (HeadlessGui h = new HeadlessGui()) {
-            TreeView<String> tree = new TreeView<>(h.gui, source);
+            TreeView<String> tree = Listing.tree(h, source);
             h.gui.root().children(tree.node());
             tree.expand("src");
             tree.expand("lib");
@@ -163,7 +163,7 @@ class TreeRefreshTest {
     @Test
     void anItemMovedIntoAnUnopenedBranchLosesItsRowUntilThatBranchOpens() {
         try (HeadlessGui h = new HeadlessGui()) {
-            TreeView<String> tree = new TreeView<>(h.gui, source);
+            TreeView<String> tree = Listing.tree(h, source);
             h.gui.root().children(tree.node());
             tree.expand("src");
             h.frame();
@@ -183,7 +183,7 @@ class TreeRefreshTest {
     @Test
     void anOpenFolderStaysOpenAcrossARefresh() {
         try (HeadlessGui h = new HeadlessGui()) {
-            TreeView<String> tree = new TreeView<>(h.gui, source);
+            TreeView<String> tree = Listing.tree(h, source);
             h.gui.root().children(tree.node());
             tree.expand("src");
             h.frame();
@@ -205,7 +205,7 @@ class TreeRefreshTest {
     @Test
     void aCollapsedBranchIsNotWalkedInto() {
         try (HeadlessGui h = new HeadlessGui()) {
-            TreeView<String> tree = new TreeView<>(h.gui, source);
+            TreeView<String> tree = Listing.tree(h, source);
             h.gui.root().children(tree.node());
             h.frame();
             int before = fetches.get();
@@ -221,7 +221,7 @@ class TreeRefreshTest {
     @Test
     void anItemThatLeftTheModelLosesItsRow() {
         try (HeadlessGui h = new HeadlessGui()) {
-            TreeView<String> tree = new TreeView<>(h.gui, source);
+            TreeView<String> tree = Listing.tree(h, source);
             h.gui.root().children(tree.node());
             tree.expand("src");
             h.frame();
@@ -240,11 +240,11 @@ class TreeRefreshTest {
     @Test
     void aSelectionOnARemovedRowComesUpToItsParent() {
         try (HeadlessGui h = new HeadlessGui()) {
-            TreeView<String> tree = new TreeView<>(h.gui, source);
+            TreeView<String> tree = Listing.tree(h, source);
             h.gui.root().children(tree.node());
             tree.expand("src");
+            h.frame();   // its children land
             tree.select("test");
-            h.frame();
             assertEquals("test", tree.selected());
 
             kids.get("src").remove("test");
@@ -260,7 +260,7 @@ class TreeRefreshTest {
     @Test
     void aLeafThatGainsChildrenCanBeOpened() {
         try (HeadlessGui h = new HeadlessGui()) {
-            TreeView<String> tree = new TreeView<>(h.gui, source);
+            TreeView<String> tree = Listing.tree(h, source);
             h.gui.root().children(tree.node());
             h.frame();
             long before = tree.rowNode("notes.txt").id();

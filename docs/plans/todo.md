@@ -51,6 +51,16 @@ true of input that ends a park, and not of input that lands inside the remainder
 *Status* paragraph names, a Win32 event waited on beside the queue so a wake never leaves a message behind and the
 re-park can be `waitEvents` again. That is in `vexelray-os-windows`, and it would restore the promise.
 
+- **Later still (2026-10-29): the ceiling caps draws, not passes, and the cost above is gone.** Input, logic and drawing
+  run on their own clocks (vexelray-framework's ROADMAP, fork 7). OS input and another thread's wake end the park and
+  run an update pass at once: pump, input snapshot, dispatch, drain, layout. The pass draws only if the ceiling's slot
+  has come; otherwise its draw stays owed and the loop parks until the slot, still woken by input. The sleep-out is
+  gone, so input inside a gap is no longer left unread, and the re-park is `waitEvents` again. A wake the loop posts
+  to itself (motion, a relayout, a widget's write) is a draw request held to the slot and posts no OS message, which is
+  what keeps the loop from spinning through a gap. The pointer sweep this entry was about now costs an update per
+  batch of mouse messages (hit-test and hover), and still at most one draw a slot. Held by
+  `LoopCountersTest.aWakeInsideTheCeilingsGapIsTakenAtOnceAndOnlyItsDrawWaitsForTheSlot`.
+
 Still open: the compositor's rate is read, not the window's monitor (a per-monitor read is not written), and Linux and
 macOS report no interval and keep the fallback. First animation after a cold start still has one late frame (4 to 6 ms
 before the animation's first tick arrives, most likely cold code; the thread hand-off is measured at 50 to 100 us).

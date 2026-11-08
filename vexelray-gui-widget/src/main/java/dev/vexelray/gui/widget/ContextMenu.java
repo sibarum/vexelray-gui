@@ -1,15 +1,19 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.ClaimScope;
 import dev.vexelray.gui.core.input.ClickEvent;
+import dev.vexelray.gui.core.input.Commands;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.input.MenuItem;
 import dev.vexelray.gui.core.input.MenuPresenter;
 import dev.vexelray.gui.core.input.Shortcut;
+import dev.vexelray.gui.core.input.Trigger;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.style.Finish;
+import dev.vexelray.gui.core.style.Paint;
 import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.icons.Icon;
@@ -48,8 +52,14 @@ import java.util.concurrent.ConcurrentHashMap;
  * "what applies right now". The panel, its subscription, its claim and its identity survive; the rows are released
  * when the next menu takes their place, the same way {@link Modals} treats a dialog's buttons.
  *
+ * <p><b>The keyboard walks it.</b> While open it also claims Up and Down (to the line before or after, past rules,
+ * headings and greyed lines, round the ends), Home and End, Enter (choose, or open a submenu), Right (into a submenu)
+ * and Left (back out). The line under the keyboard is painted as the pointer would paint it, and the pointer resting on
+ * a line moves the keyboard there. A menu opened by the pointer marks nothing until a key; one dropped by a key
+ * ({@code TitleBar.open}) starts on its first line ({@link #markFirst}).
+ *
  * <p><b>Dismissal is claims and observation, not modality.</b> While open, the menu claims Escape at
- * {@link ClaimScope#VISIBLE} — released on hide, because a hidden node keeps its claims. Click-away rides the
+ * {@link ClaimScope#VISIBLE} — released on hide with the walking keys, because a hidden node keeps its claims. Click-away rides the
  * {@code clicks()} topic, which publishes every click on every node: a left click whose target is not one of the
  * menu's own nodes closes it. Right clicks are deliberately ignored there — the dispatch that re-anchors the menu
  * publishes one too, and racing it would close what it just opened. Nothing is blocked while the menu is up; the
@@ -76,6 +86,21 @@ public final class ContextMenu implements MenuPresenter {
 
     private static final Shortcut ESCAPE = Shortcut.of(Key.ESCAPE);
 
+    /**
+     * The keys that walk an open menu, claimed with Escape while it is open and released with it: Up and Down to the
+     * line before or after (wrapping, past rules, headings and greyed lines), Home and End to the first or last, Enter
+     * to choose, Right into a submenu, Left back out of one.
+     */
+    private static final Shortcut UP = Shortcut.of(Key.UP);
+    private static final Shortcut DOWN = Shortcut.of(Key.DOWN);
+    private static final Shortcut HOME = Shortcut.of(Key.HOME);
+    private static final Shortcut END = Shortcut.of(Key.END);
+    private static final Shortcut ENTER = Shortcut.of(Key.ENTER);
+    private static final Shortcut NUMPAD_ENTER = Shortcut.of(Key.NUMPAD_ENTER);
+    private static final Shortcut RIGHT = Shortcut.of(Key.RIGHT);
+    private static final Shortcut LEFT = Shortcut.of(Key.LEFT);
+    private static final Shortcut[] WALK = {UP, DOWN, HOME, END, ENTER, NUMPAD_ENTER, RIGHT, LEFT};
+
     private final Gui gui;
     private final Node menu;
     private final Subscription clickSub;
@@ -100,6 +125,17 @@ public final class ContextMenu implements MenuPresenter {
     /** How many of {@link #levels} are open now. Guarded by {@code this}. */
     private int depth;
 
+    /**
+     * The line under the keyboard: the depth of its panel (0 the menu's own) and its index among that panel's rows,
+     * or {@code keyAt} -1 for none. The pointer resting on a line moves it there too, so the keys go on from wherever
+     * the hand left off. Guarded by {@code this}.
+     */
+    private int keyDepth;
+    private int keyAt = -1;
+
+    /** Each command row's icon, so the keyboard's mark paints a row as the pointer's does. Guarded by {@code this}. */
+    private final java.util.Map<Node, IconView> rowIcons = new java.util.HashMap<>();
+
     /** One depth of submenu: its panel, the rows it holds now, and the row and item that opened it. */
     private static final class Level {
         final Node panel;
@@ -123,32 +159,43 @@ public final class ContextMenu implements MenuPresenter {
         this.menu = panel(gui);
         ownIds.add(menu.id());
         this.clickSub = gui.bus().subscribe(gui.clicks(), this::onAnyClick);
-        gui.menus(this);
+        Seams.of(gui).menus(this);
     }
 
-    /** A panel rows are drawn on: the menu's own, and each submenu's. */
+    /**
+     * A panel rows are drawn on: the menu's own, and each submenu's. A card floating over the page, as Rasterware 0.1's
+     * settings were: the panel's surface, a hairline edge, rounded well inside the rows' own corners.
+     */
     private static Node panel(Gui gui) {
         return gui.column()
                 .role("menu")
                 .visible(false)
                 .background(Role.PANEL)
-                .corner(Length.rem(0.5f))
-                .border(Length.rem(0.1f), Role.LINE)
+                .corner(Length.rem(0.75f))
+                .border(Length.dp(1), Role.LINE)
                 .lit(Finish.LIT)
                 .elevation(gui.theme().elevation(Relief.FLOATING))
                 .padding(Length.dp(PAD_DP))
-                .scroll(false, false);
+                .gap(Length.dp(1))
+                // Down, when it must: the layout caps a float at its parent, so a menu taller than the window is cut to
+                // the window's height, and without a scroller the lines past the cut could not be reached at all — a
+                // title-bar menu in a small window lost its last items off the bottom. A menu that fits never scrolls.
+                .scroll(false, true);
     }
 
     /** A panel's padding: how far its first row stands below its top edge, which a submenu is raised by. */
-    private static final float PAD_DP = 4f;
+    private static final float PAD_DP = 6f;
+
+    /** A line's icon: a little larger than its words, so its detail reads, in a cell a little larger again. */
+    private static final Length ICON = Length.rem(1.25f);
+    private static final Length ICON_CELL = Length.rem(1.5f);
 
     /**
      * Make sure {@code gui} can show context menus, without disturbing a presenter it already has. Called by every
      * widget that declares a default menu, so the defaults work in a UI that never mentions menus at all.
      */
     public static void presentOn(Gui gui) {
-        if (gui != null && gui.menus() == null) {
+        if (gui != null && Seams.of(gui).menus() == null) {
             new ContextMenu(gui);   // installs itself
         }
     }
@@ -186,25 +233,292 @@ public final class ContextMenu implements MenuPresenter {
      */
     @Override
     public synchronized void present(ClickEvent where, List<MenuItem> menuItems) {
+        // Whatever opened the menu before has lost it: this opening is someone else's (or its own again, which says so
+        // after this returns).
+        hidden();
         opener = where;
         closeSubmenus(0);
+        keyAt = -1;
         rebuild(menuItems);
-        if (!attached) {
-            attached = true;
-            gui.root().append(menu);
-        }
-        float dpi = Math.max(0.0001f, gui.dpi().value());
+        menu.scrollTo(0f, 0f);   // each opening is a new menu, read from its first line
+        float dpi = Math.max(0.0001f, Seams.of(gui).dpi().value());
         menu.floatAt(Length.dp(where.x() / dpi), Length.dp(where.y() / dpi));
-        menu.visible(true);
         if (!shown) {
             shown = true;
+            closing = null;
+            // Faded up rather than shown at once, and faded out rather than hidden at once (hide): the window's motion
+            // fades an opacity as it fades a colour. The first opening is the panel arriving in the tree, which the
+            // window's presence motion fades up and raises into its place. Never removed between openings, because
+            // removing a node releases it and everything keyed by it.
+            if (!attached) {
+                attached = true;
+                gui.root().append(menu.visible(true).opacity(1f).hitInert(false));
+            } else {
+                menu.visible(true).hitInert(false).opacity(1f);
+            }
             // Claimed only while open (and released on hide): a hidden node keeps its claims, and a closed menu
             // owning Escape would shadow whatever the page wants it for.
-            gui.claim(menu, ESCAPE, ClaimScope.VISIBLE, this::hide);
+            Seams.of(gui).claim(menu, ESCAPE, ClaimScope.VISIBLE, this::hide);
+            Seams.of(gui).claim(menu, UP, ClaimScope.VISIBLE, () -> step(-1));
+            Seams.of(gui).claim(menu, DOWN, ClaimScope.VISIBLE, () -> step(1));
+            Seams.of(gui).claim(menu, HOME, ClaimScope.VISIBLE, () -> edge(true));
+            Seams.of(gui).claim(menu, END, ClaimScope.VISIBLE, () -> edge(false));
+            Seams.of(gui).claim(menu, ENTER, ClaimScope.VISIBLE, this::choose);
+            Seams.of(gui).claim(menu, NUMPAD_ENTER, ClaimScope.VISIBLE, this::choose);
+            Seams.of(gui).claim(menu, RIGHT, ClaimScope.VISIBLE, this::into);
+            Seams.of(gui).claim(menu, LEFT, ClaimScope.VISIBLE, this::outOf);
         }
     }
 
-    /** Close the menu. Hidden, not removed: the panel keeps its identity, and its rows keep theirs until replaced. */
+    // ------------------------------------------------------------------ the keyboard
+
+    /**
+     * Put the keyboard on the menu's first line that can be chosen: what a menu opened by a key does, so the next key
+     * moves from there ({@code TitleBar.open}). A menu opened by the pointer starts with nothing marked, as a desktop
+     * menu does, and the first Down or Up marks its first or last line.
+     */
+    public synchronized void markFirst() {
+        if (shown) {
+            keyDepth = 0;
+            edge(true);
+        }
+    }
+
+    /**
+     * Drop {@code menu} from {@code target}'s lower left, as a menu bar's menu drops, or close whichever menu is open:
+     * the one behaviour of everything whose plain press is a menu (a title-bar menu, a {@link Button#menu menu
+     * button}). {@code at} is the click, or null for a key, which puts the keyboard on the first line
+     * ({@link #markFirst}). Nothing for an empty menu or a target not laid out yet. In the dispatch, as a click's is.
+     */
+    static void drop(Gui gui, Node target, ClickEvent at, dev.vexelray.gui.core.input.Menu menu) {
+        if (menu.isEmpty()) {
+            return;
+        }
+        if (Seams.of(gui).menus() instanceof ContextMenu open && open.isOpen()) {
+            open.hide();
+            return;
+        }
+        dev.vexelray.gui.core.layout.NodeLayout l = target.layout();
+        if (!l.present()) {
+            return;   // not laid out: nowhere to hang it from
+        }
+        float dpi = Math.max(0.0001f, Seams.of(gui).dpi().value());
+        ClickEvent under = new ClickEvent(target.id(), at == null ? MouseButton.LEFT : at.button(),
+                l.rect().x(), l.rect().y() + l.rect().h() + 6 * dpi, 1, at == null ? Set.of() : at.modifiers());
+        Seams.of(gui).openMenu(under, sink -> {
+            for (MenuItem item : menu.items()) {
+                sink.item(item);
+            }
+        });
+        if (at == null && Seams.of(gui).menus() instanceof ContextMenu open && open.isOpen()) {
+            open.markFirst();
+        }
+    }
+
+    /**
+     * {@link #drop(Gui, Node, ClickEvent, dev.vexelray.gui.core.input.Menu)}, and {@code onOpen} told {@code true} when
+     * the menu opens from {@code target} and {@code false} when it closes, however it closes (a line chosen, a click
+     * away, Escape, another menu opening in its place): what lets a target stay lit while its menu is open, as a menu
+     * bar's open menu is.
+     */
+    static void drop(Gui gui, Node target, ClickEvent at, dev.vexelray.gui.core.input.Menu menu,
+                     java.util.function.Consumer<Boolean> onOpen) {
+        drop(gui, target, at, menu);
+        whileOpen(gui, onOpen);
+    }
+
+    /**
+     * If a menu is open on {@code gui} now, tell {@code onOpen} {@code true}, and {@code false} once it closes or is
+     * replaced: called right after something opens a menu, by the thing that opened it. Nothing if none is open.
+     */
+    static void whileOpen(Gui gui, java.util.function.Consumer<Boolean> onOpen) {
+        if (Seams.of(gui).menus() instanceof ContextMenu open && open.isOpen()) {
+            open.untilHidden(() -> onOpen.accept(false));
+            onOpen.accept(true);
+        }
+    }
+
+    /** What to run when the menu next hides or is opened again: one at a time, the latest opener's. Guarded by this. */
+    private Runnable onHidden;
+
+    /** Run {@code r} once, when the menu next hides or opens again; replaces one not yet run, running it first. */
+    synchronized void untilHidden(Runnable r) {
+        hidden();
+        onHidden = r;
+    }
+
+    /** Tell whoever is waiting that the menu is no longer theirs. */
+    private void hidden() {
+        Runnable r;
+        synchronized (this) {
+            r = onHidden;
+            onHidden = null;
+        }
+        if (r != null) {
+            r.run();
+        }
+    }
+
+    /** The line under the keyboard as {@code depth.index}, or null for none. For tests. */
+    synchronized String marked() {
+        return keyAt < 0 ? null : keyDepth + "." + keyAt;
+    }
+
+    /** A submenu the pointer closed may have held the keyboard: it goes back to the deepest panel still open. */
+    private void clamp() {
+        if (keyDepth > depth) {
+            keyDepth = depth;
+            keyAt = -1;
+        }
+    }
+
+    private List<Node> rowsAt(int d) {
+        return d == 0 ? rows : levels.get(d - 1).rows;
+    }
+
+    private List<MenuItem> itemsAt(int d) {
+        return d == 0 ? items : levels.get(d - 1).item.children();
+    }
+
+    private static boolean choosable(MenuItem item) {
+        return !item.separator() && !item.heading() && item.enabled();
+    }
+
+    /** Move the keyboard {@code delta} lines along its panel, wrapping, past what cannot be chosen. */
+    private synchronized void step(int delta) {
+        if (!shown) {
+            return;
+        }
+        clamp();
+        if (keyAt < 0) {
+            keyDepth = 0;
+            edge(delta > 0);
+            return;
+        }
+        List<MenuItem> line = itemsAt(keyDepth);
+        int n = line.size();
+        for (int k = 1; k <= n; k++) {
+            int i = Math.floorMod(keyAt + delta * k, n);
+            if (choosable(line.get(i))) {
+                mark(keyDepth, i);
+                return;
+            }
+        }
+    }
+
+    /** The first or the last line of the keyboard's panel that can be chosen. */
+    private synchronized void edge(boolean first) {
+        clamp();
+        List<MenuItem> line = itemsAt(keyDepth);
+        int n = line.size();
+        for (int k = 0; k < n; k++) {
+            int i = first ? k : n - 1 - k;
+            if (choosable(line.get(i))) {
+                mark(keyDepth, i);
+                return;
+            }
+        }
+    }
+
+    /** Put the keyboard's mark on line {@code i} of the panel at {@code d}, painting it as the pointer would. */
+    private synchronized void mark(int d, int i) {
+        unmark();
+        keyDepth = d;
+        keyAt = i;
+        Node row = rowsAt(d).get(i);
+        paint(row, rowIcons.get(row), itemsAt(d).get(i), InteractionState.HOVER);
+        row.scrollIntoView();   // a panel the window cut short scrolls to the line the keyboard walked onto
+    }
+
+    /** Take the mark off its line, which goes back to rest unless it is the way to an open submenu. */
+    private synchronized void unmark() {
+        if (keyAt < 0 || keyDepth > depth || keyAt >= rowsAt(keyDepth).size()) {
+            keyAt = -1;
+            return;
+        }
+        Node row = rowsAt(keyDepth).get(keyAt);
+        if (!opens(row)) {
+            paint(row, rowIcons.get(row), itemsAt(keyDepth).get(keyAt), InteractionState.NORMAL);
+        }
+        keyAt = -1;
+    }
+
+    /** The pointer is resting on {@code row}, at depth {@code at}: the keyboard goes on from there. */
+    private synchronized void pointed(int at, Node row) {
+        int i = rowsAt(at).indexOf(row);
+        if (i < 0 || (keyDepth == at && keyAt == i)) {
+            return;
+        }
+        unmark();
+        keyDepth = at;
+        keyAt = i;
+    }
+
+    /** Enter: choose the marked command, or open the marked submenu and step into it. */
+    private void choose() {
+        Runnable action;
+        synchronized (this) {
+            clamp();
+            if (!shown || keyAt < 0) {
+                return;
+            }
+            MenuItem item = itemsAt(keyDepth).get(keyAt);
+            if (item.submenu()) {
+                into();
+                return;
+            }
+            action = item.action();
+        }
+        hide();
+        action.run();   // on the GUI thread, in the dispatch of the key, as a click's is in the click's
+    }
+
+    /** Right: open the marked line's submenu, and put the keyboard on its first line. */
+    private synchronized void into() {
+        clamp();
+        if (!shown || keyAt < 0) {
+            return;
+        }
+        MenuItem item = itemsAt(keyDepth).get(keyAt);
+        if (!item.submenu() || !item.enabled()) {
+            return;
+        }
+        int at = keyDepth;
+        openSubmenu(at, rowsAt(at).get(keyAt), item);
+        if (depth > at) {
+            keyAt = -1;   // the row it opened from stays lit as the way to what is open
+            keyDepth = at + 1;
+            edge(true);
+        }
+    }
+
+    /** Left: close the submenu the keyboard is in, and put it back on the line that opened it. */
+    private synchronized void outOf() {
+        clamp();
+        if (!shown || keyDepth == 0) {
+            return;
+        }
+        int parent = keyDepth - 1;
+        Node opener = levels.get(parent).opener;
+        unmark();
+        closeSubmenus(parent);
+        int i = rowsAt(parent).indexOf(opener);
+        keyDepth = parent;
+        if (i >= 0) {
+            mark(parent, i);
+        }
+    }
+
+    /** How long a closed menu takes to fade out before it is hidden: the window's presence motion, near enough. */
+    static final long FADE_MILLIS = 160L;
+
+    /** What hides the faded panel once its fade is done; replaced by an opening, which keeps it. Guarded by this. */
+    private TimerTask closing;
+
+    /**
+     * Close the menu. It stops taking the pointer at once and fades out where it stands, then is hidden, not removed:
+     * the panel keeps its identity, and its rows keep theirs until replaced.
+     */
     public void hide() {
         if (!shown) {
             return;
@@ -213,9 +527,29 @@ public final class ContextMenu implements MenuPresenter {
         synchronized (this) {
             settle();
             closeSubmenus(0);
+            menu.hitInert(true).opacity(0f);
+            if (timer == null) {
+                timer = new Timer("vexelray-menu", true);
+            }
+            TimerTask faded = new TimerTask() {
+                @Override
+                public void run() {
+                    synchronized (ContextMenu.this) {
+                        if (closing == this) {
+                            closing = null;
+                            menu.visible(false);
+                        }
+                    }
+                }
+            };
+            closing = faded;
+            timer.schedule(faded, FADE_MILLIS);
         }
-        menu.visible(false);
         gui.releaseClaim(menu, ESCAPE);
+        for (Shortcut key : WALK) {
+            gui.releaseClaim(menu, key);
+        }
+        hidden();
     }
 
     /** Release the menu's subscription, registrations and nodes. */
@@ -280,17 +614,18 @@ public final class ContextMenu implements MenuPresenter {
         level.opener = row;
         level.item = item;
         fill(level.panel, level.rows, null, item.children(), at + 1);
+        level.panel.scrollTo(0f, 0f);
         // Beside the row, its first row level with it. The row's rect is a frame old, which is the frame the pointer
         // found it in; px are converted to dp against the density, as the menu's own anchor is. Clamped into the
         // window by the layout, so one that would run off the right edge stands over the menu instead.
         dev.vexelray.gui.core.layout.NodeLayout l = row.layout();
         if (l.present()) {
-            float dpi = Math.max(0.0001f, gui.dpi().value());
+            float dpi = Math.max(0.0001f, Seams.of(gui).dpi().value());
             level.panel.floatAt(Length.dp((l.rect().x() + l.rect().w()) / dpi + PAD_DP),
                     Length.dp(l.rect().y() / dpi - PAD_DP));
         }
         level.panel.visible(true);
-        row.background(Role.SELECTION);   // the way to what is open stays lit while it is
+        row.background(Role.RAISED).border(Length.dp(1), Role.EDGE.alpha(0.5f));   // the way to what is open stays lit
         depth = at + 1;
     }
 
@@ -350,7 +685,7 @@ public final class ContextMenu implements MenuPresenter {
             Level level = levels.get(i);
             level.panel.visible(false);
             if (level.opener != null) {
-                level.opener.background((Role) null);
+                level.opener.background(Role.NONE).border(Length.dp(1), Role.NONE);
             }
             level.opener = null;
             level.item = null;
@@ -371,6 +706,7 @@ public final class ContextMenu implements MenuPresenter {
     /** Release {@code rows} and take them out of the tree. */
     private void release(List<Node> rows) {
         for (Node row : rows) {
+            rowIcons.remove(row);
             gui.releaseNode(row);
             row.remove();
         }
@@ -410,7 +746,7 @@ public final class ContextMenu implements MenuPresenter {
         // which is the only time it can be decided without something moving under the pointer.
         boolean iconColumn = menuItems.stream().anyMatch(MenuItem::marked);
         for (MenuItem item : menuItems) {
-            Node row = item.separator() ? own(rule()) : row(item, iconColumn, at);
+            Node row = item.separator() ? own(rule()) : item.heading() ? own(heading(item)) : row(item, iconColumn, at);
             rows.add(row);
             if (record != null) {
                 record.add(item);
@@ -429,14 +765,30 @@ public final class ContextMenu implements MenuPresenter {
      * One command row: full-width, hover-shaded while it can be chosen, dimmed and inert when it cannot. {@code at} is
      * the depth of the panel it is on, the menu's own being 0.
      */
+    /**
+     * What {@code item} says at its right: its command's first trigger as the tree's {@link Commands} has it now, so a
+     * rebound chord is what the menu shows; or, naming no command, the chord it states; or nothing. A command that is
+     * named and has no trigger now says nothing, rather than a chord the keyboard no longer has.
+     */
+    private String chord(MenuItem item) {
+        if (item.command() != null) {
+            List<Trigger> now = Seams.of(gui).commands().triggers(item.command());
+            return now.isEmpty() ? "" : now.getFirst().text();
+        }
+        return item.shortcut() == null ? "" : item.shortcut().text();
+    }
+
     private Node row(MenuItem item, boolean iconColumn, int at) {
         Node row = own(gui.row()
                 .role("menuitem")
                 .width(Length.FILL)
-                .corner(Length.rem(0.4f))
-                .padding(Length.dp(4), Length.dp(12))
-                .gap(Length.rem(0.5f))
+                .corner(Length.rem(0.5f))
+                .padding(Length.dp(6), Length.dp(10))
+                .gap(Length.rem(0.625f))
+                .alignItems(dev.vexelray.gui.core.layout.LayoutEnums.AlignItems.CENTER)
+                .border(Length.dp(1), Role.NONE)
                 .scroll(false, false));
+        IconView mark = null;
         if (iconColumn) {
             // A cell of fixed width whether or not this item fills it: the column is what aligns the labels, so an
             // item with no mark still takes its share of it instead of sliding its label into the gap. Dimmer than
@@ -444,13 +796,14 @@ public final class ContextMenu implements MenuPresenter {
             // set wins over a glyph; either sits centred in the same cell.
             Role tone = item.enabled() ? Role.DIM : Role.FAINT;
             Node cell = own(gui.row()
-                    .width(Length.rem(1.2f))
-                    .height(Length.rem(1.2f))
+                    .width(ICON_CELL)
+                    .height(ICON_CELL)
                     .justify(dev.vexelray.gui.core.layout.LayoutEnums.Justify.CENTER)
                     .alignItems(dev.vexelray.gui.core.layout.LayoutEnums.AlignItems.CENTER)
                     .scroll(false, false));
             if (item.mark() != null) {
-                cell.append(own(IconView.of(gui, item.mark()).size(Length.rem(1f)).tint(tone).node()));
+                mark = IconView.of(gui, item.mark()).size(ICON).tint(tone);
+                cell.append(own(mark.node()));
             } else if (item.icon() != null) {
                 cell.append(own(gui.text(item.icon())
                         .textSize(Length.rem(1))
@@ -464,12 +817,27 @@ public final class ContextMenu implements MenuPresenter {
                 .textSize(Length.rem(1))
                 .textColor(item.enabled() ? Role.INK : Role.FAINT)
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE)));
+        String chord = chord(item);
+        if (!chord.isEmpty()) {
+            // The chord that does the same, dim at the line's end: said here so a person learns it from the menu, and
+            // bound where every chord is, not by this line.
+            row.append(own(gui.text(chord)
+                    .textSize(Length.rem(0.9f))
+                    .wordWrap(false)
+                    .textColor(item.enabled() ? Role.DIM : Role.FAINT)
+                    .align(TextLayout.HAlign.RIGHT, TextLayout.VAlign.MIDDLE)));
+        }
         if (item.submenu()) {
             // The sign that this line goes further rather than doing something: a chevron at its end, where the
             // submenu will stand.
             row.append(own(IconView.of(gui, Icon.CHEVRON_RIGHT).size(Length.rem(0.8f))
                     .tint(item.enabled() ? Role.DIM : Role.FAINT).node()));
         }
+        IconView icon = mark;
+        if (icon != null) {
+            rowIcons.put(row, icon);
+        }
+        paint(row, icon, item, InteractionState.NORMAL);
         if (!item.enabled()) {
             return row;   // no handlers at all: nothing to hover, nothing to choose
         }
@@ -477,15 +845,16 @@ public final class ContextMenu implements MenuPresenter {
             // Opened by pointing at it, as a desktop's submenus are, once the pointer rests there (see hovered), and
             // at once by a click, for a hand that does not hover (a touch, a script). It stays lit while what it
             // opened is open.
-            gui.onState(row, state -> {
+            Seams.of(gui).onState(row, state -> {
                 if (state != InteractionState.NORMAL) {
-                    row.background(Role.SELECTION);
+                    pointed(at, row);
+                    paint(row, icon, item, state);
                     hovered(() -> openSubmenu(at, row, item));
                 } else if (!opens(row)) {
-                    row.background((Role) null);
+                    paint(row, icon, item, state);
                 }
             });
-            gui.onClick(row, () -> {
+            Seams.of(gui).onClick(row, () -> {
                 settle();
                 openSubmenu(at, row, item);
             });
@@ -493,15 +862,18 @@ public final class ContextMenu implements MenuPresenter {
             // Transparent at rest so the menu's own surface shows through, and the hover fill is the theme's, not a
             // constant of this widget's: an item is a panel the pointer is on. Pointing at a command closes any
             // submenu opened beside a row at its own depth, once the pointer rests there: it has moved on from it.
-            gui.onState(row, state -> {
-                row.background(state == InteractionState.NORMAL ? null : Role.SELECTION);
+            Seams.of(gui).onState(row, state -> {
+                if (state != InteractionState.NORMAL) {
+                    pointed(at, row);
+                }
+                paint(row, icon, item, state);
                 if (state != InteractionState.NORMAL) {
                     hovered(() -> closeSubmenus(at));
                 }
             });
-            gui.onClick(row, () -> {
+            Seams.of(gui).onClick(row, () -> {
                 hide();
-                item.action().run();   // already on the handler executor — the lane app callbacks run on
+                item.action().run();   // on the GUI thread, in the dispatch: an item sends its message from here
             });
         }
         // Addressable by what it says, so a script can choose it: menu.restart-in-debug-mode. Released with the row.
@@ -515,10 +887,44 @@ public final class ContextMenu implements MenuPresenter {
         return s.replaceAll("^-+|-+$", "");
     }
 
+    /**
+     * How a command line looks in {@code state}, as a choice in Rasterware 0.1's settings did. Bare at rest, so a menu
+     * reads as a list of words. Under the pointer the raised surface fills it, an edge closes round it and its icon
+     * lifts off its own shadow; pressed, the fill deepens. A {@link MenuItem#current() current} line is edged in the
+     * accent at every state, its icon glowing in it. Colour only, inside a box that was always the line's, so nothing
+     * moves or grows under the pointer; the window's motion fades between the states.
+     */
+    private static void paint(Node row, IconView icon, MenuItem item, InteractionState state) {
+        boolean lit = state != InteractionState.NORMAL;
+        if (item.current()) {
+            row.background(Role.ACCENT.alpha(lit ? 0.24f : 0.16f)).border(Length.dp(1), Role.ACCENT);
+        } else {
+            row.background(lit ? Paint.of(Role.RAISED, state) : Role.NONE)
+                    .border(Length.dp(1), lit ? Role.EDGE.alpha(0.5f) : Role.NONE);
+        }
+        if (icon != null && item.enabled()) {
+            icon.tint(item.current() ? Role.ACCENT : lit ? Role.INK : Role.DIM)
+                    .glow(item.current() ? 0.2f : 0f)
+                    .shadow(!item.current() && lit ? 0.08f : 0f);
+        }
+    }
+
+    /** A group's heading: small capitals in the secondary ink, standing a little off the line above. */
+    private Node heading(MenuItem item) {
+        return gui.text(item.label().toUpperCase(java.util.Locale.ROOT))
+                .role("heading")
+                .width(Length.FILL)
+                .textSize(Length.rem(0.75f))
+                .textColor(Role.DIM)
+                .wordWrap(false)
+                .padding(Length.dp(6), Length.dp(11))
+                .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
+    }
+
     /** A thin horizontal rule between groups. */
     private Node rule() {
         return gui.box().width(Length.FILL).height(Length.dp(1)).background(Role.LINE)
-                .margin(Length.dp(3)).scroll(false, false);
+                .margin(Length.dp(5)).scroll(false, false);
     }
 
     /**
@@ -529,8 +935,17 @@ public final class ContextMenu implements MenuPresenter {
     private void onAnyClick(ClickEvent e) {
         // Nor the left click that opened it, which a button whose click is a menu (a title-bar instrument's) publishes
         // too, and which may arrive here after the show.
-        if (shown && e.button() == MouseButton.LEFT && !ownIds.contains(e.nodeId()) && !e.equals(opener)) {
+        if (shown && e.button() == MouseButton.LEFT && !ownIds.contains(e.nodeId()) && !opened(e)) {
             hide();
         }
+    }
+
+    /**
+     * Whether {@code e} is the click this menu was opened at. By node, button and count rather than by place, because a
+     * menu hung from its button (the title bar's lockup) is anchored somewhere other than where the click landed.
+     */
+    private boolean opened(ClickEvent e) {
+        ClickEvent o = opener;
+        return o != null && o.nodeId() == e.nodeId() && o.button() == e.button() && o.clicks() == e.clicks();
     }
 }

@@ -25,7 +25,7 @@ class TreeFindTest {
             "test", List.of("AppTest.java"),
             "docs", List.of());
 
-    private static final class MapSource implements TreeView.Source<String> {
+    private static class MapSource implements Listing<String> {
         final AtomicInteger fetches = new AtomicInteger();
 
         @Override
@@ -54,7 +54,7 @@ class TreeFindTest {
     @Test
     void aTreeThatIsNotSearchableHasNoBar() {
         try (HeadlessGui h = new HeadlessGui()) {
-            TreeView<String> tree = new TreeView<>(h.gui, new MapSource());
+            TreeView<String> tree = Listing.tree(h, new MapSource());
             h.gui.root().children(tree.node());
             h.frame();
             tree.focus();
@@ -167,6 +167,27 @@ class TreeFindTest {
         }
     }
 
+    /**
+     * What a row is found by is its entry's to say: here a whole path, which the label does not show. The walk tests
+     * the text it was given and runs nothing of the application's.
+     */
+    @Test
+    void anEntryCanBeFoundByMoreThanItsLabel() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TreeView<String> tree = tree(h, new MapSource() {
+                @Override
+                public TreeView.Entry entry(String item) {
+                    return item.equals("Util.java") ? super.entry(item).find("src/main/Util.java")
+                            : super.entry(item);
+                }
+            });
+            find(h, tree, "main/util");
+
+            assertEquals("Util.java", tree.selected(), "matched by its path, ignoring case");
+            tree.close();
+        }
+    }
+
     /** Escape puts the bar away and hands the keyboard back, with the tree where the search left it. */
     @Test
     void escapeShutsTheBarAndGivesTheKeyboardBackToTheTree() {
@@ -214,7 +235,7 @@ class TreeFindTest {
     }
 
     private static TreeView<String> tree(HeadlessGui h, MapSource source) {
-        TreeView<String> tree = new TreeView<>(h.gui, source).searchable(true);
+        TreeView<String> tree = Listing.tree(h, source).searchable(true);
         h.gui.root().children(tree.node());
         h.frame();
         return tree;
@@ -226,7 +247,7 @@ class TreeFindTest {
         h.chord(Key.F, Key.LEFT_CONTROL);
         h.frame();
         h.type(query);
-        h.frame();
+        h.frames(4);   // the walk goes on from each level it asks for in the frame after the reply lands
     }
 
     private static boolean shown(HeadlessGui h, TreeView<String> tree) {

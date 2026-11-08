@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.layout.Length;
@@ -50,24 +51,24 @@ class RethemeTest {
         }
 
         @Override
-        public boolean moving() {
-            return false;
+        public long draw(Frame frame) {
+            return Frame.NEVER;
         }
     }
 
     @Test
     void aRoleWrittenBeforeTheSwapIsDrawnInTheThemeAfterIt() {
-        try (Gui gui = new Gui(Atchung.create(), SAME_THREAD)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Node n = gui.box().width(Length.dp(40)).height(Length.dp(20))
                     .background(Role.PANEL).border(Length.dp(1), Role.LINE).lit(Finish.LIT);
             gui.root().children(n);
-            RetainedNode node = gui.frame(400f, 300f, RethemeTest::noText).children.get(0);
+            RetainedNode node = Seams.of(gui).frame(400f, 300f, RethemeTest::noText).children.get(0);
             assertEquals(Theme.DARK.color(Role.PANEL), node.background(gui.drawnTheme()));
             assertTrue(node.lit(gui.drawnTheme()), "the dark theme lights its surfaces");
 
             gui.theme(Theme.LIGHT);
             assertSame(Theme.DARK, gui.drawnTheme(), "the swap is an edit, drawn with the frame that applies it");
-            gui.frame(400f, 300f, RethemeTest::noText);
+            Seams.of(gui).frame(400f, 300f, RethemeTest::noText);
             assertSame(Theme.LIGHT, gui.drawnTheme());
             assertEquals(Theme.LIGHT.color(Role.PANEL), node.background(gui.drawnTheme()));
             assertEquals(Theme.LIGHT.color(Role.LINE), node.borderColor(gui.drawnTheme()));
@@ -77,30 +78,30 @@ class RethemeTest {
 
     @Test
     void aStateIsShadedByTheThemeThatDrawsIt() {
-        try (Gui gui = new Gui(Atchung.create(), SAME_THREAD)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Node n = gui.box().width(Length.dp(40)).height(Length.dp(20))
                     .background(Role.ACTION.at(InteractionState.HOVER));
             gui.root().children(n);
-            RetainedNode node = gui.frame(400f, 300f, RethemeTest::noText).children.get(0);
+            RetainedNode node = Seams.of(gui).frame(400f, 300f, RethemeTest::noText).children.get(0);
             gui.theme(Theme.LIGHT);
-            gui.frame(400f, 300f, RethemeTest::noText);
+            Seams.of(gui).frame(400f, 300f, RethemeTest::noText);
             assertEquals(Theme.LIGHT.color(Role.ACTION, InteractionState.HOVER), node.background(gui.drawnTheme()));
         }
     }
 
     @Test
     void theSwapIsReportedAsTheColourChangesItMakes() {
-        try (Gui gui = new Gui(Atchung.create(), SAME_THREAD)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Recording paint = new Recording();
             gui.paintMotion(paint);
             Node themed = gui.text("x").width(Length.dp(40)).height(Length.dp(20)).background(Role.PANEL);
             Node fixed = gui.box().width(Length.dp(40)).height(Length.dp(20)).background(Theme.DARK.color(Role.PANEL));
             gui.root().children(themed, fixed);
-            gui.frame(400f, 300f, RethemeTest::noText);
+            Seams.of(gui).frame(400f, 300f, RethemeTest::noText);
             assertTrue(paint.told.isEmpty());
 
             gui.theme(Theme.LIGHT);
-            gui.frame(400f, 300f, RethemeTest::noText);
+            Seams.of(gui).frame(400f, 300f, RethemeTest::noText);
             // The themed node's fill, and its text in the theme's ink, which it never stated. The fixed colour is the
             // same in every theme, which is exactly what is wrong with writing one.
             assertEquals(List.of("BACKGROUND", "TEXT"), paint.told);
@@ -110,20 +111,20 @@ class RethemeTest {
 
             paint.told.clear();
             gui.theme(Theme.LIGHT);
-            gui.frame(400f, 300f, RethemeTest::noText);
+            Seams.of(gui).frame(400f, 300f, RethemeTest::noText);
             assertTrue(paint.told.isEmpty(), "the theme it already has changes nothing");
         }
     }
 
     @Test
     void writingTheSamePaintAgainChangesNothing() {
-        try (Gui gui = new Gui(Atchung.create(), SAME_THREAD)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Node n = gui.box().width(Length.dp(40)).height(Length.dp(20)).background(Role.ACTION.at(InteractionState.HOVER));
             gui.root().children(n);
-            gui.frame(400f, 300f, RethemeTest::noText);
+            Seams.of(gui).frame(400f, 300f, RethemeTest::noText);
             gui.takeDrawNeeded();
             n.background(Role.ACTION.at(InteractionState.HOVER));
-            gui.frame(400f, 300f, RethemeTest::noText);
+            Seams.of(gui).frame(400f, 300f, RethemeTest::noText);
             assertFalse(gui.takeDrawNeeded(), "a state handler firing again with the same state costs no frame");
         }
     }

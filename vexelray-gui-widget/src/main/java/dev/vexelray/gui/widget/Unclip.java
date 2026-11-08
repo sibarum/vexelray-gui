@@ -1,5 +1,7 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.Timing;
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.InteractionState;
@@ -60,8 +62,8 @@ public final class Unclip {
     }
 
     /** How the drawn-out node fades in and out, or null to snap. One ramp for both directions. */
-    public Unclip motion(Ramp ramp) {
-        this.motion = ramp;
+    public Unclip motion(Timing timing) {
+        this.motion = Ramp.of(gui, timing);
         return this;
     }
 
@@ -78,7 +80,7 @@ public final class Unclip {
         Objects.requireNonNull(over, "over");
         Objects.requireNonNull(subject, "subject");
         Lift lift = new Lift(subject);
-        gui.onState(over, state -> {
+        Seams.of(gui).onState(over, state -> {
             if (state == InteractionState.NORMAL) {
                 lift.to(0f);
             } else if (lift.target == 0f && subject.layout().clipped()) {

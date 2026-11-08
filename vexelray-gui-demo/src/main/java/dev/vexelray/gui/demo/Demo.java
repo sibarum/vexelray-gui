@@ -1,5 +1,10 @@
 package dev.vexelray.gui.demo;
 
+import sibarum.atchung.Topic;
+import sibarum.atchung.Sender;
+import dev.vexelray.gui.widget.spi.WidgetSeams;
+import dev.vexelray.gui.core.Timing;
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.automation.Capability;
 import dev.vexelray.gui.automation.Sockets;
@@ -35,7 +40,7 @@ import sibarum.tactroller.api.CoordinateSpace;
 import sibarum.tactroller.api.Key;
 import sibarum.tactroller.api.Modifier;
 import sibarum.tactroller.api.Tactroller;
-import sibarum.tactroller.atchung.TactrollerInputBridge;
+import sibarum.tactroller.atchung.InputPublisher;
 import sibarum.tactroller.clipboard.Clipboard;
 import sibarum.tactroller.clipboard.ClipboardException;
 
@@ -100,7 +105,7 @@ public final class Demo {
         // Every reveal in the window — a tree's cut-off name, a table's cut-off cell — fades the same way, said
         // once. Quick, because it is the thing itself and not help arriving, and symmetric, so it leaves the way it
         // came: an ease-out over the same time is mostly done in its first frames and reads as a snap.
-        Unclip.of(gui).motion((progress, done) -> krono.ramp(Dur.ms(150), Ease.IN_OUT_CUBIC, progress, done));
+        Unclip.of(gui).motion(Timing.millis(150, Timing.Curve.IN_OUT_CUBIC));
 
         // Undo for the whole window, bound before any chapter is built, as the framework binds one on every window:
         // every control in every chapter records into it, and Ctrl+Z reaches all of them (docs/plans/undo.md).
@@ -137,7 +142,6 @@ public final class Demo {
         }
 
         int maxFrames = args.length > 0 ? Integer.parseInt(args[0]) : 0;
-        startWorker(gui, shell.console());
 
         // Placement is read before the window exists, so the gallery is *created* where it was left rather than
         // appearing and then moving — and clamped on the way, because the desk may have changed shape since.
@@ -195,13 +199,17 @@ public final class Demo {
             // Closing the window is a *request* the application may refuse. Installed only when there is input
             // to answer it with: a dialog nobody can click would be a window that cannot be closed at all.
             if (input != null) {
-                app.onCloseRequest(request -> Modals.show(
-                        Modal.of("Quit the gallery?", "Window placement and zoom are saved either way.")
-                                .defaultButton("Quit", request::proceed)
-                                .cancelButton("Stay", request::cancel)));
+                // The host's, so its buttons run code: a close request is answered by proceeding or cancelling it.
+                WidgetSeams host = WidgetSeams.get();
+                app.onCloseRequest(request -> {
+                    Modal quit = Modal.of("Quit the gallery?", "Window placement and zoom are saved either way.");
+                    host.defaultButton(quit, "Quit", request::proceed);
+                    host.cancelButton(quit, "Stay", request::cancel);
+                    Modals.show(quit);
+                });
             }
 
-            TactrollerInputBridge bridge = input == null ? null : new TactrollerInputBridge(input, gui.bus());
+            WindowFeed bridge = input == null ? null : new WindowFeed(input, gui);
             if (maxFrames <= 0) {
                 // Render on demand: park until something says a frame is due, and only on an uncapped run — a
                 // frame cap is a script, and blocking would make N frames of a still window take forever rather
@@ -215,7 +223,7 @@ public final class Demo {
                         .maxFrameRate(16_666_666L);   // 60 Hz ceiling while animating
                 // And the wakes, without which the parking above is a hang rather than a saving: a worker's
                 // mutation and a timeline's tick are not OS input, so each has to nudge the message queue.
-                gui.onWork(app::postWake);
+                Seams.of(gui).onWork(app::postWake);
                 krono.kron().onWork(app::postWake);
             }
             try {
@@ -290,15 +298,35 @@ public final class Demo {
      * {@link Settings} over one file each write back everything they hold, so the second save would undo the
      * first.
      */
+    /** A zoom key's message. */
+    private enum Zoom {
+        IN, OUT, RESET;
+
+        void apply(Gui gui) {
+            if (this == IN) {
+                gui.zoomIn();
+            } else if (this == OUT) {
+                gui.zoomOut();
+            } else {
+                gui.resetZoom();
+            }
+        }
+    }
+
     private static Keymap zoomKeys(Gui gui) {
         Keymap keys = new Keymap(gui).persist(AppHome.of(APP).settings("keys"));
+        // A chord sends a message, and the gallery hears it, as an application's view would: a key is never code run in
+        // the frame by the keymap.
+        Topic<Zoom> zoom = Topic.edge("demo.zoom", Zoom.class);
+        gui.bus().subscribe(zoom, z -> z.apply(gui));
+        Sender<Zoom> to = gui.bus().tick(() -> { }).inbox("zoom-keys").sender(zoom);
         // Numpad equivalents too, for keyboards where the main row needs a modifier to reach + at all.
         keys.action("view.zoom-in", "Zoom in", Shortcut.of(Key.EQUAL, Modifier.CONTROL),
-                Shortcut.of(Key.NUMPAD_ADD, Modifier.CONTROL)).on(gui::zoomIn);
+                Shortcut.of(Key.NUMPAD_ADD, Modifier.CONTROL)).sends(to, Zoom.IN);
         keys.action("view.zoom-out", "Zoom out", Shortcut.of(Key.MINUS, Modifier.CONTROL),
-                Shortcut.of(Key.NUMPAD_SUBTRACT, Modifier.CONTROL)).on(gui::zoomOut);
+                Shortcut.of(Key.NUMPAD_SUBTRACT, Modifier.CONTROL)).sends(to, Zoom.OUT);
         keys.action("view.zoom-reset", "Actual size", Shortcut.of(Key.DIGIT_0, Modifier.CONTROL),
-                Shortcut.of(Key.NUMPAD_0, Modifier.CONTROL)).on(gui::resetZoom);
+                Shortcut.of(Key.NUMPAD_0, Modifier.CONTROL)).sends(to, Zoom.RESET);
         return keys;
     }
 
@@ -359,7 +387,7 @@ public final class Demo {
             // The GUI may carry the pointer along with something it animates — a cancelled card flying home with
             // the hand on it. Positions are in the CLIENT space just configured, the same space they arrive in.
             if (input.supportsPointerWarp()) {
-                gui.onPointerWarp((x, y) -> {
+                Seams.of(gui).onPointerWarp((x, y) -> {
                     try {
                         input.warpPointer(Math.round(x), Math.round(y));
                     } catch (BackendException e) {
@@ -424,7 +452,7 @@ public final class Demo {
             System.out.println("input unavailable for this window (" + e.getMessage() + ")");
             return WindowInput.NONE;
         }
-        TactrollerInputBridge bridge = new TactrollerInputBridge(backend, windowGui.bus());
+        WindowFeed bridge = new WindowFeed(backend, windowGui);
         return new WindowInput() {
 
             @Override
@@ -440,7 +468,7 @@ public final class Demo {
     }
 
     /** Snapshot input onto the bus for this frame; a transient backend poll failure just skips the frame. */
-    private static void pump(TactrollerInputBridge bridge) {
+    private static void pump(WindowFeed bridge) {
         if (bridge == null) {
             return;
         }
@@ -452,23 +480,18 @@ public final class Demo {
     }
 
     /**
-     * Application logic off the GUI thread, mutating the tree through handles exactly as a click handler does.
-     *
-     * <p>It says something once and then stops, which is the honest version of this demonstration: a worker that
-     * chattered forever would keep the render-on-demand loop awake for no reason, and a gallery whose activity
-     * rail is always moving cannot show you that something you did moved it.
+     * One window's device input, published on that window's tree's input topic ({@link Gui#input()}): what
+     * tactroller-atchung's {@code TactrollerInputBridge} does, on a topic named by the tree rather than the shared
+     * default, so each window on the bus hears only its own.
      */
-    private static void startWorker(Gui gui, Console console) {
-        gui.async(() -> {
-            try {
-                Thread.sleep(600);
-                console.note("worker thread reporting in — this line was appended from off the GUI thread");
-                Thread.sleep(900);
-                console.note("every handle is thread-safe: a mutation is a message, reconciled next frame");
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        });
+    private record WindowFeed(Tactroller backend, InputPublisher publisher) {
+        WindowFeed(Tactroller backend, Gui gui) {
+            this(backend, new InputPublisher(gui.bus(), gui.input().name()));
+        }
+
+        void pump() throws BackendException {
+            publisher.publish(backend.snapshot());
+        }
     }
 
     private Demo() {

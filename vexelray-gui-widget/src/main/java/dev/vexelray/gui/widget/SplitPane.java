@@ -1,5 +1,9 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.Timing;
+import dev.vexelray.gui.core.spi.Seams;
+import sibarum.atchung.Topic;
+import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.CursorShape;
@@ -44,11 +48,23 @@ import java.util.function.Consumer;
  * accent mid-gesture every time the pointer got ahead of the line it is moving. Given a {@link #motion} ramp, the
  * change between the two colours is a fade rather than a cut; give it a linear ease, as for any fade.
  *
- * <p>Remembering the size is the application's, through {@link #onResize} — which reports the sized pane's size in
- * {@code dp} at the end of each drag, ready for {@code WindowMemory} or {@code Settings}, so a restored size
+ * <p>Remembering the size is the application's, through {@link #RESIZED} — which carries the sized pane's size in
+ * {@code dp} at the end of each drag, and the split's {@link #address() address}, ready for {@code WindowMemory} or {@code Settings}, so a restored size
  * arrives through {@link #size(Length)} before the first frame.
  */
 public final class SplitPane {
+
+    /** The sized pane's size, in dp, after a drag ends. The last in a frame. */
+    public static final Topic<Resized> RESIZED =
+            Addressed.state(Resized.class, Resized::split);
+
+    /** The split at {@code split} has its sized pane {@code dp} across. */
+    public record Resized(String split, float dp) implements Addressed {
+        @Override
+        public Object address() {
+            return split;
+        }
+    }
 
     /** How the two panes sit. */
     public enum Orientation {
@@ -90,7 +106,7 @@ public final class SplitPane {
     private volatile Length minFirst = Length.rem(6);
     private volatile Length minSecond = Length.rem(6);
     private volatile float sizeDp;
-    private volatile Consumer<Float> onResize = dp -> { };
+    private final WidgetName name;
 
     /**
      * Two panes. Each pane node should be {@link Length#FILL} in both directions; it is placed in a box that
@@ -115,9 +131,10 @@ public final class SplitPane {
                 .width(Length.FILL).height(Length.FILL)
                 .scroll(false, false)
                 .children(firstBox, divider, secondBox);
+        this.name = new WidgetName(gui, "split", frame);
         gui.cursor(divider, across ? CursorShape.RESIZE_HORIZONTAL : CursorShape.RESIZE_VERTICAL);
-        gui.onDrag(divider, this::drag);
-        gui.onState(divider, state -> {
+        Seams.of(gui).onDrag(divider, this::drag);
+        Seams.of(gui).onState(divider, state -> {
             synchronized (this) {
                 pointer = state;
             }
@@ -149,8 +166,8 @@ public final class SplitPane {
      * Fade the line between its resting colour and the accent along {@code ramp}, instead of switching in one
      * frame. A fade that is interrupted turns round from wherever it had got to. {@code null} cuts, as before.
      */
-    public SplitPane motion(Ramp ramp) {
-        this.motion = ramp;
+    public SplitPane motion(Timing timing) {
+        this.motion = Ramp.of(gui, timing);
         return this;
     }
 
@@ -188,11 +205,11 @@ public final class SplitPane {
         return this;
     }
 
-    /** The size of the sized pane. Applies at once and does not notify {@link #onResize}. */
+    /** The size of the sized pane. Applies at once and publishes nothing. */
     public SplitPane size(Length size) {
         float em = Math.max(1f, gui.rootEmPx());
         this.sizeDp = size.scalarPx(LayoutContext.of(em * 100f, em * 100f), 0f)
-                / Math.max(0.0001f, gui.dpi().value());
+                / Math.max(0.0001f, Seams.of(gui).dpi().value());
         place(size);
         return this;
     }
@@ -209,10 +226,15 @@ public final class SplitPane {
         return this;
     }
 
-    /** The sized pane's size in dp after a drag ends. Runs on a worker thread. */
-    public SplitPane onResize(Consumer<Float> handler) {
-        this.onResize = handler == null ? dp -> { } : handler;
+    /** Call this split {@code name} in its tree ("sidebar"): its {@link #address()} is the tree's name and this. */
+    public SplitPane name(String name) {
+        this.name.name(name);
         return this;
+    }
+
+    /** Where this split is on the bus: what its {@link Resized} carries. */
+    public String address() {
+        return name.address();
     }
 
     /** The painted line, for a test to read. */
@@ -242,7 +264,7 @@ public final class SplitPane {
 
     private void drag(DragEvent e) {
         boolean across = orientation == Orientation.SIDE_BY_SIDE;
-        float dpi = Math.max(0.0001f, gui.dpi().value());
+        float dpi = Math.max(0.0001f, Seams.of(gui).dpi().value());
         if (e.phase() != DragEvent.Phase.MOVE) {
             synchronized (this) {
                 dragging = e.phase() == DragEvent.Phase.START;
@@ -256,7 +278,7 @@ public final class SplitPane {
             }
             retarget();
             if (e.phase() == DragEvent.Phase.END) {
-                onResize.accept(sizeDp);
+                gui.bus().publish(RESIZED, new Resized(name.address(), sizeDp));
             }
             return;
         }

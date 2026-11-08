@@ -1,5 +1,6 @@
 package dev.vexelray.gui.demo.chapter;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
@@ -89,7 +90,7 @@ public final class PlotChapter implements Chapter {
         this.console = stage.console();
 
         figure = gui.box().width(Length.FILL).height(Length.grow(1));
-        gui.onResizeUi(figure, layout -> {
+        Seams.of(gui).onResize(figure, layout -> {
             size.set(new float[]{layout.rect().w(), layout.rect().h()});
             redraw();
         });
@@ -106,7 +107,9 @@ public final class PlotChapter implements Chapter {
             }));
         }
 
-        Slider zoom = new Slider(gui, 0.35f).onChange(v -> {
+        Slider zoom = new Slider(gui, 0.35f);
+        gui.mailbox(Slider.CHANGED, zoom.address(), c -> {
+            double v = c.value();
             half.set(new double[]{MIN_HALF + v * (MAX_HALF - MIN_HALF)});
             redraw();
         });

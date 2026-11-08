@@ -62,7 +62,7 @@ Consequences, all deliberate:
 
 The same rule generalises: `type` publishes per-character key down/up and `CharTyped` through the ordinary path
 (never a text-set shortcut, and never auto-repeat for single characters — that is command-keys-only by design);
-`scroll` publishes wheel deltas; `drag` is press, path, release with the button held.
+`scroll` publishes wheel deltas; `drag` is press, path, release with the button held, then the click that puts a latched carry down.
 
 ---
 
@@ -145,6 +145,13 @@ free:
 With both, the rule is mechanical: **a gap preceded by a `loop.park` that covers it is expected; a gap that is
 not is a stall**, and the last row before it is the suspect. This is why the frame loop must be instrumented in
 A2 even though it is not something the agent drives.
+
+A pass is not a draw: most passes take input and draw nothing. Each draw writes a row of its own on the `draw` lane,
+after its `emit canvas` zone: **`draw.ran`**, `#<n> [<cause> ...] [+<more>]`. The number counts the draws of every
+window on the loop, apart from the pass's. The causes are those of the tree edits it is the first to show (an edit
+that changed layout, geometry or drawing, each cause once, at most 16, then how many more), written while the
+`layout` lane is traced. A draw runs in its pass's cause, so this is what links a click's widget writes to the draw
+that showed them. atchung's tick writes the same kind of row, `tick.ran` (atchung `docs/probe.md`).
 
 `frame` and `version` stay in the schema, but as *causality* columns rather than ordering ones — once the
 timestamp sort has shown you where to look, they answer "did this land before or after that layout", which
@@ -582,30 +589,30 @@ socket and ottermate do not depend on that module.
 
 #### The declared bus graph
 
-The program's message graph, as its declarations state it: the components and other publishers, each `@Subscribe`
-mailbox with its topic, payload type, overflow policy and capacity, and each topic a type declares it publishes. The
-format, version 1, is fixed by the Inspector's contract
-([vexelray-inspector docs/bus-circuit.md](../../../vexelray-inspector/docs/bus-circuit.md) §1). The Inspector draws
-the bus as a circuit from it.
+The program's message graph, as its declarations state it: every part and the lane it runs on, every way each hears
+a topic (a mailbox, an inbox, a job's request, a source's start and stop), what each sends, and each topic's kind. The
+format, version 2, is fixed by the Inspector's contract
+([vexelray-inspector docs/bus-graph.md](../../../vexelray-inspector/docs/bus-graph.md)). The Inspector draws its
+graph and flows panels from it.
 
-- **Where it comes from.** vexelray-framework's processor writes it as a `BUS_GRAPH` constant, and the generated
-  wiring hands it to `BusGraph.declare(String)` at startup, the way the build identity reaches `Discovery.build`.
-  `declare` refuses, at once, any text whose first line is not `# vexelray bus graph 1`. An application not built by
-  the processor declares none.
+- **Where it comes from.** vexelray-framework's processor writes it as a `BUS_GRAPH` constant, its topic lines read
+  off each topic's own constant when the wiring loads, and the generated wiring hands it to `BusGraph.declare(String)`
+  at startup, the way the build identity reaches `Discovery.build`. `declare` refuses, at once, any text whose first
+  line is not `# vexelray bus graph 2`. An application not built by the processor declares none.
 - **How to read it.** `bus graph` is a diagnostics read. It answers `ok bus graph lines=<n>`, then the `n` lines as
   declared, header first, or `err no bus graph: <why>` when none was declared. The link answers the same verb as a
   `Query`. `BusGraph.text()` gives it in-process.
 
-The reply's shape, for the contract's sample graph. This is not a transcript: no application declares a graph until
-the framework's processor emits one.
+The reply's shape, cut short:
 
 ```
-$ ottermate --app witness bus graph
-ok bus graph lines=9
-# vexelray bus graph 1
-component  dev.example.Worker      lane=worker
+$ ottermate --app vexelray-inspector bus graph
+ok bus graph lines=95
+# vexelray bus graph 2
+part component dev.sibarum.inspector.core.Bench lane=logic timer
 ...
-publishes  dev.example.Worker       topic=witness.ping
+sends dev.sibarum.inspector.core.ListRuns topic=dev.sibarum.inspector.core.Messages.Runs
+topic dev.sibarum.inspector.core.Messages.Rows kind=edge
 ```
 
 The rest of `bus` (the topic registry and the tap) is still `missing`, and `bus` alone or with any other word
@@ -634,7 +641,7 @@ whether the run succeeded.
 | `go <landmark>` | The framework's own navigation: reveal whatever conceals it, scroll it into view, focus it. |
 | `move <ref\|landmark\|x,y>` | Travel there. Hover happens on the way, and is recorded. |
 | `click` / `rightclick <target>` | Travel there, then press and release. |
-| `drag <target> <target>` | Press, travel, release. |
+| `drag <target> <target>` | Press, travel, release, and put down: under the default `DragRelease.KEEP` a release keeps the carry in hand (transfer.md §13), so `drag` then clicks where it let go, as a hand would. `down`/`up` do not, so a latched carry can still be photographed. |
 | `down <target>` / `up [target]` | A drag held open: travel there and press; then `move` and `shot` as often as wanted; then let go, where the pointer is or after travelling. `drag` is over before anything could photograph it, and the middle of a gesture — a card half-carried, a gap half-open — is often what needs looking at. |
 | `scroll <target> <dx> <dy>` | Wheel notches there. |
 | `touch <target> <n> <dx> <dy> [scale] [turn] [ms]` | `n` fingers on the touchpad, the pointer there: they land in a ring, then over `ms` (200) their centre moves `dx`, `dy` mm, their spread grows by `scale` and they turn `turn` degrees, and they lift. A swipe is `touch @x 3 -30 0`; a pinch, `touch @x 2 0 0 2`. Published as the touchpad's driver path publishes contacts, so the recognizer, the dispatcher's claims and the widget are all exercised. |
@@ -689,7 +696,8 @@ view`. A row half out of the window is neither: it is clicked on the half that i
 the frame that took it until that frame has published, and every handler the frame dispatched until it has
 returned, so a click's own handler, which posts its mutation after the frame that dispatched it, is waited for
 too. It is woken by the debt being paid, not by a layout commit, because a frame that changed nothing publishes
-nothing (2 s, then `err did not settle`). Then, when the host handed over a `Timeline`, it waits for the
+nothing (2 s, then `err did not settle`, unless the timeline is busy: a tween owes the next frame at every step, so
+motion longer than 2 s keeps the loop owed, and that debt is the timeline's to wait for). Then, when the host handed over a `Timeline`, it waits for the
 timeline to go quiet (10 s; a repeating cue is named rather than waited out), and for the loop once more. So it
 is exact about the frame loop, its handlers and the clock, and never a sleep. It cannot see work the
 application started for itself, on `Gui.async` or a thread of its own: that is not the loop's debt. An agent
@@ -749,47 +757,70 @@ placement one.
 
 ### Chrome belongs to the framework
 
-A title bar is window chrome, and chrome belongs to whoever owns the window. An application contributes
-**identity** — its title, and an icon only as identity. It never contributes **controls** there; a control an
-application needs belongs in the application's own UI.
+The app menu, the badges and the window controls are window chrome, and chrome belongs to whoever owns the window.
+An application contributes **identity** there — its title, and an icon only as identity — and never a button.
 
 This is what makes a utility free everywhere. The moment one app puts its own button in the caption, the strip
 is app-addressable, and no framework instrument can rely on the space existing or on its meaning being the same
 from one window to the next. "Screenshot this window" is only free if the framework owns the place it lives.
 
+An application's own commands go in **its menus** (`TitleBar.menu`): a menu bar after the lockup, the place a desktop
+application's menu bar has always been. They never reach the caption's slack, the badges or the window controls, so
+those still mean the same in every window. *Ruled 2026-11-03 by the author, with VexelRay IDE's Run menu as the
+witness; until then an application had no controls in the bar at all, and its commands lived over its content.*
+
 ### Four zones
 
-`TitleBar` is `[identity | caption | buttons]` today. It becomes:
-
 ```
-[ identity | caption (flex, DRAG) | instruments | window controls ]
+[ lockup | app's menus | title | caption (flex, DRAG) | badges | window controls ]
 ```
 
-- **identity** — application-supplied, declarative, no handlers of the application's. The one handler there is the
-  framework's: `TitleBar.onMark`, which `vexelray-framework` uses to open the application's About window from the
-  mark. The mark is `WindowRegion.INTERACTIVE` only while it has one, and a script reaches it as the landmark
-  `titlebar-mark`.
-- **caption** — the flexing drag region, still `WindowRegion.DRAG`.
-- **instruments** — framework-owned, each `WindowRegion.INTERACTIVE`, with the gaps between them left draggable
-  exactly as the caption buttons already manage.
+- **lockup** — the application's identity: its mark and its name as a logo (`TitleBar.icon`, `TitleBar.wordmark`),
+  one target that opens the **app menu**. Under the pointer a plate lifts behind it and the logo takes the accent; a
+  colour change, so nothing appears or grows. The menu is the framework's: an About line (`TitleBar.onMark`, which
+  `vexelray-framework` uses for the About window), then each instrument's section. The lockup is
+  `WindowRegion.INTERACTIVE` only while the menu has a line, and a script reaches it as the landmark `titlebar-mark`.
+  An application gives its logo while it builds its tree, as identity; the framework sets the name in the theme's
+  type on any bar still without one.
+- **app's menus** — the application's own (`TitleBar.menu(name, label, Menu)`), in the order first declared, each a
+  label that wears the lockup's plate and accent under the pointer and hangs its `Menu` from its lower left. A `Menu`
+  is data, each item a message to send, declared again when its facts change; `TitleBar.open(name)` drops one from a
+  key. One that is empty stays, greyed and caption. A script reaches each as `titlebar-menu.<name>`, and its items as
+  any menu's are (`menu.<label>`).
+- **title** and **caption** — what the window shows, then the flexing drag region, still `WindowRegion.DRAG`.
+- **badges** — an instrument's button stands here only while its state must be seen without asking (a recording, a
+  debug run), each `WindowRegion.INTERACTIVE`, with the gaps between them left draggable exactly as the caption
+  buttons already manage.
 - **window controls** — minimize, maximize, close. Rightmost, and maximize keeps `MAXIMIZE_BUTTON` so the
   platform's own snap affordance still works.
 
+*Until 2026-11-02 every instrument was a button in a strip at the right. The strip read as out of place beside the
+window controls, and each new tool widened it; the app menu holds them all, so the bar's right end is the window's
+controls and whatever is going on now.*
+
 ### Registered, never enumerated
 
-An instrument is a value — mark, tooltip, role, action — contributed to a registry that `TitleBar` renders
-without inspecting. The framework registers screenshot and macro-record; `TitleBar` branches on nothing, so the
-automation module can add its own without `TitleBar` knowing it exists. It does: `WindowInstrument.automation` and
-`WindowInstrument.debugging` (role, and landmark, `instrument-automation`) open the framework's restart menu, after
-the key bindings. An instrument with a `menu` opens it at the click instead of running an action, and the menu's
-items are landmarks by what they say (`menu.restart-in-debug-mode`), so a script can choose one. The menu is
-handed the window's own `WindowControls`, as an action is, so what it does is to the window it was opened in.
+An instrument is a value — mark, tooltip, role, action, and the icon its line wears — contributed to a registry that
+`TitleBar` renders without inspecting. Each is a section of the app menu (`WindowInstrument.section`): its menu's
+lines, or one line of its icon and tooltip that runs its action. `TitleBar` branches on nothing, so the automation
+module can add its own without `TitleBar` knowing it exists. It does: `WindowInstrument.automation` puts *Restart in
+debug mode* in the menu, and in a debug run `WindowInstrument.debugging` heads its section *Debug run* with the
+ports, and stands at the right as the bug with its lamps (role, and landmark, `instrument-automation`) the whole run
+long. The menu's items are landmarks by what they say (`menu.restart-in-debug-mode`), so a script can choose one:
+`click titlebar-mark`, then `click menu.restart-in-debug-mode`. The menu is handed the window's own
+`WindowControls`, as an action is, so what it does is to the window it was opened in.
 
-**The camera records, where something can.** `SaveScreenshot.instrument()` is the plain screenshot button, unless a
+**The menu is drawn as a card** (`ContextMenu`, every context menu's presenter): a section can open with a heading
+(`MenuSink.heading`, small capitals), each line wears its icon, a line about something going on now
+(`MenuItem.current`, *Stop recording*) is edged in the accent, and the panel fades up as it opens and out as it
+closes.
+
+**The camera records, where something can.** `SaveScreenshot.instrument()` is the plain screenshot line, unless a
 `WindowRecorder` is on the class path (`vexelray-codec-record` puts one there). Then it is `WindowInstrument.camera`,
-the same role, opening a menu: `menu.take-screenshot`, and `menu.record-video-to-file` (a save dialog, then
-`WindowRecording.start`) or, while a recording runs in any window, `menu.stop-recording` first. The lens is filled
-while recording, a shape and not a colour, in every window's bar, through `WindowRecording.LIVE`. Frames reach the
+a *Capture* section: `menu.take-screenshot`, and `menu.record-video` (a save dialog, then `WindowRecording.start`)
+or, while a recording runs in any window, `menu.stop-recording` first. While recording, the camera stands at the
+right of every window's bar with its lens filled, a shape and not a colour, through `WindowRecording.LIVE`, and its
+click opens the same section. Frames reach the
 recorder through `WindowControls.tap`, the presenter's `FrameTap`, so a recording never causes a frame and never makes
 one wait. The recording ends with its window: `GuiWindow.close` finishes the file once the presenter has handed over
 its last frames. A
@@ -799,9 +830,8 @@ has: the bar commands an interface and knows no implementations.
 
 ### Three constraints
 
-- **Never revealed on hover.** Instruments are always present and reserve their width. Where the bar is too
-  narrow they collapse into an overflow instrument that is itself always present. Nothing in this strip may
-  appear, move or grow under the pointer.
+- **Never revealed on hover.** A badge comes and goes with the state it shows, never with the pointer, and the
+  app menu is opened by a click. Nothing in the bar may appear, move or grow under the pointer.
 - **Marks, not glyphs.** The primary atlas carries no camera or record symbol, so instrument marks are `Picture`
   geometry, which also stays crisp under zoom. They are drawn on `CaptionGrid` — the same unit, the same single
   pixel-snapped stroke, the same 16 × 12 unit envelope as the window controls, which `TitleBar` now draws the same

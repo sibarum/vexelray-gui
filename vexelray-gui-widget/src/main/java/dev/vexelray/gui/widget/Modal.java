@@ -2,6 +2,7 @@ package dev.vexelray.gui.widget;
 
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.icons.Icon;
+import sibarum.atchung.Sender;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -13,9 +14,9 @@ import java.util.List;
  *
  * {@snippet :
  * Modals.show(Modal.of("Unsaved changes", "Save before closing?")
- *         .defaultButton("Save", this::save)
- *         .button("Discard", this::discard)
- *         .cancelButton("Cancel", request::cancel));
+ *         .defaultButton("Save", closing, Closing.SAVE)
+ *         .button("Discard", closing, Closing.DISCARD)
+ *         .cancelButton("Cancel", closing, Closing.STAY));
  * }
  *
  * <p>Two buttons are special, and only by what dismisses them: the <b>default</b> button is the one Enter
@@ -26,20 +27,75 @@ import java.util.List;
  * dialog, not a misconfiguration.
  *
  * <p>Immutable-ish by convention: each builder call returns {@code this}, and a spec is meant to be built and
- * handed straight to {@link Modals}. Actions run on the dialog's handler executor, off the GUI thread, after the
- * dialog has closed — so an action may itself put up the next dialog without waiting for anything.
+ * handed straight to {@link Modals}. A button's message is sent after the dialog has closed, so whoever hears it may
+ * itself put up the next dialog without waiting for anything.
+ *
+ * <p><b>A button sends a message</b> ({@link #button(String, Sender, Object)} and its siblings), as a menu item does,
+ * or only puts the dialog away ({@link #defaultButton(String)}, {@link #cancelButton(String)}). Nothing on a dialog runs
+ * code of its caller's (vexelray-framework's {@code docs/threading.md}, T7.2 and T7.5): the host that wants code to
+ * run on an answer hears its own message.
  */
 public final class Modal {
 
-    /** One button: its label, what it does, and whether Enter or Escape reaches it. */
-    public record Button(String label, Runnable action, boolean isDefault, boolean isCancel) {
+    static {
+        Hosting.install();
+    }
 
-        public Button {
+    /**
+     * One button: its label, whether Enter or Escape reaches it, and the message it sends when chosen, or none for a
+     * button that only puts the dialog away. Data, so what a dialog answers can be read off it before it is shown.
+     */
+    public static final class Button {
+
+        private final String label;
+        private final Sender<?> to;
+        private final Object message;
+        /** The host's code to run instead of a message ({@code WidgetSeams}), or null. */
+        private final Runnable action;
+        private final boolean isDefault;
+        private final boolean isCancel;
+
+        private Button(String label, Sender<?> to, Object message, boolean isDefault, boolean isCancel) {
+            this(label, to, message, null, isDefault, isCancel);
+        }
+
+        private Button(String label, Sender<?> to, Object message, Runnable action, boolean isDefault,
+                       boolean isCancel) {
             if (label == null || label.isBlank()) {
                 throw new IllegalArgumentException("button label must not be blank");
             }
-            if (action == null) {
-                action = () -> { };
+            this.label = label;
+            this.to = to;
+            this.message = message;
+            this.action = action;
+            this.isDefault = isDefault;
+            this.isCancel = isCancel;
+        }
+
+        public String label() {
+            return label;
+        }
+
+        /** What choosing this sends, or null for a button that only dismisses. */
+        public Object message() {
+            return message;
+        }
+
+        public boolean isDefault() {
+            return isDefault;
+        }
+
+        public boolean isCancel() {
+            return isCancel;
+        }
+
+        /** Send the message, if there is one: the presenter's, after the dialog's close was asked for. */
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        void press() {
+            if (action != null) {
+                action.run();
+            } else if (to != null) {
+                ((Sender) to).send(message);
             }
         }
     }
@@ -98,24 +154,65 @@ public final class Modal {
         return new Modal(title, message);
     }
 
-    /** Add an ordinary button. */
-    public Modal button(String label, Runnable action) {
-        buttons.add(new Button(label, action, false, false));
+    /** Add an ordinary button that sends {@code message} through {@code to} when chosen. */
+    public <T> Modal button(String label, Sender<T> to, T message) {
+        buttons.add(new Button(label, sending(to), sent(message), false, false));
         return this;
     }
 
-    /** Add the button Enter presses — the affirmative one, drawn accented. At most one; the last one wins. */
-    public Modal defaultButton(String label, Runnable action) {
+    /** Add the button Enter presses, sending {@code message} through {@code to}: drawn accented; the last one wins. */
+    public <T> Modal defaultButton(String label, Sender<T> to, T message) {
         buttons.removeIf(Button::isDefault);
-        buttons.add(new Button(label, action, true, false));
+        buttons.add(new Button(label, sending(to), sent(message), true, false));
         return this;
     }
 
-    /** Add the button Escape (and the dialog's close button) presses. At most one; the last one wins. */
-    public Modal cancelButton(String label, Runnable action) {
-        buttons.removeIf(Button::isCancel);
-        buttons.add(new Button(label, action, false, true));
+    /** Add the button Enter presses that only puts the dialog away: the "OK" of a dialog that asks nothing. */
+    public Modal defaultButton(String label) {
+        buttons.removeIf(Button::isDefault);
+        buttons.add(new Button(label, null, null, true, false));
         return this;
+    }
+
+    /** Add the button Escape and the close box press, sending {@code message} through {@code to}; the last one wins. */
+    public <T> Modal cancelButton(String label, Sender<T> to, T message) {
+        buttons.removeIf(Button::isCancel);
+        buttons.add(new Button(label, sending(to), sent(message), false, true));
+        return this;
+    }
+
+    /** Add the button Escape and the close box press that only puts the dialog away. */
+    public Modal cancelButton(String label) {
+        buttons.removeIf(Button::isCancel);
+        buttons.add(new Button(label, null, null, false, true));
+        return this;
+    }
+
+    // The host's forms, reached through WidgetSeams: code run when the button is chosen.
+
+    Modal button(String label, Runnable action) {
+        buttons.add(new Button(label, null, null, action, false, false));
+        return this;
+    }
+
+    Modal defaultButton(String label, Runnable action) {
+        buttons.removeIf(Button::isDefault);
+        buttons.add(new Button(label, null, null, action, true, false));
+        return this;
+    }
+
+    Modal cancelButton(String label, Runnable action) {
+        buttons.removeIf(Button::isCancel);
+        buttons.add(new Button(label, null, null, action, false, true));
+        return this;
+    }
+
+    private static Sender<?> sending(Sender<?> to) {
+        return java.util.Objects.requireNonNull(to, "to");
+    }
+
+    private static Object sent(Object message) {
+        return java.util.Objects.requireNonNull(message, "message");
     }
 
     /**

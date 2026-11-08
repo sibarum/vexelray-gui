@@ -1,5 +1,6 @@
 package dev.vexelray.gui.demo.chapter;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
@@ -74,9 +75,11 @@ public final class LayoutChapter implements Chapter {
                 JUSTIFY[justify.get()], ALIGN[align.get()]));
         state.run();
 
-        Slider gap = new Slider(gui, 0.2f).onChange(v -> arena.gap(Length.rem((float) v * 3f)));
+        Slider gap = new Slider(gui, 0.2f);
+        gui.mailbox(Slider.CHANGED, gap.address(), m -> arena.gap(Length.rem((float) m.value() * 3f)));
         gap.node().width(Length.rem(10));
-        Slider pad = new Slider(gui, 0.25f).onChange(v -> arena.padding(Length.dp((float) v * 48f)));
+        Slider pad = new Slider(gui, 0.25f);
+        gui.mailbox(Slider.CHANGED, pad.address(), m -> arena.padding(Length.dp((float) m.value() * 48f)));
         pad.node().width(Length.rem(10));
 
         Node controls = Ui.strip(gui,
@@ -104,7 +107,7 @@ public final class LayoutChapter implements Chapter {
                         Ui.button(gui, "Reset", gui::resetZoom),
                         Ui.button(gui, "What zoom am I at?", () ->
                                 console.note(String.format("zoom %.2fx, root em %.1f px",
-                                        gui.zoom().value(), gui.rootEmPx())))),
+                                        Seams.of(gui).zoom().value(), gui.rootEmPx())))),
                 Ui.prose(gui, "The gap slider is in rem and the padding slider in dp. Zoom in and watch which "
                         + "of the two changes: content grows, frame does not. That is the whole distinction, "
                         + "and getting it backwards is what makes a zoomed interface feel like a screenshot "

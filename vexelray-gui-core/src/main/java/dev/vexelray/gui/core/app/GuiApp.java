@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core.app;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.canvas.Canvas;
 import dev.vexelray.canvas.CanvasShader;
 import dev.vexelray.canvas.CanvasVertex;
@@ -77,17 +78,18 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
     /** Watches what each frame costs, and offers simplified graphics to a machine that cannot keep up. */
     private final SlowFrames slowFrames = new SlowFrames(new SlowFramesHost());
     /**
-     * {@code -Dvexelray.debug.slowFrames=<ms>}: add that much to every frame drawn while boxes are shaded — a machine
-     * whose GPU the shading overwhelms, on one that it does not. How the slow-frames offer is tried end to end, prompt,
+     * {@code -Dvexelray.debug.slowFrames=<ms>}: keep the GPU busy that much after every frame drawn while boxes are
+     * shaded — a machine whose GPU the shading overwhelms, on one that it does not. The thread is free meanwhile, as it
+     * is on such a machine ({@link GuiWindow}'s slow GPU). How the slow-frames offer is tried end to end, prompt,
      * judgement and save, on hardware that never needs it. Zero (the default) is off.
      */
-    private static final long DEBUG_SLOW_FRAME_NANOS = Long.getLong("vexelray.debug.slowFrames", 0L) * 1_000_000L;
+    static final long DEBUG_SLOW_FRAME_NANOS = Long.getLong("vexelray.debug.slowFrames", 0L) * 1_000_000L;
     /**
      * {@code -Dvexelray.debug.slowFramesFlat=<ms>}: the same while boxes are flat. Zero (the default) is a machine that
      * flat shading rescues; as much as {@code slowFrames} is one slow for some other reason, which is how the offer is
      * seen to stay quiet when simplified graphics is already on, and to keep a switch that did not help.
      */
-    private static final long DEBUG_SLOW_FLAT_FRAME_NANOS =
+    static final long DEBUG_SLOW_FLAT_FRAME_NANOS =
             Long.getLong("vexelray.debug.slowFramesFlat", 0L) * 1_000_000L;
     /**
      * What makes every OS window this application opens — see {@link #GuiApp(WindowConfig,
@@ -117,6 +119,8 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
     private final List<StreamTexture> streams = new ArrayList<>();
     /** Textures handed to {@link #release}, waiting for a frame that no longer names them. Main thread. */
     private final List<Retiring> retiring = new ArrayList<>();
+    private final List<AutoCloseable> closedFeeds = new ArrayList<>();
+    private static final SampledImage[] NO_IMAGES = new SampledImage[0];
     /** Loop iterations begun, so a released texture can be held for a whole one after it. Main thread. */
     private long iteration;
     private final List<StorageBuffer> buffers = new ArrayList<>();
@@ -180,6 +184,10 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
     private long displayReadAt;
     /** Set by {@link #postWake}, consumed by the park: how a wake is told apart from OS input. */
     private final java.util.concurrent.atomic.AtomicBoolean wakePosted = new java.util.concurrent.atomic.AtomicBoolean();
+    /** The thread running {@link #run}, so a wake can tell the loop asking itself from another thread asking it. */
+    private volatile Thread loopThread;
+    /** The loop asked itself for its next frame this pass: owed at the ceiling's next slot. Loop thread only. */
+    private boolean selfWake;
     /** What the loop has done, as {@link LoopCounters} reports it; this application's methods of that name read it. */
     private final LoopTally tally = new LoopTally();
 
@@ -463,11 +471,14 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
         // One placeholder for the device, not one per window: every window's canvas pipeline is built against the
         // same layout, and every span that draws no image binds this same 1x1 white. One canvas shader and one look
         // table too, so every window draws a look alike.
-        this.images = new DeviceImages(device, canvasShader);
+        // A feed handed a slot from any thread asks for a frame through the loop, which owns the windows.
+        this.images = new DeviceImages(device, canvasShader, () -> post(this::requestFrames));
 
         this.main = new GuiWindow(platform, instance, device, fonts, images, null,
                 probe, probeSurface, config.decorations(), presentBackend);
         main.tally(tally);
+        main.gpuWake(this::postWake);
+        main.frameCosts(slowFrames::drawn);
         this.controls = controlsFor(main);
     }
 
@@ -746,6 +757,37 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
     }
 
     /**
+     * Whether any window has a draw owed that waits for nothing but the ceiling: a pass inside the gap leaves one. A draw
+     * held for the GPU is not counted: the presenter wakes the loop for it ({@link GuiWindow#drawDue}).
+     */
+    /**
+     * How long until the earliest asked half on any open window is due (Gui#nanosUntilDue), Long.MAX_VALUE when every
+     * one is at rest: the frame contract's park, so a part due later wakes the loop then and not before.
+     */
+    private long untilAskedDue() {
+        long until = main.gui == null ? Long.MAX_VALUE : main.gui.nanosUntilDue();
+        for (int i = 0; i < open.size(); i++) {
+            Gui g = open.get(i).window.gui;
+            if (g != null) {
+                until = Math.min(until, g.nanosUntilDue());
+            }
+        }
+        return until;
+    }
+
+    private boolean anyDrawDue() {
+        if (main.drawDue()) {
+            return true;
+        }
+        for (int i = 0; i < open.size(); i++) {
+            if (open.get(i).window.drawDue()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Whether some released texture is still waiting out its iteration, or for the frames before its mark — the loop
      * must not park on it.
      */
@@ -777,7 +819,7 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                 continue;
             }
             if (shownAny(r.images)) {
-                if (warn && !r.warned) {
+                if (warn && !r.warned && shownNow(r.images)) {   // not one only fading out under its replacement
                     r.warned = true;
                     LOG.warn("a released texture is still shown by a node, so it stays open until no tree names "
                             + "it; give the node another image before releasing: " + r.thing);
@@ -810,6 +852,21 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
         return false;
     }
 
+    /** Whether any window shows one of {@code images} as its image now, not only fading out under its replacement. */
+    private boolean shownNow(SampledImage[] images) {
+        for (SampledImage image : images) {
+            if (main.showsNow(image)) {
+                return true;
+            }
+            for (OpenWindow w : open) {
+                if (w.window.showsNow(image)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     /** Whether any window's tree, as its last update left it, still names {@code image}. */
     private boolean shown(SampledImage image) {
         if (main.shows(image)) {
@@ -823,14 +880,22 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
         return false;
     }
 
-    /** Whether {@code image} is on {@code node} or anywhere under it. */
+    /**
+     * Whether {@code image} is on {@code node} or anywhere under it: shown, or fading out under the image that replaced
+     * it (RetainedNode.imageBefore), which still samples it until the crossfade lets it go.
+     */
     static boolean names(RetainedNode node, dev.vexelray.target.ImageHandle image) {
-        if (node.image() == image) {
+        return names(node, image, true);
+    }
+
+    /** As {@link #names(RetainedNode, dev.vexelray.target.ImageHandle)}, counting one fading out only when {@code fading}. */
+    static boolean names(RetainedNode node, dev.vexelray.target.ImageHandle image, boolean fading) {
+        if (node.image() == image || fading && node.imageBefore == image) {
             return true;
         }
         List<RetainedNode> children = node.children;
         for (int i = 0; i < children.size(); i++) {
-            if (names(children.get(i), image)) {
+            if (names(children.get(i), image, fading)) {
                 return true;
             }
         }
@@ -1256,101 +1321,8 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                 "every frame owed while a task posted by " + source + " ran",
                 java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(nanos) + " ms on the GUI thread, so the"
                         + " window did not draw and took no input for that long. This queue is for structural"
-                        + " work — opening a window, changing a tab — and not for work that blocks; put that"
-                        + " on the offload lane with offload(work, landed, failed), which runs it off this"
-                        + " thread and hands the result back here");
-    }
-
-    /**
-     * Do {@code work} on the offload lane and hand what it produced back here, on the GUI thread.
-     *
-     * <h2>Public for the same reason {@link #post} is</h2>
-     *
-     * That method was made public because applications were each growing a queue of their own. They have
-     * since moved up a level and are growing the <em>round trip</em>: submit to a pool, catch what it throws,
-     * post the result back, post the failure back. It is four lines that are wrong in a quiet way when they
-     * are wrong — a result applied on the pool thread works until the day it does not — and there is no
-     * reason for an application to write it.
-     *
-     * <p><b>This is the shortest correct way to do slow work, and that is deliberate.</b> Reading a file
-     * straight from a command handler is shorter still and stops the frame loop for as long as the disk takes;
-     * {@link Gui#async} is shorter and gives back no result, so a caller who needs one hand-rolls the way
-     * home. Making the correct round trip the least typing is the point of it being here.
-     *
-     * <p><b>What runs on the lane must touch nothing.</b> No node, no tab, no model — it computes a value and
-     * returns it. Everything that acts on that value runs in {@code landed}, on this thread, in order with
-     * every other request in the queue. That is the whole discipline, and it is checkable by reading one
-     * lambda.
-     *
-     * <p><b>Every outcome of {@code work} reaches exactly one of {@code landed} and {@code failed}.</b> A caller
-     * that shows a spinner until one of them runs is waiting on that promise, and an outcome that reaches
-     * neither is a spinner that never stops. See {@link #offloaded} for how an {@code Error} is told apart.
-     *
-     * @param work   the slow part: I/O, a decode, a parse. Runs on the offload lane
-     * @param landed what to do with the result, on the GUI thread
-     * @param failed what to do when {@code work} threw, on the GUI thread. A report, usually — this is not a
-     *               path that should take the application down, because the thing that failed was one request.
-     *               An {@code Exception} arrives as itself; an {@code Error} arrives wrapped in an
-     *               {@link java.util.concurrent.ExecutionException} whose cause it is
-     */
-    public <T> void offload(java.util.concurrent.Callable<T> work, java.util.function.Consumer<T> landed,
-                            java.util.function.Consumer<Exception> failed) {
-        Gui gui = mainGui;
-        if (gui == null) {
-            throw new IllegalStateException(
-                    "no tree yet: offload needs the lane the Gui was built on, which run() binds");
-        }
-        gui.offload().execute(offloaded(work, landed, failed, this::post));
-    }
-
-    /**
-     * The half of {@link #offload} that runs on the lane: call {@code work}, and {@code post} back whichever of
-     * {@code landed} and {@code failed} its outcome calls for. Apart from {@code offload} so it can be run
-     * without a window.
-     *
-     * <p><b>It catches {@code Throwable}, not {@code Exception}.</b> It caught {@code Exception}, so an
-     * {@code AssertionError}, a {@code StackOverflowError} from a recursive parse or an {@code OutOfMemoryError}
-     * from one oversized decode escaped onto the pool thread, neither callback ran, and a UI waiting on the
-     * result waited forever with nothing in the log saying why.
-     *
-     * <p><b>An {@code Error} is wrapped rather than the parameter widened.</b> {@code failed} is a
-     * {@code Consumer<Exception>}, and widening it to {@code Throwable} breaks every caller holding a
-     * {@code Consumer<Exception>} or passing a method that takes one. {@code ExecutionException} is the JDK's
-     * own word for "the computation threw this", it is what {@code Future.get} hands back for the same case, and
-     * a caller that only prints the message still prints the error's name, because the message is the cause's.
-     *
-     * <p><b>A {@code VirtualMachineError} is delivered and then rethrown.</b> Delivered, because the request
-     * still failed and its caller still needs to hear that. Rethrown, because an out-of-memory or a stack
-     * overflow says something about the process rather than about the one request, and swallowing it here would
-     * leave the only record of it being whatever {@code failed} chose to show. Rethrowing ends this pool thread
-     * through its uncaught-exception handler and the pool starts another. Any other {@code Error} — an
-     * assertion, a linkage error from a missing optional library — is about the request, and stops at
-     * {@code failed} the same way an exception does. The rethrow is in a {@code finally}, so a post that itself
-     * cannot allocate does not hide the error it was reporting.
-     */
-    static <T> Runnable offloaded(java.util.concurrent.Callable<T> work, java.util.function.Consumer<T> landed,
-                                  java.util.function.Consumer<Exception> failed,
-                                  java.util.function.Consumer<Runnable> post) {
-        return () -> {
-            T value;
-            try {
-                value = work.call();
-            } catch (Exception e) {
-                post.accept(() -> failed.accept(e));
-                return;
-            } catch (Throwable t) {
-                Exception wrapped = new java.util.concurrent.ExecutionException(t);
-                try {
-                    post.accept(() -> failed.accept(wrapped));
-                } finally {
-                    if (t instanceof VirtualMachineError fatal) {
-                        throw fatal;
-                    }
-                }
-                return;
-            }
-            post.accept(() -> landed.accept(value));
-        };
+                        + " work (opening a window, changing a tab) and not for work that blocks: that is a"
+                        + " job's, whose reply comes back as a message");
     }
 
     /**
@@ -1425,6 +1397,7 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                 spec.standing().place(spec.config(), anchorHandle(spec)), this::create, presentBackend);
         w.liveStep(() -> iterationTop(false));
         w.tally(tally);
+        w.gpuWake(this::postWake);
         WindowInput input = inputs.attach(w.window, spec.gui());
         OpenWindow entry = new OpenWindow(w, input, spec, owner);
         LOG.info("window opened: \"{}\" {}x{}{}", spec.config().title(), spec.config().width(), spec.config().height(),
@@ -1562,14 +1535,12 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
      * means "as fast as you can", and on a presenter that does not block that is 140 fps to show a
      * 60 Hz display. This bounds it without involving the presenter.
      *
-     * <p>It bounds the frames a {@link #postWake} earns: a wake is remembered, not dropped, and draws no
-     * sooner than this gap after the previous frame <em>began</em>. A wake that lands together with OS input
-     * is held to the same gap.
-     *
-     * <p>It bounds the frames OS input earns the same way. Input after a quiet spell costs nothing in latency, since
-     * the gap has long run out by then; input arriving faster than the ceiling (a pointer sweeping the window) is
-     * held to it, each frame taking whatever arrived in the gap. It waits at most this gap, and a timed sleep is what
-     * makes it wait ({@code waitEvents} cannot be repeated: it returns at once while a message is unread).
+     * <p><b>It bounds draws, and nothing else.</b> A draw begins no sooner than this gap after the last pass that
+     * was allowed to draw. OS input and a {@link #postWake} from another thread are not held: each runs a pass at once,
+     * which takes the input, drains what arrived and lays out, and draws only if the gap has run out; otherwise its draw
+     * stays owed until it has. So input and messages are answered at their own rate, a pointer sweeping the window
+     * costs an update per batch of mouse messages, and what is on screen trails by at most this gap. A wake the loop
+     * posts to itself (motion still moving, a relayout) is a draw, held to the gap like any other.
      */
     public GuiApp maxFrameRate(long minFrameNanos) {
         this.minFrameNanos = Math.max(0L, minFrameNanos);
@@ -1613,7 +1584,19 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
         }
     }
 
+    /**
+     * Owe the loop a pass. From another thread (a lane, a job, the automation socket) that is an event: the loop runs
+     * a pass at once, to take what arrived, and draws only at the ceiling's next slot. From the loop's own thread it
+     * is the loop asking for its next frame (motion still moving, a relayout, a widget's write): a draw, held to the
+     * slot like any other, and no reason to run a pass before then. Posting the OS message for it would end the next
+     * park at once and spin the loop through the gap.
+     */
     public void postWake() {
+        if (Thread.currentThread() == loopThread) {
+            tally.wake(selfWake);
+            selfWake = true;
+            return;
+        }
         if (Probe.ON) {
             Probe.mark(Lane.FRAME, "wake.post", "nudging the OS message queue");
         }
@@ -1692,7 +1675,7 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
      */
     private void wireWake(Gui gui) {
         if (gui != null && wired.add(gui)) {
-            gui.onWork(this::postWake);
+            Seams.of(gui).onWork(this::postWake);
             gui.systemReducedMotion(systemReducedMotion);
             suiteGraphics(gui);
         }
@@ -1865,6 +1848,13 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
         // iteration is presented this iteration, so it must be able to ask for the next one.
         wireAllWakes();
         iteration++;
+        // A closed feed's texture goes the way a released one does: nodes name the feed, never the texture, so no node
+        // holds it, and it waits only for the frames in flight that may sample it.
+        images.closedFeeds(closedFeeds);
+        for (AutoCloseable s : closedFeeds) {
+            retire(s, NO_IMAGES);
+        }
+        closedFeeds.clear();
         if (!retiring.isEmpty()) {
             retire(loop);
         }
@@ -1877,7 +1867,7 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
 
     /**
      * Drive {@code gui}, running {@code beforeFrame} at the top of each frame — the app-edge hook for pumping input
-     * onto the bus (e.g. {@code TactrollerInputBridge::pump}) before {@link Gui#frame} drains and dispatches it.
+     * onto the bus (e.g. {@code TactrollerInputBridge::pump}) before {@link dev.vexelray.gui.core.spi.Seams#frame} drains and dispatches it.
      *
      * <p>This loop is the one thread all windows share: each iteration pumps and presents the main window, then
      * materialises any pending {@link #requestPopup} calls, then pumps and presents each open popup. A popup that
@@ -1890,12 +1880,19 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
         // Navigation requests reach the loop here, on the main thread, because the only thing this half of
         // navigation does is open windows — and creating a window belongs to the main thread on every platform.
         this.navSub = gui.bus().subscribeAsync(
-                dev.vexelray.gui.core.nav.NavTopics.GO, this::route, this::post);
+                dev.vexelray.gui.core.nav.Address.NAVIGATE, this::route, this::post);
         wireWake(gui);
         // Map the GUI's desired cursor shape onto the OS window (I-beam over editable text, §8.3).
-        gui.onCursorChange(shape -> main.window.setCursor(osCursor(shape)));
+        Seams.of(gui).onCursorChange(shape -> main.window.setCursor(osCursor(shape)));
         int frame = 0;
         boolean running = true;
+        // The ceiling is on draws: the start of the last pass that drew, and whether one has. Only a draw spends it, so a
+        // pass that took input and drew nothing leaves the next draw free to run at once. Passes nothing posted (pacing
+        // that wants a frame with nothing to draw, the loop asking itself for one) are kept to the same rate from the
+        // last pass, so they cannot spin either (untilPass below).
+        long lastDraw = 0L;
+        boolean drawn = false;
+        loopThread = Thread.currentThread();
         main.liveStep(() -> iterationTop(false));
         // Each pass in a new cause of the loop's clock, which the posted tasks, the input and the mailboxes it runs
         // each step out of for their own and back into: what is left in it is what a frame did on its own account,
@@ -1914,13 +1911,19 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                     followDisplay();
                 }
                 wakePosted.set(false);   // a wake from here on was posted during this frame, so it is pending for the next
-                long frameStarted = System.nanoTime();   // the gap the ceiling holds is frame start to frame start
+                selfWake = false;        // and so is the loop's own asking for its next frame
+                long frameStarted = System.nanoTime();
+                // Four clocks, one thread. Every pass takes the input that has arrived and drains what the lanes
+                // sent, so input and messages are answered at their own rate; presenting waits for the ceiling, a gap
+                // from the start of the last pass that drew, and for the GPU, which the window does not wait for
+                // either: it holds the draw and the presenter wakes the loop when the GPU is ready (GuiWindow.pull).
+                boolean mayDraw = !drawn || minFrameNanos <= 0L || frameStarted - lastDraw >= minFrameNanos;
                 try (Zone frameZone = Probe.zone(Lane.FRAME, "frame")) {
-                    running = main.frame(beforeFrame) || mainGate.keepAlive(main.window, gui.handlers());
+                    running = main.frame(beforeFrame, mayDraw) || mainGate.keepAlive(main.window);
                 }
                 open.removeIf(w -> {
                     // Each window pumps its own input before its own frame: two OS windows, one loop, one GUI.
-                    if (w.window.frame(w.input::pump) || w.gate.keepAlive(w.window.window, w.spec.gui().handlers())) {
+                    if (w.window.frame(w.input::pump, mayDraw) || w.gate.keepAlive(w.window.window)) {
                         return false;
                     }
                     if (w.window.window == modal) {
@@ -1933,16 +1936,14 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                     return true;
                 });
                 frame++;
-                if (tally.drewThisIteration()) {
-                    long debugSlow = mainGui == null ? 0L
-                            : mainGui.flatShading() ? DEBUG_SLOW_FLAT_FRAME_NANOS : DEBUG_SLOW_FRAME_NANOS;
-                    if (debugSlow > 0L) {
-                        java.util.concurrent.locks.LockSupport.parkNanos(debugSlow);
-                    }
-                    // What this frame cost the machine, start to presented, before the loop parks: a frame drawn is what
-                    // simplified graphics would make cheaper, and an idle park is not slowness.
-                    slowFrames.drawn(frameStarted, System.nanoTime() - frameStarted);
+                boolean drew = tally.drewThisIteration();
+                if (drew) {
+                    lastDraw = frameStarted;
+                    drawn = true;
                 }
+                // What a frame cost the machine reaches SlowFrames from the window, start to the GPU done with it, when
+                // the next draw finds out (GuiWindow.reportFrameCost): a draw no longer waits for the GPU, so the time
+                // this pass took is not what simplified graphics would make cheaper.
                 if (running) {
                     // After presenting, never before: the frame the application just asked for is not the
                     // one to make it wait for. One call covers every window, because the wait is on this
@@ -1958,7 +1959,14 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                     // for a message already gone -- forever, when nobody is looking, with every later wake
                     // suppressed because a frame is already owed. Found by vexelray-framework's two-window
                     // witness; TwoWindowsWakeTest in vexelray-gui-harness.
-                    long paced = tasks.isEmpty() && !retireDue() && !wakePosted.get() ? pacing.getAsLong() : 0L;
+                    // Those are events, owed a pass at once whatever the ceiling says; drawing is not.
+                    boolean eventPending = !tasks.isEmpty() || retireDue() || wakePosted.get();
+                    long paced = eventPending ? 0L : pacing.getAsLong();
+                    // An asked half due later than this pass is owed a pass then (frame-contract.md B), whatever the
+                    // application's pacing says; one due now has already woken the loop.
+                    if (!eventPending) {
+                        paced = Math.min(paced, untilAskedDue());
+                    }
                     long budget = paced;
                     // Then the two bounds. The floor applies only while someone is looking: an unfocused
                     // window parks on whatever the application asked for, up to forever.
@@ -1967,9 +1975,25 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                         budget = Math.min(budget, maxIdleNanos);
                     }
                     long floored = budget;
-                    // The ceiling applies always. A zero budget means "immediately", which on a presenter
-                    // that does not block is as fast as the machine goes; this is what stops that.
-                    budget = Math.max(budget, minFrameNanos - (System.nanoTime() - frameStarted));
+                    // The ceiling. An event is not held: it runs a pass now, and that pass draws if the ceiling and the
+                    // GPU allow. Otherwise a draw held for the ceiling runs exactly at its slot. Anything else that
+                    // only wants a pass (pacing at zero while something animates, the loop asking itself for a frame,
+                    // a draw held for the GPU, whose presenter will wake the loop) waits a gap from the last pass,
+                    // since a zero budget on a draw that does not block is as fast as the machine goes.
+                    long now = System.nanoTime();
+                    long untilDraw = drawn ? minFrameNanos - (now - lastDraw) : 0L;
+                    long untilPass = minFrameNanos - (now - frameStarted);
+                    if (!eventPending) {
+                        if (!mayDraw && anyDrawDue()) {
+                            // Held this pass, so the next one may draw: at once if the slot opened while this pass ran
+                            // (a park that ended a hair early), and this cannot spin.
+                            budget = Math.max(0L, untilDraw);
+                        } else if (selfWake) {
+                            budget = Math.max(0L, untilPass);
+                        } else {
+                            budget = Math.max(budget, untilPass);
+                        }
+                    }
                     // Counted by whichever bound decided it, the last to move it first (LoopCounters.Park).
                     tally.close();
                     tally.park(budget <= 0L ? LoopCounters.Park.ZERO
@@ -1987,7 +2011,8 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                     // the preceding park is expected, and a gap that is not is a stall whose suspect is the row
                     // above it.
                     if (Probe.ON) {
-                        Probe.mark(Lane.FRAME, "frame.present", "#" + frame);
+                        // A pass that drew presented; one between the ceiling's slots only updated.
+                        Probe.mark(Lane.FRAME, drew ? "frame.present" : "frame.update", "#" + frame);
                         Probe.mark(Lane.FRAME, "loop.park",
                                 budget == Long.MAX_VALUE ? "forever" : budget / 1_000_000 + "ms");
                     }
@@ -1996,21 +2021,13 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                         // application spends most of its life, and a wait total that is small next to the run
                         // time is the signature of a loop that is spinning rather than sleeping.
                         try (Zone waitZone = Probe.idleZone(Lane.FRAME, "wait for events")) {
+                            // OS input and another thread's wake end the park early, and the next pass takes them
+                            // at once: it updates, and draws only if the ceiling's slot has come. Before input and
+                            // drawing had separate clocks, the loop slept out the rest of the gap here, so input that
+                            // landed inside a gap waited for it unread. A pointer sweeping the window now runs an
+                            // update per batch of messages (hit-test, hover, the widgets' messages) and still draws
+                            // no more often than the ceiling.
                             main.window.waitEvents(budget);
-                            // OS input and a posted wake both end the park early, so the ceiling would hold for
-                            // neither: a pointer moving over the window ran a frame per mouse message, about 250 a
-                            // second on a 240 Hz panel. Sleep out what is left of the gap whatever ended it. Nothing
-                            // is lost: the messages stay queued for the next pump, which reads pointer position and
-                            // queued button and key edges, so the motion of a held-back frame arrives summed in the
-                            // next. A plain timed sleep and not waitEvents, which returns at once while a message is
-                            // unread. A loop that parked longer than a gap has none left, so input after a quiet
-                            // spell is answered at once; only input arriving faster than the ceiling waits, at most
-                            // one gap.
-                            long gapEnds = frameStarted + minFrameNanos;
-                            long left;
-                            while (minFrameNanos > 0 && (left = gapEnds - System.nanoTime()) > 0) {
-                                java.util.concurrent.locks.LockSupport.parkNanos(left);
-                            }
                         }
                     }
                 }
@@ -2076,6 +2093,27 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
     // --- headless capture ---
 
     /**
+     * The GPU's time to draw {@code gui}, reconciled and laid out at {@code width}×{@code height} as {@link #capture}
+     * lays it out, in vexelray-text's standard fonts: the same frame drawn {@code frames} times on one device, offscreen,
+     * each frame's milliseconds from before its group passes to the end of its pass. A measuring tool's: the format
+     * comparison times SDG drawing by it.
+     */
+    public static double[] gpuMillis(Gui gui, int width, int height, int frames) {
+        TextFaces faces = TextFaces.standard();
+        Seams.of(gui).frame(width, height, faces);
+        settle(gui, width, height, faces);
+        RetainedNode root = Seams.of(gui).frame(width, height, faces);
+        double[] out = new double[frames];
+        render(faces, null, width, height, 0f, 0f, 0f, canvas -> {
+            if (root != null) {
+                TreeRenderer.emit(root, canvas, faces, gui);
+            }
+        }, out);
+        return out;
+    }
+
+
+    /**
      * Reconcile + lay out {@code gui} at {@code width}×{@code height}, render one frame, and write a PNG — in
      * vexelray-text's standard fonts.
      */
@@ -2107,9 +2145,9 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
         // fires inside it, and the mutation it posts is applied by the next drain. A still image wants the settled
         // state rather than the instant before it, so the first frame is a warm-up and the last is the picture.
         // Between them, settle: what handlers and animations still had in flight is carried to rest.
-        gui.frame(width, height, faces);
+        Seams.of(gui).frame(width, height, faces);
         settle(gui, width, height, faces);
-        RetainedNode root = gui.frame(width, height, faces);
+        RetainedNode root = Seams.of(gui).frame(width, height, faces);
         byte[] rgba = render(faces, canvasShader, width, height, bgR, bgG, bgB, canvas -> {
             if (root != null) {
                 TreeRenderer.emit(root, canvas, faces, gui);
@@ -2125,6 +2163,18 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
      */
     static byte[] render(TextFaces faces, CanvasShader.Composed asked, int width, int height,
                          float bgR, float bgG, float bgB, java.util.function.Consumer<Canvas> emit) {
+        return render(faces, asked, width, height, bgR, bgG, bgB, emit, null);
+    }
+
+    /**
+     * As {@link #render(TextFaces, CanvasShader.Composed, int, int, float, float, float, java.util.function.Consumer)},
+     * drawn {@code gpuMillis.length} times on the one device, each frame's GPU time in milliseconds put in
+     * {@code gpuMillis} (from before its group passes to the end of its pass; {@link GpuTimer}); the last frame's
+     * pixels returned. Null for one frame, untimed.
+     */
+    static byte[] render(TextFaces faces, CanvasShader.Composed asked, int width, int height,
+                         float bgR, float bgG, float bgB, java.util.function.Consumer<Canvas> emit,
+                         double[] gpuMillis) {
         CanvasShader.Composed canvasShader = canvasShader(faces, asked);
         NativePlatform platform = NativePlatform.current();
         try (VulkanInstance instance = new VulkanInstance("vexelray-gui",
@@ -2135,7 +2185,7 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                  VulkanRenderPass rp = new VulkanRenderPass(device, Vk.FORMAT_R8G8B8A8_UNORM,
                          Vk.IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
                  FontAtlases fonts = FontAtlases.upload(device, faces);
-                 DeviceImages images = new DeviceImages(device, canvasShader);
+                 DeviceImages images = new DeviceImages(device, canvasShader, null);
                  ShadeletTables tables = new ShadeletTables(device)) {
                 Canvas canvas = new Canvas(width, height);
                 canvas.looks(images.looks());
@@ -2149,11 +2199,28 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                              CanvasShader.vertex().spirv(), "main", images.fragment().spirv(), "main",
                              canvasConfig(fonts.first(), images.placeholder(), tables.buffer(), false))) { // fixed viewport: offscreen, no resize
                     // The same run list the windowed path walks, so a tree holding images captures to PNG exactly as
-                    // it presents — which is what makes the image kind checkable without a window.
-                    return OffscreenDraw.toRgba(device, rp.handle(), pipeline, width, height, vb.handle(),
-                            fonts.first().descriptorSet(), tables.buffer().descriptorSet(),
-                            bind(runs, vertexCount, images, fonts.textures()),
-                            bgR, bgG, bgB, 1f);
+                    // it presents — which is what makes the image kind checkable without a window. Groups drawn apart
+                    // are given their targets first, as a window gives them.
+                    try (GroupPasses groups = new GroupPasses(device, images, fonts.first(), fonts.textures(), tables)) {
+                        dev.vexelray.vulkan.present.Recorder pre = groups.prepare(canvas, vertexCount, vb.handle());
+                        List<WindowedPresenter.Run> bound = bind(runs, vertexCount, images, fonts.textures());
+                        if (gpuMillis == null) {
+                            return OffscreenDraw.toRgba(device, rp.handle(), pipeline, width, height, vb.handle(),
+                                    fonts.first().descriptorSet(), tables.buffer().descriptorSet(), bound,
+                                    bgR, bgG, bgB, 1f, pre);
+                        }
+                        byte[] rgba = null;
+                        try (dev.vexelray.vulkan.present.GpuTimer timer =
+                                     new dev.vexelray.vulkan.present.GpuTimer(instance.handle(), device)) {
+                            for (int i = 0; i < gpuMillis.length; i++) {
+                                rgba = OffscreenDraw.toRgba(device, rp.handle(), pipeline, width, height, vb.handle(),
+                                        fonts.first().descriptorSet(), tables.buffer().descriptorSet(), bound,
+                                        bgR, bgG, bgB, 1f, pre, timer);
+                                gpuMillis[i] = timer.millis();
+                            }
+                        }
+                        return rgba;
+                    }
                 }
             }
         }
@@ -2163,19 +2230,16 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
     private static final int SETTLE_ROUNDS = 64;
     /** Logical time one settle round carries the animation clock: well short of Driven's one-second forgiveness. */
     private static final java.time.Duration SETTLE_STEP = java.time.Duration.ofMillis(100);
-    /** How long one round waits for the handler lane before capturing whatever has landed. */
-    private static final long SETTLE_HANDLER_WAIT_MS = 5_000;
 
     /**
      * Run frames until the tree has nothing left in flight, so a capture photographs where it was going rather
      * than wherever thread timing left it.
      *
-     * <p>Two frames were enough for a mutation posted by layout, and not for one posted by a handler. A widget
-     * that fetches on the handler lane — a tree opening its rows, say — publishes whenever its worker gets there,
-     * which may be before the picture frame or after it; and if a transition was installed in between, the edit
-     * starts one that only a ticked clock would ever finish. Six captures of the same page made three pictures.
-     * So each round waits for the handler lane to return, applies what it published, and steps the registered
-     * {@link dev.vexelray.gui.core.AnimationClock} until nothing is scheduled. Nothing here presents a frame, so
+     * <p>Two frames were enough for a mutation posted by layout, and not for what follows a handler: a message to a
+     * widget lands a frame later, and an edit may start a transition that only a ticked clock would ever finish.
+     * So each round runs a frame while one is owed, and steps the registered
+     * {@link dev.vexelray.gui.core.AnimationClock} until nothing is scheduled. An application's reply from another
+     * thread (a tree's listing) is not waited for; that is the shell's "what is owed", in phase 5. Nothing here presents a frame, so
      * the clock is the capture's alone, and stepping it in fixed amounts is what makes where it ends up the same
      * every time.
      *
@@ -2184,24 +2248,17 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
      */
     private static void settle(Gui gui, int width, int height, TextFaces faces) {
         for (int round = 0; round < SETTLE_ROUNDS; round++) {
-            try {
-                if (!gui.awaitHandlers(SETTLE_HANDLER_WAIT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)) {
-                    LOG.warn("capture: " + gui.whatIsOwed() + " after " + SETTLE_HANDLER_WAIT_MS
-                            + " ms; capturing without it");
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return;
-            }
             dev.vexelray.gui.core.AnimationClock clock = gui.animationClock();
-            boolean animating = clock != null && !clock.quiet();
+            // The tree's own asked halves (fades, slides, a view's declared draw) run on its clock too, and are due
+            // until they arrive: the clock is stepped for them as for anything scheduled on it.
+            boolean animating = clock != null && (!clock.quiet() || gui.nanosUntilDue() != Long.MAX_VALUE);
             if (!animating && !gui.frameOwed()) {
                 return;
             }
             if (animating) {
                 clock.advance(SETTLE_STEP);
             }
-            gui.frame(width, height, faces);
+            Seams.of(gui).frame(width, height, faces);
         }
         LOG.warn("capture: not at rest after " + SETTLE_ROUNDS + " rounds (" + gui.whatIsOwed()
                 + "); capturing as it stands");
@@ -2212,10 +2269,9 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
     /**
      * Map a requested {@link dev.vexelray.gui.core.input.CursorShape} onto the window API.
      *
-     * <p><b>The engine offers the arrow, the I-beam and the two resize arrows</b> — the shapes every desktop has a
-     * system cursor for. The hand shapes — pointer over anything clickable, open and closed hands over anything
-     * grabbable — fall back to the arrow: Windows has a pointing hand but no open or closed one, so a grab hand
-     * would mean shipping cursor images. The rule that decides them is framework-side and fully exercised
+     * <p><b>The engine offers the arrow, the I-beam, the pointing hand and the two resize arrows</b> — the shapes
+     * every desktop has a system cursor for. The grab hands — open and closed, over anything grabbable — fall back
+     * to the arrow: Windows has no open or closed hand, so they would mean shipping cursor images. The rule that decides them is framework-side and fully exercised
      * ({@code CursorRuleTest}). Degrading to the arrow is the right fallback: a wrong-looking cursor is a cosmetic
      * loss, where guessing at a shape the platform has no standard for would not be.
      */
@@ -2227,6 +2283,7 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
     private static final java.util.Map<dev.vexelray.gui.core.input.CursorShape, NativeWindow.Cursor> OS_CURSORS =
             java.util.Map.of(
                     dev.vexelray.gui.core.input.CursorShape.TEXT, NativeWindow.Cursor.TEXT,
+                    dev.vexelray.gui.core.input.CursorShape.POINTER, NativeWindow.Cursor.POINTER,
                     dev.vexelray.gui.core.input.CursorShape.RESIZE_HORIZONTAL, NativeWindow.Cursor.RESIZE_HORIZONTAL,
                     dev.vexelray.gui.core.input.CursorShape.RESIZE_VERTICAL, NativeWindow.Cursor.RESIZE_VERTICAL);
 

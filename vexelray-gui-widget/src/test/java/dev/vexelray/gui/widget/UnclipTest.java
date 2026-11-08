@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.Length;
 import org.junit.jupiter.api.Test;
@@ -78,7 +79,7 @@ class UnclipTest {
         try (HeadlessGui h = new HeadlessGui()) {
             Page p = page(h, new Unclip(h.gui), LONG);
             int[] nextClicked = {0};
-            h.gui.onClick(p.next(), () -> nextClicked[0]++);
+            Seams.of(h.gui).onClick(p.next(), () -> nextClicked[0]++);
             h.frame();
 
             h.hover(50f, 15f);
@@ -123,7 +124,7 @@ class UnclipTest {
     void itFadesInAndOutOnTheRampItIsGiven() {
         try (HeadlessGui h = new HeadlessGui()) {
             Steps ramp = new Steps();
-            Page p = page(h, new Unclip(h.gui).motion(ramp), LONG);
+            Page p = page(h, new Unclip(h.gui).motion(TestClocks.drive(h, ramp)), LONG);
 
             h.hover(50f, 15f);
             h.frame();
@@ -150,7 +151,7 @@ class UnclipTest {
     void aSupersededFadeDoesNothing() {
         try (HeadlessGui h = new HeadlessGui()) {
             Steps ramp = new Steps();
-            Page p = page(h, new Unclip(h.gui).motion(ramp), LONG);
+            Page p = page(h, new Unclip(h.gui).motion(TestClocks.drive(h, ramp)), LONG);
 
             h.hover(50f, 15f);
             h.frame();
@@ -183,7 +184,7 @@ class UnclipTest {
             assertTrue(window == Unclip.of(h.gui), "asked twice, the same one");
             assertFalse(window == Unclip.of(other.gui), "and every window its own");
 
-            TreeView<String> tree = new TreeView<>(h.gui, new TreeView.Source<String>() {
+            TreeView<String> tree = Listing.tree(h, new Listing<String>() {
                 @Override
                 public List<String> roots() {
                     return List.of("a");

@@ -1,7 +1,10 @@
 package dev.vexelray.gui.core.edit;
 
+import dev.vexelray.gui.core.Addressed;
+import sibarum.atchung.Atchung;
 import sibarum.atchung.Committer;
 import sibarum.atchung.State;
+import sibarum.atchung.Topic;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -24,10 +27,11 @@ import java.util.Objects;
  * the position is gone and the history reports dirty until the next {@link #mark()}. That is the honest answer:
  * the state that was saved is no longer reachable.
  *
- * <p><b>Status rides the bus.</b> {@link #status()} is a {@code State<Status>}, so a menu item's enablement, a
- * title bar's dirty dot and an unsaved-changes gate subscribe to it instead of polling, and a subscriber on
- * another thread is indistinguishable from a local one. It is published with the monitor released, so a listener
- * cannot re-enter the history it is being told about.
+ * <p><b>Status rides the bus.</b> {@link #status()} reads it now; a history {@link #announceOn announced} on a bus
+ * publishes every change as {@link Changed} on {@link #STATUS}, so a menu item's enablement, a title bar's dirty dot
+ * and an unsaved-changes gate hear it in their mailboxes instead of polling. A window's history is announced by the
+ * tree it is bound to ({@code Gui.history}), at {@code gui.address(History.ADDRESS)}. It is published with the monitor
+ * released, so nothing hearing it can re-enter the history it is being told about.
  *
  * <p><b>An entry may refuse, and a refusal moves nothing.</b> Each entry is asked {@link Change#check()} before it
  * applies; a conflict or a refusal leaves both stacks as they were, so a failed undo never costs the redo, and
@@ -41,6 +45,24 @@ import java.util.Objects;
  * says.
  */
 public final class History {
+
+    /**
+     * A history's status changed: what is possible, how much of it, and whether the work is saved. The last in a frame
+     * for each history. Published only for a history {@link #announceOn announced} on a bus.
+     */
+    public static final Topic<Changed> STATUS =
+            Addressed.state(Changed.class, Changed::history);
+
+    /** What a tree calls the window's history on the bus: {@code gui.address(History.ADDRESS)}. */
+    public static final String ADDRESS = "history";
+
+    /** The history at {@code history} now stands at {@code status}. */
+    public record Changed(String history, Status status) implements Addressed {
+        @Override
+        public Object address() {
+            return history;
+        }
+    }
 
     /** Default cap on retained entries, so a long session cannot grow the stacks without bound. */
     public static final int DEFAULT_LIMIT = 1000;
@@ -92,10 +114,28 @@ public final class History {
         return limit;
     }
 
-    /** What is possible now, and whether the work is saved. Subscribe rather than poll. */
-    public State<Status> status() {
-        return status;
+    /** What is possible now, and whether the work is saved: read now. To hear it change, see {@link #STATUS}. */
+    public Status status() {
+        return status.value();
     }
+
+    /**
+     * Announce this history's status on {@code bus} as {@code address}: at once, and on every change after. The tree a
+     * window's history is bound to does it; a document's own history is announced by whoever keeps it.
+     */
+    public History announceOn(Atchung bus, String address) {
+        Objects.requireNonNull(bus, "bus");
+        Objects.requireNonNull(address, "address");
+        this.announced = new Announce(bus, address);
+        published();
+        return this;
+    }
+
+    /** Where status is announced, or null for nowhere. */
+    private record Announce(Atchung bus, String address) {
+    }
+
+    private volatile Announce announced;
 
     /**
      * Record {@code undoing} — the change that reverts something the caller has <b>already</b> applied. This is
@@ -375,5 +415,9 @@ public final class History {
             next = new Status(!undo.isEmpty(), !redo.isEmpty(), clean(), undo.size(), redo.size());
         }
         status.commit(publish, next);
+        Announce to = announced;
+        if (to != null) {
+            to.bus().publish(STATUS, new Changed(to.address(), next));
+        }
     }
 }

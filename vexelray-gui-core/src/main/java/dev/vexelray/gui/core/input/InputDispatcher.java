@@ -33,10 +33,9 @@ import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 import java.util.function.LongConsumer;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executor;
 
 /**
- * Framework-owned input dispatch (architecture.md §8). Subscribes a {@link Pump} to the {@link InputTopics#INPUT}
+ * Framework-owned input dispatch (architecture.md §8). Subscribes a {@link Pump} to its tree's {@link #input()} topic
  * topic and, once per frame, drains it on the GUI thread and routes each edge against the current laid-out tree.
  *
  * <p>Scope so far:
@@ -47,8 +46,11 @@ import java.util.concurrent.Executor;
  *       {@link #onState} is told when its {@link InteractionState} changes (NORMAL/HOVER/PRESSED), so it can
  *       restyle. State is computed with ancestor-or-self coverage, so hovering a button's label counts as hovering
  *       the button.</li>
+ *   <li><b>Pointer position</b> — each node registered via {@link #onPointer} is told where the pointer is while it
+ *       is over the node, by the same coverage, and once when it leaves.</li>
  * </ul>
- * Handlers run on the supplied executor (off the GUI thread by default), so a slow handler never stalls rendering.
+ * Handlers run here, on the GUI thread, during {@link #dispatch}: they are the GUI's own components answering their
+ * input, and must not block (vexelray-framework's {@code docs/threading.md}, T1.1, T3.8).
  *
  * <p>Because {@link #dispatch} runs during the frame, before layout, hit-testing uses the previous frame's rects —
  * the standard one-frame-geometry latency, invisible in practice. Focus routing, capture, wheel, keyboard, and
@@ -127,7 +129,11 @@ public final class InputDispatcher {
 
     private final Atchung bus;
     private final Topic<ClickEvent> clicks;
-    private final Executor handlerExecutor;
+    /** This tree's device input, and the gestures recognised from it: see {@link InputTopics}. */
+    private final Topic<sibarum.tactroller.api.InputEvent> input;
+    private final Topic<sibarum.tactroller.api.GestureEvent> gestures;
+    /** Whether a handler has run since {@link #dispatch} last asked: what the frame owes the next one a look for. */
+    private boolean ranHandler;
     private final Runnable requestLayout;
     private final Pump pump;
     private final Subscription sub;
@@ -139,15 +145,26 @@ public final class InputDispatcher {
     // that share one menu. Which node's sources run is a leaf→root question (see openMenu), so it is dispatch's
     // to answer -- the same walk as a click, with the same "the nearest one that has something wins" rule.
     private final Map<Long, java.util.List<Consumer<MenuSink>>> menuSources = new ConcurrentHashMap<>();
+    // Menus an application declared (T7.5): one per node, replaced rather than accumulated, because a declaration is
+    // the node's menu as of now and the next one says what it is instead. Added after the sources, so a widget's
+    // defaults come first.
+    private final Map<Long, Menu> declaredMenus = new ConcurrentHashMap<>();
     private volatile MenuPresenter menuPresenter;
     // Interaction state has *observers*, plural: a widget restyling itself and a tooltip watching the same node
     // are independent concerns, and neither should have to know the other exists. Every other handler map here
     // replaces on re-registration; this one accumulates, because state is a fact about the node, not a command
     // channel with a single owner.
     private final Map<Long, java.util.List<Consumer<InteractionState>>> stateHandlers = new ConcurrentHashMap<>();
+    /** Where the pointer is over a node: observers accumulate, as for state, since it is the same fact made finer. */
+    private final Map<Long, java.util.List<Consumer<PointerEvent>>> pointerHandlers = new ConcurrentHashMap<>();
+    /** The nodes last told the pointer is over them, and what they were told: a leave is the same box. GUI thread. */
+    private final Map<Long, PointerEvent> pointerOver = new java.util.HashMap<>();
     private final Map<Long, Consumer<DragEvent>> dragHandlers = new ConcurrentHashMap<>();
     /** Nodes that take the wheel themselves rather than letting it scroll what they are in. See onWheel. */
     private final Map<Long, Consumer<WheelEvent>> wheelHandlers = new ConcurrentHashMap<>();
+    /** Nodes that take the touchpad's pinch, and the one holding the pinch in flight, or -1. See onPinch. */
+    private final Map<Long, Consumer<PinchEvent>> pinchHandlers = new ConcurrentHashMap<>();
+    private long pinchTaker = -1;
     /** What each node would do with a drag released on it. Unrelated to dragHandlers -- see onDrop. */
     private final Map<Long, DropTarget> dropTargets = new ConcurrentHashMap<>();
     /** What each node offers up when a drag starts on it. */
@@ -160,8 +177,17 @@ public final class InputDispatcher {
     private final sibarum.tactroller.api.DragGesture drags =
             new sibarum.tactroller.api.DragGesture(DRAG_DISTANCE_PX, DRAG_HOLD_MS, Set.of(MouseButton.LEFT));
     /**
+     * When and where the press {@link #drags} is holding went down, and where the pointer has got to since: what
+     * {@link #dragHoldPending} reads, since the recogniser does not say whether it is waiting out its hold. GUI thread.
+     */
+    private long holdPressNanos;
+    private int holdPressX;
+    private int holdPressY;
+    private int holdX;
+    private int holdY;
+    /**
      * Recognises the touchpad's gestures in its contacts: one recogniser per window, fed the whole stream, so the
-     * pans and pinches published on {@link InputTopics#GESTURE} and the swipes and taps that reach claims are one
+     * pans and pinches published on {@link #gestures()} and the swipes and taps that reach claims are one
      * reading of the same fingers. GUI thread only.
      */
     private final sibarum.tactroller.api.TouchpadGesture touchpad = new sibarum.tactroller.api.TouchpadGesture();
@@ -175,7 +201,6 @@ public final class InputDispatcher {
      */
     private final java.util.concurrent.CopyOnWriteArrayList<Watch> dragWatches =
             new java.util.concurrent.CopyOnWriteArrayList<>();
-    private volatile History dropHistory;
     /** The reconciler's index, for judging a node by id (see {@link #nodeLookup}). GUI thread. */
     private java.util.function.LongFunction<RetainedNode> nodes = id -> null;
     /** The history a menu opened on a node records its edits into (see {@link #menuHistory}); any thread. */
@@ -186,35 +211,19 @@ public final class InputDispatcher {
     private final Map<Long, IntConsumer> charHandlers = new ConcurrentHashMap<>();
 
     /**
-     * Handlers registered as an <b>ordered stage</b> rather than as application logic: they run inline on the GUI
-     * thread during {@link #dispatch}, in arrival order, instead of being handed to the worker executor.
-     *
-     * <p>The distinction is what the handler <em>is</em>. An observer reacts to an event and has no ordering
-     * requirement, so it belongs off-thread where a slow one cannot stall rendering. A command performs a state
-     * transition that depends on arrival order — and handing each event to a pool separately orders the
-     * invocations but not the effects, so a burst of typed characters can apply scrambled. Serialising delivery
-     * would fix it by rebuilding the bus's own delivery machinery inside the dispatcher (architecture.md §0), and
-     * would spend exactly the asynchrony the design went to some trouble to get. Running the transition here
-     * instead costs nothing: the drain is already a total order, and applying an edit to a document is bounded
-     * model work, not application logic — the same reason the reconciler runs here.
-     */
-    private final Map<Long, IntConsumer> charStages = new ConcurrentHashMap<>();
-    private final Map<Long, Consumer<KeyEvent>> keyStages = new ConcurrentHashMap<>();
-    private final Map<Long, Consumer<DragEvent>> dragStages = new ConcurrentHashMap<>();
-    /**
      * Declared preemption (see {@link ClaimScope}). Ordered only by scope precedence, never by registration, so
-     * a focused element always outranks a global default. {@code inline} marks the framework's own claims, whose
-     * commands mutate GUI-thread state (focus) and so must not be handed to the worker executor.
+     * a focused element always outranks a global default. A claim's command runs in the dispatch, as every handler
+     * does.
      *
      * <p>A claim is on a {@link Trigger}: a chord, or a touchpad {@link Gesture} (a swipe, a tap), which resolve
      * the same way. A {@code null} chord is a claim on <em>every</em> trigger ({@link #claimAny}), and its command
      * hears which one it got. At the same scope a claim that named its trigger outranks it: the wildcard is the
      * floor of its scope, never a way of shadowing a key somebody asked for by name.
      */
-    private record Claim(Trigger chord, ClaimScope scope, long nodeId, Consumer<Trigger> command, boolean inline) {
+    private record Claim(Trigger chord, ClaimScope scope, long nodeId, Consumer<Trigger> command) {
 
-        static Claim of(Trigger chord, ClaimScope scope, long nodeId, Runnable command, boolean inline) {
-            return new Claim(chord, scope, nodeId, pressed -> command.run(), inline);
+        static Claim of(Trigger chord, ClaimScope scope, long nodeId, Runnable command) {
+            return new Claim(chord, scope, nodeId, pressed -> command.run());
         }
 
         boolean any() {
@@ -261,6 +270,12 @@ public final class InputDispatcher {
      */
     private Consumer<Set<Modifier>> modifierSink = m -> { };
     private long focusedId = -1;
+    /** Whether {@link #focusedId} has been seen shown since it got the keyboard: see {@link #handOnHiddenFocus}. */
+    private boolean focusSeenShown;
+    /** Whether the rest of this frame's input is being held back for the next ({@link #holdRest}). GUI thread. */
+    private boolean holding;
+    /** What {@link #holdRest} held back, oldest first. GUI thread. */
+    private final java.util.ArrayDeque<InputEvent> heldInput = new java.util.ArrayDeque<>();
     /** How {@link #focusedId} was last asked for: the focus ring's visibility rule reads it. */
     private FocusCause focusCause = FocusCause.PROGRAM;
     /** Whether the window holds OS focus, from tactroller's focus edges. The ring dims while it does not. */
@@ -354,17 +369,28 @@ public final class InputDispatcher {
     private Consumer<Boolean> pointerLockSink = locked -> { };
     private boolean lockRequested;
 
-    public InputDispatcher(Atchung bus, Topic<ClickEvent> clicks, Executor handlerExecutor) {
-        this(bus, clicks, handlerExecutor, () -> { });
+    /** The topic this dispatcher hears device input on: its tree's ({@link InputTopics#input}). */
+    public Topic<sibarum.tactroller.api.InputEvent> input() {
+        return input;
     }
 
-    public InputDispatcher(Atchung bus, Topic<ClickEvent> clicks, Executor handlerExecutor, Runnable requestLayout) {
+    /** The topic it publishes the touchpad gestures it recognises on: its tree's ({@link InputTopics#gestures}). */
+    public Topic<sibarum.tactroller.api.GestureEvent> gestures() {
+        return gestures;
+    }
+
+    public InputDispatcher(Atchung bus, String tree, Topic<ClickEvent> clicks) {
+        this(bus, tree, clicks, () -> { });
+    }
+
+    public InputDispatcher(Atchung bus, String tree, Topic<ClickEvent> clicks, Runnable requestLayout) {
         this.bus = bus;
         this.clicks = clicks;
-        this.handlerExecutor = handlerExecutor;
+        this.input = InputTopics.input(tree);
+        this.gestures = InputTopics.gestures(tree);
         this.requestLayout = requestLayout;
         this.pump = bus.pump();
-        this.sub = pump.subscribe(InputTopics.INPUT, this::handle, MAILBOX, Backpressure.FAIL);
+        this.sub = pump.subscribe(input, this::handle, MAILBOX, Backpressure.FAIL);
         // Focus traversal is a framework *default*, not an interception: it is an ordinary global claim, so a
         // focused element that claims Tab (a multiline editor indenting) simply outranks it. Shift+Tab is left
         // unclaimed by such elements, which is what keeps a way out of the field.
@@ -425,6 +451,18 @@ public final class InputDispatcher {
                 .add(source);
     }
 
+    /**
+     * Declare {@code nodeId}'s menu, replacing what was declared before; {@link Menu#NONE} takes it away. Read at the
+     * moment of the right click, so a declaration made any time before it is the one shown.
+     */
+    public void menu(long nodeId, Menu menu) {
+        if (menu.isEmpty()) {
+            declaredMenus.remove(nodeId);
+        } else {
+            declaredMenus.put(nodeId, menu);
+        }
+    }
+
     /** Install what shows a context menu, replacing any prior one; {@code null} means no menus are shown. */
     public void menuPresenter(MenuPresenter presenter) {
         this.menuPresenter = presenter;
@@ -447,6 +485,16 @@ public final class InputDispatcher {
     }
 
     /**
+     * Register an observer of where the pointer is over {@code nodeId}: told on every move while the node or a
+     * descendant is under it (the coverage {@link #onState} judges hover by), and once more, not over, when it
+     * leaves. Observers accumulate and are released with the node. See {@link PointerEvent}.
+     */
+    public void onPointer(long nodeId, Consumer<PointerEvent> handler) {
+        pointerHandlers.computeIfAbsent(nodeId, id -> new java.util.concurrent.CopyOnWriteArrayList<>())
+                .add(handler);
+    }
+
+    /**
      * Register a drag handler for {@code nodeId}: a left press on the node (or a descendant) captures the pointer
      * and delivers START, then MOVE for every subsequent motion while held (even off the node), then END on
      * release. Replaces any prior handler for that node.
@@ -456,8 +504,21 @@ public final class InputDispatcher {
     }
 
     /**
+     * Register a pinch handler for {@code nodeId}: the touchpad's fingers spread or pinched with the pointer over the
+     * node (or a descendant) go to it as {@link PinchEvent}s, the nearest such node on the pointer's path holding the
+     * gesture until it ends. Replaces any prior handler for that node; {@code null} removes it.
+     */
+    public void onPinch(long nodeId, Consumer<PinchEvent> handler) {
+        if (handler == null) {
+            pinchHandlers.remove(nodeId);
+        } else {
+            pinchHandlers.put(nodeId, handler);
+        }
+    }
+
+    /**
      * Register a wheel handler for {@code nodeId}: the wheel turned over the node (or a descendant) goes to it as a
-     * {@link WheelEvent}, on the handler executor, instead of scrolling the nearest overflowing ancestor. The nearest
+     * {@link WheelEvent}, during the dispatch, instead of scrolling the nearest overflowing ancestor. The nearest
      * such node on the pointer's path wins. Replaces any prior handler for that node; {@code null} removes it.
      */
     public void onWheel(long nodeId, Consumer<WheelEvent> handler) {
@@ -483,6 +544,11 @@ public final class InputDispatcher {
     /** Register what {@code nodeId} offers up when a drag begins on it — see {@link DragSource}. */
     public void onDragSource(long nodeId, DragSource source) {
         dragSources.put(nodeId, source);
+    }
+
+    /** Make {@code nodeId} no longer something a drag begins on. */
+    public void dropDragSource(long nodeId) {
+        dragSources.remove(nodeId);
     }
 
     /** One {@link DragWatch}, and the node whose removal ends it. */
@@ -527,12 +593,6 @@ public final class InputDispatcher {
         return DragState.of(s);
     }
 
-    /** Where a completed drop records its change. Until one is set, drops resolve and draw but commit nothing —
-     * which is the right default for a tree that has not said who owns its undo. */
-    public void dropHistory(History history) {
-        this.dropHistory = history;
-    }
-
     /** The drag in flight, or null. For a renderer drawing the ghost and the indicator. */
     public DragSession dragSession() {
         return session != null && !session.ended() ? session : null;
@@ -556,6 +616,15 @@ public final class InputDispatcher {
                 || event instanceof InputEvent.PointerMoved)) {
             return;
         }
+        if (event instanceof InputEvent.ButtonPressed p && p.button() == MouseButton.LEFT
+                && drags.activeButton() == null) {
+            holdPressNanos = p.timestampNanos();
+            holdPressX = holdX = p.x();
+            holdPressY = holdY = p.y();
+        } else if (event instanceof InputEvent.PointerMoved m) {
+            holdX = m.x();
+            holdY = m.y();
+        }
         for (sibarum.tactroller.api.DragEvent d : drags.feed(event)) {
             onDragGesture(d);
         }
@@ -568,17 +637,14 @@ public final class InputDispatcher {
      */
     private void feedTouchpad(InputEvent event) {
         for (sibarum.tactroller.api.GestureEvent g : touchpad.feed(event)) {
-            bus.publish(InputTopics.GESTURE, g);
+            bus.publish(gestures, g);
+            pinch(g);
             for (Gesture t : gestureTriggers.feed(g)) {
                 Claim claimed = resolveClaim(t);
                 if (claimed == null) {
                     continue;
                 }
-                if (claimed.inline()) {
-                    claimed.command().accept(t);
-                } else {
-                    handlerExecutor.execute(() -> claimed.command().accept(t));
-                }
+                handled(() -> claimed.command().accept(t));
             }
         }
     }
@@ -666,14 +732,13 @@ public final class InputDispatcher {
     }
 
     /**
-     * Put the latched drag down at {@code (x, y)}: the click that ends a carry. Performs the resolved change through
-     * the drop history, and puts focus where the drop landed.
+     * Put the latched drag down at {@code (x, y)}: the click that ends a carry. Lands the resolved drop, and puts
+     * focus where the drop landed.
      */
     private void commitSession(float x, float y) {
         session.moveTo(x, y, this::dropTargetsAt);
         DragState last = stateOf(session);
-        History history = dropHistory;
-        Drop performed = history == null ? Drop.NONE : session.commit(history);
+        Drop performed = session.commit();
         session = null;
         if (performed.accepts()) {
             // Focus follows the drop, and this is load-bearing rather than a nicety. Ctrl+Z resolves by focus
@@ -775,7 +840,7 @@ public final class InputDispatcher {
      * answers clicks keeps a drag handler above it from capturing its press.
      */
     private boolean ownsPointerDrag(RetainedNode n) {
-        return dragHandlers.containsKey(n.id) || dragStages.containsKey(n.id);
+        return dragHandlers.containsKey(n.id);
     }
 
     /**
@@ -836,6 +901,47 @@ public final class InputDispatcher {
         focusable.add(nodeId);
     }
 
+    // --- whether a node's one handler of a kind is held: Gui.hear adds a listener and never replaces one ---
+
+    /** True if {@code nodeId} has a click handler. */
+    public boolean hasClick(long nodeId) {
+        return clickHandlers.containsKey(nodeId);
+    }
+
+    /** True if {@code nodeId} has a double-click handler. */
+    public boolean hasDoubleClick(long nodeId) {
+        return doubleClickHandlers.containsKey(nodeId);
+    }
+
+    /** True if {@code nodeId} has a context-click handler. */
+    public boolean hasContextClick(long nodeId) {
+        return contextHandlers.containsKey(nodeId);
+    }
+
+    /** True if {@code nodeId} has a drag handler. */
+    public boolean hasDrag(long nodeId) {
+        return dragHandlers.containsKey(nodeId);
+    }
+
+    /** True if {@code nodeId} takes the wheel. */
+    public boolean hasWheel(long nodeId) {
+        return wheelHandlers.containsKey(nodeId);
+    }
+
+    public boolean hasPinch(long nodeId) {
+        return pinchHandlers.containsKey(nodeId);
+    }
+
+    /** True if {@code nodeId} has a key handler. */
+    public boolean hasKey(long nodeId) {
+        return keyHandlers.containsKey(nodeId);
+    }
+
+    /** True if {@code nodeId} has a typed-text handler. */
+    public boolean hasChar(long nodeId) {
+        return charHandlers.containsKey(nodeId);
+    }
+
     /** Explicitly mark a node focusable (e.g. a button) even without a key handler. */
     public void setFocusable(long nodeId, boolean canFocus) {
         if (canFocus) {
@@ -852,34 +958,6 @@ public final class InputDispatcher {
         focusable.add(nodeId);
     }
 
-    // --- ordered stages: run on the GUI thread during dispatch, in arrival order (see charStages) ---
-
-    /** Register {@code nodeId}'s typed-text stage, run in arrival order on the GUI thread. */
-    public void onCharUi(long nodeId, IntConsumer stage) {
-        charStages.put(nodeId, stage);
-        focusable.add(nodeId);
-    }
-
-    /** Register {@code nodeId}'s key-command stage, run in arrival order on the GUI thread. */
-    public void onKeyUi(long nodeId, Consumer<KeyEvent> stage) {
-        keyStages.put(nodeId, stage);
-        focusable.add(nodeId);
-    }
-
-    /** Register {@code nodeId}'s drag stage, run in arrival order on the GUI thread. */
-    public void onDragUi(long nodeId, Consumer<DragEvent> stage) {
-        dragStages.put(nodeId, stage);
-    }
-
-    /**
-     * Claim {@code chord} for {@code nodeId}, running the command on the GUI thread in arrival order — the
-     * variant a claim that performs an edit needs, so it sequences against typed text rather than racing it.
-     */
-    public void claimUi(long nodeId, Trigger chord, ClaimScope scope, Runnable command) {
-        claims.removeIf(c -> c.nodeId() == nodeId && c.scope() == scope && chord.equals(c.chord()));
-        claims.add(Claim.of(chord, scope, nodeId, command, true));
-    }
-
     /** Register a global shortcut command — a {@link ClaimScope#GLOBAL} claim owned by no node. */
     public void registerShortcut(Shortcut shortcut, Runnable command) {
         claim(-1L, shortcut, ClaimScope.GLOBAL, command);
@@ -888,7 +966,7 @@ public final class InputDispatcher {
     /** Claim {@code chord} for {@code nodeId} at {@code scope}; replaces any identical claim by the same node. */
     public void claim(long nodeId, Trigger chord, ClaimScope scope, Runnable command) {
         claims.removeIf(c -> c.nodeId() == nodeId && c.scope() == scope && chord.equals(c.chord()));
-        claims.add(Claim.of(chord, scope, nodeId, command, false));
+        claims.add(Claim.of(chord, scope, nodeId, command));
     }
 
     /**
@@ -898,7 +976,7 @@ public final class InputDispatcher {
      */
     public void claimAny(long nodeId, ClaimScope scope, Consumer<Trigger> command) {
         claims.removeIf(c -> c.nodeId() == nodeId && c.any());
-        claims.add(new Claim(null, scope, nodeId, command, false));
+        claims.add(new Claim(null, scope, nodeId, command));
     }
 
     /** Drop the wildcard claim {@code nodeId} holds, if any; its claims on named chords stay. */
@@ -913,7 +991,7 @@ public final class InputDispatcher {
 
     /** A framework default, run on the GUI thread because it mutates dispatch state. */
     private void claimInternal(Shortcut chord, Runnable command) {
-        claims.add(Claim.of(chord, ClaimScope.GLOBAL, -1L, command, true));
+        claims.add(Claim.of(chord, ClaimScope.GLOBAL, -1L, command));
     }
 
     /** The topic every routed key press is reported on (set by Gui). */
@@ -933,6 +1011,47 @@ public final class InputDispatcher {
      */
     public void revealSink(LongConsumer sink) {
         this.revealSink = sink == null ? id -> { } : sink;
+    }
+
+    /**
+     * Install the sink told the pointer's state on the node the framework shades: the nearest under the pointer that
+     * answers clicks and hears no {@link InteractionState} of its own (set by Gui, which writes it to the tree as
+     * {@code PropKey.POINTER_STATE}, where the node's role colours take it). The same inference as the pointer cursor's,
+     * so whatever shows the hand also lifts under it and shows a press. Told {@code NORMAL} for the one it leaves.
+     */
+    public void shadeSink(java.util.function.BiConsumer<Long, InteractionState> sink) {
+        this.shadeSink = sink == null ? (id, s) -> { } : sink;
+    }
+
+    private java.util.function.BiConsumer<Long, InteractionState> shadeSink = (id, s) -> { };
+    /** The node {@link #shadeSink} was last told about, and what. */
+    private long shadedId = -1L;
+    private InteractionState shadedState = InteractionState.NORMAL;
+
+    /** Work out which node the framework shades, and tell the sink of a change. GUI thread, with the states. */
+    private void reportShade() {
+        long target = -1L;
+        for (RetainedNode n = hoverHit; n != null; n = n.parent) {
+            if (answersClicks(n.id)) {
+                if (!stateHandlers.containsKey(n.id)) {
+                    target = n.id;   // a node that hears its own state shades itself, as every widget does
+                }
+                break;
+            }
+        }
+        InteractionState now = target < 0 ? InteractionState.NORMAL
+                : leftDown && pressAncestry.contains(target) ? InteractionState.PRESSED : InteractionState.HOVER;
+        if (target == shadedId && now == shadedState) {
+            return;
+        }
+        if (shadedId >= 0 && shadedId != target) {
+            shadeSink.accept(shadedId, InteractionState.NORMAL);
+        }
+        shadedId = target;
+        shadedState = now;
+        if (target >= 0) {
+            shadeSink.accept(target, now);
+        }
     }
 
     /**
@@ -1071,18 +1190,19 @@ public final class InputDispatcher {
         doubleClickHandlers.remove(nodeId);
         contextHandlers.remove(nodeId);
         menuSources.remove(nodeId);
+        declaredMenus.remove(nodeId);
         stateHandlers.remove(nodeId);
+        pointerHandlers.remove(nodeId);
+        pointerOver.remove(nodeId);
         dragHandlers.remove(nodeId);
         wheelHandlers.remove(nodeId);
         dropTargets.remove(nodeId);
+        pinchHandlers.remove(nodeId);
         dragSources.remove(nodeId);
         dragWatches.removeIf(w -> w.nodeId() == nodeId);
         keyHandlers.remove(nodeId);
         charHandlers.remove(nodeId);
-        charStages.remove(nodeId);
         nodeCursors.remove(nodeId);
-        keyStages.remove(nodeId);
-        dragStages.remove(nodeId);
         claims.removeIf(c -> c.nodeId() == nodeId);
         focusable.remove(nodeId);
         reportedState.remove(nodeId);
@@ -1117,9 +1237,13 @@ public final class InputDispatcher {
      * Drain this frame's input against {@code root} (the laid-out tree, or {@code null} before the first layout).
      * Runs on the GUI thread: {@link Pump#drain()} delivers queued edges to {@link #handle} on this thread.
      */
-    public void dispatch(RetainedNode root) {
+    public boolean dispatch(RetainedNode root) {
         this.currentRoot = root;
         dropDisabledFocus();
+        handOnHiddenFocus();
+        // What the last frame held back behind a chord's message goes first, in the order it arrived, and ahead of
+        // anything newer: by now whoever heard the message has acted on it (see holdRest).
+        deliverHeld();
         pump.drain();
         pumpKeyRepeat();
         pumpDragGesture();
@@ -1134,6 +1258,108 @@ public final class InputDispatcher {
         }
         settleDragSession();
         showArmed();
+        boolean ran = ranHandler;
+        ranHandler = false;
+        // Input held back owes the next frame, whatever else did or did not run: it is delivered there and nowhere else.
+        return ran || !heldInput.isEmpty();
+    }
+
+    /**
+     * Hold back the rest of this frame's input, to be delivered at the start of the next frame's dispatch: what a
+     * chord that sends a message calls ({@code Gui.shortcut}, {@code Gui.claim} with a sender).
+     *
+     * <p>A chord's message is heard after this frame's input has been dispatched, by a view draining its mailbox on
+     * this thread, and what it does there (move the keyboard to a field it shows) lands then. The keys typed straight
+     * after the chord are in the same frame's input, so without this they were routed to wherever the keyboard was
+     * before the chord: Vexplore's Ctrl+L and a fast path typed after it put its first letters in the list (its v0.2
+     * FN-5). Held, they reach the keyboard where the chord's message put it. Every event after the chord is held, not
+     * only keys, so a click or a modifier's release keeps its order among them. A frame's delay, and nothing to
+     * declare: a chord that moves nothing costs the keys after it one frame.
+     *
+     * <p>One frame covers a message heard on this thread. A chord whose message goes to a part on another lane, which
+     * answers before the view moves the keyboard, is not covered: the answer can take more than a frame to come back.
+     */
+    public void holdRest() {
+        holding = true;
+    }
+
+    /** Deliver what {@link #holdRest} held, once each, in order; a chord among them holds what follows it again. */
+    private void deliverHeld() {
+        holding = false;
+        for (int n = heldInput.size(); n > 0; n--) {
+            handle(heldInput.pollFirst());
+        }
+    }
+
+    /**
+     * Hand the keyboard on from a node that has been hidden since it had it, before this frame's input is delivered:
+     * a hidden field that kept it would take the next keys typed, unseen (Vexplore v0.2 FN-3). It goes to the next
+     * focusable node in Tab order after the hidden one's place, as Tab from there would take it, or nowhere if there
+     * is none.
+     *
+     * <p>Only a node hidden <em>while</em> it had the keyboard gives it up. One given the keyboard while hidden keeps
+     * it until it has been seen shown, so a view may focus a field in the same breath as it shows it, in either order.
+     * Allocation-free while nothing is hidden: it runs every frame.
+     */
+    private void handOnHiddenFocus() {
+        if (focusedId == -1) {
+            return;
+        }
+        RetainedNode n = nodes.apply(focusedId);
+        if (n == null) {
+            return;
+        }
+        if (n.shownInTree()) {
+            focusSeenShown = true;
+            return;
+        }
+        if (!focusSeenShown) {
+            return;
+        }
+        List<RetainedNode> order = new ArrayList<>();
+        collectFocusOrder(currentRoot, focusedId, order);
+        int at = -1;
+        for (int i = 0; i < order.size(); i++) {
+            if (order.get(i).id == focusedId) {
+                at = i;
+                break;
+            }
+        }
+        long next = -1;
+        for (int k = 1; at >= 0 && k < order.size(); k++) {
+            RetainedNode c = order.get((at + k) % order.size());
+            if (c.shownInTree() && !c.disabledInTree()) {
+                next = c.id;
+                break;
+            }
+        }
+        setFocus(next, FocusCause.PROGRAM);
+    }
+
+    /**
+     * Every focusable node in tree (DFS pre-order), hidden and disabled ones included, and {@code keep} wherever it
+     * is: the places Tab order is cut from, so a hidden node's place in it can be found.
+     */
+    private void collectFocusOrder(RetainedNode n, long keep, List<RetainedNode> out) {
+        if (n == null) {
+            return;
+        }
+        if (n.id == keep || focusable.contains(n.id)) {
+            out.add(n);
+        }
+        for (RetainedNode c : n.children) {
+            collectFocusOrder(c, keep, out);
+        }
+    }
+
+    /**
+     * Run a handler: here, now, in order with the input around it. Noted, because a handler may do something that
+     * publishes no mutation (start a motion, send a message), and the frame that ran it owes the loop a look at the
+     * next one: see what {@link #dispatch} returns.
+     */
+    private void handled(Runnable handler) {
+        handler.run();
+        ranHandler = true;
     }
 
     /**
@@ -1147,6 +1373,35 @@ public final class InputDispatcher {
             onDragGesture(d);
         }
     }
+
+    /**
+     * Whether a press has travelled far enough to be a drag and is waiting only for its hold to pass: the state in
+     * which the drag begins on a frame's tick and on nothing else, so the loop owes this tree frames until it does.
+     *
+     * <p>A loop that parks once input stops never ticks again, and the drag then begins only with the next event —
+     * the release, if the pointer was held still. A hand on a mouse nearly always moves again, and its moves carry
+     * their own time, so this was all but invisible to one; a driver that travels for less than the hold and then
+     * stops, to look, saw no drag at all until it let go. Asked after this frame's dispatch, so the frame whose tick
+     * started the drag reports false.
+     *
+     * <p>Bounded both ways, because this reads the press's stamp and its own idea of the distance rather than the
+     * recogniser's: a press stamped later than now, or one this and the recogniser disagree about, would otherwise
+     * keep the loop drawing for as long as the button was down. Past the hold it stays true a little while, for the
+     * frame whose tick ran a moment before the hold passed.
+     */
+    public boolean dragHoldPending() {
+        if (drags.activeButton() == null || drags.isDragging()) {
+            return false;
+        }
+        if (Math.abs(holdX - holdPressX) < DRAG_DISTANCE_PX && Math.abs(holdY - holdPressY) < DRAG_DISTANCE_PX) {
+            return false;   // still a click: no hold to wait out, and a press held still owes nothing
+        }
+        long held = System.nanoTime() - holdPressNanos;
+        return held >= 0 && held < DRAG_HOLD_PENDING_NANOS;
+    }
+
+    /** How long after a press {@link #dragHoldPending} may say so: the hold, and a few frames' grace past it. */
+    private static final long DRAG_HOLD_PENDING_NANOS = (DRAG_HOLD_MS + 100L) * 1_000_000L;
 
     /**
      * Re-resolve the live drag against the tree as it now stands, then count the frame as seen.
@@ -1189,6 +1444,11 @@ public final class InputDispatcher {
     // --- delivered on the GUI thread during dispatch() ---
 
     private void handle(InputEvent e) {
+        // Behind a chord that sent a message, the rest waits for the next frame (holdRest), and is sequenced then.
+        if (holding) {
+            heldInput.addLast(e);
+            return;
+        }
         // Sequence every edge, not just the ones that publish an observation: a consumer that only ever sees key
         // routes still needs the gaps between them to be countable.
         current = conduit.next();
@@ -1220,7 +1480,7 @@ public final class InputDispatcher {
                 pointerX = m.x();
                 pointerY = m.y();
                 hoverHit = RetainedNode.enabledPart(HitTest.at(currentRoot, m.x(), m.y()));
-                refreshStates();
+                refreshStates(true);
             }
             case InputEvent.ButtonPressed b when b.button() == MouseButton.LEFT -> {
                 pointerX = b.x();
@@ -1324,7 +1584,7 @@ public final class InputDispatcher {
                     float step = WHEEL_STEP_EM * em(taker);
                     WheelEvent w = new WheelEvent((float) s.xOffset() * step, -(float) s.yOffset() * step);
                     if (handler != null) {
-                        handlerExecutor.execute(() -> handler.accept(w));
+                        handled(() -> handler.accept(w));
                     }
                     break;
                 }
@@ -1356,15 +1616,9 @@ public final class InputDispatcher {
                 // Typed text goes only to the focused, editable node — never conflated with the key command.
                 if (focusedId != -1) {
                     int cp = c.codepoint();
-                    // The ordered stage runs here, on the drain thread, so a burst of characters applies in the
-                    // order it was typed. An async handler is still offered the code point afterwards.
-                    IntConsumer stage = charStages.get(focusedId);
-                    if (stage != null) {
-                        stage.accept(cp);
-                    }
                     IntConsumer handler = charHandlers.get(focusedId);
                     if (handler != null) {
-                        handlerExecutor.execute(() -> handler.accept(cp));
+                        handled(() -> handler.accept(cp));
                     }
                 }
             }
@@ -1420,11 +1674,7 @@ public final class InputDispatcher {
         Shortcut pressed = new Shortcut(heldMods, key);
         Claim claimed = resolveClaim(pressed);
         if (claimed != null) {
-            if (claimed.inline()) {
-                claimed.command().accept(pressed);
-            } else {
-                handlerExecutor.execute(() -> claimed.command().accept(pressed));
-            }
+            handled(() -> claimed.command().accept(pressed));
             report(e, true);
             return;
         }
@@ -1432,13 +1682,9 @@ public final class InputDispatcher {
         // 2. Otherwise the focused node's key handler (caret motion, backspace, ...). Core takes nothing for
         //    itself here — if nobody claimed the chord, the focused element hears it.
         if (focusedId != -1) {
-            Consumer<KeyEvent> stage = keyStages.get(focusedId);
-            if (stage != null) {
-                stage.accept(e);   // ordered: a caret move must sequence against the typing around it
-            }
             Consumer<KeyEvent> handler = keyHandlers.get(focusedId);
             if (handler != null) {
-                handlerExecutor.execute(() -> handler.accept(e));
+                handled(() -> handler.accept(e));
             }
             // Arm auto-repeat: this key re-fires after the initial delay until released (§8.4).
             repeatKey = key;
@@ -1544,13 +1790,9 @@ public final class InputDispatcher {
         }
         // Use the live modifier set so pressing Ctrl mid-hold upgrades e.g. arrow-repeat to word-jump.
         KeyEvent e = new KeyEvent(repeatKey, Set.copyOf(heldMods));
-        Consumer<KeyEvent> stage = keyStages.get(focusedId);
-        if (stage != null) {
-            stage.accept(e);
-        }
         Consumer<KeyEvent> handler = keyHandlers.get(focusedId);
         if (handler != null) {
-            handlerExecutor.execute(() -> handler.accept(e));
+            handled(() -> handler.accept(e));
         }
         repeatNextNanos = now + REPEAT_INTERVAL_NANOS; // frame-rate-bounded; no burst catch-up
     }
@@ -1640,6 +1882,8 @@ public final class InputDispatcher {
         long old = focusedId;
         ringFade.moved(old, focusCause, id);
         focusedId = id;
+        RetainedNode gained = id == -1 ? null : nodes.apply(id);
+        focusSeenShown = gained != null && gained.shownInTree();
         focusCause = cause;
         focusStateSink.run();
         if (focusTopic != null) {
@@ -1757,6 +2001,46 @@ public final class InputDispatcher {
         return x >= r[0] && x < r[0] + r[2] && y >= r[1] && y < r[1] + r[3];
     }
 
+    /**
+     * A pinch gesture's events to the node holding it: chosen at its start by where the pointer is, which the OS holds
+     * still while two fingers are down, and kept to its end, so a pinch never changes hands part way.
+     */
+    private void pinch(sibarum.tactroller.api.GestureEvent g) {
+        switch (g) {
+            case sibarum.tactroller.api.GestureEvent.GestureStarted s
+                    when s.kind() == sibarum.tactroller.api.GestureEvent.Kind.PINCH -> {
+                pinchTaker = -1;
+                if (pinchHandlers.isEmpty()) {
+                    return;
+                }
+                for (RetainedNode n = HitTest.at(currentRoot, s.x(), s.y()); n != null; n = n.parent) {
+                    if (pinchHandlers.containsKey(n.id)) {
+                        pinchTaker = n.id;
+                        tellPinch(new PinchEvent(PinchEvent.Phase.START, 1f));
+                        return;
+                    }
+                }
+            }
+            case sibarum.tactroller.api.GestureEvent.GestureUpdated u
+                    when u.kind() == sibarum.tactroller.api.GestureEvent.Kind.PINCH && pinchTaker >= 0 ->
+                    tellPinch(new PinchEvent(PinchEvent.Phase.MOVE, (float) u.scale()));
+            case sibarum.tactroller.api.GestureEvent.GestureEnded e
+                    when e.kind() == sibarum.tactroller.api.GestureEvent.Kind.PINCH && pinchTaker >= 0 -> {
+                tellPinch(new PinchEvent(PinchEvent.Phase.END, 1f));
+                pinchTaker = -1;
+            }
+            default -> {
+            }
+        }
+    }
+
+    private void tellPinch(PinchEvent e) {
+        Consumer<PinchEvent> handler = pinchHandlers.get(pinchTaker);
+        if (handler != null) {
+            handled(() -> handler.accept(e));
+        }
+    }
+
     /** Nearest ancestor-or-self of {@code hit} with a wheel handler, or null. */
     private RetainedNode wheelTaker(RetainedNode hit) {
         if (wheelHandlers.isEmpty()) {
@@ -1815,6 +2099,11 @@ public final class InputDispatcher {
      * observer loop is skipped outright: the ordinary case of a pointer moving within one leaf.
      */
     private void refreshStates() {
+        refreshStates(false);
+    }
+
+    /** As {@link #refreshStates()}, and with {@code moved} the pointer moved, so every node it is over is told where. */
+    private void refreshStates(boolean moved) {
         long generation = stateGeneration.get();   // read before the loop: a registration during it forces the next
         boolean hoverMoved = hoverAncestry.walk(hoverHit);
         boolean pressMoved = pressAncestry.walk(pressHit);
@@ -1822,8 +2111,46 @@ public final class InputDispatcher {
             refreshedGeneration = generation;
             refreshedLeftDown = leftDown;
             reportStates();
+            reportShade();
         }
+        reportPointer(moved);
         updateCursor();
+    }
+
+    /**
+     * Tell each observed node on the hover chain where the pointer is (on a move, or when it has just come over the
+     * node), and each node told before and no longer on the chain that the pointer has left. Costs the chain's depth
+     * plus the nodes it is over, and nothing when no node observes the pointer.
+     */
+    private void reportPointer(boolean moved) {
+        if (pointerHandlers.isEmpty() && pointerOver.isEmpty()) {
+            return;
+        }
+        var it = pointerOver.values().iterator();
+        while (it.hasNext()) {
+            PointerEvent last = it.next();
+            if (!hoverAncestry.contains(last.nodeId())) {
+                it.remove();
+                tellPointer(last.left(pointerX, pointerY));
+            }
+        }
+        for (RetainedNode n = hoverHit; n != null; n = n.parent) {
+            if (pointerHandlers.containsKey(n.id) && (moved || !pointerOver.containsKey(n.id))) {
+                PointerEvent now = new PointerEvent(n.id, pointerX, pointerY, n.x, n.y, n.w, n.h, true);
+                pointerOver.put(n.id, now);
+                tellPointer(now);
+            }
+        }
+    }
+
+    private void tellPointer(PointerEvent e) {
+        java.util.List<Consumer<PointerEvent>> observers = pointerHandlers.get(e.nodeId());
+        if (observers == null) {
+            return;
+        }
+        for (Consumer<PointerEvent> observer : observers) {
+            handled(() -> observer.accept(e));
+        }
     }
 
     private void reportStates() {
@@ -1851,7 +2178,7 @@ public final class InputDispatcher {
                 }
                 InteractionState delivered = now;
                 for (Consumer<InteractionState> observer : entry.getValue()) {
-                    handlerExecutor.execute(() -> observer.accept(delivered));
+                    handled(() -> observer.accept(delivered));
                 }
             }
         }
@@ -1941,7 +2268,7 @@ public final class InputDispatcher {
      */
     private RetainedNode ancestorWithDragHandler(RetainedNode hit) {
         for (RetainedNode n = hit; n != null; n = n.parent) {
-            if (dragHandlers.containsKey(n.id) || dragStages.containsKey(n.id)) {
+            if (dragHandlers.containsKey(n.id)) {
                 return n;
             }
             if (answersClicks(n.id)) {
@@ -1985,14 +2312,9 @@ public final class InputDispatcher {
     private void fireDrag(DragEvent.Phase phase, float x, float y, float dx, float dy) {
         RetainedNode n = dragCapture;
         DragEvent e = new DragEvent(phase, x, y, dx, dy, n.x, n.y, n.w, n.h, pressCount, heldMods);
-        // Ordered first: click-to-caret moves the same document typing does, so it has to sequence with it.
-        Consumer<DragEvent> stage = dragStages.get(n.id);
-        if (stage != null) {
-            stage.accept(e);
-        }
         Consumer<DragEvent> handler = dragHandlers.get(n.id);
         if (handler != null) {
-            handlerExecutor.execute(() -> handler.accept(e));
+            handled(() -> handler.accept(e));
         }
     }
 
@@ -2020,7 +2342,7 @@ public final class InputDispatcher {
         for (RetainedNode n = target; n != null; n = n.parent) {
             Consumer<ClickEvent> handler = handlers.get(n.id);
             if (handler != null) {
-                handlerExecutor.execute(() -> handler.accept(e));
+                handled(() -> handler.accept(e));
                 return; // consumed; bubbling stops at the first handler
             }
         }
@@ -2032,8 +2354,8 @@ public final class InputDispatcher {
      * inside a panel inside a page can each have one, and the innermost thing the user actually pointed at is the
      * one that answers, without any of them knowing the others exist.
      *
-     * <p>The sources themselves run on the handler executor, not here: they read application state to decide what
-     * is on the menu, and the GUI thread is mid-frame. A node whose sources contribute nothing has no menu — an
+     * <p>The sources run here, in the dispatch, and must not block: they read state to decide what
+     * is on the menu, and a declared menu (T7.5) reads none. A node whose sources contribute nothing has no menu — an
      * empty panel is never flashed — and with no presenter installed nothing is collected, which is said once if a
      * node on the way up has a menu that therefore goes undrawn.
      */
@@ -2041,8 +2363,7 @@ public final class InputDispatcher {
         MenuPresenter presenter = menuPresenter;
         if (presenter == null) {
             for (RetainedNode n = target; n != null; n = n.parent) {
-                java.util.List<Consumer<MenuSink>> sources = menuSources.get(n.id);
-                if (sources != null && !sources.isEmpty()) {
+                if (hasMenu(n.id)) {
                     dev.vexelray.diag.Diagnostics.dropped("context-menu-presenter",
                             "the context menu of node " + n.id,
                             "no MenuPresenter is installed on this tree and none is registered as a "
@@ -2054,14 +2375,21 @@ public final class InputDispatcher {
             return;
         }
         for (RetainedNode n = target; n != null; n = n.parent) {
-            java.util.List<Consumer<MenuSink>> sources = menuSources.get(n.id);
-            if (sources == null || sources.isEmpty()) {
+            if (!hasMenu(n.id)) {
                 continue;
             }
-            handlerExecutor.execute(() -> {
+            java.util.List<Consumer<MenuSink>> sources = menuSources.getOrDefault(n.id, java.util.List.of());
+            Menu declared = declaredMenus.getOrDefault(n.id, Menu.NONE);
+            handled(() -> {
                 MenuCollector collector = new MenuCollector(e, menuHistory.apply(e.nodeId()));
                 for (Consumer<MenuSink> source : sources) {
                     source.accept(collector);
+                }
+                if (!declared.isEmpty() && !sources.isEmpty()) {
+                    collector.separator();
+                }
+                for (MenuItem item : declared.items()) {
+                    collector.item(item);
                 }
                 java.util.List<MenuItem> items = collector.build();
                 if (!items.isEmpty()) {
@@ -2072,9 +2400,15 @@ public final class InputDispatcher {
         }
     }
 
+    /** True if {@code nodeId} has a menu of either kind: a source in code, or a declared one. */
+    private boolean hasMenu(long nodeId) {
+        java.util.List<Consumer<MenuSink>> sources = menuSources.get(nodeId);
+        return (sources != null && !sources.isEmpty()) || declaredMenus.containsKey(nodeId);
+    }
+
     /**
      * Ask {@code source} for a menu and show it at {@code e}, as a right click on a node with a menu would: for a
-     * control whose plain click opens a menu (a title-bar instrument's). On the handler lane, as the sources are.
+     * control whose plain click opens a menu (a title-bar instrument's). In the dispatch, as the sources are.
      */
     public void openMenu(ClickEvent e, Consumer<MenuSink> source) {
         MenuPresenter presenter = menuPresenter;
@@ -2083,7 +2417,7 @@ public final class InputDispatcher {
                     "no MenuPresenter is installed on this tree; install one with Gui.menus");
             return;
         }
-        handlerExecutor.execute(() -> {
+        handled(() -> {
             MenuCollector collector = new MenuCollector(e, menuHistory.apply(e.nodeId()));
             source.accept(collector);
             java.util.List<MenuItem> items = collector.build();

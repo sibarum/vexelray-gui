@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.diag.Diagnostics;
 import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
 import dev.vexelray.gui.core.layout.Length;
@@ -51,7 +52,7 @@ class NestedScrollTest {
     void aWindowUnderAMinimumSizedToTheContentScrollsTwiceAndSaysWhy() {
         try (Gui gui = new Gui(Atchung.create())) {
             Node body = inspectorShape(gui);
-            gui.frame(1040f, 860f, NestedScrollTest::noText);
+            Seams.of(gui).frame(1040f, 860f, NestedScrollTest::noText);
 
             assertTrue(body.layout().overflowY() && gui.root().layout().overflowY(), "the picture: two bars");
             List<String> said = nested();
@@ -67,7 +68,7 @@ class NestedScrollTest {
     void theSameWindowAtItsMinimumScrollsOnceAndSaysNothing() {
         try (Gui gui = new Gui(Atchung.create())) {
             Node body = inspectorShape(gui);
-            gui.frame(1040f, 940f, NestedScrollTest::noText);
+            Seams.of(gui).frame(1040f, 940f, NestedScrollTest::noText);
 
             assertTrue(body.layout().overflowY(), "the body scrolls the content");
             assertFalse(gui.root().layout().overflowY(), "and the root does not");
@@ -83,7 +84,7 @@ class NestedScrollTest {
                     .children(gui.box().size(Length.dp(100), Length.dp(1000)));
             gui.root().direction(Direction.COLUMN)
                     .children(gui.box().size(Length.FILL, Length.dp(900)), list, gui.box().size(Length.FILL, Length.dp(900)));
-            gui.frame(800f, 600f, NestedScrollTest::noText);
+            Seams.of(gui).frame(800f, 600f, NestedScrollTest::noText);
 
             assertTrue(list.layout().overflowY() && gui.root().layout().overflowY(), "both scroll");
             assertEquals(List.of(), nested());
@@ -103,7 +104,7 @@ class NestedScrollTest {
             Node outer = gui.column().size(Length.dp(600), Length.dp(400))
                     .children(inner, gui.box().size(Length.FILL, Length.dp(50)));
             gui.root().children(outer);
-            gui.frame(800f, 600f, NestedScrollTest::noText);
+            Seams.of(gui).frame(800f, 600f, NestedScrollTest::noText);
 
             List<String> said = nested();
             assertEquals(1, said.size(), Diagnostics.recorded().toString());

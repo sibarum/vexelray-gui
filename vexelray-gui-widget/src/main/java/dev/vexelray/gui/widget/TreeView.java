@@ -1,5 +1,8 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.Timing;
+import dev.vexelray.gui.core.spi.Seams;
+import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.IconSource;
 import dev.vexelray.gui.core.Node;
@@ -9,12 +12,10 @@ import dev.vexelray.gui.core.drop.DragWatch;
 import dev.vexelray.gui.core.drop.DropEffect;
 import dev.vexelray.gui.core.drop.Payload;
 import dev.vexelray.gui.core.drop.PayloadType;
-import dev.vexelray.gui.core.edit.Change;
 import dev.vexelray.gui.core.input.ClickEvent;
 import dev.vexelray.gui.core.input.CursorShape;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.layout.LayoutEnums;
-import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.drop.Transfer;
 import dev.vexelray.gui.core.input.ClaimScope;
 import dev.vexelray.gui.core.input.KeyEvent;
@@ -33,6 +34,9 @@ import dev.vexelray.gui.icons.Icon;
 import dev.vexelray.gui.icons.IconView;
 import dev.vexelray.text.TextLayout;
 import sibarum.atchung.Subscription;
+import sibarum.atchung.Topic;
+import sibarum.probe.Lane;
+import sibarum.probe.Probe;
 import sibarum.tactroller.api.Key;
 import sibarum.tactroller.api.Modifier;
 
@@ -45,13 +49,12 @@ import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
-import java.util.function.BiPredicate;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 /**
  * A generic explorer for hierarchical data — a filesystem, an AST, a scene graph, anything recursive the
- * application can describe through a {@link Source}.
+ * application can describe a level at a time ({@link Children}).
  *
  * <p><b>The tree nests; it does not flatten.</b> Each item is a column of two nodes: its row, and a children
  * container holding the item's subtree. Expand and collapse are one {@code visible()} flip on that container —
@@ -61,10 +64,15 @@ import java.util.function.Predicate;
  * flattened row list would need mid-list insertion the model does not offer. A nested subtree only ever appends
  * into its own container.
  *
- * <p><b>Children are pulled, not pushed, and never on the frame loop.</b> {@link Source#children} runs on the
- * handler executor the first time an item expands — it may hit a disk or a network, and the ordered input stages
- * are for bounded model work only. Until the fetch lands the item shows as expanded with nothing under it;
- * materialised subtrees are kept (hidden) across collapse, so re-expanding is two prop flips and no I/O.
+ * <p><b>Children are asked for by message, and answered by message.</b> The first time an item expands the tree
+ * publishes {@link ChildrenWanted} on {@link #CHILDREN_WANTED}, and builds the level when {@link Children} arrives on
+ * {@link #CHILDREN}, addressed to the tree's {@link #name()}. Listing a level may hit a disk or a network, and the
+ * frame is for bounded work only, so the tree never lists anything itself: the application answers, on whatever
+ * thread its logic runs on, and the reply is applied in a frame like any other message. What the tree draws a row
+ * from — its label, its icon, whether it opens — comes in the reply as data ({@link Entry}), so nothing of the
+ * application's runs in the frame to draw one (vexelray-framework's {@code docs/threading.md}, T7.2 and T7.5). Until
+ * the reply lands the item shows as expanded with nothing under it; materialised subtrees are kept (hidden) across
+ * collapse, so re-expanding is two prop flips and no request.
  *
  * <p><b>One tab stop, whole-tree keyboard model.</b> The tree is a single focusable node; rows are pointer
  * targets but never focus targets, so Tab crosses the tree in one step instead of one per row. While the tree
@@ -83,11 +91,12 @@ import java.util.function.Predicate;
  * only known forwards, so it walks from the top remembering the last match it passed and stops at the row the
  * selection is on.
  *
- * <p><b>Every row carries a menu, and everything on it is an {@link Action}.</b> Expand and Collapse are two of
- * them — recursive, because the single-level flip is what the disclosure control and the arrow keys already are —
- * and an application's own commands are the same kind of thing, with the same icon, the same per-item
- * availability, and the same place in the queue. Which is the other half: <b>the tree runs one action at a time</b>
- * (see {@link Job}), so triggering a second one supersedes the first wherever it had got to.
+ * <p><b>Every row carries a menu.</b> The tree's own lines are Expand and Collapse — recursive, because the
+ * single-level flip is what the disclosure control and the arrow keys already are — and Cut, Copy and Paste where
+ * it moves things. An application's commands are {@link MenuAction}s: declared once, offered per row as each row's
+ * {@link Entry} says, and announced on {@link #CHOSEN} when chosen, so a right click runs nothing of the
+ * application's. <b>The tree runs one walk at a time</b> — expand-all, find, reveal — and starting another, or
+ * choosing any line, stops the one running wherever it had got to.
  *
  * <p>Scrolling, clipping and scrollbars come from the container itself (overflow is a layout fact, not a widget
  * feature), so a tree taller than its box scrolls with no code here. Which container is the point: {@link #node()}
@@ -97,12 +106,327 @@ import java.util.function.Predicate;
  */
 public final class TreeView<T> implements AutoCloseable {
 
-    /**
-     * How the application describes its hierarchy. {@link #children} is called at most once per item, on the
-     * handler executor, the first time that item expands — it may do I/O. {@link #hasChildren} must be cheap:
-     * it decides whether a disclosure control is shown, and it is asked when the row is built, not when it opens
-     * (a filesystem answers it from the directory bit without listing anything).
+    // ------------------------------------------------------------------------------------------- on the bus
+
+    /*
+     * The message model (vexelray-framework docs/threading.md, T3.8 and T7.5): a tree asks for each level it needs
+     * and is told it, by message. A tree is addressed by its name, given when it is built, because the roots are asked
+     * for then and whoever answers has to know which tree is asking.
      */
+
+    /** A tree wants a level listed: every request, in order. Answer each with one {@link Children}. */
+    public static final Topic<ChildrenWanted> CHILDREN_WANTED =
+            Topic.edge(ChildrenWanted.class);
+
+    /** A level, listed for the tree that asked: applied on the GUI thread, in the frame it arrives. */
+    public static final Topic<Children> CHILDREN = Addressed.edge(Children.class);
+
+    /** The selection landing on an item, by a click or the keyboard. The last in a frame. */
+    public static final Topic<Selected> SELECTED =
+            Addressed.state(Selected.class, Selected::tree);
+
+    /**
+     * A row clicked: after it is selected, and whether or not it already was. Not the disclosure, which opens and
+     * closes. {@link #SELECTED} cannot stand in for this: an arrow key lands the selection too, so a tree where a click
+     * <em>does</em> something (makes a folder the root, say) would do it at every step of a walk with the keyboard.
+     * Here the click is the command and the keys only move; Enter is {@link #ACTIVATED}. Every one, in order.
+     */
+    public static final Topic<Clicked> CLICKED = Addressed.edge(Clicked.class);
+
+    /** The selected item activated, by Enter. Every one, in order. */
+    public static final Topic<Activated> ACTIVATED = Addressed.edge(Activated.class);
+
+    /**
+     * The row the pointer is on, or none when it leaves the rows altogether: for a tree whose rows are previewed before
+     * they are chosen. The last in a frame, so moving from one row to the next is heard as the next.
+     */
+    public static final Topic<Hovered> HOVERED = Addressed.state(Hovered.class, Hovered::tree);
+
+    /**
+     * A row's box clicked, or Space pressed on the selected row, in a {@link #checkable} tree: after the row is
+     * selected. The tree changes no box for it; what is ticked is the application's, and it says so with
+     * {@link #MARKS}. Every one, in order.
+     */
+    public static final Topic<Toggled> TOGGLED = Addressed.edge(Toggled.class);
+
+    /** What is ticked, for the tree that is told: applied on the GUI thread, in the frame it arrives. Every one. */
+    public static final Topic<Marks> MARKS = Addressed.edge(Marks.class);
+
+    /**
+     * An item put somewhere in a {@link #reorderable} tree, by a drop or a paste. The tree moves no row for it: the
+     * hierarchy is the application's, and it says when it has changed with {@link #REFRESH}. Every one, in order.
+     */
+    public static final Topic<Placed> PLACED = Addressed.edge(Placed.class);
+
+    /**
+     * The user put {@code item} at {@code where} in the tree at {@code at}, meaning {@code effect}: what
+     * {@link #PLACED} carries, addressed to the tree. An announcement, not a request the tree waits on: the
+     * arrangement is the application's, so it makes the move in its own model and then says so: it tells the tree to
+     * look again ({@link #REFRESH}). A type of the tree's own, so it names one channel (vexelray-framework's
+     * threading.md, T4.1).
+     *
+     * @param at     the tree's address
+     * @param item   what was placed
+     * @param where  where, relative to an item already there
+     * @param effect {@code MOVE} for a drag or a cut, {@code COPY} for a copy
+     */
+    public record Placed(String at, Object item, Placement<?> where, dev.vexelray.gui.core.drop.DropEffect effect)
+            implements dev.vexelray.gui.core.Addressed {
+        public Placed {
+            java.util.Objects.requireNonNull(at, "at");
+            java.util.Objects.requireNonNull(item, "item");
+            java.util.Objects.requireNonNull(where, "where");
+            java.util.Objects.requireNonNull(effect, "effect");
+        }
+
+        @Override
+        public Object address() {
+            return at;
+        }
+    }
+
+    /**
+     * One of the application's {@link MenuAction}s chosen from a row's menu. The tree does nothing else for it: the work
+     * is the application's, done where its logic runs. Every one, in order.
+     */
+    public static final Topic<Chosen> CHOSEN = Addressed.edge(Chosen.class);
+
+    /**
+     * The user chose the {@link MenuAction} {@code action} from the menu of {@code item} in the tree at {@code at}:
+     * what {@link #CHOSEN} carries, addressed to the tree. A type of the tree's own, so it names one channel
+     * (vexelray-framework's threading.md, T4.1).
+     *
+     * @param at     the tree's address
+     * @param action the action's id
+     * @param item   the row's item
+     */
+    public record Chosen(String at, String action, Object item) implements dev.vexelray.gui.core.Addressed {
+        public Chosen {
+            java.util.Objects.requireNonNull(at, "at");
+            java.util.Objects.requireNonNull(action, "action");
+            java.util.Objects.requireNonNull(item, "item");
+        }
+
+        @Override
+        public Object address() {
+            return at;
+        }
+    }
+
+    /**
+     * A {@link #revealPath} walk ended: at its last item, selected, or short of it where the tree no longer offered the
+     * way down. Not for a walk superseded by another. Every one, in order.
+     */
+    public static final Topic<Revealed> REVEALED = Addressed.edge(Revealed.class);
+
+    /** The id of the tree's own Expand: everything under the row, opened. For an {@link Entry} to {@link Entry#hides hide}. */
+    public static final String EXPAND = "expand";
+
+    /** The id of the tree's own Collapse: everything under the row, shut. */
+    public static final String COLLAPSE = "collapse";
+
+    /** The id of the tree's own Cut, on the menu where the tree moves things. */
+    public static final String CUT = "cut";
+
+    /** The id of the tree's own Copy, on the menu where the tree copies things. */
+    public static final String COPY = "copy";
+
+    /** The id of the tree's own Paste, on the menu where the tree takes anything at all. */
+    public static final String PASTE = "paste";
+
+
+    /**
+     * The hierarchy has changed: the tree that is told asks again for every level it has listed, as
+     * {@link #refresh()} does. The last in a frame, since a second in the same frame would ask the same questions.
+     */
+    public static final Topic<Refresh> REFRESH = Addressed.state(Refresh.class, Refresh::tree);
+
+    /** The tree at {@code tree} has {@code item} selected. */
+    public record Selected(String tree, Object item) implements Addressed {
+        @Override
+        public Object address() {
+            return tree;
+        }
+    }
+
+    /** {@code item}'s row in the tree at {@code tree} was clicked. */
+    public record Clicked(String tree, Object item) implements Addressed {
+        @Override
+        public Object address() {
+            return tree;
+        }
+    }
+
+    /** {@code item} in the tree at {@code tree} was activated. */
+    public record Activated(String tree, Object item) implements Addressed {
+        @Override
+        public Object address() {
+            return tree;
+        }
+    }
+
+    /** The pointer is on {@code item}'s row in the tree at {@code tree}, or on none of its rows when null. */
+    public record Hovered(String tree, Object item) implements Addressed {
+        @Override
+        public Object address() {
+            return tree;
+        }
+    }
+
+    /** The tree at {@code tree} should look at its hierarchy again: something under it has changed. */
+    public record Refresh(String tree) implements Addressed {
+        @Override
+        public Object address() {
+            return tree;
+        }
+    }
+
+    /** A reveal in the tree at {@code tree} toward {@code item} ended, at it ({@code reached}) or short of it. */
+    public record Revealed(String tree, Object item, boolean reached) implements Addressed {
+        @Override
+        public Object address() {
+            return tree;
+        }
+    }
+
+    /** {@code item}'s box in the tree at {@code tree} was clicked, or Space pressed on its row. */
+    public record Toggled(String tree, Object item) implements Addressed {
+        @Override
+        public Object address() {
+            return tree;
+        }
+    }
+
+    /**
+     * What is ticked in {@code tree}, for the items named: the rest keep what they were last told, and an item never
+     * named is {@link Check#OFF}. A change that touches other rows (a cascade, a parent turning {@link Check#MIXED})
+     * names them in the same message, so the tree shows the whole of it in one frame. An item with no row yet is kept
+     * for when its row is built, so a level and its marks may arrive in either order.
+     */
+    public record Marks(String tree, Map<Object, Check> marks) implements Addressed {
+        public Marks {
+            marks = Map.copyOf(marks);
+        }
+
+        /** Routed by the tree's name, as {@link Children} is. */
+        @Override
+        public Object address() {
+            return tree;
+        }
+    }
+
+    /**
+     * {@code tree} wants what is under {@code parent} — its roots when {@code parent} is null. Asked once per item, the
+     * first time it is opened or a walk (expand-all, find, a reveal) has to go through it, and again for every level
+     * already listed when the tree is {@link #refresh refreshed}.
+     */
+    public record ChildrenWanted(String tree, Object parent) {
+    }
+
+    /**
+     * What is under {@code parent} in {@code tree} (its roots when {@code parent} is null), in display order. The
+     * answer to a {@link ChildrenWanted}; one that answers nothing the tree asked is dropped, and counted.
+     */
+    public record Children(String tree, Object parent, List<Entry> entries) implements Addressed {
+        public Children {
+            entries = List.copyOf(entries);
+        }
+
+        /** Routed by the tree's name: see {@link Gui#mailbox(Topic, Object, sibarum.atchung.Subscriber)}. */
+        @Override
+        public Object address() {
+            return tree;
+        }
+    }
+
+    /**
+     * One item as the application describes it: what it is called, its icon, and whether it opens. Data rather than
+     * questions the tree asks as it draws, so drawing a row runs nothing of the application's.
+     *
+     * <p>{@code branch} decides whether a disclosure is shown, so it is known without listing anything: a filesystem
+     * answers it from the directory bit.
+     *
+     * <p>{@code acceptsChildren} is whether the item could <em>hold</em> children — which is not the same question as
+     * whether it has any, and is the one a drop has to ask. They were the same question until an empty branch turned
+     * up. A folder with nothing in it is a leaf by {@code branch}, so its row divided in two and offered nowhere to
+     * drop <em>into</em> — and since taking the last child out of a branch is what empties it, the tree let the user
+     * reach a state it gave them no way to leave. Say true where a branch is a branch because of what it <em>is</em>
+     * rather than what happens to be in it: a directory, a column on a board, a group. It is not a promise that any
+     * drop succeeds: the application still refuses what only its model knows when it hears {@link #PLACED}. This decides whether
+     * the band is offered at all; that decides what happens in it.
+     *
+     * <p><b>What the row's menu offers is part of the entry too</b> ({@code hidden}, {@code greyed}), for the same
+     * reason: whether Delete applies to this file is a fact about the file, known to whoever lists it, and asking it
+     * at the right click would run the application's code in the frame (vexelray-framework's threading.md, T7.5).
+     * Every {@link MenuAction} is shown and enabled unless the entry says otherwise. When the facts change, the
+     * application sends {@link #REFRESH}, as it does for a new label. The ids are the actions' own and the tree's
+     * {@link #EXPAND}, {@link #COLLAPSE}, {@link #CUT}, {@link #COPY} and {@link #PASTE}; hiding one of the tree's own
+     * takes it off this row's menu, and when it is enabled stays the tree's.
+     *
+     * @param icon   drawn before the label — a folder, a file's type, a class — or null for none. A tree none of whose
+     *               entries names an icon is laid out exactly as it was before icons existed.
+     * @param hidden the actions not on this row's menu at all: Rename on a header, Extract on what is not an archive
+     * @param greyed the actions on this row's menu that cannot be chosen now: a greyed line teaches where it lives
+     * @param find   what Ctrl+F looks for the query in, ignoring case: the label unless the entry says otherwise, such
+     *               as a whole path, or a SKU beside the name
+     */
+    public record Entry(Object item, String label, IconSource icon, boolean branch, boolean acceptsChildren,
+                        java.util.Set<String> hidden, java.util.Set<String> greyed, String find) {
+        public Entry {
+            java.util.Objects.requireNonNull(item, "item");
+            label = label == null ? String.valueOf(item) : label;
+            hidden = hidden == null ? java.util.Set.of() : java.util.Set.copyOf(hidden);
+            greyed = greyed == null ? java.util.Set.of() : java.util.Set.copyOf(greyed);
+            find = find == null ? label : find;
+        }
+
+        /** An entry whose menu offers everything, found by its label. */
+        public Entry(Object item, String label, IconSource icon, boolean branch, boolean acceptsChildren) {
+            this(item, label, icon, branch, acceptsChildren, null, null, null);
+        }
+
+        /** An item that does not open, and takes no drop into it. */
+        public static Entry leaf(Object item, String label) {
+            return new Entry(item, label, null, false, false);
+        }
+
+        /** An item that opens, and takes a drop into it. */
+        public static Entry branch(Object item, String label) {
+            return new Entry(item, label, null, true, true);
+        }
+
+        /** This entry, drawn with {@code icon}. */
+        public Entry icon(IconSource icon) {
+            return new Entry(item, label, icon, branch, acceptsChildren, hidden, greyed, find);
+        }
+
+        /** This entry, taking a drop into it or not: a leaf that holds things, or a branch that refuses them. */
+        public Entry acceptsChildren(boolean accepts) {
+            return new Entry(item, label, icon, branch, accepts, hidden, greyed, find);
+        }
+
+        /** This entry, with the actions {@code ids} off its menu as well as any it already hides. */
+        public Entry hides(String... ids) {
+            return new Entry(item, label, icon, branch, acceptsChildren, union(hidden, ids), greyed, find);
+        }
+
+        /** This entry, with the actions {@code ids} greyed on its menu as well as any it already greys. */
+        public Entry greys(String... ids) {
+            return new Entry(item, label, icon, branch, acceptsChildren, hidden, union(greyed, ids), find);
+        }
+
+        /** This entry, found by Ctrl+F through {@code text} rather than its label. */
+        public Entry find(String text) {
+            return new Entry(item, label, icon, branch, acceptsChildren, hidden, greyed, text);
+        }
+
+        private static java.util.Set<String> union(java.util.Set<String> had, String... ids) {
+            java.util.Set<String> all = new java.util.HashSet<>(had);
+            all.addAll(List.of(ids));
+            return all;
+        }
+    }
+
     /**
      * What a checkbox on a row can say. Three states, because two cannot describe a folder half of whose
      * contents are ticked — and a parent that shows unticked while something under it is ticked is a lie the
@@ -126,186 +450,27 @@ public final class TreeView<T> implements AutoCloseable {
     }
 
     /**
-     * Checkboxes on rows: the tree draws them and reports clicks; the application owns what is ticked.
+     * The tree runs one walk at a time — expand-all, collapse-all, find, reveal — and a job is how a running one finds
+     * out it is no longer the one: the instant another starts, or a line is chosen from a row's menu, every job handed
+     * out before it is dead, and stays dead.
      *
-     * <pre>{@code
-     * tree.checkable(new TreeView.Checkable<Path>() {
-     *     public Check state(Path p)  { return selected.contains(p) ? Check.ON : Check.OFF; }
-     *     public void toggled(Path p) { if (!selected.remove(p)) selected.add(p); }
-     * });
-     * }</pre>
-     *
-     * <p>The same split as the hierarchy, for the same reason. A tick is a fact about the application's model —
-     * which files are staged, which options are on — so the tree can no more own it than it owns the tree
-     * itself. It asks, draws what it is told, and reports the click.
-     *
-     * <p><b>Cascading is deliberately not here.</b> Whether ticking a folder ticks everything under it, whether
-     * a parent goes {@link Check#MIXED} when one child is on, whether ticking a child ticks its parents — those
-     * are model rules and they genuinely differ: a staging area cascades down, a filter does not, a permission
-     * tree propagates up. A widget that picked one would be wrong for the other two and would have to be fought.
-     * {@link #state} is asked per row, so any of those policies is expressible by answering it.
-     */
-    public interface Checkable<T> {
-
-        /** The state of {@code item}'s box. Asked for every visible row when the marks are refreshed. */
-        Check state(T item);
-
-        /**
-         * The user clicked {@code item}'s box (or pressed Space on its row). Change the model; the tree
-         * re-reads {@link #state} for every visible row immediately afterwards, so a change that touches other
-         * rows — a cascade, a parent turning MIXED — shows without being announced separately.
-         *
-         * <p>Runs on the handler executor, like every other handler here.
-         */
-        void toggled(T item);
-    }
-
-    public interface Source<T> {
-        /** The top-level items, in display order. */
-        List<T> roots();
-
-        /** The row text for {@code item}. */
-        String label(T item);
-
-        /** Whether {@code item} can expand at all. Cheap; asked once, when the row is built. */
-        boolean hasChildren(T item);
-
-        /** The children of {@code item}, in display order. Called once, lazily, on the handler executor. */
-        List<T> children(T item);
-
-        /**
-         * Whether {@code item} could <em>hold</em> children — which is not the same question as whether it has
-         * any, and is the one a drop has to ask.
-         *
-         * <p>(Placed on {@code Source} rather than beside {@link Reorder} because it is a fact about the item,
-         * which is what a source answers, and not a policy about a placement, which is what a reorder decides.)
-         *
-         * <p>They were the same question until an empty branch turned up. A folder with nothing in it is a leaf
-         * by {@link #hasChildren}, so its row divided in two and offered nowhere to drop <em>into</em> — and
-         * since taking the last child out of a branch is what empties it, the tree let the user reach a state it
-         * gave them no way to leave. The last item could be dragged out of a column and never back in.
-         *
-         * <p>The default keeps the old answer, which is right for a tree whose leaves are genuinely leaves — a
-         * file cannot contain a file. Say otherwise where a branch is a branch because of what it <em>is</em>
-         * rather than because of what happens to be in it: a directory, a column on a board, a group.
-         *
-         * <p>Answering true is not a promise that any particular drop succeeds. The application still refuses
-         * individual placements through {@link Reorder}, and both answers reach the user the same way, before
-         * they let go. This one decides whether the band is offered at all; that one decides what happens in it.
-         *
-         * <p>Cheap: asked while the pointer is over the row, once per frame.
-         */
-        default boolean acceptsChildren(T item) {
-            return hasChildren(item);
-        }
-
-        /**
-         * The icon drawn before {@code item}'s label — a folder, a file's type, a class — or null for none. Asked
-         * when the row is built and again whenever it is resynced, so an item whose kind changes changes icon. A tree
-         * whose source names no icon for any row is laid out exactly as it was before icons existed.
-         */
-        default IconSource icon(T item) {
-            return null;
-        }
-    }
-
-    /**
-     * The tree runs one action at a time, and a job is how a running one finds out it is no longer the one: the
-     * instant another action is triggered, every job handed out before it is dead, and stays dead.
-     *
-     * <p><b>Superseded, not interrupted.</b> The tree cannot pull a thread out of application code, so a body that
-     * never asks simply runs to the end — what is guaranteed is that the question is always answerable. A body
-     * that does anything worth stopping asks between its steps, which for the built-ins means between rows: the
-     * expensive part of expanding a subtree is a fetch per level, so a check per level is as prompt as the tree
-     * can be without pretending {@link Source#children} can be cancelled.
+     * <p><b>Superseded, not interrupted.</b> A walk asks between rows and whenever a level it waited for lands, so a
+     * superseded walk asks for nothing more; a request already sent is answered, and the answer still builds its
+     * level, which is never wrong to have. The tree's own: an application's work, started by {@link #CHOSEN}, runs
+     * where its logic does, and stops itself when it hears the next.
      */
     @FunctionalInterface
-    public interface Job {
-        /** Whether this action is still the tree's current one. */
+    private interface Job {
+        /** Whether this walk is still the tree's current one. */
         boolean live();
     }
 
     /**
-     * What an {@link Action} does: told which item it was invoked on, and which job it is running as. Runs on the
-     * handler executor, so it is free to touch a disk or a network — and to take long enough that consulting
-     * {@code job} matters.
+     * One of the tree's own lines: library code, which the tree runs itself, with when it is offered decided from the
+     * tree's own state. The application can only take one off a row, by its id on the {@link Entry}.
      */
-    @FunctionalInterface
-    public interface Command<T> {
-        /** Do the work, returning early once {@code job} is no longer {@link Job#live()}. */
-        void run(T item, Job job);
-    }
-
-    /**
-     * One command on the row menu: a mark, a label, what it does, and — per item — whether it is offered at all
-     * and whether it can be chosen.
-     *
-     * <p><b>Absent and greyed say different things</b>, so both are here rather than one standing in for the other.
-     * {@link #enabledWhen} is for a command that belongs on this kind of row but does not apply to this one right
-     * now — a greyed line teaches where the command lives. {@link #shownWhen} is for a command that has no business
-     * on this row at all — Rename on a header, Extract on something that is not an archive — where a permanently
-     * greyed line would be furniture that never lights up.
-     *
-     * <p>Built and tuned before the tree is shown; the predicates are asked at the moment of each right click, on
-     * a worker thread, and may read whatever application state they like.
-     */
-    public static final class Action<T> {
-
-        private final String icon;
-        private final IconSource mark;
-        private final String label;
-        private final Command<T> body;
-        private volatile Predicate<T> shown = item -> true;
-        private volatile Predicate<T> enabled = item -> true;
-
-        private Action(String icon, IconSource mark, String label, Command<T> body) {
-            this.icon = icon;
-            this.mark = mark;
-            this.label = label;
-            this.body = body == null ? (item, job) -> { } : body;
-        }
-
-        /** A command with no mark, offered on every row by default. */
-        public static <T> Action<T> of(String label, Command<T> body) {
-            return new Action<>(null, null, label, body);
-        }
-
-        /** A command marked with {@code icon} (a glyph, or null for none), offered on every row by default. */
-        public static <T> Action<T> of(String icon, String label, Command<T> body) {
-            return new Action<>(icon, null, label, body);
-        }
-
-        /** A command marked with {@code mark}, an icon from the set, offered on every row by default. */
-        public static <T> Action<T> of(IconSource mark, String label, Command<T> body) {
-            return new Action<>(null, mark, label, body);
-        }
-
-        /** Offer this action only for items {@code test} accepts; for the rest it is not on the menu at all. */
-        public Action<T> shownWhen(Predicate<T> test) {
-            this.shown = test == null ? item -> true : test;
-            return this;
-        }
-
-        /** Show this action greyed for items {@code test} rejects — it belongs here, it just does not apply. */
-        public Action<T> enabledWhen(Predicate<T> test) {
-            this.enabled = test == null ? item -> true : test;
-            return this;
-        }
-
-        /** The glyph drawn beside the label, or null. */
-        public String icon() {
-            return icon;
-        }
-
-        /** The icon from the set drawn beside the label, or null. */
-        public IconSource mark() {
-            return mark;
-        }
-
-        /** The text shown. */
-        public String label() {
-            return label;
-        }
+    private record Line<T>(String id, Icon mark, String label, BiConsumer<T, Job> body,
+                           Predicate<T> shown, Predicate<T> enabled) {
     }
 
     /** Indent per depth level, in em, so the stagger scales with the text it indents. */
@@ -331,9 +496,9 @@ public final class TreeView<T> implements AutoCloseable {
     /** The gap between a row's parts, in em. The indent carries one more, where it used to sit beside the chevron. */
     private static final float GAP_EM = 0.25f;
 
-    private static final Shortcut CUT = Shortcut.of(Key.X, Modifier.CONTROL);
-    private static final Shortcut COPY = Shortcut.of(Key.C, Modifier.CONTROL);
-    private static final Shortcut PASTE = Shortcut.of(Key.V, Modifier.CONTROL);
+    private static final Shortcut CUT_CHORD = Shortcut.of(Key.X, Modifier.CONTROL);
+    private static final Shortcut COPY_CHORD = Shortcut.of(Key.C, Modifier.CONTROL);
+    private static final Shortcut PASTE_CHORD = Shortcut.of(Key.V, Modifier.CONTROL);
 
     /** The carried label's fill where releasing would place it, and where it would not: barely see-through. */
     private static final Paint CARRY_ACCEPTS = Role.ACTION.alpha(0.92f);
@@ -359,7 +524,17 @@ public final class TreeView<T> implements AutoCloseable {
         final Node labelBox;     // the rest of the row, clipping the name at the row's edge
         final Node kidsBox;     // hidden until expanded; children entries append here, never anywhere else
         boolean expanded;
-        boolean materialized;    // whether Source.children has been asked
+        boolean materialized;    // whether its children have been asked for
+        boolean listed;          // whether they have arrived, so the rows under it are the ones there are
+        /** What the application last said the item is called, and whether it takes a drop into it. */
+        String name;
+        boolean acceptsChildren;
+        /** What its menu leaves off and greys, and what Ctrl+F looks in: the entry's, as last told. */
+        java.util.Set<String> hidden;
+        java.util.Set<String> greyed;
+        String key;
+        /** The walks waiting for this row's children to arrive, resumed when they do. */
+        final List<Walk> waiters = new ArrayList<>(0);
         /** The pointer's state on the row as a whole, and whether it is on the disclosure. Guarded by the tree. */
         InteractionState pointer = InteractionState.NORMAL;
         boolean onDisclosure;
@@ -376,11 +551,16 @@ public final class TreeView<T> implements AutoCloseable {
         /** Bumped per animation, so a ramp still running for a superseded toggle finds nothing to write. */
         long animGen;
 
-        Row(T item, Row parent) {
+        Row(T item, Entry entry, Row parent) {
             this.item = item;
             this.parent = parent;
             this.depth = parent == null ? 0 : parent.depth + 1;
-            this.canExpand = source.hasChildren(item);
+            this.canExpand = entry.branch();
+            this.name = entry.label();
+            this.acceptsChildren = entry.acceptsChildren();
+            this.hidden = entry.hidden();
+            this.greyed = entry.greyed();
+            this.key = entry.find();
 
             this.spacer = gui.box().width(indent(depth)).scroll(false, false);
             // Turned, never moved: hit-inert, so a click on the column reaches the column whatever angle it is at.
@@ -414,7 +594,7 @@ public final class TreeView<T> implements AutoCloseable {
             // the alternative, adding the box when checkable() arrives, means rebuilding every row that already
             // exists to get one.
             this.checkMark = IconView.of(gui, null).size(Length.rem(0.8f)).tint(Role.ACCENT);
-            this.icon = IconView.of(gui, source.icon(item)).size(Length.rem(1f));
+            this.icon = IconView.of(gui, entry.icon()).size(Length.rem(1f));
             icon.node().visible(icon.icon() != null);
             this.checkBox = gui.row()
                     .width(Length.rem(0.95f)).height(Length.rem(0.95f))
@@ -424,24 +604,23 @@ public final class TreeView<T> implements AutoCloseable {
                     .alignItems(LayoutEnums.AlignItems.CENTER)
                     .scroll(false, false)
                     // Shown from the start on a tree that is already checkable, so a branch opened later does
-                    // not appear a box narrower than the rows above it and then jump. The *mark* inside is not
-                    // read here: that is application code, and this constructor runs under the tree's monitor.
-                    .visible(checkable != null)
+                    // not appear a box narrower than the rows above it and then jump; and marked from the start,
+                    // from what the application last said, so a ticked item's row is never drawn empty.
+                    .visible(checkable)
                     .children(checkMark.node());
+            paintCheck(checks.getOrDefault(item, Check.OFF));
             // Guarded when it runs rather than when it is built, for the same reason the disclosure is: a tree
             // becomes checkable after its first rows already exist.
-            gui.onClick(checkBox, () -> {
-                Checkable<T> c = checkable;
-                if (c == null) {
+            Seams.of(gui).onClick(checkBox, () -> {
+                if (!checkable) {
                     return;
                 }
                 // Selecting first is the convention every explorer follows, and it is what makes Space
                 // afterwards act on the row the pointer just ticked.
                 select(this, true);
-                c.toggled(item);
-                recheck();
+                gui.bus().publish(TOGGLED, new Toggled(address, item));
             });
-            gui.onState(checkBox, state -> checkBox.border(Length.rem(0.1f),
+            Seams.of(gui).onState(checkBox, state -> checkBox.border(Length.rem(0.1f),
                     state == InteractionState.NORMAL ? Role.EDGE : Role.ACCENT));
 
             // One line, cut off at the row's edge. The row is a fixed height — that is what keeps paging exact —
@@ -454,7 +633,7 @@ public final class TreeView<T> implements AutoCloseable {
             // masks a node's children, not its own glyphs, which is the other reason the box is a box. The same
             // shape as a Table cell. There is no ellipsis anywhere in the text stack; the unclip below is how a
             // cut name is read in full.
-            this.label = gui.text(source.label(item))
+            this.label = gui.text(name)
                     .textSize(Length.rem(1))
                     .textColor(Role.INK)
                     .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
@@ -489,7 +668,7 @@ public final class TreeView<T> implements AutoCloseable {
             // that has been open once has rows in here at all — a branch never expanded has no nodes under it,
             // so there is nothing there for a landmark to name and nothing for this to reveal. Expanding walks
             // outward-in, so an ancestor's own reveal has already run by the time this one is asked.
-            gui.reveals(kidsBox, descendant -> {
+            Seams.of(gui).reveals(kidsBox, descendant -> {
                 if (expanded) {
                     return false;
                 }
@@ -500,37 +679,35 @@ public final class TreeView<T> implements AutoCloseable {
             // A row click selects; a click on the disclosure itself also toggles. Both arrive on the handler
             // executor and both funnel into synchronized transitions, so a click and a keystroke can interleave
             // but never tear the state.
-            gui.onClick(rowNode, () -> {
+            Seams.of(gui).onClick(rowNode, () -> {
                 select(this, true);
-                onClick.accept(item);
+                gui.bus().publish(CLICKED, new Clicked(address, item));
             });
             // A context click selects first — the convention every explorer follows — and that is true whether or
             // not anything ends up on the menu, so it stays a click handler rather than a side effect of building
             // one. It is also what makes the menu's commands legible: they act on the row that just lit up.
-            gui.onContextClick(rowNode, e -> select(this, true));
-            // Two sources, and the order is the menu's shape: what the tree knows how to do to any row, then what
-            // the application knows about this one. Both go on through the same door — the app's items are wrapped
-            // so that choosing one supersedes whatever action was running, exactly as choosing a built-in does.
-            gui.onContextMenu(rowNode, menu -> rowMenu(item, menu));
-            gui.onContextMenu(rowNode, menu -> contextMenu.accept(item, new Preempting(menu)));
+            Seams.of(gui).onContextClick(rowNode, e -> select(this, true));
+            // The menu is the tree's own lines, then the application's actions, each offered as this row's entry
+            // last said: built here from what the tree already holds, with nothing of the application's run.
+            Seams.of(gui).onContextMenu(rowNode, menu -> rowMenu(this, menu));
             // Registered whatever the row is today, and guarded when it runs rather than when it is built: a
             // leaf can gain children (a reconcile after a drop moved one into it), and a handler that was never
             // installed cannot be installed later without rebuilding the row and losing everything else on it.
             // A leaf's disclosure is only indent, and a click there is a click on the row, as it was before the
             // indent was part of the disclosure.
-            gui.onClick(disclosure, () -> {
+            Seams.of(gui).onClick(disclosure, () -> {
                 select(this, true);
                 if (canExpand) {
                     toggle(this);
                 } else {
-                    onClick.accept(item);
+                    gui.bus().publish(CLICKED, new Clicked(address, item));
                 }
             });
-            gui.onState(rowNode, state -> {
+            Seams.of(gui).onState(rowNode, state -> {
                 restyle(this, state);
                 hovered(this, state != InteractionState.NORMAL);
             });
-            gui.onState(disclosure, state -> disclosureHovered(this, state != InteractionState.NORMAL));
+            Seams.of(gui).onState(disclosure, state -> disclosureHovered(this, state != InteractionState.NORMAL));
             // The full name, in place, for a row that cuts it off — and nothing for one that does not. Unclip asks
             // at hover time rather than being kept up to date, so a row costs one state observer until someone
             // rests on it: whether a name is cut depends on the depth, the tree's width and the zoom.
@@ -561,7 +738,6 @@ public final class TreeView<T> implements AutoCloseable {
          * user who has never seen the control before.
          */
         void paintCheck(Check state) {
-            checkBox.visible(true);
             switch (state) {
                 case OFF -> checkMark.icon(null);
                 case ON -> checkMark.icon(Icon.CHECK);
@@ -580,33 +756,45 @@ public final class TreeView<T> implements AutoCloseable {
         }
 
         /**
-         * Bring the row's own appearance back in line with the source: its label, and whether it can be opened.
+         * Bring the row's own appearance back in line with what the application now says it is: its label, its
+         * icon, and whether it can be opened.
          *
          * <p>A row that stops being able to hold children is shut on the way, because an open row with no
-         * disclosure control is one the user cannot close.
+         * disclosure control is one the user cannot close. One that starts being able to is asked for its children
+         * afresh the next time it opens, whatever it was told before.
          */
-        void resync() {
-            label.text(source.label(item));
-            IconSource kind = source.icon(item);
-            icon.icon(kind);
-            icon.node().visible(kind != null);
-            boolean now = source.hasChildren(item);
+        void resync(Entry entry) {
+            name = entry.label();
+            label.text(name);
+            icon.icon(entry.icon());
+            icon.node().visible(entry.icon() != null);
+            acceptsChildren = entry.acceptsChildren();
+            hidden = entry.hidden();
+            greyed = entry.greyed();
+            key = entry.find();
+            boolean now = entry.branch();
             if (now == canExpand) {
                 return;
             }
             canExpand = now;
-            if (!now) {
-                expanded = false;
-                materialized = false;
-                children.clear();
-                open(this, 0f);
-            }
+            expanded = false;
+            materialized = false;
+            listed = false;
+            children.clear();   // their rows are not reached by the reconcile this runs in, so it sweeps them
+            open(this, 0f);
             showDisclosure();
         }
     }
 
     private final Gui gui;
-    private final Source<T> source;
+    /** What this tree is called in its GUI ("files"). */
+    private final String name;
+    /** Where it is on the bus, the GUI's name and {@link #name}: what every message to or from it carries. */
+    private final String address;
+    /** The tree's mailboxes for {@link #CHILDREN}, {@link #MARKS} and {@link #REFRESH}, routed by {@link #address}. */
+    private final Subscription childrenSub;
+    private final Subscription marksSub;
+    private final Subscription refreshSub;
     private final Node root;
 
     /**
@@ -620,19 +808,41 @@ public final class TreeView<T> implements AutoCloseable {
     /** The Scroller and its bar. */
     private final Scrollbars scrolling;
 
-    /** All state below is guarded by {@code this}. The GUI-thread stages and the handler executor both mutate
-     *  it; the monitor makes their transitions atomic, and every callback leaves the monitor before dispatch. */
+    /** All state below is guarded by {@code this}. It is the GUI thread's in 0.2, and the monitor is what 0.1 needed
+     *  when a handler pool shared it; taking it out is a refactor owed with the widget library's T7.2 walk. */
     /** How expand and collapse are timed, or null for the instant flip. See {@link #motion}. */
     private volatile Ramp motion;
 
     private final List<Row> rootRows = new ArrayList<>();
+    /** Whether the roots have arrived; until they have, a walk waits for them as it waits for any level. */
+    private boolean rootsListed;
+    /** Whether the roots have been asked for: in the tree's first frame, by the {@link #REFRESH} it sent itself. */
+    private boolean rootsAsked;
+    private final List<Walk> rootWaiters = new ArrayList<>(0);
+
+    /**
+     * The refresh in flight: the levels asked for again, keyed by their row ({@link #ROOTS} for the roots), and the
+     * replies that have landed. Null when none is. Applied whole once the last level lands, never level by level: an
+     * item moved from one branch to another is in one listing and missing from the other, and a level applied alone
+     * would drop the row that the next one reuses — closing every folder under it.
+     */
+    private Map<Object, List<Entry>> refreshing;
+    private java.util.Set<Object> refreshAwaits;
+    /** Whether {@link #refresh} was called again while one was in flight, so another follows it. */
+    private boolean refreshAgain;
+
+    /** The key the roots' level is held under in {@link #refreshing}, where every other level is its row. */
+    private static final Object ROOTS = new Object();
+
     private final Map<T, Row> rowsByItem = new HashMap<>();
     private final List<Row> visible = new ArrayList<>();
     private Row selected;
-    /** What a reorder means, or null until reorderable() is called. */
-    private volatile Reorder<T> reorder;
-    /** What is ticked, or null until checkable() is called -- which is also what hides every box. */
-    private volatile Checkable<T> checkable;
+    /** The effects a placement may have, or null until reorderable() is called. */
+    private volatile java.util.Set<DropEffect> effects;
+    /** Whether checkable() has been called, which is what shows every box. */
+    private volatile boolean checkable;
+    /** What the application last said is ticked, by item, whether or not the item has a row. Guarded by this. */
+    private final Map<Object, Check> checks = new HashMap<>();
     /** The form this tree offers its rows as -- per instance, so two trees do not silently accept each other's. */
     private final PayloadType<T> itemType = PayloadType.of("tree-item");
     /** How the drop target is shown; replaceable, defaulted to the theme accent at construction. */
@@ -646,33 +856,28 @@ public final class TreeView<T> implements AutoCloseable {
     /** What the carried label last showed, and where: written only when it changes. Guarded by this. */
     private Object carriedAs;
 
-    private volatile Consumer<T> onSelect = t -> { };
-    private volatile Consumer<T> onActivate = t -> { };
-    private volatile Consumer<T> onClick = t -> { };
-    private volatile Consumer<T> onHover = t -> { };
+
+
+
+
     private volatile Role hoverFill = Role.PANEL;
     private volatile Role hoverInk = Role.INK;
     private volatile CursorShape rowCursor;
     /** The row the pointer is on, or null. Guarded by {@code this}. */
     private Row hoveredRow;
-    private volatile BiConsumer<T, MenuSink> contextMenu = (item, menu) -> { };
 
     /**
-     * Which action is the current one. Every {@link Job} is a captured value of this counter compared back against
-     * it, so starting an action is one increment and "am I still it?" is one read — no registry of running work,
+     * Which walk is the current one. Every {@link Job} is a captured value of this counter compared back against
+     * it, so starting one is one increment and "am I still it?" is one read — no registry of running work,
      * nothing to unregister, and no way for a job to outlive its own answer.
      */
     private final AtomicLong actions = new AtomicLong();
 
-    /** The two the tree ships. Public handles, because their availability is the application's to retune. */
-    private final Action<T> expandAction;
-    private final Action<T> collapseAction;
-    private final Action<T> cutAction;
-    private final Action<T> copyAction;
-    private final Action<T> pasteAction;
+    /** The tree's own lines, in menu order, with a rule after Collapse. */
+    private final List<Line<T>> lines;
 
-    /** What the application added, in the order it added it. Read on every right click, written at build time. */
-    private final List<Action<T>> extraActions = new CopyOnWriteArrayList<>();
+    /** What the application declared, in the order it declared it. */
+    private final MenuActions extraActions = new MenuActions(EXPAND, COLLAPSE, CUT, COPY, PASTE);
 
     /**
      * The find bar: null until {@link #searchable} first asks for one, then hidden until Ctrl+F, and no part of
@@ -686,35 +891,47 @@ public final class TreeView<T> implements AutoCloseable {
      */
     private final Unclip unclip;
 
-    /** How a row answers a query. Replaceable: only the application knows what its items are searchable by. */
-    private volatile BiPredicate<T, String> matcher;
-
-    /** Build a tree over {@code source}; roots are listed immediately (on the calling thread), collapsed. */
-    public TreeView(Gui gui, Source<T> source) {
+    /**
+     * Build a tree called {@code name}, which asks for its roots in its first frame. On the GUI thread, where every
+     * widget is built.
+     *
+     * <p>The name, qualified by the GUI's, is the tree's {@link #address()}: every message to or from it carries that,
+     * so the name is unique among a GUI's trees and chosen by whoever builds the view ("files", "outline"). It is given here
+     * rather than set afterwards because whoever answers has to know which tree is asking. The roots are asked for in
+     * the first frame and not here because whoever answers may be built after the tree, as an application's view is
+     * built after the widgets it shows. Items are compared by {@code equals}, and the items of a tree are its own type: what arrives in a
+     * {@link Children} is taken to be a {@code T}.
+     *
+     * @throws IllegalStateException when another tree on this GUI already has the name
+     */
+    public TreeView(Gui gui, String name) {
         this.gui = gui;
-        this.source = source;
+        this.name = java.util.Objects.requireNonNull(name, "name");
+        this.address = gui.address(name);
+        this.childrenSub = gui.mailbox(CHILDREN, address, this::listed);
+        this.marksSub = gui.mailbox(MARKS, address, this::marked);
+        this.refreshSub = gui.mailbox(REFRESH, address, r -> refresh());
         ContextMenu.presentOn(gui);   // rows carry whatever menu the application declares; this shows it
         // Marked plus and minus, the set's own for "open everything under it" and "shut it": the row's chevron
         // opens one level, and these walk the whole subtree, so they are told apart from it on purpose. Enabled by
-        // what the row is — a leaf has nothing to expand, a shut row has nothing to collapse — which is a default
-        // the application can replace, and a reason it is stated as a predicate rather than baked into the walk.
-        this.expandAction = Action.<T>of(Icon.PLUS, "Expand", this::expandDeep).enabledWhen(this::canOpen);
-        this.collapseAction = Action.<T>of(Icon.MINUS, "Collapse", this::collapseDeep).enabledWhen(this::isOpen);
+        // what the row is — a leaf has nothing to expand, a shut row has nothing to collapse.
+        Predicate<T> always = item -> true;
         // The transfer commands, on the menu as well as on the chords — a cut you can only reach by knowing the
         // chord is half a feature, and the menu is where a user finds out that a tree can do this at all.
         //
         // Shown only where the tree accepts transfers, because reorderable() is what makes any of them mean
         // anything; hidden rather than greyed, since a tree that will never take a paste is not a tree where
-        // Paste "does not apply right now".
-        this.cutAction = Action.<T>of(Icon.CUT, "Cut", (item, job) -> take(item, DropEffect.MOVE))
-                .shownWhen(item -> reorder != null);
-        this.copyAction = Action.<T>of(Icon.COPY, "Copy", (item, job) -> take(item, DropEffect.COPY))
-                .shownWhen(item -> reorder != null);
-        // Greyed rather than hidden, because this one genuinely is "not right now": there is nothing in hand,
-        // and the entry disappearing would leave the user wondering where the command went between two clicks.
-        this.pasteAction = Action.<T>of(Icon.PASTE, "Paste", (item, job) -> paste(item))
-                .shownWhen(item -> reorder != null)
-                .enabledWhen(item -> gui.transfer().offers(itemType));
+        // Paste "does not apply right now". Paste is greyed rather than hidden when nothing is in hand, because that
+        // genuinely is "not right now", and the line disappearing would leave the user wondering where it went.
+        this.lines = List.of(
+                new Line<>(EXPAND, Icon.PLUS, "Expand", this::expandDeep, always, this::canOpen),
+                new Line<>(COLLAPSE, Icon.MINUS, "Collapse", this::collapseDeep, always, this::isOpen),
+                new Line<>(CUT, Icon.CUT, "Cut", (item, job) -> take(item, DropEffect.MOVE),
+                        item -> offers(DropEffect.MOVE), always),
+                new Line<>(COPY, Icon.COPY, "Copy", (item, job) -> take(item, DropEffect.COPY),
+                        item -> offers(DropEffect.COPY), always),
+                new Line<>(PASTE, Icon.PASTE, "Paste", (item, job) -> paste(item),
+                        item -> effects != null, item -> gui.transfer().offers(itemType)));
         // The frame and the scroller are two boxes, not one. The frame carries the tree's own look and holds the
         // chrome; the rows go inside a scroller that fills what is left of it. One box could not do both: the bar
         // would be content, and content scrolls.
@@ -741,26 +958,18 @@ public final class TreeView<T> implements AutoCloseable {
         // Navigation is an ordered stage: moving a cursor is order-dependent under key repeat, and it is pure
         // lookups on the visible list — exactly what the GUI-thread lane is for. Registering it also makes the
         // tree focusable, which is the single tab stop.
-        gui.onKeyUi(this.root, this::onKey);
+        Seams.of(gui).onKey(this.root, this::onKey);
         // Cut, copy and paste, claimed FOCUSED so they belong to the tree only while it holds focus -- a text
         // field in the same window keeps its own, and neither has to know about the other.
-        gui.claim(this.root, CUT, ClaimScope.FOCUSED, () -> take(selectedItem(), DropEffect.MOVE));
-        gui.claim(this.root, COPY, ClaimScope.FOCUSED, () -> take(selectedItem(), DropEffect.COPY));
-        gui.claim(this.root, PASTE, ClaimScope.FOCUSED, () -> paste(selectedItem()));
+        Seams.of(gui).claim(this.root, CUT_CHORD, ClaimScope.FOCUSED, () -> take(selectedItem(), DropEffect.MOVE));
+        Seams.of(gui).claim(this.root, COPY_CHORD, ClaimScope.FOCUSED, () -> take(selectedItem(), DropEffect.COPY));
+        Seams.of(gui).claim(this.root, PASTE_CHORD, ClaimScope.FOCUSED, () -> paste(selectedItem()));
 
         // No find bar until searchable(true) asks for one: a tree nobody searches carries nothing for it.
-        this.matcher = (item, query) -> source.label(item).toLowerCase().contains(query.toLowerCase());
         root.children(scrolling.node());
 
-        synchronized (this) {
-            for (T item : source.roots()) {
-                Row r = new Row(item, null);
-                rootRows.add(r);
-                rowsByItem.put(item, r);
-                entries.append(r.entry);
-            }
-            refreshVisible();
-        }
+        // To itself, so it is heard in the first frame, by which time every answerer is subscribed: see refresh().
+        gui.bus().publish(REFRESH, new Refresh(address));
     }
 
     /** The node to place in a layout (size it there — the tree fills whatever box it is given). */
@@ -768,8 +977,99 @@ public final class TreeView<T> implements AutoCloseable {
         return root;
     }
 
+    /** What this tree is called in its GUI. */
+    public String name() {
+        return name;
+    }
+
+    /** Where this tree is on the bus ({@code "main.files"}): the {@code tree} of every message to or from it. */
+    public String address() {
+        return address;
+    }
+
+    /** Ask for what is under {@code parent}, or for the roots when it is null. */
+    private void ask(T parent) {
+        gui.bus().publish(CHILDREN_WANTED, new ChildrenWanted(address, parent));
+    }
+
     /**
-     * Put a checkbox on every row, with {@code checkable} saying what is ticked and taking the clicks.
+     * A level has arrived. It is the first listing of a row that was asked for, or of the roots, and builds that
+     * level; or it is one of a refresh's, held until the rest of them land. Anything else answers nothing this tree
+     * asked — a second reply, or one for an item that has gone — and is dropped, and counted.
+     */
+    private void listed(Children reply) {
+        List<Walk> resumed;
+        Row landed = null;
+        synchronized (this) {
+            @SuppressWarnings("unchecked")
+            T parent = (T) reply.parent();
+            Row row = parent == null ? null : rowsByItem.get(parent);
+            Object key = parent == null ? ROOTS : row;
+            if (refreshAwaits != null && key != null && refreshAwaits.remove(key)) {
+                refreshing.put(key, reply.entries());
+                if (!refreshAwaits.isEmpty()) {
+                    return;
+                }
+                landed = applyRefresh();
+                resumed = List.of();
+            } else if (parent == null && !rootsListed) {
+                rootsListed = true;
+                for (Entry entry : reply.entries()) {
+                    Row r = new Row(item(entry), entry, null);
+                    rootRows.add(r);
+                    rowsByItem.put(r.item, r);
+                    entries.append(r.entry);
+                }
+                refreshVisible();
+                resumed = List.copyOf(rootWaiters);
+                rootWaiters.clear();
+                if (refreshAgain) {
+                    refreshAgain = false;
+                    startRefresh();
+                }
+            } else if (row != null && row.materialized && !row.listed) {
+                materialize(row, reply.entries());
+                resumed = List.copyOf(row.waiters);
+                row.waiters.clear();
+            } else {
+                Probe.count(Lane.BUS, CHILDREN.name() + " unasked");
+                return;
+            }
+        }
+        if (landed != null) {
+            select(landed, true);
+        }
+        for (Walk walk : resumed) {
+            walk.run();
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private T item(Entry entry) {
+        return (T) entry.item();
+    }
+
+    /**
+     * Put a checkbox on every row. The tree draws them and says when one is clicked ({@link #TOGGLED}); the
+     * application owns what is ticked and says so ({@link #MARKS}):
+     *
+     * <pre>{@code
+     * tree.checkable();
+     * gui.mailbox(TreeView.TOGGLED, tree.address(), t -> logic.send(new Flip(t.item())));
+     * // the logic, having flipped it: marks.send(new TreeView.Marks(tree, Map.of(item, Check.ON, parent, Check.MIXED)))
+     * }</pre>
+     *
+     * <p>The same split as the hierarchy, for the same reason. A tick is a fact about the application's model —
+     * which files are staged, which options are on — so the tree can no more own it than it owns the tree itself.
+     * It draws what it is told and reports the click, and a click changes no box until the application answers,
+     * a frame later; a box that ticked itself first would be one the application could then untick under the
+     * pointer.
+     *
+     * <p><b>Cascading is deliberately not here.</b> Whether ticking a folder ticks everything under it, whether a
+     * parent goes {@link Check#MIXED} when one child is on, whether ticking a child ticks its parents — those are
+     * model rules and they genuinely differ: a staging area cascades down, a filter does not, a permission tree
+     * propagates up. A widget that picked one would be wrong for the other two and would have to be fought. A
+     * {@link Marks} names every item it changes, so any of those policies is one message.
      *
      * <p>Space toggles the selected row, which is the same command reached the other way — and the reason it is
      * the tree's business rather than the application's is that the tree already owns the selection the chord
@@ -780,47 +1080,40 @@ public final class TreeView<T> implements AutoCloseable {
      * hover rule exists to prevent, and a tree that is sometimes checkable is a tree whose rows change width
      * while you are reading them.
      */
-    public TreeView<T> checkable(Checkable<T> checkable) {
-        this.checkable = java.util.Objects.requireNonNull(checkable, "checkable");
-        recheck();
-        return this;
-    }
-
-    /**
-     * Ask again what is ticked, and redraw the boxes.
-     *
-     * <p>The counterpart to {@link #refresh} for the other thing the tree reads and does not own. It is
-     * separate because it is far cheaper — no hierarchy is walked and no {@code children} is called — and
-     * because the two changes are genuinely different events: a drop restructures, a tick does not.
-     *
-     * <p>Called for you after a click on a box, so an application only needs this when something <em>else</em>
-     * changed what is ticked: a "select all" button, a background job, another view of the same model.
-     */
-    public TreeView<T> recheck() {
-        Checkable<T> c = checkable;
-        if (c == null) {
-            return this;
-        }
-        List<Row> rows;
-        synchronized (this) {
-            rows = List.copyOf(rowsByItem.values());
-        }
-        // Outside the monitor: state() is the application's code and may do anything, and holding the tree's
-        // lock across it is how a widget deadlocks against the model it is reading.
-        for (Row row : rows) {
-            row.paintCheck(c.state(row.item));
+    public synchronized TreeView<T> checkable() {
+        checkable = true;
+        for (Row row : rowsByItem.values()) {
+            row.checkBox.visible(true);
         }
         return this;
     }
 
+    /** What is ticked has changed: keep it for every item named, and redraw the boxes of those that have rows. */
+    private synchronized void marked(Marks told) {
+        for (Map.Entry<Object, Check> mark : told.marks().entrySet()) {
+            checks.put(mark.getKey(), mark.getValue());
+            Row row = rowsByItem.get(mark.getKey());
+            if (row != null) {
+                row.paintCheck(mark.getValue());
+            }
+        }
+    }
+
     /**
-     * Read the hierarchy again and bring the rows into line with it — the other half of {@link #reorderable}.
+     * Ask for the hierarchy again and bring the rows into line with it — what {@link #REFRESH} does, and the other half
+     * of {@link #reorderable}.
      *
-     * <p>A tree reads its model through a {@link Source} and is never told when that model changes, which is the
-     * right split (it is the application's model, mutated by the application's code) and leaves the application
-     * holding one obligation: <b>say when</b>. Without this the tree resolved a placement, drew the indicator,
-     * refused what could not be done and recorded the change — and then showed the hierarchy as it had been,
-     * which made every one of those correct behaviours look broken.
+     * <p>A tree is told its model a level at a time, when it asks, and is never told when that model changes, which
+     * is the right split (it is the application's model, mutated by the application's code) and leaves the
+     * application holding one obligation: <b>say when</b>. Without this the tree resolved a placement, drew the
+     * indicator, refused what could not be done and recorded the change — and then showed the hierarchy as it had
+     * been, which made every one of those correct behaviours look broken.
+     *
+     * <p><b>Every level asked for at once, and applied at once.</b> A {@link ChildrenWanted} goes out for the roots and
+     * for every row already listed, and nothing changes on screen until the last of them is answered. Applying each
+     * as it landed would be simpler and wrong: an item moved from one branch to another is missing from one listing
+     * and present in the other, and whichever landed first would decide whether its row was kept or rebuilt. A
+     * refresh asked for while one is in flight follows it.
      *
      * <p><b>Rows are reused, not rebuilt.</b> An item that was already in the tree keeps its row — the same
      * node, the same registrations, its expansion state, and its place in the selection — and is moved to
@@ -828,73 +1121,126 @@ public final class TreeView<T> implements AutoCloseable {
      * a rebuilt tree closes every folder the user had opened, which after a drag is precisely the state they
      * were working in.
      *
-     * <p><b>No new I/O.</b> Only rows that have already been opened are walked into, so a reconcile costs
+     * <p><b>No new listings.</b> Only rows that have already been listed are asked about again, so a refresh costs
      * exactly the directory listings the user has already paid for. A collapsed folder is re-read when it is
      * next opened, which is when it was going to be read anyway.
-     *
-     * <p>Safe from any thread, like every other method here.
      */
-    public TreeView<T> refresh() {
-        Row landed;
-        synchronized (this) {
-            java.util.Set<T> live = new java.util.HashSet<>();
-            reconcile(null, source.roots(), live);
-            // Anything not reached is gone from the model. It cannot be hiding under a collapsed row: an
-            // unopened row has no children rows to hide, and an opened one was walked.
-            for (java.util.Iterator<Map.Entry<T, Row>> it = rowsByItem.entrySet().iterator(); it.hasNext(); ) {
-                Map.Entry<T, Row> e = it.next();
-                if (!live.contains(e.getKey())) {
-                    e.getValue().entry.remove();
-                    it.remove();
-                }
+    public synchronized TreeView<T> refresh() {
+        if (!rootsAsked) {
+            // The first: the one the tree sent itself when it was built, heard in its first frame. The roots are asked
+            // for here, not in the constructor, because whoever answers may be built after the tree, and a question
+            // published before its answerer subscribes is heard by nobody, and waited on for good.
+            rootsAsked = true;
+            if (!rootsListed) {
+                ask(null);
             }
-            refreshVisible();
-            // The selection never rests on a row that is no longer there — the same rule a collapse follows.
-            landed = selected != null && !rowsByItem.containsKey(selected.item) ? nearestLive(selected) : null;
-            if (selected != null && !rowsByItem.containsKey(selected.item)) {
-                selected = null;
-            }
+            return this;
         }
-        if (landed != null) {
-            select(landed, true);
+        if (refreshAwaits != null || !rootsListed) {
+            refreshAgain = true;   // after the one in flight, or once the roots it would be asking about are here
+            return this;
         }
-        // Rows built by the reconcile have never been asked what they are: their boxes are still hidden, and a
-        // tick that only appears after the next click would be a state the user could not trust.
-        recheck();
+        startRefresh();
         return this;
     }
 
+    /** Ask again for the roots and every level already listed. Guarded by {@code this}. */
+    private void startRefresh() {
+        refreshing = new HashMap<>();
+        refreshAwaits = new java.util.HashSet<>();
+        refreshAwaits.add(ROOTS);
+        List<T> asked = new ArrayList<>();
+        for (Row row : rowsByItem.values()) {
+            if (row.listed) {
+                refreshAwaits.add(row);
+                asked.add(row.item);
+            }
+        }
+        ask(null);
+        for (T item : asked) {
+            ask(item);
+        }
+    }
+
     /**
-     * Reconcile one level: the rows under {@code parent} become exactly {@code items}, in that order.
+     * The last of a refresh's levels has landed: apply them all. Guarded by {@code this}.
+     *
+     * @return where the selection lands when its row has gone, or null
+     */
+    private Row applyRefresh() {
+        Map<Object, List<Entry>> listings = refreshing;
+        refreshing = null;
+        refreshAwaits = null;
+        java.util.Set<T> live = new java.util.HashSet<>();
+        reconcile(null, listings.get(ROOTS), listings, live);
+        // Anything not reached is gone from the model. It cannot be hiding under a collapsed row: an
+        // unopened row has no children rows to hide, and an opened one was walked.
+        for (java.util.Iterator<Map.Entry<T, Row>> it = rowsByItem.entrySet().iterator(); it.hasNext(); ) {
+            Map.Entry<T, Row> e = it.next();
+            if (!live.contains(e.getKey())) {
+                e.getValue().entry.remove();
+                it.remove();
+            }
+        }
+        refreshVisible();
+        // The selection never rests on a row that is no longer there — the same rule a collapse follows.
+        Row landed = selected != null && !rowsByItem.containsKey(selected.item) ? nearestLive(selected) : null;
+        if (selected != null && !rowsByItem.containsKey(selected.item)) {
+            selected = null;
+        }
+        if (refreshAgain) {
+            refreshAgain = false;
+            startRefresh();
+        }
+        return landed;
+    }
+
+    /**
+     * Reconcile one level: the rows under {@code parent} become exactly {@code level}, in that order.
      *
      * <p>Each row is inserted at its index whether or not it moved. That is one mutation per row per reconcile,
      * against the bookkeeping needed to work out which of them actually changed — and the bookkeeping is what
      * would be wrong the first time two items swapped places, because a swap has no smallest edit that is
      * obviously right. A mutation that sets a node where it already is costs a list remove and an add.
+     *
+     * <p>A row listed again goes down into its new listing. One whose children were asked for after the refresh
+     * began has none in it, and keeps the rows its own reply built.
      */
-    private void reconcile(Row parent, List<T> items, java.util.Set<T> live) {
+    private void reconcile(Row parent, List<Entry> level, Map<Object, List<Entry>> listings, java.util.Set<T> live) {
         Node box = parent == null ? entries : parent.kidsBox;
-        List<Row> settled = new ArrayList<>(items.size());
-        for (int i = 0; i < items.size(); i++) {
-            T item = items.get(i);
+        List<Row> settled = new ArrayList<>(level.size());
+        for (int i = 0; i < level.size(); i++) {
+            Entry entry = level.get(i);
+            T item = item(entry);
             live.add(item);
             Row row = rowsByItem.get(item);
             if (row == null) {
-                row = new Row(item, parent);
+                row = new Row(item, entry, parent);
                 rowsByItem.put(item, row);
             } else {
                 row.reseat(parent);
-                row.resync();
+                row.resync(entry);
             }
             box.insert(row.entry, i);
             settled.add(row);
-            if (row.materialized) {
-                reconcile(row, source.children(item), live);
+            List<Entry> under = listings.get(row);
+            if (under != null && row.listed) {   // not a row the entry has just made a leaf
+                reconcile(row, under, listings, live);
+            } else {
+                keep(row, live);
             }
         }
         List<Row> siblings = parent == null ? rootRows : parent.children;
         siblings.clear();
         siblings.addAll(settled);
+    }
+
+    /** Mark everything under {@code row} live as it stands: rows a refresh did not list, and so does not judge. */
+    private void keep(Row row, java.util.Set<T> live) {
+        for (Row child : row.children) {
+            live.add(child.item);
+            keep(child, live);
+        }
     }
 
     /** The nearest row still in the tree above a removed one — where a selection lands when its row goes. */
@@ -919,16 +1265,21 @@ public final class TreeView<T> implements AutoCloseable {
     }
 
     /**
-     * Let rows be dragged to new places in the tree, with {@code reorder} saying what each placement means.
+     * Let rows be dragged to new places in the tree, and cut, copied and pasted, with the effects the model has:
+     * {@code MOVE} for a drag or a cut, {@code COPY} for a copy, which a model whose items are unique leaves out.
+     * Where one lands is announced as {@link #PLACED}; the application moves it in its own model, records it in its
+     * own history, and sends {@link #REFRESH} for the tree to show it.
      *
      * <pre>{@code
-     * tree.reorderable((moved, where) -> model.change(moved, where));   // null refuses the placement
+     * tree.reorderable(DropEffect.MOVE);
+     * gui.mailbox(TreeView.PLACED, tree.address(), p -> logic.send(new Move(p.item(), p.where())));
+     * // the logic, having moved it: refresh.send(new TreeView.Refresh(tree))
      * }</pre>
      *
      * <p>A press on a row becomes a drag only once it has travelled far enough and been held long enough, so an
      * ordinary click still selects; and a drop that never got as far as being drawn commits nothing, so a click
      * too quick to see cannot reorganise the tree. Escape cancels. All of that is the framework's, not this
-     * widget's — {@link Gui#onDragSource} and {@link Gui#onDrop} are the whole of what is registered here.
+     * widget's — {@link dev.vexelray.gui.core.spi.Seams#onDragSource} and {@link dev.vexelray.gui.core.spi.Seams#onDrop} are the whole of what is registered here.
      *
      * <p>The tree draws the rest: a line or a box where the drop would land, and the row's label riding beside the
      * pointer, wherever it is carried. An application draws neither (transfer.md §0).
@@ -941,20 +1292,31 @@ public final class TreeView<T> implements AutoCloseable {
      * by which rect contains the point: a sub-pixel gap between two rows would otherwise be a place where drops
      * silently do nothing, and that is exactly the kind of crack a user learns to hunt for.
      *
-     * <p>Refusal is the application's, through {@code reorder} returning null — dropping a folder into itself,
-     * a placement that would leave the item where it already is, a branch that will not take children. Refusing
-     * there means the user sees it before releasing rather than discovering it afterwards.
+     * <p><b>What is refused is decided here, in the frame, from what is declared</b> ({@link #placeable}): an item
+     * dropped onto or under itself, a move that leaves it where it already is, a place among the children of an
+     * entry that does not {@link Entry#acceptsChildren accept} them, an effect not given here. Refusing in the frame
+     * means the user sees it before releasing rather than discovering it afterwards. What only the model can know
+     * (a name already taken in that folder) the application refuses when it hears the placement, and says why.
      *
      * <p>The payload is offered as {@link #itemType()}, which is private to this tree: two trees do not accept
      * one another's rows unless one is deliberately told about the other's type.
-     *
-     * <p>Set {@link Gui#dropHistory} for the move to be undoable — without one it resolves and draws but commits
-     * nothing, which is the framework refusing to make a change the user could not take back.
      */
-    public TreeView<T> reorderable(Reorder<T> reorder) {
-        java.util.Objects.requireNonNull(reorder, "reorder");
-        this.reorder = reorder;
-        gui.onDragSource(rows, (x, y) -> {
+    public TreeView<T> reorderable(DropEffect... effects) {
+        java.util.EnumSet<DropEffect> given = java.util.EnumSet.noneOf(DropEffect.class);
+        for (DropEffect effect : effects) {
+            if (!effect.accepts()) {
+                throw new IllegalArgumentException("a placement has an effect: " + effect);
+            }
+            given.add(effect);
+        }
+        if (given.isEmpty()) {
+            throw new IllegalArgumentException("reorderable with no effect would offer nothing: say MOVE, COPY or both");
+        }
+        if (this.effects != null) {
+            throw new IllegalStateException("this tree is already reorderable");
+        }
+        this.effects = java.util.Collections.unmodifiableSet(given);
+        Seams.of(gui).onDragSource(rows, (x, y) -> {
             Row from = rowAt(y);
             if (from == null) {
                 return null;   // the space below the last row is somewhere to drop, not something to pick up
@@ -964,19 +1326,19 @@ public final class TreeView<T> implements AutoCloseable {
             select(from, true);
             return Payload.of(itemType, from.item);
         });
-        gui.onDrop(rows, (payload, x, y) -> payload.as(itemType)
+        Seams.of(gui).onDrop(rows, (payload, x, y) -> payload.as(itemType)
                 .map(moved -> resolvePlacement(moved, y))
                 .orElse(Drop.NONE));
         // Drawn from the published drag rather than from the live session: the session is the framework's own
         // state, mutated on the GUI thread inside the frame, and a widget reading it would be reading a value
         // that changes underneath its paint. The State commits once per frame and only on change, so a pointer
         // held still over one seam costs nothing.
-        this.dragSub = gui.drag().onCommit(v -> showDrop(v.value()));
+        this.dragSub = Seams.of(gui).drag().onCommit(v -> showDrop(v.value()));
         // What is in the hand is the tree's to draw, as the indicator is: the tree knows what a row is called, and
         // an application that had to build this itself would be rebuilding it in every application. Watched
         // rather than read from the published drag, because it follows the pointer, and the published drag is a
         // frame behind it (transfer.md §12.3).
-        gui.watchDrag(rows, new DragWatch() {
+        Seams.of(gui).watchDrag(rows, new DragWatch() {
             @Override
             public void moved(DragState now) {
                 carry(now);
@@ -1019,7 +1381,7 @@ public final class TreeView<T> implements AutoCloseable {
         }
         // Told every frame of a drag, moved or not; a write that changes nothing would still owe a frame, and that
         // frame another, so the window would never be idle while a row was carried.
-        String text = held == null ? null : source.label(held);
+        String text = held == null ? null : labelOf(held);
         Object now = held == null ? null : List.of(text, drag.x(), drag.y(), drag.accepts());
         synchronized (this) {
             if (java.util.Objects.equals(now, carriedAs)) {
@@ -1031,11 +1393,23 @@ public final class TreeView<T> implements AutoCloseable {
             label.visible(false);
             return;
         }
-        float dpi = Math.max(0.0001f, gui.dpi().value());
+        float dpi = Math.max(0.0001f, Seams.of(gui).dpi().value());
         label.text(text).visible(true)
                 .floatAt(Length.dp(drag.x() / dpi + 14f), Length.dp(drag.y() / dpi + 12f))
                 .background(drag.accepts() ? CARRY_ACCEPTS : CARRY_REFUSES)
                 .textColor(drag.accepts() ? Role.ON_ACTION : Role.ON_DANGER);
+    }
+
+    /** What {@code item}'s row says, or the item itself when it has none here (carried in from another tree). */
+    private synchronized String labelOf(T item) {
+        Row row = rowsByItem.get(item);
+        return row == null ? String.valueOf(item) : row.name;
+    }
+
+    /** Whether {@code item} takes a drop into it, as the application last said. */
+    private synchronized boolean acceptsChildren(T item) {
+        Row row = rowsByItem.get(item);
+        return row != null && row.acceptsChildren;
     }
 
     /**
@@ -1113,9 +1487,9 @@ public final class TreeView<T> implements AutoCloseable {
     /** Which of a row's bands the pointer is in, and the drop that band means. */
     private Drop bandOf(T moved, Row row, Rect rect, float y) {
         float within = clamp01((y - rect.y()) / rect.h());
-        // Whether it can *hold* children, not whether it has any — asked of the source every time, because an
-        // empty branch is still a branch and a row that has just been emptied must not stop accepting drops.
-        if (!source.acceptsChildren(row.item)) {
+        // Whether it can *hold* children, not whether it has any, because an empty branch is still a branch and a
+        // row that has just been emptied must not stop accepting drops.
+        if (!acceptsChildren(row.item)) {
             // Nothing that has no inside, so the row divides in two and the boundary is its middle. Giving such
             // a row an "into" band that then always refused would be a third of it that looks live and is not.
             return within < 0.5f
@@ -1131,19 +1505,81 @@ public final class TreeView<T> implements AutoCloseable {
         return placed(moved, Placement.into(row.item), rect);
     }
 
-    /** Ask the application what this placement means; a refusal is an ordinary answer and becomes NONE. */
+    /** The drop this placement is, if it is offered: landing announces it. A refusal is an ordinary NONE. */
     private Drop placed(T moved, Placement<T> where, Rect indicator) {
         // MOVE, because a pointer drag has no way to say otherwise yet: the gesture carries no modifier state,
         // so there is nothing for a Ctrl-drag to be recognised from. When it does, this is the one line that
-        // changes — the application side already answers COPY, because a paste asks it the same question.
-        Change change = resolve(moved, where, DropEffect.MOVE);
-        return change == null ? Drop.NONE : Drop.move(indicator, change);
+        // changes — a paste already places with COPY.
+        return placeable(moved, where, DropEffect.MOVE)
+                ? Drop.move(indicator, () -> announce(moved, where, DropEffect.MOVE))
+                : Drop.NONE;
     }
 
-    /** Ask the application what {@code effect} at {@code where} means; a refusal is an ordinary null. */
-    private Change resolve(T moved, Placement<T> where, DropEffect effect) {
-        Reorder<T> r = reorder;
-        return r == null ? null : r.move(moved, where, effect);
+    /** Say that {@code moved} was put at {@code where}: the application's to make so. */
+    private void announce(T moved, Placement<T> where, DropEffect effect) {
+        gui.bus().publish(PLACED, new Placed(address, moved, where, effect));
+    }
+
+    /** Whether this tree was made reorderable with {@code effect}. */
+    private boolean offers(DropEffect effect) {
+        java.util.Set<DropEffect> given = effects;
+        return given != null && given.contains(effect);
+    }
+
+    /**
+     * Whether putting {@code moved} at {@code where} with {@code effect} is offered, from what is declared and what
+     * the tree can see: never asking the application, because this is asked every frame of a drag.
+     *
+     * <ul>
+     *   <li>The effect is one the tree was made {@link #reorderable} with.
+     *   <li>Not onto, beside or under itself: an item cannot be put inside what it contains, and beside itself is
+     *       where it is. For a copy too, which would be a folder holding a copy of itself, forever.
+     *   <li>The place is among the children of something that {@link Entry#acceptsChildren accepts} them: {@code
+     *       INTO} asks the reference, {@code BEFORE} and {@code AFTER} ask its parent, and the top level always does.
+     *   <li>A move goes somewhere else: not into the parent it is already in, nor just before the sibling after it or
+     *       just after the one before it, each of which is the item exactly where it was. A copy may land there.
+     * </ul>
+     *
+     * <p>Only rows the tree has are consulted: an item carried in from another tree has no row here, and is held
+     * to the second and third rule only as far as the rows that exist can say.
+     */
+    private synchronized boolean placeable(T moved, Placement<T> where, DropEffect effect) {
+        if (!offers(effect)) {
+            return false;
+        }
+        Row mine = rowsByItem.get(moved);
+        if (where.isRoot()) {
+            return effect != DropEffect.MOVE || mine == null || mine.parent != null;
+        }
+        T ref = where.reference();
+        Row at = rowsByItem.get(ref);
+        for (Row r = at; r != null; r = r.parent) {
+            if (r.item.equals(moved)) {
+                return false;   // itself, or something under it
+            }
+        }
+        if (ref.equals(moved)) {
+            return false;
+        }
+        boolean into = where.relation() == Placement.Relation.INTO;
+        Row container = into ? at : at == null ? null : at.parent;
+        boolean accepts = into ? at != null && at.acceptsChildren : container == null || container.acceptsChildren;
+        if (!accepts) {
+            return false;
+        }
+        if (effect != DropEffect.MOVE || mine == null || at == null) {
+            return true;
+        }
+        if (into) {
+            return mine.parent != at;
+        }
+        if (mine.parent != at.parent) {
+            return true;
+        }
+        List<Row> siblings = mine.parent == null ? rootRows : mine.parent.children;
+        int from = siblings.indexOf(mine);
+        int to = siblings.indexOf(at);
+        return where.relation() == Placement.Relation.BEFORE ? to != from + 1 : to != from - 1;
     }
 
     /** A seam line at the top or bottom edge of a row, thin enough to read as "between" rather than "on". */
@@ -1230,6 +1666,16 @@ public final class TreeView<T> implements AutoCloseable {
     }
 
     /**
+     * Frame the tree in a well, the default, or {@link Framing#FLUSH flush} with what is around it: for a tree set into
+     * a card that is already its edge, as a navigator's is. Either way the tree takes the same room.
+     */
+    public TreeView<T> frame(Framing framing) {
+        Framing f = framing == null ? Framing.WELL : framing;
+        root.background(f.fill()).border(Length.rem(0.1f), f.edge());
+        return this;
+    }
+
+    /**
      * Let Ctrl+F search the tree, or stop it. Off by default: the bar is a feature an application chooses, the
      * way a field chooses it by being {@link TextField#multiline multiline}.
      *
@@ -1280,38 +1726,6 @@ public final class TreeView<T> implements AutoCloseable {
         return selected == null ? null : selected.item;
     }
 
-    /** React to the selection landing on an item (click or keyboard). Runs on the handler executor. */
-    public TreeView<T> onSelect(Consumer<T> handler) {
-        this.onSelect = handler == null ? t -> { } : handler;
-        return this;
-    }
-
-    /**
-     * React to a row being clicked: after it is selected, and whether or not it already was. Not the disclosure,
-     * which opens and closes. Runs on the handler executor.
-     *
-     * <p>{@link #onSelect} cannot stand in for this. It is the selection landing, and an arrow key lands it too, so
-     * a tree where a click <em>does</em> something (makes a folder the root, say) would do it at every step of a
-     * walk with the keyboard. Here the click is the command and the keys only move; Enter is {@link #onActivate}.
-     */
-    public TreeView<T> onClick(Consumer<T> handler) {
-        this.onClick = handler == null ? t -> { } : handler;
-        return this;
-    }
-
-    /**
-     * React to the pointer coming onto a row ({@code item}) and leaving the rows altogether ({@code null}). Moving
-     * from one row to the next reports the next one; a null between them is dropped when the next row has already
-     * said so by the time it would go out. Runs on the handler executor.
-     *
-     * <p>For a tree whose rows are previewed before they are chosen: what is under the pointer is what a click
-     * would act on, so showing it there makes the click's consequence visible before it is made.
-     */
-    public TreeView<T> onHover(Consumer<T> handler) {
-        this.onHover = handler == null ? t -> { } : handler;
-        return this;
-    }
-
     /**
      * The fill and ink of a row under the pointer, where they are {@code PANEL} and {@code INK} by default: a quiet
      * hover suits a tree whose click is cheap, and a tree whose click changes a great deal wants a loud one.
@@ -1328,89 +1742,74 @@ public final class TreeView<T> implements AutoCloseable {
         return this;
     }
 
-    /** React to an item being activated (Enter). Runs on the handler executor. */
-    public TreeView<T> onActivate(Consumer<T> handler) {
-        this.onActivate = handler == null ? t -> { } : handler;
-        return this;
-    }
-
     /**
-     * Give every row a context menu. The row is selected first — the menu that opens is about the row under the
-     * pointer, so that row must visibly become the subject — and then this is asked what should be on it, with the
-     * item in hand. That is the context a tree can add that the framework cannot: which <em>thing</em> was clicked.
+     * Put {@code action} on every row's menu, after the tree's own lines and behind a rule, in the order actions are
+     * declared. The row is selected first — the menu that opens is about the row under the pointer, so that row must
+     * visibly become the subject — and choosing the line publishes {@link Chosen} on {@link #CHOSEN}. Which rows
+     * offer it, and which grey it, each row's {@link Entry} says.
      *
-     * <p>Runs on a worker thread at the moment of the click. Contributing nothing still leaves the tree's own
-     * items on the menu; what this adds lands after them.
-     *
-     * <p>This is the free-form door — anything a {@link MenuSink} can express, decided at click time. An
-     * application whose commands <em>are</em> commands on the item, with a mark and an availability, wants
-     * {@link #action} instead: the difference is that an {@code Action} is a peer of Expand and Collapse and the
-     * tree runs it, where a source contributes lines and runs them itself. Either way the action is one of the
-     * tree's: choosing anything from a row's menu supersedes whatever was running.
-     */
-    public TreeView<T> onContextMenu(BiConsumer<T, MenuSink> source) {
-        this.contextMenu = source == null ? (item, menu) -> { } : source;
-        return this;
-    }
-
-    /**
-     * Add a command to every row's menu, after Expand and Collapse and behind a rule. Added actions appear in the
-     * order they were added, each shown, greyed or dropped per item by its own predicates.
+     * <p>Choosing any line stops the walk the tree was running — an expand-all still unfolding underneath the thing
+     * the user chose instead. Work the application started for an earlier {@code Chosen} is the application's to stop.
      *
      * {@snippet :
-     * tree.action(TreeView.Action.<Path>of("×", "Delete", (path, job) -> delete(path))
-     *         .enabledWhen(Files::isWritable)
-     *         .shownWhen(path -> !path.equals(root)));
+     * tree.action(MenuAction.of("delete", "×", "Delete"));
+     * gui.mailbox(TreeView.CHOSEN, tree.address(), chosen -> outbox.send(new Delete((Path) chosen.item())));
      * }
+     *
+     * @throws IllegalArgumentException when the id is one of the tree's own, or another action already has it
      */
-    public TreeView<T> action(Action<T> action) {
-        if (action != null) {
-            extraActions.add(action);
-        }
+    public TreeView<T> action(MenuAction action) {
+        extraActions.add(action);
         return this;
-    }
-
-    /**
-     * The built-in recursive Expand, so an application can retune it: {@code shownWhen}/{@code enabledWhen} to
-     * change when it is offered, or {@code shownWhen(item -> false)} to take it off the menu entirely. Enabled by
-     * default for any row that can open at all.
-     */
-    public Action<T> expandAction() {
-        return expandAction;
-    }
-
-    /** The built-in recursive Collapse — the twin of {@link #expandAction}, enabled for any row that is open. */
-    public Action<T> collapseAction() {
-        return collapseAction;
     }
 
     /**
      * Expand {@code item} and everything under it, exactly as the menu's Expand does — including becoming this
      * tree's current action, so it supersedes whatever was running and is itself superseded by the next one.
      *
-     * <p>The walk runs on the handler executor because every level of it may fetch children, and it opens each
-     * level as it lands rather than at the end: a deep tree over a slow source unfolds, which is both the honest
-     * report of what is happening and what makes stopping it half way meaningful.
+     * <p>Every level may have to be asked for, so the walk opens each level as its reply lands rather than at the
+     * end: a deep tree over a slow source unfolds, which is both the honest report of what is happening and what
+     * makes stopping it half way meaningful.
      */
     public TreeView<T> expandAll(T item) {
-        Job job = begin();
-        gui.handlers().execute(() -> expandDeep(item, job));
+        expandDeep(item, begin());
         return this;
     }
 
-    /** Collapse {@code item} and everything under it — the twin of {@link #expandAll}, and never any I/O. */
+    /** Collapse {@code item} and everything under it — the twin of {@link #expandAll}, and never a request. */
     public TreeView<T> collapseAll(T item) {
-        Job job = begin();
-        gui.handlers().execute(() -> collapseDeep(item, job));
+        collapseDeep(item, begin());
         return this;
     }
 
     /**
      * Expand {@code item} programmatically. Works top-down: an item whose ancestors have never been expanded has
      * no row yet (its parent's children were never asked for), and then this is a no-op — expand the path from
-     * the root downward. The first expansion fetches children asynchronously, like any other.
+     * the root downward, or {@link #revealPath reveal} it. The first expansion asks for its children, like any other.
+     *
+     * <p>The roots are the exception, and are waited for: a tree asks for them when it is built and has none until
+     * they land, so a root expanded straight after building the tree opens when they do.
      */
     public synchronized TreeView<T> expand(T item) {
+        if (!rootsListed) {
+            rootWaiters.add(new Walk(() -> true) {
+                @Override
+                void start() {
+                    expand(item);
+                }
+
+                @Override
+                boolean arrive(Row row) {
+                    return true;
+                }
+
+                @Override
+                boolean exhausted() {
+                    return false;
+                }
+            });
+            return this;
+        }
         Row r = rowsByItem.get(item);
         if (r != null && r.canExpand && !r.expanded) {
             toggleLocked(r);
@@ -1432,31 +1831,29 @@ public final class TreeView<T> implements AutoCloseable {
      * the tree to get there, where {@link #select} only ever lands on a row that is already open.
      *
      * <p><b>{@code chain} is the way down, not a search.</b> Its first item is a root row, each next is a child of
-     * the one before, and the last is the one to select. The tree cannot work that out for itself — a
-     * {@link Source} describes children and never parents — so the application, which knows its own hierarchy,
-     * says it. A caller with only the item and no way down wants {@link #expandAll} or the find bar instead.
+     * the one before, and the last is the one to select. The tree cannot work that out for itself — it is told
+     * children and never parents — so the application, which knows its own hierarchy, says it. A caller with only
+     * the item and no way down wants {@link #expandAll} or the find bar instead.
      *
-     * <p>The walk runs on the handler executor and opens each level as it lands, exactly as {@link #expandAll}
-     * does and for the same reason: every level may fetch children, and a fetch belongs nowhere near the frame
-     * loop. It is an action like any other, so it supersedes whatever was running and gives way to whatever comes
-     * next.
+     * <p><b>A chain of replies.</b> Each level is opened, and asked for if it has not been, and the walk goes on from
+     * it when its {@link Children} land: so it opens each level as it arrives, exactly as {@link #expandAll} does. It
+     * is an action like any other, so it supersedes whatever was running and gives way to whatever comes next.
      *
-     * <p>{@code then} runs once the walk has ended, on the handler executor — somewhere to put whatever wanted the
-     * row that now exists, a mark on it being the case this was written for. It does not run when the walk was
-     * superseded, which is the same rule the walk itself obeys.
+     * <p>When the walk has ended it is announced on {@link #REVEALED}, so whatever wanted the row that now exists (a mark
+     * on it being the case this was written for) hears it in the frame it landed. A superseded walk announces
+     * nothing, which is the same rule the walk itself obeys.
      *
      * <p><b>Not reaching the end is not an error.</b> A level the source no longer offers stops the walk where it
-     * is: the tree is left open as far as it got, nothing is selected, and {@code then} still runs — the caller
-     * asked about a hierarchy that has moved under it, and that is an answer rather than a failure.
+     * is: the tree is left open as far as it got, nothing is selected, and it is still announced, as not reached —
+     * the caller asked about a hierarchy that has moved under it, and that is an answer rather than a failure.
+     *
+     * @throws IllegalArgumentException when {@code chain} is empty
      */
-    public TreeView<T> revealPath(List<T> chain, Runnable then) {
-        List<T> path = List.copyOf(chain);
-        Job job = begin();
-        gui.handlers().execute(() -> {
-            if (revealChain(path, job) && then != null) {
-                then.run();
-            }
-        });
+    public TreeView<T> revealPath(List<T> chain) {
+        if (chain.isEmpty()) {
+            throw new IllegalArgumentException("a reveal is a way down to something: the chain is empty");
+        }
+        new RevealWalk(begin(), List.copyOf(chain)).run();
         return this;
     }
 
@@ -1495,6 +1892,10 @@ public final class TreeView<T> implements AutoCloseable {
         if (bar != null) {
             bar.close();   // takes the bar's own claims with it; the root's Ctrl+F goes with the root below
         }
+        childrenSub.close();
+        marksSub.close();
+        refreshSub.close();
+        begin();   // a walk waiting on a level stays waiting; the reply that would resume it no longer arrives
         synchronized (this) {
             for (Row r : rowsByItem.values()) {
                 gui.releaseNode(r.rowNode);
@@ -1598,8 +1999,7 @@ public final class TreeView<T> implements AutoCloseable {
             }
             item = selected.item;
         }
-        Consumer<T> handler = onActivate;
-        gui.handlers().execute(() -> handler.accept(item));
+        gui.bus().publish(ACTIVATED, new Activated(address, item));
     }
 
     /**
@@ -1620,18 +2020,13 @@ public final class TreeView<T> implements AutoCloseable {
     // --- find: Ctrl+F, and the search that is an action like any other ---
 
     /**
-     * How a row answers a query. The default is a case-insensitive substring of the row's label, which is what a
-     * user typing into a find bar means by "search" — and wrong for exactly the applications that know better: a
-     * filesystem tree searched by full path, a symbol tree searched by kind, an inventory searched by SKU.
-     *
-     * <p>Asked on the handler executor, once per row the walk reaches, so it may read application state — and
-     * should be cheap, because the walk's other half is already paying for I/O.
+     * Whether {@code row} answers {@code query}: its entry's {@link Entry#find find} text holding the query, ignoring
+     * case. The label unless the entry says otherwise, which is what a user typing into a find bar means by "search";
+     * an application that knows better (a filesystem searched by whole path, an inventory by SKU) says so on the
+     * entry, so the walk runs nothing of the application's in the frame.
      */
-    public TreeView<T> matcher(BiPredicate<T, String> test) {
-        this.matcher = test == null
-                ? (item, query) -> source.label(item).toLowerCase().contains(query.toLowerCase())
-                : test;
-        return this;
+    private boolean matches(Row row, String query) {
+        return row.key.toLowerCase().contains(query.toLowerCase());
     }
 
     /**
@@ -1686,10 +2081,11 @@ public final class TreeView<T> implements AutoCloseable {
             return;
         }
         built().status("Searching…");
-        Row found = forward ? findFrom(query, from, job) : findBack(query, from, job);
-        if (!job.live()) {
-            return;   // superseded mid-walk: the search that replaced this one owns the status line now
-        }
+        (forward ? new FindForward(job, query, from) : new FindBack(job, query, from)).run();
+    }
+
+    /** A search has ended with {@code found}, or with nothing: say so, and go to it. */
+    private void found(Row found) {
         built().status(found == null ? "No match" : "");
         if (found != null) {
             reveal(found);
@@ -1698,47 +2094,179 @@ public final class TreeView<T> implements AutoCloseable {
     }
 
     /**
-     * Walk the whole hierarchy in document order looking for {@code query}, fetching levels as it reaches them and
-     * wrapping once past the end when it started somewhere other than the top.
+     * A walk over the hierarchy in document order, which goes down into each row it reaches once that row's children
+     * are here — asking for them, and waiting for the reply, when they are not.
      *
-     * <p>It expands nothing on the way. Materialising a row and opening it are two different things — the first is
-     * "what is under here", the second is "show it" — and a search that opened every row it passed would leave the
-     * tree unfolded behind it. Only the path to the answer is opened, by {@link #reveal}.
+     * <p><b>Resumable, not blocking.</b> A level that has to be asked for ends the walk's turn: it waits on that row,
+     * and the reply resumes it where it stopped. Nothing waits on a thread, so the tree never blocks the frame and a
+     * slow source only makes the walk slower. A walk superseded while it waits finds out when it resumes and asks for
+     * nothing more.
+     *
+     * <p>The row is arrived at, then gone down into, and the two are separate steps because a walk that stopped
+     * between them for a reply must not arrive twice: a search would test the row again, and the anchor it is
+     * stepping on from would answer itself.
      */
-    private Row findFrom(String query, T from, Job job) {
-        BiPredicate<T, String> test = matcher;
-        Deque<Row> pending = new ArrayDeque<>();
-        pushRoots(pending);
-        boolean past = from == null;
-        boolean wrapped = past;
-        while (job.live()) {
-            Row row = pending.poll();
-            if (row == null) {
-                if (wrapped) {
-                    return null;
+    private abstract class Walk implements Runnable {
+
+        final Job job;
+        final Deque<Row> pending = new ArrayDeque<>();
+        /** The row arrived at whose children the walk goes down into next. */
+        private Row below;
+        private boolean started;
+
+        Walk(Job job) {
+            this.job = job;
+        }
+
+        /** Where the walk starts, once the roots are here. */
+        abstract void start();
+
+        /** Arrive at {@code row}; @return whether to go on, which a search that has its answer does not. */
+        abstract boolean arrive(Row row);
+
+        /** Whether to go down into {@code row} at all. */
+        boolean descends(Row row) {
+            return row.canExpand;
+        }
+
+        /** Nothing is left to walk; @return whether the walk carries on, having pushed more to walk. */
+        abstract boolean exhausted();
+
+        /** On the GUI thread: where the walk began, and from every reply it waited for. */
+        @Override
+        public final void run() {
+            if (!job.live()) {
+                return;
+            }
+            if (!started) {
+                if (!awaitRoots(this)) {
+                    return;
                 }
-                // Round again from the top, now matching everything: the anchor was never reached from where we
-                // started, or there was nothing after it. Once only — the second pass ends the search either way.
-                wrapped = true;
-                past = true;
-                pushRoots(pending);
-                continue;
+                started = true;
+                start();
             }
-            if (!past) {
-                past = row.item.equals(from);   // the anchor itself is the one row a "next" must not answer with
-            } else if (test.test(row.item, query)) {
-                return row;
-            }
-            if (claimFetch(row)) {
-                materialize(row);   // outside the monitor: the search pays the same I/O an expansion would
-            }
-            synchronized (this) {
-                for (int i = row.children.size() - 1; i >= 0; i--) {
-                    pending.push(row.children.get(i));
+            while (job.live()) {
+                if (below != null) {
+                    if (!awaitChildren(below, this)) {
+                        return;
+                    }
+                    synchronized (TreeView.this) {
+                        // Reversed onto the stack, so the subtree comes off it top down — the order it is drawn in.
+                        for (int i = below.children.size() - 1; i >= 0; i--) {
+                            pending.push(below.children.get(i));
+                        }
+                    }
+                    below = null;
+                    continue;
+                }
+                Row row = pending.poll();
+                if (row == null) {
+                    if (exhausted()) {
+                        continue;
+                    }
+                    return;
+                }
+                if (!arrive(row)) {
+                    return;
+                }
+                if (descends(row)) {
+                    below = row;
                 }
             }
         }
-        return null;
+
+        /** Put the roots on the stack, top first. */
+        final void pushRoots() {
+            synchronized (TreeView.this) {
+                pending.clear();
+                for (int i = rootRows.size() - 1; i >= 0; i--) {
+                    pending.push(rootRows.get(i));
+                }
+            }
+        }
+    }
+
+    /**
+     * Whether the roots are here; when they are not, {@code walk} is resumed once they are.
+     */
+    private synchronized boolean awaitRoots(Walk walk) {
+        if (rootsListed) {
+            return true;
+        }
+        rootWaiters.add(walk);
+        return false;
+    }
+
+    /**
+     * Whether {@code row}'s children are here, so a walk can go down into it; when they are not, they are asked for if
+     * nobody has, and {@code walk} is resumed once they land. A row that cannot open has none, and is here already.
+     */
+    private boolean awaitChildren(Row row, Walk walk) {
+        T ask;
+        synchronized (this) {
+            if (!row.canExpand || row.listed) {
+                return true;
+            }
+            row.waiters.add(walk);
+            ask = claimFetch(row) ? row.item : null;
+        }
+        if (ask != null) {
+            ask(ask);
+        }
+        return false;
+    }
+
+    /**
+     * Search forward for {@code query} from {@code from} (or from the top when it is null), wrapping once past the
+     * end when it started somewhere other than the top, and stop at the first row that answers.
+     *
+     * <p>It expands nothing on the way. Listing a row and opening it are two different things — the first is "what
+     * is under here", the second is "show it" — and a search that opened every row it passed would leave the tree
+     * unfolded behind it. Only the path to the answer is opened, by {@link #reveal}.
+     */
+    private final class FindForward extends Walk {
+        private final String query;
+        private final T from;
+        private boolean past;
+        private boolean wrapped;
+
+        FindForward(Job job, String query, T from) {
+            super(job);
+            this.query = query;
+            this.from = from;
+            this.past = from == null;
+            this.wrapped = past;
+        }
+
+        @Override
+        void start() {
+            pushRoots();
+        }
+
+        @Override
+        boolean arrive(Row row) {
+            if (!past) {
+                past = row.item.equals(from);   // the anchor itself is the one row a "next" must not answer with
+            } else if (matches(row, query)) {
+                found(row);
+                return false;
+            }
+            return true;
+        }
+
+        @Override
+        boolean exhausted() {
+            if (wrapped) {
+                found(null);
+                return false;
+            }
+            // Round again from the top, now matching everything: the anchor was never reached from where we started,
+            // or there was nothing after it. Once only — the second pass ends the search either way.
+            wrapped = true;
+            past = true;
+            pushRoots();
+            return true;
+        }
     }
 
     /**
@@ -1751,45 +2279,46 @@ public final class TreeView<T> implements AutoCloseable {
      * to a match. Only the wrap case is a full walk, and only because "the last match of all" says the whole tree.
      * It is an action like every other, so the next keystroke overtakes it where it stands.
      */
-    private Row findBack(String query, T from, Job job) {
-        BiPredicate<T, String> test = matcher;
-        Deque<Row> pending = new ArrayDeque<>();
-        pushRoots(pending);
-        Row before = null;   // the last match strictly before the anchor
-        Row last = null;     // and the last match anywhere, which is what the wrap lands on
-        boolean past = from == null;
-        while (job.live()) {
-            Row row = pending.poll();
-            if (row == null) {
-                return before != null ? before : last;   // nothing behind the anchor, so round to the end
-            }
+    private final class FindBack extends Walk {
+        private final String query;
+        private final T from;
+        private boolean past;
+        private Row before;   // the last match strictly before the anchor
+        private Row last;     // and the last match anywhere, which is what the wrap lands on
+
+        FindBack(Job job, String query, T from) {
+            super(job);
+            this.query = query;
+            this.from = from;
+            this.past = from == null;
+        }
+
+        @Override
+        void start() {
+            pushRoots();
+        }
+
+        @Override
+        boolean arrive(Row row) {
             boolean anchor = !past && row.item.equals(from);
             past |= anchor;
-            if (test.test(row.item, query)) {
+            if (matches(row, query)) {
                 last = row;      // a wrap lands on the last match anywhere — including the anchor itself, which is
                 if (!past) {     // the right answer when it is the only match there is
                     before = row;
                 }
             }
             if (anchor && before != null) {
-                return before;   // nothing further on can be nearer to the anchor from behind
+                found(before);   // nothing further on can be nearer to the anchor from behind
+                return false;
             }
-            if (claimFetch(row)) {
-                materialize(row);   // the same I/O an expansion would pay, for the same reason
-            }
-            synchronized (this) {
-                for (int i = row.children.size() - 1; i >= 0; i--) {
-                    pending.push(row.children.get(i));
-                }
-            }
+            return true;
         }
-        return null;
-    }
 
-    private synchronized void pushRoots(Deque<Row> pending) {
-        pending.clear();
-        for (int i = rootRows.size() - 1; i >= 0; i--) {
-            pending.push(rootRows.get(i));
+        @Override
+        boolean exhausted() {
+            found(before != null ? before : last);   // nothing behind the anchor, so round to the end
+            return false;
         }
     }
 
@@ -1802,87 +2331,41 @@ public final class TreeView<T> implements AutoCloseable {
             }
         }
         for (int i = ancestors.size() - 1; i >= 0; i--) {
-            Row ancestor = ancestors.get(i);
-            if (openLocked(ancestor)) {
-                materialize(ancestor);   // it was walked through, so this is all but unreachable — and correct
-            }
+            openLocked(ancestors.get(i));   // walked through, so listed: this opens and asks for nothing
         }
     }
 
     // --- actions: the row menu, and the one-at-a-time rule ---
 
-    /** What the tree itself puts on a row's menu: its own two commands, then whatever the application added. */
-    private void rowMenu(T item, MenuSink menu) {
-        offer(expandAction, item, menu);
-        offer(collapseAction, item, menu);
-        // Unconditional: a rule that would open the menu or double another is dropped by the sink, so this needs
-        // no test for whether anything above it or below it survived its own predicates.
-        menu.separator();
-        offer(cutAction, item, menu);
-        offer(copyAction, item, menu);
-        offer(pasteAction, item, menu);
-        menu.separator();
-        for (Action<T> action : extraActions) {
-            offer(action, item, menu);
+    /**
+     * A row's menu: the tree's own lines, then the application's actions, each offered as the row's entry last said.
+     * The row is the GUI thread's, as is this, so what the entry said is read without asking anyone.
+     */
+    private void rowMenu(Row row, MenuSink menu) {
+        for (int i = 0; i < lines.size(); i++) {
+            Line<T> line = lines.get(i);
+            if (line.shown().test(row.item) && !row.hidden.contains(line.id())) {
+                T item = row.item;
+                boolean enabled = line.enabled().test(item) && !row.greyed.contains(line.id());
+                menu.item(new MenuItem(null, line.label(), () -> line.body().accept(item, begin()), enabled,
+                        line.mark()));
+            }
+            // A rule after Collapse and after Paste. Unconditional: a rule that would open the menu or double
+            // another is dropped by the sink, so this needs no test of what survived above or below it.
+            if (line.id().equals(COLLAPSE) || line.id().equals(PASTE)) {
+                menu.separator();
+            }
         }
-    }
-
-    /** Put {@code action} on {@code menu} for {@code item} — shown or not, enabled or not, as it says. */
-    private void offer(Action<T> action, T item, MenuSink menu) {
-        if (!action.shown.test(item)) {
-            return;
-        }
-        menu.item(new MenuItem(action.icon(), action.label(), () -> action.body.run(item, begin()),
-                action.enabled.test(item), action.mark()));
+        extraActions.offer(menu, gui, CHOSEN, Chosen::new, address, row.item, row.hidden, row.greyed, this::begin);
     }
 
     /**
-     * Claim the tree for a new action and hand back its job. One increment: everything running is now superseded,
+     * Claim the tree for a new walk and hand back its job. One increment: everything running is now superseded,
      * and this is what the next {@link Job#live()} will be measured against.
      */
     private Job begin() {
         long generation = actions.incrementAndGet();
         return () -> actions.get() == generation;
-    }
-
-    /**
-     * The sink handed to a {@link #onContextMenu} source: the same menu, with each contributed action made one of
-     * the tree's. A source that adds "Delete" gets the one-at-a-time rule for free, and a long expand does not
-     * carry on unfolding underneath the thing the user chose instead.
-     */
-    private final class Preempting implements MenuSink {
-
-        private final MenuSink delegate;
-
-        Preempting(MenuSink delegate) {
-            this.delegate = delegate;
-        }
-
-        @Override
-        public ClickEvent event() {
-            return delegate.event();
-        }
-
-        @Override
-        public dev.vexelray.gui.core.edit.History history() {
-            return delegate.history();   // or a source's edit items would stop being undoable inside a tree
-        }
-
-        @Override
-        public MenuSink item(MenuItem item) {
-            // Every command at any depth: a submenu's lines are the tree's too.
-            delegate.item(item.wrapActions(action -> () -> {
-                begin();
-                action.run();
-            }));
-            return this;
-        }
-
-        @Override
-        public MenuSink separator() {
-            delegate.separator();
-            return this;
-        }
     }
 
     /** Whether {@code item}'s row can open at all — Expand's default availability. */
@@ -1898,109 +2381,123 @@ public final class TreeView<T> implements AutoCloseable {
     }
 
     /**
-     * Open {@code item} and its whole subtree, depth first, fetching each level as it is reached.
-     *
-     * <p>An explicit stack rather than recursion, and one task rather than one per row: the walk is a single piece
-     * of work that happens to have levels, and cutting it into tasks would put the check that stops it — and the
-     * fetch that blocks it — in the wrong place. {@code job} is asked between rows, which is between fetches.
-     *
-     * <p>Materialisation is claimed under the monitor and performed outside it, so a slow {@link Source#children}
-     * never holds the lock the frame's stages need. A row whose fetch is already in flight from a click is left to
-     * that fetch; the walk finds its children when it gets there, or not at all if it gets there first.
+     * Open {@code item} and its whole subtree, depth first, asking for each level as it is reached and going on from
+     * it when it lands. {@code job} is asked between rows and whenever a reply resumes the walk, so a superseded
+     * expand asks for nothing more. A row whose children were already asked for, by a click, is waited on rather than
+     * asked again.
      */
     private void expandDeep(T item, Job job) {
-        Deque<Row> pending = new ArrayDeque<>();
-        synchronized (this) {
-            Row row = rowsByItem.get(item);
-            if (row == null) {
-                return;
-            }
-            pending.push(row);
-        }
-        while (job.live()) {
-            Row row = pending.poll();
-            if (row == null) {
-                return;
-            }
-            if (openLocked(row)) {
-                materialize(row);   // may touch a disk: outside the monitor, on the handler executor
-            }
-            synchronized (this) {
-                // Reversed onto the stack, so the subtree comes off it top down — the order it is drawn in, and
-                // the order a source is asked to produce it in.
-                for (int i = row.children.size() - 1; i >= 0; i--) {
-                    pending.push(row.children.get(i));
+        new Walk(job) {
+            @Override
+            void start() {
+                synchronized (TreeView.this) {
+                    Row row = rowsByItem.get(item);
+                    if (row != null) {
+                        pending.push(row);
+                    }
                 }
             }
-        }
-    }
 
-    /**
-     * Walk {@code path} from its root row down, opening every level but the last, and select what it ends on.
-     *
-     * <p><b>Each level is opened and fetched before the next is looked for</b>, which is the whole of why this is
-     * a walk on this thread rather than a handful of {@link #expand} calls: a row's children do not exist until
-     * its fetch has landed, so a caller that asked for the levels one after another would be looking for rows
-     * nobody had built yet, and would find the deepest of them missing every time.
-     *
-     * <p>Materialisation is claimed under the monitor and performed outside it, as {@link #expandDeep} does — a
-     * slow {@link Source#children} must not hold the lock the frame's stages need. A level whose fetch is already
-     * in flight from a click is left to that fetch, and this finds its children built or not at all.
-     *
-     * @return whether the walk reached its end rather than being superseded part way down
-     */
-    private boolean revealChain(List<T> path, Job job) {
-        for (int i = 0; i < path.size() - 1; i++) {
-            if (!job.live()) {
+            @Override
+            boolean arrive(Row row) {
+                openLocked(row);
+                return true;
+            }
+
+            @Override
+            boolean exhausted() {
                 return false;
             }
-            Row row;
-            synchronized (this) {
-                row = rowsByItem.get(path.get(i));
-            }
-            if (row == null) {
-                return true;   // a level that is no longer there: as far as this goes, and the caller still runs
-            }
-            if (openLocked(row)) {
-                materialize(row);   // may touch a disk: outside the monitor, on the handler executor
-            }
-        }
-        if (!job.live()) {
-            return false;
-        }
-        Row target;
-        synchronized (this) {
-            target = path.isEmpty() ? null : rowsByItem.get(path.getLast());
-        }
-        if (target != null) {
-            select(target, true);
-        }
-        return true;
+        }.run();
     }
 
     /**
-     * Put {@code row} in the expanded state, whatever state it was in; @return whether its children still have to
-     * be fetched — in which case the caller does that (and {@link #materialize} does the opening, once there is
-     * something to open onto).
+     * Walk a path from its root row down, opening every level but the last, and select what it ends on.
+     *
+     * <p><b>Each level is opened and listed before the next is looked for</b>, which is the whole of why this is
+     * a walk rather than a handful of {@link #expand} calls: a row's children do not exist until its reply has
+     * landed, so a caller that asked for the levels one after another would be looking for rows nobody had built
+     * yet, and would find the deepest of them missing every time.
      */
-    private synchronized boolean openLocked(Row row) {
-        if (!row.canExpand) {
+    private final class RevealWalk extends Walk {
+        private final List<T> path;
+        private int at;
+
+        RevealWalk(Job job, List<T> path) {
+            super(job);
+            this.path = path;
+        }
+
+        @Override
+        void start() {
+            // Not the stack: a path is one row per level, found by item as each level lands.
+        }
+
+        @Override
+        boolean arrive(Row row) {
+            return true;
+        }
+
+        @Override
+        boolean exhausted() {
+            while (at < path.size() - 1) {
+                Row row;
+                synchronized (TreeView.this) {
+                    row = rowsByItem.get(path.get(at));
+                }
+                if (row == null) {
+                    break;   // a level that is no longer there: as far as this goes, and the caller still runs
+                }
+                openLocked(row);
+                at++;
+                if (!awaitChildren(row, this)) {
+                    return false;   // resumed by the reply, which finds this level done and looks for the next
+                }
+            }
+            boolean reached = false;
+            if (at >= path.size() - 1) {
+                Row target;
+                synchronized (TreeView.this) {
+                    target = rowsByItem.get(path.getLast());
+                }
+                if (target != null) {
+                    select(target, true);
+                    reached = true;
+                }
+            }
+            gui.bus().publish(REVEALED, new Revealed(address, path.getLast(), reached));
             return false;
         }
-        boolean fetch = claimFetch(row);
-        if (!row.expanded) {
-            row.expanded = true;
-            row.showDisclosure();
-        }
-        if (!fetch) {
-            open(row, 1f);
-        }
-        refreshVisible();
-        return fetch;
     }
 
     /**
-     * Claim {@code row}'s one fetch without opening it; @return whether the caller must now materialise it.
+     * Put {@code row} in the expanded state, whatever state it was in, asking for its children if nobody has. Its
+     * subtree opens now when they are here, and when they land when they are not: there is nothing to open onto
+     * before that.
+     */
+    private void openLocked(Row row) {
+        boolean ask;
+        synchronized (this) {
+            if (!row.canExpand) {
+                return;
+            }
+            ask = claimFetch(row);
+            if (!row.expanded) {
+                row.expanded = true;
+                row.showDisclosure();
+            }
+            if (row.listed) {
+                open(row, 1f);
+            }
+            refreshVisible();
+        }
+        if (ask) {
+            ask(row.item);
+        }
+    }
+
+    /**
+     * Claim {@code row}'s one request without opening it; @return whether the caller must now send it.
      *
      * <p>The two are separate because searching needs the first without the second: a walk has to know what is
      * under a row to keep going, and must leave it looking exactly as it found it.
@@ -2095,8 +2592,7 @@ public final class TreeView<T> implements AutoCloseable {
         // view would align the top of a folder's contents rather than the folder.
         row.rowNode.scrollIntoView();
         if (notify) {
-            Consumer<T> handler = onSelect;
-            gui.handlers().execute(() -> handler.accept(item));
+            gui.bus().publish(SELECTED, new Selected(address, item));
         }
     }
 
@@ -2116,9 +2612,8 @@ public final class TreeView<T> implements AutoCloseable {
     }
 
     /**
-     * Flip {@code row} between expanded and collapsed. The visual flip is immediate; the first expansion also
-     * dispatches the children fetch to the handler executor, because {@link Source#children} may do I/O and this
-     * method runs on the GUI thread when the flip came from a key. Collapsing with the selection inside the
+     * Flip {@code row} between expanded and collapsed. The visual flip is immediate; the first expansion also asks
+     * for the row's children, and the subtree opens when they land. Collapsing with the selection inside the
      * subtree pulls the selection up onto the collapsed row, so it never rests on a hidden node.
      *
      * <p><b>A flip is an action too</b>, and takes the tree over like any other. Clicking a disclosure glyph or
@@ -2133,17 +2628,17 @@ public final class TreeView<T> implements AutoCloseable {
         begin();
         row.expanded = !row.expanded;
         row.showDisclosure();
-        if (row.expanded && !row.materialized) {
-            row.materialized = true;
-            gui.handlers().execute(() -> materialize(row));
+        if (row.expanded && !row.listed) {
+            if (claimFetch(row)) {
+                ask(row.item);
+            }
             refreshVisible();
             return;
         }
         open(row, row.expanded ? 1f : 0f);
         refreshVisible();
         if (!row.expanded && selected != null && isUnder(selected, row)) {
-            Row landed = row;
-            gui.handlers().execute(() -> select(landed, true));
+            select(row, true);
         }
     }
 
@@ -2157,8 +2652,8 @@ public final class TreeView<T> implements AutoCloseable {
      * shortcut — displacing the rows below with a transform would move them without making room, so the tree's
      * own extent, its overflow and its scrollbar would all describe a tree that is not the one on screen.
      */
-    public synchronized TreeView<T> motion(Ramp motion) {
-        this.motion = motion;
+    public synchronized TreeView<T> motion(Timing timing) {
+        this.motion = Ramp.of(gui, timing);
         return this;
     }
 
@@ -2233,30 +2728,24 @@ public final class TreeView<T> implements AutoCloseable {
         return em;
     }
 
-    /** Fetch and build {@code row}'s children — handler executor, so the source is free to touch a disk. */
-    private void materialize(Row row) {
-        List<T> kids = source.children(row.item);
-        synchronized (this) {
-            for (T item : kids) {
-                Row r = new Row(item, row);
-                row.children.add(r);
-                rowsByItem.put(item, r);
-                row.kidsBox.append(r.entry);
-            }
-            if (row.children.isEmpty()) {
-                // The source promised children and delivered none (an emptied directory): demote to a leaf.
-                row.expanded = false;
-                row.chevron.icon(null);
-            }
-            // The animation starts here rather than at the toggle: until the fetch lands there is nothing to
-            // open, and a subtree animating to a height of zero content would be a flourish over an empty box.
-            open(row, row.expanded ? 1f : 0f);
-            refreshVisible();
+    /** Build {@code row}'s children from the level that has just arrived for it. Guarded by {@code this}. */
+    private void materialize(Row row, List<Entry> level) {
+        row.listed = true;
+        for (Entry entry : level) {
+            Row r = new Row(item(entry), entry, row);
+            row.children.add(r);
+            rowsByItem.put(r.item, r);
+            row.kidsBox.append(r.entry);
         }
-        // The rows that just appeared have boxes but no marks in them. Outside the monitor, because asking what
-        // is ticked is asking the application, and holding the tree's lock across that is how a widget
-        // deadlocks against the model it is reading.
-        recheck();
+        if (row.children.isEmpty()) {
+            // The application said it opens and listed nothing under it (an emptied directory): demote to a leaf.
+            row.expanded = false;
+            row.chevron.icon(null);
+        }
+        // The animation starts here rather than at the toggle: until the reply lands there is nothing to open,
+        // and a subtree animating to a height of zero content would be a flourish over an empty box.
+        open(row, row.expanded ? 1f : 0f);
+        refreshVisible();
     }
 
     /** Recompute the flattened visible-row list — the thing the keyboard walks. Guarded by {@code this}. */
@@ -2304,8 +2793,8 @@ public final class TreeView<T> implements AutoCloseable {
      * followed by Escape or by another cut a non-event — rather than a hole in the tree waiting to be filled.
      */
     private void take(T item, DropEffect effect) {
-        if (item == null || reorder == null) {
-            return;   // nothing to take, or a tree that does not accept transfers at all
+        if (item == null || !offers(effect)) {
+            return;   // nothing to take, or a tree that does not take this kind of transfer at all
         }
         gui.transfer(new Transfer(Payload.of(itemType, item), effect));
     }
@@ -2324,9 +2813,9 @@ public final class TreeView<T> implements AutoCloseable {
      * onto a file means "beside this file"; and the two are told apart by the same answer the middle band of a
      * row is offered on.
      *
-     * <p>The application refuses through {@link Reorder} exactly as it does for a drop, so a paste that cannot
-     * happen does nothing rather than doing something unexpected — and a copy of an item a model cannot
-     * duplicate is refused rather than quietly turning into a move.
+     * <p>Offered on the same terms as a drop ({@link #placeable}), so a paste that cannot happen does nothing rather
+     * than doing something unexpected — and a copy in a tree that was not made reorderable with {@code COPY} is
+     * refused rather than quietly turning into a move. What lands is {@link #PLACED}, as a drop is.
      */
     private void paste(T target) {
         Transfer held = gui.transfer();
@@ -2334,19 +2823,15 @@ public final class TreeView<T> implements AutoCloseable {
             return;
         }
         T moved = held.payload().as(itemType).orElse(null);
-        History history = gui.dropHistory();
-        if (moved == null || history == null) {
-            // No history is the same refusal a drop makes: a transfer the user could not take back would be the
-            // one edit in the framework with no way out, and silently so.
+        if (moved == null) {
             return;
         }
         Placement<T> where = target == null ? Placement.intoRoot()
-                : source.acceptsChildren(target) ? Placement.into(target) : Placement.after(target);
-        Change change = resolve(moved, where, held.effect());
-        if (change == null) {
+                : acceptsChildren(target) ? Placement.into(target) : Placement.after(target);
+        if (!placeable(moved, where, held.effect())) {
             return;
         }
-        history.perform(change);
+        announce(moved, where, held.effect());
         if (held.effect() == DropEffect.MOVE) {
             // A cut lands once. A copy stays in hand, because pasting the same thing into three places is the
             // reason copy exists and making the user press Ctrl+C between each would be answering that with no.
@@ -2356,16 +2841,14 @@ public final class TreeView<T> implements AutoCloseable {
 
     /** Space on the selected row: the same command the box's click runs, reached from the keyboard. */
     private void toggleChecked() {
-        Checkable<T> c = checkable;
         Row row;
         synchronized (this) {
             row = selected;
         }
-        if (c == null || row == null) {
+        if (!checkable || row == null) {
             return;
         }
-        c.toggled(row.item);
-        recheck();
+        gui.bus().publish(TOGGLED, new Toggled(address, row.item));
     }
 
     private void restyle(Row row, InteractionState state) {
@@ -2411,8 +2894,9 @@ public final class TreeView<T> implements AutoCloseable {
 
     /**
      * Track which row the pointer is on and report changes. The leave of one row and the enter of the next can
-     * arrive in either order, so a leave only clears the row that is still the hovered one, and the null goes out
-     * after a beat in which the next enter may land: off the rows altogether is the one null anyone hears.
+     * arrive in either order, so a leave only clears the row that is still the hovered one; and {@link #HOVERED} is
+     * state, so a leave and the next enter in one frame are heard as the enter: off the rows altogether is the one
+     * null anyone hears.
      */
     private void hovered(Row row, boolean over) {
         synchronized (this) {
@@ -2428,17 +2912,6 @@ public final class TreeView<T> implements AutoCloseable {
                 hoveredRow = null;
             }
         }
-        if (over) {
-            onHover.accept(row.item);
-            return;
-        }
-        gui.handlers().execute(() -> {
-            synchronized (this) {
-                if (hoveredRow != null) {
-                    return;   // the pointer went straight onto another row, which has said so
-                }
-            }
-            onHover.accept(null);
-        });
+        gui.bus().publish(HOVERED, new Hovered(address, over ? row.item : null));
     }
 }

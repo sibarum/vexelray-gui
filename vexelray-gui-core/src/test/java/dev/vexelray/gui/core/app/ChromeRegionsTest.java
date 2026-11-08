@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core.app;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.WindowRegion;
@@ -36,7 +37,7 @@ class ChromeRegionsTest {
                 .windowRegion(WindowRegion.DRAG)
                 .children(spacer, button);
         gui.root().children(bar);
-        return ChromeRegions.of(gui.frame(400f, 300f, ChromeRegionsTest::noText));
+        return ChromeRegions.of(Seams.of(gui).frame(400f, 300f, ChromeRegionsTest::noText));
     }
 
     @Test
@@ -70,7 +71,7 @@ class ChromeRegionsTest {
             gui.root().children(gui.box().width(Length.FILL).height(Length.dp(32))
                     .windowRegion(WindowRegion.DRAG).children(max));
 
-            HitRegions regions = ChromeRegions.of(gui.frame(400f, 300f, ChromeRegionsTest::noText));
+            HitRegions regions = ChromeRegions.of(Seams.of(gui).frame(400f, 300f, ChromeRegionsTest::noText));
 
             assertNotNull(regions.maximizeButton(), "reported to the window manager as the maximize affordance");
             assertTrue(regions.interactive().contains(regions.maximizeButton()),
@@ -86,10 +87,10 @@ class ChromeRegionsTest {
         try (Gui gui = new Gui(Atchung.create())) {
             Node bar = gui.box().width(Length.FILL).height(Length.dp(32)).windowRegion(WindowRegion.DRAG);
             gui.root().children(bar);
-            ChromeRegions.of(gui.frame(400f, 300f, ChromeRegionsTest::noText));
+            ChromeRegions.of(Seams.of(gui).frame(400f, 300f, ChromeRegionsTest::noText));
 
             bar.visible(false);
-            HitRegions after = ChromeRegions.of(gui.frame(400f, 300f, ChromeRegionsTest::noText));
+            HitRegions after = ChromeRegions.of(Seams.of(gui).frame(400f, 300f, ChromeRegionsTest::noText));
 
             assertSame(HitRegions.NONE, after, "nothing declared once the bar is hidden");
         }
@@ -100,7 +101,7 @@ class ChromeRegionsTest {
         try (Gui gui = new Gui(Atchung.create())) {
             gui.root().children(gui.box().width(Length.FILL).height(Length.dp(32)));
 
-            HitRegions regions = ChromeRegions.of(gui.frame(400f, 300f, ChromeRegionsTest::noText));
+            HitRegions regions = ChromeRegions.of(Seams.of(gui).frame(400f, 300f, ChromeRegionsTest::noText));
 
             assertSame(HitRegions.NONE, regions);
             assertNull(regions.maximizeButton());
@@ -116,11 +117,11 @@ class ChromeRegionsTest {
             Node bar = gui.box().width(Length.FILL).height(Length.dp(32)).windowRegion(WindowRegion.DRAG);
             gui.root().children(banner, bar);
 
-            HitRegions before = ChromeRegions.of(gui.frame(400f, 300f, ChromeRegionsTest::noText));
+            HitRegions before = ChromeRegions.of(Seams.of(gui).frame(400f, 300f, ChromeRegionsTest::noText));
             assertEquals(0, before.caption().get(0).y());
 
             banner.visible(true);
-            HitRegions after = ChromeRegions.of(gui.frame(400f, 300f, ChromeRegionsTest::noText));
+            HitRegions after = ChromeRegions.of(Seams.of(gui).frame(400f, 300f, ChromeRegionsTest::noText));
 
             assertEquals(20, after.caption().get(0).y(), "the caption moved down with the layout, unprompted");
         }
@@ -140,7 +141,7 @@ class ChromeRegionsTest {
             gui.root().children(gui.box().width(Length.FILL).height(Length.dp(32))
                     .windowRegion(WindowRegion.DRAG));
 
-            RetainedNode root = gui.frame(400f, 300f, ChromeRegionsTest::noText);
+            RetainedNode root = Seams.of(gui).frame(400f, 300f, ChromeRegionsTest::noText);
             HitRegions regions = ChromeRegions.of(root, gui.resizeBorderPx());
 
             assertEquals(16, gui.resizeBorderPx(), "dp resolves 1:1 at density 1");
@@ -158,7 +159,7 @@ class ChromeRegionsTest {
             gui.resizeBorder(Length.dp(12));
             gui.root().children(gui.box().width(Length.FILL).height(Length.dp(32)));
 
-            HitRegions regions = ChromeRegions.of(gui.frame(400f, 300f, ChromeRegionsTest::noText),
+            HitRegions regions = ChromeRegions.of(Seams.of(gui).frame(400f, 300f, ChromeRegionsTest::noText),
                     gui.resizeBorderPx());
 
             assertEquals(12, regions.resizeBorder());
@@ -173,7 +174,7 @@ class ChromeRegionsTest {
 
             assertEquals(0, gui.resizeBorderPx());
             assertSame(HitRegions.NONE,
-                    ChromeRegions.of(gui.frame(400f, 300f, ChromeRegionsTest::noText), gui.resizeBorderPx()));
+                    ChromeRegions.of(Seams.of(gui).frame(400f, 300f, ChromeRegionsTest::noText), gui.resizeBorderPx()));
         }
     }
 }

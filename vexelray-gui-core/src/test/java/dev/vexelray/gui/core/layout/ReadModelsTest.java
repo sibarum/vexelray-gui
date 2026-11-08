@@ -28,7 +28,7 @@ class ReadModelsTest {
 
     /** Everything runs inline, so a resize observer has landed by the time the assertion reads it. */
     private static ReadModels plain() {
-        return new ReadModels(ReadModels.Meanings.NONE, Runnable::run);
+        return new ReadModels(ReadModels.Meanings.NONE);
     }
 
     private static RetainedNode box(float x, float y, float w, float h) {
@@ -166,7 +166,7 @@ class ReadModelsTest {
             public String landmarkName(long id) {
                 return id == wanted ? "save-button" : "";
             }
-        }, Runnable::run);
+        });
 
         rm.publish(root);
 
@@ -184,7 +184,7 @@ class ReadModelsTest {
         ReadModels rm = plain();
         RetainedNode root = box(0, 0, 100, 100);
         List<Rect> seen = new ArrayList<>();
-        rm.onResize(root.id, computed -> seen.add(computed.rect()), true);
+        rm.onResize(root.id, computed -> seen.add(computed.rect()));
 
         rm.publish(root);
         root.w = 200f;
@@ -199,7 +199,7 @@ class ReadModelsTest {
         ReadModels rm = plain();
         RetainedNode root = box(0, 0, 100, 100);
         AtomicInteger told = new AtomicInteger();
-        rm.onResize(root.id, computed -> told.incrementAndGet(), true);
+        rm.onResize(root.id, computed -> told.incrementAndGet());
 
         rm.publish(root);
         assertEquals(1, told.get(), "the first box is news");
@@ -214,7 +214,7 @@ class ReadModelsTest {
         ReadModels rm = plain();
         RetainedNode root = box(0, 0, 100, 100);
         AtomicInteger told = new AtomicInteger();
-        rm.onResize(root.id, computed -> told.incrementAndGet(), true);
+        rm.onResize(root.id, computed -> told.incrementAndGet());
         rm.publish(root);
 
         rm.forget(root.id);

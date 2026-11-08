@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class TreeScrollTest {
 
     /** Twenty roots, no children: enough rows to overflow a short box, and nothing to fetch. */
-    private static final class FlatSource implements TreeView.Source<String> {
+    private static final class FlatSource implements Listing<String> {
         @Override
         public List<String> roots() {
             List<String> items = new ArrayList<>();
@@ -151,7 +151,7 @@ class TreeScrollTest {
 
     /** The tree in a box a few rows tall, so anything past the first handful is off screen. */
     private static TreeView<String> shortTree(HeadlessGui h) {
-        TreeView<String> tree = new TreeView<>(h.gui, new FlatSource()).searchable(true);
+        TreeView<String> tree = Listing.tree(h, new FlatSource()).searchable(true);
         tree.node().height(Length.rem(8));   // ~4 rows of the 1.75em the tree gives each one
         h.gui.root().children(tree.node());
         h.frame();

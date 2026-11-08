@@ -67,7 +67,7 @@ class DialogsWearTheApplicationsLookTest {
             // And the tree that was themed is the tree a dialog goes up on. Awaited rather than asserted
             // straight away because presenting a window is the loop's work, not this thread's.
             modals.present(Modal.of("Delete file", "This cannot be undone.")
-                    .defaultButton("Delete", () -> { }));
+                    .defaultButton("Delete"));
             assertTrue(harness.await(() -> harness.windows().size() == 2, 5_000),
                     "the dialog never got as far as being given a window");
             assertTrue(modals.showing(), "the dialog has a window but the queue does not think it is up");
@@ -91,7 +91,7 @@ class DialogsWearTheApplicationsLookTest {
         Gui gui = new Gui();
         try (HarnessApp harness = HarnessApp.start(gui, WindowConfig.of("harness", 400, 300));
              Modals modals = Modals.install(harness.app())) {
-            modals.present(Modal.of("Ready", "Nothing to decide.").defaultButton("OK", () -> { }));
+            modals.present(Modal.of("Ready", "Nothing to decide.").defaultButton("OK"));
             assertTrue(harness.await(() -> harness.windows().size() == 2, 5_000),
                     "a dialog installed without a look never got a window either");
             assertSame(Theme.DARK, gui.theme(), "and the application's own tree was left alone");

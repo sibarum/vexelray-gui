@@ -7,7 +7,7 @@
     <parent>
         <groupId>dev.vexelray.gui</groupId>
         <artifactId>vexelray-gui</artifactId>
-        <version>0.1.3-SNAPSHOT</version>
+        <version>0.2.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>vexelray-gui-harness</artifactId>
@@ -36,6 +36,20 @@
         <dependency>
             <groupId>dev.vexelray</groupId>
             <artifactId>vexelray-shadelets</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Test scope only, for IconSdgCaptureTest: a layered icon drawn as SDG against its old stacked fields. -->
+        <dependency>
+            <groupId>dev.vexelray.gui</groupId>
+            <artifactId>vexelray-gui-file-icons</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Test scope only, for SdgCaptureTest: drawings made by SDG's encoders, checked against its CPU reference. -->
+        <dependency>
+            <groupId>dev.vexelray.fields</groupId>
+            <artifactId>vexelray-fields-sdg</artifactId>
+            <version>${vexelray-fields.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

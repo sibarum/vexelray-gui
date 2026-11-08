@@ -6,8 +6,6 @@ import dev.vexelray.gui.core.drop.Drop;
 import dev.vexelray.gui.core.drop.DropEffect;
 import dev.vexelray.gui.core.drop.Payload;
 import dev.vexelray.gui.core.drop.PayloadType;
-import dev.vexelray.gui.core.edit.Change;
-import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.layout.Rect;
 import dev.vexelray.gui.core.model.RetainedNode;
 import org.junit.jupiter.api.DisplayName;
@@ -37,8 +35,8 @@ class DragWatchTest {
     private static final PayloadType<String> ROW = PayloadType.of("row");
 
     private final Atchung bus = Atchung.create();
-    private final InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS, Runnable::run);
-    private final History history = new History();
+    private final InputDispatcher dispatcher = new InputDispatcher(bus, "test", CLICKS);
+    private final List<String> landed = new ArrayList<>();
     private final List<String> heard = new ArrayList<>();
     private RetainedNode root;
 
@@ -58,8 +56,7 @@ class DragWatchTest {
         body.parent = root;
         root.children.add(body);
         dispatcher.onDragSource(7, (x, y) -> Payload.of(ROW, "r"));
-        dispatcher.onDrop(7, (payload, x, y) -> Drop.move(new Rect(0f, y, 200f, 2f), nothing()));
-        dispatcher.dropHistory(history);
+        dispatcher.onDrop(7, (payload, x, y) -> Drop.move(new Rect(0f, y, 200f, 2f), () -> landed.add("r")));
         dispatcher.watchDrag(7, recorder("w"));
     }
 
@@ -77,32 +74,23 @@ class DragWatchTest {
         };
     }
 
-    private static Change nothing() {
-        return new Change() {
-            @Override
-            public Change apply() {
-                return this;
-            }
-        };
-    }
-
     private void press(int x, int y) {
         lastX = x;
         lastY = y;
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, x, y, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonPressed(MouseButton.LEFT, x, y, 0));
     }
 
     private int lastX = 20;
     private int lastY = 20;
 
     private void move(int x, int y) {
-        bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(x, y, x - lastX, y - lastY, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.PointerMoved(x, y, x - lastX, y - lastY, 0));
         lastX = x;
         lastY = y;
     }
 
     private void release(int x, int y) {
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, x, y, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonReleased(MouseButton.LEFT, x, y, 0));
     }
 
     private void frame() {
@@ -157,7 +145,7 @@ class DragWatchTest {
         press(20, 20);
         move(20, 60);
         frame();
-        bus.publish(InputTopics.INPUT, new InputEvent.KeyPressed(Key.ESCAPE, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.KeyPressed(Key.ESCAPE, 0));
         frame();
 
         assertEquals("w:ended 60 MOVE -> NONE", heard.getLast(),
@@ -179,7 +167,7 @@ class DragWatchTest {
 
         assertEquals("w:ended 60 MOVE -> NONE", heard.getLast(),
                 "no frame drew it, so there is nothing to settle — but the source still has to put it back");
-        assertFalse(history.canUndo());
+        assertTrue(landed.isEmpty());
     }
 
     @Test
@@ -205,7 +193,7 @@ class DragWatchTest {
         release(20, 60);
         frame();
         assertTrue(seen.getLast().latched(), "and still carried, latched, once it is up");
-        assertFalse(history.canUndo(), "letting go is not dropping");
+        assertTrue(landed.isEmpty(), "letting go is not dropping");
 
         move(20, 90);
         frame();
@@ -213,7 +201,7 @@ class DragWatchTest {
         press(20, 90);
         release(20, 90);
         frame();
-        assertTrue(history.canUndo(), "the click did");
+        assertFalse(landed.isEmpty(), "the click did");
         assertEquals("w:ended 90 MOVE -> MOVE", heard.getLast());
     }
 
@@ -229,13 +217,13 @@ class DragWatchTest {
         release(20, 60);
         frame();
 
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.RIGHT, 20, 60, 0));
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.RIGHT, 20, 60, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonPressed(MouseButton.RIGHT, 20, 60, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonReleased(MouseButton.RIGHT, 20, 60, 0));
         frame();
 
         assertEquals("w:ended 60 MOVE -> NONE", heard.getLast());
         assertEquals(List.of(), menus, "the click that cancelled is used up by cancelling");
-        assertFalse(history.canUndo());
+        assertTrue(landed.isEmpty());
     }
 
     @Test

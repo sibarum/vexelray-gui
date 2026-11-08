@@ -2,11 +2,11 @@
 
 One mechanism, two ways in. A **drag** carries something under the pointer; a **cut** carries the same thing in
 hand until a **paste** puts it down. They are not two features that happen to resemble each other — they resolve
-against the same targets, produce the same change, and record in the same undo stack. The keyboard route is the
+against the same targets and land as the same message. The keyboard route is the
 pointer route with the position supplied by the selection instead of by the mouse.
 
 This is the record of the decisions. The classes are in `core.drop`, the widget half is `TreeView` +
-`Placement`/`Reorder`/`DropIndicator`, and the motion it depends on is `LayoutMotion` (layout-read-model.md §2.1).
+`Placement`/`Placed`/`DropIndicator`, and the motion it depends on is `LayoutMotion` (layout-read-model.md §2.1).
 Cards — things that leave their place and travel with the hand, rather than rows an indicator points between —
 are `Board`/`Deck`, and §12.
 
@@ -26,15 +26,17 @@ items do not change between those, and the layout's response is all that does �
 
 | What the user moves | Container | The application writes | In the gallery |
 |---|---|---|---|
-| Rows of a hierarchy, between and into one another | `TreeView.reorderable(Reorder)` | a `Source`; a `Reorder` returning a `Change`; `refresh()` after each change | Drag & drop |
-| Cards in a stack, or between stacks | `Board` + `Deck.reorderable(Reorder)` | the card's node; a `Reorder`; `deck.items(list)` after each change | Cards |
-| Rows of a flat list (or a `Table`'s `rows()`), out to other lists and onto rows | `ListView.draggable(type, label)` + `ListView.droppable(type, Receiver)` | a `PayloadType<List<T>>` both lists share; a `Receiver` returning a `Drop` for a row, or for the list when given null; `items(list)` after each change | — (Vexplore's two folders) |
-| An item onto something that is not a container | `gui.onDrop` on that thing, reading the container's `itemType()` | the `Drop`; lighting it from `gui.drag()` | Drag & drop's archive |
+| Rows of a hierarchy, between and into one another | `TreeView.reorderable(MOVE[, COPY])` | answers to `CHILDREN_WANTED`, each `Entry` saying whether it `acceptsChildren`; hears `PLACED`, moves the item in its model and history, sends `REFRESH` | Drag & drop |
+| Cards in a stack, or between stacks | `Board` + `Deck.reorderable()` | the card's node; hears `Deck.PLACED`, moves the item, and hands the deck `items(list)` | Cards |
+| Rows of a flat list (or a `Table`'s `rows()`), out to other lists and onto rows | `ListView.draggable(type, label)` + `ListView.droppable(type, effect)` | a `PayloadType<List<T>>` both lists share; hears `LANDED`, on a row or on the list when `onto` is null; `items(list)` after each change | — (Vexplore's two folders) |
+| An item onto something that is not a container | `Seams.onDrop` on that thing (the widget library's seam), reading the container's `itemType()` | the `Drop`; lighting it from `gui.drag()` | Drag & drop's archive |
 
-**The reorder is a question, and the change is a value.** A `Reorder` is asked once a frame while the pointer
-moves, returns the `Change` a drop there would make or null to refuse, and nothing is applied until the release;
-the GUI's `dropHistory` performs it, so it undoes. The change ends by handing the container the new model — the
-same step undo takes, which is why a drop, an undo and any other edit all move alike. An item has to stay *equal
+**What is offered is declared, and what lands is announced.** A container decides once a frame, while the pointer
+moves, whether a placement is offered, from what it was told (the effects it is reorderable with, each entry's
+`acceptsChildren`) and what it can see (an item into itself, a move that leaves it where it is); it runs no
+application code to decide. On release it announces where the item went (`PLACED`), and the application makes the
+change in its own model and records it in its own history, so it undoes. A refusal only the model can make is made
+then. The change ends by handing the container the new model — the same step undo takes, which is why a drop, an undo and any other edit all move alike. An item has to stay *equal
 to itself* across that: a `Board` matches items by `equals` to know which card is which, so an item whose
 equality changes when the user edits it (a record with a label in it, say) is a different card after the edit,
 and its node is rebuilt under the user's hands. Give items an identity.
@@ -181,12 +183,11 @@ field still held focus would send the user's first undo to the field's typing hi
 just made. Focusing the drop point realigns the two, and is what the user expects anyway: the thing just moved is
 the thing now being acted on.
 
-**Drops and pastes share one history.** `Gui.dropHistory` is readable for exactly this reason: a paste makes the
-same change from the keyboard and must land in the same stack. Two stacks would mean Ctrl+Z undoing whichever
-*kind* of transfer the user last did rather than the last thing they did.
-
-**Without a history, a transfer resolves and draws but commits nothing.** Deliberately: a mutation with no way
-back, happening silently, is worse than one that does not happen.
+**Drops and pastes share one history, the application's.** A paste makes the same change from the keyboard as a
+drop, announced the same way, so the application records both where it records every other edit of its model. Two
+stacks would mean Ctrl+Z undoing whichever *kind* of transfer the user last did rather than the last thing they did.
+The GUI keeps no history of drops: the change is the application's, so its undo is too (vexelray-framework's
+threading.md, T7.2).
 
 ---
 
@@ -291,7 +292,8 @@ singular and lives in the GUI.** Adding a source should touch nothing in `DropTa
 | Declines bubble rather than veto | `DragSessionTest.declinesBubbleRatherThanBlock` |
 | Indicator and commit are the same value | `DragSessionTest.theIndicatorIsTheCommittedResolution` |
 | An unseen drop does not commit | `DragSessionTest.anUnseenDropIsNotADrop`, `TreeReorderTest.aFlickDoesNotReorganise` |
-| A cancel keeps the redo stack | `DragSessionTest.cancellingRecordsNothingAndKeepsRedo` |
+| A cancel lands nothing | `DragSessionTest.cancellingLandsNothing` |
+| What the tree can see is no placement is refused in the frame | `TreeReorderTest.aNoOpIsRefusedInTheFrame`, `TreeReorderTest.notUnderItself` |
 | Escape is not also a claim | `DropGestureTest.escapeDuringADragIsNotAlsoAClaim` |
 | Focus follows the drop | `DropGestureTest.dropMovesFocus` |
 | A node that drags for itself is not a handle | `DropGestureTest.aNodeThatDragsForItselfOwnsItsPress` |
@@ -324,7 +326,7 @@ A tree reorders rows by drawing a line between two of them: the row stays where 
 indicator says where it will go. That is right for a tree, whose rows are dense, uniform and mostly read as
 text. It is wrong for cards — anything a user thinks of as an object with a place — where the object is expected
 to come away in the hand and the others to make room for it. `Board<T>` and `Deck<T>` are that, on the same
-`DragSession`, `Drop`, `Reorder` and `Placement` as everything above; nothing in the resolution layer changed.
+`DragSession`, `Drop`, `Placement` and `Placed` as everything above; nothing in the resolution layer changed.
 
 ### 12.1 Nothing jumps, and the reason it holds everywhere
 

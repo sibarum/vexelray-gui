@@ -36,7 +36,7 @@ class ListViewMarksTest {
             ListView<String> list = mount(h);
             Color plain = fill(h, list, "a");
 
-            list.marked(Set.of("b", "c")::contains);
+            list.marks(Set.of("b", "c"));
             h.frame();
 
             assertNotEquals(plain, fill(h, list, "b"), "the mark shows");
@@ -50,7 +50,7 @@ class ListViewMarksTest {
         try (HeadlessGui h = new HeadlessGui()) {
             ListView<String> list = mount(h);
             list.looks(Role.SELECTION, Role.ACCENT);
-            list.marked("b"::equals);
+            list.marks(Set.of("b"));
             h.frame();
             Color marked = fill(h, list, "b");
 
@@ -66,9 +66,9 @@ class ListViewMarksTest {
         try (HeadlessGui h = new HeadlessGui()) {
             ListView<String> list = mount(h);
             Color plain = fill(h, list, "a");
-            list.marked("a"::equals);
+            list.marks(Set.of("a"));
             h.frame();
-            list.marked(null);
+            list.marks(Set.of());
             h.frame();
             assertEquals(plain, fill(h, list, "a"));
         }

@@ -1,10 +1,11 @@
 package dev.vexelray.gui.demo.chapter;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.ScrollRange;
-import dev.vexelray.gui.core.ScrollSource;
+import dev.vexelray.gui.core.spi.ScrollSource;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.style.Role;
@@ -171,9 +172,9 @@ public final class ScrollChapter implements Chapter {
             State.Builder<ScrollRange> b = State.of(ScrollRange.NONE);
             this.set = b.mutation("set", (current, next) -> next);
             this.range = b.build();
-            gui.onResize(view, layout -> move(range.value().offset()));
+            Seams.of(gui).onResize(view, layout -> move(range.value().offset()));
             // The wheel over the view pans it too: it is not inside anything that scrolls.
-            gui.onWheel(view, w -> scrollBy(w.dx() != 0f ? w.dx() : w.dy()));
+            Seams.of(gui).onWheel(view, w -> scrollBy(w.dx() != 0f ? w.dx() : w.dy()));
         }
 
         @Override

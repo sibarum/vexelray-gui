@@ -32,6 +32,12 @@ import dev.vexelray.canvas.Color;
  * there is in effect for the first frame that would have shown the new colour: a node never shows its destination
  * early, not even for one frame. {@link #drawn} is called by the renderer, which may be on another thread; an
  * implementation publishes what it reads there safely.
+ *
+ * <h2>Told and asked</h2>
+ *
+ * <p>This is a part under the frame contract (vexelray-gui's docs/plans/frame-contract.md): {@link #repainted} is its
+ * told half, and {@link #draw} its asked half, run once per frame for the frame's present time before anything is
+ * emitted. {@link #drawn} reads what {@code draw} chose, and computes nothing of its own.
  */
 public interface PaintMotion {
 
@@ -42,8 +48,41 @@ public interface PaintMotion {
         /** Its border's colour. */
         BORDER,
         /** Its text's colour, where it states one. Spans that state their own are their own. */
-        TEXT
+        TEXT,
+        /**
+         * Its own opacity ({@code Node.opacity}), reported as white at that alpha, so a source that blends colours
+         * blends it with no case of its own: white to white is white, and the alpha goes linearly. Only for a node
+         * on screen; one given an opacity before it is laid out is drawn at it from its first frame.
+         */
+        OPACITY,
+        /**
+         * How far what a node shows has come up over what it replaced, its words or its image, reported as white from
+         * no alpha to full when they are replaced; the renderer draws what was there before at the rest. Only for a
+         * node on screen.
+         */
+        REPLACED
     }
+
+    /**
+     * An amount, not a colour, as {@link Channel#OPACITY} and {@link Channel#REPLACED} carry one: white at alpha
+     * {@code a}, so a source that blends colours blends it, and what is read back is its alpha. Never drawn.
+     */
+    static Color amount(float a) {
+        return new Color(1f, 1f, 1f, a);
+    }
+
+    /**
+     * Whether {@code a} and {@code b} look the same on screen: equal, or both at no alpha, which leaves no hue to tell
+     * them apart. {@code Role.NONE} is transparent black, and a colour faded out is that colour at no alpha; the two
+     * are the same nothing, so neither a fade nor a watch for cuts may treat the step from one to the other as a change.
+     */
+    static boolean same(Color a, Color b) {
+        return a.equals(b) || (a.a() <= 0f && b.a() <= 0f);
+    }
+
+    /** {@link #amount} at its two ends. */
+    Color NONE_OF_IT = amount(0f);
+    Color ALL_OF_IT = amount(1f);
 
     /** Nothing fades: every node is drawn in the colour it was given. The default, and reduced motion. */
     PaintMotion NONE = new PaintMotion() {
@@ -59,8 +98,8 @@ public interface PaintMotion {
         }
 
         @Override
-        public boolean moving() {
-            return false;
+        public long draw(dev.vexelray.gui.core.Frame frame) {
+            return dev.vexelray.gui.core.Frame.NEVER;
         }
 
         @Override
@@ -72,7 +111,8 @@ public interface PaintMotion {
     /**
      * Node {@code node}'s {@code channel} has just changed from {@code from} to {@code to}, both colours. An
      * implementation that fades starts from the colour the node is drawn in now (which is {@code from} only when the
-     * node was at rest) and ends at {@code to}.
+     * node was at rest) and ends at {@code to}. Told {@code from} equal to {@code to}, the channel is at rest there:
+     * whatever was on its way is let go, so the next change starts from {@code from} itself.
      */
     void repainted(long node, Channel channel, Color from, Color to);
 
@@ -83,6 +123,10 @@ public interface PaintMotion {
      */
     Color drawn(long node, Channel channel, Color settled);
 
-    /** Whether anything is still on its way, so the frame after this one has something different to draw. */
-    boolean moving();
+    /**
+     * Choose every colour on its way for {@code frame}'s present time, and answer when next to be asked:
+     * {@link dev.vexelray.gui.core.Frame#NEVER} once nothing is on its way, the present time while something is. Called
+     * on the GUI thread once per frame, after this frame's {@link #repainted} calls and before any {@link #drawn}.
+     */
+    long draw(dev.vexelray.gui.core.Frame frame);
 }

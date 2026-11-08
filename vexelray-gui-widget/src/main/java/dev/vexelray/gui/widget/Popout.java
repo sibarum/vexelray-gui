@@ -1,6 +1,9 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
+import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.gui.core.Gui;
+import dev.vexelray.gui.core.nav.Address;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.WindowControls;
 import dev.vexelray.gui.core.WindowRegion;
@@ -13,7 +16,6 @@ import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
 import dev.vexelray.gui.core.layout.LayoutEnums.Justify;
 import dev.vexelray.gui.core.layout.Length;
-import dev.vexelray.gui.core.nav.NavTopics;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.icons.Icon;
 import dev.vexelray.gui.icons.IconView;
@@ -21,6 +23,7 @@ import dev.vexelray.os.Decorations;
 import dev.vexelray.os.WindowConfig;
 import dev.vexelray.text.TextLayout;
 import sibarum.atchung.Atchung;
+import sibarum.atchung.Topic;
 
 /**
  * A panel docked against one edge of a window, which the user can collapse to a rail, pop out into a window of
@@ -30,9 +33,11 @@ import sibarum.atchung.Atchung;
  * it: it carries that tree's mutation sink, and its registrations — handlers, focusability, widget state — are
  * keyed by node id inside that tree and released when the node leaves it. There is no operation that moves a
  * subtree from one {@link Gui} to another, and there should not be: the thing that would have to survive such a
- * move is precisely the state that lives in the tree it is moving out of. So the content is declared as a
- * {@link Content} <b>builder</b> rather than handed over as a node, and it is built <b>once per host</b> — once
- * into the docked panel, and once into the popped-out window's tree the first time it is popped.
+ * move is precisely the state that lives in the tree it is moving out of. So the content is built <b>once per
+ * host</b> by the view: into {@link #body()} when it builds the panel, and into {@link #awayBody()}, against
+ * {@link #away()}, when {@link #POPPED} says the panel was popped for the first time. The view builds it, never the
+ * panel: a builder the panel ran would be the view's code run in the frame (vexelray-framework's threading.md,
+ * T7.2).
  *
  * <p><b>Both instances then stay alive.</b> Neither is ever removed; popping out hides the docked body and shows
  * the window, docking back does the reverse — the same choice {@link Tabs} makes for pages and for the same
@@ -96,14 +101,18 @@ public final class Popout {
     }
 
     /**
-     * How the panel's content is built. Called once per tree it appears in — the host tree, and the popped-out
-     * window's tree — with the {@link Gui} that owns that tree and the container to append into. Build against
-     * the {@code gui} handed in and never against one captured from elsewhere: a node minted by the wrong tree
-     * is a mutation posted to a model that has never heard of it.
+     * The panel popped out for the first time: build its content into {@link #awayBody()}, against {@link #away()}, and
+     * never against a {@code Gui} captured from elsewhere, since a node minted by the wrong tree is a mutation posted
+     * to a model that has never heard of it. Published on the host's bus. Every one, in order.
      */
-    @FunctionalInterface
-    public interface Content {
-        void build(Gui gui, Node into);
+    public static final Topic<Popped> POPPED = Addressed.edge(Popped.class);
+
+    /** The panel at {@code popout} was popped out for the first time. */
+    public record Popped(String popout) implements Addressed {
+        @Override
+        public Object address() {
+            return popout;
+        }
     }
 
     /** Header strip height, matching {@link TitleBar}'s so a panel against the top lines up with the caption. */
@@ -117,7 +126,7 @@ public final class Popout {
 
     private final Gui host;
     private final Edge edge;
-    private final Content content;
+    private final WidgetName name;
 
     private final Node root;
     private final Node panel;
@@ -155,17 +164,15 @@ public final class Popout {
     private volatile boolean popped;
 
     /**
-     * A panel titled {@code title}, docked against {@code edge} of the window showing {@code host}, whose
-     * content is built by {@code content}. The docked instance is built now; the popped-out one is built the
-     * first time the panel is popped.
+     * A panel titled {@code title}, docked against {@code edge} of the window showing {@code host}. The view builds
+     * the docked content into {@link #body()}; the popped-out copy, when {@link #POPPED} says so.
      */
-    public Popout(Gui host, String title, Edge edge, Content content) {
-        if (host == null || edge == null || content == null) {
-            throw new IllegalArgumentException("host, edge and content must not be null");
+    public Popout(Gui host, String title, Edge edge) {
+        if (host == null || edge == null) {
+            throw new IllegalArgumentException("host and edge must not be null");
         }
         this.host = host;
         this.edge = edge;
-        this.content = content;
         this.title = title == null ? "" : title;
 
         this.headerTitle = host.text(this.title)
@@ -197,7 +204,6 @@ public final class Popout {
                 .height(Length.FILL)
                 .background(Role.PANEL)
                 .scroll(false, false);
-        content.build(host, body);
 
         this.panel = host.column()
                 .background(Role.PANEL)
@@ -216,6 +222,7 @@ public final class Popout {
         }
 
         this.root = (edge.vertical() ? host.row() : host.column()).role("popout").scroll(false, false);
+        this.name = new WidgetName(host, "popout", root);
         if (edge.vertical()) {
             root.width(Length.AUTO).height(Length.FILL);
         } else {
@@ -227,13 +234,13 @@ public final class Popout {
             root.children(rule, panel);
         }
 
-        this.away = new Gui(Atchung.create(), host.handlers(), host.offload());
+        this.away = new Gui(Atchung.create());
         bridgeNavigation();
 
         // The one thing a container that conceals has to declare. Popped out, the docked copy is hidden and the
         // live one is in another tree that this landmark is not in — so the reveal brings the panel home, which
         // is the only way the node being navigated to becomes something the user can actually look at.
-        host.reveals(body, descendant -> {
+        Seams.of(host).reveals(body, descendant -> {
             if (popped) {
                 dock();
                 return true;
@@ -452,7 +459,7 @@ public final class Popout {
         away.root().direction(Direction.COLUMN)
                 .background(Role.PAGE)
                 .children(awayBar.node(), awayBody);
-        content.build(away, awayBody);
+        host.bus().publish(POPPED, new Popped(name.address()));
     }
 
     /**
@@ -464,30 +471,40 @@ public final class Popout {
      * it after this runs.
      */
     private void bridgeNavigation() {
-        away.bus().subscribe(NavTopics.GO, address -> {
+        away.bus().subscribe(Address.NAVIGATE, address -> {
             if (address.windowNamed() && !address.window().equals(away.windowKey())) {
-                host.bus().publish(NavTopics.GO, address);
+                host.bus().publish(Address.NAVIGATE, address);
             }
         });
-        host.bus().subscribe(NavTopics.GO, address -> {
+        host.bus().subscribe(Address.NAVIGATE, address -> {
             if (address.windowNamed() && address.window().equals(away.windowKey())) {
-                away.bus().publish(NavTopics.GO, address);
+                away.bus().publish(Address.NAVIGATE, address);
             }
         });
     }
 
     /**
-     * The popped-out tree and what is in it — for the test, which has no {@code GuiApp} to open a window with
-     * and so must drive the away tree directly. Package-private rather than public on purpose: what the away
-     * tree contains is this class's business, and an application reaching into it is describing a component
-     * this one is not.
+     * The popped-out window's tree, which the view builds the popped-out content against when {@link #POPPED} says so.
+     * Its own tree on its own bus: see the field.
      */
-    Gui awayGui() {
+    public Gui away() {
         return away;
     }
 
-    Node awayBody() {
+    /** The container the popped-out content goes in, or null before the first pop. */
+    public Node awayBody() {
         return awayBody;
+    }
+
+    /** Call this panel {@code name} in the host's tree ("outline"): its {@link #address()}, which {@link #POPPED} carries. */
+    public Popout name(String name) {
+        this.name.name(name);
+        return this;
+    }
+
+    /** Where this panel is on the host's bus: {@code "<tree>.<name>"}. */
+    public String address() {
+        return name.address();
     }
 
     TitleBar awayBar() {
@@ -532,8 +549,8 @@ public final class Popout {
                 .scroll(false, false)
                 .windowRegion(region)
                 .children(icon);
-        gui.onClick(b, action);
-        gui.onState(b, state -> b.background(
+        Seams.of(gui).onClick(b, action);
+        Seams.of(gui).onState(b, state -> b.background(
                 state == InteractionState.NORMAL ? Role.NONE : hover));
         return b;
     }

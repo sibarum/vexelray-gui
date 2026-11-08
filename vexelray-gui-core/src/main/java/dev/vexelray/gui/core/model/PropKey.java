@@ -58,6 +58,12 @@ public enum PropKey {
      */
     FIELD(false),
     /**
+     * A drawing in signed distance graphics ({@code ImageSdg}): full-colour layers, each a distance field and a paint,
+     * fitted into the box with its aspect kept, sharp at any size; an icon's tint and effects with it. Not
+     * layout-affecting, as an image is not: a box that paints takes its size from the box.
+     */
+    SDG(false),
+    /**
      * A {@code Picture} drawn inside this node's box: an ordered list of marks in the box's own pixel frame, with
      * {@code (0, 0)} at its top-left corner. A plot, a diagram, a sparkline — anything an application wants to put
      * marks on the screen for, without one laid-out node per mark.
@@ -223,6 +229,11 @@ public enum PropKey {
     WHITESPACE(false),
     /** A faint mark after each line's last character where a newline ends it (Boolean). Drawn past the text. */
     LINE_ENDS(false),
+    /**
+     * Where a one-line label that does not fit is cut ({@code Ellipsis}; absent is at the box's edge, through a
+     * glyph). Reflows: the cut is made by the layout, at the width it settles on.
+     */
+    ELLIPSIS(true),
     // Layout (border-box: border + padding inset the content, so border width is layout-affecting)
     DIRECTION(true),
     JUSTIFY(true),
@@ -319,6 +330,13 @@ public enum PropKey {
      * of several children at a time needs this rather than structural churn.
      */
     VISIBLE(true),
+    /**
+     * The pointer's state on a node that answers clicks and does not shade itself (it hears no {@code NodeEvent.STATE}):
+     * written by the framework, never by an application, and drawn as its {@code Role} background and border at that
+     * state ({@code Role.at}). So anything clickable lifts under the pointer and shows a press, with no code of its
+     * own. Absent is {@code NORMAL}.
+     */
+    POINTER_STATE(false),
     /**
      * What this node is to the <b>window manager</b> ({@link dev.vexelray.gui.core.WindowRegion}) — a title bar
      * to drag the window by, a hole in one for a control drawn on it, or the maximize button. Only meaningful in

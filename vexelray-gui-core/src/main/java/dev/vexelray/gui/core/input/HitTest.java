@@ -40,6 +40,9 @@ public final class HitTest {
         if (root != null && root.hitInert()) {
             return null;   // pointer-transparent: drawn, but never under the pointer (subtree included)
         }
+        if (root != null && root.drawnOpacity <= 0f) {
+            return null;   // faded to nothing by an asked half, which cannot say hitInert (Drawn.opacity)
+        }
         if (root == null || !contains(root, x, y)) {
             return null;
         }

@@ -11,7 +11,6 @@ import dev.vexelray.gui.core.nav.Navigator;
 
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 import java.util.function.LongConsumer;
 import java.util.function.LongFunction;
@@ -53,20 +52,18 @@ final class Undoing {
     private final LongFunction<RetainedNode> nodes;
     private final Supplier<RetainedNode> root;
     private final LongConsumer scrollIntoView;
-    private final Executor handlers;
     private final Consumer<String> wake;
     /** A handle on a node by id, for the event: a presenter plays its cue on a {@link Node}, not on an id. */
     private final LongFunction<Node> handles;
 
     Undoing(Navigator navigator, InputDispatcher input, LongFunction<RetainedNode> nodes,
-            Supplier<RetainedNode> root, LongConsumer scrollIntoView, Executor handlers, Consumer<String> wake,
+            Supplier<RetainedNode> root, LongConsumer scrollIntoView, Consumer<String> wake,
             LongFunction<Node> handles) {
         this.navigator = navigator;
         this.input = input;
         this.nodes = nodes;
         this.root = root;
         this.scrollIntoView = scrollIntoView;
-        this.handlers = handlers;
         this.wake = wake;
         this.handles = handles;
     }
@@ -160,13 +157,11 @@ final class Undoing {
     }
 
     private void apply(History history, boolean redo, long id) {
-        handlers.execute(() -> {
-            Outcome outcome = redo ? history.attemptRedo() : history.attemptUndo();
-            sink.accept(event(history, redo, outcome, id));
-        });
+        Outcome outcome = redo ? history.attemptRedo() : history.attemptUndo();
+        sink.accept(event(history, redo, outcome, id));
     }
 
     private void report(History history, boolean redo, Outcome outcome, long id) {
-        handlers.execute(() -> sink.accept(event(history, redo, outcome, id)));
+        sink.accept(event(history, redo, outcome, id));
     }
 }

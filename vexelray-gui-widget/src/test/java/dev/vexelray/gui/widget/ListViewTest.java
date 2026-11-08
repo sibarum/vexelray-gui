@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.Rect;
@@ -14,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -150,7 +152,7 @@ class ListViewTest {
         try (HeadlessGui h = new HeadlessGui()) {
             ListView<String> list = mount(h, 100);
             List<String> activated = new ArrayList<>();
-            list.onActivate(activated::add);
+            h.gui.mailbox(ListView.ACTIVATED, list.address(), a -> activated.add((String) a.item()));
             Rect r = list.rowNode("item00002").layout().rect();
             h.clicks(r.x() + r.w() / 2f, r.y() + r.h() / 2f, 2);
             h.frame();
@@ -252,26 +254,24 @@ class ListViewTest {
         }
     }
 
-    /** A right click selects the row under the pointer and asks for that item's menu, which is then shown. */
+    /** A right click selects the row under the pointer and offers its menu; choosing a line says which item. */
     @Test
-    void aRightClickSelectsTheRowAndBuildsItsMenuAroundTheItem() {
+    void aRightClickSelectsTheRowAndOffersItsMenuForTheItem() {
         try (HeadlessGui h = new HeadlessGui()) {
-            ListView<String> list = mountTall(h, 10);
-            String[] asked = {null};
-            list.onContextMenu((item, menu) -> {
-                asked[0] = item;
-                menu.item("Open " + item, () -> { });
-            });
+            ListView<String> list = mountTall(h, 10).action(MenuAction.of("open", "Open"));
+            List<ListView.Chosen> chosen = new ArrayList<>();
+            h.gui.mailbox(ListView.CHOSEN, list.address(), chosen::add);
             clickRow(h, list, "item00001");
 
             rightClickRow(h, list, "item00003");
 
             assertEquals(Set.of("item00003"), list.selection().selection(), "the row under the pointer, alone");
-            assertEquals("item00003", asked[0], "and the menu was asked about that item");
-            assertEquals(List.of("Open item00003"),
-                    ((ContextMenu) h.gui.menus()).items().stream().map(dev.vexelray.gui.core.input.MenuItem::label)
-                            .toList(),
+            ContextMenu menu = (ContextMenu) Seams.of(h.gui).menus();
+            assertEquals(List.of("Open"), menu.items().stream().map(dev.vexelray.gui.core.input.MenuItem::label).toList(),
                     "on a presenter the list installed, so it is on screen");
+            menu.items().get(0).action().run();
+            h.frame();
+            assertEquals(List.of(new ListView.Chosen(list.address(), "open", "item00003")), chosen, "about that item");
         }
     }
 
@@ -280,7 +280,7 @@ class ListViewTest {
     void aRightClickInsideTheSelectionKeepsIt() {
         try (HeadlessGui h = new HeadlessGui()) {
             ListView<String> list = mountTall(h, 10);
-            list.onContextMenu((item, menu) -> menu.item("Delete", () -> { }));
+            list.action(MenuAction.of("delete", "Delete"));
             clickRow(h, list, "item00002");
             clickRow(h, list, "item00004", Key.LEFT_CONTROL);
 
@@ -372,5 +372,56 @@ class ListViewTest {
         Rect r = row.layout().rect();
         assertTrue(r.y() >= box.y() - 0.5f && r.y() + r.h() <= box.y() + box.h() + 0.5f,
                 "the row sits inside the list's box: row " + r + " in " + box);
+    }
+
+    /**
+     * A row's button is drawn by the face and pressed by the user, and the press is a message: the row's item and
+     * the button's action on {@link ListView#CHOSEN}. Nothing of the view's runs at the press.
+     */
+    @Test
+    void aRowsButtonIsAnnouncedWithItsItem() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            ListView<String> list = new ListView<>(h.gui, ROW_REM, (n, item) -> n.row().children(
+                    n.text(item).width(Length.grow(1)),
+                    n.button(dev.vexelray.gui.icons.Icon.PLUS, "Stage", "stage", true)));
+            list.node().height(TALL_H);
+            h.gui.root().children(list.node());
+            list.items(names(3));
+            List<ListView.Chosen> chosen = new ArrayList<>();
+            h.gui.mailbox(ListView.CHOSEN, list.address(), chosen::add);
+            h.frame().frame();
+
+            dev.vexelray.gui.core.model.RetainedNode button = withRole(h.retained(list.rowNode("item00001")), "button");
+            assertNotNull(button, "the face drew a button");
+            h.click(button.x + button.w / 2f, button.y + button.h / 2f);
+            h.frame();
+
+            assertEquals(List.of(new ListView.Chosen(list.address(), "stage", "item00001")), chosen);
+        }
+    }
+
+    /** The first node under {@code n} with {@code role}, or null. */
+    private static dev.vexelray.gui.core.model.RetainedNode withRole(dev.vexelray.gui.core.model.RetainedNode n,
+                                                                    String role) {
+        if (role.equals(n.role())) {
+            return n;
+        }
+        for (var c : n.children) {
+            var found = withRole(c, role);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    /** A board's cards take no presses yet, and say so where the face asks for one rather than dropping the press. */
+    @Test
+    void aBoardsCardsRefuseAButton() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Nodes card = new Nodes(h.gui, "board");
+            assertThrows(IllegalStateException.class,
+                    () -> card.button(dev.vexelray.gui.icons.Icon.PLUS, "Stage", "stage", true));
+        }
     }
 }

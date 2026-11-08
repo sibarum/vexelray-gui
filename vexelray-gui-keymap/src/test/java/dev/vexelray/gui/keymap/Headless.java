@@ -1,5 +1,6 @@
 package dev.vexelray.gui.keymap;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.InputTopics;
@@ -30,12 +31,7 @@ final class Headless implements AutoCloseable {
     private RetainedNode last;
 
     Headless() {
-        this(Runnable::run);
-    }
-
-    /** Handlers on {@code workers}: one that holds them back shows which commands ran on the GUI thread instead. */
-    Headless(java.util.concurrent.Executor workers) {
-        this.gui = new Gui(bus, workers);
+        this.gui = new Gui(bus);
     }
 
     private final TextMeasurer measurer = new TextMeasurer() {
@@ -68,17 +64,17 @@ final class Headless implements AutoCloseable {
     };
 
     Headless frame() {
-        last = gui.frame(800f, 600f, measurer);
+        last = Seams.of(gui).frame(800f, 600f, measurer);
         return this;
     }
 
     Headless down(Key k) {
-        bus.publish(InputTopics.INPUT, new InputEvent.KeyPressed(k, 0));
+        bus.publish(gui.input(), new InputEvent.KeyPressed(k, 0));
         return this;
     }
 
     Headless up(Key k) {
-        bus.publish(InputTopics.INPUT, new InputEvent.KeyReleased(k, 0));
+        bus.publish(gui.input(), new InputEvent.KeyReleased(k, 0));
         return this;
     }
 

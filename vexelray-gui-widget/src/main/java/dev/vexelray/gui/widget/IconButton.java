@@ -1,11 +1,14 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.IconSource;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.ClaimScope;
 import dev.vexelray.gui.core.input.CursorShape;
+import dev.vexelray.gui.core.input.ClickEvent;
 import dev.vexelray.gui.core.input.InteractionState;
+import dev.vexelray.gui.core.input.Menu;
 import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.layout.LayoutEnums.AlignItems;
 import dev.vexelray.gui.core.layout.LayoutEnums.Direction;
@@ -30,7 +33,9 @@ import sibarum.tactroller.api.Key;
  * the icon in the accent with a glow, the field's own, so a live state (running, recording, pinned) is seen at a
  * glance without a second drawing.
  *
- * <p>Handlers run on a worker thread, like every other widget's.
+ * <p>A press is published on {@link Button#PRESSED}, carrying this button's {@link #address() address}, as a
+ * {@link Button}'s is: a press is a press, whichever button drew it (vexelray-framework's {@code docs/threading.md},
+ * T3.8).
  */
 public final class IconButton {
 
@@ -49,6 +54,9 @@ public final class IconButton {
     private volatile Role ink = Role.DIM;
     private volatile InteractionState state = InteractionState.NORMAL;
     private volatile Runnable onPress = () -> { };
+    /** What a press drops, or {@link Menu#NONE} for a button that publishes {@link Button#PRESSED}. */
+    private volatile Menu menu = Menu.NONE;
+    private final WidgetName address;
     private Tooltip tooltip;
     private volatile String tipText;
 
@@ -65,15 +73,19 @@ public final class IconButton {
                 .alignItems(AlignItems.CENTER)
                 .scroll(false, false)
                 .children(glyph.node(), label);
+        this.address = new WidgetName(gui, "iconbutton", node);
         gui.focusable(node, true);
         gui.cursor(node, CursorShape.POINTER);
-        gui.onClick(node, this::activate);
-        gui.onState(node, s -> {
+        Seams.of(gui).onClick(node, (ClickEvent e) -> activate(e));
+        // A second quick press is a second press, and the double click it also makes is the button's own: left to
+        // bubble, it reached whatever the button sits in (a viewer's stage, which a double click puts full screen).
+        Seams.of(gui).onDoubleClick(node, () -> { });
+        Seams.of(gui).onState(node, s -> {
             this.state = s;
             paint();
         });
-        gui.claim(node, ENTER, ClaimScope.FOCUSED, this::activate);
-        gui.claim(node, SPACE, ClaimScope.FOCUSED, this::activate);
+        Seams.of(gui).claim(node, ENTER, ClaimScope.FOCUSED, () -> activate(null));
+        Seams.of(gui).claim(node, SPACE, ClaimScope.FOCUSED, () -> activate(null));
         paint();
     }
 
@@ -88,8 +100,8 @@ public final class IconButton {
         return this;
     }
 
-    /** Rename it: the accessible name. A tooltip keeps its own words ({@link #tip}). */
-    public IconButton name(String name) {
+    /** Relabel it: the accessible name, as a {@link Button}'s label is. A tooltip keeps its own words ({@link #tip}). */
+    public IconButton label(String name) {
         label.text(name == null ? "" : name);
         return this;
     }
@@ -140,13 +152,31 @@ public final class IconButton {
         return this;
     }
 
-    /** What pressing it does. */
-    public IconButton onPress(Runnable handler) {
+    /**
+     * Call this button {@code name} on the bus ("play"): its {@link #address()} is the tree's name and this. Not
+     * {@link #label(String)}, which is what it is called to the user.
+     */
+    public IconButton name(String name) {
+        this.address.name(name);
+        return this;
+    }
+
+    /** Where this button is on the bus: what its {@link Button.Pressed} carries. */
+    public String address() {
+        return address.address();
+    }
+
+    /**
+     * The widget library's hook on a press, for a widget built from icon buttons: run in the dispatch, and as well as
+     * {@link Button#PRESSED} rather than instead. Package-private, because an application hears a button by its
+     * message.
+     */
+    IconButton onPress(Runnable handler) {
         this.onPress = handler == null ? () -> { } : handler;
         return this;
     }
 
-    /** Make this a toggle: it holds on or off, announced as such, and on glows. Pressing it still only runs the handler. */
+    /** Make this a toggle: it holds on or off, announced as such, and on glows. Pressing it still only publishes the press. */
     public IconButton toggle(boolean toggle) {
         this.toggle = toggle;
         node.role(toggle ? "togglebutton" : "button");
@@ -154,7 +184,7 @@ public final class IconButton {
         return this;
     }
 
-    /** Show it on or off. Silent: the handler decides what a press means and calls this. */
+    /** Show it on or off. Silent: whoever hears the press decides what it means and calls this. */
     public IconButton on(boolean on) {
         this.on = on;
         paint();
@@ -175,9 +205,23 @@ public final class IconButton {
         return this;
     }
 
-    private void activate() {
-        if (enabled) {
+    /**
+     * Make this a menu button, as {@link Button#menu} does: a click, Enter or Space drops {@code menu} from the button,
+     * each line sends its own message, and a press publishes no {@link Button#PRESSED}. {@link Menu#NONE} undoes it.
+     */
+    public IconButton menu(Menu menu) {
+        this.menu = java.util.Objects.requireNonNull(menu, "menu");
+        return this;
+    }
+
+    /** A press: {@code at} is the click, or null for a key. */
+    private void activate(ClickEvent at) {
+        Menu drops = menu;
+        if (enabled && !drops.isEmpty()) {
+            ContextMenu.drop(gui, node, at, drops);
+        } else if (enabled) {
             onPress.run();
+            gui.bus().publish(Button.PRESSED, new Button.Pressed(address()));
         }
     }
 
@@ -186,7 +230,9 @@ public final class IconButton {
         boolean lit = toggle && on;
         // What the icon does under the pointer and when on is the theme's, as the hover fill is.
         IconEffects icons = gui.theme().icons();
-        node.background(s == InteractionState.NORMAL ? (tile ? Role.RAISED : null) : hover);
+        // A press shows at once, as a step past the hover: pressed and hovered alike, a click had no feedback of its own.
+        node.background(s == InteractionState.NORMAL ? (tile ? Role.RAISED : null)
+                : s == InteractionState.PRESSED ? hover.at(s) : hover);
         if (tile) {
             label.textColor(!enabled ? Role.FAINT : s == InteractionState.NORMAL ? Role.DIM : Role.INK);
         }

@@ -1,8 +1,10 @@
 # Key bindings — rebindable actions, and the editor that rebinds them
 
 Status: **landed** (`vexelray-gui-keymap`, plus two primitives in `-core`: `Gui.claimAny` and
-`Shortcut.text`/`parse`). Opt-in: nothing in the framework creates a keymap, and a title bar shows the key
-button only when it is handed one.
+`Shortcut.text`/`parse`). Opt-in in this repo: nothing here creates a keymap, and a title bar shows the key
+button only when it is handed one. `vexelray-framework` does both for its applications: it makes the keymap
+(`Shell.keymap()`, a part from `TREE`), persists it to `keys.properties`, and adds the button to every framework
+title bar once an action is declared (its `docs/architecture.md` §5).
 
 ## 1. The action mapper
 
@@ -11,21 +13,21 @@ by name. Which chord reaches the handler is no longer the code's to fix:
 
 ```java
 Keymap keys = new Keymap(gui).persist(AppHome.of("editor").settings("keys"));
-keys.action("file.save", "Save", Shortcut.of(Key.S, Modifier.CONTROL)).on(this::save);
-keys.action("file.save-as", "Save As", Shortcut.of(Key.S, Modifier.CONTROL, Modifier.SHIFT)).on(this::saveAs);
+keys.action("file.save", "Save", Shortcut.of(Key.S, Modifier.CONTROL)).sends(commands, new Save());
+keys.action("file.save-as", "Save As", Shortcut.of(Key.S, Modifier.CONTROL, Modifier.SHIFT)).sends(commands, new SaveAs());
 keys.action("view.zen", "Zen mode").on(ui::toggleZen);          // no default: the user may give it one
 ```
 
-Each line replaces a `gui.shortcut(...)`, and is the same thing on the bus: a `GLOBAL` claim (§3 of
+Each line is a window-wide command, the one way an application declares one (`Gui.shortcut` went on 2026-11-07),
+and it is on the bus what a shortcut always was: a `GLOBAL` claim (§3 of
 [keyboard-focus-text.md](keyboard-focus-text.md)), so a focused field still outranks it. Rebinding releases one
 claim and makes another; the handler never hears about it.
 
 - **The id is the stable part.** It is what a settings file stores: rename the label freely; rename the id
   and the user's choice for it is forgotten. Ids are dotted words, `[A-Za-z0-9._-]+`.
-- **Handlers run on a worker**, as every claim's command does. `Action.run()` runs it directly, for the menu
-  item or button that does the same thing. `ordered()` runs it on the GUI thread in the order keys arrived instead
-  (`claimUi`), for a command that edits what typing edits too: a terminal's paste, which on a worker could land
-  among the characters typed around it. Bounded work only, as for any ordered stage.
+- **Handlers run in the dispatch**, on the GUI thread in the order keys arrived, as every claim's command does.
+  `Action.run()` runs it directly, for the menu item or button that does the same thing. Bounded work only: an
+  application's action sends a message (`Action.sends`).
 - **No handler, no claim.** A declared action that nothing implements yet swallows no key.
 - **Claimed on a node of the keymap's own**, never on the root. A rebind releases exactly the keymap's claim on
   the old chord; releasing it on the root would take the application's undo chords with it.
@@ -121,7 +123,7 @@ directly, so a widget reading pans and a claim on a swipe agree on what the fing
 
 ## 3. Recording: a claim on every chord
 
-`gui.claimAny(node, scope, chord -> ...)` claims *every* chord for a node, and the command hears which one it
+`Seams.of(gui).claimAny(node, scope, chord -> ...)` claims *every* chord for a node, and the command hears which one it
 got. It is an ordinary claim, which is the whole point: while it applies it outranks the framework's Tab and
 the application's Ctrl+S, so a recorder records them rather than performing them. Nothing new in the
 dispatcher but the match. A touchpad gesture reaches it too, so the editor records a swipe by watching one
@@ -156,7 +158,8 @@ titleBar.instruments(List.of(SaveScreenshot.instrument(), KeymapWindow.instrumen
 ```
 
 `WindowInstrument.keymap(tooltip, open)` is core's — the role `instrument-keymap` and a drawn keyboard mark —
-so an agent finds it by one name in every application, as with the screenshot. `KeymapWindow` supplies the
+and `KeymapWindow.instrument` makes it the app menu's *Key bindings…* line, with the icon set's keyboard, so an agent
+finds it by one name in every application (`menu.key-bindings`), as with the screenshot. `KeymapWindow` supplies the
 behaviour: the editor in a window of its own (registered as `app.window("keymap")`, so a second click raises
 it), wearing the main window's theme and client-drawn chrome. Never in `WindowInstrument.standard()`: an
 application without rebindable commands has nothing for it to open.

@@ -2,7 +2,6 @@ package dev.vexelray.gui.harness;
 
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.app.GuiApp;
-import dev.vexelray.gui.core.input.InputTopics;
 import dev.vexelray.os.NativePlatform;
 import dev.vexelray.os.NativeWindow;
 import dev.vexelray.os.WindowConfig;
@@ -276,8 +275,8 @@ public final class HarnessApp implements AutoCloseable {
      * frame can fail to arrive.
      */
     public void click(int x, int y, MouseButton button) {
-        gui.bus().publish(InputTopics.INPUT, new InputEvent.ButtonPressed(button, x, y, 0));
-        gui.bus().publish(InputTopics.INPUT, new InputEvent.ButtonReleased(button, x, y, 0));
+        gui.bus().publish(gui.input(), new InputEvent.ButtonPressed(button, x, y, 0));
+        gui.bus().publish(gui.input(), new InputEvent.ButtonReleased(button, x, y, 0));
         // Input published on the bus is not an OS event, so nothing has told the loop it arrived. A real
         // click would have: this stands in for the WM_LBUTTONDOWN that wakes the loop before its own
         // dispatch ever sees the event. Everything *after* this wake is what is under test.

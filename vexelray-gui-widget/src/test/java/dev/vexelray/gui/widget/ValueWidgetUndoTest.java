@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.edit.Outcome;
 import dev.vexelray.gui.core.edit.UndoEvent;
@@ -35,7 +36,7 @@ class ValueWidgetUndoTest {
 
         Window() {
             h.gui.history(history);
-            h.gui.onUndo(events::add);
+            Seams.of(h.gui).onUndo(events::add);
         }
 
         Window mount(dev.vexelray.gui.core.Node... nodes) {
@@ -147,20 +148,21 @@ class ValueWidgetUndoTest {
     void aSliderDragIsOneStepAndOneCommit() {
         try (Window w = new Window()) {
             List<Double> commits = new CopyOnWriteArrayList<>();
-            Slider s = new Slider(w.h.gui, 0f).lattice(Lattice.intervals(10)).onCommit(commits::add);
+            Slider s = new Slider(w.h.gui, 0f).lattice(Lattice.intervals(10));
+            w.h.gui.mailbox(Slider.COMMITTED, s.address(), c -> commits.add(c.value()));
             w.mount(s.node());
             Rect r = s.node().layout().rect();
             int y = (int) (r.y() + r.h() / 2f);
             float travel = r.w() - r.h();
-            w.h.bus.publish(InputTopics.INPUT,
+            w.h.bus.publish(w.h.gui.input(),
                     new InputEvent.ButtonPressed(MouseButton.LEFT, (int) (r.x() + r.h() / 2f), y, 0));
             w.h.frame();
             for (int k = 1; k <= 8; k++) {
                 int x = (int) (r.x() + r.h() / 2f + k * 0.1f * travel);
-                w.h.bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(x, y, 1, 0, 0));
+                w.h.bus.publish(w.h.gui.input(), new InputEvent.PointerMoved(x, y, 1, 0, 0));
                 w.h.frame();
             }
-            w.h.bus.publish(InputTopics.INPUT,
+            w.h.bus.publish(w.h.gui.input(),
                     new InputEvent.ButtonReleased(MouseButton.LEFT, (int) (r.x() + r.h() / 2f + 0.8f * travel), y, 0));
             w.h.frame().frame();
             assertEquals(0.8f, s.value(), 1e-5f);
@@ -245,58 +247,56 @@ class ValueWidgetUndoTest {
         }
     }
 
-    /** A command as a change: the press does it, Ctrl+Z undoes it, and the change is built at press time. */
+    /**
+     * A command as a change, recorded by the view that heard the press. The model here is the logic's, on the other
+     * side of the bus: the change's apply and revert each send it a message, so Ctrl+Z undoes it without touching
+     * the logic's data from the frame.
+     */
     @Test
-    void aButtonThatPerformsAChangeIsUndone() {
+    void aPressRecordedAsAChangeIsUndoneByMessage() {
         try (Window w = new Window()) {
-            List<String> items = new CopyOnWriteArrayList<>(List.of("a"));
-            java.util.concurrent.atomic.AtomicInteger asked = new java.util.concurrent.atomic.AtomicInteger();
-            Button add = new Button(w.h.gui, "Add").perform(() -> {
-                asked.incrementAndGet();
-                String item = "n" + items.size();
-                return new dev.vexelray.gui.core.edit.Change() {
-                    @Override
-                    public dev.vexelray.gui.core.edit.Change apply() {
-                        items.add(item);
-                        dev.vexelray.gui.core.edit.Change self = this;
-                        return () -> {
-                            items.remove(item);
-                            return self;
-                        };
-                    }
-                };
-            });
+            List<String> items = new CopyOnWriteArrayList<>(List.of("a"));   // the logic's, changed only by message
+            sibarum.atchung.Topic<String> added = sibarum.atchung.Topic.edge("test.undo.added", String.class);
+            sibarum.atchung.Topic<String> removed = sibarum.atchung.Topic.edge("test.undo.removed", String.class);
+            w.h.bus.subscribe(added, items::add);
+            w.h.bus.subscribe(removed, items::remove);
+
+            Button add = new Button(w.h.gui, "Add");
+            w.h.gui.mailbox(Button.PRESSED, add.address(), p -> w.history.perform(adding(w, added, removed,
+                    "n" + items.size())));
             w.mount(add.node());
 
             w.click(add.node());
             w.h.pause();
             w.click(add.node());
             assertEquals(List.of("a", "n1", "n2"), items);
-            assertEquals(2, asked.get(), "the change is asked for on each press, against what is there then");
             assertEquals(2, w.history.undoDepth());
 
             w.undo();
-            assertEquals(List.of("a", "n1"), items, "Ctrl+Z takes the last command back");
+            assertEquals(List.of("a", "n1"), items, "Ctrl+Z sent the last command's undoing");
             w.redo();
             assertEquals(List.of("a", "n1", "n2"), items);
         }
     }
 
-    @Test
-    void aCommandWithNothingToDoRecordsNothing() {
-        try (Window w = new Window()) {
-            Button b = new Button(w.h.gui, "Nothing").perform(() -> null);
-            w.mount(b.node());
-            w.click(b.node());
-            assertEquals(0, w.history.undoDepth());
-        }
+    /** Adding {@code item}, as a pair of messages: one to do it, one to take it back. */
+    private static dev.vexelray.gui.core.edit.Change adding(Window w, sibarum.atchung.Topic<String> added,
+                                                          sibarum.atchung.Topic<String> removed, String item) {
+        return () -> {
+            w.h.bus.publish(added, item);
+            return () -> {
+                w.h.bus.publish(removed, item);
+                return adding(w, added, removed, item);
+            };
+        };
     }
 
     @Test
     void aChipUndoesAsASwitchDoes() {
         try (Window w = new Window()) {
             List<Boolean> heard = new CopyOnWriteArrayList<>();
-            Button chip = new Button(w.h.gui, "Bold").toggle(true).onToggle(heard::add);
+            Button chip = new Button(w.h.gui, "Bold").toggle(true);
+            w.h.gui.mailbox(Button.TOGGLED, chip.address(), t -> heard.add(t.pressed()));
             w.mount(chip.node());
             w.click(chip.node());
             assertTrue(chip.pressed());
@@ -309,8 +309,9 @@ class ValueWidgetUndoTest {
     @Test
     void aSelectChoiceUndoesButBrowsingTheListDoesNot() {
         try (Window w = new Window()) {
-            List<Set<String>> commits = new CopyOnWriteArrayList<>();
-            Select<String> s = new Select<String>(w.h.gui).options(List.of("x", "y", "z")).onCommit(commits::add);
+            List<Set<Object>> commits = new CopyOnWriteArrayList<>();
+            Select<String> s = new Select<String>(w.h.gui).options(List.of("x", "y", "z"));
+            w.h.gui.mailbox(Select.COMMITTED, s.address(), c -> commits.add(c.chosen()));
             w.mount(s.node());
             s.show("x");
             w.h.focus(s.node());

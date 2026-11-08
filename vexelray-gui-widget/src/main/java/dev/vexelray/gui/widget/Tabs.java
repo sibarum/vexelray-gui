@@ -1,12 +1,15 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.Timing;
+import dev.vexelray.gui.core.spi.Seams;
+import sibarum.atchung.Topic;
+import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.ClaimScope;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.input.Shortcut;
-import dev.vexelray.gui.core.input.MenuSink;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.NodeLayout;
 import dev.vexelray.gui.core.style.Finish;
@@ -21,6 +24,7 @@ import sibarum.tactroller.api.Key;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.function.IntConsumer;
 
 /**
@@ -36,8 +40,73 @@ import java.util.function.IntConsumer;
  * pointer cursor by inference (§8.3); they are focusable, so Tab reaches them; and each claims Left/Right at
  * {@link ClaimScope#FOCUSED} while it holds focus, so the arrow keys walk the bar without core knowing what a tab
  * is. Nothing here reaches past a {@link Node} handle.
+ *
+ * <p>What changes is a message carrying the panel's {@link #address() address}: the tab selected on {@link #SELECTED}
+ * and a tab removed on {@link #REMOVED} (vexelray-framework's {@code docs/threading.md}, T3.8).
  */
 public final class Tabs {
+
+    /** The tab selected, including the first. The last in a frame. */
+    public static final Topic<Selected> SELECTED =
+            Addressed.state(Selected.class, Selected::tabs);
+
+    /**
+     * A tab removed, whoever removed it — the application's own {@link #remove} call, or the <b>Close</b> item the bar
+     * puts on every header's context menu without being asked. That second source is the reason it exists: an
+     * application that keeps anything alongside the bar (a parallel list of documents) is otherwise never told, and
+     * every index it computes afterwards points a tab off. Every one, in order.
+     *
+     * <p>The index is the tab's when it was removed. Tabs are only ever appended, so a view that drops its own entry
+     * for each of these in the order they arrive, and adds one for each tab it adds, stays in step with the bar.
+     */
+    public static final Topic<Removed> REMOVED = Addressed.edge(Removed.class);
+
+    /**
+     * One of the bar's {@link #action actions} chosen from a tab's menu, with the tab's index as it was when the menu
+     * opened. The bar does nothing else for it. Every one, in order.
+     */
+    public static final Topic<Chosen> CHOSEN = Addressed.edge(Chosen.class);
+
+    /**
+     * The user chose the {@link MenuAction} {@code action} from the menu of {@code item} in the tab bar at {@code at}:
+     * what {@link #CHOSEN} carries, addressed to the tab bar. A type of the tab bar's own, so it names one channel
+     * (vexelray-framework's threading.md, T4.1).
+     *
+     * @param at     the tab bar's address
+     * @param action the action's id
+     * @param item   the tab's index as it was when the menu opened
+     */
+    public record Chosen(String at, String action, Object item) implements dev.vexelray.gui.core.Addressed {
+        public Chosen {
+            java.util.Objects.requireNonNull(at, "at");
+            java.util.Objects.requireNonNull(action, "action");
+            java.util.Objects.requireNonNull(item, "item");
+        }
+
+        @Override
+        public Object address() {
+            return at;
+        }
+    }
+
+    /** The id of the bar's own Close, which no action of the application's may take. */
+    public static final String CLOSE = "close";
+
+    /** The panel at {@code tabs} now shows tab {@code index}. */
+    public record Selected(String tabs, int index) implements Addressed {
+        @Override
+        public Object address() {
+            return tabs;
+        }
+    }
+
+    /** Tab {@code index} of the panel at {@code tabs} was removed. */
+    public record Removed(String tabs, int index) implements Addressed {
+        @Override
+        public Object address() {
+            return tabs;
+        }
+    }
 
     private final Gui gui;
     private final Node root;
@@ -60,9 +129,9 @@ public final class Tabs {
     private volatile int selected = -1;
     private volatile boolean closable = true;
     private volatile HeaderSkin skin = this::themeSkin;
-    private volatile IntConsumer onSelect = i -> { };
-    private volatile IntConsumer onRemove = i -> { };
-    private volatile TabMenu contextMenu = (index, menu) -> { };
+    private final WidgetName name;
+    /** What is on every tab's menu after Close, in the order declared. */
+    private final MenuActions actions = new MenuActions(CLOSE);
     private volatile TabTransition transition = TabTransition.NONE;
 
     /** The two pages a transition currently has hold of, or null when the panel is at rest. Guarded by {@code this}. */
@@ -84,17 +153,6 @@ public final class Tabs {
 
 
     /**
-     * What an application adds to a tab's context menu, told which tab was right-clicked. A separate type rather
-     * than a {@code BiConsumer<Integer, MenuSink>} because the index is an {@code int} and the pair reads better
-     * named: {@code (index, menu) -> menu.item("Duplicate", () -> duplicate(index))}.
-     */
-    @FunctionalInterface
-    public interface TabMenu {
-        /** Add to the menu for tab {@code index}. Runs on a worker thread, at the moment of the click. */
-        void build(int index, MenuSink menu);
-    }
-
-    /**
      * The motion of one tab change: the outgoing page is on its way out, the incoming one is already visible, and
      * for the duration both occupy the whole content area — the outgoing one floats over the incoming one, so
      * nothing reflows while they overlap and the pointer passes straight through the one that is leaving.
@@ -113,7 +171,7 @@ public final class Tabs {
      * with no frame loop behaves exactly like one in a running application that never installed a transition.
      */
     @FunctionalInterface
-    public interface TabTransition {
+    interface TabTransition {
 
         /** Move the pages. Safe to call {@code done} inline, from a frame loop, or from another thread. */
         void run(Change change, Runnable done);
@@ -196,7 +254,7 @@ public final class Tabs {
      * moving — which does not read as a slow fade, it reads as a delay followed by a jump. The failure is
      * invisible to a test that only checks the endpoints, because the endpoints are perfect either way.
      */
-    public static TabTransition crossfade(Ramp ramp) {
+    static TabTransition crossfade(Ramp ramp) {
         return (change, done) -> {
             dissolve(change, 0f);
             ramp.run(p -> dissolve(change, clamp(p)), done);
@@ -229,7 +287,7 @@ public final class Tabs {
      * behind its trailing edge — the leaving page is what covers the box while the arriving one is still faint,
      * so it is the one thing here that cannot go anywhere.
      */
-    public static TabTransition slide(Ramp ramp) {
+    static TabTransition slide(Ramp ramp) {
         return (change, done) -> {
             // The arriving page enters from the side you moved toward; leftward selections come from the left.
             float from = change.incomingOnTop() ? TRAVEL : -TRAVEL;
@@ -299,6 +357,7 @@ public final class Tabs {
                 // own motion fading a new page in as well made "no tab animation" still animate (MainFrame's setting).
                 .childMotion(false);
         this.root = gui.column().role("tabs").width(Length.FILL).height(Length.FILL).children(strip, pages);
+        this.name = new WidgetName(gui, "tabs", root);
     }
 
     /** The node to place in a layout. */
@@ -316,36 +375,15 @@ public final class Tabs {
         return headers.size();
     }
 
-    /** React to selection changes (including the first one). Runs on the handler executor. */
-    public Tabs onSelect(IntConsumer handler) {
-        this.onSelect = handler == null ? i -> { } : handler;
+    /** Call this panel {@code name} in its tree ("documents"): its {@link #address()} is the tree's name and this. */
+    public Tabs name(String name) {
+        this.name.name(name);
         return this;
     }
 
-    /**
-     * React to a tab being removed, whoever removed it — the application's own {@link #remove} call, or the
-     * <b>Close</b> item the bar puts on every header's context menu without being asked.
-     *
-     * <p>That second source is the reason this exists. {@link #remove} is an owner's operation: it releases the
-     * page's registrations but cannot close the widgets on it, and an application that keeps anything alongside
-     * the bar — a parallel list of documents, a map from tab to model — owns that too. Close reaches
-     * {@code remove} directly from a right click, so without this the owner is never told, its structure keeps a
-     * tab the bar has lost, and every index it computes afterwards points one or more tabs off. Nothing throws
-     * and nothing looks wrong; the panel simply starts acting on the wrong page.
-     *
-     * <p><b>Runs inline, not on the handler executor</b>, unlike {@link #onSelect}. A parallel structure has to
-     * shrink in the same instant the bar's does or there is a window where the two disagree, and that window is
-     * exactly the bug this is here to close. It runs after both internal lists have lost the tab and before the
-     * selection moves to a survivor, so the handler sees the panel already consistent, and any {@code onSelect}
-     * that follows is delivered against indices the owner has already agreed with.
-     *
-     * <p>The handler may add a tab (an editor that refuses to be left with none does exactly that): the panel is
-     * unselected at that moment, so {@link #add} selects what it adds and the reselection below finds nothing
-     * left to do. It must not call {@link #remove} again.
-     */
-    public Tabs onRemove(IntConsumer handler) {
-        this.onRemove = handler == null ? i -> { } : handler;
-        return this;
+    /** Where this panel is on the bus: what its messages carry. */
+    public String address() {
+        return name.address();
     }
 
     /**
@@ -361,19 +399,19 @@ public final class Tabs {
 
         // Handlers resolve the header to its index at event time, not add time: tabs can be removed, so a
         // baked-in index would aim every surviving closure one tab off. The node's identity is the stable key.
-        gui.onClick(header, () -> select(headers.indexOf(header)));
+        Seams.of(gui).onClick(header, () -> select(headers.indexOf(header)));
         gui.focusable(header, true);
         // Arrow keys walk the bar while a header holds focus. A claim rather than a key handler, so it preempts
         // anything else bound to those chords for exactly as long as this header is focused.
         // Focus goes with the selection: the claims are scoped to the focused header, so a walk that left focus
         // behind would answer every further press from where it started and never get past the next tab.
-        gui.claim(header, Shortcut.of(Key.LEFT), ClaimScope.FOCUSED,
+        Seams.of(gui).claim(header, Shortcut.of(Key.LEFT), ClaimScope.FOCUSED,
                 () -> select(headers.indexOf(header) - 1).focus());
-        gui.claim(header, Shortcut.of(Key.RIGHT), ClaimScope.FOCUSED,
+        Seams.of(gui).claim(header, Shortcut.of(Key.RIGHT), ClaimScope.FOCUSED,
                 () -> select(headers.indexOf(header) + 1).focus());
         // Hover shading. Recorded as well as painted, so that a selection landing on this header later knows
         // whether the pointer is still on it -- see the states list.
-        gui.onState(header, state -> {
+        Seams.of(gui).onState(header, state -> {
             int at = headers.indexOf(header);
             if (at >= 0) {
                 states.set(at, state);
@@ -382,20 +420,20 @@ public final class Tabs {
         });
         // The one thing every tab bar's menu has, and the same index-at-event-time rule as the handlers above:
         // Close aims at wherever this header sits when the item is chosen, not where it sat when it was built.
-        // It is also the only structural change an application does not itself call for, which is what onRemove
+        // It is also the only structural change an application does not itself call for, which is what REMOVED
         // is for -- an owner that keeps anything per tab hears about this one exactly as it hears about its own.
-        gui.onContextMenu(header, menu -> {
+        Seams.of(gui).onContextMenu(header, menu -> {
             int at = headers.indexOf(header);
             if (closable) {
                 menu.item(dev.vexelray.gui.icons.Icon.CLOSE, "Close", () -> remove(at));
             }
-            contextMenu.build(at, menu);
+            actions.offer(menu, gui, CHOSEN, Chosen::new, name.address(), at, Set.of(), Set.of(), () -> { });
         });
 
         // A hidden page is the plainest kind of concealment there is, so the panel says how to undo it: anything
         // navigated to inside this body selects the tab it is on, first. Index at reveal time, like every other
         // closure here — the page can have been dragged elsewhere in the bar since it was added.
-        gui.reveals(body, descendant -> {
+        Seams.of(gui).reveals(body, descendant -> {
             int at = bodies.indexOf(body);
             if (at < 0 || at == selected) {
                 return false;   // already showing, or no longer a page of this panel: nothing to reveal
@@ -405,7 +443,7 @@ public final class Tabs {
         });
 
         // A header that moves or resizes (a rename, a neighbour removed, the bar scrolled) takes the indicator with it.
-        gui.onResize(header, layout -> restIndicator());
+        Seams.of(gui).onResize(header, layout -> restIndicator());
         bar.append(header);
         pages.append(body.width(Length.FILL).height(Length.FILL).visible(false));
         headers.add(header);
@@ -420,11 +458,20 @@ public final class Tabs {
     }
 
     /**
-     * Install the motion for a tab change. The default is {@link TabTransition#NONE} — instant, and identical to
-     * how the panel behaved before transitions existed, so this is opt-in and the reduced-motion path is simply
-     * not calling it.
+     * Slide the arriving page in over {@code timing} on a tab change, the leaving one dissolving under it; null to cut.
+     * The default is a cut, instant and identical to how the panel behaved before transitions existed.
      */
-    public Tabs transition(TabTransition transition) {
+    public Tabs slide(Timing timing) {
+        return transition(timing == null ? null : slide(Ramp.of(gui, timing)));
+    }
+
+    /** Dissolve one page into the next over {@code timing} on a tab change; null to cut. Give it a linear curve. */
+    public Tabs crossfade(Timing timing) {
+        return transition(timing == null ? null : crossfade(Ramp.of(gui, timing)));
+    }
+
+    /** Install the motion for a tab change, or none for a cut: the widget library's and its tests'. */
+    Tabs transition(TabTransition transition) {
         this.transition = transition == null ? TabTransition.NONE : transition;
         return this;
     }
@@ -442,7 +489,8 @@ public final class Tabs {
      * <p>It is drawn over the bar, in the bar's overlay; the headers themselves are painted as before. For reduced
      * motion, pass a ramp that arrives at once, and the indicator still marks the selection.
      */
-    public Tabs indicator(Ramp ramp) {
+    public Tabs indicator(Timing timing) {
+        Ramp ramp = Ramp.of(gui, timing);
         synchronized (indicatorLock) {
             indicatorRamp = ramp;
             indicatorGlide++;   // whatever was gliding has lost
@@ -455,7 +503,7 @@ public final class Tabs {
             return this;
         }
         // The bar resizing moves no header relative to it, but it does move its bottom edge, where the bar sits.
-        gui.onResize(bar, layout -> restIndicator());
+        Seams.of(gui).onResize(bar, layout -> restIndicator());
         restIndicator();
         return this;
     }
@@ -594,8 +642,7 @@ public final class Tabs {
             return this;
         }
         gui.batch(() -> change(next));
-        int delivered = next;
-        gui.handlers().execute(() -> onSelect.accept(delivered));
+        gui.bus().publish(SELECTED, new Selected(name.address(), next));
         return this;
     }
 
@@ -681,7 +728,7 @@ public final class Tabs {
      * page's widgets come back dead, not dormant — the caller closes them, it cannot re-home them. Selection
      * moves to the nearest surviving tab.
      *
-     * <p>{@link #onRemove} is told, whichever way the removal was asked for — including the header menu's own
+     * <p>{@link #REMOVED} is published, whichever way the removal was asked for — including the header menu's own
      * <b>Close</b>, which is a caller the application never wrote and so is the one it will otherwise miss.
      */
     public synchronized Tabs remove(int index) {
@@ -698,8 +745,8 @@ public final class Tabs {
         int previous = selected;
         selected = -1;   // force select() to restyle: surviving indices shifted under the old value
         // Here, and not a line later: whatever the owner keeps alongside the bar loses the tab at the same
-        // moment the bar does, so no index can be resolved against a pair of lists that disagree. See onRemove.
-        onRemove.accept(index);
+        // moment the bar does, so no index can be resolved against a pair of lists that disagree. See REMOVED.
+        gui.bus().publish(REMOVED, new Removed(name.address(), index));
         if (!headers.isEmpty()) {
             select(Math.min(previous > index ? previous - 1 : previous, headers.size() - 1));
         }
@@ -724,12 +771,15 @@ public final class Tabs {
     }
 
     /**
-     * Add to the context menu of every tab. Close comes first, then this — sources accumulate, so an application
-     * contributes "Close others", "Duplicate", "Pin" without restating the one the bar already knows how to do.
-     * With {@link #closable} off there is no Close, and this is the whole menu.
+     * Put {@code action} on every tab's menu, after Close, in the order actions are declared: "Close others",
+     * "Duplicate", "Pin", without restating the one the bar already knows how to do. With {@link #closable} off there
+     * is no Close, and these are the whole menu. Choosing one publishes {@link Chosen} on {@link #CHOSEN} with the
+     * tab's index; nothing of the application's runs at the right click (vexelray-framework's threading.md, T7.5).
+     *
+     * @throws IllegalArgumentException when the id is {@link #CLOSE}, or another action already has it
      */
-    public Tabs onContextMenu(TabMenu source) {
-        this.contextMenu = source == null ? (index, menu) -> { } : source;
+    public Tabs action(MenuAction action) {
+        actions.add(action);
         return this;
     }
 

@@ -4,7 +4,7 @@ package dev.vexelray.gui.core.drop;
  * A node's answer to "what would happen if this landed here".
  *
  * <pre>{@code
- * gui.onDrop(treeBody, (payload, x, y) -> payload.as(ROW)
+ * Seams.of(gui).onDrop(treeBody, (payload, x, y) -> payload.as(ROW)
  *         .map(row -> seamAt(y).accept(row))     // every y resolves to some seam
  *         .orElse(Drop.NONE));                   // ...but only rows are accepted at all
  * }</pre>

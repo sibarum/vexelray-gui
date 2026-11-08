@@ -1,5 +1,6 @@
 package dev.vexelray.gui.demo.chapter;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.Length;
@@ -8,6 +9,7 @@ import dev.vexelray.gui.demo.Chapter;
 import dev.vexelray.gui.demo.Console;
 import dev.vexelray.gui.demo.Stage;
 import dev.vexelray.gui.demo.Ui;
+import dev.vexelray.gui.widget.Nodes;
 import dev.vexelray.gui.widget.Table;
 import dev.vexelray.text.TextLayout;
 
@@ -82,7 +84,7 @@ public final class TableChapter implements Chapter {
         // Read on every published layout, written only when it changed. The guard is not an optimisation: a
         // text write invalidates the layout, so a counter that wrote unconditionally would relayout for ever --
         // the same discipline the table's own column solve is under, which is why it is worth seeing twice.
-        gui.layout().onCommit(snapshot -> {
+        Seams.of(gui).layout().onCommit(snapshot -> {
             String now = ROWS + " rows  ·  " + table.rows().realizedRows() + " of them exist  ·  "
                     + table.selection().size() + " selected";
             if (!now.equals(lastCount)) {
@@ -91,11 +93,11 @@ public final class TableChapter implements Chapter {
             }
         });
 
-        table.selection().onChange(selected -> {
+        gui.mailbox(Table.SELECTED, table.address(), selected -> {
             Item one = table.selection().one();
-            console.note(selected.size() == 1 && one != null
+            console.note(selected.chosen().size() == 1 && one != null
                     ? "selected " + one.name()
-                    : selected.size() + " rows selected");
+                    : selected.chosen().size() + " rows selected");
         });
 
         Node tools = Ui.strip(gui,
@@ -134,7 +136,7 @@ public final class TableChapter implements Chapter {
     }
 
     /** One cell: a plain text node, because a cell's box, width and clipping are the table's business. */
-    private static Node cell(Gui gui, String text, boolean numeric) {
+    private static Node cell(Nodes gui, String text, boolean numeric) {
         return gui.text(text).width(Length.FILL).height(Length.FILL)
                 .textSize(Length.rem(0.9375f))
                 .textColor(numeric ? Role.DIM : Role.INK)

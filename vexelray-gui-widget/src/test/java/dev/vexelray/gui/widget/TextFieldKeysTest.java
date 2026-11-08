@@ -160,4 +160,21 @@ class TextFieldKeysTest {
             assertEquals("abefcd", f.text());
         }
     }
+
+    /** Where the caret ends up is a message a status line hears, by line and column, never a State it reads. */
+    @Test
+    void theCaretIsAnnouncedByLineAndColumn() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TextField f = field(h, "one\ntwo", true);
+            java.util.List<TextField.Caret> heard = new java.util.ArrayList<>();
+            h.gui.mailbox(TextField.CARET, f.address(), heard::add);
+            f.caret(5);
+            h.frame();
+            h.tap(Key.RIGHT);
+            h.frame();
+
+            assertEquals(new TextField.Caret(f.address(), 6, 2, 3), heard.get(heard.size() - 1),
+                    "after 'one', a newline and 't', one step right lands on line 2, column 3");
+        }
+    }
 }

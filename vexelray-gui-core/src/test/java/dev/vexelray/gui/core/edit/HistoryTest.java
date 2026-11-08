@@ -161,12 +161,15 @@ final class HistoryTest {
         List<String> m = model();
         History h = new History();
         List<History.Status> seen = new ArrayList<>();
-        h.status().onCommit((versioned) -> seen.add(versioned.value()));
+        sibarum.atchung.Atchung bus = sibarum.atchung.Atchung.create();
+        bus.subscribe(History.STATUS, c -> seen.add(c.status()));
+        h.announceOn(bus, "main.history");
         h.perform(new Set(m, 0, "x"));
         h.undo();
         // Clean without a mark: a history nobody has saved calls its starting state the unmodified one.
         assertEquals(new History.Status(false, true, true, 0, 1), seen.get(seen.size() - 1),
                 "subscribers are told what is possible and whether the work is saved");
+        assertEquals(seen.get(seen.size() - 1), h.status(), "and status() reads the same now");
     }
 
     // ---- refusal: docs/plans/undo.md §2, rules 6 to 8 ----

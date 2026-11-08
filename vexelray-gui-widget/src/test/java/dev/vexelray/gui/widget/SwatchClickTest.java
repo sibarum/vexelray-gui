@@ -74,10 +74,16 @@ class SwatchClickTest {
         }
     }
 
-    /** An inspector holding one swatches row, in a column {@code width} wide. */
+    /**
+     * An inspector holding one swatches row, in a column {@code width} wide, told {@code chosen} and writing what the
+     * user picks back into it.
+     */
     private static Node panel(HeadlessGui h, AtomicReference<Ramp> chosen, float width) {
         Inspector inspector = new Inspector(h.gui);
-        inspector.add(Property.swatches("", "", maps(), chosen::get, chosen::set));
+        inspector.add(Property.swatches("map", "", "", maps()));
+        h.bus.publish(Inspector.VALUES,
+                new Inspector.Values(inspector.address(), java.util.Map.of("map", chosen.get())));
+        h.bus.subscribe(Inspector.EDITED, e -> chosen.set((Ramp) e.value()));
         Node panel = h.gui.column().width(Length.dp(width)).children(inspector.node());
         h.gui.root().append(panel);
         return panel;
@@ -96,6 +102,7 @@ class SwatchClickTest {
             RetainedNode steel = cards.get(1);
             h.click(steel.x + steel.w / 2f, steel.y + steel.h / 2f);
 
+            h.frame();
             assertEquals(STEEL, chosen.get(), "the click should have reached the card's handler");
         }
     }

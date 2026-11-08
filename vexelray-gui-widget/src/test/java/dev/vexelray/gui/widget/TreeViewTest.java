@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.input.MenuItem;
 import org.junit.jupiter.api.Test;
 import sibarum.tactroller.api.Key;
@@ -27,7 +28,7 @@ class TreeViewTest {
             "docs", List.of());
 
     /** A source over {@link #KIDS} that counts children() calls, so laziness is assertable. */
-    private static final class MapSource implements TreeView.Source<String> {
+    private static final class MapSource implements Listing<String> {
         final AtomicInteger fetches = new AtomicInteger();
 
         @Override
@@ -56,7 +57,7 @@ class TreeViewTest {
     void rootsAreListedCollapsedAndNothingIsFetched() {
         try (HeadlessGui h = new HeadlessGui()) {
             MapSource source = new MapSource();
-            TreeView<String> tree = new TreeView<>(h.gui, source);
+            TreeView<String> tree = Listing.tree(h, source);
             h.gui.root().children(tree.node());
             h.frame();
 
@@ -70,7 +71,7 @@ class TreeViewTest {
     void expandingFetchesChildrenOnceAndReexpandingDoesNot() {
         try (HeadlessGui h = new HeadlessGui()) {
             MapSource source = new MapSource();
-            TreeView<String> tree = new TreeView<>(h.gui, source);
+            TreeView<String> tree = Listing.tree(h, source);
             h.gui.root().children(tree.node());
             h.frame();
 
@@ -92,7 +93,7 @@ class TreeViewTest {
     void collapsedChildrenOccupyNoLayoutAndExpandedOnesDo() {
         try (HeadlessGui h = new HeadlessGui()) {
             MapSource source = new MapSource();
-            TreeView<String> tree = new TreeView<>(h.gui, source);
+            TreeView<String> tree = Listing.tree(h, source);
             h.gui.root().children(tree.node());
             h.frame();
 
@@ -115,7 +116,7 @@ class TreeViewTest {
     void collapsePullsTheSelectionUpOntoTheCollapsedRow() {
         try (HeadlessGui h = new HeadlessGui()) {
             MapSource source = new MapSource();
-            TreeView<String> tree = new TreeView<>(h.gui, source);
+            TreeView<String> tree = Listing.tree(h, source);
             h.gui.root().children(tree.node());
             h.frame();
 
@@ -135,7 +136,7 @@ class TreeViewTest {
     void arrowKeysWalkTheVisibleRows() {
         try (HeadlessGui h = new HeadlessGui()) {
             MapSource source = new MapSource();
-            TreeView<String> tree = new TreeView<>(h.gui, source);
+            TreeView<String> tree = Listing.tree(h, source);
             h.gui.root().children(tree.node());
             h.frame();
             tree.focus();
@@ -156,7 +157,7 @@ class TreeViewTest {
     void rightExpandsThenEntersAndLeftCollapsesThenExits() {
         try (HeadlessGui h = new HeadlessGui()) {
             MapSource source = new MapSource();
-            TreeView<String> tree = new TreeView<>(h.gui, source);
+            TreeView<String> tree = Listing.tree(h, source);
             h.gui.root().children(tree.node());
             h.frame();
             tree.focus();
@@ -191,7 +192,7 @@ class TreeViewTest {
     void keyboardWalksIntoAnExpandedSubtreeInDocumentOrder() {
         try (HeadlessGui h = new HeadlessGui()) {
             MapSource source = new MapSource();
-            TreeView<String> tree = new TreeView<>(h.gui, source);
+            TreeView<String> tree = Listing.tree(h, source);
             h.gui.root().children(tree.node());
             h.frame();
             tree.expand("src");
@@ -224,7 +225,8 @@ class TreeViewTest {
         try (HeadlessGui h = new HeadlessGui()) {
             MapSource source = new MapSource();
             String[] activated = {null};
-            TreeView<String> tree = new TreeView<>(h.gui, source).onActivate(item -> activated[0] = item);
+            TreeView<String> tree = Listing.tree(h, source);
+            h.gui.mailbox(TreeView.ACTIVATED, tree.address(), a -> activated[0] = (String) a.item());
             h.gui.root().children(tree.node());
             h.frame();
             tree.focus();
@@ -242,7 +244,8 @@ class TreeViewTest {
         try (HeadlessGui h = new HeadlessGui()) {
             MapSource source = new MapSource();
             String[] selectedSeen = {null};
-            TreeView<String> tree = new TreeView<>(h.gui, source).onSelect(item -> selectedSeen[0] = item);
+            TreeView<String> tree = Listing.tree(h, source);
+            h.gui.mailbox(TreeView.SELECTED, tree.address(), s -> selectedSeen[0] = (String) s.item());
             h.gui.root().children(tree.node());
             h.frame();
 
@@ -268,7 +271,8 @@ class TreeViewTest {
         try (HeadlessGui h = new HeadlessGui()) {
             MapSource source = new MapSource();
             List<String> clicked = new java.util.concurrent.CopyOnWriteArrayList<>();
-            TreeView<String> tree = new TreeView<>(h.gui, source).onClick(clicked::add);
+            TreeView<String> tree = Listing.tree(h, source);
+            h.gui.mailbox(TreeView.CLICKED, tree.address(), c -> clicked.add((String) c.item()));
             h.gui.root().children(tree.node());
             h.frame();
             h.frame();
@@ -299,7 +303,8 @@ class TreeViewTest {
         try (HeadlessGui h = new HeadlessGui()) {
             MapSource source = new MapSource();
             List<String> heard = new java.util.concurrent.CopyOnWriteArrayList<>();
-            TreeView<String> tree = new TreeView<>(h.gui, source).onHover(heard::add);
+            TreeView<String> tree = Listing.tree(h, source);
+            h.gui.mailbox(TreeView.HOVERED, tree.address(), v -> heard.add((String) v.item()));
             h.gui.root().children(tree.node());
             h.frame();
             h.frame();
@@ -326,7 +331,7 @@ class TreeViewTest {
     void anEmptyBranchDemotesToALeaf() {
         try (HeadlessGui h = new HeadlessGui()) {
             MapSource source = new MapSource();
-            TreeView<String> tree = new TreeView<>(h.gui, source);
+            TreeView<String> tree = Listing.tree(h, source);
             h.gui.root().children(tree.node());
             h.frame();
 
@@ -348,7 +353,7 @@ class TreeViewTest {
     void expandIsTopDownAProgrammaticExpandOfAnUnrealisedItemIsANoOp() {
         try (HeadlessGui h = new HeadlessGui()) {
             MapSource source = new MapSource();
-            TreeView<String> tree = new TreeView<>(h.gui, source);
+            TreeView<String> tree = Listing.tree(h, source);
             h.gui.root().children(tree.node());
             h.frame();
 
@@ -361,18 +366,12 @@ class TreeViewTest {
 
     /** A context click selects the row first — the menu that opens is about the row under the pointer. */
     @Test
-    void aContextClickSelectsTheRowAndBuildsItsMenuAroundTheItem() {
+    void aContextClickSelectsTheRowAndOffersItsMenuForTheItem() {
         try (HeadlessGui h = new HeadlessGui()) {
             MapSource source = new MapSource();
-            String[] contextItem = {null};
-            float[] at = {-1f, -1f};
-            TreeView<String> tree = new TreeView<>(h.gui, source)
-                    .onContextMenu((item, menu) -> {
-                        contextItem[0] = item;
-                        at[0] = menu.event().x();
-                        at[1] = menu.event().y();
-                        menu.item("Open " + item, () -> { });
-                    });
+            java.util.List<TreeView.Chosen> chosen = new java.util.ArrayList<>();
+            h.bus.subscribe(TreeView.CHOSEN, chosen::add);
+            TreeView<String> tree = Listing.tree(h, source).action(MenuAction.of("open", "Open"));
             h.gui.root().children(tree.node());
             h.frame();
 
@@ -382,13 +381,14 @@ class TreeViewTest {
             h.frame();
 
             assertEquals("src", tree.selected(), "the row under the pointer became the selection");
-            assertEquals("src", contextItem[0], "and the app was asked for that item's menu, with the position");
-            assertEquals(x, at[0], 0.5f);
-            assertEquals(y, at[1], 0.5f);
-            assertEquals(java.util.Arrays.asList("Expand", "Collapse", null, "Open src"),
-                    ((ContextMenu) h.gui.menus()).items().stream().map(MenuItem::label).toList(),
-                    "the tree's own two commands, a rule, then what the application added — and a presenter of "
+            ContextMenu menu = (ContextMenu) Seams.of(h.gui).menus();
+            assertEquals(java.util.Arrays.asList("Expand", "Collapse", null, "Open"),
+                    menu.items().stream().map(MenuItem::label).toList(),
+                    "the tree's own two commands, a rule, then what the application declared — and a presenter of "
                             + "the tree's own installing, so the menu is actually on screen");
+            menu.items().get(3).action().run();
+            assertEquals(java.util.List.of(new TreeView.Chosen(tree.address(), "open", "src")), chosen,
+                    "choosing it says which item the menu was about");
             tree.close();
         }
     }
@@ -397,7 +397,7 @@ class TreeViewTest {
     private static final String LONG = "BufferTestWithAVeryLongName.java";
 
     /** Roots "dir" (holding {@link #LONG}) and "z.java" — enough to put a row directly under the long one. */
-    private static final class LongNameSource implements TreeView.Source<String> {
+    private static final class LongNameSource implements Listing<String> {
         @Override
         public List<String> roots() {
             return List.of("dir", "z.java");
@@ -421,7 +421,7 @@ class TreeViewTest {
 
     /** Mount a {@link LongNameSource} tree 10 rem wide, with "dir" open and laid out. */
     private static TreeView<String> narrowTree(HeadlessGui h) {
-        TreeView<String> tree = new TreeView<>(h.gui, new LongNameSource());
+        TreeView<String> tree = Listing.tree(h, new LongNameSource());
         h.gui.root().children(h.gui.column()
                 .width(dev.vexelray.gui.core.layout.Length.rem(10))
                 .height(dev.vexelray.gui.core.layout.Length.FILL)

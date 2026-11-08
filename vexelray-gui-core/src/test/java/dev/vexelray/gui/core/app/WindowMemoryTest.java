@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core.app;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.os.NativeWindow;
 import dev.vexelray.os.WindowConfig;
@@ -173,9 +174,9 @@ class WindowMemoryTest {
             memory.save();
         }
         try (Gui fresh = new Gui()) {
-            assertEquals(1f, fresh.zoom().value(), 1e-4f, "a new tree starts unscaled");
+            assertEquals(1f, Seams.of(fresh).zoom().value(), 1e-4f, "a new tree starts unscaled");
             new WindowMemory(Settings.at(file), ONE_SCREEN).watch("main", window(0, 0, 500, 400), fresh);
-            assertEquals(1.75f, fresh.zoom().value(), 1e-4f, "and watching it puts the zoom back");
+            assertEquals(1.75f, Seams.of(fresh).zoom().value(), 1e-4f, "and watching it puts the zoom back");
         }
     }
 

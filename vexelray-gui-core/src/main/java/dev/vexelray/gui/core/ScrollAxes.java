@@ -1,12 +1,13 @@
 package dev.vexelray.gui.core;
 
 import dev.vexelray.gui.core.layout.NodeLayout;
+import dev.vexelray.gui.core.spi.ScrollSource;
 import sibarum.atchung.Committer;
 import sibarum.atchung.State;
 
 /**
  * A node's own scroll, as one {@link ScrollSource} per axis: the range read off its published layout, and offsets
- * asked of it. Made with {@link Gui#scrollAxes}, and what a {@link Scroller} is made of.
+ * asked of it. Made with {@code Seams.scrollAxes}, and what a {@link Scroller} is made of.
  *
  * <p>For a node that scrolls itself rather than inside a Scroller: a multi-line text field, whose caret-follow,
  * wheel and line culling are the text node's own. A scrollbar bound to {@link #y()} shows and moves the text's scroll

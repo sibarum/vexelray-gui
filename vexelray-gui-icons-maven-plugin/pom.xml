@@ -7,7 +7,7 @@
     <parent>
         <groupId>dev.vexelray.gui</groupId>
         <artifactId>vexelray-gui</artifactId>
-        <version>0.1.3-SNAPSHOT</version>
+        <version>0.2.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>vexelray-gui-icons-maven-plugin</artifactId>
@@ -46,6 +46,12 @@
         <dependency>
             <groupId>sibarum.imagelib</groupId>
             <artifactId>imagelib-wrapper</artifactId>
+        </dependency>
+        <!-- The pair goal: a mark's drawing as an SDG, and its art pair and icon converted from it. -->
+        <dependency>
+            <groupId>dev.vexelray.fields</groupId>
+            <artifactId>vexelray-fields-convert</artifactId>
+            <version>${vexelray-fields.version}</version>
         </dependency>
         <!-- DistanceField: the one place a mask becomes a field, which the run time's icon path also uses. -->
         <dependency>

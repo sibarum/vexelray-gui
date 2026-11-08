@@ -1,5 +1,8 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
+import sibarum.atchung.Topic;
+import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.CursorShape;
@@ -72,9 +75,47 @@ import java.util.function.BiConsumer;
  * table.items(people);
  * }
  *
+ * <p>What changes is a message carrying the table's {@link #address() address}: the selection on {@link #SELECTED} and
+ * the order on {@link #SORTED} (vexelray-framework's {@code docs/threading.md}, T3.8).
+ *
  * @param <T> the row type
  */
 public final class Table<T> implements AutoCloseable {
+
+    /** What is selected, whenever it changes. The last in a frame. */
+    public static final Topic<Selected> SELECTED =
+            Addressed.state(Selected.class, Selected::table);
+
+    /**
+     * The order, after every change to it, whether the application asked ({@link #sortBy}) or the user clicked a
+     * header. It exists because a status line that says "sorted by modified" has nowhere else to learn that the user
+     * just changed it. The last in a frame.
+     */
+    public static final Topic<Sorted> SORTED =
+            Addressed.state(Sorted.class, Sorted::table);
+
+    /** The table at {@code table} has {@code chosen} selected. */
+    public record Selected(String table, Set<Object> chosen) implements Addressed {
+        public Selected {
+            chosen = Set.copyOf(chosen);
+        }
+
+        @Override
+        public Object address() {
+            return table;
+        }
+    }
+
+    /**
+     * The table at {@code table} is ordered by {@code column} in {@code direction}: -1 and {@link Sort#NONE} when the
+     * rows are in the order they were given.
+     */
+    public record Sorted(String table, int column, Sort direction) implements Addressed {
+        @Override
+        public Object address() {
+            return table;
+        }
+    }
 
     /**
      * One column: what its header says, how wide it is, what a cell of it contains, and how to sort by it.
@@ -84,7 +125,7 @@ public final class Table<T> implements AutoCloseable {
      * @param cell  builds the contents of one cell; the cell's box and width are the table's business
      * @param sort  how rows compare on this column, or null when it cannot be sorted by
      */
-    public record Column<T>(String title, Length width, ListView.RowBuilder<T> cell, Comparator<T> sort) {
+    public record Column<T>(String title, Length width, Face<T> cell, Comparator<T> sort) {
 
         public Column {
             Objects.requireNonNull(title, "title");
@@ -93,7 +134,7 @@ public final class Table<T> implements AutoCloseable {
         }
 
         /** A column that cannot be sorted by — the default, because most columns cannot be ordered meaningfully. */
-        public static <T> Column<T> of(String title, Length width, ListView.RowBuilder<T> cell) {
+        public static <T> Column<T> of(String title, Length width, Face<T> cell) {
             return new Column<>(title, width, cell, null);
         }
 
@@ -105,7 +146,7 @@ public final class Table<T> implements AutoCloseable {
          * the comparator un-passable. Here the comparator is an argument, so it pins the type like the cell
          * builder does.
          */
-        public static <T> Column<T> of(String title, Length width, ListView.RowBuilder<T> cell,
+        public static <T> Column<T> of(String title, Length width, Face<T> cell,
                                        Comparator<T> sort) {
             return new Column<>(title, width, cell, sort);
         }
@@ -169,7 +210,7 @@ public final class Table<T> implements AutoCloseable {
 
     private int sortColumn = -1;
     private Sort sort = Sort.NONE;
-    private volatile BiConsumer<Integer, Sort> onSort = (column, direction) -> { };
+    private final WidgetName name;
 
     public Table(Gui gui, float rowRem, List<Column<T>> columns) {
         this.gui = Objects.requireNonNull(gui, "gui");
@@ -195,10 +236,12 @@ public final class Table<T> implements AutoCloseable {
                 .background(Role.CHROME);
         buildHeader();
         root.children(header, body.node());
+        this.name = new WidgetName(gui, "table", root);
+        body.selection().onChange(sel -> gui.bus().publish(SELECTED, new Selected(name.address(), Set.copyOf(sel))));
 
         // The solve rides the same read-model commit the body's window does: it is the frame's collect-and-place
         // step, and it needs the geometry that frame produced.
-        subs.add(gui.layout().onCommit(snapshot -> solve()));
+        subs.add(Seams.of(gui).layout().onCommit(snapshot -> solve()));
     }
 
     /** The node to place in a layout. */
@@ -233,19 +276,19 @@ public final class Table<T> implements AutoCloseable {
         }
         markSorted();
         apply();
-        onSort.accept(sortedColumn(), sortDirection());
+        gui.bus().publish(SORTED, new Sorted(name.address(), sortedColumn(), sortDirection()));
         return this;
     }
 
-    /**
-     * Told the order after every change to it, whether the application asked ({@link #sortBy}) or the user clicked
-     * a header. The column is -1 and the direction {@link Sort#NONE} when the rows are in the order they were
-     * given. It exists because a status line that says "sorted by modified" has nowhere else to learn that the
-     * user just changed it. Runs on the thread that changed the order.
-     */
-    public Table<T> onSort(BiConsumer<Integer, Sort> handler) {
-        this.onSort = handler == null ? (column, direction) -> { } : handler;
+    /** Call this table {@code name} in its tree ("files"): its {@link #address()} is the tree's name and this. */
+    public Table<T> name(String name) {
+        this.name.name(name);
         return this;
+    }
+
+    /** Where this table is on the bus: what its messages carry. */
+    public String address() {
+        return name.address();
     }
 
     /** Which column the rows are ordered by, or -1. */
@@ -363,12 +406,12 @@ public final class Table<T> implements AutoCloseable {
 
             cell.children(label, mark, grip);
             if (column.sortable()) {
-                gui.onClick(label, () -> cycleSort(index));
+                Seams.of(gui).onClick(label, () -> cycleSort(index));
             }
         // The column's edge is dragged to change its width, so the horizontal resize arrow, held for the whole
         // drag. The same shape as SplitPane's divider, which is the same gesture.
         gui.cursor(grip, CursorShape.RESIZE_HORIZONTAL);
-            gui.onDrag(grip, e -> resize(index, e));
+            Seams.of(gui).onDrag(grip, e -> resize(index, e));
 
             headerCells.add(cell);
             headerLabels.add(label);
@@ -388,7 +431,7 @@ public final class Table<T> implements AutoCloseable {
             return;
         }
         synchronized (this) {
-            float dpi = Math.max(0.0001f, gui.dpi().value());
+            float dpi = Math.max(0.0001f, Seams.of(gui).dpi().value());
             float now = solved[column] > 0f ? solved[column] : 0f;
             float min = Length.rem(MIN_COLUMN_REM).scalarPx(context(), 0f);
             dragged[column] = Length.dp(Math.max(min, now + e.dx()) / dpi);
@@ -413,7 +456,10 @@ public final class Table<T> implements AutoCloseable {
     // ------------------------------------------------------------------ rows
 
     /** One row: a cell per column, recorded so the solve can write each one its width. */
-    private Node buildRow(Gui g, T item) {
+    private Node buildRow(Nodes ignored, T item) {
+        // A cell's button would be announced as the body list's, under an address that is not this table's, so a
+        // table's cells take no presses until a table that needs them says what they announce.
+        Nodes g = new Nodes(gui, "table");
         Node row = g.row().width(Length.FILL).height(Length.FILL).scroll(false, false);
         List<Node> built = new ArrayList<>(columns.size());
         for (int i = 0; i < columns.size(); i++) {
@@ -445,7 +491,7 @@ public final class Table<T> implements AutoCloseable {
      */
     private synchronized Length widthOf(int column) {
         if (solved[column] > 0f) {
-            return Length.dp(solved[column] / Math.max(0.0001f, gui.dpi().value()));
+            return Length.dp(solved[column] / Math.max(0.0001f, Seams.of(gui).dpi().value()));
         }
         Length declared = dragged[column] != null ? dragged[column] : columns.get(column).width();
         return toContent(declared) ? Length.AUTO : declared;
@@ -509,7 +555,7 @@ public final class Table<T> implements AutoCloseable {
                 }
                 solved[i] = width;
                 int index = i;
-                Length as = Length.dp(width / Math.max(0.0001f, gui.dpi().value()));
+                Length as = Length.dp(width / Math.max(0.0001f, Seams.of(gui).dpi().value()));
                 writes.add(() -> place(index, as));
             }
         }
@@ -569,8 +615,8 @@ public final class Table<T> implements AutoCloseable {
     }
 
     private LayoutContext context() {
-        return new LayoutContext(gui.rootEmPx(), gui.zoom().value(), gui.dpi().value(),
-                gui.viewport().value().width(), gui.viewport().value().height());
+        return new LayoutContext(gui.rootEmPx(), Seams.of(gui).zoom().value(), Seams.of(gui).dpi().value(),
+                Seams.of(gui).viewport().value().width(), Seams.of(gui).viewport().value().height());
     }
 
     @Override

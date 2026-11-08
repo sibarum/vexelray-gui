@@ -19,6 +19,9 @@ import sibarum.elektro.queue.transport.PeerListener;
 import sibarum.elektro.queue.transport.Transport;
 import sibarum.elektro.queue.transport.tcp.TcpTransport;
 import sibarum.elektro.queue.transport.uds.UdsTransport;
+import sibarum.probe.Cause;
+import sibarum.probe.Lane;
+import sibarum.probe.Probe;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -67,6 +70,15 @@ public final class InspectorLink implements AutoCloseable {
 
     /** The longest {@code AF_UNIX} path, measured on Windows (atchung docs/spikes/elektroq-inspector-stream.md §1). */
     static final int MAX_SOCKET_PATH = 106;
+
+    /**
+     * What an application of this link sends the Inspector, as one number, said in every {@link StreamOpened}. An
+     * Inspector built against the same number is sent everything it reads, because a run with this link open records
+     * every probe lane, traced (atchung's {@code LogConfig.inspected}); one of another number warns that what it shows
+     * may be missing something. Bump it whenever what an application sends changes in a way the Inspector reads: a
+     * lane, a row's kind or detail, a field here.
+     */
+    public static final int VERSION = 1;
 
     /** The system property that switches the link off: {@code -Dautomation.link=off}. */
     public static final String SETTING = "automation.link";
@@ -248,12 +260,18 @@ public final class InspectorLink implements AutoCloseable {
         StreamOpened o = follower.opened();
         senders.put(peer, new Sender(peer, follower, Math.max(0, open.snapEveryMs())));
         return new dev.vexelray.gui.inspector.link.StreamOpened(o.lanes(), o.fromSeq(), o.startSeq(), o.oldestSeq(),
-                o.headSeq(), Optional.empty());
+                o.headSeq(), Optional.empty(), Optional.of(sibarum.probe.Probe.originNanos()), Cause.sources(),
+                recorded(), Optional.of(VERSION));
+    }
+
+    /** The lanes this process's probe records, by key, in the probe's order. */
+    static List<String> recorded() {
+        return java.util.Arrays.stream(Lane.values()).filter(Probe::on).map(Lane::key).toList();
     }
 
     private static dev.vexelray.gui.inspector.link.StreamOpened refused(StreamOpen open, String why) {
         return new dev.vexelray.gui.inspector.link.StreamOpened(open.lanes(), open.fromSeq(), -1, -1, -1,
-                Optional.of(why));
+                Optional.of(why), Optional.empty(), List.of(), List.of(), Optional.empty());
     }
 
     private void stop(PeerId peer, String why) {
@@ -370,8 +388,9 @@ public final class InspectorLink implements AutoCloseable {
 
         @Override
         public void row(Rows rows, int i) {
+            long cause = rows.cause(i);
             batch.add(new Row(rows.seq(i), rows.monoNanos(i), rows.wallNanos(i), rows.frame(i), rows.thread(i),
-                    rows.lane(i), rows.kind(i), rows.detail(i)));
+                    rows.lane(i), rows.kind(i), rows.detail(i), cause == Cause.NONE ? "" : Cause.format(cause)));
             if (batch.size() >= MAX_BATCH_ROWS) {
                 flush();
             }

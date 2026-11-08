@@ -37,23 +37,23 @@ class GestureClaimTest {
 
     /** Three fingers in a row at {@code x} mm, at {@code atMs}. */
     private static void three(Atchung bus, double x, long atMs) {
-        bus.publish(InputTopics.INPUT, new InputEvent.TouchpadChanged(List.of(
+        bus.publish(InputTopics.input("test"), new InputEvent.TouchpadChanged(List.of(
                 new TouchpadContact(1, x, 30, 0, 0), new TouchpadContact(2, x + 15, 30, 0, 0),
                 new TouchpadContact(3, x + 30, 30, 0, 0)), atMs * 1_000_000L));
     }
 
     private static void lift(Atchung bus, long atMs) {
-        bus.publish(InputTopics.INPUT, new InputEvent.TouchpadChanged(List.of(), atMs * 1_000_000L));
+        bus.publish(InputTopics.input("test"), new InputEvent.TouchpadChanged(List.of(), atMs * 1_000_000L));
     }
 
     @Test
     void aThreeFingerSwipeRunsItsClaimAndThePanIsPublished() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS, Runnable::run);
+        InputDispatcher d = new InputDispatcher(bus, "test", CLICKS);
         RetainedNode root = tree();
         List<String> log = Collections.synchronizedList(new ArrayList<>());
         List<GestureEvent> seen = Collections.synchronizedList(new ArrayList<>());
-        bus.subscribe(InputTopics.GESTURE, seen::add);
+        bus.subscribe(InputTopics.gestures("test"), seen::add);
         d.claim(-1L, Gesture.swipe(3, Gesture.Motion.SWIPE_LEFT), ClaimScope.GLOBAL, () -> log.add("previous"));
         d.claim(-1L, Gesture.swipe(3, Gesture.Motion.SWIPE_RIGHT), ClaimScope.GLOBAL, () -> log.add("next"));
 
@@ -73,7 +73,7 @@ class GestureClaimTest {
     @Test
     void aGestureClaimRanksAsAChordDoes() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS, Runnable::run);
+        InputDispatcher d = new InputDispatcher(bus, "test", CLICKS);
         RetainedNode root = tree();
         d.setFocusable(1, true);
         d.focus(1);
@@ -90,5 +90,38 @@ class GestureClaimTest {
         d.dispatch(root);
 
         assertEquals(List.of("focused"), log, "the narrower place wins, as for a key");
+    }
+    /** Two fingers {@code apart} mm apart, centred at 50 mm, at {@code atMs}. */
+    private static void two(Atchung bus, double apart, long atMs) {
+        bus.publish(InputTopics.input("test"), new InputEvent.TouchpadChanged(List.of(
+                new TouchpadContact(1, 50 - apart / 2, 30, 0, 0), new TouchpadContact(2, 50 + apart / 2, 30, 0, 0)),
+                atMs * 1_000_000L));
+    }
+
+    @Test
+    void aPinchGoesWholeToTheNearestNodeUnderThePointerThatTakesOne() {
+        Atchung bus = Atchung.create();
+        InputDispatcher d = new InputDispatcher(bus, "test", CLICKS);
+        RetainedNode root = tree();
+        List<PinchEvent> child = Collections.synchronizedList(new ArrayList<>());
+        List<PinchEvent> parent = Collections.synchronizedList(new ArrayList<>());
+        d.onPinch(1, child::add);
+        d.onPinch(0, parent::add);
+        bus.publish(InputTopics.input("test"), new InputEvent.PointerMoved(5, 5, 0, 0, 0L));
+        d.dispatch(root);
+
+        for (int i = 0; i <= 10; i++) {
+            two(bus, 20 + 3 * i, 10L + 10L * i);   // spread from 20 mm to 50 mm over 100 ms
+            d.dispatch(root);
+        }
+        lift(bus, 130);
+        d.dispatch(root);
+
+        assertEquals(List.of(), parent, "the nearest node takes it");
+        assertEquals(PinchEvent.Phase.START, child.getFirst().phase());
+        assertEquals(PinchEvent.Phase.END, child.getLast().phase());
+        double zoom = child.stream().mapToDouble(PinchEvent::scale).reduce(1, (a, b) -> a * b);
+        assertTrue(zoom > 1.5, "spreading zooms in: " + zoom);
+        assertTrue(child.stream().allMatch(p -> p.phase() == PinchEvent.Phase.MOVE || p.scale() == 1f));
     }
 }

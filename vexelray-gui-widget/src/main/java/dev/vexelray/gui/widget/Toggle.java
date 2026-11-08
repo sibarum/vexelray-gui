@@ -1,5 +1,8 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.Timing;
+import dev.vexelray.gui.core.spi.Seams;
+import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.CursorShape;
@@ -9,6 +12,8 @@ import dev.vexelray.gui.core.style.Finish;
 import dev.vexelray.gui.core.style.Relief;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
+
+import sibarum.atchung.Topic;
 
 import java.util.function.Consumer;
 
@@ -27,15 +32,27 @@ import java.util.function.Consumer;
  * or not by the application; with none installed the knob simply appears at the other end, which is what a switch
  * did before there was motion and is also the whole of the reduced-motion path.
  *
- * <p>Reads flow out through {@link #onChange}; the handler runs on a worker thread, so it must not touch the
- * retained tree except through {@link Node} handles.
+ * <p>A flip is published on {@link #CHANGED}, carrying the switch's {@link #address() address}: the last in a frame,
+ * because it is state (vexelray-framework's {@code docs/threading.md}, T3.8).
  *
  * <p><b>A flip undoes.</b> Each flip the user makes — or {@link #on(boolean)}, acting as the user — is an entry in the
- * history the tree binds above the switch; Ctrl+Z flips it back the same way, handler and all, so the application's
+ * history the tree binds above the switch; Ctrl+Z flips it back the same way, message and all, so the application's
  * model follows with nothing written for it. {@link #show} records nothing, because nobody flipped anything.
  * {@link #undoable(boolean)} turns it off for a switch that is not an edit.
  */
 public final class Toggle {
+
+    /** Whether a switch is on, whenever a flip (the user's, or {@link #on(boolean)}) changes it. The last in a frame. */
+    public static final Topic<Changed> CHANGED =
+            Addressed.state(Changed.class, Changed::toggle);
+
+    /** The switch at {@code toggle} is now {@code on}, or not. */
+    public record Changed(String toggle, boolean on) implements Addressed {
+        @Override
+        public Object address() {
+            return toggle;
+        }
+    }
 
     private final Gui gui;
     private final Node track;
@@ -44,6 +61,7 @@ public final class Toggle {
     private final Node after;
     private volatile boolean on;
     private volatile Consumer<Boolean> onChange = v -> { };
+    private final WidgetName name;
     private volatile Ramp ramp;
     /** Where the knob is, 0 to 1 — which is not {@link #on} while it is travelling. Guarded by {@code this}. */
     private float at;
@@ -72,11 +90,12 @@ public final class Toggle {
                 .alignItems(AlignItems.CENTER)
                 .scroll(false, false)
                 .children(before, knob, after);
+        this.name = new WidgetName(gui, "toggle", track);
         paint(false);
         gui.focusable(track, true);
         gui.cursor(track, CursorShape.POINTER);
-        gui.onClick(track, this::flip);
-        gui.onState(track, s -> paint(s == dev.vexelray.gui.core.input.InteractionState.HOVER));
+        Seams.of(gui).onClick(track, this::flip);
+        Seams.of(gui).onState(track, s -> paint(s == dev.vexelray.gui.core.input.InteractionState.HOVER));
         this.undo = new ValueUndo<>(gui, track, () -> on, this::set, false);
     }
 
@@ -99,7 +118,7 @@ public final class Toggle {
         return on;
     }
 
-    /** Set the state programmatically; also notifies {@link #onChange}. */
+    /** Set the state programmatically, as the user would: publishes {@link #CHANGED}. */
     public Toggle on(boolean value) {
         boolean was = on;
         set(value);
@@ -108,7 +127,7 @@ public final class Toggle {
     }
 
     /**
-     * Show a state the switch did not choose, <b>without</b> notifying {@link #onChange}.
+     * Show a state the switch did not choose, <b>without</b> publishing {@link #CHANGED}.
      *
      * <p><b>A sync is not an edit, and reporting one as an edit is a loop.</b> Where a panel re-reads its model
      * and writes what it finds back into its switches, {@link #on(boolean)} tells the application the user just
@@ -125,8 +144,22 @@ public final class Toggle {
         return this;
     }
 
-    /** React to state changes (fired on click and on {@link #on(boolean)}). Runs on a worker thread. */
-    public Toggle onChange(Consumer<Boolean> handler) {
+    /** Call this switch {@code name} in its tree ("wrap"): its {@link #address()} is the tree's name and this. */
+    public Toggle name(String name) {
+        this.name.name(name);
+        return this;
+    }
+
+    /** Where this switch is on the bus: what its {@link Changed} carries. */
+    public String address() {
+        return name.address();
+    }
+
+    /**
+     * The widget library's hook on a flip, for a widget built from switches: run as the flip is made, and as well as
+     * {@link #CHANGED} rather than instead. Package-private, because an application hears a switch by its message.
+     */
+    Toggle onChange(Consumer<Boolean> handler) {
         this.onChange = handler == null ? v -> { } : handler;
         return this;
     }
@@ -136,8 +169,8 @@ public final class Toggle {
      * knob in one step — see the class note. A ramp installed mid-travel takes effect on the next flip; the one
      * in flight finishes on the terms it started with.
      */
-    public Toggle transition(Ramp ramp) {
-        this.ramp = ramp;
+    public Toggle transition(Timing timing) {
+        this.ramp = Ramp.of(gui, timing);
         return this;
     }
 
@@ -147,10 +180,11 @@ public final class Toggle {
         undo.edited(was, !was);
     }
 
-    /** Change state, then tell the application — outside the lock, because the handler is not ours. */
+    /** Change state, then say so. */
     private void set(boolean value) {
         move(value);
         onChange.accept(value);
+        gui.bus().publish(CHANGED, new Changed(name.address(), value));
     }
 
     /**

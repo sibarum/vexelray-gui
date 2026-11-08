@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.model.RetainedNode;
@@ -25,7 +26,7 @@ class ContextMenuTest {
     /** A full-viewport page with a target node that declares a two-item menu, and the panel that shows it. */
     private static ContextMenu wire(HeadlessGui h, Node target, Runnable... actions) {
         ContextMenu menu = new ContextMenu(h.gui);   // constructing it installs it as the tree's presenter
-        h.gui.onContextMenu(target, m -> m
+        Seams.of(h.gui).onContextMenu(target, m -> m
                 .item("First", actions.length > 0 ? actions[0] : () -> { })
                 .item("Second", actions.length > 1 ? actions[1] : () -> { }));
         h.gui.root().children(target);
@@ -42,12 +43,12 @@ class ContextMenuTest {
     void theFirstMenuOnATreeBringsAPresenter() {
         try (HeadlessGui h = new HeadlessGui()) {
             Node target = page(h);
-            assertNull(h.gui.menus(), "nothing shows menus before anything has one");
-            h.gui.onContextMenu(target, m -> m.item("Only mine", () -> { }));
+            assertNull(Seams.of(h.gui).menus(), "nothing shows menus before anything has one");
+            Seams.of(h.gui).onContextMenu(target, m -> m.item("Only mine", () -> { }));
             h.gui.root().children(target);
             h.frame();
 
-            ContextMenu menu = assertInstanceOf(ContextMenu.class, h.gui.menus(),
+            ContextMenu menu = assertInstanceOf(ContextMenu.class, Seams.of(h.gui).menus(),
                     "the registered MenuPresenter.Default was installed by the first onContextMenu");
             h.rightClick(200f, 150f);
             h.frame();
@@ -62,9 +63,9 @@ class ContextMenuTest {
     void anInstalledPresenterIsNotReplacedByTheDefault() {
         try (HeadlessGui h = new HeadlessGui()) {
             dev.vexelray.gui.core.input.MenuPresenter own = (where, items) -> { };
-            h.gui.menus(own);
-            h.gui.onContextMenu(page(h), m -> m.item("Mine", () -> { }));
-            assertSame(own, h.gui.menus());
+            Seams.of(h.gui).menus(own);
+            Seams.of(h.gui).onContextMenu(page(h), m -> m.item("Mine", () -> { }));
+            assertSame(own, Seams.of(h.gui).menus());
         }
     }
 
@@ -132,7 +133,7 @@ class ContextMenuTest {
             boolean[] fired = {false, false};
             Node target = page(h);
             ContextMenu menu = new ContextMenu(h.gui);
-            h.gui.onContextMenu(target, m -> m
+            Seams.of(h.gui).onContextMenu(target, m -> m
                     .item("Plain", () -> fired[0] = true)
                     .submenu("More", sub -> sub
                             .item("Deep", () -> fired[1] = true)
@@ -155,7 +156,7 @@ class ContextMenuTest {
             var sub = menu.submenuNode(0).layout().rect();
             assertTrue(sub.x() >= more.x() + more.w(), "beside the row that opened it, not over it");
             // itemRect leaves out the panel's border, which both panels have: within it is level.
-            assertEquals(more.y() - 4f, sub.y(), 2f, "its first line level with that row");
+            assertEquals(more.y() - 6f, sub.y(), 2f, "its first line level with that row");
 
             h.click(sub.x() + sub.w() / 2f, sub.y() + 4f + more.h() / 2f);
             assertTrue(fired[1], "a command in the submenu runs");
@@ -191,7 +192,7 @@ class ContextMenuTest {
             boolean[] fired = {false};
             Node target = page(h);
             ContextMenu menu = new ContextMenu(h.gui);
-            h.gui.onContextMenu(target, m -> m
+            Seams.of(h.gui).onContextMenu(target, m -> m
                     .submenu("More", sub -> sub
                             .item("One", () -> { })
                             .item("Two", () -> { })
@@ -257,7 +258,7 @@ class ContextMenuTest {
             boolean[] pageSawEscape = {false};
             Node target = page(h);
             ContextMenu menu = wire(h, target);
-            h.gui.shortcut(Key.ESCAPE, () -> pageSawEscape[0] = true);
+            Seams.of(h.gui).shortcut(Key.ESCAPE, () -> pageSawEscape[0] = true);
 
             h.rightClick(200f, 150f);
             h.frame();
@@ -322,6 +323,39 @@ class ContextMenuTest {
         }
     }
 
+    /**
+     * A menu taller than the window is cut to the window and scrolls, rather than running off the bottom with its last
+     * lines out of reach: a title-bar menu in a small window could not be finished. The keyboard follows its line down.
+     */
+    @Test
+    void aMenuTallerThanTheWindowScrollsToItsLastLine() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Node target = page(h);
+            new ContextMenu(h.gui);
+            Seams.of(h.gui).onContextMenu(target, m -> {
+                for (int i = 0; i < 30; i++) {
+                    m.item("Line " + i, () -> { });
+                }
+            });
+            h.gui.root().children(target);
+            h.frame();
+
+            h.rightClick(100f, 10f);
+            h.frame();
+            ContextMenu menu = (ContextMenu) Seams.of(h.gui).menus();
+            var l = menu.node().layout();
+            assertTrue(l.rect().y() >= -0.5f && l.rect().y() + l.rect().h() <= 600f + 0.5f,
+                    "the panel is inside the 800x600 window");
+            assertTrue(l.overflowY(), "thirty lines do not fit, so the panel overflows into a scroller");
+            assertEquals(0f, l.scrollY(), 0.5f, "and opens at its first line");
+
+            h.tap(Key.END);
+            h.frame();
+            assertTrue(menu.node().layout().scrollY() > 0f, "walking to the last line scrolled the panel to it");
+            menu.close();
+        }
+    }
+
     @Test
     void anItemActionRunsExactlyOnce() {
         try (HeadlessGui h = new HeadlessGui()) {
@@ -349,8 +383,8 @@ class ContextMenuTest {
             ContextMenu menu = new ContextMenu(h.gui);
             Node outer = page(h);
             Node inner = h.gui.box().size(Length.dp(100), Length.dp(100));
-            h.gui.onContextMenu(outer, m -> m.item("Page", () -> { }));
-            h.gui.onContextMenu(inner, m -> m.item("Row", () -> { }));
+            Seams.of(h.gui).onContextMenu(outer, m -> m.item("Page", () -> { }));
+            Seams.of(h.gui).onContextMenu(inner, m -> m.item("Row", () -> { }));
             h.gui.root().children(outer.children(inner));
             h.frame();
 
@@ -384,7 +418,7 @@ class ContextMenuTest {
         try (HeadlessGui h = new HeadlessGui()) {
             ContextMenu menu = new ContextMenu(h.gui);
             Node target = page(h);
-            h.gui.onContextMenu(target, m -> { /* nothing applies right now */ });
+            Seams.of(h.gui).onContextMenu(target, m -> { /* nothing applies right now */ });
             h.gui.root().children(target);
             h.frame();
 
@@ -405,8 +439,8 @@ class ContextMenuTest {
         try (HeadlessGui h = new HeadlessGui()) {
             ContextMenu menu = new ContextMenu(h.gui);
             Node target = page(h);
-            h.gui.onContextMenu(target, m -> m.separator().item("Copy", () -> { }));
-            h.gui.onContextMenu(target, m -> m.separator().item("Open", () -> { }).separator());
+            Seams.of(h.gui).onContextMenu(target, m -> m.separator().item("Copy", () -> { }));
+            Seams.of(h.gui).onContextMenu(target, m -> m.separator().item("Open", () -> { }).separator());
             h.gui.root().children(target);
             h.frame();
 
@@ -425,7 +459,7 @@ class ContextMenuTest {
             int[] runs = {0};
             ContextMenu menu = new ContextMenu(h.gui);
             Node target = page(h);
-            h.gui.onContextMenu(target, m -> m.item("Paste", false, () -> runs[0]++));
+            Seams.of(h.gui).onContextMenu(target, m -> m.item("Paste", false, () -> runs[0]++));
             h.gui.root().children(target);
             h.frame();
 
@@ -452,7 +486,7 @@ class ContextMenuTest {
             int[] opened = {0};
             ContextMenu menu = new ContextMenu(h.gui);
             Node target = page(h);
-            h.gui.onContextMenu(target, m -> m.item("Opened " + (++opened[0]), () -> { }));
+            Seams.of(h.gui).onContextMenu(target, m -> m.item("Opened " + (++opened[0]), () -> { }));
             h.gui.root().children(target);
             h.frame();
 
@@ -474,7 +508,7 @@ class ContextMenuTest {
         try (HeadlessGui h = new HeadlessGui()) {
             ContextMenu menu = new ContextMenu(h.gui);
             Node target = page(h);
-            h.gui.onContextMenu(target, m -> m
+            Seams.of(h.gui).onContextMenu(target, m -> m
                     .item("+", "Expand", () -> { })
                     .item("Properties", () -> { }));
             h.gui.root().children(target);

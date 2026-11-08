@@ -28,7 +28,6 @@ public final class Action {
     private final String label;
     private final List<Trigger> defaults;
     private volatile Runnable handler;
-    private volatile boolean ordered;
     private volatile Keymap.Context context = Keymap.Context.APPLICATION;
 
     Action(Keymap keymap, String id, String label, List<Trigger> defaults) {
@@ -64,23 +63,24 @@ public final class Action {
     }
 
     /**
-     * What it does. Runs on a worker thread, like every claim. Until an action has a handler its chords are not
-     * claimed at all, so a declared but unimplemented action never swallows a key.
+     * What it does, as a message: pressing one of its chords sends {@code message} through {@code to}. The form for an
+     * application's actions (vexelray-framework's {@code docs/threading.md}, T7.5): the chords are declared, the
+     * dispatcher decides who a chord reaches, and what leaves is the message. Until an action says what it does its
+     * chords are not claimed at all, so a declared but unimplemented action never swallows a key.
      */
-    public Action on(Runnable handler) {
-        this.handler = handler;
-        keymap.sync();
-        return this;
+    public <T> Action sends(sibarum.atchung.Sender<T> to, T message) {
+        java.util.Objects.requireNonNull(to, "to");
+        java.util.Objects.requireNonNull(message, "message");
+        return on(() -> to.send(message));
     }
 
     /**
-     * Run the handler on the GUI thread, in the order keys arrived ({@link Gui#claimUi}), rather than on a worker:
-     * for a command that edits what typing also edits, such as pasting into a terminal or a document. A worker
-     * orders the commands it is handed but not their effects, so a paste run on one could land among the
-     * characters typed around it. Bounded work only, as with any ordered stage: it runs inline on the frame loop.
+     * What it does, in code: the keymap's own form, which {@link #sends} is built on. Runs during the frame, like every
+     * claim, so it is not an application's (vexelray-framework's threading.md, T7.2). Until an action has a handler its
+     * chords are not claimed at all, so a declared but unimplemented action never swallows a key.
      */
-    public Action ordered() {
-        ordered = true;
+    Action on(Runnable handler) {
+        this.handler = handler;
         keymap.sync();
         return this;
     }
@@ -108,10 +108,6 @@ public final class Action {
 
     boolean handled() {
         return handler != null;
-    }
-
-    boolean runsOrdered() {
-        return ordered;
     }
 
     Keymap.Context context() {

@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core.text;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.canvas.Canvas;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
@@ -47,7 +48,7 @@ class StyledTextTest {
         try (Gui gui = new Gui(Atchung.create())) {
             Node label = label(gui, "xxxx").spans(List.of(Span.bold(1, 3)));
             gui.root().children(label);
-            gui.frame(400, 100, FACES);
+            Seams.of(gui).frame(400, 100, FACES);
 
             float[] xs = relative(label);
             assertEquals(List.of(0f, X, X + BOLD_X, X + 2 * BOLD_X, 2 * X + 2 * BOLD_X), boxed(xs),
@@ -63,7 +64,7 @@ class StyledTextTest {
             Node styled = label(gui, "xxxx").width(Length.dp(200)).align(TextLayout.HAlign.CENTER,
                     TextLayout.VAlign.TOP).spans(List.of(Span.bold(1, 3)));
             gui.root().children(plain, styled);
-            gui.frame(400, 200, FACES);
+            Seams.of(gui).frame(400, 200, FACES);
 
             float plainLeft = line(plain).xs()[0] - plain.layout().rect().x();
             float styledLeft = line(styled).xs()[0] - styled.layout().rect().x();
@@ -81,7 +82,7 @@ class StyledTextTest {
             Node bold = label(gui, "xx xx").width(Length.dp(50)).wordWrap(true)
                     .spans(List.of(Span.bold(0, 5)));
             gui.root().children(plain, bold);
-            gui.frame(400, 200, FACES);
+            Seams.of(gui).frame(400, 200, FACES);
 
             assertEquals(1, plain.layout().text().lines().size());
             assertEquals(2, bold.layout().text().lines().size(), "the bold text wraps where its own width says");
@@ -93,7 +94,7 @@ class StyledTextTest {
         try (Gui gui = new Gui(Atchung.create())) {
             Node label = label(gui, "xx").bold();
             gui.root().children(label);
-            gui.frame(400, 100, FACES);
+            Seams.of(gui).frame(400, 100, FACES);
             assertEquals(List.of(0f, BOLD_X, 2 * BOLD_X), boxed(relative(label)));
         }
     }
@@ -104,7 +105,7 @@ class StyledTextTest {
         try (Gui gui = new Gui(Atchung.create())) {
             Node label = label(gui, "xx").spans(List.of(Span.weight(0, 2, 600)));
             gui.root().children(label);
-            gui.frame(400, 100, FACES);
+            Seams.of(gui).frame(400, 100, FACES);
             assertEquals(List.of(0f, BOLD_X, 2 * BOLD_X), boxed(relative(label)));
         }
     }
@@ -137,7 +138,7 @@ class StyledTextTest {
         try (Gui gui = new Gui(Atchung.create())) {
             Node label = label(gui, "xxxx").spans(List.of(Span.bold(1, 3)));
             gui.root().children(label);
-            RetainedNode root = gui.frame(400, 100, FACES);
+            RetainedNode root = Seams.of(gui).frame(400, 100, FACES);
 
             Canvas canvas = new Canvas(400, 100).begin();
             TreeRenderer.emit(root, canvas, FACES);

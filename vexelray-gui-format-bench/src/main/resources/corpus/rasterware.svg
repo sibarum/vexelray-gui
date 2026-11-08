@@ -1,0 +1,14 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><defs>
+<linearGradient id="t41" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#112535"/><stop offset="1" stop-color="#05121d"/></linearGradient>
+<linearGradient id="e41" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a9d7ff" stop-opacity=".55"/><stop offset=".45" stop-color="#a9d7ff" stop-opacity="0"/></linearGradient>
+<clipPath id="c41"><rect x="2" y="2" width="60" height="60" rx="15"/></clipPath>
+</defs>
+<rect x="2" y="2" width="60" height="60" rx="15" fill="url(#t41)"/>
+<rect x="2" y="2" width="60" height="60" rx="15" fill="none" stroke="#1b354b" stroke-width="1"/>
+<rect x="10" y="12.5" width="27" height="10" rx="3.5" fill="#80c5ff"/>
+<rect x="23" y="26.5" width="31" height="10" rx="3.5" fill="#dceefe"/>
+<path d="M11.5 46 V46 M15.5 43.5 V48.5 M19.5 40.5 V51.5 M23.5 44 V48 M27.5 41.5 V50.5 M31.5 44.5 V47.5 M35.5 42.5 V49.5 M39.5 39.5 V52.5 M43.5 43 V49 M47.5 45 V47 M51.5 46 V46" fill="none" stroke="#80c5ff" stroke-width="2.6" stroke-linecap="round"/>
+<path d="M33.5 15 V54" stroke="#05121d" stroke-width="6.4" stroke-linecap="round"/>
+<path d="M33.5 15 V54" stroke="#dceefe" stroke-width="2.4" stroke-linecap="round"/>
+<path d="M28 8.5 H39 Q40.6 8.5 39.6 9.9 L34.7 16.2 Q33.5 17.6 32.3 16.2 L27.4 9.9 Q26.4 8.5 28 8.5 Z" fill="#dceefe" stroke="#05121d" stroke-width="2" stroke-linejoin="round"/>
+<rect x="2.6" y="2.6" width="58.8" height="58.8" rx="14.4" fill="none" stroke="url(#e41)" stroke-width="1.2"/></svg>

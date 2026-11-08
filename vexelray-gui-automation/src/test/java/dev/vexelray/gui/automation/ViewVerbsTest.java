@@ -1,5 +1,6 @@
 package dev.vexelray.gui.automation;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.WindowControls;
 import dev.vexelray.gui.core.app.WindowView;
@@ -125,7 +126,7 @@ class ViewVerbsTest {
     }
 
     private static Gui deterministic() {
-        return new Gui(sibarum.atchung.Atchung.create(), Runnable::run);
+        return new Gui(sibarum.atchung.Atchung.create());
     }
 
     /** Runs {@code work} on a driver thread while this one lays out frames, as a real loop would. */
@@ -136,7 +137,7 @@ class ViewVerbsTest {
         driver.start();
         long deadline = System.nanoTime() + 8_000_000_000L;
         while (!answer.isDone() && System.nanoTime() < deadline) {
-            gui.frame(W, H, NO_TEXT);
+            Seams.of(gui).frame(W, H, NO_TEXT);
             Thread.onSpinWait();
         }
         return answer.getNow("err the driver never answered");
@@ -148,7 +149,7 @@ class ViewVerbsTest {
             Automation automation = new Automation(gui, new FakeWindow(800, 600, 100, 100));
             String out = driven(gui, x -> automation.command("zoom 1.5"));
             assertEquals("ok zoom=1.5", out);
-            assertEquals(1.5f, gui.zoom().value());
+            assertEquals(1.5f, Seams.of(gui).zoom().value());
         }
     }
 
@@ -168,7 +169,7 @@ class ViewVerbsTest {
         try (Gui gui = deterministic()) {
             Automation automation = new Automation(gui, new FakeWindow(800, 600, 100, 100));
             assertEquals("ok dpi=2", driven(gui, x -> automation.command("dpi 2")));
-            assertEquals(2f, gui.dpi().value());
+            assertEquals(2f, Seams.of(gui).dpi().value());
         }
     }
 
@@ -188,7 +189,7 @@ class ViewVerbsTest {
     void resizeTakesEmResolvedAtTheCurrentZoom() {
         try (Gui gui = deterministic()) {
             Automation automation = new Automation(gui, new FakeWindow(800, 600, 100, 100));
-            float em = gui.rootEmPx() * gui.zoom().value() * gui.dpi().value();
+            float em = gui.rootEmPx() * Seams.of(gui).zoom().value() * Seams.of(gui).dpi().value();
             String out = driven(gui, x -> automation.command("resize 40em 30em"));
             assertEquals("ok " + Math.round(40 * em) + "x" + Math.round(30 * em), out);
         }
@@ -264,8 +265,8 @@ class ViewVerbsTest {
             windows.command("window prefs");
             String out = driven(prefs, x -> windows.command("zoom 2"));
             assertEquals("ok zoom=2", out);
-            assertEquals(2f, prefs.zoom().value());
-            assertEquals(1f, main.zoom().value(), "zoom in one window must not reach the other");
+            assertEquals(2f, Seams.of(prefs).zoom().value());
+            assertEquals(1f, Seams.of(main).zoom().value(), "zoom in one window must not reach the other");
         }
     }
 
@@ -318,7 +319,7 @@ class ViewVerbsTest {
         try (Gui gui = deterministic()) {
             sibarum.probe.Logging.configure(new sibarum.probe.LogConfig("t", sibarum.probe.Mode.AUTOMATION,
                     sibarum.probe.Level.WARN, sibarum.probe.Level.OFF, java.util.Map.of(), null,
-                    sibarum.probe.LogConfig.Format.TEXT, 1024, 1, null, List.of()));
+                    sibarum.probe.LogConfig.Format.TEXT, 1024, 1, null, false, List.of()));
             Automation automation = new Automation(gui);
 
             String now = automation.command("log");

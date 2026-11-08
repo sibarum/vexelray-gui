@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core.layout;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
@@ -42,12 +43,12 @@ class SensibleScrollTest {
 
     private static RetainedNode laidOut(Gui gui, Node node) {
         gui.root().children(node);
-        return find(gui.frame(800f, 600f, SensibleScrollTest::noText), node.id());
+        return find(Seams.of(gui).frame(800f, 600f, SensibleScrollTest::noText), node.id());
     }
 
     @Test
     void aBoxTooShortForAScrollbarOverflowsInsteadOfScrolling() {
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             RetainedNode chip = laidOut(gui, overfull(gui, 2f));
             assertFalse(chip.overflowY, "no pill squeezed into a two-em box");
             assertEquals(chip.w, chip.viewW, "and no gutter taken from its content");
@@ -56,7 +57,7 @@ class SensibleScrollTest {
 
     @Test
     void aBoxLongEnoughStillScrollsByDefault() {
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             RetainedNode panel = laidOut(gui, overfull(gui, 10f));
             assertTrue(panel.overflowY, "a panel that overflows still gets its scrollbar, unasked");
             assertTrue(panel.viewW < panel.w, "reserving its gutter, as before");
@@ -65,11 +66,11 @@ class SensibleScrollTest {
 
     @Test
     void aDeclarationWinsEitherWay() {
-        try (Gui gui = new Gui(Atchung.create(), Runnable::run)) {
+        try (Gui gui = new Gui(Atchung.create())) {
             Node shortButAsked = overfull(gui, 2f).scroll(false, true);
             Node longButRefused = overfull(gui, 10f).scroll(false, false);
             gui.root().children(gui.column().children(shortButAsked, longButRefused));
-            RetainedNode root = gui.frame(800f, 900f, SensibleScrollTest::noText);
+            RetainedNode root = Seams.of(gui).frame(800f, 900f, SensibleScrollTest::noText);
             assertTrue(find(root, shortButAsked.id()).overflowY, "a short box that says it scrolls, does");
             assertFalse(find(root, longButRefused.id()).overflowY);
         }

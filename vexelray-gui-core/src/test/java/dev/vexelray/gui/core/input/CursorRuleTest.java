@@ -44,18 +44,18 @@ class CursorRuleTest {
 
         /** Move the pointer to (x, y) and report the cursor in force afterwards. */
         CursorShape at(RetainedNode root, float x, float y) {
-            bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved((int) x, (int) y, 0, 0, 0));
+            bus.publish(InputTopics.input("test"), new InputEvent.PointerMoved((int) x, (int) y, 0, 0, 0));
             dispatcher.dispatch(root);
             return last();
         }
 
         void press(RetainedNode root, float x, float y) {
-            bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, (int) x, (int) y, 0));
+            bus.publish(InputTopics.input("test"), new InputEvent.ButtonPressed(MouseButton.LEFT, (int) x, (int) y, 0));
             dispatcher.dispatch(root);
         }
 
         void release(RetainedNode root, float x, float y) {
-            bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, (int) x, (int) y, 0));
+            bus.publish(InputTopics.input("test"), new InputEvent.ButtonReleased(MouseButton.LEFT, (int) x, (int) y, 0));
             dispatcher.dispatch(root);
         }
 
@@ -66,7 +66,7 @@ class CursorRuleTest {
 
     private static Harness harness() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS, Runnable::run, () -> { });
+        InputDispatcher d = new InputDispatcher(bus, "test", CLICKS, () -> { });
         List<CursorShape> seen = new ArrayList<>();
         d.cursorSink(seen::add);
         return new Harness(d, bus, seen);

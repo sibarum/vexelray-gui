@@ -1,5 +1,8 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
+import sibarum.atchung.Topic;
+import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.drop.DragState;
@@ -11,7 +14,6 @@ import dev.vexelray.gui.core.drop.PayloadType;
 import dev.vexelray.gui.core.input.ClaimScope;
 import dev.vexelray.gui.core.input.ClickEvent;
 import dev.vexelray.gui.core.input.KeyEvent;
-import dev.vexelray.gui.core.input.MenuSink;
 import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.NodeLayout;
@@ -33,10 +35,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.function.Predicate;
 
 /**
  * A list whose retained tree holds <b>viewport-many rows however long the list is</b>. The invariant, and the
@@ -69,18 +69,103 @@ import java.util.function.Predicate;
  * {@snippet :
  * ListView<String> list = new ListView<>(gui, 2.0f, (g, item) -> g.text(item));
  * list.items(names);
- * list.selection().onChange(sel -> status.text(sel.size() + " selected"));
+ * list.name("names");
  * panel.append(list.node());
+ * gui.mailbox(ListView.SELECTED, list.address(), sel -> status.text(sel.chosen().size() + " selected"));
  * }
+ *
+ * <p>What the user does is a message carrying the list's {@link #address() address}: the selection on
+ * {@link #SELECTED}, a row clicked on {@link #CLICKED} (after the click has been applied to the selection), and a row
+ * activated on {@link #ACTIVATED} (vexelray-framework's {@code docs/threading.md}, T3.8).
  *
  * @param <T> the item type
  */
 public final class ListView<T> implements AutoCloseable {
 
-    /** Builds the contents of one row. The row's box, its height and its selected look are the list's business. */
-    @FunctionalInterface
-    public interface RowBuilder<T> {
-        Node build(Gui gui, T item);
+    /** What is selected, whenever it changes. The last in a frame. */
+    public static final Topic<Selected> SELECTED =
+            Addressed.state(Selected.class, Selected::list);
+
+    /** A row clicked, after the click has changed the selection. Every one, in order. */
+    public static final Topic<Clicked> CLICKED = Addressed.edge(Clicked.class);
+
+    /** A row activated: double-clicked, or Enter on a selection of one. Every one, in order. */
+    public static final Topic<Activated> ACTIVATED = Addressed.edge(Activated.class);
+
+    /**
+     * Something dropped on a {@link #droppable} list: on a row, or on the list itself. The list changes nothing for
+     * it; what landing means is the application's. Every one, in order.
+     */
+    public static final Topic<Landed> LANDED = Addressed.edge(Landed.class);
+
+    /**
+     * One of the list's {@link #action actions} chosen from a row's menu, with the row's item. The list does nothing else
+     * for it. Every one, in order.
+     */
+    public static final Topic<Chosen> CHOSEN = Addressed.edge(Chosen.class);
+
+    /**
+     * The user chose the {@link MenuAction} {@code action} from the menu of {@code item} in the list at {@code at}:
+     * what {@link #CHOSEN} carries, addressed to the list. A type of the list's own, so it names one channel
+     * (vexelray-framework's threading.md, T4.1).
+     *
+     * @param at     the list's address
+     * @param action the action's id
+     * @param item   the row's item
+     */
+    public record Chosen(String at, String action, Object item) implements dev.vexelray.gui.core.Addressed {
+        public Chosen {
+            java.util.Objects.requireNonNull(at, "at");
+            java.util.Objects.requireNonNull(action, "action");
+            java.util.Objects.requireNonNull(item, "item");
+        }
+
+        @Override
+        public Object address() {
+            return at;
+        }
+    }
+
+    /**
+     * {@code held}, the payload, was dropped with {@code effect} (the declared one, or what the keys held made it) on
+     * the row of the list at {@code list} showing {@code onto}, or on the list itself when {@code onto} is null: below
+     * the last row. A row whose item cannot take
+     * it is the application's to treat as the list, the way a file dropped on a file in an explorer pane lands in the
+     * folder the pane shows (transfer.md §4).
+     */
+    public record Landed(String list, Object held, Object onto, DropEffect effect) implements Addressed {
+        @Override
+        public Object address() {
+            return list;
+        }
+    }
+
+    /** The list at {@code list} has {@code chosen} selected. */
+    public record Selected(String list, Set<Object> chosen) implements Addressed {
+        public Selected {
+            chosen = Set.copyOf(chosen);
+        }
+
+        @Override
+        public Object address() {
+            return list;
+        }
+    }
+
+    /** A row of the list at {@code list}, showing {@code item}, was clicked. */
+    public record Clicked(String list, Object item) implements Addressed {
+        @Override
+        public Object address() {
+            return list;
+        }
+    }
+
+    /** A row of the list at {@code list}, showing {@code item}, was activated. */
+    public record Activated(String list, Object item) implements Addressed {
+        @Override
+        public Object address() {
+            return list;
+        }
     }
 
     /** Rows kept beyond each edge of the viewport, so a scroll of a few pixels does not build anything. */
@@ -93,7 +178,8 @@ public final class ListView<T> implements AutoCloseable {
     private static final Paint CARRY_REFUSES = Role.DANGER.alpha(0.92f);
 
     private final Gui gui;
-    private final RowBuilder<T> builder;
+    /** Draws the contents of one row. The row's box, its height and its selected look are the list's business. */
+    private final Face<T> builder;
     private final float rowRem;
     private final SelectionModel<T> selection;
 
@@ -118,14 +204,13 @@ public final class ListView<T> implements AutoCloseable {
     /** The row box currently showing an item, for restyling on selection change without rebuilding. */
     private final Map<T, Node> shown = new HashMap<>();
 
-    private volatile Consumer<T> onActivate = t -> { };
     private volatile Consumer<T> onRowClicked = t -> { };
-    private volatile BiConsumer<T, MenuSink> contextMenu = (item, menu) -> { };
-    /** Whether rows have a menu, and so whether a right click selects. A list with none ignores it, as before. */
-    private volatile boolean hasMenu;
+    private final WidgetName name;
+    /** What is on every row's menu, in the order declared. A list with none has no menu, and a right click on it selects nothing. */
+    private final MenuActions actions = new MenuActions();
 
-    /** Rows that are marked without being selected, and how selected and marked rows look. See {@link #marked}. */
-    private volatile Predicate<T> marked = t -> false;
+    /** Rows that are marked without being selected, and how selected and marked rows look. See {@link #marks}. */
+    private volatile Set<Object> marked = Set.of();
     private volatile Role selectedLook = Role.SELECTION;
     private volatile Role markedLook = Role.HIGHLIGHT;
 
@@ -151,11 +236,11 @@ public final class ListView<T> implements AutoCloseable {
     /** What the carried label last showed, and where: written only when it changes. Guarded by this. */
     private Object carriedAs;
 
-    public ListView(Gui gui, float rowRem, RowBuilder<T> builder) {
+    public ListView(Gui gui, float rowRem, Face<T> builder) {
         this(gui, rowRem, builder, SelectionModel.range());
     }
 
-    public ListView(Gui gui, float rowRem, RowBuilder<T> builder, SelectionModel<T> selection) {
+    public ListView(Gui gui, float rowRem, Face<T> builder, SelectionModel<T> selection) {
         this.gui = Objects.requireNonNull(gui, "gui");
         this.builder = Objects.requireNonNull(builder, "builder");
         this.selection = Objects.requireNonNull(selection, "selection");
@@ -181,14 +266,18 @@ public final class ListView<T> implements AutoCloseable {
 
         // The window follows the scroll offset, which the read-model republishes on every changed frame. This is
         // the whole of the virtualisation trigger: no polling, and no frame callback of our own.
-        subs.add(gui.layout().onCommit(snapshot -> update()));
-        selection.onChange(sel -> restyleAll());
+        subs.add(Seams.of(gui).layout().onCommit(snapshot -> update()));
+        this.name = new WidgetName(gui, "list", box);
+        selection.onChange(sel -> {
+            restyleAll();
+            gui.bus().publish(SELECTED, new Selected(name.address(), Set.copyOf(sel)));
+        });
         selection.onLeadChange(lead -> restyleAll());
 
         // One tab stop for the whole list, as a tree is: registering the key stage is what makes the root
         // focusable, and rows are pointer targets rather than tab stops.
-        gui.onKeyUi(box, this::onKey);
-        gui.claim(box, SELECT_ALL, ClaimScope.FOCUSED, () -> selection.all(order()));
+        Seams.of(gui).onKey(box, this::onKey);
+        Seams.of(gui).claim(box, SELECT_ALL, ClaimScope.FOCUSED, () -> selection.all(order()));
     }
 
     /** The node to place in a layout: the list, with its scrollbar beside it. */
@@ -253,20 +342,15 @@ public final class ListView<T> implements AutoCloseable {
      * <p>A mark is a fact about a row that is not a choice — a search hit, a file a suggestion would reach, a row
      * that differs from the other folder — and it exists because the alternative is to make it a selection, which
      * is a claim about what the user chose. A preview that <em>is</em> the selection cannot be ignored for free:
-     * the user who wanted only the file they clicked has to undo it. Marks are read through a predicate rather than
-     * held as a set, so the list needs no copy of the application's state, and a row realized by a later scroll
-     * asks the same question the rows already on screen were asked.
+     * the user who wanted only the file they clicked has to undo it. The marks are told as data, the whole set each
+     * time they change, rather than asked of a predicate: a predicate is asked on every paint, in the frame, and reads
+     * whatever it captured (vexelray-framework's threading.md, T7.2). A row realized by a later scroll wears what the
+     * set says, as the rows already on screen do.
      *
-     * <p>Selected outranks marked. Call again (or {@link #remark}) when the answer changes.
+     * <p>Selected outranks marked.
      */
-    public ListView<T> marked(Predicate<T> marked) {
-        this.marked = marked == null ? t -> false : marked;
-        restyleAll();
-        return this;
-    }
-
-    /** Re-read {@link #marked}'s predicate for every row on screen, when what it answers has changed. */
-    public ListView<T> remark() {
+    public ListView<T> marks(java.util.Collection<? extends T> marked) {
+        this.marked = marked == null ? Set.of() : Set.copyOf(marked);
         restyleAll();
         return this;
     }
@@ -348,65 +432,58 @@ public final class ListView<T> implements AutoCloseable {
         return Set.copyOf(shown.keySet());
     }
 
-    /** React to a row being activated: double-clicked, or Enter on a selection of one. */
-    public ListView<T> onActivate(Consumer<T> handler) {
-        this.onActivate = handler == null ? t -> { } : handler;
+    /** Call this list {@code name} in its tree ("files"): its {@link #address()} is the tree's name and this. */
+    public ListView<T> name(String name) {
+        this.name.name(name);
         return this;
     }
 
+    /** Where this list is on the bus: what its messages carry. */
+    public String address() {
+        return name.address();
+    }
+
+    /** A row activated. */
+    private void activated(T item) {
+        gui.bus().publish(ACTIVATED, new Activated(name.address(), item));
+    }
+
+    /** A row clicked: the hook, then the message. */
+    private void clicked(T item) {
+        onRowClicked.accept(item);
+        gui.bus().publish(CLICKED, new Clicked(name.address(), item));
+    }
+
     /**
-     * React to a row being clicked, <b>after</b> the click has been applied to the selection.
-     *
-     * <p>This is the only place that ordering holds. The click topic is a separate delivery on a separate thread,
-     * so a subscriber there may run before the row's handler has changed anything — and a drop-down that shut on
-     * the topic committed the old value about half the time. Anything that acts on "the user picked a row" hangs
-     * off this, not off the topic.
+     * The widget library's hook on a row clicked, for a widget built from a list (a drop-down): run <b>after</b> the
+     * click has been applied to the selection, and as well as {@link #CLICKED} rather than instead. Package-private,
+     * because an application hears a list by its messages.
      */
-    public ListView<T> onRowClicked(Consumer<T> handler) {
+    ListView<T> onRowClicked(Consumer<T> handler) {
         this.onRowClicked = handler == null ? t -> { } : handler;
         return this;
     }
 
     /**
-     * Give every row a context menu, {@code TreeView}'s door for a list: this is asked what should be on it at each
-     * right click, with the item under the pointer in hand, which is the context the list can add that the framework
-     * cannot. Contributing nothing opens no menu.
+     * Put {@code action} on every row's menu, in the order actions are declared, as a tree does. Choosing it publishes
+     * {@link Chosen} on {@link #CHOSEN} with the row's item; nothing of the application's runs at the right click
+     * (vexelray-framework's threading.md, T7.5). A list with no actions has no menu.
      *
      * <p><b>The right click selects first</b>, the convention every explorer follows, so the menu's commands visibly
      * have a subject: an unselected row becomes the selection, as a plain click would make it. A row that is already
-     * selected leaves the selection alone, so a menu opened on one of several selected rows is about all of them. A
-     * source wanting to know which case it is in asks {@link #selection()}; it runs on a worker thread.
+     * selected leaves the selection alone, so a menu opened on one of several selected rows is about all of them:
+     * the selection was published on {@link #SELECTED} before the menu opened, and whoever hears the choice knows
+     * which case it is from that.
      *
-     * <p>Rows are rebuilt as they scroll in, so the source is held by the list and asked by each row, not attached
-     * to rows by the caller. Installs a menu presenter on the tree if there is none, so the menu is actually shown.
+     * @throws IllegalArgumentException when another action already has the id
      */
-    public ListView<T> onContextMenu(BiConsumer<T, MenuSink> source) {
-        this.contextMenu = source == null ? (item, menu) -> { } : source;
-        this.hasMenu = source != null;
-        if (source != null) {
-            ContextMenu.presentOn(gui);
-        }
+    public ListView<T> action(MenuAction action) {
+        actions.add(action);
+        ContextMenu.presentOn(gui);   // installs a presenter on the tree if there is none, so the menu is shown
         return this;
     }
 
     // ------------------------------------------------------------------ transfer
-
-    /**
-     * What dropping {@code held} on a row of this list would do, as a {@code DropTarget} answers it: the effect and
-     * the change, or {@link Drop#NONE} (or null) to refuse.
-     *
-     * <p>{@code onto} is the row under the pointer, or null for <b>the list itself</b> — the space below the last
-     * row, and any row whose own answer was a refusal. That second case is the one that matters: declines bubble
-     * (transfer.md §4), so a row that will not take a drop does not punch a row-shaped hole in a list that would. A
-     * file dropped on a file in an explorer pane lands in the folder the pane shows.
-     *
-     * <p>Where the drop is shown is the list's: the row's box, or the list's own for null. The indicator in the
-     * returned {@link Drop} is not read, so pass {@code Rect.ZERO}.
-     */
-    @FunctionalInterface
-    public interface Receiver<T, P> {
-        Drop land(P held, T onto);
-    }
 
     /**
      * Let rows be dragged out of this list, offered as {@code type}: the whole selection, in the order shown, when
@@ -424,14 +501,14 @@ public final class ListView<T> implements AutoCloseable {
     public ListView<T> draggable(PayloadType<List<T>> type, Function<List<T>, String> label) {
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(label, "label");
-        gui.onDragSource(root, (x, y) -> {
+        Seams.of(gui).onDragSource(root, (x, y) -> {
             T from = itemAt(x, y);
             if (from == null) {
                 return null;   // the space below the last row is somewhere to drop, not something to pick up
             }
             if (!selection.isSelected(from)) {
                 selection.at(from);
-                onRowClicked.accept(from);
+                clicked(from);
                 return Payload.of(type, List.of(from));
             }
             List<T> held = new ArrayList<>();
@@ -446,7 +523,7 @@ public final class ListView<T> implements AutoCloseable {
         });
         // Watched rather than read from the published drag, because it follows the pointer and the published drag
         // is a frame behind it (transfer.md §12.3).
-        gui.watchDrag(root, new DragWatch() {
+        Seams.of(gui).watchDrag(root, new DragWatch() {
             @Override
             public void moved(DragState now) {
                 carry(now, type, label);
@@ -461,43 +538,43 @@ public final class ListView<T> implements AutoCloseable {
     }
 
     /**
-     * Let something dragged as {@code type} be dropped on this list, with {@code receiver} saying what each landing
-     * means. Every point in the list resolves: a row, or failing that the list itself (see {@link Receiver}). Nothing
-     * happens until the release, and then through {@link Gui#dropHistory}, so the drop undoes like any other edit;
-     * without a history it resolves and draws but commits nothing.
+     * Let something dragged as {@code type} be dropped on this list, meaning {@code effect}: on a row, or below the
+     * last one on the list itself. Every point in the list resolves, so there is no crack between two rows where a
+     * drop silently fails. Which drops are offered is declared here, by type, and decided in the frame; what landing
+     * means is the application's, told on {@link #LANDED} (vexelray-framework's threading.md, T7.5).
+     *
+     * <p>A copy or a move follows the keys held, as a desktop's file drop does ({@link DropEffect#byKeys}): Control
+     * copies and Shift moves, shown before the release, and {@link Landed#effect} is what the drop became. So an
+     * application reads the effect it is told rather than the one it declared.
      */
-    public <P> ListView<T> droppable(PayloadType<P> type, Receiver<T, P> receiver) {
+    public <P> ListView<T> droppable(PayloadType<P> type, DropEffect effect) {
         Objects.requireNonNull(type, "type");
-        Objects.requireNonNull(receiver, "receiver");
-        gui.onDrop(root, (payload, x, y) -> payload.as(type)
-                .map(held -> resolve(receiver, held, x, y))
+        if (!effect.accepts()) {
+            throw new IllegalArgumentException("a drop has an effect: " + effect);
+        }
+        Seams.of(gui).onDrop(root, (payload, x, y) -> payload.as(type)
+                .map(held -> resolve(held, effect, x, y))
                 .orElse(Drop.NONE));
         synchronized (this) {
             if (dropSub == null) {
-                dropSub = gui.drag().onCommit(v -> showDrop(v.value()));
+                dropSub = Seams.of(gui).drag().onCommit(v -> showDrop(v.value()));
                 subs.add(dropSub);
             }
         }
         return this;
     }
 
-    /** Which row the pointer is over, and what landing there means — or, refused there, landing on the list. */
-    private <P> Drop resolve(Receiver<T, P> receiver, P held, float x, float y) {
+    /** Which row the pointer is over, or the list below the last one: where the drop is shown, and what it says. */
+    private Drop resolve(Object held, DropEffect effect, float x, float y) {
         T onto = itemAt(x, y);
-        if (onto != null) {
-            Drop d = receiver.land(held, onto);
-            Node row = rowNode(onto);
-            Rect at = row == null ? null : row.layout().rect();
-            if (d != null && d.accepts() && at != null) {
-                return new Drop(d.effect(), at, d.change());
-            }
-        }
-        Rect box = root.layout().rect();
-        Drop d = receiver.land(held, null);
-        if (d == null || !d.accepts() || box == null) {
+        Node row = onto == null ? null : rowNode(onto);
+        Rect at = (row == null ? root : row).layout().rect();
+        if (at == null) {
             return Drop.NONE;
         }
-        return new Drop(d.effect(), box, d.change());
+        Object on = row == null ? null : onto;
+        DropEffect chosen = effect.byKeys(Seams.of(gui).modifiers().value());
+        return new Drop(chosen, at, () -> gui.bus().publish(LANDED, new Landed(name.address(), held, on, chosen)));
     }
 
     /**
@@ -591,7 +668,7 @@ public final class ListView<T> implements AutoCloseable {
             shownLabel.visible(false);
             return;
         }
-        float dpi = Math.max(0.0001f, gui.dpi().value());
+        float dpi = Math.max(0.0001f, Seams.of(gui).dpi().value());
         shownLabel.text(text).visible(true)
                 .floatAt(Length.dp(drag.x() / dpi + 14f), Length.dp(drag.y() / dpi + 12f))
                 .background(drag.accepts() ? CARRY_ACCEPTS : CARRY_REFUSES)
@@ -643,8 +720,8 @@ public final class ListView<T> implements AutoCloseable {
     private float rowPx() {
         return Length.rem(rowRem).scalarPx(
                 new dev.vexelray.gui.core.layout.LayoutContext(
-                        gui.rootEmPx(), gui.zoom().value(), gui.dpi().value(),
-                        gui.viewport().value().width(), gui.viewport().value().height()),
+                        gui.rootEmPx(), Seams.of(gui).zoom().value(), Seams.of(gui).dpi().value(),
+                        Seams.of(gui).viewport().value().width(), Seams.of(gui).viewport().value().height()),
                 0f);
     }
 
@@ -678,7 +755,7 @@ public final class ListView<T> implements AutoCloseable {
             // Before the first layout the list's own viewport is unknown, and the window it will need cannot be
             // larger than the one the whole application is drawn in. Bounding by that fills the first frame with
             // rows rather than with nothing, and the real viewport replaces it a frame later.
-            float viewH = l.present() && l.viewH() > 0f ? l.viewH() : gui.viewport().value().height();
+            float viewH = l.present() && l.viewH() > 0f ? l.viewH() : Seams.of(gui).viewport().value().height();
             float scrollY = l.present() ? l.scrollY() : 0f;
 
             int visible = (int) Math.ceil(viewH / rowPx) + 1;
@@ -735,13 +812,16 @@ public final class ListView<T> implements AutoCloseable {
         // declared without the other becoming a second, anonymous row in the tree. The contents win, because a
         // node's accessible name is derived from the text below it and the wrapper is one level too far up:
         // declared here, every row in a table reads as `row "3 item-00023 binary"` instead of `row ""`.
-        row.append(builder.build(gui, item).role(itemRole));
-        gui.onClick(row, e -> onRowClick(item, e));
+        // A press on a row's button is the row's item chosen, announced as the menu's lines are.
+        Nodes nodes = new Nodes(gui, "list", action -> gui.bus().publish(CHOSEN, new Chosen(name.address(), action, item)));
+        row.append(builder.build(nodes, item).role(itemRole));
+        Seams.of(gui).onClick(row, e -> onRowClick(item, e));
         // The second click has already selected the row, so this activates what a click just chose.
-        gui.onDoubleClick(row, () -> onActivate.accept(item));
-        gui.onContextClick(row, e -> onRowContextClick(item));
-        gui.onContextMenu(row, menu -> contextMenu.accept(item, menu));
-        gui.onState(row, state -> row.background(look(item).at(state)));
+        Seams.of(gui).onDoubleClick(row, () -> activated(item));
+        Seams.of(gui).onContextClick(row, e -> onRowContextClick(item));
+        Seams.of(gui).onContextMenu(row, menu -> actions.offer(menu, gui, CHOSEN, Chosen::new, name.address(), item,
+                Set.of(), Set.of(), () -> { }));
+        Seams.of(gui).onState(row, state -> row.background(look(item).at(state)));
         content.insert(row, at);
         shown.put(item, row);
         return row;
@@ -780,7 +860,7 @@ public final class ListView<T> implements AutoCloseable {
         } else {
             selection.at(item);
         }
-        onRowClicked.accept(item);
+        clicked(item);
     }
 
     /**
@@ -788,9 +868,9 @@ public final class ListView<T> implements AutoCloseable {
      * selection. Without a menu it means nothing, so a drop-down's options are not chosen by one.
      */
     private void onRowContextClick(T item) {
-        if (hasMenu && !selection.isSelected(item)) {
+        if (!actions.isEmpty() && !selection.isSelected(item)) {
             selection.at(item);
-            onRowClicked.accept(item);
+            clicked(item);
         }
     }
 
@@ -841,14 +921,14 @@ public final class ListView<T> implements AutoCloseable {
     /** How many rows a page key moves — what fits in the viewport, and at least one. */
     private int pageRows() {
         NodeLayout l = root.layout();
-        float viewH = l.present() && l.viewH() > 0f ? l.viewH() : gui.viewport().value().height();
+        float viewH = l.present() && l.viewH() > 0f ? l.viewH() : Seams.of(gui).viewport().value().height();
         return Math.max(1, (int) Math.floor(viewH / rowPx()));
     }
 
     private void activate() {
         T one = selection.one();
         if (one != null) {
-            onActivate.accept(one);
+            activated(one);
         }
     }
 
@@ -876,7 +956,7 @@ public final class ListView<T> implements AutoCloseable {
 
     /** The fill an item wears: selected outranks marked, because being chosen is the stronger fact. */
     private Role look(T item) {
-        return selection.isSelected(item) ? selectedLook : marked.test(item) ? markedLook : Role.NONE;
+        return selection.isSelected(item) ? selectedLook : marked.contains(item) ? markedLook : Role.NONE;
     }
 
     @Override

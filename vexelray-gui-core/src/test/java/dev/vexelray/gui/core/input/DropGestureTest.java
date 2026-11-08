@@ -3,8 +3,6 @@ package dev.vexelray.gui.core.input;
 import dev.vexelray.gui.core.drop.Drop;
 import dev.vexelray.gui.core.drop.Payload;
 import dev.vexelray.gui.core.drop.PayloadType;
-import dev.vexelray.gui.core.edit.Change;
-import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.layout.Rect;
 import dev.vexelray.gui.core.model.RetainedNode;
 import org.junit.jupiter.api.DisplayName;
@@ -37,9 +35,8 @@ class DropGestureTest {
     private static final PayloadType<String> ROW = PayloadType.of("row");
 
     private final Atchung bus = Atchung.create();
-    private final InputDispatcher dispatcher = new InputDispatcher(bus, CLICKS, Runnable::run);
+    private final InputDispatcher dispatcher = new InputDispatcher(bus, "test", CLICKS);
     private final List<String> applied = new ArrayList<>();
-    private final History history = new History();
     private RetainedNode root;
     private RetainedNode body;
 
@@ -62,33 +59,26 @@ class DropGestureTest {
         dispatcher.onDrop(7, (payload, x, y) -> payload.as(ROW)
                 .map(row -> Drop.move(new Rect(0f, y, 200f, 2f), change(row + "->" + Math.round(y))))
                 .orElse(Drop.NONE));
-        dispatcher.dropHistory(history);
     }
 
-    private Change change(String what) {
-        return new Change() {
-            @Override
-            public Change apply() {
-                applied.add(what);
-                return change("un:" + what);
-            }
-        };
+    private Runnable change(String what) {
+        return () -> applied.add(what);
     }
 
     private void press(int x, int y) {
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, x, y, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonPressed(MouseButton.LEFT, x, y, 0));
     }
 
     private void move(int x, int y, int dx, int dy) {
-        bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(x, y, dx, dy, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.PointerMoved(x, y, dx, dy, 0));
     }
 
     private void release(int x, int y) {
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, x, y, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonReleased(MouseButton.LEFT, x, y, 0));
     }
 
     private void escape() {
-        bus.publish(InputTopics.INPUT, new InputEvent.KeyPressed(Key.ESCAPE, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.KeyPressed(Key.ESCAPE, 0));
     }
 
     private void frame() {
@@ -127,10 +117,7 @@ class DropGestureTest {
 
         assertEquals(List.of("row@20->60"), applied);
         assertNull(dispatcher.dragSession(), "the session is over");
-        assertTrue(history.canUndo());
-
-        history.undo();
-        assertEquals(List.of("row@20->60", "un:row@20->60"), applied);
+        assertEquals(1, applied.size(), "landed once");
     }
 
     /**
@@ -151,8 +138,51 @@ class DropGestureTest {
         frame();
 
         assertEquals(List.of(), applied, "the user never saw a drag, so there was no drop");
-        assertFalse(history.canUndo(), "and nothing to undo, which is the point");
         assertNull(dispatcher.dragSession());
+    }
+
+    /**
+     * The one test here on the real clock, because the hold is what it is about. A driver's path is shorter than the
+     * hold and then stops: no further event comes to carry the drag over its threshold, so only a frame's tick can,
+     * and a loop that parks gets no frame unless the tree says one is owed.
+     */
+    @Test
+    @DisplayName("a press gone far enough is pending until its hold passes, and then the tick starts the drag")
+    void aHoldStillAheadIsPendingUntilATickStartsTheDrag() throws InterruptedException {
+        tree();
+        long pressed = System.nanoTime();
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonPressed(MouseButton.LEFT, 20, 20, pressed));
+        bus.publish(InputTopics.input("test"), new InputEvent.PointerMoved(20, 60, 0, 40, pressed));
+        frame();
+        org.junit.jupiter.api.Assumptions.assumeTrue(System.nanoTime() - pressed < 60_000_000L,
+                "the frame came after most of the hold had passed; nothing to observe on a machine this busy");
+
+        assertNull(dispatcher.dragSession(), "travelled, but not yet held long enough");
+        assertTrue(dispatcher.dragHoldPending(), "so the loop owes the frame whose tick will start it");
+
+        Thread.sleep(100);
+        frame();
+
+        assertNotNull(dispatcher.dragSession(), "the tick started it, with no event to carry it");
+        assertFalse(dispatcher.dragHoldPending(), "and nothing is owed for it any more");
+    }
+
+    @Test
+    @DisplayName("a press held still, or one that has not travelled far enough, owes no frames")
+    void aPressThatIsStillAClickIsNotPending() {
+        tree();
+        long pressed = System.nanoTime();
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonPressed(MouseButton.LEFT, 20, 20, pressed));
+        frame();
+        assertFalse(dispatcher.dragHoldPending(), "held still: a click so far");
+
+        bus.publish(InputTopics.input("test"), new InputEvent.PointerMoved(23, 22, 3, 2, pressed));
+        frame();
+        assertFalse(dispatcher.dragHoldPending(), "inside the deadzone: still a click");
+
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonReleased(MouseButton.LEFT, 23, 22, pressed));
+        frame();
+        assertFalse(dispatcher.dragHoldPending());
     }
 
     @Test
@@ -169,7 +199,6 @@ class DropGestureTest {
 
         assertNull(dispatcher.dragSession());
         assertEquals(List.of(), applied);
-        assertFalse(history.canUndo());
     }
 
     /**
@@ -222,7 +251,6 @@ class DropGestureTest {
         body.parent = root;
         root.children.add(body);
         dispatcher.onDragSource(7, (x, y) -> null);   // nothing here is draggable
-        dispatcher.dropHistory(history);
 
         press(20, 20);
         move(20, 60, 0, 40);
@@ -244,30 +272,7 @@ class DropGestureTest {
     }
 
     @Test
-    @DisplayName("with no history set, a drop resolves and draws but changes nothing")
-    void noHistoryMeansNoSilentMutation() {
-        root = node(0, 0, 0, 400, 400);
-        body = node(7, 0, 0, 200, 200);
-        body.parent = root;
-        root.children.add(body);
-        dispatcher.onDragSource(7, (x, y) -> Payload.of(ROW, "r"));
-        dispatcher.onDrop(7, (p, x, y) -> Drop.move(new Rect(0f, y, 200f, 2f), change("moved")));
-
-        press(20, 20);
-        move(20, 60, 0, 40);
-        frame();
-        assertTrue(dispatcher.dragSession().drop().accepts(), "it still resolves, so the indicator still draws");
-
-        release(20, 60);
-        press(20, 60);
-        release(20, 60);
-        frame();
-
-        assertEquals(List.of(), applied, "a mutation with no way back must not happen silently");
-    }
-
-    @Test
-    @DisplayName("a drop moves focus, so the next Ctrl+Z reaches the history the drop went to")
+    @DisplayName("a drop moves focus, so the next Ctrl+Z reaches what was dropped on")
     void dropMovesFocus() {
         tree();
         dispatcher.onKey(7, e -> { });   // registering a key handler makes the node focusable
@@ -299,7 +304,6 @@ class DropGestureTest {
 
         assertEquals(List.of("row@20->60"), applied, "the release is the drop");
         assertNull(dispatcher.dragSession(), "nothing stays with the pointer");
-        assertTrue(history.canUndo());
     }
 
     @Test

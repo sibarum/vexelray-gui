@@ -1,5 +1,6 @@
 package dev.vexelray.gui.typeset;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
@@ -103,8 +104,8 @@ public final class TypesetBlock implements AutoCloseable {
         // it. It also keeps the container's content box equal to its border box, which is what a floating child's
         // offsets resolve against.
         this.container = gui.box().scroll(false, false);
-        basis.add(gui.zoom().onCommit(v -> rebuild()));
-        basis.add(gui.dpi().onCommit(v -> rebuild()));
+        basis.add(Seams.of(gui).zoom().onCommit(v -> rebuild()));
+        basis.add(Seams.of(gui).dpi().onCommit(v -> rebuild()));
         rebuild();
     }
 
@@ -149,7 +150,7 @@ public final class TypesetBlock implements AutoCloseable {
      * deliberately <b>not</b> density, which {@link Length#dp} applies when the coordinates resolve.
      */
     private float basisPx() {
-        return gui.rootEmPx() * gui.zoom().value();
+        return gui.rootEmPx() * Seams.of(gui).zoom().value();
     }
 
     /** Drop the basis subscriptions. The nodes stay: removing the block from the tree is the caller's business,

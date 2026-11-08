@@ -35,7 +35,7 @@ class DisabledTest {
     private static final Topic<ClickEvent> CLICKS = Topic.of("test.disabled.clicks", ClickEvent.class);
 
     private final Atchung bus = Atchung.create();
-    private final InputDispatcher d = new InputDispatcher(bus, CLICKS, Runnable::run);
+    private final InputDispatcher d = new InputDispatcher(bus, "test", CLICKS);
     private final Map<Long, RetainedNode> index = new HashMap<>();
     private final RetainedNode root = node(0, 0, 0, 200, 200, null);
     private final RetainedNode row = node(1, 0, 0, 200, 40, root);
@@ -60,18 +60,18 @@ class DisabledTest {
     }
 
     private void click(int x, int y) {
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, x, y, 0));
-        bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, x, y, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonPressed(MouseButton.LEFT, x, y, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.ButtonReleased(MouseButton.LEFT, x, y, 0));
         d.dispatch(root);
     }
 
     private void key(Key... keys) {
         for (Key k : keys) {
-            bus.publish(InputTopics.INPUT, new InputEvent.KeyPressed(k, 0));
+            bus.publish(InputTopics.input("test"), new InputEvent.KeyPressed(k, 0));
         }
         d.dispatch(root);
         for (Key k : keys) {
-            bus.publish(InputTopics.INPUT, new InputEvent.KeyReleased(k, 0));
+            bus.publish(InputTopics.input("test"), new InputEvent.KeyReleased(k, 0));
         }
         d.dispatch(root);
     }
@@ -108,8 +108,8 @@ class DisabledTest {
         d.onState(2, buttonStates::add);
         button.set(PropKey.DISABLED, true);
 
-        bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(150, 20, 0, 0, 0));
-        bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(50, 20, 0, 0, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.PointerMoved(150, 20, 0, 0, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.PointerMoved(50, 20, 0, 0, 0));
         d.dispatch(root);
         assertEquals(List.of(InteractionState.HOVER), rowStates,
                 "the row lights once and stays lit as the pointer crosses the disabled button");
@@ -137,7 +137,7 @@ class DisabledTest {
         d.focus(2);
         row.set(PropKey.DISABLED, true);   // an ancestor: the button is just as closed
 
-        bus.publish(InputTopics.INPUT, new InputEvent.KeyPressed(Key.A, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.KeyPressed(Key.A, 0));
         d.dispatch(root);
         assertEquals(-1, d.focused(), "focus does not stay on a closed control");
         assertTrue(got.isEmpty(), "and a key in the same frame as the disable goes nowhere");

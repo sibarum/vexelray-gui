@@ -1,5 +1,6 @@
 package dev.vexelray.gui.krono;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
@@ -48,7 +49,7 @@ class PresenceTest {
     /** One frame at logical time {@code at}: the clock first, then the frame, as {@code GuiApp.run} orders them. */
     private static RetainedNode at(KronoGui krono, long at) {
         krono.tick(ms(at));
-        return krono.gui().frame(400f, 300f, PresenceTest::noText);
+        return Seams.of(krono.gui()).frame(400f, 300f, PresenceTest::noText);
     }
 
     private static Node row(Gui gui) {
@@ -59,7 +60,7 @@ class PresenceTest {
     }
 
     private static Scene scene() {
-        Gui gui = new Gui(Atchung.create(), Runnable::run);
+        Gui gui = new Gui(Atchung.create());
         KronoGui krono = KronoGui.attach(gui, Kron.driven());
         Presence presence = Presence.on(krono);
         gui.enterMotion(presence).exitMotion(presence);
@@ -115,6 +116,149 @@ class PresenceTest {
             assertNull(find(at(krono, 216), row.id()), "gone once it is drawn at nothing");
             at(krono, 232);
             assertTrue(s.presence().settled(), "and forgotten once released");
+        }
+    }
+
+    @Test
+    @DisplayName("a row hidden fades where it stands, then is hidden, still in the tree; shown, it comes back up")
+    void hidesAndShows() {
+        Scene s = scene();
+        try (KronoGui krono = s.krono()) {
+            Node row = row(krono.gui());
+            s.list().children(row);
+            at(krono, 0);
+            at(krono, 100);
+            at(krono, 116);   // arrived
+
+            row.visible(false);
+            RetainedNode r = find(at(krono, 116), row.id());
+            assertTrue(r.visible(), "still drawn while it goes");
+            assertTrue(r.hitInert(), "and not taking the pointer");
+            at(krono, 166);
+            assertEquals(0.5f, r.presence, 0.02f);
+
+            at(krono, 216);
+            assertSame(r, find(at(krono, 232), row.id()), "hidden is not removed");
+            assertFalse(r.visible(), "hidden for real once it is drawn at nothing");
+            assertFalse(r.hitInert(), "and its pointer is its own again for when it is shown");
+
+            row.visible(true);
+            at(krono, 232);
+            assertTrue(r.visible());
+            assertEquals(0f, r.presence, "shown, it arrives from nothing");
+            at(krono, 282);
+            assertEquals(0.5f, r.presence, 0.02f);
+        }
+    }
+
+    @Test
+    @DisplayName("a row hidden for real gives up its place, and the next frame closes the gap")
+    void hiddenGivesUpItsPlace() {
+        Scene s = scene();
+        try (KronoGui krono = s.krono()) {
+            Node row = row(krono.gui());
+            Node below = row(krono.gui());
+            s.list().children(row, below);
+            at(krono, 0);
+            at(krono, 100);
+            at(krono, 116);
+            RetainedNode b = find(at(krono, 116), below.id());
+            float under = b.y;
+            assertTrue(under > 0f);
+
+            row.visible(false);
+            at(krono, 116);
+            at(krono, 166);
+            assertEquals(under, b.y, "it keeps its place while it fades");
+            at(krono, 216);   // drawn at nothing, hidden for real
+            at(krono, 232);
+            assertEquals(0f, b.y, "the row below moves up into it");
+        }
+    }
+
+    @Test
+    @DisplayName("one view hidden as the one beside it is shown is a swap: the new one takes the place at once")
+    void swapTakesThePlace() {
+        Scene s = scene();
+        try (KronoGui krono = s.krono()) {
+            Node above = row(krono.gui());
+            Node files = row(krono.gui()).height(Length.grow(1f));
+            Node open = row(krono.gui()).height(Length.grow(1f)).visible(false);
+            s.list().height(Length.FILL).children(above, files, open);
+            at(krono, 0);
+            at(krono, 100);
+            at(krono, 116);
+
+            files.visible(false);
+            open.visible(true);
+            RetainedNode root = at(krono, 116);
+            RetainedNode f = find(root, files.id());
+            RetainedNode o = find(root, open.id());
+            assertEquals(20f, o.y, "the one shown has the whole place from the first frame");
+            assertEquals(280f, o.h);
+            assertTrue(f.visible(), "the one hidden is still drawn");
+            assertEquals(20f, f.y, "where it stood");
+            assertEquals(280f, f.h);
+            assertEquals(0f, o.presence, "and the new one waits while the old goes");
+
+            at(krono, 166);
+            assertEquals(0f, f.presence, 0.02f, "gone in half the time, being replaced");
+            at(krono, 216);
+            at(krono, 266);
+            assertFalse(f.visible(), "then hidden for real");
+            assertFalse(f.floating(), "and back in the flow for when it is shown");
+            assertEquals(20f, o.y);
+            assertEquals(280f, o.h);
+            assertEquals(0.5f, o.presence, 0.02f, "while the new one arrives, after it");
+            at(krono, 316);
+            at(krono, 332);
+            assertEquals(1f, o.presence, "and is all there");
+        }
+    }
+
+    @Test
+    @DisplayName("a view hidden with nothing shown beside it keeps its place while it fades, as before")
+    void hideBesideNoArrivalIsNoSwap() {
+        Scene s = scene();
+        try (KronoGui krono = s.krono()) {
+            Node a = row(krono.gui());
+            Node kept = row(krono.gui());
+            Node b = row(krono.gui()).visible(false);
+            s.list().children(a, kept, b);
+            at(krono, 0);
+            at(krono, 100);
+            at(krono, 116);
+
+            a.visible(false);
+            b.visible(true);   // shown, but the kept row stands between them: two edits, not a swap
+            RetainedNode k = find(at(krono, 116), kept.id());
+            assertEquals(20f, k.y, "the hidden one still holds its place");
+            assertFalse(find(at(krono, 116), a.id()).floating());
+        }
+    }
+
+    @Test
+    @DisplayName("a row shown again while it is being hidden comes back from where it got to")
+    void shownWhileHidingReturns() {
+        Scene s = scene();
+        try (KronoGui krono = s.krono()) {
+            Node row = row(krono.gui());
+            s.list().children(row);
+            at(krono, 0);
+            at(krono, 100);
+            at(krono, 116);
+
+            row.visible(false);
+            at(krono, 116);
+            RetainedNode r = find(at(krono, 166), row.id());
+            float mid = r.presence;
+            row.visible(true);
+            at(krono, 166);
+            assertTrue(r.visible());
+            assertEquals(mid, r.presence, 0.05f, "no jump: back up from where it got to");
+            at(krono, 300);
+            at(krono, 316);
+            assertEquals(1f, r.presence);
         }
     }
 

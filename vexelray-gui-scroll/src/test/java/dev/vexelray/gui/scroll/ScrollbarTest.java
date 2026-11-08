@@ -1,8 +1,9 @@
 package dev.vexelray.gui.scroll;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.ScrollRange;
-import dev.vexelray.gui.core.ScrollSource;
+import dev.vexelray.gui.core.spi.ScrollSource;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.NodeLayout;
 import dev.vexelray.gui.draw.Picture;
@@ -106,16 +107,16 @@ class ScrollbarTest {
             Scrollbars sb = fullPage(h);
             Node bar = sb.verticalBar().orElseThrow().node();
             float x = at(bar).rect().x() + BAR / 2f;
-            Thumb before = Thumb.of(sb.scroller().y().range().value(), H, BAR);
+            Thumb before = Thumb.of(Seams.of(h.gui).scrollSource(sb.scroller(), true).range().value(), H, BAR);
 
             float grabAt = before.start() + 10f;
             h.press(x, grabAt);
-            assertEquals(0f, sb.scroller().y().range().value().offset(), 0.5f, "taking hold moves nothing");
+            assertEquals(0f, Seams.of(h.gui).scrollSource(sb.scroller(), true).range().value().offset(), 0.5f, "taking hold moves nothing");
             h.move(x, grabAt + before.travel() / 2f);
-            assertEquals(250f, sb.scroller().y().range().value().offset(), 2f, "half the travel is half the range");
+            assertEquals(250f, Seams.of(h.gui).scrollSource(sb.scroller(), true).range().value().offset(), 2f, "half the travel is half the range");
             h.release(x, grabAt + before.travel() / 2f);
 
-            Thumb after = Thumb.of(sb.scroller().y().range().value(), H, BAR);
+            Thumb after = Thumb.of(Seams.of(h.gui).scrollSource(sb.scroller(), true).range().value(), H, BAR);
             assertEquals(grabAt + before.travel() / 2f, after.start() + 10f, 1.5f,
                     "the point taken hold of is still under the pointer");
         }
@@ -129,9 +130,9 @@ class ScrollbarTest {
             float x = at(bar).rect().x() + BAR / 2f;
 
             h.press(x, H - 10f).release(x, H - 10f);
-            assertEquals(300f, sb.scroller().y().range().value().offset(), 0.5f, "down by one view");
+            assertEquals(300f, Seams.of(h.gui).scrollSource(sb.scroller(), true).range().value().offset(), 0.5f, "down by one view");
             h.press(x, 5f).release(x, 5f);
-            assertEquals(0f, sb.scroller().y().range().value().offset(), 0.5f, "and back up by one");
+            assertEquals(0f, Seams.of(h.gui).scrollSource(sb.scroller(), true).range().value().offset(), 0.5f, "and back up by one");
         }
     }
 
@@ -141,7 +142,7 @@ class ScrollbarTest {
             Scrollbars sb = fullPage(h);
             Node bar = sb.verticalBar().orElseThrow().node();
             h.wheel(-1, at(bar).rect().x() + BAR / 2f, H / 2f);
-            assertEquals(48f, sb.scroller().y().range().value().offset(), 0.5f,
+            assertEquals(48f, Seams.of(h.gui).scrollSource(sb.scroller(), true).range().value().offset(), 0.5f,
                     "one notch, though the bar is not inside what it scrolls");
         }
     }

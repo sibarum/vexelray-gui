@@ -42,7 +42,7 @@ class StateRefreshCostTest {
     @Test
     void movesOverADeepObservedTree() {
         Atchung bus = Atchung.create();
-        InputDispatcher d = new InputDispatcher(bus, CLICKS, Runnable::run);
+        InputDispatcher d = new InputDispatcher(bus, "test", CLICKS);
         AtomicLong deliveries = new AtomicLong();
 
         RetainedNode root = node(0, 0, 0, 2000, 1000, null);
@@ -73,7 +73,7 @@ class StateRefreshCostTest {
     private static double run(Atchung bus, InputDispatcher d, RetainedNode root, int a, int b, AtomicLong deliveries,
                               int perMove) {
         // Settle on the first point, then warm up, then measure.
-        bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(a, 10, 0, 0, 0));
+        bus.publish(InputTopics.input("test"), new InputEvent.PointerMoved(a, 10, 0, 0, 0));
         d.dispatch(root);
         long start = 0;
         for (int round = 0; round < 2; round++) {
@@ -82,7 +82,7 @@ class StateRefreshCostTest {
                 start = System.nanoTime();
             }
             for (int i = 0; i < MOVES; i++) {
-                bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(i % 2 == 0 ? b : a, 10, 0, 0, 0));
+                bus.publish(InputTopics.input("test"), new InputEvent.PointerMoved(i % 2 == 0 ? b : a, 10, 0, 0, 0));
                 d.dispatch(root);
             }
             assertEquals((long) MOVES * perMove, deliveries.get());

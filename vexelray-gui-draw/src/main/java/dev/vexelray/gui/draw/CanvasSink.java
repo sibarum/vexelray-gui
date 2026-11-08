@@ -2,9 +2,14 @@ package dev.vexelray.gui.draw;
 
 import dev.vexelray.canvas.Canvas;
 import dev.vexelray.canvas.Color;
+import dev.vexelray.canvas.SdgDrawing;
 import dev.vexelray.canvas.shadelet.CoreShadelets;
 import dev.vexelray.canvas.shadelet.Look;
+import dev.vexelray.fields.sdg.Sdg;
+import dev.vexelray.target.ImageHandle;
 import dev.vexelray.text.TextLayout;
+
+import java.util.List;
 
 /**
  * The screen target: a {@link Picture.Sink} that issues engine {@link Canvas} calls.
@@ -26,6 +31,7 @@ public final class CanvasSink implements Picture.Sink {
     private final Canvas canvas;
     private final TextLayout text;
     private final float alpha;
+    private final Canvas.Roles roles;
 
     /**
      * Draw into {@code canvas}, setting glyphs with {@code text}, at {@code alpha}.
@@ -35,14 +41,31 @@ public final class CanvasSink implements Picture.Sink {
      * face, and the alternative (failing the frame) loses the whole window over a missing label.
      */
     public CanvasSink(Canvas canvas, TextLayout text, float alpha) {
+        this(canvas, text, alpha, Canvas.Roles.NONE);
+    }
+
+    /**
+     * As the constructor above, a drawing's paints that name a role taking {@code roles}' colours: the theme's, where
+     * a tree renderer draws the picture. {@link Canvas.Roles#NONE} draws every paint as authored.
+     */
+    public CanvasSink(Canvas canvas, TextLayout text, float alpha, Canvas.Roles roles) {
         this.canvas = canvas;
         this.text = text;
         this.alpha = alpha;
+        this.roles = roles == null ? Canvas.Roles.NONE : roles;
     }
 
     /** Fully opaque. */
     public CanvasSink(Canvas canvas, TextLayout text) {
         this(canvas, text, 1f);
+    }
+
+    /** The canvas's own SDG drawing, at the picture's alpha, its pages bound as they are uploaded. */
+    @Override
+    public void drawing(double x, double y, double w, double h, Sdg drawing, List<? extends ImageHandle> pages,
+                        String tag) {
+        canvas.sdg(SdgDrawing.of(drawing), pages.toArray(new ImageHandle[0]), (float) x, (float) y, (float) w,
+                (float) h, roles, alpha, null);
     }
 
     @Override

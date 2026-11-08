@@ -1,5 +1,7 @@
 package dev.vexelray.gui.demo;
 
+import dev.vexelray.gui.core.Timing;
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.InteractionState;
@@ -46,7 +48,7 @@ public final class Shell {
     private final Console console;
     private final TitleBar titleBar;
     private final Tabs pages;
-    private final Tabs.TabTransition crossfade;
+    private final Timing crossfade = Timing.millis(180, Timing.Curve.LINEAR);
     private final Node status;
     private final Node pageTitle;
     private final Node pageBlurb;
@@ -63,16 +65,14 @@ public final class Shell {
         // user is actually looking at, so under about a third of a second it reads as a rendering glitch if it
         // registers at all. Linear, because a cue does not arrive anywhere — it travels through, or rises and
         // falls, and easing a thing with no destination only produces a stall.
-        Cues cues = new Cues((progress, done) -> krono.ramp(Dur.ms(420), Ease.LINEAR, progress, done));
+        Cues cues = new Cues(gui, Timing.millis(420, Timing.Curve.LINEAR));
         this.stage = new Stage(gui, krono, cues, console);
 
         this.pages = new Tabs(gui);
         // The dissolve, and LINEAR again for the same reason: OUT_CUBIC is 87% faded by the halfway point, so
         // the visible part of the transition finishes in the first third and the rest of the duration is a stall
         // — a delay followed by a change, rather than a change.
-        this.crossfade = Tabs.crossfade(
-                (progress, done) -> krono.ramp(Dur.ms(180), Ease.LINEAR, progress, done));
-        pages.transition(crossfade);
+        pages.crossfade(crossfade);
         pages.strip().visible(false);   // the rail is the tab bar; see the class note
 
         this.pageTitle = gui.text("").width(Length.FILL).height(Length.rem(2.25f))
@@ -123,13 +123,13 @@ public final class Shell {
                 Key.DIGIT_6, Key.DIGIT_7, Key.DIGIT_8, Key.DIGIT_9};
         for (int i = 0; i < chapters.size() && i < digits.length; i++) {
             int index = i;
-            gui.shortcut(digits[i], () -> select(index), Modifier.CONTROL);
+            Seams.of(gui).shortcut(digits[i], () -> select(index), Modifier.CONTROL);
         }
-        pages.onSelect(this::showChapter);
+        gui.mailbox(Tabs.SELECTED, pages.address(), selected -> showChapter(selected.index()));
         showChapter(0);
         // The zoom readout, live. Every length in this window resolves through zoom, so the status line saying
         // what it is is the one place the number itself appears.
-        gui.zoom().onCommit(v -> restatus());
+        Seams.of(gui).zoom().onCommit(v -> restatus());
     }
 
     /** The tree's root is already built; this is the handle {@code Demo} needs to bind the window chrome. */
@@ -161,9 +161,9 @@ public final class Shell {
      * instant transition is not a special case for captures: it is the default, and the reduced-motion path.
      */
     public void selectNow(int index) {
-        pages.transition(Tabs.TabTransition.NONE);
+        pages.crossfade(null);
         pages.select(index);
-        pages.transition(crossfade);
+        pages.crossfade(crossfade);
     }
 
     private void add(Chapter chapter, Node nav) {
@@ -178,11 +178,11 @@ public final class Shell {
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
         navStates.add(state);
         navItems.add(item);
-        gui.onState(item, s -> {
+        Seams.of(gui).onState(item, s -> {
             state.set(s);
             paintNav();
         });
-        gui.onClick(item, () -> select(index));
+        Seams.of(gui).onClick(item, () -> select(index));
         nav.append(item);
     }
 
@@ -232,7 +232,7 @@ public final class Shell {
         int index = pages.selected();
         status.text(String.format("Chapter %d of %d  ·  %s  ·  zoom %.0f%%  ·  Ctrl+1..9 chapters, "
                         + "Ctrl+= / Ctrl+- zoom",
-                index + 1, chapters.size(), chapters.get(index).title(), gui.zoom().value() * 100f));
+                index + 1, chapters.size(), chapters.get(index).title(), Seams.of(gui).zoom().value() * 100f));
     }
 
     private Node statusBar() {

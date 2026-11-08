@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.layout.Dock;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
 import dev.vexelray.gui.core.layout.Length;
@@ -29,7 +30,7 @@ class DockEdgeTest {
         Node docked = gui.box().width(w).height(h).floatAt(floatX, floatY).dock(edge);
         Node box = gui.column().width(px(200)).height(px(100)).children(content, docked);
         gui.root().children(box);
-        gui.frame(400f, 300f, DockEdgeTest::noText);
+        Seams.of(gui).frame(400f, 300f, DockEdgeTest::noText);
         return new Node[]{box, content};
     }
 
@@ -58,7 +59,7 @@ class DockEdgeTest {
             Node docked = gui.box().width(px(14)).height(Length.FILL).floatAt(Length.percent(100), Length.ZERO)
                     .dock(Dock.RIGHT).visible(false);
             gui.root().children(gui.column().width(px(200)).height(px(100)).children(content, docked));
-            gui.frame(400f, 300f, DockEdgeTest::noText);
+            Seams.of(gui).frame(400f, 300f, DockEdgeTest::noText);
             assertEquals(200f, content.layout().rect().w(), 0.5f);
         }
     }

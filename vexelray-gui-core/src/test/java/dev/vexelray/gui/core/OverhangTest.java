@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.input.HitTest;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
 import dev.vexelray.gui.core.layout.Length;
@@ -75,7 +76,7 @@ class OverhangTest {
     }
 
     private static RetainedNode frame(Gui gui) {
-        return gui.frame(W, H, TM);
+        return Seams.of(gui).frame(W, H, TM);
     }
 
     /** A column across the window holding {@code field} between two fixed boxes. */

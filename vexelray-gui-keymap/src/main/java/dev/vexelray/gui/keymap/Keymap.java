@@ -1,9 +1,11 @@
 package dev.vexelray.gui.keymap;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.app.Settings;
 import dev.vexelray.gui.core.input.ClaimScope;
+import dev.vexelray.gui.core.input.Commands;
 import dev.vexelray.gui.core.input.Gesture;
 import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.input.Trigger;
@@ -28,13 +30,13 @@ import java.util.regex.Pattern;
  *
  * {@snippet :
  * Keymap keys = new Keymap(gui).persist(AppHome.of("editor").settings());
- * keys.action("file.save", "Save", Shortcut.of(Key.S, Modifier.CONTROL)).on(this::save);
- * keys.action("file.save-as", "Save As", Shortcut.of(Key.S, Modifier.CONTROL, Modifier.SHIFT)).on(this::saveAs);
+ * keys.action("file.save", "Save", Shortcut.of(Key.S, Modifier.CONTROL)).sends(commands, new Save());
+ * keys.action("file.save-as", "Save As", Shortcut.of(Key.S, Modifier.CONTROL, Modifier.SHIFT)).sends(commands, new SaveAs());
  * }
  *
- * That is the whole of the integration. Each line replaces a {@code gui.shortcut(...)}: the action is claimed on
- * the bus exactly as that shortcut was, at {@link ClaimScope#GLOBAL} unless {@link Action#within} narrows it, so
- * a focused field still outranks it and Ctrl+S still means save. What changes is that the chord is no longer the
+ * That is the whole of the integration, and the one way an application binds a window-wide chord: the action is
+ * claimed on the bus as a shortcut always was, at {@link ClaimScope#GLOBAL} unless {@link Action#within} narrows it,
+ * so a focused field still outranks it and Ctrl+S still means save. What changes is that the chord is no longer the
  * code's to fix. A {@link KeymapEditor} rebinds it, the claim moves, and the handler never hears about it.
  *
  * <h2>One chord, one action, per place</h2>
@@ -55,8 +57,8 @@ import java.util.regex.Pattern;
  * from every window {@link #attach}es each one, as it would have bound its shortcuts on each. One keymap, one set
  * of chords, every window.
  *
- * <p>Thread-safe. Writes are serialised on the keymap; handlers run on workers, as claims always do, but for an
- * {@link Action#ordered} action's, which runs on the GUI thread in the order keys arrived.
+ * <p>Thread-safe. Writes are serialised on the keymap; an action runs on the GUI thread, in the order keys arrived,
+ * as every claim does.
  */
 public final class Keymap {
 
@@ -95,7 +97,7 @@ public final class Keymap {
     }
 
     /** One claim this keymap holds on the bus, and whether its command runs in arrival order. */
-    private record Claimed(Gui gui, Node node, ClaimScope scope, Trigger chord, Action action, boolean ordered) {
+    private record Claimed(Gui gui, Node node, ClaimScope scope, Trigger chord, Action action) {
     }
 
     private final List<Action> actions = new CopyOnWriteArrayList<>();
@@ -107,6 +109,14 @@ public final class Keymap {
     private Set<Claimed> claimed = Set.of();
     private Subscription persisting;
     private volatile boolean paused;
+
+    /** What a menu asks for a named action's chords: this keymap's, as they are now (see {@link #attach}). */
+    private final Commands commands = new Commands() {
+        @Override
+        public List<Trigger> triggers(String command) {
+            return action(command).map(Keymap.this::chords).orElse(List.of());
+        }
+    };
 
     /** A keymap whose application-wide actions apply in {@code gui}. {@link #attach} adds more windows. */
     public Keymap(Gui gui) {
@@ -167,6 +177,8 @@ public final class Keymap {
             // take those with it.
             anchors.put(gui, gui.box().role("keymap"));
             sync();
+            // A menu line naming one of these actions says its chord as it is now, rebinds and all.
+            Seams.of(gui).commands(commands);
         }
         return this;
     }
@@ -213,7 +225,7 @@ public final class Keymap {
     // ------------------------------------------------------------------ reading
 
     /** What the user changed, as bus state — {@code keymap.overrides().onCommitLatest(...)} to follow it. */
-    public State<Overrides> overrides() {
+    State<Overrides> overrides() {
         return overrides;
     }
 
@@ -393,13 +405,12 @@ public final class Keymap {
                 continue;
             }
             Context c = a.context();
-            boolean ordered = a.runsOrdered();
             for (Trigger chord : now.get(a)) {
                 if (c.equals(Context.APPLICATION)) {
                     anchors.forEach((gui, anchor) -> want.add(
-                            new Claimed(gui, anchor, ClaimScope.GLOBAL, chord, a, ordered)));
+                            new Claimed(gui, anchor, ClaimScope.GLOBAL, chord, a)));
                 } else {
-                    want.add(new Claimed(c.gui(), c.node(), c.scope(), chord, a, ordered));
+                    want.add(new Claimed(c.gui(), c.node(), c.scope(), chord, a));
                 }
             }
         }
@@ -412,12 +423,7 @@ public final class Keymap {
         }
         for (Claimed w : want) {
             if (!claimed.contains(w)) {
-                Action a = w.action();
-                if (w.ordered()) {
-                    w.gui().claimUi(w.node(), w.chord(), w.scope(), a::run);
-                } else {
-                    w.gui().claim(w.node(), w.chord(), w.scope(), a::run);
-                }
+                Seams.of(w.gui()).claim(w.node(), w.chord(), w.scope(), w.action()::run);
             }
         }
         claimed = want;

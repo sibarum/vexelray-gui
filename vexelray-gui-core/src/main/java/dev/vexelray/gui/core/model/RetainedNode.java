@@ -73,6 +73,20 @@ public final class RetainedNode {
     // rather than chase it (Displacement.settle).
     public long movedFrame = Long.MIN_VALUE;
     public int moveStreak;
+    // The offset an asked half set on this node through Drawn (frame-contract.md), px, added to its displacement and
+    // inherited by its subtree as one is. It stays until the part sets it again.
+    public float drawnX;
+    public float drawnY;
+    // The stretch an asked half set on this node's picture through Drawn: along x by drawnStretch about drawnStretchX,
+    // in the node's own pixels. The picture only, not the subtree; 1 is none. It stays until the part sets it again.
+    public float drawnStretch = 1f;
+    public float drawnStretchX;
+    // The scale an asked half set on this node and its subtree through Drawn, about the centre of its box, multiplied
+    // with its own (PropKey.SCALE). 1 is none. It stays until the part sets it again.
+    public float drawnScale = 1f;
+    // The opacity an asked half set on this node and its subtree through Drawn, multiplied with its own
+    // (PropKey.OPACITY). 1 is none; at 0 the subtree is drawn as nothing and is not hit. It stays until set again.
+    public float drawnOpacity = 1f;
 
     // Arrival and departure (EnterMotion, ExitMotion). `leaving` is the reconciler's: set when a remove was taken by
     // the exit motion, so the node stays where it is, drawn going, until its presence reaches zero. The other two
@@ -84,6 +98,27 @@ public final class RetainedNode {
     // of its place in the flow and fades out where it stood, over what replaces it (Reconciler.liftReplaced). Laid out
     // as a float at the rectangle it last had, as offsets from its parent's border box.
     public boolean lifted;
+    // A leaving node that was hidden rather than removed (visible(false)): when it has faded it is hidden for real and
+    // stays in the tree, where a removed one would be detached (Reconciler.hide, Reconciler.depart).
+    public boolean hiding;
+
+    // What this node showed before its words or its image were last replaced, so the renderer can fade it out under
+    // what it shows now (Reconciler.replacing, PaintMotion.Channel.REPLACED); let go of once that is all the way up
+    // (Reconciler.settleReplaced). The words with the metrics they were laid out with and where the box was then; the
+    // image with the part of it sampled. `replacing` is whether anything is being crossfaded.
+    public boolean replacing;
+    public boolean imageReplaced;
+    public dev.vexelray.target.ImageHandle imageBefore;
+    public dev.vexelray.gui.core.ImageRegion regionBefore;
+    public dev.vexelray.gui.core.ImageScaling scalingBefore;
+    // The region written last, and the image it was written for: Node.image writes the region first, so an image
+    // replaced finds here the region its old image was drawn with.
+    public dev.vexelray.gui.core.ImageRegion regionOfImage;
+    public dev.vexelray.target.ImageHandle regionOfImageFor;
+    public String wordsBefore;
+    public dev.vexelray.gui.core.text.TextMetrics metricsBefore;
+    public float wordsBeforeX;
+    public float wordsBeforeY;
     public float liftedX;
     public float liftedY;
     public float liftedW;
@@ -165,6 +200,10 @@ public final class RetainedNode {
     // line breaks depend only on text, width and text size, none of which can change without a relayout.
     public java.util.List<dev.vexelray.text.TextLayout.LineSpan> lineSpans;
 
+    // The text cut to the width the layout settled on, an ellipsis in it, when the node asks for one and its text
+    // does not fit; null when it is drawn whole. Set by the same pass as lineSpans, which then break this string.
+    public String cutText;
+
     // Width of the line-number gutter, resolved by the layout pass (0 when there is none). It narrows the text
     // area, so it feeds the wrap width as well as the draw position — one value, computed once, read by all three.
     public float gutterPx;
@@ -240,8 +279,20 @@ public final class RetainedNode {
         return resolve(background(), theme);
     }
 
-    private static Color resolve(Paint paint, Theme theme) {
-        return paint == null ? null : paint.in(theme);
+    /**
+     * {@code paint} in {@code theme}, at the pointer's state when the framework shades this node
+     * ({@link PropKey#POINTER_STATE}) and the paint is a role: a role is what the theme can shade.
+     */
+    private Color resolve(Paint paint, Theme theme) {
+        if (paint == null) {
+            return null;
+        }
+        if (paint instanceof dev.vexelray.gui.core.style.Role role
+                && props.get(PropKey.POINTER_STATE) instanceof dev.vexelray.gui.core.input.InteractionState s
+                && s != dev.vexelray.gui.core.input.InteractionState.NORMAL) {
+            return theme.color(role, s);
+        }
+        return paint.in(theme);
     }
 
     public Length corner() {
@@ -343,6 +394,11 @@ public final class RetainedNode {
         return (dev.vexelray.gui.core.ImageField) props.get(PropKey.FIELD);
     }
 
+    /** The SDG drawing this node draws, or null (see {@link PropKey#SDG}). */
+    public dev.vexelray.gui.core.ImageSdg sdg() {
+        return (dev.vexelray.gui.core.ImageSdg) props.get(PropKey.SDG);
+    }
+
     /** How the image is scaled, or null for the sampler's own bilinear (see {@link PropKey#IMAGE_SCALING}). */
     public dev.vexelray.gui.core.ImageScaling imageScaling() {
         return (dev.vexelray.gui.core.ImageScaling) props.get(PropKey.IMAGE_SCALING);
@@ -384,6 +440,19 @@ public final class RetainedNode {
         return (String) props.get(PropKey.TEXT);
     }
 
+    /** Where this label is cut when it does not fit ({@code Node.ellipsis}), or null for at its edge. */
+    public dev.vexelray.gui.core.text.Ellipsis ellipsis() {
+        return (dev.vexelray.gui.core.text.Ellipsis) props.get(PropKey.ELLIPSIS);
+    }
+
+    /**
+     * The text as drawn: {@link #cutText} where the layout cut it to fit, else the text. What the compute phase bakes
+     * geometry for and the renderer draws; everything that reads the text as data reads {@link #textString}.
+     */
+    public String drawnText() {
+        return cutText != null ? cutText : textString();
+    }
+
     public Length textSize() {
         return len(PropKey.TEXT_SIZE, DEFAULT_TEXT_SIZE);
     }
@@ -395,7 +464,8 @@ public final class RetainedNode {
 
     /** The declared text colour in {@code theme}, or null when the node never stated one. */
     public Color textColor(Theme theme) {
-        return resolve(textColor(), theme);
+        Paint ink = textColor();   // not shaded: the framework lifts a surface under the pointer, not the words on it
+        return ink == null ? null : ink.in(theme);
     }
 
     public TextLayout.HAlign hAlign() {
@@ -575,6 +645,19 @@ public final class RetainedNode {
     /** Whether this node itself is disabled (see {@link PropKey#DISABLED}); {@link #disabledInTree()} is the rule. */
     public boolean disabled() {
         return Boolean.TRUE.equals(props.get(PropKey.DISABLED));
+    }
+
+    /**
+     * Whether this node and every ancestor are {@link #visible()}: whether the person can see it at all, which a node's
+     * own {@code visible()} does not say once something above it is hidden. Ancestors are walked on each call.
+     */
+    public boolean shownInTree() {
+        for (RetainedNode n = this; n != null; n = n.parent) {
+            if (!n.visible()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** Whether this node or any ancestor is disabled — which is what decides whether the user can act on it. */

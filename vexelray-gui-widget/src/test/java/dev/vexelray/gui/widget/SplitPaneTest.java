@@ -33,11 +33,11 @@ class SplitPaneTest {
     }
 
     private static void drag(HeadlessGui h, float x, float y, float dx, float dy) {
-        h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, (int) x, (int) y, 0));
+        h.bus.publish(h.gui.input(), new InputEvent.ButtonPressed(MouseButton.LEFT, (int) x, (int) y, 0));
         h.frame();
-        h.bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved((int) (x + dx), (int) (y + dy), (int) dx, (int) dy, 0));
+        h.bus.publish(h.gui.input(), new InputEvent.PointerMoved((int) (x + dx), (int) (y + dy), (int) dx, (int) dy, 0));
         h.frame();
-        h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, (int) (x + dx), (int) (y + dy), 0));
+        h.bus.publish(h.gui.input(), new InputEvent.ButtonReleased(MouseButton.LEFT, (int) (x + dx), (int) (y + dy), 0));
         h.frame().frame();
     }
 
@@ -55,7 +55,7 @@ class SplitPaneTest {
             Mounted m = mount(h, SplitPane.Orientation.SIDE_BY_SIDE);
             Rect r = m.first().layout().rect();
             List<Float> ended = new ArrayList<>();
-            m.pane().onResize(ended::add);
+            h.gui.mailbox(SplitPane.RESIZED, m.pane().address(), e -> ended.add(e.dp()));
 
             drag(h, r.x() + r.w() + 2f, r.y() + 50f, 40f, 0f);
 
@@ -118,14 +118,14 @@ class SplitPaneTest {
             Rect r = m.first().layout().rect();
             int x = (int) (r.x() + r.w() + 2f);
             int y = (int) (r.y() + 50f);
-            h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, x, y, 0));
+            h.bus.publish(h.gui.input(), new InputEvent.ButtonPressed(MouseButton.LEFT, x, y, 0));
             h.frame();
             // Four moves of 10 before the layout catches up: a mouse polling faster than the frame rate.
             for (int i = 1; i <= 4; i++) {
-                h.bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(x + 10 * i, y, 10, 0, 0));
+                h.bus.publish(h.gui.input(), new InputEvent.PointerMoved(x + 10 * i, y, 10, 0, 0));
             }
             h.frame();
-            h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, x + 40, y, 0));
+            h.bus.publish(h.gui.input(), new InputEvent.ButtonReleased(MouseButton.LEFT, x + 40, y, 0));
             h.frame().frame();
             assertEquals(200f, m.first().layout().rect().w(), 1.5f, "all forty, not the last ten");
         }
@@ -138,18 +138,18 @@ class SplitPaneTest {
             Rect r = m.first().layout().rect();
             int x = (int) (r.x() + r.w() + 2f);
             int y = (int) (r.y() + 50f);
-            h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, x, y, 0));
+            h.bus.publish(h.gui.input(), new InputEvent.ButtonPressed(MouseButton.LEFT, x, y, 0));
             h.frame();
             // 160 down to the 64 minimum is 96; go 146 left, then 50 back, which leaves the pointer where the
             // divider stopped, so the divider has not moved off its minimum.
-            h.bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(x - 146, y, -146, 0, 0));
+            h.bus.publish(h.gui.input(), new InputEvent.PointerMoved(x - 146, y, -146, 0, 0));
             h.frame().frame();
-            h.bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(x - 96, y, 50, 0, 0));
+            h.bus.publish(h.gui.input(), new InputEvent.PointerMoved(x - 96, y, 50, 0, 0));
             h.frame().frame();
             assertEquals(64f, m.first().layout().rect().w(), 1.5f, "the divider waits for the pointer");
-            h.bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(x - 56, y, 40, 0, 0));
+            h.bus.publish(h.gui.input(), new InputEvent.PointerMoved(x - 56, y, 40, 0, 0));
             h.frame().frame();
-            h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, x - 56, y, 0));
+            h.bus.publish(h.gui.input(), new InputEvent.ButtonReleased(MouseButton.LEFT, x - 56, y, 0));
             h.frame().frame();
             assertEquals(104f, m.first().layout().rect().w(), 1.5f, "and then follows it with no offset");
         }
@@ -218,15 +218,15 @@ class SplitPaneTest {
             float x = r.x() + r.w() + 2f;
             float y = r.y() + 50f;
 
-            h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonPressed(MouseButton.LEFT, (int) x, (int) y, 0));
+            h.bus.publish(h.gui.input(), new InputEvent.ButtonPressed(MouseButton.LEFT, (int) x, (int) y, 0));
             h.frame();
             // Past the first pane's minimum, so the divider stops and the pointer runs on ahead of it -- as a fast
             // drag is between frames, and as any drag is once a pane is at its limit.
-            h.bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved(10, (int) y, 10 - (int) x, 0, 0));
+            h.bus.publish(h.gui.input(), new InputEvent.PointerMoved(10, (int) y, 10 - (int) x, 0, 0));
             h.frame().frame();
             assertEquals(accent, h.retained(m.pane().grip()).background(h.gui.drawnTheme()), "lit while the drag is under way");
 
-            h.bus.publish(InputTopics.INPUT, new InputEvent.ButtonReleased(MouseButton.LEFT, 10, (int) y, 0));
+            h.bus.publish(h.gui.input(), new InputEvent.ButtonReleased(MouseButton.LEFT, 10, (int) y, 0));
             h.frame().frame();
             assertEquals(rest, h.retained(m.pane().grip()).background(h.gui.drawnTheme()), "back to rest once released elsewhere");
         }
@@ -237,14 +237,14 @@ class SplitPaneTest {
         try (HeadlessGui h = new HeadlessGui()) {
             Mounted m = mount(h, SplitPane.Orientation.SIDE_BY_SIDE);
             List<DoubleConsumer> fades = new ArrayList<>();
-            m.pane().motion((progress, done) -> fades.add(progress));
+            m.pane().motion(TestClocks.drive(h, (progress, done) -> fades.add(progress)));
             Color rest = h.gui.theme().color(Role.LINE);
             Color accent = h.gui.theme().color(Role.ACCENT);
             Rect r = m.first().layout().rect();
             float x = r.x() + r.w() + 2f;
             float y = r.y() + 50f;
 
-            h.bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved((int) x, (int) y, 0, 0, 0));
+            h.bus.publish(h.gui.input(), new InputEvent.PointerMoved((int) x, (int) y, 0, 0, 0));
             h.frame().frame();
             assertEquals(1, fades.size(), "hovering starts one fade");
             assertEquals(rest, h.retained(m.pane().grip()).background(h.gui.drawnTheme()), "and nothing changes before it runs");
@@ -255,7 +255,7 @@ class SplitPaneTest {
             assertTrue(!half.equals(rest) && !half.equals(accent), "halfway is neither end: " + half);
 
             // Leaving mid-fade turns round from the halfway colour, not from the accent.
-            h.bus.publish(InputTopics.INPUT, new InputEvent.PointerMoved((int) x + 300, (int) y, 300, 0, 0));
+            h.bus.publish(h.gui.input(), new InputEvent.PointerMoved((int) x + 300, (int) y, 300, 0, 0));
             h.frame().frame();
             assertEquals(2, fades.size());
             fades.get(0).accept(1.0);   // the superseded fade finishing must not repaint

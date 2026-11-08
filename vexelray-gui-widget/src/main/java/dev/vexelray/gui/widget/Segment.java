@@ -1,5 +1,8 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
+import sibarum.atchung.Topic;
+import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.CursorShape;
@@ -27,15 +30,27 @@ import java.util.function.Consumer;
  *
  * <h2>The value is the caller's, and the label is only a label</h2>
  *
- * Options are added as (label, value) so the thing that comes back out of {@link #onChange} is what the
+ * Options are added as (label, value) so the thing that comes back out in {@link #CHANGED} is what the
  * application already calls it — {@code "sss"}, not {@code "SSS"}, and not an index that silently means something
  * else the moment an option is inserted. A value is compared by {@link Object#equals}, so an enum constant, a
  * record or a string all work and none of them needs to be a string first.
  *
- * <p>Reads flow out through {@link #onChange}; the handler runs on a worker thread, so it must not touch the
- * retained tree except through {@link Node} handles.
+ * <p>A choice is published on {@link #CHANGED}, carrying the segment's {@link #address() address}: the last in a
+ * frame, because it is state (vexelray-framework's {@code docs/threading.md}, T3.8).
  */
 public final class Segment<T> {
+
+    /** The value chosen, when the user (or {@link #select}) chooses one. The last in a frame. */
+    public static final Topic<Changed> CHANGED =
+            Addressed.state(Changed.class, Changed::segment);
+
+    /** The segment at {@code segment} now has {@code value} chosen: the value its option was added with. */
+    public record Changed(String segment, Object value) implements Addressed {
+        @Override
+        public Object address() {
+            return segment;
+        }
+    }
 
     private final Gui gui;
     private final Node bar;
@@ -43,6 +58,7 @@ public final class Segment<T> {
     private final List<T> order = new ArrayList<>();
     private volatile T selected;
     private volatile Consumer<T> onChange = v -> { };
+    private final WidgetName name;
     /** The way back from each choice, into the tree's history. */
     private final ValueUndo<T> undo;
 
@@ -60,9 +76,10 @@ public final class Segment<T> {
                 .gap(Length.dp(1))
                 .alignItems(AlignItems.CENTER)
                 .scroll(false, false);
+        this.name = new WidgetName(gui, "segment", bar);
         this.undo = new ValueUndo<>(gui, bar, () -> selected, v -> {
             show(v);
-            onChange.accept(v);
+            changed(v);
         }, false);
     }
 
@@ -90,8 +107,8 @@ public final class Segment<T> {
         order.add(value);
         gui.focusable(cell, true);
         gui.cursor(cell, CursorShape.POINTER);
-        gui.onClick(cell, () -> select(value));
-        gui.onState(cell, s -> paintOne(value, s == InteractionState.HOVER));
+        Seams.of(gui).onClick(cell, () -> select(value));
+        Seams.of(gui).onState(cell, s -> paintOne(value, s == InteractionState.HOVER));
         bar.append(cell);
         if (selected == null) {
             selected = value;
@@ -110,20 +127,20 @@ public final class Segment<T> {
         return selected;
     }
 
-    /** Select a value; also notifies {@link #onChange}. A value with no option is ignored. */
+    /** Select a value, as the user would: publishes {@link #CHANGED}. A value with no option is ignored. */
     public Segment<T> select(T value) {
         if (!cells.containsKey(value)) {
             return this;
         }
         T was = selected;
         show(value);
-        onChange.accept(value);
+        changed(value);
         undo.edited(was, value);
         return this;
     }
 
     /**
-     * Show a selection the segment did not make, <b>without</b> notifying {@link #onChange}. A value with no
+     * Show a selection the segment did not make, <b>without</b> publishing {@link #CHANGED}. A value with no
      * option is ignored.
      *
      * <p>A sync is not an edit. Where a panel re-reads its model and writes what it finds back into its rows,
@@ -139,8 +156,28 @@ public final class Segment<T> {
         return this;
     }
 
-    /** React to selection changes (fired on click and on {@link #select}). Runs on a worker thread. */
-    public Segment<T> onChange(Consumer<T> handler) {
+    /** Call this segment {@code name} in its tree ("units"): its {@link #address()} is the tree's name and this. */
+    public Segment<T> name(String name) {
+        this.name.name(name);
+        return this;
+    }
+
+    /** Where this segment is on the bus: what its {@link Changed} carries. */
+    public String address() {
+        return name.address();
+    }
+
+    /** A value chosen: the hook, then the message. */
+    private void changed(T value) {
+        onChange.accept(value);
+        gui.bus().publish(CHANGED, new Changed(name.address(), value));
+    }
+
+    /**
+     * The widget library's hook on a choice, for a widget built from segments: run as the choice is made, and as well
+     * as {@link #CHANGED} rather than instead. Package-private, because an application hears a segment by its message.
+     */
+    Segment<T> onChange(Consumer<T> handler) {
         this.onChange = handler == null ? v -> { } : handler;
         return this;
     }

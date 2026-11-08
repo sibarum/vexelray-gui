@@ -36,6 +36,7 @@ import dev.vexelray.gui.core.input.FocusEvent;
 import dev.vexelray.gui.core.input.InputDispatcher;
 import dev.vexelray.gui.core.input.InteractionState;
 import dev.vexelray.gui.core.input.KeyEvent;
+import dev.vexelray.gui.core.input.Menu;
 import dev.vexelray.gui.core.input.MenuPresenter;
 import dev.vexelray.gui.core.input.MenuSink;
 import dev.vexelray.gui.core.input.Gesture;
@@ -44,7 +45,6 @@ import dev.vexelray.gui.core.input.Trigger;
 import dev.vexelray.gui.core.model.RetainedNode;
 import dev.vexelray.gui.core.model.SemanticNode;
 import dev.vexelray.gui.core.nav.Address;
-import dev.vexelray.gui.core.nav.NavTopics;
 import dev.vexelray.gui.core.nav.Navigation;
 import dev.vexelray.gui.core.nav.Navigator;
 import dev.vexelray.gui.core.nav.Reveal;
@@ -83,7 +83,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * The framework facade and the boundary between worker threads and the GUI thread. Workers build UI and mutate it
- * through {@link Node} handles minted here (each publishes a {@code Create}); the GUI thread calls {@link #frame}
+ * through {@link Node} handles minted here (each publishes a {@code Create}); the GUI thread calls {@link dev.vexelray.gui.core.spi.Seams#frame}
  * once per frame to drain the mutation channel, reconcile the retained tree (single writer), and lay it out.
  *
  * <p>The mutation channel is an Atchung {@code Topic<Mutation>} (architecture.md §4-5): {@link Node} setters
@@ -101,10 +101,11 @@ public final class Gui implements AutoCloseable {
     private static final sibarum.probe.Log LOG = sibarum.probe.Log.of("gui");
 
     /**
-     * The internal tree-mutation channel. A private topic name so it never collides with application traffic on a
-     * shared bus; losslessly drained on the GUI thread each frame.
+     * The internal tree-mutation channel, named by the tree ({@code vexelray.gui.<tree>.mutations}) so it never
+     * collides with application traffic or with another tree's on a shared bus; losslessly drained on the GUI thread
+     * each frame.
      */
-    private static final Topic<Mutation> MUTATIONS = Topic.of("vexelray.gui.mutations", Mutation.class);
+    private final Topic<Mutation> mutationTopic;
 
     /**
      * Mailbox bound for the mutation pump, in <b>cells</b> rather than in edits — the channel folds, so this
@@ -118,11 +119,11 @@ public final class Gui implements AutoCloseable {
      */
     private static final int MUTATION_MAILBOX = 1 << 16;
 
-    /** Framework click events, resolved from raw input by the dispatcher; workers subscribe here. */
-    private static final Topic<ClickEvent> CLICKS = Topic.of("vexelray.gui.clicks", ClickEvent.class);
+    /** Framework click events, resolved from raw input by the dispatcher: this tree's ({@link #clicks()}). */
+    private final Topic<ClickEvent> clickTopic;
 
-    /** Keyboard focus changes (gained/lost per node). */
-    private static final Topic<FocusEvent> FOCUS = Topic.of("vexelray.gui.focus", FocusEvent.class);
+    /** Keyboard focus changes (gained/lost per node), this tree's. */
+    private final Topic<FocusEvent> focusEventTopic;
 
     /**
      * How many frames a {@link #navigate} may spend before it gives up. Counted in frames rather than
@@ -133,13 +134,31 @@ public final class Gui implements AutoCloseable {
     private static final int MAX_NAV_FRAMES = 240;
 
     /** Every routed key press, whatever took it — the observation channel (see {@link KeyRouted}). */
-    private static final Topic<KeyRouted> KEY_ROUTES = Topic.of("vexelray.gui.keys", KeyRouted.class);
+    private final Topic<KeyRouted> keyRouteTopic;
 
     /** Where nodes come from: the id counter, the publisher seam, and the batch. See {@link Trees}. */
     private final Trees trees;
     private final Atchung bus;
     private final MutationSink sink;
     private final Pump pump;
+    /**
+     * The widgets' mailboxes ({@link #mailbox}): a tick of the GUI's own, run on the GUI thread at the start of each
+     * frame's drain. A tick rather than more of {@link #pump} because a logic tick hands another tick all of its
+     * writes at once (atchung's {@code Tick}), so a frame applies all of what the logic wrote in one of its ticks or
+     * none of it, never half. Input and the tree's own mutations stay on the pump, as they always have.
+     */
+    private final sibarum.atchung.Tick widgets;
+    private final sibarum.atchung.Inbox widgetInbox;
+    /** The widgets' addressed mailboxes, routed by address: see {@link #mailbox(Topic, Object, sibarum.atchung.Subscriber)}. */
+    private final Routes routes;
+    /** How many unnamed trees this process has made: what names each one apart from the others. */
+    private static final java.util.concurrent.atomic.AtomicInteger TREES = new java.util.concurrent.atomic.AtomicInteger();
+    /** The names of the open trees on each bus, so a second of one name is refused rather than sharing topics. */
+    private static final Map<Atchung, java.util.Set<String>> NAMES = new java.util.WeakHashMap<>();
+    /** This tree's name among the others on a bus: see {@link #name()}. */
+    private final String treeName;
+    /** This tree's node-event topics ({@link #hear}), one per kind heard so far. GUI thread only. */
+    private final Map<NodeEvent<?>, Topic<?>> nodeTopics = new java.util.HashMap<>();
 
     // Wakes are traced through Probe on the FRAME lane -- `-Dprobe=frame -Dprobe.trace=true`, or
     // `-Dprobe.format=csv` for the correlation log. There was a bespoke flag here writing to System.out, which
@@ -160,7 +179,7 @@ public final class Gui implements AutoCloseable {
      * property write</em>, which is a syscall against a fold that had just reduced the write itself to a map
      * put — the cheap half optimised and the expensive half left alone.
      *
-     * <p>Cleared at the very top of {@link #frame}, before the drain rather than after it. A write that lands
+     * <p>Cleared at the very top of {@link dev.vexelray.gui.core.spi.Seams#frame}, before the drain rather than after it. A write that lands
      * mid-frame then re-arms the wake and costs one extra frame that finds nothing to do; clearing at the end
      * would instead swallow that write's wake and leave it sitting until something unrelated woke the loop. Over
      * -waking is a wasted frame, under-waking is a UI that stops updating.
@@ -198,6 +217,19 @@ public final class Gui implements AutoCloseable {
      * the three things a walk needs of the tree.
      */
     private final Navigator navigator;
+
+    /** A watch for what changes in one frame ({@link Cuts}), told each frame; null when nothing watches. */
+    private volatile Cuts cuts;
+
+    /** Watch this tree's frames with {@code watch}, or stop with null ({@link Cuts#watch}). */
+    void cuts(Cuts watch) {
+        this.cuts = watch;
+    }
+
+    /** The landmark {@code id} is reached by, or null: what a {@link Cuts} calls a node it found. */
+    String landmarkName(long id) {
+        return navigator.landmarkName(id);
+    }
     /** The two-press undo every {@link #history} binding and {@link #undo}/{@link #redo} call goes through. */
     private final Undoing undoing;
     /** Which history each node bound, by node id — what {@link #historyFor} walks up through. */
@@ -208,7 +240,7 @@ public final class Gui implements AutoCloseable {
     private final Node root;
     /**
      * Size and scale: the window, the zoom, the density, and the minimums and limits that shape them. Every
-     * {@link Length} resolves against what this holds, and {@link #frame} asks it once per pass — see
+     * {@link Length} resolves against what this holds, and {@link dev.vexelray.gui.core.spi.Seams#frame} asks it once per pass — see
      * {@link Metrics}, which owns the remembered values the dirty-check compares against.
      */
     private final Metrics metrics = new Metrics();
@@ -238,6 +270,18 @@ public final class Gui implements AutoCloseable {
     /** What colour nodes are drawn in relative to the colour they were given; NONE until a source is attached. */
     private volatile dev.vexelray.gui.core.style.PaintMotion paintMotion =
             dev.vexelray.gui.core.style.PaintMotion.NONE;
+    /** The parts the host registered to be asked every frame (spi.Asked), in registration order. GUI thread. */
+    private final java.util.List<dev.vexelray.gui.core.spi.Asked> asked = new java.util.ArrayList<>();
+    /** The earliest the registered parts said they are due, as they last answered. GUI thread. */
+    private long askedDue = Frame.NEVER;
+    /** What every asked half sets its nodes through: one per tree, so asking allocates nothing. */
+    private final DrawnSink drawnSink = new DrawnSink();
+    /**
+     * When the last frame's asked halves said this tree is next due (Frame.NEVER at rest), and the present time that
+     * frame drew for: the loop parks until then and no longer ({@link #nanosUntilDue}). Written on the GUI thread.
+     */
+    private volatile long due = Frame.NEVER;
+    private volatile long dueFrom;
     /** How much of a node arriving or leaving is drawn; NONE until a source is attached. */
     private volatile EnterMotion enterMotion = EnterMotion.NONE;
     private volatile ExitMotion exitMotion = ExitMotion.NONE;
@@ -265,7 +309,7 @@ public final class Gui implements AutoCloseable {
     private final ReadModels readModels;
     private final LayoutReader layoutReader;
     private volatile TextClipboard clipboard = new TextClipboard.InMemory();
-    /** Guards installing the default context-menu presenter: see {@link #onContextMenu}. */
+    /** Guards installing the default context-menu presenter: see {@link dev.vexelray.gui.core.spi.Seams#onContextMenu}. */
     private final Object menusLock = new Object();
     // The look. Not a State on the bus like zoom is: a Length resolves against zoom every frame, whereas a colour
     // is resolved once and written into a prop, so there is nothing per-frame to coalesce (see Theme's class note
@@ -275,23 +319,7 @@ public final class Gui implements AutoCloseable {
     /** The focus state and theme the read-models were last published against; see the frame's publish step. */
     private dev.vexelray.gui.core.input.FocusState publishedFocus = dev.vexelray.gui.core.input.FocusState.NONE;
     private Theme publishedTheme;
-    private final Executor handlers;
-    /**
-     * Where {@link #async} puts work — a different lane from {@link #handlers}, and the split is the point.
-     * "Worker thread" used to mean both, which is one name for two lanes with different rules in the
-     * documentation applications read: a handler is short, ordinary application code answering an input event,
-     * and an offloaded task is a file read, a decode or a network call that may outlast any number of frames.
-     */
-    private final Executor offload;
-    /** {@link #offload}, carrying each task's submitter's cause to the lane's thread: what {@link #offload()} hands out. */
-    private final Executor offloadCarrying;
-    /**
-     * The lanes this {@code Gui} built because nobody handed it one, and the only ones {@link #close} may shut
-     * down. Empty when both were supplied, which is deliberate: a lane its embedder owns outlives the tree
-     * presented on it, so closing one window must not take the application's threads with it.
-     */
-    private final List<ExecutorService> ownedLanes = new ArrayList<>(2);
-    /** Set by {@link #close}; a lane rejecting after it is a stopped lane, whatever kind of executor it is. */
+    /** Set by {@link #close}. */
     private volatile boolean closed;
 
     /** Create a GUI on its own private Atchung bus. */
@@ -303,64 +331,55 @@ public final class Gui implements AutoCloseable {
      * Create a GUI on a shared Atchung bus — hand in the same bus the application uses so input publishers
      * ({@code tactroller-atchung}), widgets, and workers all meet the framework on one fabric.
      *
-     * <p><b>One {@code Gui} per bus.</b> Share it with anything that is not a {@code Gui}; never with a second
-     * one. This class's topics are {@code static} — {@code vexelray.gui.mutations} is one name for every
-     * instance — so two trees on one bus each receive the other's mutations, and the mailbox they arrive in is
-     * bounded at {@value #MUTATION_MAILBOX} with {@link sibarum.atchung.Backpressure#BLOCK}. A tree that is not
-     * currently being presented never drains it, so the second {@code Gui} fills up and then <b>blocks the
-     * first one's node setters for good</b>: an application that freezes after some tens of thousands of
-     * edits, with no exception and nothing in a log.
+     * <p><b>Any number of trees may share a bus</b>, each under its own name: every topic a tree uses for itself — its
+     * mutations, its input, its clicks, focus and key routes, its node events — is named by the tree
+     * ({@code vexelray.gui.<tree>.mutations}), and every message its widgets publish carries an address qualified by
+     * it. So two windows on one bus never hear each other's input or apply each other's edits, and a message can
+     * travel between them with nothing bridging it. Navigation ({@code Address.NAVIGATE}) is the one topic they share
+     * on purpose: an address names its window, and each tree takes only its own.
      *
-     * <p>Two windows means two buses today, and the cost is that a message cannot travel between them without
-     * something bridging it. Making one bus carry every tree is a real goal and a real change — the topics
-     * would have to be per instance rather than per class — and it is not this constructor.
+     * <p>The tree is named {@code tree<n>}, numbered in the order this process made them; see {@link #name()}.
      */
     public Gui(Atchung bus) {
-        this(bus, null, null);
+        this(bus, "tree" + TREES.incrementAndGet());
     }
 
     /**
-     * Create a GUI on a shared bus with an explicit executor for input handlers (clicks, keys, chars, drags,
-     * state). Pass a same-thread executor ({@code Runnable::run}) for a <b>deterministic, headless</b> GUI —
-     * input published on the bus is handled synchronously inside {@link #frame}, so a test (or any embedder) has
-     * exact control over what fires and when, with no worker-thread races. {@code null} uses the default handler
-     * lane (handlers run off the GUI thread), which is what a live application wants.
+     * Create a GUI called {@code name} on a shared Atchung bus: as {@link #Gui(Atchung)}, with a name chosen by whoever
+     * makes the window ("main", "settings", "editor-2" for the second of a kind). The name is the tree's on this bus
+     * until the tree is {@link #close closed}.
      *
-     * <p>Leaves the offload lane to this class, so {@link #async} still lands on a pool of this {@code Gui}'s
-     * own. An embedder that means to own the application's threads wants
-     * {@link #Gui(Atchung, Executor, Executor)} instead — passing a handler executor alone redirects handlers
-     * and leaves the pool, which is not the same thing.
+     * @throws IllegalArgumentException when {@code name} is empty or holds a {@code '.'}, which separates it from a
+     *                                  widget's name in an {@link #address}
+     * @throws IllegalStateException    when another open tree on {@code bus} already has the name: the two would
+     *                                  share every topic, and each apply the other's edits
      */
-    public Gui(Atchung bus, java.util.concurrent.Executor handlerExecutor) {
-        this(bus, handlerExecutor, null);
-    }
-
-    /**
-     * Create a GUI on a shared bus with both lanes supplied — the constructor for an embedder that owns the
-     * application's threads rather than inheriting one set per tree.
-     *
-     * <p><b>The two lanes are not interchangeable.</b> {@code handlerExecutor} runs input handlers: clicks,
-     * keys, chars, drags and state, each followed by a wake. {@code offloadExecutor} is where {@link #async}
-     * puts work that is genuinely unbounded — file I/O, network, image decode — which is a different lane
-     * because it has different rules, not because two pools are tidier than one. Putting a blocking read on the
-     * handler lane is how click dispatch ends up waiting behind a wedged network mount.
-     *
-     * <p>Either may be {@code null}, and {@code null} means <em>this class builds that one and closes it</em>.
-     * A lane that was passed in is never shut down by {@link #close}: its lifetime is the embedder's, and a
-     * second window closing must not take the first one's threads with it.
-     *
-     * @param handlerExecutor the lane input handlers run on, or {@code null} for one of this {@code Gui}'s own
-     * @param offloadExecutor the lane {@link #async} submits to, or {@code null} for one of this {@code Gui}'s
-     *                        own
-     */
-    public Gui(Atchung bus, java.util.concurrent.Executor handlerExecutor,
-               java.util.concurrent.Executor offloadExecutor) {
+    public Gui(Atchung bus, String name) {
+        java.util.Objects.requireNonNull(name, "name");
+        if (name.isEmpty() || name.indexOf('.') >= 0) {
+            throw new IllegalArgumentException("a GUI's name is not empty and holds no '.': \"" + name + "\"");
+        }
+        synchronized (NAMES) {
+            if (!NAMES.computeIfAbsent(bus, b -> new java.util.HashSet<>()).add(name)) {
+                throw new IllegalStateException("a GUI called \"" + name + "\" is already open on this bus: two trees"
+                        + " of one name would share every topic; name each window's tree apart");
+            }
+        }
+        this.treeName = name;
+        this.mutationTopic = Topic.of("vexelray.gui." + name + ".mutations", Mutation.class);
+        this.clickTopic = Topic.of("vexelray.gui." + name + ".clicks", ClickEvent.class);
+        this.focusEventTopic = Topic.of("vexelray.gui." + name + ".focus", FocusEvent.class);
+        this.keyRouteTopic = Topic.of("vexelray.gui." + name + ".keys", KeyRouted.class);
         this.bus = bus;
         this.pump = bus.pump();
+        // One inbox for every widget, so commands to two widgets are applied in the order they were sent.
+        this.widgets = bus.tick(() -> wake("widget message"));
+        this.widgetInbox = widgets.inbox("widgets");
+        this.routes = new Routes(widgetInbox, name);
         // Where nodes come from, and the seam their handles write through. It resolves Node.layout() through a
         // reader that is consulted lazily, which is what lets it be built before the read-model it will read —
         // a handle minted here does not ask about geometry until something reads one.
-        this.trees = new Trees(bus, MUTATIONS, this::wake, this::publishedLayout);
+        this.trees = new Trees(bus, mutationTopic, this::wake, this::publishedLayout);
         this.sink = trees.sink();
         long rootId = trees.rootId();
         // A node leaving the tree releases everything keyed by its id. Without this, a removed node kept its
@@ -379,7 +398,7 @@ public final class Gui implements AutoCloseable {
         // only observable is the state at its end, and a superseded write is unobservable in principle. That
         // condition is the whole licence for this and it is worth re-checking before anything is allowed to read
         // the model directly.
-        this.mutationSub = pump.subscribe(MUTATIONS, reconciler::apply, MUTATION_MAILBOX, Backpressure.BLOCK,
+        this.mutationSub = pump.subscribe(mutationTopic, reconciler::apply, MUTATION_MAILBOX, Backpressure.BLOCK,
                 Mutation::cell);
         // Navigation requests arrive on the same pump, so a link clicked in another window, a macro step and a
         // test all enter this tree at the same point in the frame the tree's own edits do — before the drain,
@@ -407,61 +426,27 @@ public final class Gui implements AutoCloseable {
                 return new Node(id, sink, layoutReader);
             }
         }, bus, this::wake);
-        this.navSub = pump.subscribe(NavTopics.GO, navigator::accept, MUTATION_MAILBOX, Backpressure.BLOCK);
-        // Framework input dispatch on the same bus; click handlers run on the worker executor (off the GUI thread).
-        // Wheel scrolling mutates scroll offsets on the GUI thread and asks for a relayout next frame.
-        // Every handler is followed by a wake, whatever it did.
+        this.navSub = pump.subscribe(Address.NAVIGATE, navigator::accept, MUTATION_MAILBOX, Backpressure.BLOCK);
+        // Framework input dispatch on the same bus. Every handler runs in the dispatch, on the GUI thread, inside the
+        // frame and the cause of the input it answers; the frame that ran one wakes the loop (see frameBody).
         //
-        // Mutating a node wakes the loop already, because the publish does it. But a handler is ordinary
-        // application code and its effect is very often *neither* a mutation nor a clock operation: it
-        // drops a request on one of the application's own queues — a history to restore, a file to open,
-        // a preview to render — each drained once per frame from the host's beforeFrame hook. Nothing
-        // about that is visible from here, and to a loop that parks it does not exist: the handler runs,
-        // the queue fills, no frame is asked for, and the request is executed on whatever frame some
-        // unrelated event eventually causes. The tell is that the *effect* is what arrives late, so an
-        // animation the handler queued starts from the beginning whenever the frame finally comes,
-        // rather than being found already in progress.
-        //
-        // So the wake is hung on the one thing every such path has in common: a handler ran. Waking after
-        // it finishes covers all of them, including the ones an application has not written yet, and
-        // costs one frame per input event that finds nothing left to do.
-        Executor base = handlerExecutor != null ? handlerExecutor : own(handlerLane());
-        this.offload = offloadExecutor != null ? offloadExecutor : own(offloadLane());
-        this.offloadCarrying = Cause.carrying(offload);
-        // Owed from submission to return, and the wake comes before the payment: a handler is still the frame's
-        // work while it runs, and a settle that cannot see it answers before the click has done anything (Owed).
-        // Run in the cause it was submitted in, the click's or the key's, so what the handler does is charged to
-        // the input that asked for it (atchung's docs/correlation.md).
-        this.handlers = task -> {
-            owed.oweHandler();
-            Runnable carried = Cause.carry(task);
-            try {
-                base.execute(() -> {
-                    try {
-                        carried.run();
-                    } finally {
-                        wake("handler returned");
-                        owed.payHandler();
-                    }
-                });
-            } catch (RejectedExecutionException e) {
-                owed.payHandler();
-                dropIfStopped(base, e, "Gui.handlers/stopped", "an input handler or change notification");
-            }
-        };
         // Dirtying layout is a change like any other, and it is the one that publishes no Mutation: a
         // scroll offset moves, the tree has to be laid out again, and nothing on the bus says so. In a
         // loop that redrew unconditionally the distinction never mattered; in one that parks, a
         // relayout nobody asked a frame for is a tree that stays exactly as it was last drawn.
-        this.input = new InputDispatcher(bus, CLICKS, handlers, () -> {
+        this.input = new InputDispatcher(bus, name, clickTopic, () -> {
             reconciler.markLayoutDirty();
             wake("layout requested");
         });
-        this.input.focusTopic(FOCUS);
-        this.input.keyRoutedTopic(KEY_ROUTES);
+        this.input.focusTopic(focusEventTopic);
+        this.input.keyRoutedTopic(keyRouteTopic);
         // Tab reveals what it lands on, exactly as Node.scrollIntoView would: posted during dispatch, drained this
         // frame and answered after this frame's layout, so no frame shows focus out of view.
         this.input.revealSink(id -> sink.post(new Mutation.Reveal(id)));
+        // Whatever is clickable and does not shade itself lifts under the pointer and shows a press (POINTER_STATE).
+        this.input.shadeSink((id, state) -> sink.post(new Mutation.SetProp(id,
+                dev.vexelray.gui.core.model.PropKey.POINTER_STATE,
+                state == dev.vexelray.gui.core.input.InteractionState.NORMAL ? null : state)));
         // Disabled is judged on the tree (an ancestor's counts), so the dispatcher needs to find a node by id.
         this.input.nodeLookup(reconciler::node);
         // A menu's edits go where the right-clicked node's other edits go: the history bound nearest above it.
@@ -502,13 +487,13 @@ public final class Gui implements AutoCloseable {
             public String landmarkName(long id) {
                 return navigator.landmarkName(id);
             }
-        }, handlers);
+        });
         this.layoutReader = readModels.reader();
         // After the reader, because the events it sends carry node handles, and a handle reads its geometry there.
         LayoutReader reads = this.layoutReader;
         this.undoing = new Undoing(navigator, input, reconciler::node, reconciler::root,
                 id -> sink.post(new Mutation.Reveal(id)),   // as Tab reveals what it lands on
-                handlers, this::wake, id -> new Node(id, sink, reads));
+                this::wake, id -> new Node(id, sink, reads));
 
         // The modifiers held right now, published the same way, and a State rather than a topic for the same
         // reason: this is a *condition*, not an event. Nobody wants the edges — they want to know what is held.
@@ -531,74 +516,60 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
-     * The live drag as a bus {@code State} — subscribe with {@code gui.drag().onCommit(...)} to draw a ghost or a
-     * drop indicator. {@link DragState#NONE} whenever nothing is being dragged.
-     *
-     * <p>Published once per frame, on change only, so a still pointer over a settled indicator costs nothing.
+     * This tree's name among the others on a bus: what its node-event topics are named by, and the first part of every
+     * one of its widgets' {@link #address addresses}.
      */
-    public State<DragState> drag() {
-        return transfers.drag();
+    public String name() {
+        return treeName;
     }
 
     /**
-     * The modifier keys held right now, as a bus {@code State} — subscribe with
-     * {@code gui.modifiers().onCommit(...)} to restyle while one is held, or read {@code .value()} inside a
-     * handler that needs to know what a click meant.
-     *
-     * <p><b>Why this exists at all.</b> A modifier press is not a command and is routed nowhere: it arms the
-     * chord the next key makes, and until now that was the whole of its life. But a modifier is also a
-     * <em>mode</em> the user can see — hold Ctrl and the links in a document underline themselves — and a mode
-     * with no observable state is one every widget would have to reconstruct from key edges of its own, which
-     * is precisely the side channel this framework does not permit. It comes from the same tactroller edges as
-     * everything else; this is where the framework stops keeping it to itself.
-     *
-     * <p>Committed on change only, and cleared when the window loses focus — a key released over another window
-     * is never seen here, and a modifier that stays held for ever is a UI stuck in a mode with no way out.
+     * Where a widget of this tree called {@code widget} is on the bus: {@code "<tree>.<widget>"}, such as
+     * {@code "main.path"}. Every message a widget publishes carries its address, and every command for it is routed by
+     * it, so a widget's name need only be unique in its own tree: the "path" field of two windows sharing a bus are
+     * {@code "main.path"} and {@code "editor-2.path"}, and a reply to either goes to the one that spoke.
      */
-    public State<java.util.Set<Modifier>> modifiers() {
-        return modifierState;
-    }
-
-    /**
-     * The live window size as a bus {@code State} — subscribe with {@code gui.viewport().onCommit(...)}. The
-     * drawable area in layout px, the space {@link #layout()} rects and input events are in: always the real
-     * window, never the canvas {@link #minSize} may clamp it to, and not the OS outer rect a window is created at.
-     */
-    public State<Viewport> viewport() {
-        return metrics.viewport();
-    }
-
-    /**
-     * The user zoom factor as a bus {@code State} (1.0 = unscaled). Read it with {@code gui.zoom().value()} or
-     * subscribe to observe changes.
-     *
-     * <p>Zoom is not a property of any node: it is one of the ambient factors every {@link Length} resolves
-     * against ({@code em = v · rootEmPx · zoom · dpi}, §6), so changing it rescales the entire UI — box sizes,
-     * padding, border, corner radius, text size, the scrollbar thickness, the text insets and the wheel step —
-     * in one step and in proportion. That is the whole point of §6's "no pixel unit", and zooming is the cheapest
-     * way to see whether it actually holds: anything that fails to move with the rest is still pinned to device
-     * pixels. The one deliberate exception is {@link Length#dp}: chrome that honours density and opts out of zoom
-     * (§6), so a gap or a hairline in dp is meant to stay put.
-     *
-     * <p><b>The window follows.</b> In a {@code GuiApp}, a window that is not maximized, minimized or fullscreen
-     * scales its client area by the same ratio, so a zoom keeps the composition rather than crowding or emptying
-     * the window; an axis already spanning the screen's work area keeps its span, and a window that would outgrow
-     * the screen is fitted into it. A resize by hand is the new base. A zoom set before the first frame (a restored
-     * one) is not a change: the window was already sized for it.
-     */
-    public State<Float> zoom() {
-        return metrics.zoom();
+    public String address(String widget) {
+        return treeName + "." + widget;
     }
 
     /**
      * Set the zoom factor, clamped to the configured range ({@link #zoomRange}; by default
-     * 0.5 to 3). Safe from any thread — it commits
-     * to the {@code State}, and the next {@link #frame} notices the change and relays out, so nothing writes to
-     * the reconciler off the GUI thread.
+     * 0.5 to 3). Safe from any thread: on the GUI thread, or before the first frame, it is at once; from another, it
+     * is applied at the top of the next frame, so whatever restyles from the zoom runs on the GUI thread and never on
+     * the caller's (see {@link #scale}).
      */
     public Gui zoom(float factor) {
-        metrics.zoom(factor);
+        scale(() -> metrics.zoom(factor));
         return this;
+    }
+
+    /** What runs a widget's Timing: the host's, installed through Seams.clock, or null for none. */
+    private volatile dev.vexelray.gui.core.spi.Clock clock;
+    /** What says a named command's chords to a menu ({@code Seams.commands}): the keymap, once one is attached. */
+    private volatile dev.vexelray.gui.core.input.Commands commands = dev.vexelray.gui.core.input.Commands.NONE;
+
+    /** The thread frames run on, from the first frame; null before it. */
+    private volatile Thread frameThread;
+
+    /** Zoom and density writes made off the frame thread, applied in order at the top of the next frame. */
+    private final java.util.concurrent.ConcurrentLinkedQueue<Runnable> scaleWrites =
+            new java.util.concurrent.ConcurrentLinkedQueue<>();
+
+    /**
+     * Make a zoom or density write on the frame thread. The zoom and density are bus {@code State}s whose listeners
+     * run on the thread that commits, and the widgets that restyle from them (a typeset block rebuilding, a status
+     * line) touch nodes, so a commit from a logic thread would run widget code there. So one made off the frame thread
+     * waits for the next frame, and one made on it, or before frames begin, is made at once.
+     */
+    private void scale(Runnable write) {
+        Thread frames = frameThread;
+        if (frames == null || frames == Thread.currentThread()) {
+            write.run();
+        } else {
+            scaleWrites.add(write);
+            requestFrame();
+        }
     }
 
     /**
@@ -609,7 +580,7 @@ public final class Gui implements AutoCloseable {
      * <p>Re-clamps the current factor immediately, so narrowing the range cannot leave the UI outside it.
      */
     public Gui zoomRange(float min, float max, float step) {
-        metrics.zoomRange(min, max, step);
+        scale(() -> metrics.zoomRange(min, max, step));
         return this;
     }
 
@@ -618,21 +589,21 @@ public final class Gui implements AutoCloseable {
      * glide is already heading, so three presses are three steps. {@link #zoom(float)} is always at once.
      */
     public Gui zoomIn() {
-        metrics.zoomIn();
+        scale(metrics::zoomIn);
         requestFrame();
         return this;
     }
 
     /** Zoom out one step, clamped to the configured minimum, as {@link #zoomIn} does. */
     public Gui zoomOut() {
-        metrics.zoomOut();
+        scale(metrics::zoomOut);
         requestFrame();
         return this;
     }
 
     /** Back to 1.0 — unscaled, gliding as a step does. */
     public Gui resetZoom() {
-        metrics.resetZoom();
+        scale(metrics::resetZoom);
         requestFrame();
         return this;
     }
@@ -701,24 +672,11 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
-     * {@link #resizeBorder} in pixels, as of the last {@link #frame} — resolved there so it answers for the same
+     * {@link #resizeBorder} in pixels, as of the last {@link dev.vexelray.gui.core.spi.Seams#frame} — resolved there so it answers for the same
      * zoom and density that frame was laid out at. {@code 0} means "the platform's own".
      */
     public int resizeBorderPx() {
         return metrics.resizeBorderPx();
-    }
-
-    /**
-     * The display density as a bus {@code State} — the points-to-pixels ratio of the surface being drawn to
-     * (1.0 on a conventional display, 2.0 on a Retina-class one).
-     *
-     * <p>Distinct from {@link #zoom} on purpose, even though both currently multiply into the same em. Density
-     * keeps a UI the same <em>physical</em> size on a denser screen; zoom is the user asking for bigger. A length
-     * can sensibly honour one and not the other, and that is only expressible while the two stay separate
-     * factors.
-     */
-    public State<Float> dpi() {
-        return metrics.dpi();
     }
 
     /**
@@ -743,37 +701,15 @@ public final class Gui implements AutoCloseable {
      * Set the display density (see {@link #dpi()}), clamped to the range {@link Metrics} declares.
      *
      * <p><b>Feed this from the real surface scale, and lay out in the same space input arrives in.</b> The
-     * framework lays out in whatever viewport {@link #frame} is handed and hit-tests input against those rects,
+     * framework lays out in whatever viewport {@link dev.vexelray.gui.core.spi.Seams#frame} is handed and hit-tests input against those rects,
      * so the two must be the same coordinate space. On a Retina-class display, points and pixels differ by this
      * factor: lay out in framebuffer pixels and deliver input in {@code CLIENT} (point) space and every hit test
      * is out by it. On a 1:1 display the two spaces coincide, which is exactly why the mismatch survives
      * development on such a machine and surfaces on the first dense one.
      */
     public Gui dpi(float scale) {
-        metrics.dpi(scale);
+        scale(() -> metrics.dpi(scale));
         return this;
-    }
-
-    /**
-     * The computed-layout read-model as a coalesced {@code State} (docs/reference/layout-read-model.md): every node's
-     * position/size/scroll after layout, republished per changed frame. Subscribe to react to layout changes, or
-     * read a node's own via {@link Node#layout()}. The value is one frame stale (the framework's input latency).
-     */
-    public State<LayoutSnapshot> layout() {
-        return readModels.layout();
-    }
-
-    /**
-     * The semantic read-model as a coalesced {@code State} (docs/reference/automation.md §3): what every node <b>is</b> —
-     * role, name, structure, focus — published on the same frames and at the same {@code version} as
-     * {@link #layout()}, so the two join by node id and by frame.
-     *
-     * <p>Exists because {@link dev.vexelray.gui.core.model.NodeKind} is {@code BOX} or {@code TEXT}: enough for
-     * the renderer, and an anonymous tree to everyone else. A consumer that must address a node by meaning — an
-     * automation agent, a thin client — reads this.
-     */
-    public State<SemanticSnapshot> semantics() {
-        return readModels.semantics();
     }
 
     /** The latest semantic snapshot (never null; {@link SemanticSnapshot#EMPTY} before the first layout). */
@@ -787,110 +723,27 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
-     * Register a click handler for {@code node} — fired when a left press and release land on it (bubbling to the
-     * nearest ancestor with a handler). Runs on a worker thread, so it may freely mutate the tree via handles.
-     */
-    public Gui onClick(Node node, Runnable handler) {
-        input.onClick(node.id(), handler);
-        return this;
-    }
-
-    /**
-     * Register a click handler that is told <b>what the click meant</b>: the {@link ClickEvent} carries the
-     * modifiers held when the button was released, so Ctrl-click and Shift-click can be told apart from a click.
-     *
-     * <p>Without this a widget driving a selection would have to read keyboard state from somewhere else at the
-     * moment a pointer handler runs — a second channel alongside the event, and one that is already wrong if the
-     * key came up while the handler was queued. The modifiers were always part of the click (see
-     * {@link ClickEvent}); this hands them to the left-button handler as {@link #onContextClick} already does to
-     * the right-button one. Runs on a worker thread, like the plain form.
-     */
-    public Gui onClick(Node node, java.util.function.Consumer<ClickEvent> handler) {
-        input.onClick(node.id(), handler);
-        return this;
-    }
-
-    /**
-     * Register a double-click handler for {@code node} — fired when the second of two quick left clicks in one
-     * place lands on it (bubbling to the nearest ancestor with a double-click handler).
+     * Declare {@code node}'s context menu: what is on it and the message each item sends, set before the right click
+     * rather than worked out during it (vexelray-framework's {@code docs/threading.md}, T7.5). The form for an
+     * application's menus; {@link dev.vexelray.gui.core.spi.Seams#onContextMenu} is the widget library's.
      *
      * {@snippet :
-     * gui.onClick(row, () -> select(path))
-     *    .onDoubleClick(row, () -> open(path));
+     * gui.menu(row, Menu.builder()
+     *         .item("Open", open, new Open(file))
+     *         .item("Delete", !file.readOnly(), delete, new Delete(file))
+     *         .build());
      * }
      *
-     * <p>The clicks still arrive as clicks: the second one reaches {@link #onClick} and then this. That is what
-     * keeps single clicks immediate — telling a lone click from the first half of a double would mean holding
-     * every click for the whole double-click window. For triple clicks and beyond, read
-     * {@link ClickEvent#clicks()} in an {@link #onClick} handler. Runs on a worker thread, like a click.
+     * <p><b>A declaration replaces the last one</b>, unlike sources, which accumulate: it is the node's menu as of now,
+     * so when what the menu should hold changes, declare it again. {@link Menu#NONE} takes it away. It follows the
+     * same nearest-node rule as a source, and on a node that has both, the sources' items come first, so a widget's
+     * defaults lead and the application's follow.
      */
-    public Gui onDoubleClick(Node node, Runnable handler) {
-        input.onDoubleClick(node.id(), handler);
-        return this;
-    }
-
-    /** {@link #onDoubleClick(Node, Runnable)}, handed the {@link ClickEvent} — where it landed, what was held. */
-    public Gui onDoubleClick(Node node, java.util.function.Consumer<ClickEvent> handler) {
-        input.onDoubleClick(node.id(), handler);
-        return this;
-    }
-
-    /**
-     * Register a context-click handler for {@code node} — fired when a <em>right</em> press and release land on it
-     * (bubbling to the nearest ancestor with a handler). The handler receives the {@link ClickEvent} because a
-     * context action almost always needs the pointer position, to anchor a menu at it. A right click changes
-     * nothing else — no focus move, no PRESSED state, no drag capture; what it means is the widget's decision.
-     * Runs on a worker thread, so it may freely mutate the tree via handles.
-     */
-    public Gui onContextClick(Node node, java.util.function.Consumer<ClickEvent> handler) {
-        input.onContextClick(node.id(), handler);
-        return this;
-    }
-
-    /**
-     * Give {@code node} a context menu: {@code source} is asked what should be on it at the moment of each right
-     * click, and the answer is shown by the installed {@link MenuPresenter}.
-     *
-     * {@snippet :
-     * gui.onContextMenu(row, menu -> menu
-     *         .item("Open", () -> open(path))
-     *         .item("Paste", clipboard.hasText(), () -> paste(path)));   // shown, greyed when it cannot apply
-     * }
-     *
-     * <p><b>The nearest node with a menu owns the click</b> — leaf→root, the same rule a click handler follows. So
-     * a row inside a panel inside a page may each declare one and the innermost thing the user pointed at answers,
-     * with none of them knowing the others exist.
-     *
-     * <p><b>Sources accumulate</b>, like {@link #onState} observers: a widget declares its own defaults (a text
-     * field's Copy/Cut/Paste) and the application adds what only it knows, in registration order, into one menu.
-     * That is why the menu is built per click rather than held: its contents are a fact about the current state,
-     * and only the source knows what that is. A source that adds nothing means no menu opens, so "sometimes there
-     * is nothing to offer here" needs no special case.
-     *
-     * <p>Sources run on a worker thread, so they may read application state freely.
-     *
-     * <p><b>The first menu brings its presenter.</b> A tree with no {@link #menus() presenter} gets the
-     * {@link MenuPresenter.Default} on the class path here ({@code vexelray-gui-widget}'s {@code ContextMenu}), so
-     * a tree whose only menus are the application's own draws them as a text field's would be.
-     */
-    public Gui onContextMenu(Node node, java.util.function.Consumer<MenuSink> source) {
-        input.onContextMenu(node.id(), source);
-        if (input.menuPresenter() == null) {
+    public Gui menu(Node node, Menu menu) {
+        input.menu(node.id(), java.util.Objects.requireNonNull(menu, "menu"));
+        if (!menu.isEmpty() && input.menuPresenter() == null) {
             presentMenus();
         }
-        return this;
-    }
-
-    /**
-     * Show the menu {@code source} builds at {@code at}, now: for a control whose plain click opens a menu, as a
-     * title-bar instrument's does. Built and shown as a right click's would be, by the installed presenter (the
-     * default one, if this tree has none yet).
-     */
-    public Gui openMenu(ClickEvent at, java.util.function.Consumer<MenuSink> source) {
-        if (input.menuPresenter() == null) {
-            presentMenus();
-        }
-        input.openMenu(at, source);
         return this;
     }
 
@@ -913,132 +766,22 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
-     * Install what draws context menus. {@code vexelray-gui-widget}'s {@code ContextMenu} is installed the first
-     * time a node is given a menu, so this is only for replacing it with something else — before the UI is built,
-     * since a presenter already there is kept rather than replaced.
+     * The topic this tree hears device input on ({@code vexelray.gui.<tree>.input}): what a window's input source
+     * publishes to, such as tactroller-atchung's {@code InputPublisher} named {@code gui.input().name()}, and what a
+     * driver that types or clicks into this tree publishes on. Per tree, so two windows on one bus hear their own.
      */
-    public Gui menus(MenuPresenter presenter) {
-        input.menuPresenter(presenter);
-        return this;
+    public Topic<sibarum.tactroller.api.InputEvent> input() {
+        return input.input();
     }
 
-    /** The installed context-menu presenter, or {@code null} if nothing shows menus on this tree yet. */
-    public MenuPresenter menus() {
-        return input.menuPresenter();
+    /** The touchpad gestures this tree's dispatcher recognises, published on its own topic: see {@link #input()}. */
+    public Topic<sibarum.tactroller.api.GestureEvent> gestures() {
+        return input.gestures();
     }
 
     /** The click topic: {@code gui.bus().subscribe(gui.clicks(), ...)} to react to clicks anywhere (any button). */
     public Topic<ClickEvent> clicks() {
-        return CLICKS;
-    }
-
-    /**
-     * React to {@code node}'s pointer-interaction state (NORMAL/HOVER/PRESSED) — e.g. to restyle a button on hover
-     * and press. The handler is invoked on a worker thread on each state change, so it may mutate the tree via
-     * handles. Hovering a descendant (a button's label) counts as hovering {@code node}.
-     */
-    public Gui onState(Node node, java.util.function.Consumer<InteractionState> handler) {
-        input.onState(node.id(), handler);
-        return this;
-    }
-
-    /**
-     * Drag {@code node}: a left press on it (or a descendant) captures the pointer and delivers START/MOVE/END
-     * {@link DragEvent}s — MOVE continues while held even when the pointer leaves the node. The handler runs on a
-     * worker thread; use {@link DragEvent#fractionX()}/{@code fractionY()} to map the pointer onto the node.
-     */
-    public Gui onDrag(Node node, java.util.function.Consumer<DragEvent> handler) {
-        input.onDrag(node.id(), handler);
-        return this;
-    }
-
-    /**
-     * Take the wheel over {@code node} (or a descendant): it arrives as a {@link dev.vexelray.gui.core.input.WheelEvent}
-     * on a worker thread, instead of scrolling whatever {@code node} is inside. For something that is not inside what
-     * it moves — a scrollbar beside its {@link Scroller}, a 3D view panning its camera. {@code null} gives the wheel
-     * back.
-     */
-    public Gui onWheel(Node node, java.util.function.Consumer<dev.vexelray.gui.core.input.WheelEvent> handler) {
-        input.onWheel(node.id(), handler);
-        return this;
-    }
-
-    /**
-     * Say what would happen if a drag were released on {@code node} — see {@link DropTarget}.
-     *
-     * <p>Not the same thing as {@link #onDrag}, and a node may have both without them interacting. That one is a
-     * manipulation the pointer steers: captured on press, no threshold, ends on release, and always about a
-     * gesture that started on the node itself. This one answers about a drag the node did not start and may know
-     * nothing about — one begun elsewhere in this window, in another window of this process, or in another
-     * process entirely, since a file dragged from the desktop arrives with no press for anything to have
-     * captured.
-     *
-     * <p>The target is asked once per frame while a drag is over it, on the GUI thread, and returns a
-     * description. Nothing it describes happens until the user releases, and what happens then is exactly the
-     * {@link dev.vexelray.gui.core.drop.Drop} that was last shown.
-     */
-    public Gui onDrop(Node node, DropTarget target) {
-        input.onDrop(node.id(), java.util.Objects.requireNonNull(target, "target"));
-        return this;
-    }
-
-    /** The drop targets under a point, innermost first — the {@link DragSession.Lookup} for this tree, for a
-     * drag source driving a session against it. */
-    public java.util.List<DropTarget> dropTargetsAt(float x, float y) {
-        return input.dropTargetsAt(x, y);
-    }
-
-    /**
-     * Make {@code node} something a drag can begin on — see {@link DragSource}.
-     *
-     * <p>The gesture is recognised for you: a press here becomes a drag only once the pointer has travelled far
-     * enough and held long enough, so an ordinary click on the node stays an ordinary click. The source is asked
-     * for a payload at that moment, not at the press, and answering null leaves the gesture as a click.
-     */
-    public Gui onDragSource(Node node, DragSource source) {
-        input.onDragSource(node.id(), java.util.Objects.requireNonNull(source, "source"));
-        return this;
-    }
-
-    /**
-     * Hear about every drag in this tree on the GUI thread, in the frame it moves, and hear how it ended — see
-     * {@link dev.vexelray.gui.core.drop.DragWatch}.
-     *
-     * <p>For whatever draws the thing being carried. {@link #drag()} is the published view and is right for
-     * drawing <em>about</em> a drag, but a handle written from it lands a frame late, and its ending does not say
-     * whether the drag dropped or was cancelled. {@code node} only bounds the registration: the watch is dropped
-     * with it, and is told about drags anywhere in the tree, not only over it.
-     */
-    public Gui watchDrag(Node node, dev.vexelray.gui.core.drop.DragWatch watch) {
-        input.watchDrag(node.id(), watch);
-        return this;
-    }
-
-    /**
-     * Where a completed drop records its change, so it can be undone.
-     *
-     * <p>Until one is set, drops resolve and draw but commit nothing — deliberately, because a drop that mutated
-     * with no way back would be the one operation in the framework the user could not undo, and silently so.
-     *
-     * <p>A drop also moves focus to what a click at the drop point would focus, which is what keeps Ctrl+Z
-     * pointed at the right history: {@link #history(Node, History, ClaimScope)} resolves by focus, and a drag is
-     * a pointer gesture with no focus relationship of its own.
-     */
-    public Gui dropHistory(History history) {
-        input.dropHistory(java.util.Objects.requireNonNull(history, "history"));
-        transfers.history(history);
-        return this;
-    }
-
-    /**
-     * Where a transfer records its change — the history {@link #dropHistory} set, or null.
-     *
-     * <p>Readable because a drop is not the only way to complete a transfer: a paste makes the same change, from
-     * the keyboard, and must land in the same stack. Two histories would mean Ctrl+Z undoing whichever kind of
-     * transfer the user happened to do last rather than the last thing they did.
-     */
-    public History dropHistory() {
-        return transfers.history();
+        return clickTopic;
     }
 
     /**
@@ -1067,116 +810,13 @@ public final class Gui implements AutoCloseable {
         return input.dragSession();
     }
 
-    /**
-     * Observe {@code node}'s computed geometry: the handler is called with its {@link NodeLayout} whenever the
-     * node's box changes, <b>including the first time it has one</b>. Runs on a worker thread.
-     *
-     * <p><b>This is the seam for "my geometry is real now".</b> Everything else a node can be told about is
-     * input; geometry was observable only by polling {@link Node#layout} or by subscribing to {@link #layout()}
-     * and diffing, and an application that did neither had no way to know when its box arrived. The failure that
-     * produces is silent — code that runs too early reads {@link NodeLayout#ABSENT}, does nothing, reports
-     * nothing, and is never asked again — which is why it belongs in the framework rather than in each
-     * application's notes.
-     *
-     * <p><b>Lifecycle callbacks are not a substitute, and neither is the window.</b> {@code WindowSpec.onCreated}
-     * means the OS window exists; nothing has been measured yet, so a node's box is still absent there. The first
-     * call to this handler is the moment after that — and because it is an observer rather than a one-shot, the
-     * same registration also covers every later window resize, zoom change and DPI change, which a
-     * "first frame" callback would not.
-     *
-     * <p>Only a change of <em>box</em> fires it: the border rect and the content rect are compared, so scrolling
-     * a container does not (its viewport did not move, its contents did). A node laid out to zero — inside a
-     * hidden parent, say — is reported honestly as zero rather than withheld; a consumer that cannot draw at
-     * that size checks and waits for the next call.
-     */
-    public Gui onResize(Node node, java.util.function.Consumer<NodeLayout> handler) {
-        return watchResize(node, handler, false);
-    }
-
-    /**
-     * As {@link #onResize}, delivered on the GUI thread inside the layout pass that produced the change, in the
-     * ordered lane the {@code *Ui} seams share — for a handler whose work has to land in the same frame as the
-     * layout it reacts to. It runs while the framework holds the frame, so it must be short: measure, mutate a
-     * handle, return. Anything that computes belongs on {@link #onResize}.
-     */
-    public Gui onResizeUi(Node node, java.util.function.Consumer<NodeLayout> handler) {
-        return watchResize(node, handler, true);
-    }
-
-    private Gui watchResize(Node node, java.util.function.Consumer<NodeLayout> handler, boolean ordered) {
-        readModels.onResize(node.id(), handler, ordered);
+    private Gui watchResize(Node node, java.util.function.Consumer<NodeLayout> handler) {
+        readModels.onResize(node.id(), handler);
         return this;
     }
 
     /**
-     * Register a key handler for {@code node} (which becomes focusable). Fires with each key press while the node
-     * holds focus, after shortcuts and Tab traversal have had first refusal. Runs on a worker thread.
-     */
-    public Gui onKey(Node node, java.util.function.Consumer<KeyEvent> handler) {
-        input.onKey(node.id(), handler);
-        return this;
-    }
-
-    /**
-     * Register a typed-text handler for {@code node} (which becomes focusable and, by convention, editable).
-     * Fires once per Unicode code point typed while the node holds focus — the text channel, delivered from
-     * {@code CharTyped}, kept separate from {@link #onKey} (caret motion, backspace, shortcuts). Runs on a
-     * worker thread.
-     */
-    public Gui onChar(Node node, java.util.function.IntConsumer handler) {
-        input.onChar(node.id(), handler);
-        return this;
-    }
-
-    // --- ordered stages (§5): the GUI-thread variants of the seams above ---
-
-    /**
-     * Register {@code node}'s typed-text <b>stage</b>: like {@link #onChar}, but run on the GUI thread during the
-     * frame's input drain, <b>in arrival order</b>.
-     *
-     * <p>Use this — not {@link #onChar} — when the handler performs a state transition that depends on the order
-     * events arrived in. The worker executor orders the invocations but not their effects: a burst of typed
-     * characters handed to a pool one task at a time can apply scrambled, and because each individual edit is
-     * coherent, the result reads as a dropped keystroke rather than a race. Everything without an ordering
-     * requirement — application logic, notifications, anything slow — belongs on {@link #onChar}, where it still
-     * cannot stall rendering.
-     *
-     * <p>A stage runs inline on the frame loop, so it must be bounded model work (splice a document, move a
-     * caret) and never application logic or I/O. That is the same contract the reconciler runs under.
-     */
-    public Gui onCharUi(Node node, java.util.function.IntConsumer stage) {
-        input.onCharUi(node.id(), stage);
-        return this;
-    }
-
-    /** Register {@code node}'s key-command stage — the ordered counterpart of {@link #onKey}. */
-    public Gui onKeyUi(Node node, java.util.function.Consumer<KeyEvent> stage) {
-        input.onKeyUi(node.id(), stage);
-        return this;
-    }
-
-    /** Register {@code node}'s drag stage — the ordered counterpart of {@link #onDrag}. */
-    public Gui onDragUi(Node node, java.util.function.Consumer<DragEvent> stage) {
-        input.onDragUi(node.id(), stage);
-        return this;
-    }
-
-    /**
-     * Claim {@code chord} for {@code node}, running the command on the GUI thread in arrival order — the ordered
-     * counterpart of {@link #claim}, for a claim whose command edits state that typing also edits.
-     */
-    public Gui claimUi(Node node, Trigger chord, ClaimScope scope, Runnable command) {
-        input.claimUi(node.id(), chord, scope, command);
-        return this;
-    }
-
-    /** {@link #claimUi(Node, Trigger, ClaimScope, Runnable)}, kept so code compiled against it before still links. */
-    public Gui claimUi(Node node, Shortcut chord, ClaimScope scope, Runnable command) {
-        return claimUi(node, (Trigger) chord, scope, command);
-    }
-
-    /**
-     * Drop every registration {@code node} holds — input handlers, ordered stages, claims, focusability, and its
+     * Drop every registration {@code node} holds — input handlers, claims, focusability, and its
      * geometry observer — and clear focus if it held it. Removing a node does this automatically; this is for
      * releasing a node's registrations while keeping the node.
      */
@@ -1189,6 +829,9 @@ public final class Gui implements AutoCloseable {
     private void releaseNodeId(long id) {
         boundHistories.remove(id);
         input.clearHandlers(id);
+        for (Topic<?> topic : nodeTopics.values()) {
+            routes.remove(topic, id);
+        }
         readModels.forget(id);
         navigator.forget(id);
     }
@@ -1214,6 +857,15 @@ public final class Gui implements AutoCloseable {
     /** Move keyboard focus to {@code node}. */
     public Gui focus(Node node) {
         input.focus(node.id());
+        return this;
+    }
+
+    /**
+     * Take the keyboard from whatever has it, and give it to nothing: keys typed next reach claims and shortcuts only.
+     * A node hidden while it has the keyboard hands it on by itself; this is for letting go of it on purpose.
+     */
+    public Gui blur() {
+        input.focus(-1);
         return this;
     }
 
@@ -1247,17 +899,6 @@ public final class Gui implements AutoCloseable {
     /** The node named by {@code name}, if this tree has that landmark. */
     public java.util.Optional<Node> landmarkNode(String name) {
         return navigator.landmarkNode(name);
-    }
-
-    /**
-     * Declare how {@code node} makes a descendant of it reachable — the seam that lets navigation cross a tab
-     * panel, a collapsed branch or a drawer without knowing what any of those are. See {@link Reveal}, which is
-     * where the reasoning lives; the widgets that conceal things register their own, so an application composing
-     * them needs this only for a container it wrote itself.
-     */
-    public Gui reveals(Node node, Reveal reveal) {
-        navigator.reveals(node.id(), reveal);
-        return this;
     }
 
     /**
@@ -1299,33 +940,43 @@ public final class Gui implements AutoCloseable {
         return navigator.windowKey();
     }
 
-    /** Register a global keyboard shortcut. The command runs on a worker thread. */
-    public Gui shortcut(Shortcut shortcut, Runnable command) {
-        input.registerShortcut(shortcut, command);
+    /**
+     * Claim {@code chord} for {@code node} at {@code scope}, and send {@code message} through {@code to} when it is
+     * pressed: {@link #claim(Node, Trigger, ClaimScope, Runnable)}'s preemption, with a message where the command was.
+     * The form for an application's claims (vexelray-framework's {@code docs/threading.md}, T7.5).
+     */
+    public <T> Gui claim(Node node, Trigger chord, ClaimScope scope, sibarum.atchung.Sender<T> to, T message) {
+        seams.claim(node, chord, scope, sends(to, message));
         return this;
-    }
-
-    /** Convenience: {@code gui.shortcut(Key.S, save, Modifier.CONTROL)}. */
-    public Gui shortcut(Key key, Runnable command, Modifier... mods) {
-        return shortcut(Shortcut.of(key, mods), command);
     }
 
     /**
-     * Claim {@code chord} for {@code node} at {@code scope} — preemption declared in advance. While the claim
-     * applies, that chord runs {@code command} and reaches nothing else: not the focused node's key handler, not
-     * another element's claim at a broader scope, not the framework's own defaults (which are themselves
-     * {@link ClaimScope#GLOBAL} claims, so a focused element outranks them).
-     *
-     * <p>This is what the framework offers in place of {@code preventDefault}, which it cannot: cancelling
-     * requires a handler to answer synchronously, and handlers here run on worker threads. Declaring the
-     * preemption up front lets the dispatcher decide on the GUI thread while the command runs wherever.
-     *
-     * <p>The chord may as well be a touchpad {@link Gesture} — a three-finger swipe, a two-finger double tap —
-     * which is claimed, outranked and released exactly as a key is.
+     * Make {@code node} something a drag can begin on, carrying {@code payload}: the declared form of
+     * {@link dev.vexelray.gui.core.spi.Seams#onDragSource}, for an application (vexelray-framework's {@code docs/threading.md}, T7.5). The payload is
+     * the node's, set ahead of time, so the dispatcher needs no answer when the press turns into a drag; declare it
+     * again when what the node stands for changes. {@code null} makes the node not draggable.
      */
-    public Gui claim(Node node, Trigger chord, ClaimScope scope, Runnable command) {
-        input.claim(node.id(), chord, scope, command);
+    public Gui draggable(Node node, dev.vexelray.gui.core.drop.Payload payload) {
+        if (payload == null) {
+            input.dropDragSource(node.id());
+        } else {
+            input.onDragSource(node.id(), (x, y) -> payload);
+        }
         return this;
+    }
+
+    /**
+     * What a declared binding runs: the send it names, and the input after it held back for the next frame, by when
+     * whoever heard the message has acted on it. Without the hold, keys typed straight after a chord that moves the
+     * keyboard went where the keyboard had been (InputDispatcher#holdRest).
+     */
+    private <T> Runnable sends(sibarum.atchung.Sender<T> to, T message) {
+        java.util.Objects.requireNonNull(to, "to");
+        java.util.Objects.requireNonNull(message, "message");
+        return () -> {
+            to.send(message);
+            input.holdRest();
+        };
     }
 
     /** Drop every claim {@code node} holds on {@code chord}. */
@@ -1334,34 +985,12 @@ public final class Gui implements AutoCloseable {
         return this;
     }
 
-    /** {@link #claim(Node, Trigger, ClaimScope, Runnable)}, kept so code compiled against it before still links. */
-    public Gui claim(Node node, Shortcut chord, ClaimScope scope, Runnable command) {
-        return claim(node, (Trigger) chord, scope, command);
-    }
-
     /** {@link #releaseClaim(Node, Trigger)}, kept so code compiled against it before still links. */
     public Gui releaseClaim(Node node, Shortcut chord) {
         return releaseClaim(node, (Trigger) chord);
     }
 
-    /**
-     * Claim <em>every</em> chord for {@code node} at {@code scope}, the command hearing which one was pressed —
-     * for a control whose subject is the chord itself, a key-binding recorder above all. While it is armed at
-     * {@link ClaimScope#FOCUSED}, Ctrl+S records Ctrl+S rather than saving, and Tab records Tab rather than
-     * moving focus: the framework's defaults are claims, and this one outranks them while it applies.
-     *
-     * <p>A claim naming its chord at the same scope still wins, so the wildcard is the floor of its scope and
-     * never shadows a key somebody asked for by name. A modifier pressed alone is not a chord and reaches nobody,
-     * here as everywhere; read {@link #modifiers()} to show the ones being held. A touchpad {@link Gesture} that
-     * is a command (a swipe, a tap) is heard too, so a recorder records the gesture made on the pad. The command
-     * runs on a worker.
-     */
-    public Gui claimAny(Node node, ClaimScope scope, java.util.function.Consumer<Trigger> command) {
-        input.claimAny(node.id(), scope, command);
-        return this;
-    }
-
-    /** Drop {@code node}'s {@link #claimAny wildcard claim}; its claims on named chords stay. */
+    /** Drop {@code node}'s {@link dev.vexelray.gui.core.spi.Seams#claimAny wildcard claim}; its claims on named chords stay. */
     public Gui releaseClaimAny(Node node) {
         input.releaseClaimAny(node.id());
         return this;
@@ -1382,9 +1011,9 @@ public final class Gui implements AutoCloseable {
      * entry is applied on a handler thread, as a claimed command always was.
      */
     public Gui history(Node node, History history, ClaimScope scope) {
-        claim(node, Shortcut.of(Key.Z, Modifier.CONTROL), scope, () -> undo(history));
-        claim(node, Shortcut.of(Key.Z, Modifier.CONTROL, Modifier.SHIFT), scope, () -> redo(history));
-        claim(node, Shortcut.of(Key.Y, Modifier.CONTROL), scope, () -> redo(history));
+        seams.claim(node, Shortcut.of(Key.Z, Modifier.CONTROL), scope, () -> undo(history));
+        seams.claim(node, Shortcut.of(Key.Z, Modifier.CONTROL, Modifier.SHIFT), scope, () -> redo(history));
+        seams.claim(node, Shortcut.of(Key.Y, Modifier.CONTROL), scope, () -> redo(history));
         boundHistories.put(node.id(), history);
         return this;
     }
@@ -1429,7 +1058,7 @@ public final class Gui implements AutoCloseable {
      * at, take them there and stop; if it is disabled, show it and refuse; if it has left the tree, refuse;
      * otherwise apply it (docs/plans/undo.md §2). From any thread — an Undo button or menu item calls this rather
      * than {@link History#undo()}, which would change something out of sight. Judged in the next frame; what it
-     * came to is told to {@link #onUndo}.
+     * came to is told to {@link dev.vexelray.gui.core.spi.Seams#onUndo}.
      */
     public Gui undo(History history) {
         undoing.request(java.util.Objects.requireNonNull(history, "history"), false);
@@ -1442,17 +1071,9 @@ public final class Gui implements AutoCloseable {
         return this;
     }
 
-    /**
-     * Hear what every {@link #undo}/{@link #redo} in this tree came to, on a handler thread — the seam a
-     * presenter hangs on to turn a failure into a prompt or a cue. One sink; installing another replaces it.
-     */
-    public Gui onUndo(java.util.function.Consumer<dev.vexelray.gui.core.edit.UndoEvent> sink) {
-        undoing.sink(sink);
-        return this;
-    }
-
     /** The application-wide binding: {@link #history(Node, History, ClaimScope)} on the root, always in force. */
     public Gui history(History history) {
+        java.util.Objects.requireNonNull(history, "history").announceOn(bus, address(History.ADDRESS));   // heard in a mailbox
         return history(root, history, ClaimScope.GLOBAL);
     }
 
@@ -1462,12 +1083,12 @@ public final class Gui implements AutoCloseable {
      * would otherwise never be told about. Observation only: subscribing cannot cancel or redirect anything.
      */
     public Topic<KeyRouted> keyRoutes() {
-        return KEY_ROUTES;
+        return keyRouteTopic;
     }
 
     /** The focus-change topic: {@code gui.bus().subscribe(gui.focusEvents(), ...)}. */
     public Topic<FocusEvent> focusEvents() {
-        return FOCUS;
+        return focusEventTopic;
     }
 
     /**
@@ -1492,15 +1113,6 @@ public final class Gui implements AutoCloseable {
 
 
     /**
-     * Install the sink notified when the desired pointer cursor changes (§8.3) — e.g. the I-beam over editable
-     * text. The application maps {@link CursorShape} onto its window's cursor. Called on the GUI thread.
-     */
-    public Gui onCursorChange(java.util.function.Consumer<CursorShape> sink) {
-        input.cursorSink(sink);
-        return this;
-    }
-
-    /**
      * Declare that dragging {@code node} should hold the pointer for the length of the gesture: locked on the
      * drag's START, released on its END.
      *
@@ -1519,36 +1131,6 @@ public final class Gui implements AutoCloseable {
         return this;
     }
 
-    /**
-     * Install the sink notified when the pointer should be locked ({@code true}) or released ({@code false}).
-     * The application maps it onto its input backend's pointer lock. Called on the GUI thread, and only on a
-     * change, so an application need not de-duplicate.
-     *
-     * <p>The same seam as {@link #onCursorChange} and for the same reason: the framework can say what it wants
-     * of a pointer and cannot reach an OS to get it.
-     */
-    public Gui onPointerLock(java.util.function.Consumer<Boolean> sink) {
-        input.pointerLockSink(sink);
-        return this;
-    }
-
-    /**
-     * Install where the pointer is put when this tree asks to carry it — the host's half of
-     * {@link #ridePointer}. The same seam as {@link #onPointerLock}: core can say where it wants the pointer and
-     * cannot reach an OS to put it there. Until one is installed, a ride moves nothing.
-     */
-    public Gui onPointerWarp(dev.vexelray.gui.core.input.PointerWarp warp) {
-        input.pointerWarp(warp);
-        return this;
-    }
-
-    /**
-     * The warp installed now, {@link dev.vexelray.gui.core.input.PointerWarp#NONE} if none. For a second pointer
-     * that borrows the seam — an automation driver while it holds the hand — and has to give it back.
-     */
-    public dev.vexelray.gui.core.input.PointerWarp pointerWarp() {
-        return input.pointerWarp();
-    }
 
     /**
      * Begin carrying the pointer along with an animation, until the hand takes it back — see
@@ -1613,6 +1195,20 @@ public final class Gui implements AutoCloseable {
     public Gui zoomGlide(java.time.Duration halfLife) {
         zoomGlideNanos = halfLife.toNanos();
         applyMotionKnobs();
+        return this;
+    }
+
+    /** Whether the window follows the zoom; see {@link #zoomSizesWindow(boolean)}. */
+    private volatile boolean zoomSizesWindow = true;
+
+    /**
+     * Whether this tree's window grows and shrinks with its zoom (on by default; {@link Seams#zoom} says how). Right
+     * for a window sized to its content, where a zoom should keep the composition. Off for one whose content is
+     * whatever room is left — a picture, a map, a canvas — where the zoom sizes the controls around it and a smaller
+     * control should give that room to the content, not take it from the screen.
+     */
+    public Gui zoomSizesWindow(boolean follows) {
+        zoomSizesWindow = follows;
         return this;
     }
 
@@ -1761,7 +1357,8 @@ public final class Gui implements AutoCloseable {
         boolean still = reducedMotion();
         input.scrollGlide(still ? 0L : glideNanos);
         input.focusFade(still ? 0L : focusFadeNanos);
-        metrics.zoomGlide(still ? 0L : zoomGlideNanos);
+        long zoomHalfLife = still ? 0L : zoomGlideNanos;
+        scale(() -> metrics.zoomGlide(zoomHalfLife));   // turning motion off mid-glide lands the zoom: a write
     }
 
     /**
@@ -1811,15 +1408,24 @@ public final class Gui implements AutoCloseable {
 
     /**
      * Whether the frame just run has something new to show, and clear it — the host's question between
-     * {@link #frame} and drawing. A host that does not ask simply draws every frame, as before.
+     * {@link dev.vexelray.gui.core.spi.Seams#frame} and drawing. A host that does not ask simply draws every frame, as before.
      *
-     * <p>GUI thread, after {@link #frame}. Not cleared by {@code frame} itself: a frame that runs and is not drawn
+     * <p>GUI thread, after {@link dev.vexelray.gui.core.spi.Seams#frame}. Not cleared by {@code frame} itself: a frame that runs and is not drawn
      * (a minimized window still drains) leaves the change owed to the next one that is.
      */
     public boolean takeDrawNeeded() {
         boolean was = drawNeeded;
         drawNeeded = false;
         return was;
+    }
+
+    /**
+     * The causes of the tree's edits that changed what is drawn since the last call, and clear them, as
+     * {@link Reconciler#takeDrawnCauses} says them: for the host's row of the draw that shows them. GUI thread, as it
+     * draws.
+     */
+    public String takeDrawnCauses() {
+        return reconciler.takeDrawnCauses();
     }
 
     /** Install the clipboard implementation text widgets use (default: an in-memory, process-local one). */
@@ -1862,14 +1468,6 @@ public final class Gui implements AutoCloseable {
         return new Scroller(this, trees.scroller(), content);
     }
 
-    /**
-     * {@code node}'s own scroll as a {@link ScrollSource} per axis — for a node that scrolls itself, such as a
-     * multi-line text field, so a {@code Scrollbar} can show and move it. One per node: it is the node's scroll watch.
-     */
-    public ScrollAxes scrollAxes(Node node) {
-        return new ScrollAxes(this, node);
-    }
-
     /** A node's scroll watch: the ranges its ScrollAxes publishes (ReadModels.onScroll). */
     void onScroll(Node node, java.util.function.Consumer<NodeLayout> handler) {
         readModels.onScroll(node.id(), handler);
@@ -1892,130 +1490,123 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
-     * Threads on the default offload lane. Bounded, because a pool that answers a full queue by growing has
-     * chosen the one policy the rest of this stack refuses. This was a {@code newCachedThreadPool}, which
-     * answers a wedged filesystem mount by making one more thread per blocked call — so the lane that exists to
-     * absorb a stall was the thing that multiplied it.
+     * A widget's mailbox: {@code topic}'s messages delivered to {@code stage} on the GUI thread, in each frame's
+     * drain, after input is dispatched and with the tree's own mutations, before layout. This is how a message from
+     * an application's logic reaches a widget's state: the logic publishes a command record and the widget applies
+     * it here, on the thread that owns it, so the widget needs no lock and the logic never touches a widget
+     * (vexelray-framework's {@code docs/threading.md}, T3.8).
      *
-     * <p>Bounded in <em>threads</em>, not in queue. A full lane makes work wait behind the work already on it,
-     * which is backpressure; a bounded queue would make it fail instead, and a caller of {@link #async} has
-     * nowhere to put a rejection. Choosing loss is a decision taken per channel, by whoever knows what the
-     * channel carries, and it is not this pool's to take on their behalf.
-     */
-    private static final int OFFLOAD_THREADS = Math.max(4, Runtime.getRuntime().availableProcessors());
-
-    /**
-     * The handler lane's default: unbounded in threads, as it has always been.
+     * <p>For widget code, which is the framework's: what runs in {@code stage} runs inside the frame budget. The
+     * topic's kind decides what waits: on a state topic only the last write per key since the last frame, on an edge
+     * topic every message, in order. Every widget's mailbox is one queue, so two widgets' messages are applied in the
+     * order they were sent, and what one logic tick wrote is applied in one frame, whole. An edge mailbox that
+     * overflows is a fault naming the topic.
      *
-     * <p>Deliberately <em>not</em> bounded yet. While {@link #async} is merely the documented place for blocking
-     * work rather than the only one, a handler that blocks — {@code text-editor-vexel-demo} reads and writes
-     * files straight from one — would fill a bounded handler lane and stop click dispatch dead. Bounding this
-     * one is a change that arrives after the blocking handlers move, not before it.
+     * @param capacity how many edges may wait for one frame
      */
-    private static ExecutorService handlerLane() {
-        return Executors.newCachedThreadPool(named("vexelray-gui-handler"));
-    }
-
-    /** The offload lane's default — {@link #OFFLOAD_THREADS} is why it is bounded, and in what. */
-    private static ExecutorService offloadLane() {
-        ThreadPoolExecutor pool = new ThreadPoolExecutor(OFFLOAD_THREADS, OFFLOAD_THREADS, 30L, TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(), named("vexelray-gui-offload"));
-        // An idle application should not sit on threads it is not using, and letting the core time out makes the
-        // bound a ceiling rather than a floor.
-        pool.allowCoreThreadTimeOut(true);
-        return pool;
+    public <T> Subscription mailbox(Topic<T> topic, sibarum.atchung.Subscriber<T> stage, int capacity) {
+        return widgetInbox.subscribe(topic, stage, capacity);
     }
 
     /**
-     * Daemon platform threads, named for their lane — never virtual ones, and that is measured rather than
-     * stylistic. An application following Kronometer's advice sets
-     * {@code -Djdk.virtualThreadScheduler.parallelism=1}, worth 3x on the baton handoff. That is a global JVM
-     * property with no per-thread override in JDK 25, so a virtual lane would land on the one carrier the baton
-     * needs and deadlock against the serialization that makes it fast, rather than merely running slowly. The
-     * flag is the application's to set and correctness may not depend on it, so the default here has to be the
-     * one that is still right when it <em>is</em> set.
+     * As {@link #mailbox(Topic, sibarum.atchung.Subscriber, int)}, handed only the messages whose key is in
+     * {@code keys}: a filter a view declares on a state topic (vexelray-framework's {@code docs/threading.md}, T4.8), so
+     * it is never handed a message it would discard. Only a state topic has keys, so a filter on an edge is refused.
      */
-    private static ThreadFactory named(String lane) {
-        AtomicInteger n = new AtomicInteger();
-        return r -> {
-            Thread t = new Thread(r, lane + "-" + n.incrementAndGet());
-            t.setDaemon(true);
-            return t;
-        };
-    }
-
-    /** Record {@code lane} as this {@code Gui}'s own to shut down, and return it. See {@link #ownedLanes}. */
-    private ExecutorService own(ExecutorService lane) {
-        ownedLanes.add(lane);
-        return lane;
+    public <T> Subscription mailbox(Topic<T> topic, sibarum.atchung.Subscriber<T> stage, int capacity,
+                                    java.util.Set<?> keys) {
+        return widgetInbox.subscribe(topic, stage, capacity, keys);
     }
 
     /**
-     * Run {@code work} on the offload lane — file I/O, network, a decode: work that may outlast a frame, and
-     * which is on a different lane from input handlers for that reason.
+     * As {@link #mailbox(Topic, sibarum.atchung.Subscriber, int, java.util.Set)}, named: each delivery's
+     * {@code receive} row on the probe's bus lane says {@code name} after the widgets' inbox, so a reader following a
+     * message's cause sees which view method it reached and not only that it reached the GUI. A view's generated
+     * wiring names each of its mailboxes {@code Class#method}.
      *
-     * <p>What lands there must not touch the tree or the timeline in place. A result comes back by publishing
-     * on a topic, or through a node mutation, which is the same door a worker building UI already uses.
+     * @param name the mailbox's name, non-empty and holding no space
+     * @param keys the keys it is handed, or {@code null} for every message
      */
-    public void async(Runnable work) {
-        try {
-            offload.execute(Cause.carry(work));
-        } catch (RejectedExecutionException e) {
-            dropIfStopped(offload, e, "Gui.async/stopped", "offloaded work");
+    public <T> Subscription mailbox(String name, Topic<T> topic, sibarum.atchung.Subscriber<T> stage, int capacity,
+                                    java.util.Set<?> keys) {
+        return widgetInbox.subscribe(java.util.Objects.requireNonNull(name, "name"), topic, stage, capacity, keys);
+    }
+
+    /**
+     * A widget's mailbox for the messages on {@code topic} {@link Addressed addressed} to it: as
+     * {@link #mailbox(Topic, sibarum.atchung.Subscriber, int)}, routed by address, so a widget is handed only its own.
+     * Every widget on a topic shares one route table, and a message for an address nobody answers to is dropped and
+     * counted. GUI thread only, as building and closing a widget are.
+     *
+     * @throws IllegalStateException when another mailbox on {@code topic} already answers to {@code address}
+     */
+    public <T extends Addressed> Subscription mailbox(Topic<T> topic, Object address,
+                                                      sibarum.atchung.Subscriber<T> stage) {
+        return routes.add(topic, address, stage);
+    }
+
+    /**
+     * Hear {@code kind} of event on {@code node} as a message: the form for a view, which is an application's
+     * (vexelray-framework's {@code docs/threading.md}, T7.4). The dispatcher publishes each event on this tree's topic
+     * for the kind, addressed to the node, and it reaches {@code stage} in the widget tick, on the GUI thread, after
+     * input is dispatched and before the tree's mutations are applied: so a click is heard, and what the view writes
+     * about it drawn, in the frame the click arrived.
+     *
+     * {@snippet :
+     * gui.hear(swatch, NodeEvent.CLICK, click -> pick.send(new Pick(colour)))
+     *    .hear(swatch, NodeEvent.STATE, state -> swatch.border(look.at(state)));
+     * }
+     *
+     * <p><b>A message, not a call.</b> The event is queued with every other message for the widgets, under its kind:
+     * every click arrives, in order; for {@link NodeEvent#STATE}, {@link NodeEvent#POINTER} and {@link NodeEvent#RESIZE}
+     * only the last per node in a tick, so hovering across a row and off it again within a frame is heard as where the
+     * pointer ended.
+     * Hearing a node is what makes it a target, as registering a handler did: a click bubbles to the nearest node that
+     * hears clicks, and hearing {@link NodeEvent#KEY} makes a node focusable.
+     *
+     * <p><b>Once per node and kind, and never over a widget's own.</b> A node a widget already handles that kind on
+     * belongs to the widget, which says what happened to it on topics of its own; hearing it as well is refused rather
+     * than either silently replacing the other. Released with the node.
+     *
+     * <p>The node-level registrations ({@link dev.vexelray.gui.core.spi.Seams#onClick}, {@link dev.vexelray.gui.core.spi.Seams#onState} and the rest) are the widget library's, which
+     * is the GUI and needs its events during dispatch, in order with the input around them.
+     *
+     * @throws IllegalStateException when the node already has its one handler of {@code kind}
+     */
+    public <E> Gui hear(Node node, NodeEvent<E> kind, sibarum.atchung.Subscriber<? super E> stage) {
+        long id = node.id();
+        if (kind.taken(input, this, id)) {
+            throw new IllegalStateException("node " + id + " already has a " + kind.name() + " handler, which is a "
+                    + "widget's: hear what the widget publishes about it instead of the node beneath it");
         }
+        Topic<NodeEvent.Message<E>> topic = nodeTopic(kind);
+        routes.add(topic, id, message -> stage.on(message.event()));
+        kind.listen(input, this, id, event -> bus.publish(topic, new NodeEvent.Message<>(id, event)));
+        return this;
     }
 
-    /**
-     * Answer a lane's rejection: dropped when the lane has been shut down, rethrown when it has not.
-     *
-     * <p>Work arriving at a stopped lane is not the caller's mistake, it is shutdown's ordinary race. Offloaded
-     * work outlives frames by design, so a highlight or a file read in flight when the application quits
-     * finishes after the handler lane has stopped, and what it hands on — a widget's change notification, a
-     * follow-up {@code async} — has nowhere to go. The caller cannot see the shutdown coming and has nowhere to
-     * put the exception, so it surfaced as an uncaught error on an offload thread in any teardown that caught a
-     * task mid-flight. The work was for a tree that is going away, and dropping it is the trade {@link #close}
-     * (or whoever owns the lane) already made by stopping the lane at all.
-     *
-     * <p>A lane counts as stopped when it is an {@link ExecutorService} that has been shut down, or when this
-     * {@code Gui} has been {@linkplain #close closed}. The second is the signal this {@code Gui} controls itself,
-     * and the only one it can see through an embedder's lane that forwards to a pool ({@code r -> pool.execute(r)},
-     * a toolkit's executor): that lane rejects after its pool stops exactly as a refusing one does, and is not an
-     * {@code ExecutorService} to ask.
-     *
-     * <p>Only a <em>stopped</em> lane is answered this way. A lane that rejects while running — a bounded queue an
-     * embedder chose — has made a decision about loss that belongs to whoever chose it, and it still throws.
-     *
-     * <p>A drop is reported through {@link Diagnostics}, once per lane. The race is ordinary, but the same drop is
-     * also what a real lifecycle bug looks like — a timer still calling {@code async} after {@code close} — and
-     * that used to surface as an exception pointing at the leak. Once per key keeps a teardown from repeating in
-     * the log while still leaving a line, and a record a test can assert on.
-     */
-    private void dropIfStopped(Executor lane, RejectedExecutionException e, String key, String what) {
-        boolean shut = lane instanceof ExecutorService s && s.isShutdown();
-        if (closed || shut) {
-            Diagnostics.dropped(key, what + " reached a stopped lane and was dropped",
-                    closed ? "its Gui was closed" : "the lane was shut down before the work arrived");
-            return;
-        }
-        throw e;
+    /** This tree's topic for {@code kind}, made the first time a node hears one. */
+    @SuppressWarnings("unchecked")
+    private <E> Topic<NodeEvent.Message<E>> nodeTopic(NodeEvent<E> kind) {
+        return (Topic<NodeEvent.Message<E>>) nodeTopics.computeIfAbsent(kind, k -> {
+            // Named per tree, because node ids are per tree: two trees on one bus would each hear the other's node 7
+            // (T4.6). The kind decides whether a node's events fold.
+            String name = "vexelray.gui." + treeName + ".node." + k.name();
+            Class<NodeEvent.Message<E>> type = (Class<NodeEvent.Message<E>>) (Class<?>) NodeEvent.Message.class;
+            return k.isState()
+                    ? Topic.state(name, type, NodeEvent.Message::node)
+                    : Topic.edge(name, type);
+        });
     }
 
-    /**
-     * The lane {@link #async} submits to, exposed so a widget that does its own blocking work puts it in the
-     * same place rather than on the handler lane beside click dispatch. Work submitted to it runs in its submitter's
-     * cause, as {@link #async} does.
-     */
-    public Executor offload() {
-        return offloadCarrying;
+    /** {@link NodeEvent#RESIZE}'s side of the read-model, for {@link NodeEvent}. */
+    boolean watchesResize(long id) {
+        return readModels.watchesResize(id);
     }
 
-    /**
-     * The executor application handlers run on — the same lane clicks, keys and drags are delivered through, so a
-     * widget dispatching its own app-facing callbacks here gives them identical semantics (and identical
-     * determinism under a test harness that injected a same-thread executor).
-     */
-    public Executor handlers() {
-        return handlers;
+    /** {@link NodeEvent#RESIZE}'s registration: in the layout pass, so the message leaves with the size it reports. */
+    void watchResize(long id, java.util.function.Consumer<NodeLayout> publish) {
+        readModels.onResize(id, publish);
     }
 
     /**
@@ -2060,7 +1651,7 @@ public final class Gui implements AutoCloseable {
             return;   // a frame is already owed, and saying so twice does not owe two
         }
         if (Probe.ON) {
-            String id = "Gui@" + Integer.toHexString(System.identityHashCode(this));
+            String id = "Gui@" + Integer.toHexString(System.identityHashCode(Gui.this));
             if (workListener != NO_WAKE) {
                 // The other half of the gap analysis (docs/reference/automation.md §4). loop.park says the loop went to
                 // sleep and for how long it was allowed to; this says what woke it, and why. A gap that ends in
@@ -2101,7 +1692,7 @@ public final class Gui implements AutoCloseable {
      * automation driver's every command answers {@code ok}, and nothing happens: no click lands, no key is
      * typed, the tree never changes. It comes right the instant any real event arrives, so it presents as the
      * clicks having been ignored rather than as the loop having been asleep — the same misreading
-     * {@link #onWork} exists to prevent for mutations, in the one place where a mutation is not what is
+     * {@link dev.vexelray.gui.core.spi.Seams#onWork} exists to prevent for mutations, in the one place where a mutation is not what is
      * waiting.
      *
      * <p>Named for its caller's situation rather than made general on purpose: an application has no reason to
@@ -2119,7 +1710,7 @@ public final class Gui implements AutoCloseable {
      * <p>The read side of the wake, for anything that needs to know whether the tree has settled: chiefly the
      * automation driver's {@code settle}, which waits for a mutation to be reflected before it reads or clicks
      * again (docs/reference/automation.md §5). It is one count rather than the wake flag because the flag is
-     * cleared at the top of the frame, and a reader that asked it between there and the publish — or while the
+     * cleared at the top of the frame, and a reader that asked it between there and the publish — in 0.1, or while the
      * click's handler ran on its worker — was told nothing was owed; see {@link Owed}.
      *
      * <p><b>What it does not say.</b> Work the application starts for itself — on {@link #async}, on a thread of
@@ -2141,77 +1732,16 @@ public final class Gui implements AutoCloseable {
         return owed.awaitPaid(timeout, unit);
     }
 
-    /**
-     * Block until every handler dispatched so far has returned, bounded — {@code true} once none is running,
-     * {@code false} if one still is when {@code timeout} runs out.
-     *
-     * <p>For a caller that runs the frames itself, such as a headless capture: {@link #awaitNothingOwed} would
-     * wait on a frame only that caller can run. What a returned handler published is waiting for the next frame.
-     * Work a handler handed to {@link #async} is not waited for, for the reason {@link #frameOwed} gives.
-     */
-    public boolean awaitHandlers(long timeout, java.util.concurrent.TimeUnit unit) throws InterruptedException {
-        return owed.awaitHandlers(timeout, unit);
-    }
-
     /** What {@link #frameOwed} is owed, as a phrase a refusal can quote: {@code "frame still owed"}, {@code "a handler still running"}. */
     public String whatIsOwed() {
         return owed.describe();
     }
 
     /**
-     * How a host loop that parks between frames is told a mutation is waiting for it.
-     *
-     * <p><b>Required by any loop that sleeps</b>, and its absence is a window that stops updating rather
-     * than a slow one. Click handlers run on the worker executor, off the GUI thread — so a handler
-     * publishes its mutation <em>after</em> the frame that dispatched the click has already drained,
-     * reconciled and presented. A loop that then asks only its animation clock is told there is nothing
-     * to do, parks, and leaves the mutation queued: the button was clicked, the state changed, and the
-     * screen keeps showing what it showed before. It comes right the instant any OS event arrives, so it
-     * presents as "the UI only updates when I move the mouse" — which points at input handling rather
-     * than at the loop, and it is worst on a touchpad where a click carries no movement with it.
-     *
-     * <pre>{@code
-     * gui.onWork(app::postWake);          // alongside kron.onWork(app::postWake)
-     * }</pre>
-     *
-     * <p>Both are needed and they are not redundant: this one covers changes the application makes, the
-     * clock's covers time passing. Either alone leaves half the reasons a frame is due unaccounted for.
-     *
-     * <p>Fires on <em>every</em> publish, including from the GUI thread mid-frame, which costs at most
-     * one extra pass that finds nothing to do. Filtering by thread would be an optimisation paid for in
-     * exactly the currency this is trying to save.
-     *
-     * <p>One listener, last call wins — so one call site per {@code Gui}. A second, from a profiler or
-     * an adapter installing its own, silently replaces the first and the loop stops waking.
-     */
-    public void onWork(Runnable listener) {
-        this.workListener = java.util.Objects.requireNonNull(listener, "listener");
-        if (Probe.ON) {
-            Probe.mark(Lane.FRAME, "wake.wired", "Gui@" + Integer.toHexString(System.identityHashCode(this)));
-        }
-        // A wake recorded while nothing was listening was delivered to NO_WAKE and reached no loop, so it is
-        // delivered again, to the listener that can act on it. It used to be cleared instead, so the next edit
-        // would wake afresh — and that made a tree edited before it was presented read as settled until its
-        // first frame: an automation driver connecting in that gap was told `ok v0` and then `(no tree yet)`
-        // (docs/plans/background-runs.md). The flag stays set, because the frame it stands for is still owed.
-        if (woken.get()) {
-            try {
-                listener.run();
-            } catch (Throwable t) {
-                if (!warnedWakeFailed) {
-                    warnedWakeFailed = true;
-                    LOG.warn("the onWork listener threw; frames may stop arriving "
-                            + "when nothing else wakes the loop", t);
-                }
-            }
-        }
-    }
-
-    /**
      * Attach the source that says how far behind its laid-out position each node is drawn — see
      * {@link LayoutMotion}. {@link LayoutMotion#NONE} (the default) draws everything exactly where layout put it.
      *
-     * <p>One source per tree, last call wins, for the same reason as {@link #onWork}: two of them would each
+     * <p>One source per tree, last call wins, for the same reason as {@link dev.vexelray.gui.core.spi.Seams#onWork}: two of them would each
      * report a displacement for the same node and the tree would be drawn at whichever one was asked second.
      * A source that wants to compose several transitions composes them on its own side, where it can see them
      * both.
@@ -2290,6 +1820,95 @@ public final class Gui implements AutoCloseable {
         return paintMotion;
     }
 
+    /** The tree's present time: its clock's ({@link dev.vexelray.gui.core.spi.Clock#nanos}), else the wall's. */
+    long presentNanos() {
+        dev.vexelray.gui.core.spi.Clock c = clock;
+        return c == null ? System.nanoTime() : c.nanos();
+    }
+
+    /** The same moment on the machine's monotonic clock ({@link Frame#monoNanos}). */
+    long monoNanos() {
+        dev.vexelray.gui.core.spi.Clock c = clock;
+        return c == null ? System.nanoTime() : c.monoNanos();
+    }
+
+    /**
+     * How long the loop may park before this tree's asked halves are next due: zero when one wants the next frame,
+     * {@link Long#MAX_VALUE} when every one is at rest. A host takes the least of this and its own deadlines, so a part
+     * that changes every second costs one frame a second and a still one none (frame-contract.md B).
+     */
+    public long nanosUntilDue() {
+        long at = due;
+        if (at == Frame.NEVER) {
+            return Long.MAX_VALUE;
+        }
+        // Measured on the tree's clock from the moment the last frame drew for, which is the clock the due time is on.
+        return Math.max(0L, at - Math.max(dueFrom, presentNanos()));
+    }
+
+    /** The one {@link Drawn} of this tree: writes an asked half's offsets onto the nodes, noting whether any changed. */
+    private final class DrawnSink implements Drawn {
+
+        private boolean changed;
+
+        @Override
+        public Drawn offset(Node node, float dx, float dy) {
+            RetainedNode n = reconciler.node(node.id());
+            if (n != null && Displacement.offset(n, dx, dy)) {
+                changed = true;
+            }
+            return this;
+        }
+
+        @Override
+        public Drawn stretch(Node node, float factor, float originX) {
+            if (!(factor > 0f)) {
+                throw new IllegalArgumentException("a picture is stretched by a positive factor: " + factor);
+            }
+            RetainedNode n = reconciler.node(node.id());
+            if (n != null && Displacement.stretch(n, factor, originX)) {
+                changed = true;
+            }
+            return this;
+        }
+
+        @Override
+        public Drawn scale(Node node, float factor) {
+            if (!(factor > 0f)) {
+                throw new IllegalArgumentException("a node is scaled by a positive factor: " + factor);
+            }
+            RetainedNode n = reconciler.node(node.id());
+            if (n != null && Displacement.scale(n, factor)) {
+                changed = true;
+            }
+            return this;
+        }
+
+        @Override
+        public Drawn opacity(Node node, float opacity) {
+            RetainedNode n = reconciler.node(node.id());
+            if (n != null && Displacement.opacity(n, opacity)) {
+                changed = true;
+            }
+            return this;
+        }
+
+        @Override
+        public Drawn show(Feed feed, int slot) {
+            if (feed.choose(slot)) {
+                changed = true;
+            }
+            return this;
+        }
+
+        /** Whether an offset changed since the last call: the frame then owes a publish and a draw. */
+        boolean takeChanged() {
+            boolean was = changed;
+            changed = false;
+            return was;
+        }
+    }
+
     /**
      * Register the clock this tree's animations run on, for a run with no frame loop to tick it — see
      * {@link AnimationClock}. The clock's own module calls this when it is attached; last call wins.
@@ -2308,44 +1927,29 @@ public final class Gui implements AutoCloseable {
      * Whether a frame is owed: mutations are queued and nothing has drawn them yet.
      *
      * <p>For a host that wants to check rather than be told — a diagnostic, or a belt-and-braces term in
-     * a pacing supplier. {@link #onWork} is the load-bearing half; this cannot close the race on its own,
-     * because a handler still running on a worker has not published yet and so has nothing to report.
+     * a pacing supplier. {@link dev.vexelray.gui.core.spi.Seams#onWork} is the load-bearing half; this cannot close the race on its own,
+     * because work an application's logic is still doing has not published yet and so has nothing to report.
      */
     public boolean hasPendingWork() {
         return pump.hasPending();
-    }
-
-    /**
-     * Drain + reconcile + (re)layout for one frame; returns the retained root to render (may be null on the very
-     * first call before the root's Create is drained — it won't be, since we drain first). {@code tm} supplies
-     * text intrinsic sizes.
-     */
-    public RetainedNode frame(float viewportW, float viewportH, TextMeasurer tm) {
-        // The frame the last wake asked for is this one, so the next edit has to ask again. First thing, before
-        // anything below can publish: see the field's note on why this is the top and not the bottom.
-        //
-        // The flag is cleared here but the debt is not: this frame holds the wake's unit until it has published,
-        // and only then pays it. A reader asking in between is still owed this frame (Owed).
-        boolean tookWake = woken.getAndSet(false);
-        try {
-            return frameBody(viewportW, viewportH, tm);
-        } finally {
-            if (tookWake) {
-                owed.pay();
-            }
-            if (!framed) {
-                framed = true;
-                owed.pay();   // the first frame, which a new tree is owed from the start
-            }
-        }
     }
 
     private RetainedNode frameBody(float viewportW, float viewportH, TextMeasurer tm) {
         // Dispatch this frame's input first, against the previous frame's laid-out tree (§8, §10): a click may
         // register a mutation, which the drain below then applies in the same frame.
         try (Zone probeZone = Probe.zone(Lane.LAYOUT, "dispatch input")) {
-            input.dispatch(reconciler.root());
+            // A handler's effect is not always a mutation, which wakes the loop by being published: it may start a
+            // motion or send a message, and to a loop that parks, an effect nothing asked a frame for does not
+            // exist until some unrelated event causes one. So a frame that ran a handler asks for the next one,
+            // at the cost of a frame per input that finds nothing to do; and it asks before this frame pays.
+            if (input.dispatch(reconciler.root())) {
+                wake("handler returned");
+            }
         }
+        // The widgets' mailboxes, before the mutation drain, so the node writes a command makes (a field's text,
+        // say) are applied in this frame's drain rather than the next's. Everything staged is applied: a frame has
+        // no deadline to carry anything past.
+        widgets.run(Long.MAX_VALUE);
         // Drain the mutation pump on the GUI thread: the subscriber applies each Mutation to the reconciler in
         // FIFO order (single writer). The tree is up to date afterward.
         pump.drain();
@@ -2360,6 +1964,11 @@ public final class Gui implements AutoCloseable {
         // after. One step per frame is not a delay, it is the only honest cadence — see Navigation.
         stepNavigations();
         RetainedNode r = reconciler.root();
+        // Zoom and density written from another thread since the last frame, in the order they were made: applied
+        // here so the State commits, and everything that restyles from it runs, on this thread.
+        for (Runnable write = scaleWrites.poll(); write != null; write = scaleWrites.poll()) {
+            write.run();
+        }
         // A zoom step on its way moves one frame's worth before the size and scale are asked, so this frame is laid
         // out at the zoom it is drawn at; while it is still on its way, the next frame is owed.
         if (metrics.stepZoomGlide(System.nanoTime()) && metrics.zoomGliding()) {
@@ -2421,7 +2030,12 @@ public final class Gui implements AutoCloseable {
             long now = System.nanoTime();
             motionFrame += now - motionFrameNanos > MOTION_FRAME_GAP_NANOS ? 2 : 1;
             motionFrameNanos = now;
-            if (motionNow != LayoutMotion.NONE) {
+            // The moment every asked half draws for (frame-contract.md B), sampled once: the motions below, the
+            // registered parts, and the paint the renderer reads after this frame.
+            Frame frame = new Frame(presentNanos(), monoNanos(), reducedMotion());
+            long layoutDue = Frame.NEVER;
+            boolean askedAny = !asked.isEmpty();
+            if (motionNow != LayoutMotion.NONE || askedAny) {
                 // On a layout pass only, not on every frame whose geometry changed: on a frame with no layout (a caret
                 // moved, say) every node still holds where and how big it was *drawn*, and settling that would record
                 // a node mid-flight as where it belongs and leave it there until the next layout. Only layout moves
@@ -2442,12 +2056,22 @@ public final class Gui implements AutoCloseable {
                 // anything displaced, which is the walk that writes the resting positions back. Past that every
                 // node already stands at its recorded position, layout or no layout, so the walk would rewrite
                 // each one with itself: hover frames and idle wakes skip it.
-                if (displaced || motionNow.active()) {
+                // Asked after settle has told it this frame's moves, and before anything is displaced.
+                layoutDue = motionNow.draw(frame);
+                // The registered parts' asked halves, after the told ones have run and layout has placed their nodes.
+                // What they set is an offset, walked in with the displacement; a part's offset stays set, so while
+                // any part is registered the walk runs on every frame, to put it back after a layout.
+                askedDue = Frame.NEVER;
+                for (int i = 0; i < asked.size(); i++) {
+                    askedDue = Math.min(askedDue, asked.get(i).draw(frame, drawnSink));
+                }
+                if (displaced || frame.owes(layoutDue) || askedAny) {
                     displaceWalks++;
                     moving = Displacement.displace(r, motionNow);
                 }
             }
             displaced = moving;
+            boolean offsetMoved = drawnSink.takeChanged();
             // Arrival and departure, in the same stage and for the same reason: everything after this reads what
             // is drawn. Walked only while something is arriving or leaving — an edit that started one says so, and
             // a walk that found one asks for the next — and the walk that finds everything at rest is the one that
@@ -2469,7 +2093,7 @@ public final class Gui implements AutoCloseable {
             // The theme likewise: its focus ring decides ringShown.
             dev.vexelray.gui.core.input.FocusState focusNow = input.focusState();
             boolean focusMoved = !focusNow.equals(publishedFocus) || theme != publishedTheme;
-            if (geometryChanged || moving || focusMoved || departing) {
+            if (geometryChanged || moving || offsetMoved || focusMoved || departing) {
                 // Last of the compute phase, because it is a fact about the rects everything above just
                 // finished writing: displacement moves a node after layout placed it, and a clip resolved
                 // before that would describe a frame nobody sees.
@@ -2487,11 +2111,29 @@ public final class Gui implements AutoCloseable {
                 wake("motion");
             }
             // The same for colour: a fade in progress draws something different next frame, and stops asking when
-            // it arrives.
-            boolean fading = paintMotion.moving();
-            if (fading) {
+            // it arrives. Asked here, after this frame's repaints were told in the drain, for the renderer to read.
+            long paintDue = paintMotion.draw(frame);
+            reconciler.settleReplaced();   // words or an image all the way up: what they replaced is let go
+            Cuts watching = cuts;
+            if (watching != null) {
+                watching.frame(reconciler.root(), paintMotion, reconciler.theme());   // a test watching for cuts
+            }
+            boolean fading = paintDue != Frame.NEVER;
+            if (frame.owes(paintDue)) {
                 wake("paint motion");
             }
+            // A press gone far enough to be a drag becomes one on a frame's tick when its hold passes, and on nothing
+            // else once the pointer stops: so until then the next frame has work too (InputDispatcher#dragHoldPending).
+            if (input.dragHoldPending()) {
+                wake("drag hold");
+            }
+            // A registered part due now wants the next frame; one due later is the loop's to park until
+            // (nanosUntilDue), and one at rest costs nothing.
+            if (askedAny && frame.owes(askedDue)) {
+                wake("asked");
+            }
+            due = Math.min(Math.min(layoutDue, paintDue), askedAny ? askedDue : Frame.NEVER);
+            dueFrom = frame.presentNanos();
             if (presenting) {
                 wake("presence");
             }
@@ -2506,7 +2148,7 @@ public final class Gui implements AutoCloseable {
             // changed something (equal writes leave it clear); the layout covers a size or zoom change that no
             // edit made; geometry covers a caret that moved without reflowing; motion covers a transition between
             // frames. Taken with |=, because a frame that is run and not drawn keeps what it found for the next.
-            if (reconciler.takeDrawDirty() | layoutRan | geometryChanged | moving | fading | presenting) {
+            if (reconciler.takeDrawDirty() | layoutRan | geometryChanged | moving | fading | presenting | offsetMoved) {
                 drawNeeded = true;
             }
         }
@@ -2519,16 +2161,352 @@ public final class Gui implements AutoCloseable {
 
     @Override
     public void close() {
-        // First, so a rejection from a lane stopped by what follows (or by its owner, concurrently) reads as the
-        // teardown it is. See dropIfStopped.
         closed = true;
         input.close();
         mutationSub.close();
         navSub.close();
-        // Only what this Gui built. A lane handed in belongs to whoever handed it over, and shutting one of
-        // those down here is how closing a dialog takes the application's threads with it.
-        for (ExecutorService lane : ownedLanes) {
-            lane.shutdownNow();
+        synchronized (NAMES) {
+            java.util.Set<String> open = NAMES.get(bus);
+            if (open != null) {
+                open.remove(treeName);
+            }
+        }
+    }
+
+    // --- the widget library's and the host's seams: see dev.vexelray.gui.core.spi.Seams ---
+
+    static {
+        dev.vexelray.gui.core.spi.Seams.install(gui -> gui.seams);
+    }
+
+    /** This tree's seams, reached through {@code Seams.of(gui)} and from nothing an application is handed. */
+    private final dev.vexelray.gui.core.spi.Seams seams = new GuiSeams();
+
+    /** The seams' implementation: an inner class, so each one is the old method on this tree, moved. */
+    private final class GuiSeams extends dev.vexelray.gui.core.spi.Seams {
+
+        @Override
+        public dev.vexelray.gui.core.input.PointerWarp pointerWarp() {
+            return input.pointerWarp();
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.ScrollSource scrollSource(Scroller scroller, boolean vertical) {
+            return vertical ? scroller.y() : scroller.x();
+        }
+
+        @Override
+        public ScrollAxes scrollAxes(Node node) {
+            return new ScrollAxes(Gui.this, node);
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams clock(dev.vexelray.gui.core.spi.Clock clock) {
+            Gui.this.clock = clock;
+            return this;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Clock clock() {
+            return Gui.this.clock;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams ask(dev.vexelray.gui.core.spi.Asked part) {
+            java.util.Objects.requireNonNull(part, "part");
+            if (!asked.contains(part)) {
+                asked.add(part);
+                // An offset is drawn from where layout last recorded a node, and nothing is recorded on a tree with
+                // no motion and no parts: so the next frame lays out, which records, and asks it.
+                reconciler.markLayoutDirty();
+                requestFrame();
+            }
+            return this;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams unask(dev.vexelray.gui.core.spi.Asked part) {
+            asked.remove(part);
+            return this;
+        }
+
+        @Override
+        public sibarum.atchung.State<DragState> drag() {
+            return transfers.drag();
+        }
+
+        @Override
+        public sibarum.atchung.State<java.util.Set<Modifier>> modifiers() {
+            return modifierState;
+        }
+
+        @Override
+        public sibarum.atchung.State<Viewport> viewport() {
+            return metrics.viewport();
+        }
+
+        @Override
+        public sibarum.atchung.State<Float> zoom() {
+            return metrics.zoom();
+        }
+
+        @Override
+        public boolean zoomSizesWindow() {
+            return zoomSizesWindow;
+        }
+
+        @Override
+        public sibarum.atchung.State<Float> dpi() {
+            return metrics.dpi();
+        }
+
+        @Override
+        public sibarum.atchung.State<LayoutSnapshot> layout() {
+            return readModels.layout();
+        }
+
+        @Override
+        public sibarum.atchung.State<SemanticSnapshot> semantics() {
+            return readModels.semantics();
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams onClick(Node node, Runnable handler) {
+            input.onClick(node.id(), handler);
+            return this;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams onClick(Node node, java.util.function.Consumer<ClickEvent> handler) {
+            input.onClick(node.id(), handler);
+            return this;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams onDoubleClick(Node node, Runnable handler) {
+            input.onDoubleClick(node.id(), handler);
+            return this;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams onDoubleClick(Node node, java.util.function.Consumer<ClickEvent> handler) {
+            input.onDoubleClick(node.id(), handler);
+            return this;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams onContextClick(Node node, java.util.function.Consumer<ClickEvent> handler) {
+            input.onContextClick(node.id(), handler);
+            return this;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams onContextMenu(Node node, java.util.function.Consumer<MenuSink> source) {
+            input.onContextMenu(node.id(), source);
+            if (input.menuPresenter() == null) {
+                presentMenus();
+            }
+            return this;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams openMenu(ClickEvent at, java.util.function.Consumer<MenuSink> source) {
+            if (input.menuPresenter() == null) {
+                presentMenus();
+            }
+            input.openMenu(at, source);
+            return this;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams menus(MenuPresenter presenter) {
+            input.menuPresenter(presenter);
+            return this;
+        }
+
+        @Override
+        public MenuPresenter menus() {
+            return input.menuPresenter();
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams commands(dev.vexelray.gui.core.input.Commands commands) {
+            Gui.this.commands = commands == null ? dev.vexelray.gui.core.input.Commands.NONE : commands;
+            return this;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.input.Commands commands() {
+            return Gui.this.commands;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams onState(Node node, java.util.function.Consumer<InteractionState> handler) {
+            input.onState(node.id(), handler);
+            return this;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams onPointer(Node node, java.util.function.Consumer<dev.vexelray.gui.core.input.PointerEvent> handler) {
+            input.onPointer(node.id(), handler);
+            return this;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams onDrag(Node node, java.util.function.Consumer<DragEvent> handler) {
+            input.onDrag(node.id(), handler);
+            return this;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams onWheel(Node node, java.util.function.Consumer<dev.vexelray.gui.core.input.WheelEvent> handler) {
+            input.onWheel(node.id(), handler);
+            return this;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams onDrop(Node node, DropTarget target) {
+            input.onDrop(node.id(), java.util.Objects.requireNonNull(target, "target"));
+            return this;
+        }
+
+        @Override
+        public java.util.List<DropTarget> dropTargetsAt(float x, float y) {
+            return input.dropTargetsAt(x, y);
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams onDragSource(Node node, DragSource source) {
+            input.onDragSource(node.id(), java.util.Objects.requireNonNull(source, "source"));
+            return this;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams watchDrag(Node node, dev.vexelray.gui.core.drop.DragWatch watch) {
+            input.watchDrag(node.id(), watch);
+            return this;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams onResize(Node node, java.util.function.Consumer<NodeLayout> handler) {
+            watchResize(node, handler);
+            return this;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams onKey(Node node, java.util.function.Consumer<KeyEvent> handler) {
+            input.onKey(node.id(), handler);
+            return this;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams onChar(Node node, java.util.function.IntConsumer handler) {
+            input.onChar(node.id(), handler);
+            return this;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams reveals(Node node, Reveal reveal) {
+            navigator.reveals(node.id(), reveal);
+            return this;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams shortcut(Shortcut shortcut, Runnable command) {
+            input.registerShortcut(shortcut, command);
+            return this;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams shortcut(Key key, Runnable command, Modifier... mods) {
+            return shortcut(Shortcut.of(key, mods), command);
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams claim(Node node, Trigger chord, ClaimScope scope, Runnable command) {
+            input.claim(node.id(), chord, scope, command);
+            return this;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams claim(Node node, Shortcut chord, ClaimScope scope, Runnable command) {
+            return claim(node, (Trigger) chord, scope, command);
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams claimAny(Node node, ClaimScope scope, java.util.function.Consumer<Trigger> command) {
+            input.claimAny(node.id(), scope, command);
+            return this;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams onUndo(java.util.function.Consumer<dev.vexelray.gui.core.edit.UndoEvent> sink) {
+            undoing.sink(sink);
+            return this;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams onCursorChange(java.util.function.Consumer<CursorShape> sink) {
+            input.cursorSink(sink);
+            return this;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams onPointerLock(java.util.function.Consumer<Boolean> sink) {
+            input.pointerLockSink(sink);
+            return this;
+        }
+
+        @Override
+        public void onWork(Runnable listener) {
+            Gui.this.workListener = java.util.Objects.requireNonNull(listener, "listener");
+            if (Probe.ON) {
+                Probe.mark(Lane.FRAME, "wake.wired", "Gui@" + Integer.toHexString(System.identityHashCode(this)));
+            }
+            // A wake recorded while nothing was listening was delivered to NO_WAKE and reached no loop, so it is
+            // delivered again, to the listener that can act on it. It used to be cleared instead, so the next edit
+            // would wake afresh — and that made a tree edited before it was presented read as settled until its
+            // first frame: an automation driver connecting in that gap was told `ok v0` and then `(no tree yet)`
+            // (docs/plans/background-runs.md). The flag stays set, because the frame it stands for is still owed.
+            if (woken.get()) {
+                try {
+                    listener.run();
+                } catch (Throwable t) {
+                    if (!warnedWakeFailed) {
+                        warnedWakeFailed = true;
+                        LOG.warn("the onWork listener threw; frames may stop arriving "
+                                + "when nothing else wakes the loop", t);
+                    }
+                }
+            }
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams onPointerWarp(dev.vexelray.gui.core.input.PointerWarp warp) {
+            input.pointerWarp(warp);
+            return this;
+        }
+
+        @Override
+        public RetainedNode frame(float viewportW, float viewportH, TextMeasurer tm) {
+            // The frame the last wake asked for is this one, so the next edit has to ask again. First thing, before
+            // anything below can publish: see the field's note on why this is the top and not the bottom.
+            //
+            // The flag is cleared here but the debt is not: this frame holds the wake's unit until it has published,
+            // and only then pays it. A reader asking in between is still owed this frame (Owed).
+            boolean tookWake = woken.getAndSet(false);
+            frameThread = Thread.currentThread();
+            try {
+                return frameBody(viewportW, viewportH, tm);
+            } finally {
+                if (tookWake) {
+                    owed.pay();
+                }
+                if (!framed) {
+                    framed = true;
+                    owed.pay();   // the first frame, which a new tree is owed from the start
+                }
+            }
         }
     }
 }

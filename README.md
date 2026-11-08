@@ -125,7 +125,7 @@ Colour is a **role**, resolved against the one `Theme` on `Gui` — no widget na
 gui.theme(Theme.LIGHT);                                            // before building; DARK is the default
 Node card = gui.box().background(gui.theme().color(Role.PANEL))    // PAGE / CHROME / PANEL / RAISED / WELL / LINE
         .border(Length.rem(0.1f), gui.theme().color(Role.LINE));   // INK / DIM / FAINT / ACCENT / ACTION / DANGER
-gui.onState(card, s -> card.background(gui.theme().color(Role.PANEL, s)));   // hover and press are derived
+Seams.of(gui).onState(card, s -> card.background(gui.theme().color(Role.PANEL, s)));   // hover and press are derived
 ```
 
 A `Palette` is nine authored numbers, not a table of colours: a page, a lightness step, an ink, a
@@ -158,15 +158,28 @@ bloom) are deliberately out of scope for the single-pass batch.
 
 ## Interaction
 
-Input arrives tactroller → atchung → the framework's dispatch; you subscribe by node:
+Input arrives tactroller → atchung → the framework's dispatch. An application hears it as messages: a widget's on its
+own topics, a node's of its own through `hear`, and what the dispatcher must know before the input (a menu, a chord)
+is declared, each item naming the message it sends:
 
 ```java
-gui.onClick(button, () -> log.append(gui.text("clicked")));       // the handler lane
-gui.onContextClick(row, e -> menu.show(e.x(), e.y()));            // right-click, with the pointer position
-gui.onState(button, s -> button.background(gui.theme().color(Role.PANEL, s))); // observers add up
-gui.onDrag(slider, e -> set(e.fractionX()));                      // pointer-captured
-gui.shortcut(Key.EQUAL, gui::zoomIn, Modifier.CONTROL);           // global chords
-gui.claim(node, Shortcut.of(Key.LEFT), ClaimScope.FOCUSED, cmd);  // focused-only chords
+gui.mailbox(Button.PRESSED, save.address(), p -> saves.send(new Save()));   // a widget's press
+gui.hear(row, NodeEvent.CLICK, click -> picks.send(new Pick(id)));          // a node's own click
+gui.hear(card, NodeEvent.STATE, s -> card.background(gui.theme().color(Role.PANEL, s)));
+gui.hear(chart, NodeEvent.POINTER, p -> under.send(new Under(p.over(), p.localX())));   // where, over a picture
+keys.action("file.save", "Save", Shortcut.of(Key.S, Modifier.CONTROL)).sends(saves, new Save());   // window-wide
+gui.claim(node, Shortcut.of(Key.LEFT), ClaimScope.FOCUSED, moves, new Move(-1));   // focused-only
+```
+
+The registrations a widget is built from, which run code in the dispatch in order with the input around it, are the
+widget library's and the host's, on `Seams.of(gui)`, and nothing an application is handed reaches them
+(vexelray-framework's `docs/threading.md`, T7.2):
+
+```java
+Seams seams = Seams.of(gui);
+seams.onClick(button, () -> press());                            // a widget answering its own input
+seams.onDrag(slider, e -> set(e.fractionX()));                   // pointer-captured
+seams.shortcut(Key.EQUAL, gui::zoomIn, Modifier.CONTROL);        // the library's own chords
 ```
 
 Clickable nodes get the pointer cursor by inference; register `gui.cursor(node, shape)` only when
@@ -175,31 +188,45 @@ the affordance can't be inferred (a slider wants GRAB). Focus is `gui.focusable(
 
 ### Context menus
 
-A menu is not an object you build and keep — it is a question asked at the moment of the right click:
+An application's menu is **declared**, never built at the click: the menu has to open in the frame of the
+right click, so what is on it is set ahead of time, and choosing a line sends a message (vexelray-framework's
+`threading.md`, T7.5). On a node the view holds, the menu is declared whole, each item naming its message:
 
 ```java
-gui.onContextMenu(row, menu -> menu
-        .item("Open", () -> open(path))
-        .item("Paste", clipboard.hasText(), () -> paste(path))   // shown, greyed when it cannot apply
+gui.menu(row, Menu.builder()
+        .item("Open", open, new Open(path))
+        .item("Rename", !readOnly, rename, new Rename(path))   // shown, greyed when it cannot apply
         .separator()
-        .item("Properties", () -> inspect(path)));
+        .item("Properties", inspect, new Inspect(path))
+        .build());
+```
+
+On a widget that builds its own items' nodes (a tree's rows, a list's, a tab bar's tabs), the view declares
+each line once and is told which item it was chosen on:
+
+```java
+tree.action(MenuAction.of("delete", "×", "Delete"));
+gui.mailbox(TreeView.CHOSEN, tree.address(), chosen -> outbox.send(new Delete((Path) chosen.item())));
 ```
 
 - **The nearest node with a menu owns the click** — leaf→root, the same rule a click handler follows,
   so a row inside a panel inside a page may each declare one and the innermost answers.
-- **Sources accumulate**, like `onState` observers: the widget states its defaults and the
-  application adds what only it knows, into one menu, in registration order. Nothing is restated and
-  nothing has to agree on an order.
-- **A widget can hand its own context to the builder**: `TreeView.onContextMenu((item, menu) -> …)`
-  and `Tabs.onContextMenu((index, menu) -> …)` say *which* thing was clicked, which the framework has
-  no way to name.
-- **Contribute nothing and no menu opens** — "there is nothing to offer here" needs no special case.
+- **The widget's own lines come first**, then the application's: a field's Copy/Cut/Paste then its
+  declared menu behind a rule, a tab's Close then the bar's actions, a tree's Expand and Collapse then
+  its actions. Nothing is restated.
+- **`Chosen(at, action, item)`** arrives on the widget's own topic, `TreeView.CHOSEN`, `ListView.CHOSEN`
+  or `Tabs.CHOSEN`, carrying the item (a tab's index as it was when the menu opened).
+- **What a tree's row offers comes with its `Entry`**: `hides("delete")`, `greys("delete")`. It is a
+  fact the listing already states, and a changed fact arrives with `REFRESH`, like a changed label. A
+  list's and a tab bar's actions are on every item.
+- **Offer nothing and no menu opens** — "there is nothing to offer here" needs no special case.
 - **Defaults ship with the widgets**: a `TextField` offers Copy/Cut/Paste (Copy alone when
-  `readOnly(true)`, each greyed when it does not apply), a tab offers Close.
+  `readOnly(true)`, each greyed when it does not apply), a tab offers Close. These are the widget
+  library's, and answer in code through `Seams.onContextMenu`, which an application is not handed.
 
-`ContextMenu` draws them, installed by the first `onContextMenu` on a tree whatever declared it (it is
-registered as core's `MenuPresenter.Default`); `gui.menus(presenter)` replaces it with something else entirely
-(`MenuPresenter`), the same way `gui.clipboard(...)` replaces the clipboard.
+`ContextMenu` draws them, installed by the first widget or declaration that needs one (it is
+registered as core's `MenuPresenter.Default`); `Seams.of(gui).menus(presenter)` replaces it with something
+else entirely (`MenuPresenter`), the same way `gui.clipboard(...)` replaces the clipboard.
 
 **Threading**: `gui.async(work)` runs app logic off the GUI thread; `gui.batch(edits)` groups
 mutations into one frame. Install the OS clipboard with `gui.clipboard(...)` (see the demo — the
@@ -213,15 +240,14 @@ half of that, and all of them are discovered after letting go, which is the wors
 anything.
 
 ```java
-gui.onDragSource(body, (x, y) -> rowAt(y) instanceof Row r ? Payload.of(ROW, r) : null);  // null = nothing here drags
-gui.onDrop(body, (payload, x, y) -> payload.as(ROW)                 // asked per frame, for *every* point
-        .map(row -> seamAt(y).accept(row))
+Seams.of(gui).onDragSource(body, (x, y) -> rowAt(y) instanceof Row r ? Payload.of(ROW, r) : null);  // null = nothing here drags
+Seams.of(gui).onDrop(body, (payload, x, y) -> payload.as(ROW)                 // asked per frame, for *every* point
+        .map(row -> seamAt(y).accept(row))           // a Drop: the effect, the indicator, and what landing does
         .orElse(Drop.NONE));
-gui.dropHistory(history);                            // until this is set, drops resolve and draw but commit nothing
 ```
 
 - **Sources are plural; resolution is singular.** A drag begun by the pointer and a cut carried in
-  hand resolve against the same targets, produce the same `Change`, and record in the same undo stack.
+  hand resolve against the same targets and land as the same message.
   The keyboard route is the pointer route with the position supplied by the selection instead of the
   mouse — which is why `gui.transfer(...)` (what is held for a paste) is one per `Gui` and not the OS
   clipboard: a typed payload has nowhere to ride across a process boundary.
@@ -240,11 +266,16 @@ gui.dropHistory(history);                            // until this is set, drops
   on purpose: it rules out the drop that works in some places and silently does nothing in others, so
   the user learns to hunt for the spot that "takes". `Drop.NONE` is a legitimate answer — the point is
   that it is an *answer*, chosen, rather than a gap nobody considered. It describes and never acts:
-  what is *shown* is what is performed on release, from the same resolution.
-- **Refusing is an ordinary answer.** A `Reorder<T>` returns the `Change` that puts an item at a
-  `Placement`, or null — dropping a folder inside itself, a read-only branch, a copy of an item that
-  cannot be duplicated. Refusing here means the user is told by the indicator *before* releasing
-  rather than by nothing happening afterwards.
+  what is *shown* is what lands on release, from the same resolution. Those are the widget library's seams
+  (`Seams`); an application's own widgets declare and announce, below.
+- **What is offered is declared; what lands is announced.** A tree is made `reorderable(MOVE)` (or `MOVE, COPY`),
+  and each `Entry` says whether it `acceptsChildren`. From that and what it can see, the tree refuses in the
+  frame: a folder dropped inside itself, a read-only branch, a move that leaves an item where it is, a copy in a
+  tree without one. The user is told by the indicator *before* releasing rather than by nothing happening
+  afterwards, and no application code runs while the pointer moves. A drop or a paste that is offered lands as
+  `TreeView.PLACED`; the application moves the item in its own model, records it in its own history, and sends
+  `TreeView.REFRESH`. What only the model knows (a name already taken there) it refuses when it hears it.
+  vexelray-framework's threading.md, T7.2 and T7.5, has why.
 - **A `Placement` is relative, never an index.** "After Q" survives an edit elsewhere; "under P at
   index 4" does not, and a reorder undone minutes later is not hypothetical.
 - **`DropIndicator`** is told *where* and decides only *how* — a bar on a seam, a ring around a box,
@@ -257,11 +288,11 @@ The same mechanism for things that are not rows — cards in a kanban, steps in 
 where the thing itself should leave its place and travel with the hand:
 
 ```java
-Board<Task> board = new Board<Task>(gui, task -> card(task))       // any node; the board moves that node
-        .motion((p, done) -> krono.ramp(Dur.ms(200), Ease.OUT_CUBIC, p, done));
-Deck<Task> todo = board.column().items(model.todo())
-        .reorderable((moved, where, effect) -> model.move(moved, TODO, where));   // a Change, or null
-model.onChange(() -> todo.items(model.todo()));    // every edit ends here, undo included
+Board<Task> board = new Board<Task>(gui, (n, task) -> card(n, task))   // any node; the board moves that node
+        .motion(Timing.millis(200, Timing.Curve.OUT_CUBIC));
+Deck<Task> todo = board.column().name("todo").items(model.todo()).reorderable();
+gui.mailbox(Deck.PLACED, todo.address(), p -> logic.send(new Move(p.item(), TODO, p.where())));
+// told the logic's new list, the view hands it over: todo.items(list). Every edit ends there, undo included
 ```
 
 - **Every state shows, and none of it in words.** Pressed, the card sinks into its lane and follows the
@@ -304,7 +335,7 @@ calling), so a page arrived at this way is in exactly the state it would be in h
 their way there. It is deliberately *not* synthesised input: input needs a place on screen to aim at,
 and half of what navigation does is make the target have one.
 
-`gui.reveals(node, reveal)` is the seam that lets navigation cross a tab panel, a collapsed branch or
+`Seams.of(gui).reveals(node, reveal)` is the seam that lets navigation cross a tab panel, a collapsed branch or
 a drawer without knowing what any of those are — the widgets that conceal things register their own,
 so an application needs this only for a container it wrote itself. An `Address` may name a window
 (`"prefs/theme.accent"`); one naming another window is *published* rather than walked, and `GuiApp`
@@ -321,20 +352,20 @@ gui.history(field.node(), field.history(), ClaimScope.FOCUSED);   // and the edi
 Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y, bound to a `History` and claimed at a scope. **Nesting needs nothing
 new**: claim precedence already says the specific binding wins while it applies, so Ctrl+Z undoes your
 typing while the caret is in a field and the last document command when it is not, with neither
-history knowing the other exists. A transfer records into `gui.dropHistory()` whichever way it was
-made, so a drop and a paste land in the same stack rather than in two that disagree about what "the
-last thing you did" was.
+history knowing the other exists. A drop or a paste is the application's edit, announced by the widget
+(`TreeView.PLACED`, `Deck.PLACED`), and the application records it where it records its other edits, so a drop
+and a paste land in the same stack whichever way they were made.
 
 ### Key bindings
 
 ```java
 Keymap keys = new Keymap(gui).persist(AppHome.of("editor").settings("keys"));
-keys.action("file.save", "Save", Shortcut.of(Key.S, Modifier.CONTROL)).on(this::save);
+keys.action("file.save", "Save", Shortcut.of(Key.S, Modifier.CONTROL)).sends(commands, new Save());
 titleBar.instruments(List.of(SaveScreenshot.instrument(), KeymapWindow.instrument(app, gui, keys)));
 ```
 
-Opt-in, in `vexelray-gui-keymap`. Each action replaces a `gui.shortcut(...)` and is the same `GLOBAL`
-claim, but the chord is the user's: the key button beside the screenshot opens a `KeymapEditor` (also a
+In `vexelray-gui-keymap`, and the one way an application binds a window-wide chord (`Gui.shortcut` went on
+2026-11-07). Each action is a `GLOBAL` claim, but the chord is the user's: the key button beside the screenshot opens a `KeymapEditor` (also a
 plain node, to embed anywhere), where pressing a new chord rebinds it — recorded through `gui.claimAny`,
 so Ctrl+S is recorded rather than saving. Within one place a chord reaches one action, and a rebind takes
 it from whoever had it and says so. Only what changed is stored, as text (`keys.text()`), so later
@@ -348,17 +379,17 @@ answer.
 
 ```java
 NodeLayout box = node.layout();                      // rect, content rect, scroll, overflow, corner radii, text metrics
-gui.onResize(node, computed -> repaint(computed));   // "my geometry is real now" — including the first time
-gui.layout();                                        // the whole snapshot, as bus State
+Seams.of(gui).onResize(node, computed -> repaint(computed));   // "my geometry is real now" — including the first time
+gui.layoutSnapshot();                                // the whole snapshot, read now
 gui.semanticSnapshot();                              // what each node *is*: role, name, structure, focus
 ```
 
 `onResize` is the seam that closes a silent failure mode: geometry used to be observable only by
 polling or by diffing the snapshot, so code that ran too early read `NodeLayout.ABSENT`, did nothing,
 reported nothing, and was never asked again. It is an observer rather than a one-shot, so the same
-registration covers every later resize, zoom and DPI change. `onResizeUi` is the same thing delivered
-inside the layout pass that produced it, for work that has to land in the same frame — measure, mutate
-a handle, return; anything that computes belongs on the plain one. Only a change of *box* fires it, so
+registration covers every later resize, zoom and DPI change. It is delivered inside the publish after the
+layout that produced it, so the work lands in the same frame and must be short: measure, mutate a handle,
+return. Only a change of *box* fires it, so
 scrolling a container does not. See [docs/reference/layout-read-model.md](docs/reference/layout-read-model.md) and
 [docs/reference/semantic-read-model.md](docs/reference/semantic-read-model.md).
 
@@ -384,8 +415,8 @@ The controls themselves:
 - **`Slider`** — a dragged track with a lit, elevated thumb; `value()`/`onChange`.
 - **`Toggle`** — a switch, and literally a two-valued slider: two grow-weighted spacers split the free space in
   the ratio `on : (1-on)`, so the knob lands flush at either end at any track width and any DPI, with no pixel
-  arithmetic to keep in step with the geometry. The crossing is a `Ramp` — installed or not by the application,
-  and with none installed the knob simply appears at the other end, which is both what a switch did before there
+  arithmetic to keep in step with the geometry. The crossing is a `Timing` — given or not by the application,
+  and with none given the knob simply appears at the other end, which is both what a switch did before there
   was motion and the whole of the reduced-motion path.
 - **`NumberField`** — a `TextField` that only ever hands out a number. **What is on screen and what has been
   agreed are two different things**: `-1.` and a bare `-` are each halfway to a real number, so a field that
@@ -413,9 +444,10 @@ The controls themselves:
 - **`SplitPane`** — two panes and a draggable divider, side by side or stacked. **One pane has the size and the
   other takes the rest** (`sized(Pane)`), so a resized window moves the far edge and leaves the divider where the
   user put it. Read as a displacement, like `Table`'s grip; `onResize` reports the size in dp for `WindowMemory`.
-- **`ListView.marked` / `looks`** — a row can be *marked* without being selected: a search hit, a file a suggestion
+- **`ListView.marks` / `looks`** — a row can be *marked* without being selected: a search hit, a file a suggestion
   would reach, a row that differs from the other folder. A mark is a fact that is not a choice, so previewing one
-  does not have to be undone. `Table.headers(face, size, ink)` styles the column titles and `Table.onSort` says when
+  does not have to be undone. The marks are told as a set, the whole of it each time it changes, not asked of a
+  predicate in the frame. `Table.headers(face, size, ink)` styles the column titles and `Table.onSort` says when
   the order changed, however it changed.
 - **`Select<T>`** — the other end of the same choice: one line high whatever the list holds, with the
   alternatives a click away. A closed strip over a floating `ListView`, so a select over ten thousand values
@@ -445,11 +477,13 @@ The controls themselves:
   takes, for the same reason. Two consequences worth stating: the **value column belongs to the inspector**, not
   to the row — it is reserved for every row and handed to the property as a `Readout`, because a column that
   appeared only where there was something to put in it would move the controls beside it as values came and
-  went; and factories take a **supplier and a consumer, not a value and a callback**, so the model stays the
-  truth and `refresh()` re-reads it after a preset, a keystroke or a fit changed it elsewhere. Sections are
-  declared, never sorted: the order on screen is the order in the source. `card(...)` is the other shape — a
-  heading with a switch and a badge over a body of rows that folds away — which is here rather than in an
-  application because a layer list is the same thing every time. `motion(ramp)` gives the knobs of the switches
+  went; and **a row holds no getter or setter onto the model**: each has an id, the values arrive as one
+  message (`Values` on `Inspector.VALUES`) and are shown, never echoed, and what the user changes leaves as
+  `Edited(inspector, property, value)` on `Inspector.EDITED`, so the model stays the application's, on its own
+  thread. A value told before its row exists is shown when the row is built. Sections are declared, never
+  sorted: the order on screen is the order in the source. `card(id, title, badge)` is the other shape — a
+  heading with a switch, told and edited like a row, and a badge, over a body of rows that folds away — which is
+  here rather than in an application because a layer list is the same thing every time. `motion(ramp)` gives the knobs of the switches
   the panel builds itself — a card head's, a `flag` row's — their time, offered to every row the same way the
   `Readout` is (`Property.motion`, default: ignore it), so a row with nothing to animate is not asked to have
   any and a panel says it once rather than per row.
@@ -460,11 +494,11 @@ The controls themselves:
   on its side**: a tab bar asks *which of these documents am I looking at*, so one is always selected; a rail
   asks *which tool am I holding*, so **none** is a legitimate answer and clicking the selected icon puts the
   panel away. That state is the reason it is its own widget rather than an orientation flag on the other one —
-  the work is the canvas, and the panel is on loan from it. Pages are builders, built the first time they are
-  shown and kept thereafter (a rebuilt page would come back drawing correctly and unable to take a keystroke,
+  the work is the canvas, and the panel is on loan from it. A page is built by the view the first time it is
+  shown, when `Rail.OPENED` says so, into `rail.page(key)`, in the widget tick of that frame, and kept thereafter (a rebuilt page would come back drawing correctly and unable to take a keystroke,
   since registrations are keyed by node id and released when a node leaves the tree). The icons keep their
   places whether the panel is open or shut and the panel takes its space from the content, so nothing appears,
-  grows or shifts under the pointer. A `PanelTransition` (`Rail.fade`, `Rail.slide`, or the application's own)
+  grows or shifts under the pointer. Its motion (`rail.fade(timing)`, `rail.slide(timing, travel)`)
   is where the *none* state costs something the other widget never pays: a panel on its way out has to still be
   there while it goes, so **hiding it is the last thing that happens, not the first** — and `onSelect` is told at
   the moment the selection changes rather than after the panel has gone, which is what lets a handler move
@@ -476,7 +510,7 @@ The controls themselves:
   (Up/Down/Left/Right/Home/End/PageUp/PageDown/Enter).
 - **`Board<T>` / `Deck<T>`** — cards the user picks up, carries and puts down: within a column, and between the
   columns (`Deck`s) of one board. The application says what a card looks like (any node — the board moves that
-  same node everywhere it goes) and what a placement means (a `Reorder<T>`, as for the tree); the board does the
+  same node everywhere it goes) and what a placement means (it hears `Deck.PLACED`, as a tree's application hears `TreeView.PLACED`); the board does the
   rest, and **nothing on screen ever jumps** doing it. See *Cards* under Transfer above.
 - **`ListView<T>`** — a list whose retained tree holds **viewport-many rows however long the list is**.
   Three children, always: a top spacer, the realized rows, a bottom spacer. The spacers stand in for
@@ -485,6 +519,10 @@ The controls themselves:
   end does not walk the list into existence. Rows that stay in the window are *kept*, not rebuilt: a
   scroll of one row builds one row. Row height is uniform and stated in `rem`, which is what makes the
   offset→index map O(1) and keeps the rows zooming with everything else.
+  **A row is drawn by a `Face<T>`, `(nodes, item) -> Node`**, which is handed a `Nodes` and never the `Gui`: boxes,
+  text, icons, the theme, and `nodes.button(icon, label, action, enabled)`, a control whose press arrives as
+  `Chosen(list, action, item)` on `ListView.CHOSEN`. A face runs whenever a row scrolls in, so it may draw and
+  nothing else: no bus, no mailbox, no clipboard. `Table.Column`'s cells and `Board`'s cards are `Face`s too.
 - **`Table<T>`** — a `ListView` body under a sticky header, with columns the user can resize and sort
   by. A column width is a constraint *between siblings' children*, which is the cross-tree solve the
   layout engine deliberately does not do, so the table does it itself in the shape that decision
@@ -511,7 +549,7 @@ The controls themselves:
   out from under it.
 - **`Cue` / `Cues`** — one-shot feedback on a node: `cues.play(field.node(), Cue.scanline(accent))`
   after a submit, `Cue.ring(danger)` on a refusal, `Cue.wash(...)` when something changed
-  programmatically. A cue is a pure `(progress, box) -> Picture`; a `Ramp` says when. What `Cues` owns
+  programmatically. A cue is a pure `(progress, box) -> Picture`; a `Timing` says how long. What `Cues` owns
   is only that **the box comes back clean**: a cue paints into the node's overlay slot, whose identity
   value is null, so settling is `overlay(null)` and there is no resting value to guess wrong — which
   is what lets a cue be played on a node it did not build. One cue per node, superseding rather than
@@ -532,11 +570,13 @@ The controls themselves:
   and never interprets, so a module it has never heard of can contribute one. Opt-in, and
   *framework*-owned on purpose: the moment an application puts its own button in a caption, the strip
   is application-addressable and no instrument can rely on the space existing from one window to the
-  next. An application contributes identity to a title bar, never controls.
+  next. An application contributes identity to a title bar, and its own commands only as **menus** after the lockup
+  (`TitleBar.menu`, a `Menu` of messages), a menu bar that never reaches the caption, the badges or the controls.
 - **`Popout`** — a panel docked against one edge of the window, collapsible to a rail and poppable out into a
   window of its own. Docked, it is an ordinary child of the host tree: the host's content shrinks by exactly
   its width, and it clips and scrolls with the window. Popping out is **not** a reparent — a `Node` belongs to
-  the tree that minted it — so the content is declared as a builder and run once per tree, both instances then
+  the tree that minted it — so the view builds the content once per tree: into `body()` when it builds the panel,
+  and into `awayBody()`, against `away()`, when `Popout.POPPED` says it was first popped. Both instances are then
   hidden rather than removed. Collapsed and popped-out leave the same footprint, the rail carrying the control
   that undoes it; a `Reveal` makes a landmark inside the panel reachable, docking it back if it was out. The
   window is a named `AppWindow` wearing the application's own `TitleBar` (`Decorations.CLIENT`), with the dock
@@ -545,11 +585,9 @@ The controls themselves:
 - **`Tooltip`** — hover help that is admissible under the hover rule by construction: the bubble is
   `hitInert` (drawn, never a pointer target), anchored to the control's box (never follows the
   pointer), and coexists with the control's own hover restyle because state observers accumulate.
-  `attach(target, Supplier<String>)` is for help that is a fact about *the moment* rather than about the
-  control — a swatch saying which colour it currently holds, a button saying why it is unavailable now. The
-  supplier is asked once per hover, at the moment the bubble would show, exactly as a context menu's source is
-  asked once per click; null or blank shows nothing. It exists so that there is never a reason to re-attach,
-  which would silently add a second observer.
+  Attaching again changes what a target says, on the one observer it already has, so help that is a fact about
+  *the moment* — a button saying why it is unavailable now — is told when it changes, as a label is; null or blank
+  shows nothing. The text is data: a function asked at hover would be the caller's code in the frame.
 
 The demo is a **gallery**: a navigation rail, a page, and an activity rail, with one
 [chapter](vexelray-gui-demo/src/main/java/dev/vexelray/gui/demo/Chapter.java) per part of the
@@ -573,7 +611,7 @@ or `.overlay(p)` (over the node, its border, its text and its children).
 
 ```java
 Node figure = gui.box().width(Length.FILL).height(Length.rem(12));
-gui.onResize(figure, computed -> figure.picture(chart(computed.rect())));   // pixels, so re-author per box
+Seams.of(gui).onResize(figure, computed -> figure.picture(chart(computed.rect())));   // pixels, so re-author per box
 ```
 
 **Why a picture rather than more nodes.** Before this there were two options: one node per mark, or a
@@ -626,21 +664,31 @@ the bottom row is three *rasterisations* of one SVG rather than one bitmap scale
 
 ## Motion
 
-Motion is opt-in everywhere, and the seam is one interface: a **`Ramp`** drives `progress` over
-`[0,1]` and calls `done`. That is deliberately clock-free — `-widget` names no clock, because a clock
-enters at the application edge — so `-krono` satisfies it without either module knowing the other
-exists, and the reduced-motion path is simply not calling it.
+Motion is opt-in everywhere, and what a view says is a tempo: a **`Timing`**, a duration and a curve. The widget
+runs it on its tree's **clock**, which the host installs (`Seams.clock`) and `-krono` provides when it attaches, so
+`-widget` names no clock and a view runs no code over time (vexelray-framework's threading.md, T7.2). With no
+clock, or with motion reduced, a timing lands at once.
 
 ```java
-Ramp quick = (p, done) -> krono.ramp(ms(200), Ease.LINEAR, p, done);
-tabs.transition(Tabs.slide(quick));
-rail.transition(Rail.slide(quick, -1.5f));   // sign: which edge the rail is against
-inspector.motion(quick);                     // every switch the panel built itself
-Cues cues = new Cues((p, done) -> krono.ramp(ms(240), Ease.LINEAR, p, done));
+Timing quick = Timing.millis(200, Timing.Curve.LINEAR);
+tabs.slide(quick);
+rail.slide(quick, -1.5f);      // sign: which edge the rail is against
+inspector.motion(quick);       // every switch the panel built itself
+Cues cues = new Cues(gui, Timing.millis(240, Timing.Curve.LINEAR));
 ```
 
-Which is the shape the seam is *for*: one ramp, declared once at the application edge, handed to
-every widget that has something to move. Reduced motion is then one place — hand out nothing.
+One tempo, declared once, handed to every widget that has something to move.
+
+A view that draws something of its own and wants it to move takes a **`Tween`**: a position from rest (0) to
+arrived (1) that eases towards whatever it is sent to and announces each step on `Tween.VALUE`, addressed to it. The
+view sends it somewhere and hears where it is, in its mailbox, where it redraws; the code that runs in the frame is the
+tween's. Sent somewhere new halfway, it turns from where it is, in the part of the timing the distance left needs.
+
+```java
+Tween lift = Tween.of(gui, "lens.lift", Timing.millis(160, Timing.Curve.OUT_CUBIC));
+gui.mailbox(Tween.VALUE, lift.address(), t -> paint(t.value()));
+lift.toward(hovered ? 1f : 0f);
+```
 
 **`vexelray-gui-krono`** attaches [Kronometer](https://github.com/sibarum/kronometer) to the frame
 loop rather than replacing it: `KronoGui.attach(gui)`, ticked from `GuiApp.run`'s `beforeFrame` hook,
@@ -649,7 +697,7 @@ drawn out of phase with what was computed. `krono.bind(card, Node::elevation, kr
 property from a signal; `krono.animate(...)` is callable from a click handler, which is not on the
 timeline, because every scheduling method routes through `onTimeline`.
 
-A ramp must deliver both endpoints exactly, and the last one on a frame that is actually presented: a
+A clock must deliver both endpoints exactly, and the last one on a frame that is actually presented: a
 consumer that never sees 0 begins by jumping to wherever the first sample landed, and one that tears
 down on arrival runs in the same batch as the final sample unless something separates them.
 

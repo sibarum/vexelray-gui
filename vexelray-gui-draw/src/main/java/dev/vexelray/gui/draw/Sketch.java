@@ -99,6 +99,16 @@ public final class Sketch {
         return add(new Picture.Text(text, x, y, sizePx, color, tag));
     }
 
+    /**
+     * A drawing in signed distance graphics fitted into the box at {@code (x, y)}, its aspect kept: an emblem on a
+     * diagram, a symbol on a plot. {@code drawing} and {@code pages} as {@link Picture.Sink#drawing} has them; in a
+     * GUI, an {@code ImageSdg}'s {@code source()} and {@code pages()}, kept while it is shown.
+     */
+    public Sketch drawing(double x, double y, double w, double h, dev.vexelray.fields.sdg.Sdg drawing,
+                          java.util.List<? extends dev.vexelray.target.ImageHandle> pages) {
+        return add(new Picture.Drawing(x, y, w, h, drawing, pages, tag));
+    }
+
     // --- composition ----------------------------------------------------------------------------------------
 
     /** Add an authored mark as it is — including a kind this builder has no method for. Its own tag is kept. */

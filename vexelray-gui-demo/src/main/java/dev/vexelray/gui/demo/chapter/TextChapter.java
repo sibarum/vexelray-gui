@@ -1,5 +1,6 @@
 package dev.vexelray.gui.demo.chapter;
 
+import dev.vexelray.gui.core.Timing;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.edit.History;
@@ -13,7 +14,6 @@ import dev.vexelray.gui.demo.Stage;
 import dev.vexelray.gui.demo.Ui;
 import dev.vexelray.gui.widget.Cue;
 import dev.vexelray.gui.widget.Cues;
-import dev.vexelray.gui.widget.Ramp;
 import dev.vexelray.gui.widget.TextField;
 import dev.vexelray.canvas.Color;
 import sibarum.kronometer.Dur;
@@ -78,8 +78,8 @@ public final class TextChapter implements Chapter {
                 Span.underline(39, 47),                                 // "messages"
                 Span.background(61, 65, theme.color(Role.LINE))));      // "flex"
 
-        // The history is the field's own. Reading it is a subscription rather than a poll: the status commits
-        // when it changes and not once per frame, so a counter that is right is also a counter that is free.
+        // The window's history, which the field records into. Hearing it is a mailbox rather than a poll: the status is
+        // announced when it changes and not once per frame, so a counter that is right is also a counter that is free.
         History history = notes.history();
         Node counter = Ui.label(gui, "", Length.FILL);
         java.util.function.Consumer<History.Status> show = s -> {
@@ -87,12 +87,10 @@ public final class TextChapter implements Chapter {
                     s.undoDepth(), s.redoDepth(), s.clean() ? "clean" : "modified"));
             counter.textColor(s.clean() ? Role.FAINT : Role.DIM);
         };
-        history.status().onCommit(v -> show.accept(v.value()));
-        // Subscribing says what happens *next*; the counter also has to be right before anything has happened,
-        // which is a read of the value the state already holds. A subscription that also replayed its current
-        // value on registration would remove this line, and would mean every observer had to be ready to be
-        // called during its own construction.
-        show.accept(history.status().value());
+        gui.mailbox(History.STATUS, gui.address(History.ADDRESS), c -> show.accept(c.status()));
+        // The mailbox says what happens *next*; the counter also has to be right before anything has happened, which
+        // is a read of the status the history already holds.
+        show.accept(history.status());
 
         // A single-line field, and the three moments a field has to be able to report. Acceptance is a scanline
         // sweeping the field that took the command; a write the user did not cause is a wash, because that is
@@ -103,7 +101,7 @@ public final class TextChapter implements Chapter {
         Cue written = Cue.wash(Color.withAlpha(theme.color(Role.ACCENT), 0.5f));
         Cue rejected = Cue.ring(theme.color(Role.DANGER))
                 .with(Cue.wash(Color.withAlpha(theme.color(Role.DANGER), 0.45f)));
-        Ramp insistent = (progress, done) -> stage.krono().ramp(Dur.ms(650), Ease.LINEAR, progress, done);
+        Timing insistent = Timing.millis(650, Timing.Curve.LINEAR);
 
         TextField line = new TextField(gui, "type here, Enter to log — long text scrolls and is masked at the edge");
         line.node().width(Length.grow(1));
@@ -111,7 +109,8 @@ public final class TextChapter implements Chapter {
                 Span.foreground(0, 4, theme.color(Role.ACCENT)),        // "type"
                 Span.background(5, 9, theme.color(Role.LINE)),          // "here"
                 Span.underline(11, 16)));                               // "Enter"
-        line.onSubmit(s -> {
+        gui.mailbox(TextField.SUBMITTED, line.address(), submitted -> {
+            String s = submitted.text();
             if (s.isBlank()) {
                 cues.play(line.node(), rejected, insistent);
                 console.refused("nothing to submit");

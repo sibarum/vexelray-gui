@@ -13,6 +13,7 @@ import dev.vexelray.gui.demo.Ui;
 import dev.vexelray.gui.icons.Icon;
 import dev.vexelray.gui.icons.IconView;
 import dev.vexelray.gui.krono.Scheduled;
+import dev.vexelray.gui.widget.Button;
 import dev.vexelray.gui.widget.IconButton;
 import dev.vexelray.gui.widget.Tooltip;
 import sibarum.kronometer.Dur;
@@ -83,22 +84,24 @@ public final class IconsChapter implements Chapter {
 
         // Buttons that are one icon, and toggles whose on state is the same drawing, lit.
         IconButton play = new IconButton(gui, Icon.PLAY, "Play").toggle(true).tip("Play (Space)");
-        play.onPress(() -> {
+        gui.mailbox(Button.PRESSED, play.address(), p -> {
             boolean now = !play.on();
-            play.on(now).icon(now ? Icon.PAUSE : Icon.PLAY).name(now ? "Pause" : "Play");
+            play.on(now).icon(now ? Icon.PAUSE : Icon.PLAY).label(now ? "Pause" : "Play");
             console.say(now ? "playing" : "paused");
         });
         IconButton pin = new IconButton(gui, Icon.PIN_UP, "Keep shown").toggle(true).tip("Keep shown");
-        pin.onPress(() -> {
+        gui.mailbox(Button.PRESSED, pin.address(), p -> {
             boolean now = !pin.on();
             pin.on(now).icon(now ? Icon.PIN_DOWN : Icon.PIN_UP);
         });
+        IconButton step = new IconButton(gui, Icon.STEP, "Step").tip("Step (.)");
+        IconButton reset = new IconButton(gui, Icon.RESET, "Reset").tip("Reset (R)");
+        IconButton trash = new IconButton(gui, Icon.TRASH, "Delete").hover(Role.DANGER);
+        gui.mailbox(Button.PRESSED, step.address(), p -> console.say("step"));
+        gui.mailbox(Button.PRESSED, reset.address(), p -> console.say("reset"));
+        gui.mailbox(Button.PRESSED, trash.address(), p -> console.say("delete"));
         Node buttons = gui.row().gap(Length.rem(0.5f)).alignItems(AlignItems.CENTER).scroll(false, false).children(
-                play.node(), pin.node(),
-                new IconButton(gui, Icon.STEP, "Step").tip("Step (.)").onPress(() -> console.say("step")).node(),
-                new IconButton(gui, Icon.RESET, "Reset").tip("Reset (R)").onPress(() -> console.say("reset")).node(),
-                new IconButton(gui, Icon.TRASH, "Delete").hover(Role.DANGER).onPress(() -> console.say("delete"))
-                        .node());
+                play.node(), pin.node(), step.node(), reset.node(), trash.node());
 
         // A turn, which a field takes without losing an edge: a spinner is the busy arc and a clock.
         IconView busy = IconView.of(gui, Icon.BUSY).size(Length.dp(28)).tint(Role.ACCENT);

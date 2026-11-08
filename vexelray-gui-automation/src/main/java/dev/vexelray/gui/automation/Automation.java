@@ -1,8 +1,8 @@
 package dev.vexelray.gui.automation;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.WindowControls;
-import dev.vexelray.gui.core.input.InputTopics;
 import dev.vexelray.gui.core.layout.LayoutSnapshot;
 import dev.vexelray.gui.core.layout.NodeLayout;
 import dev.vexelray.gui.core.layout.Rect;
@@ -146,7 +146,7 @@ public final class Automation implements Commands {
         // Waking, because this host loop is entitled to be parked: injected input is neither a mutation nor an
         // OS event, so it is the one reason a frame can be owed that nothing else reports. See
         // Gui.wakeForInput, and §6's promise that this module has no interesting failure modes of its own.
-        this.cursor = new Cursor(gui.bus(), gui::wakeForInput);
+        this.cursor = new Cursor(gui, gui::wakeForInput);
     }
 
     private static java.util.function.Supplier<WindowControls> constant(WindowControls controls) {
@@ -195,7 +195,7 @@ public final class Automation implements Commands {
         releaseHeldKeys();
         synchronized (this) {
             if (hostWarp != null) {
-                gui.onPointerWarp(hostWarp);
+                Seams.of(gui).onPointerWarp(hostWarp);
                 hostWarp = null;
             }
         }
@@ -211,8 +211,8 @@ public final class Automation implements Commands {
      */
     private synchronized void holdPointer() {
         if (hostWarp == null) {
-            hostWarp = gui.pointerWarp();
-            gui.onPointerWarp(cursor::carry);
+            hostWarp = Seams.of(gui).pointerWarp();
+            Seams.of(gui).onPointerWarp(cursor::carry);
         }
     }
 
@@ -535,7 +535,7 @@ public final class Automation implements Commands {
         long deadline = System.nanoTime() + SETTLE_TIMEOUT_MS * 1_000_000L;
         java.util.concurrent.Semaphore published = new java.util.concurrent.Semaphore(0);
         String why;
-        try (var sub = gui.layout().onCommit(v -> published.release())) {
+        try (var sub = Seams.of(gui).layout().onCommit(v -> published.release())) {
             // Subscribed before the condition is read, never after: the frame carrying the scroll can land in
             // between, and layout does not republish when nothing has moved — so a wait armed afterwards is a
             // wait for a commit that is never coming again.
@@ -626,7 +626,37 @@ public final class Automation implements Commands {
         int[] to = target(args[1]);
         cursor.moveTo(from[0], from[1]);
         cursor.drag(to[0], to[1], MouseButton.LEFT);
-        return "ok " + cursor.x() + "," + cursor.y();
+        String down = putDown();
+        return down != null ? down : "ok " + cursor.x() + "," + cursor.y();
+    }
+
+    /**
+     * Put down what the release just let go of, if it is still in hand: the end of a {@code drag}, which is a move
+     * from one place to another and not a pick-up.
+     *
+     * <p>Under {@code DragRelease.KEEP}, the default, letting go of the button keeps the thing with the pointer and the
+     * next left click puts it down (docs/reference/transfer.md §13), so a {@code drag} that only released left every
+     * script's carry in the air. This is that click, where the release was, as a person's hand would make it. Under
+     * {@code DROP} the release already put it down and nothing is in hand to click for. Waits for the frame that
+     * dispatched the release first, since that frame decides which it was, and is the frame that shows the carry: a
+     * drop with no frame between it and the pick-up is one the user never saw, and commits nothing.
+     *
+     * <p>{@code down} and {@code up} do not do this. They are for looking at a gesture part-way, and a latched carry is
+     * one of the parts.
+     *
+     * @return {@code null} once nothing is in hand, or the refusal if the loop would not catch up
+     */
+    private String putDown() {
+        String loop = settleLoop();
+        if (loop != null) {
+            return loop;
+        }
+        dev.vexelray.gui.core.drop.DragState held = Seams.of(gui).drag().value();
+        if (!held.active() || !held.latched()) {
+            return null;
+        }
+        cursor.click(cursor.x(), cursor.y());
+        return settleLoop();
     }
 
     /**
@@ -731,7 +761,7 @@ public final class Automation implements Commands {
     }
 
     private void touchpad(List<TouchpadContact> contacts) {
-        gui.bus().publish(InputTopics.INPUT, new InputEvent.TouchpadChanged(contacts, System.nanoTime()));
+        gui.bus().publish(gui.input(), new InputEvent.TouchpadChanged(contacts, System.nanoTime()));
         gui.wakeForInput();
     }
 
@@ -752,7 +782,7 @@ public final class Automation implements Commands {
      */
     private String type(String text) {
         text.codePoints().forEach(cp -> {
-            gui.bus().publish(InputTopics.INPUT, new InputEvent.CharTyped(cp, 0));
+            gui.bus().publish(gui.input(), new InputEvent.CharTyped(cp, 0));
             gui.wakeForInput();
             if (Probe.ON) {
                 Probe.mark(Lane.INPUT, "type", new String(Character.toChars(cp)));
@@ -968,12 +998,12 @@ public final class Automation implements Commands {
     }
 
     private void press(Key k) {
-        gui.bus().publish(InputTopics.INPUT, new InputEvent.KeyPressed(k, 0));
+        gui.bus().publish(gui.input(), new InputEvent.KeyPressed(k, 0));
         gui.wakeForInput();
     }
 
     private void release(Key k) {
-        gui.bus().publish(InputTopics.INPUT, new InputEvent.KeyReleased(k, 0));
+        gui.bus().publish(gui.input(), new InputEvent.KeyReleased(k, 0));
         gui.wakeForInput();
     }
 
@@ -1004,7 +1034,8 @@ public final class Automation implements Commands {
      * frame owed is not settled, and answering at once is how a panel was photographed part-way through its
      * transition and reported {@code ok}. Then the loop once more, because the tick that finished the motion
      * posted its last frame's worth of mutations. A timeline that never goes quiet — a repeating cue — is
-     * reported by name rather than waited out.
+     * reported by name rather than waited out. A loop still owed at its bound while the timeline is busy goes on to
+     * this wait rather than refusing: motion owes a frame at every step, so motion longer than the bound keeps it owed.
      *
      * <p><b>What it cannot see</b> is work the application started for itself — on {@code Gui.async}, on a
      * thread of its own — which is not the loop's debt ({@link Gui#frameOwed()} says so from the other side).
@@ -1013,11 +1044,12 @@ public final class Automation implements Commands {
      */
     public String settle() {
         String loop = settleLoop();
-        if (loop != null) {
-            return loop;
-        }
+        // A loop still owed when the timeline is busy is owed by the motion: each step of a tween posts the next
+        // frame's mutations, so the debt never reaches zero until the motion ends. That is the timeline's wait, under
+        // the timeline's bound, not a loop that failed to catch up. About's 2.8-second intro used to fail here, and
+        // only when an earlier settle had not already sat through most of it.
         if (timeline.quiet()) {
-            return "ok v" + gui.semanticSnapshot().version();
+            return loop != null ? loop : "ok v" + gui.semanticSnapshot().version();
         }
         String clock = settleTimeline();
         if (clock != null) {
@@ -1114,7 +1146,7 @@ public final class Automation implements Commands {
         // Subscribed before the first look, or the publish that satisfies the wait can land in the gap between
         // looking and subscribing -- and then nothing further is published, and the wait runs to its timeout
         // having been true the whole time.
-        try (var sub = gui.layout().onCommit(v -> published.release())) {
+        try (var sub = Seams.of(gui).layout().onCommit(v -> published.release())) {
             while (true) {
                 String name = named(landmark);
                 if (name != null && name.toLowerCase(Locale.ROOT).contains(needle)) {
@@ -1157,7 +1189,7 @@ public final class Automation implements Commands {
     private String awaitExists(String landmark) {
         long deadline = System.nanoTime() + AWAIT_TIMEOUT_MS * 1_000_000L;
         java.util.concurrent.Semaphore published = new java.util.concurrent.Semaphore(0);
-        try (var sub = gui.layout().onCommit(v -> published.release())) {
+        try (var sub = Seams.of(gui).layout().onCommit(v -> published.release())) {
             while (true) {
                 SemanticNode n = landmarked(landmark);
                 if (n != null) {
@@ -1198,8 +1230,8 @@ public final class Automation implements Commands {
      * Everything {@link #zoom}, {@link #dpi} and {@link #resize} can change, read back in one line.
      */
     public String size() {
-        float zoom = gui.zoom().value();
-        float dpi = gui.dpi().value();
+        float zoom = Seams.of(gui).zoom().value();
+        float dpi = Seams.of(gui).dpi().value();
         WindowControls controls = this.controls.get();
         return "ok " + controls.width() + "x" + controls.height() + " zoom=" + number(zoom) + " dpi=" + number(dpi)
                 + " em=" + number(gui.rootEmPx() * zoom * dpi) + "px";
@@ -1215,12 +1247,12 @@ public final class Automation implements Commands {
      */
     private String zoom(String rest) {
         if (rest.isBlank()) {
-            return "ok zoom=" + number(gui.zoom().value());
+            return "ok zoom=" + number(Seams.of(gui).zoom().value());
         }
         float asked = factor(rest, "zoom");
         gui.zoom(asked);
         String failed = relayout();
-        float got = gui.zoom().value();
+        float got = Seams.of(gui).zoom().value();
         return failed != null ? failed : "ok zoom=" + number(got) + clampNote(asked, got, "zoom");
     }
 
@@ -1233,12 +1265,12 @@ public final class Automation implements Commands {
      */
     private String dpi(String rest) {
         if (rest.isBlank()) {
-            return "ok dpi=" + number(gui.dpi().value());
+            return "ok dpi=" + number(Seams.of(gui).dpi().value());
         }
         float asked = factor(rest, "dpi");
         gui.dpi(asked);
         String failed = relayout();
-        float got = gui.dpi().value();
+        float got = Seams.of(gui).dpi().value();
         return failed != null ? failed : "ok dpi=" + number(got) + clampNote(asked, got, "dpi");
     }
 
@@ -1294,7 +1326,7 @@ public final class Automation implements Commands {
             return "err resize needs a width and a height, like 1024x768 or 46em 30em";
         }
         String[] parts = {m.group(1), m.group(2)};
-        float em = gui.rootEmPx() * gui.zoom().value() * gui.dpi().value();
+        float em = gui.rootEmPx() * Seams.of(gui).zoom().value() * Seams.of(gui).dpi().value();
         int w = pixels(parts[0], em);
         int h = pixels(parts[1], em);
         controls.resize(w, h);
@@ -1576,7 +1608,7 @@ public final class Automation implements Commands {
             "move <ref|x,y>           travel there (hover happens on the way)",
             "click <ref|x,y>          travel there, then press and release",
             "rightclick <ref|x,y>     the same, with the right button",
-            "drag <ref|x,y> <ref|x,y> press, travel, release",
+            "drag <ref|x,y> <ref|x,y> press, travel, release, and put down",
             "down <ref|x,y>           travel there and press, and hold: move and shot keep it held",
             "up [ref|x,y]             let go, where the pointer is or after travelling there",
             "scroll <ref|x,y> dx dy   wheel notches there",

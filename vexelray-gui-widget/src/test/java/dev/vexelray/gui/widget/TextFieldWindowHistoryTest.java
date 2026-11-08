@@ -1,5 +1,6 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.edit.Outcome;
 import dev.vexelray.gui.core.edit.UndoEvent;
@@ -31,7 +32,7 @@ class TextFieldWindowHistoryTest {
 
         Two() {
             h.gui.history(window);
-            h.gui.onUndo(events::add);
+            Seams.of(h.gui).onUndo(events::add);
             h.gui.root().children(h.gui.column().width(Length.FILL).children(a.node(), b.node()));
             h.frame();
         }

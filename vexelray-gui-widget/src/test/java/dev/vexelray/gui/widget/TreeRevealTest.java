@@ -19,10 +19,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * children do not exist until its fetch has landed, so a caller that merely asked for the levels in turn would
  * find the deepest missing every time.
  *
- * <p>Everything here runs on {@link HeadlessGui}'s same-thread handler executor, so the walk that a live
- * application pays for off the frame loop happens inline, in the order it would happen in anyway.
+ * <p>The levels are answered by a {@link Listing}, inline, and each reply lands in a frame: the walk goes on from a
+ * level in the frame after its reply, so a reveal takes a frame per level it has to ask for.
  */
 class TreeRevealTest {
+
+    /** Frames enough for the deepest chain here: one per level the walk may have to ask for, and the roots'. */
+    private static final int LEVELS = 4;
 
     /** Deep enough that a reveal has to open more than one level to get to the bottom of it. */
     private static final Map<String, List<String>> KIDS = Map.of(
@@ -32,7 +35,7 @@ class TreeRevealTest {
             "test", List.of("AppTest.java"),
             "docs", List.of());
 
-    private static final class MapSource implements TreeView.Source<String> {
+    private static final class MapSource implements Listing<String> {
         final AtomicInteger fetches = new AtomicInteger();
 
         @Override
@@ -61,12 +64,12 @@ class TreeRevealTest {
     void revealOpensEveryLevelOnTheWayAndSelectsTheEnd() {
         try (HeadlessGui h = new HeadlessGui()) {
             MapSource source = new MapSource();
-            TreeView<String> tree = new TreeView<>(h.gui, source);
+            TreeView<String> tree = Listing.tree(h, source);
             h.gui.root().children(tree.node());
             h.frame();
 
-            tree.revealPath(List.of("src", "main", "java", "App.java"), null);
-            h.frame();
+            tree.revealPath(List.of("src", "main", "java", "App.java"));
+            h.frames(LEVELS);
 
             assertEquals("App.java", tree.selected(), "the walk lands on the row the chain ends at");
             assertNotNull(tree.rowNode("App.java"), "a selected row is one that was built");
@@ -75,47 +78,19 @@ class TreeRevealTest {
         }
     }
 
-    /**
-     * The reason this is a walk and not three {@link TreeView#expand} calls, against a harness that defers
-     * handlers the way a live application's worker pool does: expand is a no-op on an item whose row does not
-     * exist yet, and nothing below the first level exists until its parent's fetch has landed. Asked for in a
-     * row, the three calls reach exactly one level down and the other two find nothing to open.
-     */
-    @Test
-    void expandingTheLevelsInsteadWouldNeverReachTheBottom() {
-        try (HeadlessGui h = HeadlessGui.manual()) {
-            MapSource source = new MapSource();
-            TreeView<String> tree = new TreeView<>(h.gui, source);
-            h.gui.root().children(tree.node());
-            h.frame();
-
-            tree.expand("src");
-            tree.expand("main");
-            tree.expand("java");
-            h.tasks.drain();
-            h.frame();
-
-            assertNotNull(tree.rowNode("main"), "the one level whose row existed when it was asked for");
-            assertNull(tree.rowNode("App.java"), "expand cannot reach past the level it opened");
-            tree.close();
-        }
-    }
-
-    /** The same three levels, as one walk: it blocks on each fetch, so the deepest row is there when it ends. */
+    /** Three levels, as one walk that waits for each fetch, so the deepest row is there when it ends. */
     @Test
     void theWalkIsOneTaskThatWaitsForEachLevelItOpens() {
-        try (HeadlessGui h = HeadlessGui.manual()) {
+        try (HeadlessGui h = new HeadlessGui()) {
             MapSource source = new MapSource();
-            TreeView<String> tree = new TreeView<>(h.gui, source);
+            TreeView<String> tree = Listing.tree(h, source);
             h.gui.root().children(tree.node());
             h.frame();
 
-            tree.revealPath(List.of("src", "main", "java", "App.java"), null);
-            assertNull(tree.rowNode("main"), "nothing has run yet: the walk is a handler like any other");
-            h.tasks.drain();
-            h.frame();
+            tree.revealPath(List.of("src", "main", "java", "App.java"));
+            h.frames(LEVELS);
 
-            assertNotNull(tree.rowNode("App.java"), "three levels deep, off one queued task");
+            assertNotNull(tree.rowNode("App.java"), "three levels deep, in one walk");
             assertEquals("App.java", tree.selected());
             tree.close();
         }
@@ -126,12 +101,12 @@ class TreeRevealTest {
     void revealOpensTheWayDownAndNothingElse() {
         try (HeadlessGui h = new HeadlessGui()) {
             MapSource source = new MapSource();
-            TreeView<String> tree = new TreeView<>(h.gui, source);
+            TreeView<String> tree = Listing.tree(h, source);
             h.gui.root().children(tree.node());
             h.frame();
 
-            tree.revealPath(List.of("src", "main", "java"), null);
-            h.frame();
+            tree.revealPath(List.of("src", "main", "java"));
+            h.frames(LEVELS);
 
             assertNotNull(tree.rowNode("resources"), "the way down was opened");
             assertNull(tree.rowNode("AppTest.java"), "'test' sits beside the chain and stays shut");
@@ -145,17 +120,18 @@ class TreeRevealTest {
     void revealingIntoAnOpenTreeCostsNothingAndShutsNothing() {
         try (HeadlessGui h = new HeadlessGui()) {
             MapSource source = new MapSource();
-            TreeView<String> tree = new TreeView<>(h.gui, source);
+            TreeView<String> tree = Listing.tree(h, source);
             h.gui.root().children(tree.node());
             h.frame();
 
-            tree.revealPath(List.of("src", "test", "AppTest.java"), null);
-            tree.revealPath(List.of("src", "main", "java", "App.java"), null);
-            h.frame();
+            tree.revealPath(List.of("src", "test", "AppTest.java"));
+            h.frames(LEVELS);   // to its end: a reveal begun while another waits on a level supersedes it
+            tree.revealPath(List.of("src", "main", "java", "App.java"));
+            h.frames(LEVELS);
             int fetched = source.fetches.get();
 
-            tree.revealPath(List.of("src", "main", "java", "Util.java"), null);
-            h.frame();
+            tree.revealPath(List.of("src", "main", "java", "Util.java"));
+            h.frames(LEVELS);
 
             assertEquals("Util.java", tree.selected());
             assertEquals(fetched, source.fetches.get(), "everything on the way was already materialised");
@@ -164,42 +140,50 @@ class TreeRevealTest {
         }
     }
 
-    /** The callback is where a caller puts what needed the row, so it runs after the row is there to be had. */
+    /** The end of the walk is announced after the row is there to be had, so whoever wanted the row finds it. */
     @Test
-    void theCallbackRunsOnceTheRowExists() {
+    void theEndIsAnnouncedOnceTheRowExists() {
         try (HeadlessGui h = new HeadlessGui()) {
             MapSource source = new MapSource();
-            TreeView<String> tree = new TreeView<>(h.gui, source);
+            TreeView<String> tree = Listing.tree(h, source);
             h.gui.root().children(tree.node());
             h.frame();
 
             AtomicReference<Node> seen = new AtomicReference<>();
-            tree.revealPath(List.of("src", "main", "java", "App.java"), () -> seen.set(tree.rowNode("App.java")));
-            h.frame();
+            List<TreeView.Revealed> told = new java.util.ArrayList<>();
+            h.gui.mailbox(TreeView.REVEALED, tree.address(), r -> {
+                told.add(r);
+                seen.set(tree.rowNode("App.java"));
+            });
+            tree.revealPath(List.of("src", "main", "java", "App.java"));
+            h.frames(LEVELS + 1);
 
-            assertNotNull(seen.get(), "the row was built by the time the caller was told the walk had ended");
+            assertNotNull(seen.get(), "the row was built by the time the walk was announced as ended");
+            assertEquals(List.of(new TreeView.Revealed(tree.address(), "App.java", true)), told);
             tree.close();
         }
     }
 
     /**
-     * A chain through something the source no longer offers stops where it runs out. The caller still gets its
-     * turn — it asked about a hierarchy that has moved under it, and that is an answer rather than a failure.
+     * A chain through something the source no longer offers stops where it runs out. The end is still announced, as
+     * not reached — the caller asked about a hierarchy that has moved under it, and that is an answer rather than a failure.
      */
     @Test
     void aChainThatRunsOutSelectsNothingAndStillReportsBack() {
         try (HeadlessGui h = new HeadlessGui()) {
             MapSource source = new MapSource();
-            TreeView<String> tree = new TreeView<>(h.gui, source);
+            TreeView<String> tree = Listing.tree(h, source);
             h.gui.root().children(tree.node());
             h.frame();
 
-            AtomicInteger told = new AtomicInteger();
-            tree.revealPath(List.of("src", "gone", "App.java"), told::incrementAndGet);
-            h.frame();
+            List<TreeView.Revealed> told = new java.util.ArrayList<>();
+            h.gui.mailbox(TreeView.REVEALED, tree.address(), told::add);
+            tree.revealPath(List.of("src", "gone", "App.java"));
+            h.frames(LEVELS + 1);
 
             assertNull(tree.selected(), "there was no row to land on");
-            assertEquals(1, told.get(), "the walk ended, and said so");
+            assertEquals(List.of(new TreeView.Revealed(tree.address(), "App.java", false)), told,
+                    "the walk ended, and said so");
             assertTrue(source.fetches.get() >= 1, "it opened as far down as the chain was real");
             tree.close();
         }

@@ -1,5 +1,8 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.spi.Seams;
+import sibarum.atchung.Topic;
+import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
@@ -29,15 +32,15 @@ import java.util.function.Consumer;
  * {@link ContextMenu} does. This widget draws a picker; it does not also decide it is a drop-down.
  *
  * <h2>Three announcements, and they are not the same event</h2>
- * {@link #onChange} fires continuously while a drag moves — that is the live preview, and the whole reason to
- * drag rather than type. {@link #onCommit} fires when a choice has been <em>made</em>: the drag ended, the hex was
+ * {@link #CHANGED} is published continuously while a drag moves — that is the live preview, and the whole reason to
+ * drag rather than type. {@link #COMMITTED} is published when a choice has been <em>made</em>: the drag ended, the hex was
  * submitted, a recent swatch was clicked; that is what records into the {@link ColorHistory}. And
  * {@link #color(Color)} — the application telling the picker what the selection is now — fires neither, because
  * nobody chose anything. An application drives its preview from the first and its document edit from the second.
  * Collapsing them would make either every pixel of a drag an undo step or the picker impossible to watch.
  *
  * <p><b>The undo entry is the picker's own</b>: each commit is a step in the history the tree binds above it, and
- * undoing replays the earlier colour as a commit, so an application's edit hung off {@link #onCommit} follows with
+ * undoing replays the earlier colour as a commit, so an application's edit made on {@link #COMMITTED} follows with
  * nothing more written. An application that records its own entry instead turns this off with
  * {@link #undoable(boolean)}, or every choice would be two steps.
  *
@@ -59,13 +62,42 @@ import java.util.function.Consumer;
  * lose the user's place every time they dragged into a corner (see {@link Hsv}).
  *
  * {@snippet :
- * ColorPicker picker = new ColorPicker(gui, stroke.color(), app.recentColors())
- *         .onChange(c -> canvas.previewStroke(c))
- *         .onCommit(c -> app.edit("Stroke colour", () -> stroke.color(c)));
+ * ColorPicker picker = new ColorPicker(gui, stroke.color(), app.recentColors()).name("stroke");
  * inspector.append(picker.node());
+ * gui.mailbox(ColorPicker.CHANGED, picker.address(), c -> canvas.previewStroke(c.color()));
+ * gui.mailbox(ColorPicker.COMMITTED, picker.address(), c -> edits.send(new SetStroke(c.color())));
  * }
+ *
+ * <p>Both carry the picker's {@link #address() address} (vexelray-framework's {@code docs/threading.md}, T3.8).
  */
 public final class ColorPicker implements AutoCloseable {
+
+    /** The colour as a drag moves: the live preview. The last in a frame. */
+    public static final Topic<Changed> CHANGED =
+            Addressed.state(Changed.class, Changed::picker);
+
+    /**
+     * A colour <b>chosen</b>: a drag released, a hex submitted, a recent clicked, and an undo or redo. The one to
+     * make an edit from. Every one, in order.
+     */
+    public static final Topic<Committed> COMMITTED =
+            Addressed.edge(Committed.class);
+
+    /** The picker at {@code picker} now shows {@code color}. */
+    public record Changed(String picker, Color color) implements Addressed {
+        @Override
+        public Object address() {
+            return picker;
+        }
+    }
+
+    /** The picker at {@code picker} was set to {@code color}. */
+    public record Committed(String picker, Color color) implements Addressed {
+        @Override
+        public Object address() {
+            return picker;
+        }
+    }
 
     /** How wide a band is allowed to get before another is added, in px. Below an eye's ability to see a step. */
     private static final double BAND_PX = 2.0;
@@ -113,8 +145,7 @@ public final class ColorPicker implements AutoCloseable {
      */
     private volatile boolean writingHex;
 
-    private volatile Consumer<Color> onChange = c -> { };
-    private volatile Consumer<Color> onCommit = c -> { };
+    private final WidgetName name;
 
     /**
      * What the picker holds, as undo sees it: the coordinates and the alpha, not the {@link Color}, for the reason
@@ -160,7 +191,7 @@ public final class ColorPicker implements AutoCloseable {
                 .corner(Length.rem(0.4f))
                 .border(HAIRLINE, theme.color(Role.LINE))
                 .scroll(false, false);
-        gui.onResize(preview, computed -> repaintPreview());
+        Seams.of(gui).onResize(preview, computed -> repaintPreview());
 
         this.hex = new TextField(gui, Hex.format(start));
         hex.node().width(Length.grow(1f)).height(Length.rem(2.4f));
@@ -195,6 +226,7 @@ public final class ColorPicker implements AutoCloseable {
                                 .scroll(false, false)
                                 .children(preview, hex.node()),
                         recents);
+        this.name = new WidgetName(gui, "colorpicker", root);
 
         // The strip follows the history wherever it is changed from -- this picker, another picker sharing it, or
         // the application restoring a saved palette. Nothing here writes the strip directly.
@@ -210,13 +242,13 @@ public final class ColorPicker implements AutoCloseable {
             this.alpha = back.alpha();
             this.committed = back;
             repaint();
-            onCommit.accept(color());
+            committed(color());
         }, false);
     }
 
     /**
      * Whether choices made here are undoable: on by default — a released drag, a submitted hex or a clicked recent
-     * is one step each. Off when the application records its own entry from {@link #onCommit} instead.
+     * is one step each. Off when the application records its own entry from {@link #COMMITTED} instead.
      */
     public ColorPicker undoable(boolean undoable) {
         undo.enabled(undoable);
@@ -273,20 +305,25 @@ public final class ColorPicker implements AutoCloseable {
         return this;
     }
 
-    /** Called continuously while a drag moves — the live preview. Runs on a worker thread. */
-    public ColorPicker onChange(Consumer<Color> handler) {
-        this.onChange = handler == null ? c -> { } : handler;
+    /** Call this picker {@code name} in its tree ("stroke"): its {@link #address()} is the tree's name and this. */
+    public ColorPicker name(String name) {
+        this.name.name(name);
         return this;
     }
 
-    /**
-     * Called when a colour has been <b>chosen</b>: a drag released, a hex submitted, a recent clicked. This is the
-     * one to hang an edit and an undo entry off, and it is what records into the {@link ColorHistory}. Runs on a
-     * worker thread.
-     */
-    public ColorPicker onCommit(Consumer<Color> handler) {
-        this.onCommit = handler == null ? c -> { } : handler;
-        return this;
+    /** Where this picker is on the bus: what its messages carry. */
+    public String address() {
+        return name.address();
+    }
+
+    /** The colour moved. */
+    private void changed(Color c) {
+        gui.bus().publish(CHANGED, new Changed(name.address(), c));
+    }
+
+    /** A colour chosen. */
+    private void committed(Color c) {
+        gui.bus().publish(COMMITTED, new Committed(name.address(), c));
     }
 
     /** Release the tooltip, the hex field and the history subscription. The nodes go when they leave the tree. */
@@ -307,11 +344,11 @@ public final class ColorPicker implements AutoCloseable {
                 .height(height)
                 .background(theme.color(Role.WELL))
                 .scroll(false, false);
-        gui.onDrag(n, drag);
+        Seams.of(gui).onDrag(n, drag);
         gui.cursor(n, CursorShape.GRAB);
         // A picture resolves no units of its own, so every ramp is re-authored against the box the layout
         // settled on -- which is also what carries it through a zoom or a DPI change.
-        gui.onResize(n, computed -> repaint());
+        Seams.of(gui).onResize(n, computed -> repaint());
         return new RampView(n);
     }
 
@@ -355,13 +392,13 @@ public final class ColorPicker implements AutoCloseable {
         Color c = color();
         if (committed) {
             history.use(c);
-            onCommit.accept(c);
+            committed(c);
             Chosen before = this.committed;
             Chosen after = new Chosen(hsv, alpha);
             this.committed = after;
             undo.edited(before, after, true);   // a drag is one gesture, so one step, folded into nothing
         } else {
-            onChange.accept(c);
+            changed(c);
         }
     }
 
@@ -571,7 +608,7 @@ public final class ColorPicker implements AutoCloseable {
                 .border(HAIRLINE, theme.color(Role.LINE))
                 .background(theme.color(Role.WELL))
                 .scroll(false, false);
-        gui.onClick(slot, () -> {
+        Seams.of(gui).onClick(slot, () -> {
             Color c = colorAt(index);
             if (c != null) {
                 this.hsv = Hsv.of(c);
@@ -581,11 +618,11 @@ public final class ColorPicker implements AutoCloseable {
         });
         // An empty slot is not a control, so it does not light up: the strip reserves its space without
         // pretending there is something there to click.
-        gui.onState(slot, state -> slot.border(HAIRLINE,
+        Seams.of(gui).onState(slot, state -> slot.border(HAIRLINE,
                 colorAt(index) != null && state != InteractionState.NORMAL
                         ? theme.color(Role.ACCENT)
                         : theme.color(Role.LINE)));
-        gui.onResize(slot, computed -> slot.picture(swatchPicture(slot, colorAt(index))));
+        Seams.of(gui).onResize(slot, computed -> slot.picture(swatchPicture(slot, colorAt(index))));
         // Asked at hover, not at attach: a slot's colour outlives any one thing it held. Attached once, for the
         // reason Tooltip.attach(Node, Supplier) exists.
         swatchTips.attach(slot, () -> {

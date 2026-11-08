@@ -38,7 +38,9 @@ Undefined for the developer, then, but one fixed behaviour from the framework, a
 nobody planned is visible on screen and in the log, instead of turning into a scrollbar that reads like a style
 choice.
 
-`clip(true)` stays as it is: a mask with no scrolling, for a box that means to cut its content off.
+`clip(true)` stays as it is: a mask with no scrolling, for a box that means to cut its content off. Since it
+cuts its content off, that content is no room anything must make for it: short of room, a clipped box gives way
+like a `Scroller` does (§2.1), which is what keeps a long window title from pushing the close button off the window.
 
 ## 2. `Scroller`: the mask
 
@@ -359,7 +361,7 @@ until step 5.
 | vexelray-framework | `About` hero | `TactrollerInputBackend` keeps setting `scrollGlide`. `AboutTest` and the acceptance run check for the §1 report instead of the sideways one |
 | mainframe | `OpenDialog` grid; `WorkspacesPage` `scrollIntoView` | gets `Tabs` for free in step 3. `TerminalView` can publish its scrollback as a `ScrollSource` and get a real bar, a later change of its own |
 | vexplore | `Dock`, `RailView` | |
-| text-editor-vexel-demo (Vex) | `Formatted`, `Preview`; `Navigator` `scrollIntoView` | |
+| text-editor-vexel-demo (VexelRay IDE) | `Formatted`, `Preview`; `Navigator` `scrollIntoView` | |
 | calculator-vexel-demo | `SettingsWindow`, the tape (`lock(BOTTOM)` with `scrollToEdge`) | |
 | vexelray-sim-fluid | `ControlPanel`, `Sidebar` | |
 | pontif-framework | `BoxWalker`'s `Scrolls` atom | the atom becomes a `Scroller` with an optional bar. This is a change to its schema |

@@ -10,7 +10,9 @@ set underneath (`conflict`); 120 replies, all ok. It found two defects, both fix
 `BigDecimal.equals` calls them different), and **the navigator never asked a target to reveal itself**, so a
 landmark on a tab page — `Tabs` registers its reveal on each page — was unreachable. MainFrame's workspaces page
 dropped its hand-wired history and records into its window's; witnessed live: New, Ctrl+Z, Ctrl+Y. Step 7 as built: `Button.perform(Supplier<Change>)` and
-`MenuSink.edit(label, [enabled,] Supplier<Change>)`. Both take a supplier rather than a change, because a command's
+`MenuSink.edit(label, [enabled,] Supplier<Change>)`. *(0.2: `Button.perform` is gone with T7.2's walk: a view hears
+`Button.PRESSED` and calls `history.perform(change)` itself, and a change to data the logic owns is a `Change` whose
+apply and revert each send it a message. `MenuSink.edit` stays, as the widget library's.)* Both take a supplier rather than a change, because a command's
 change depends on what is selected when it is chosen, and a null answer means "nothing to do this time". Both
 perform through the history nearest the button, or the right-clicked node (`MenuSink.history()`, which a wrapping
 sink must pass through, as `TreeView`'s does), and still apply where none is bound. A chip (`Button.toggle`) holds
@@ -36,7 +38,7 @@ safe from any thread — and claims its own undo chords at `FOCUSED`, routed thr
 step 4 the window's `GLOBAL` claim took Ctrl+Z from every field, because a claim outranks key delivery. Its
 entries target the field and check that the text still reads what they expect; `text(...)` forgets only this
 field's entries (`History.forget`); leaving the field ends its run. Documents opt out with `history(History)`: the
-template's and Vex's `Buffer`, the gui demo's notes, and MainFrame's three inline editors, whose commit is the
+template's and VexelRay IDE's `Buffer`, the gui demo's notes, and MainFrame's three inline editors, whose commit is the
 step. One rule was added, because the plan's §2 rule 3 alone would have wedged a history: **an entry whose node
 has left the tree fails once and is then discarded** (`History.discard`) — a node id is never reused, so under
 `BLOCK` it would stand in front of every other undo for the rest of the session. A landmark target, or a node
@@ -149,8 +151,9 @@ conflict check makes that safe for built-in widgets, but not for an application'
 
 ## 5. Scope
 
-**One history per window**, created by the framework shell, bound to the chords and to `dropHistory`, and
-injectable. *Ruled 2026-10-13* (scope per window). Reason: two windows on two documents must not share one
+**One history per window**, created by the framework shell, bound to the chords, and
+injectable. (It was also the GUI's drop history until 0.2, when a drop became the application's edit, announced
+by the widget and recorded by the application: vexelray-framework's threading.md, T7.2.) *Ruled 2026-10-13* (scope per window). Reason: two windows on two documents must not share one
 stack.
 
 **Text fields stop keeping a private history**; their typing runs become entries in the window's, ended by a

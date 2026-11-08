@@ -1,5 +1,7 @@
 package dev.vexelray.gui.demo.chapter;
 
+import dev.vexelray.gui.core.Timing;
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.drop.DragState;
@@ -16,6 +18,7 @@ import dev.vexelray.gui.demo.Chapter;
 import dev.vexelray.gui.demo.Console;
 import dev.vexelray.gui.demo.Stage;
 import dev.vexelray.gui.demo.Ui;
+import dev.vexelray.gui.widget.Placement;
 import dev.vexelray.gui.widget.TreeView;
 import dev.vexelray.text.TextLayout;
 
@@ -36,21 +39,24 @@ import java.util.List;
  *
  * <p>Under the container, the framework supplies what makes a drag a drag: the travel-and-hold threshold that keeps
  * an ordinary click an ordinary click, the flick too quick to have been drawn committing nothing, Escape
- * cancelling, the undo record, and the focus move that keeps Ctrl+Z pointed at the history the drop wrote into.
+ * cancelling, and the focus move that keeps Ctrl+Z pointed at what was just dropped.
  *
- * <p><b>The split is the whole design.</b> A tree reads its hierarchy through a {@code Source}, so it can say
+ * <p><b>The split is the whole design.</b> A tree is told its hierarchy a level at a time, so it can say
  * where a drop would land <em>in the tree's own terms</em> — before this row, into that branch, out to the root —
  * but it cannot say what putting it there does, because that is a mutation of a model it can only read. So the
- * tree resolves a placement and the application returns a {@link Change}. <b>Refusal is the application's too</b>,
- * by returning null: a task into itself, a placement that would leave it exactly where it already is. Answering
- * there is what makes the indicator disappear <em>before</em> the user releases rather than the drop being
- * swallowed afterwards.
+ * tree resolves a placement, refuses in the frame what it can see is no placement (a task into itself, one left
+ * exactly where it is), and announces the rest; the application makes it a {@link Change} in its own history. That
+ * the tree refuses in the frame is what makes the indicator disappear <em>before</em> the user releases rather than
+ * the drop being swallowed afterwards.
  *
  * <p>And the third part, which the application also owns: <b>saying when the model changed</b>. The tree is never
- * told, so every change here ends in {@code refresh()}. Undo works the same way, because the inverse change is a
+ * told, so every change here ends in a {@code TreeView.REFRESH}. Undo works the same way, because the inverse change is a
  * change like any other.
  */
 public final class DragChapter implements Chapter {
+
+    /** The board's name on the bus: what its requests carry, and what this answers to. */
+    private static final String BOARD = "board";
 
     /** A task, or a column of them — the hierarchy is one thing, not two. */
     private static final class Task {
@@ -116,82 +122,47 @@ public final class DragChapter implements Chapter {
         Gui gui = this.gui;
         this.console = stage.console();
 
-        // Without a history, a drop resolves and draws but commits nothing — deliberately, because a drop that
-        // mutated with no way back would be the one operation in the framework the user could not take back, and
-        // silently so. Setting one is the application saying where those changes go.
-        gui.dropHistory(history);
-
-        board = new TreeView<>(gui, new TreeView.Source<Task>() {
-
-            @Override
-            public List<Task> roots() {
-                return List.copyOf(root.kids);
+        // The tree asks for each level and this answers it. Inline, on the thread that asks, which is the GUI thread:
+        // the model is in memory and is changed there, by the drops below, so it is read where it is written. A model
+        // behind a disk answers on a thread of its own (the Trees chapter). Subscribed before the tree is built,
+        // because building it is what asks for the columns.
+        gui.bus().subscribe(TreeView.CHILDREN_WANTED, wanted -> {
+            if (!wanted.tree().equals(gui.address(BOARD))) {
+                return;
             }
-
-            @Override
-            public String label(Task task) {
-                return task.name;
+            Task parent = (Task) wanted.parent();
+            List<TreeView.Entry> level = new ArrayList<>();
+            for (Task task : (parent == null ? root : parent).kids) {
+                // Anything on this board can hold anything else — a column holds tasks, a task holds subtasks — and,
+                // crucially, that stays true of a column the user has just emptied. Answering this with whether it
+                // has children is what makes the last card out of a column the last card ever to go into it.
+                level.add(new TreeView.Entry(task, task.name, null, !task.kids.isEmpty(), true));
             }
-
-            @Override
-            public boolean hasChildren(Task task) {
-                return !task.kids.isEmpty();
-            }
-
-            @Override
-            public List<Task> children(Task task) {
-                return List.copyOf(task.kids);
-            }
-
-            @Override
-            public boolean acceptsChildren(Task task) {
-                // Anything on this board can hold anything else — a column holds tasks, a task holds subtasks —
-                // and, crucially, that stays true of a column the user has just emptied. Answering this with
-                // hasChildren is what makes the last card out of a column the last card ever to go into it.
-                return true;
-            }
+            gui.bus().publish(TreeView.CHILDREN, new TreeView.Children(wanted.tree(), parent, level));
         });
+        board = new TreeView<>(gui, BOARD);
         board.node().width(Length.FILL).height(Length.FILL);
-        // Opened before the motion is installed, and the order is load-bearing rather than tidy. A board whose
-        // columns are shut is a board with nothing to drag, so these have to be open on the first frame — and an
-        // animated open is a change spread over frames a capture run never presents, which would photograph
-        // three columns with their contents still at zero height. With no motion installed yet the tree takes
-        // its instant path, which is the same reason Tabs defaults to no transition.
+        // A board whose columns are shut is a board with nothing to drag, so they are opened from the start: when
+        // the columns land, and each one's tasks a frame after that.
         for (Task column : root.kids) {
             board.expand(column);
         }
-        // From here on, opening a column slides the rows below it down rather than teleporting them. A reordered
-        // row still lands at once, which is deliberate: the whole board settles on the same frame, and half a
-        // view animating while the other half snaps is worse than either (see the Motion chapter).
-        board.motion((progress, done) ->
-                stage.krono().ramp(sibarum.kronometer.Dur.ms(180), sibarum.kronometer.anim.Ease.OUT_CUBIC,
-                        progress, done));
+        // Opening a column slides the rows below it down rather than teleporting them, the first opening included:
+        // the tasks land after the columns, and arriving is a change like any other. A capture plays it to rest. A
+        // reordered row still lands at once, which is deliberate: the whole board settles on the same frame, and half
+        // a view animating while the other half snaps is worse than either (see the Motion chapter).
+        board.motion(Timing.millis(180, Timing.Curve.OUT_CUBIC));
 
-        // What each placement means, in the model's own terms — and which ones mean nothing, which is the more
-        // interesting half. Every point over the rows resolves to a placement, so this is asked about all of
-        // them, once per frame, while the pointer moves. It decides what to draw, not what to do: the change it
-        // returns is not applied until the user releases.
-        board.reorderable((moved, where, effect) -> {
-            // A copy has nothing to refuse about where it came from: it is a new task, so it can land inside
-            // the one it was copied from, and landing where the original already sits is not a no-op. So the
-            // item being placed is decided first, and every question below is asked about *that* item.
-            Task placing = effect == DropEffect.COPY ? copyOf(moved) : moved;
-            if (effect != DropEffect.MOVE && effect != DropEffect.COPY) {
-                return null;   // LINK is not a thing a board has
+        // Moves and copies, by drag and by Ctrl+X, Ctrl+C and Ctrl+V. The tree decides in the frame which placements
+        // it offers, from what it can see (a task into itself, a move that changes nothing) and from what each entry
+        // accepts; it announces where one lands, and what that means is ours, in the model's own terms, recorded in
+        // our history so it undoes.
+        board.reorderable(DropEffect.MOVE, DropEffect.COPY);
+        gui.mailbox(TreeView.PLACED, board.address(), placed -> {
+            Change change = placement((Task) placed.item(), placed.where(), placed.effect());
+            if (change != null) {
+                history.perform(change);
             }
-            if (where.isRoot()) {
-                return put(placing, root, root.kids.size());
-            }
-            Task reference = where.reference();
-            if (reference.isUnder(placing)) {
-                return null;   // into itself or its own descendant: not a failure, an answer
-            }
-            return switch (where.relation()) {
-                case INTO -> reference.kids.contains(placing) ? null
-                        : put(placing, reference, reference.kids.size());
-                case BEFORE -> beside(placing, reference, 0);
-                case AFTER -> beside(placing, reference, 1);
-            };
         });
 
         // A target that is not a tree: an ordinary box, a drop target, and a subscription to the published drag
@@ -213,8 +184,9 @@ public final class DragChapter implements Chapter {
                                 .textSize(Length.rem(0.875f)).textColor(Role.FAINT)
                                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.TOP),
                         archived);
-        gui.onDrop(archive, (payload, x, y) -> payload.as(taskType)
-                .map(task -> task.parent == null ? Drop.NONE : Drop.move(rectOf(archive), archiving(task)))
+        Seams.of(gui).onDrop(archive, (payload, x, y) -> payload.as(taskType)
+                .map(task -> task.parent == null ? Drop.NONE
+                        : Drop.move(rectOf(archive), () -> history.perform(archiving(task))))
                 .orElse(Drop.NONE));
 
         // Nothing here draws the task in the hand: the tree carries its own rows, wherever they are carried, the
@@ -225,7 +197,7 @@ public final class DragChapter implements Chapter {
         // behind the pointer, which nobody can see on a box lighting up. The drag is the window's, not this
         // chapter's — a card picked up in the Cards chapter is published here too — so the archive lights only for
         // a drag whose payload is one of the tree's tasks.
-        gui.drag().onCommit(v -> {
+        Seams.of(gui).drag().onCommit(v -> {
             DragState drag = v.value();
             boolean task = drag.active() && drag.payload().as(taskType).isPresent();
             lightArchive(task && over(archive, drag) && drag.accepts());
@@ -261,6 +233,26 @@ public final class DragChapter implements Chapter {
                                         gui.column().width(Length.rem(15)).height(Length.FILL)
                                                 .children(archive)),
                         tools);
+    }
+
+    /**
+     * What putting {@code moved} at {@code where} with {@code effect} means here, or null where it means nothing.
+     * The tree has already refused what it can see; what is left is the model's own say.
+     */
+    private Change placement(Task moved, Placement<?> where, DropEffect effect) {
+        // A copy has nothing to refuse about where it came from: it is a new task, so it can land inside the one it
+        // was copied from, and landing where the original already sits is not a no-op. So the item being placed is
+        // decided first, and every question below is asked about *that* item.
+        Task placing = effect == DropEffect.COPY ? copyOf(moved) : moved;
+        if (where.isRoot()) {
+            return put(placing, root, root.kids.size());
+        }
+        Task reference = (Task) where.reference();
+        return switch (where.relation()) {
+            case INTO -> put(placing, reference, reference.kids.size());
+            case BEFORE -> beside(placing, reference, 0);
+            case AFTER -> beside(placing, reference, 1);
+        };
     }
 
     /**
@@ -359,12 +351,12 @@ public final class DragChapter implements Chapter {
     /**
      * Every change ends here: the model has moved, so the views are told.
      *
-     * <p>Two of them, and neither is the tree's business to know about. {@code refresh()} is the obligation the
-     * {@code Source} split leaves with the application — the tree reads the hierarchy and is never notified when
+     * <p>Two of them, and neither is the tree's business to know about. {@code REFRESH} is the obligation the
+     * request-and-reply split leaves with the application — the tree asks for the hierarchy and is never told when
      * it changes — and the archive is an ordinary list of nodes this chapter owns outright.
      */
     private void shown(String what) {
-        board.refresh();
+        gui.bus().publish(TreeView.REFRESH, new TreeView.Refresh(board.address()));
         redrawArchive();
         console.say(what);
     }

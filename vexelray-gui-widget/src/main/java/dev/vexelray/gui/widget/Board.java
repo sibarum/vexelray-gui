@@ -1,5 +1,7 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.Timing;
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
@@ -9,8 +11,6 @@ import dev.vexelray.gui.core.drop.Drop;
 import dev.vexelray.gui.core.drop.DropEffect;
 import dev.vexelray.gui.core.drop.Payload;
 import dev.vexelray.gui.core.drop.PayloadType;
-import dev.vexelray.gui.core.edit.Change;
-import dev.vexelray.gui.core.edit.History;
 import dev.vexelray.gui.core.input.ClaimScope;
 import dev.vexelray.gui.core.input.Shortcut;
 import dev.vexelray.gui.core.layout.Length;
@@ -30,20 +30,21 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.function.Function;
 
 /**
  * Cards the user can pick up, carry and put down — within a stack, and between the stacks of one board.
  *
  * <pre>{@code
- * Board<Task> board = new Board<Task>(gui, task -> card(task))   // what a card looks like: any node
+ * Board<Task> board = new Board<Task>(gui, (n, task) -> card(n, task))   // what a card looks like: any node
  *         .motion(motion.arrival);                              // how long moving takes; none, and it is instant
- * Deck<Task> todo  = board.column().items(model.todo()).reorderable(...);
- * Deck<Task> doing = board.column().items(model.doing()).reorderable(...);
- * gui.dropHistory(history);                                     // until there is one, nothing commits
+ * Deck<Task> todo  = board.column().name("todo").items(model.todo()).reorderable();
+ * Deck<Task> doing = board.column().name("doing").items(model.doing()).reorderable();
+ * gui.mailbox(Deck.PLACED, todo.address(), p -> logic.send(new Move(p.item(), "todo", p.where())));
+ * // and the view, told the logic's new lists: todo.items(lists.todo()); doing.items(lists.doing());
  * }</pre>
  *
- * <p>The application says what a card looks like and what putting one somewhere means. The board does the rest:
+ * <p>The application says what a card looks like and what putting one somewhere means: it hears where each was put
+ * ({@link Deck#PLACED}) and hands the decks their new lists. The board does the rest:
  * the press that becomes a drag, the card lifting off the deck and following the hand, the deck opening a gap where
  * it would land, the drop, and the card settling into place; or Escape, and the card flying back to the gap it
  * left. Undo puts it back the same way, because undo is the application handing a deck its old list.
@@ -90,7 +91,7 @@ public final class Board<T> {
     private static final Paint PAD_EDGE = Role.ACCENT.alpha(0.38f);
 
     private final Gui gui;
-    private final Function<? super T, ? extends Node> faces;
+    private final Face<T> faces;
     private final PayloadType<T> itemType = PayloadType.of("board-card");
     final List<Deck<T>> decks = new CopyOnWriteArrayList<>();
 
@@ -154,7 +155,7 @@ public final class Board<T> {
      * <p>The factory is called once per item, when the item first appears in a deck, and the node is removed when
      * the item leaves the board. Give the node its own background and corners; a card's width is the deck's.
      */
-    public Board(Gui gui, Function<? super T, ? extends Node> faces) {
+    public Board(Gui gui, Face<T> faces) {
         this.gui = Objects.requireNonNull(gui, "gui");
         this.faces = Objects.requireNonNull(faces, "faces");
     }
@@ -166,8 +167,8 @@ public final class Board<T> {
      * stopping dead in it. Without one everything moves instantly, which is the reduced-motion path and is still
      * correct: the card still follows the pointer and the gap still opens, they just do not take time to.
      */
-    public Board<T> motion(Ramp ramp) {
-        this.motion = ramp;
+    public Board<T> motion(Timing timing) {
+        this.motion = Ramp.of(gui, timing);
         return this;
     }
 
@@ -191,9 +192,9 @@ public final class Board<T> {
     public Deck<T> column() {
         Deck<T> deck = new Deck<>(this, gui);
         decks.add(deck);
-        gui.onDragSource(deck.node, (x, y) -> payloadAt(deck, x, y));
-        gui.onDrop(deck.node, (payload, x, y) -> resolve(deck, payload, x, y));
-        gui.watchDrag(deck.node, watch);
+        Seams.of(gui).onDragSource(deck.node, (x, y) -> payloadAt(deck, x, y));
+        Seams.of(gui).onDrop(deck.node, (payload, x, y) -> resolve(deck, payload, x, y));
+        Seams.of(gui).watchDrag(deck.node, watch);
         return deck;
     }
 
@@ -652,19 +653,19 @@ public final class Board<T> {
 
     /** Build the card for {@code item}: the application's node, in a carrier the board can move. */
     private Card<T> build(T item) {
-        Node face = faces.apply(item);
+        Node face = faces.build(new Nodes(gui, "board"), item);   // a card takes no presses: no board has asked
         Node carrier = gui.column().width(Length.FILL).height(Length.AUTO)
                 .padding(spacing, Length.ZERO).children(face);
         Card<T> card = new Card<>(this, item, carrier, face);
         face.elevation(elevation(0f));
-        // The keyboard's way to the same placements a drag reaches, through the same question and the same history.
+        // The keyboard's way to the same placements a drag reaches, through the same placements and the same announcement.
         // On the face, which is the node the user sees: the focus ring is drawn round the focused node's own box
         // and corners, and round the carrier it would be a square frame standing off the card by its spacing.
         gui.focusable(face, true);
-        gui.claim(face, Shortcut.of(Key.UP, Modifier.ALT), ClaimScope.FOCUSED, () -> nudge(card, 0, -1));
-        gui.claim(face, Shortcut.of(Key.DOWN, Modifier.ALT), ClaimScope.FOCUSED, () -> nudge(card, 0, 1));
-        gui.claim(face, Shortcut.of(Key.LEFT, Modifier.ALT), ClaimScope.FOCUSED, () -> nudge(card, -1, 0));
-        gui.claim(face, Shortcut.of(Key.RIGHT, Modifier.ALT), ClaimScope.FOCUSED, () -> nudge(card, 1, 0));
+        Seams.of(gui).claim(face, Shortcut.of(Key.UP, Modifier.ALT), ClaimScope.FOCUSED, () -> nudge(card, 0, -1));
+        Seams.of(gui).claim(face, Shortcut.of(Key.DOWN, Modifier.ALT), ClaimScope.FOCUSED, () -> nudge(card, 0, 1));
+        Seams.of(gui).claim(face, Shortcut.of(Key.LEFT, Modifier.ALT), ClaimScope.FOCUSED, () -> nudge(card, -1, 0));
+        Seams.of(gui).claim(face, Shortcut.of(Key.RIGHT, Modifier.ALT), ClaimScope.FOCUSED, () -> nudge(card, 1, 0));
         // An open hand over a card: it can be picked up. Hover changes nothing on screen but the pointer, which is
         // the one thing that may. A button on the card keeps its own pointer — the nearer node decides.
         gui.cursor(face, dev.vexelray.gui.core.input.CursorShape.GRAB);
@@ -970,7 +971,7 @@ public final class Board<T> {
 
     /** What a press on {@code deck} picks up: the card under it, or nothing over a gap or the empty space below. */
     private Payload payloadAt(Deck<T> deck, float x, float y) {
-        if (deck.reorder == null) {
+        if (!deck.reorderable) {
             return null;
         }
         synchronized (this) {
@@ -1008,8 +1009,7 @@ public final class Board<T> {
      */
     private Drop resolve(Deck<T> deck, Payload payload, float x, float y) {
         Optional<T> offered = payload.as(itemType);
-        Reorder<T> reorder = deck.reorder;
-        if (offered.isEmpty() || reorder == null) {
+        if (offered.isEmpty() || !deck.reorderable) {
             return Drop.NONE;
         }
         T item = offered.get();
@@ -1042,22 +1042,15 @@ public final class Board<T> {
             where = placementIn(items, k);
             slotRect = new Rect(inner.x(), edge, inner.w(), h.h);
             token = h.token;
+            h.aimDeck = deck;
+            h.aimAt = where;
+            h.aimRect = slotRect;
         }
-        // Outside the lock: the application's code, which may take locks of its own.
-        Change change = reorder.move(item, where, DropEffect.MOVE);
-        if (change == null) {
-            return Drop.NONE;
-        }
-        synchronized (this) {
-            if (held != null && held.token == token) {
-                held.aimDeck = deck;
-                held.aimAt = where;
-                held.aimRect = slotRect;
-            }
-        }
+        // Landing predicts where the card goes, so it settles there at once, and tells the application, whose new
+        // list for the deck confirms the prediction when it comes (Deck.items).
         return Drop.move(slotRect, () -> {
             committed(token, deck, where);
-            return change.apply();
+            deck.announce(item, where);
         });
     }
 
@@ -1307,7 +1300,7 @@ public final class Board<T> {
     /** The card resting under {@code (x, y)} in a deck cards can be picked up from, or null. */
     private Card<T> cardAt(float x, float y) {
         for (Deck<T> deck : decks) {
-            if (deck.reorder == null) {
+            if (!deck.reorderable) {
                 continue;
             }
             for (Slot<T> slot : deck.slots) {
@@ -1344,8 +1337,8 @@ public final class Board<T> {
 
     /**
      * Move a card from the keyboard: within its deck by one ({@code dIndex}), or to the same place in the
-     * neighbouring deck ({@code dDeck}). The same question a drop asks, recorded in the same history, so undo does
-     * not care which way the card was moved.
+     * neighbouring deck ({@code dDeck}). The same placements a drop offers, announced the same way, so the
+     * application does not care which way the card was moved.
      */
     private void nudge(Card<T> card, int dDeck, int dIndex) {
         Deck<T> target;
@@ -1376,16 +1369,10 @@ public final class Board<T> {
                 where = placementIn(theirs, Math.min(i, theirs.size()));
             }
         }
-        Reorder<T> reorder = target.reorder;
-        History history = gui.dropHistory();
-        if (reorder == null || history == null) {
-            return;   // the same refusal a drop makes: nothing the user could not take back
+        if (!target.reorderable) {
+            return;   // the same refusal a drop makes
         }
-        Change change = reorder.move(card.item, where, DropEffect.MOVE);
-        if (change == null) {
-            return;
-        }
-        history.perform(change);
+        target.announce(card.item, where);
         Deck<T> to = target;
         Placement<T> at = where;
         act(() -> {
@@ -1439,7 +1426,7 @@ public final class Board<T> {
     }
 
     private float dpi() {
-        return gui.dpi().value();
+        return Seams.of(gui).dpi().value();
     }
 
     private Length px(float px) {
@@ -1610,7 +1597,7 @@ public final class Board<T> {
         if (give <= 0f && !card.pullPainted) {
             return;
         }
-        float em = gui.rootEmPx() * gui.zoom().value() * dpi();
+        float em = gui.rootEmPx() * Seams.of(gui).zoom().value() * dpi();
         card.carrier.translate(card.pullX * give / em, card.pullY * give / em);
         card.pullPainted = give > 0f;
     }

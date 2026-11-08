@@ -1,5 +1,7 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.Timing;
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
@@ -12,14 +14,9 @@ import dev.vexelray.gui.core.style.Role;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.BooleanSupplier;
-import java.util.function.Consumer;
-import java.util.function.DoubleConsumer;
-import java.util.function.DoubleSupplier;
-import java.util.function.Supplier;
 
 /**
- * One settable thing: a name, the section it belongs under, and the control that reads and writes it.
+ * One settable thing: an id, a name, the section it belongs under, and the control that shows and edits it.
  *
  * <h2>A property builds its own editor, and that is what keeps the set open</h2>
  *
@@ -28,7 +25,8 @@ import java.util.function.Supplier;
  * static factories; an application that needs a sixth writes a {@code Property} and hands it over, without this
  * module being touched or knowing it happened. That is the same shape {@code dev.vexelray.gui.plot.Expr} takes
  * for the same reason, and the alternative — a tagged union the inspector dispatches on — makes every new editor
- * a change to the widget that displays it.
+ * a change to the widget that displays it. Building a node is presentation, which a view may do on the GUI thread
+ * (vexelray-framework's threading.md, T7.4).
  *
  * <h2>The value column is the inspector's, not the property's</h2>
  *
@@ -37,28 +35,40 @@ import java.util.function.Supplier;
  * column for every row and hands the property a {@link Readout} to write into; a property that has nothing to put
  * there simply never calls it, and the column stays blank rather than absent.
  *
- * <h2>Getters, not values</h2>
+ * <h2>Told values, announced edits</h2>
  *
- * Every factory takes a supplier and a consumer rather than an initial value and a callback, because the model is
- * the truth and a property is a view onto it. The supplier is read when the editor is built and whenever
- * {@link Inspector#refresh()} is called, so a change made somewhere else — a preset button, a keystroke, a fit —
- * shows up in the panel without anything having to remember to push it there.
+ * The model is the truth and it is the application's, so a property holds no getter or setter onto it: reading the
+ * model from the frame, or writing it from the dispatch, would reach into the logic's state from the GUI thread
+ * (T7.2). Whoever owns the values tells the inspector them ({@link Inspector#VALUES}), and each reaches its row's
+ * {@link #show}; what the user does leaves through the {@link Edits} the row is given, as {@link Inspector#EDITED}.
+ * A value told is shown, never reported back as an edit, so the two cannot chase each other.
  */
 public interface Property {
+
+    /** What {@link Inspector.Edited} and {@link Inspector.Values} name this row by: unique in its inspector. */
+    String id();
 
     /** The label shown at the head of the row. */
     String name();
 
-    /** Build the control. Called once per inspector the property is placed in. */
-    Node editor(Gui gui, Readout value);
+    /**
+     * Build the control. Called once per inspector the property is placed in, on the GUI thread. What the user does
+     * to it goes out through {@code edits}; a value is shown through {@code value}.
+     */
+    Node editor(Gui gui, Readout value, Edits edits);
 
     /** The section heading this row sits under; empty for an ungrouped row. */
     default String section() {
         return "";
     }
 
-    /** Re-read the model into the control. The default does nothing, which suits a property with no state. */
-    default void refresh() {
+    /**
+     * Show {@code value}, which the model now holds: told, not edited, so nothing is published. Called after
+     * {@link #editor} with the last value the inspector was told for this row, and whenever a new one is told. A
+     * value of a type the row does not show is ignored. The default does nothing, which suits a property with no
+     * state.
+     */
+    default void show(Object value) {
     }
 
     /**
@@ -74,13 +84,22 @@ public interface Property {
      * panel was given its motion, after it for one that was already there, and with null to mean no motion —
      * which is the default and the whole of the reduced-motion path.
      */
-    default void motion(Ramp ramp) {
+    default void motion(Timing timing) {
     }
 
     /** Where a property writes the number, word or nothing that belongs in the row's value column. */
     @FunctionalInterface
     interface Readout {
         void show(String text);
+    }
+
+    /**
+     * Where a property says the user changed it: the inspector publishes each as an {@link Inspector.Edited}. Called
+     * by the property's own control, as the edit happens; never for a value it was told.
+     */
+    @FunctionalInterface
+    interface Edits {
+        void edited(Object value);
     }
 
     /** One choice in a {@link #choice} row: what it is called, and what it is. */
@@ -94,33 +113,29 @@ public interface Property {
     record Swatch<T>(String label, T value, List<Color> stops) {
     }
 
-    /** A number dragged along a track, shown in the value column. */
-    static Property range(String section, String name, double min, double max, double step,
-                          DoubleSupplier get, DoubleConsumer set) {
-        return new Rows.Range(section, name, min, max, step, get, set);
+    /** A number dragged along a track, shown in the value column. A {@code Double}; at {@code min} until told. */
+    static Property range(String id, String section, String name, double min, double max, double step) {
+        return new Rows.Range(id, section, name, min, max, step);
     }
 
-    /** A number typed or stepped. */
-    static Property number(String section, String name, double step, double min, double max,
-                           DoubleSupplier get, DoubleConsumer set) {
-        return new Rows.Number(section, name, step, min, max, get, set);
+    /** A number typed or stepped. A {@code Double}; the nearest to zero it may be until told. */
+    static Property number(String id, String section, String name, double step, double min, double max) {
+        return new Rows.Number(id, section, name, step, min, max);
     }
 
-    /** An on/off switch. */
-    static Property flag(String section, String name, BooleanSupplier get, Consumer<Boolean> set) {
-        return new Rows.Flag(section, name, get, set);
+    /** An on/off switch. A {@code Boolean}; off until told. */
+    static Property flag(String id, String section, String name) {
+        return new Rows.Flag(id, section, name);
     }
 
-    /** One of a handful of options, all on show. */
-    static <T> Property choice(String section, String name, List<Option<T>> options,
-                               Supplier<T> get, Consumer<T> set) {
-        return new Rows.Choice<>(section, name, options, get, set);
+    /** One of a handful of options, all on show. One of the options' values; none chosen until told. */
+    static <T> Property choice(String id, String section, String name, List<Option<T>> options) {
+        return new Rows.Choice<>(id, section, name, options);
     }
 
-    /** One of a handful of colour maps, each shown as the colours it is. */
-    static <T> Property swatches(String section, String name, List<Swatch<T>> options,
-                                 Supplier<T> get, Consumer<T> set) {
-        return new Rows.Swatches<>(section, name, options, get, set);
+    /** One of a handful of colour maps, each shown as the colours it is. None chosen until told. */
+    static <T> Property swatches(String id, String section, String name, List<Swatch<T>> options) {
+        return new Rows.Swatches<>(id, section, name, options);
     }
 }
 
@@ -130,14 +145,21 @@ final class Rows {
     private Rows() {
     }
 
-    /** What every built-in row shares: its heading and its section. */
+    /** What every built-in row shares: its id, its heading and its section. */
     private abstract static class Base implements Property {
+        private final String id;
         private final String section;
         private final String name;
 
-        Base(String section, String name) {
+        Base(String id, String section, String name) {
+            this.id = java.util.Objects.requireNonNull(id, "id");
             this.section = section == null ? "" : section;
             this.name = name;
+        }
+
+        @Override
+        public String id() {
+            return id;
         }
 
         @Override
@@ -155,48 +177,42 @@ final class Rows {
         private final double min;
         private final double max;
         private final double step;
-        private final DoubleSupplier get;
-        private final DoubleConsumer set;
         private Slider slider;
         private Readout value;
         /** Kept, not just forwarded: the panel may be given its motion before this row is asked for a slider. */
-        private Ramp knob;
+        private Timing knob;
 
-        Range(String section, String name, double min, double max, double step,
-              DoubleSupplier get, DoubleConsumer set) {
-            super(section, name);
+        Range(String id, String section, String name, double min, double max, double step) {
+            super(id, section, name);
             this.min = min;
             this.max = max;
             this.step = step;
-            this.get = get;
-            this.set = set;
         }
 
         @Override
-        public Node editor(Gui gui, Readout value) {
+        public Node editor(Gui gui, Readout value, Edits edits) {
             this.value = value;
-            double current = get.getAsDouble();
             // The step is the slider's to show and to rest on, so it is handed over as a lattice; the row only
             // turns the point the slider settled on back into a value.
-            this.slider = new Slider(gui, (float) fraction(current))
+            this.slider = new Slider(gui, 0f)
                     .lattice(max > min && step > 0 ? Lattice.every(step / (max - min)) : Lattice.none())
                     .transition(knob);
             slider.onChange(f -> {
                 double v = exact(min + f * (max - min));
-                set.accept(v);
+                edits.edited(v);
                 value.show(Text.of(v, step));
             });
-            value.show(Text.of(current, step));
+            value.show(Text.of(min, step));
             return slider.node().width(Length.grow(1f));
         }
 
         @Override
-        public void refresh() {
-            if (slider == null) {
+        public void show(Object told) {
+            if (slider == null || !(told instanceof java.lang.Number n)) {
                 return;
             }
-            double current = get.getAsDouble();
-            // show, not value: a row re-reading its model is not the user dragging it. See Toggle.show.
+            double current = n.doubleValue();
+            // show, not value: a row told its model is not the user dragging it. See Toggle.show.
             slider.show((float) fraction(current));
             value.show(Text.of(current, step));
         }
@@ -206,7 +222,7 @@ final class Rows {
         }
 
         @Override
-        public void motion(Ramp ramp) {
+        public void motion(Timing ramp) {
             this.knob = ramp;
             if (slider != null) {
                 slider.transition(ramp);
@@ -228,70 +244,61 @@ final class Rows {
     }
 
     static final class Number extends Base {
-        private final DoubleSupplier get;
-        private final DoubleConsumer set;
         private final double step;
         private final double min;
         private final double max;
         private NumberField field;
 
-        Number(String section, String name, double step, double min, double max,
-               DoubleSupplier get, DoubleConsumer set) {
-            super(section, name);
+        Number(String id, String section, String name, double step, double min, double max) {
+            super(id, section, name);
             this.step = step;
             this.min = min;
             this.max = max;
-            this.get = get;
-            this.set = set;
         }
 
         @Override
-        public Node editor(Gui gui, Readout value) {
-            this.field = new NumberField(gui, get.getAsDouble(), step, min, max);
-            field.onChange(set);
+        public Node editor(Gui gui, Readout value, Edits edits) {
+            this.field = new NumberField(gui, Math.clamp(0.0, min, max), step, min, max);
+            field.onChange(edits::edited);
             return field.node();
         }
 
         @Override
-        public void refresh() {
-            if (field != null) {
-                // show, not value: a sync is not an edit. See Toggle.show.
-                field.show(get.getAsDouble());
+        public void show(Object told) {
+            if (field != null && told instanceof java.lang.Number n) {
+                // show, not value: a told value is not an edit. See Toggle.show.
+                field.show(n.doubleValue());
             }
         }
     }
 
     static final class Flag extends Base {
-        private final BooleanSupplier get;
-        private final Consumer<Boolean> set;
         private Toggle toggle;
         /** Kept, not just forwarded: the panel may be given its motion before this row is asked for a switch. */
-        private Ramp knob;
+        private Timing knob;
 
-        Flag(String section, String name, BooleanSupplier get, Consumer<Boolean> set) {
-            super(section, name);
-            this.get = get;
-            this.set = set;
+        Flag(String id, String section, String name) {
+            super(id, section, name);
         }
 
         @Override
-        public Node editor(Gui gui, Readout value) {
-            this.toggle = new Toggle(gui, get.getAsBoolean());
-            toggle.onChange(set);
+        public Node editor(Gui gui, Readout value, Edits edits) {
+            this.toggle = new Toggle(gui, false);
+            toggle.onChange(edits::edited);
             toggle.transition(knob);
             return toggle.node();
         }
 
         @Override
-        public void refresh() {
-            if (toggle != null) {
-                // show, not on: a row re-reading its model is not the user flipping the switch. See Toggle.show.
-                toggle.show(get.getAsBoolean());
+        public void show(Object told) {
+            if (toggle != null && told instanceof Boolean on) {
+                // show, not on: a row told its model is not the user flipping the switch. See Toggle.show.
+                toggle.show(on);
             }
         }
 
         @Override
-        public void motion(Ramp ramp) {
+        public void motion(Timing ramp) {
             this.knob = ramp;
             if (toggle != null) {
                 toggle.transition(ramp);
@@ -301,33 +308,29 @@ final class Rows {
 
     static final class Choice<T> extends Base {
         private final List<Property.Option<T>> options;
-        private final Supplier<T> get;
-        private final Consumer<T> set;
         private Segment<T> segment;
 
-        Choice(String section, String name, List<Property.Option<T>> options, Supplier<T> get, Consumer<T> set) {
-            super(section, name);
+        Choice(String id, String section, String name, List<Property.Option<T>> options) {
+            super(id, section, name);
             this.options = List.copyOf(options);
-            this.get = get;
-            this.set = set;
         }
 
         @Override
-        public Node editor(Gui gui, Readout value) {
+        public Node editor(Gui gui, Readout value, Edits edits) {
             this.segment = new Segment<>(gui);
             for (Property.Option<T> o : options) {
                 segment.option(o.label(), o.value());
             }
-            segment.select(get.get());
-            segment.onChange(set);
+            segment.onChange(edits::edited);
             return segment.node();
         }
 
         @Override
-        public void refresh() {
-            if (segment != null) {
-                // show, not select: a sync is not an edit. See Toggle.show.
-                segment.show(get.get());
+        @SuppressWarnings("unchecked")
+        public void show(Object told) {
+            if (segment != null && told != null) {
+                // show, not select: a told value is not an edit. See Toggle.show. One that is no option is ignored.
+                segment.show((T) told);
             }
         }
     }
@@ -344,23 +347,24 @@ final class Rows {
      * being given a fixed column. A fixed column is wider than the whole card in a narrow panel, and a card
      * whose children do not fit is not merely cramped here: see {@code editor} for what a card that overflows
      * turns into.
+     *
+     * <p>A click shows the card it chose at once, as a switch moves under the finger: the row is the user's
+     * control, and the value it stands for is the one they just picked. A value told later wins.
      */
     static final class Swatches<T> extends Base {
         private final List<Property.Swatch<T>> options;
-        private final Supplier<T> get;
-        private final Consumer<T> set;
         private final List<Node> cards = new ArrayList<>();
         private Gui gui;
+        /** The value the row shows as chosen, or null for none. */
+        private Object chosen;
 
-        Swatches(String section, String name, List<Property.Swatch<T>> options, Supplier<T> get, Consumer<T> set) {
-            super(section, name);
+        Swatches(String id, String section, String name, List<Property.Swatch<T>> options) {
+            super(id, section, name);
             this.options = List.copyOf(options);
-            this.get = get;
-            this.set = set;
         }
 
         @Override
-        public Node editor(Gui gui, Readout value) {
+        public Node editor(Gui gui, Readout value, Edits edits) {
             this.gui = gui;
             Node column = gui.column().role("swatches").gap(Length.rem(0.2f)).width(Length.grow(1f));
             for (Property.Swatch<T> s : options) {
@@ -389,20 +393,26 @@ final class Rows {
                         .children(strip, label);
                 gui.focusable(card, true);
                 gui.cursor(card, CursorShape.POINTER);
-                gui.onClick(card, () -> {
-                    set.accept(s.value());
-                    refresh();
+                Seams.of(gui).onClick(card, () -> {
+                    chosen = s.value();
+                    repaint();
+                    edits.edited(s.value());
                 });
-                gui.onState(card, st -> paint(card, s.value(), st == InteractionState.HOVER));
+                Seams.of(gui).onState(card, st -> paint(card, s.value(), st == InteractionState.HOVER));
                 cards.add(card);
                 column.append(card);
             }
-            refresh();
+            repaint();
             return column;
         }
 
         @Override
-        public void refresh() {
+        public void show(Object told) {
+            this.chosen = told;
+            repaint();
+        }
+
+        private void repaint() {
             if (gui == null) {
                 return;
             }
@@ -412,10 +422,10 @@ final class Rows {
         }
 
         private void paint(Node card, T value, boolean hover) {
-            boolean chosen = value.equals(get.get());
-            card.border(Length.dp(1), chosen ? Role.ACCENT : hover ? Role.GRIP : Role.EDGE);
-            card.background(chosen ? Role.SELECTION : hover ? Role.CHROME : Role.NONE);
-            card.textColor(chosen ? Role.INK : Role.DIM);
+            boolean isChosen = value.equals(chosen);
+            card.border(Length.dp(1), isChosen ? Role.ACCENT : hover ? Role.GRIP : Role.EDGE);
+            card.background(isChosen ? Role.SELECTION : hover ? Role.CHROME : Role.NONE);
+            card.textColor(isChosen ? Role.INK : Role.DIM);
         }
     }
 

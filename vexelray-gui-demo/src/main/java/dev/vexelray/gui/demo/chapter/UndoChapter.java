@@ -1,5 +1,6 @@
 package dev.vexelray.gui.demo.chapter;
 
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.edit.Change;
@@ -76,8 +77,11 @@ public final class UndoChapter implements Chapter {
         text.node().width(Length.rem(12));
         Button chip = new Button(gui, "Bold").toggle(true);
         List<String> items = new CopyOnWriteArrayList<>(List.of("first"));
-        Button add = new Button(gui, "Add an item").kind(Button.Kind.PRIMARY)
-                .perform(() -> adding(items, "item " + (items.size() + 1)));
+        Button add = new Button(gui, "Add an item").kind(Button.Kind.PRIMARY);
+        // A command as an edit: the press is heard like any other, and the view records the change in the window's
+        // history, so Ctrl+Z takes it back. The items are this page's own; a model that is the logic's would be
+        // changed by a Change whose apply and revert each send it a message.
+        gui.mailbox(Button.PRESSED, add.address(), p -> history.perform(adding(items, "item " + (items.size() + 1))));
 
         Node values = Ui.label(gui, "", Length.FILL);
         Node status = Ui.label(gui, "", Length.FILL);
@@ -88,41 +92,42 @@ public final class UndoChapter implements Chapter {
                 chip.pressed() ? "on" : "off", items.size()));
         // The popup opens on a handler thread, a moment after the click that asked for it; a scene waits for
         // "(open)" before it presses the keys the popup claims, rather than racing it.
-        gui.onResize(select.popupNode(), computed -> readOut.run());
-        // And the live preview, so a scene sees the cursor land before it presses Enter: both keys are claims, run
-        // on handler threads, and two of those are not ordered against each other.
-        select.selection().onChange(chosen -> readOut.run());
+        Seams.of(gui).onResize(select.popupNode(), computed -> readOut.run());
+        // And the live preview, so a scene sees the cursor land before it presses Enter.
+        gui.mailbox(Select.CHANGED, select.address(), m -> readOut.run());
 
-        toggle.onChange(v -> readOut.run());
-        slider.onChange(v -> readOut.run());
-        number.onChange(v -> readOut.run());
-        segment.onChange(v -> readOut.run());
-        select.onCommit(v -> readOut.run());
-        text.onChange(v -> readOut.run());
-        chip.onToggle(v -> readOut.run());
-        history.status().onCommit(s -> {
+        gui.mailbox(Toggle.CHANGED, toggle.address(), m -> readOut.run());
+        gui.mailbox(Slider.CHANGED, slider.address(), m -> readOut.run());
+        gui.mailbox(NumberField.CHANGED, number.address(), m -> readOut.run());
+        gui.mailbox(Segment.CHANGED, segment.address(), m -> readOut.run());
+        gui.mailbox(Select.COMMITTED, select.address(), m -> readOut.run());
+        gui.mailbox(TextField.CHANGED, text.address(), m -> readOut.run());
+        gui.mailbox(Button.TOGGLED, chip.address(), m -> readOut.run());
+        gui.mailbox(History.STATUS, gui.address(History.ADDRESS), c -> {
             readOut.run();   // a command's change has no handler of its own to say so
-            status.text(depths(s.value()) + "  ·  last: " + last);
+            status.text(depths(c.status()) + "  ·  last: " + last);
         });
 
         // ---- the three refusals ----------------------------------------------------------------------------
 
         Toggle locked = new Toggle(gui, false).undoable(false);   // locking is not an edit
-        locked.onChange(on -> toggle.node().disabled(on));
+        gui.mailbox(Toggle.CHANGED, locked.address(), m -> toggle.node().disabled(m.on()));
         TextField scratch = new TextField(gui, "");
         scratch.node().width(Length.rem(12));
         Node scratchRow = gui.row().width(Length.FILL).gap(Ui.GAP).scroll(false, false).children(scratch.node());
-        Button remove = new Button(gui, "Remove the scratch field").onPress(scratch.node()::remove);
-        Button underneath = new Button(gui, "Set the number to 99 underneath").onPress(() -> {
+        Button remove = new Button(gui, "Remove the scratch field");
+        gui.mailbox(Button.PRESSED, remove.address(), p -> scratch.node().remove());
+        Button underneath = new Button(gui, "Set the number to 99 underneath");
+        gui.mailbox(Button.PRESSED, underneath.address(), p -> {
             number.show(99);   // a sync: the model changed, nobody edited the field
             readOut.run();
         });
 
         // What the framework's own presenter does in an application — a ring on a refused control, a prompt for
         // the rest — done here with the gallery's console, and said in a readout a scene can wait on.
-        gui.onUndo(e -> {
+        Seams.of(gui).onUndo(e -> {
             last = e.outcome().name().toLowerCase(Locale.ROOT);
-            status.text(depths(history.status().value()) + "  ·  last: " + last);
+            status.text(depths(history.status()) + "  ·  last: " + last);
             report(e, stage, console);
         });
 
@@ -141,7 +146,7 @@ public final class UndoChapter implements Chapter {
         gui.landmark("undo.remove", remove.node());
         gui.landmark("undo.underneath", underneath.node());
         readOut.run();
-        status.text(depths(history.status().value()) + "  ·  last: " + last);
+        status.text(depths(history.status()) + "  ·  last: " + last);
 
         Node page = gui.column().width(Length.FILL).height(Length.AUTO).gap(Ui.GAP).scroll(false, false).children(
                 Ui.card(gui,

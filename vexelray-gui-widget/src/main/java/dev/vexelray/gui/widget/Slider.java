@@ -1,5 +1,9 @@
 package dev.vexelray.gui.widget;
 
+import dev.vexelray.gui.core.Timing;
+import dev.vexelray.gui.core.spi.Seams;
+import sibarum.atchung.Topic;
+import dev.vexelray.gui.core.Addressed;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
@@ -47,14 +51,41 @@ import java.util.function.DoubleConsumer;
  * None of these is a mode. {@link Lattice#none()} has no points, so nothing is drawn, nothing holds, and
  * nothing settles: that is the continuous slider, and it is what you get by default.
  *
- * <p>{@link #value()} is always a point of the lattice, and {@link #onChange} fires only when it changes to a
+ * <p>{@link #value()} is always a point of the lattice, and {@link #CHANGED} is published only when it changes to a
  * different one — dragging across a coarse lattice reports once per point crossed, not once per pointer move.
  * Arrow keys move one point (a twentieth of the travel when there are none); Home and End go to the ends.
  *
- * <p>Reads flow out through {@link #onChange}; the handler runs on a worker thread (the drag dispatch thread), so
- * it must not touch the retained tree except through {@link Node} handles (which are thread-safe).
+ * <p>What it does is a message, carrying the slider's {@link #address() address}: the value as it moves on
+ * {@link #CHANGED}, the last in a frame, and the value chosen on {@link #COMMITTED}, every one (vexelray-framework's
+ * {@code docs/threading.md}, T3.8).
  */
 public final class Slider {
+
+    /** The value as the thumb moves: the live preview. The last in a frame. */
+    public static final Topic<Changed> CHANGED =
+            Addressed.state(Changed.class, Changed::slider);
+
+    /**
+     * A value <b>chosen</b>: the end of a drag, a key step, {@link #value(float)}, and an undo or redo — the one an
+     * application saves or sends. A drag is one, however many points it crossed. Every one, in order.
+     */
+    public static final Topic<Committed> COMMITTED = Addressed.edge(Committed.class);
+
+    /** The slider at {@code slider} now shows {@code value}, 0 to 1. */
+    public record Changed(String slider, double value) implements Addressed {
+        @Override
+        public Object address() {
+            return slider;
+        }
+    }
+
+    /** The slider at {@code slider} was set to {@code value}, 0 to 1. */
+    public record Committed(String slider, double value) implements Addressed {
+        @Override
+        public Object address() {
+            return slider;
+        }
+    }
 
     /**
      * The track's height <em>and</em> the thumb's width — one length on purpose. The thumb's centre travels the
@@ -84,7 +115,7 @@ public final class Slider {
     private volatile Ramp ramp;
     private volatile float value;
     private volatile DoubleConsumer onChange = v -> { };
-    private volatile DoubleConsumer onCommit = v -> { };
+    private final WidgetName name;
     /** The value when the drag in progress began: what undoing the whole drag returns to. Guarded by this. */
     private float dragFrom;
     /** The way back from each drag and each key step, into the tree's history. */
@@ -116,8 +147,9 @@ public final class Slider {
                 .background(Role.TRACK).corner(Length.rem(0.55f))
                 .alignItems(AlignItems.CENTER).scroll(false, false) // a slider never scrolls
                 .children(leftSpacer, thumb, rightSpacer);
-        gui.onDrag(track, this::pointer);
-        gui.onKey(track, e -> {
+        this.name = new WidgetName(gui, "slider", track);
+        Seams.of(gui).onDrag(track, this::pointer);
+        Seams.of(gui).onKey(track, e -> {
             if (e.key() == Key.LEFT || e.key() == Key.DOWN) {
                 step(-1);
             } else if (e.key() == Key.RIGHT || e.key() == Key.UP) {
@@ -131,12 +163,12 @@ public final class Slider {
         // Arrow-key steps fold into one run; a drag is recorded alone, when it ends (see pointer).
         this.undo = new ValueUndo<>(gui, track, () -> value, v -> {
             float rest = move(v, true);
-            onChange.accept(rest);
-            onCommit.accept(rest);
+            changed(rest);
+            committed(rest);
         }, true);
         // A picture resolves no units of its own, so the ticks are re-authored against the box the layout
         // settled on — which is also what carries them through a zoom or a DPI change.
-        gui.onResize(track, computed -> {
+        Seams.of(gui).onResize(track, computed -> {
             paintTicks(computed.rect());
             measure(computed.rect());
         });
@@ -156,23 +188,34 @@ public final class Slider {
     }
 
     /**
-     * Set the value programmatically (0..1), rested on the lattice, as the user would: notifies {@link #onChange}
-     * and {@link #onCommit}, and is a step Ctrl+Z takes back. {@link #show} is the sync that is none of those.
+     * Set the value programmatically (0..1), rested on the lattice, as the user would: publishes {@link #CHANGED}
+     * and {@link #COMMITTED}, and is a step Ctrl+Z takes back. {@link #show} is the sync that is none of those.
      */
     public Slider value(float v) {
         edit(v);
         return this;
     }
 
-    /**
-     * React to a value being <b>chosen</b>: the end of a drag, a key step, {@link #value(float)} — and an undo or
-     * redo. {@link #onChange} fires as the thumb moves, which is the live preview; this is the decision, the one an
-     * application saves or sends. A drag reports here once, however many points it crossed. Runs on a worker
-     * thread.
-     */
-    public Slider onCommit(DoubleConsumer handler) {
-        this.onCommit = handler == null ? v -> { } : handler;
+    /** Call this slider {@code name} in its tree ("volume"): its {@link #address()} is the tree's name and this. */
+    public Slider name(String name) {
+        this.name.name(name);
         return this;
+    }
+
+    /** Where this slider is on the bus: what its messages carry. */
+    public String address() {
+        return name.address();
+    }
+
+    /** The value moved: the hook, then the message. */
+    private void changed(float rest) {
+        onChange.accept(rest);
+        gui.bus().publish(CHANGED, new Changed(name.address(), rest));
+    }
+
+    /** A value chosen. */
+    private void committed(float rest) {
+        gui.bus().publish(COMMITTED, new Committed(name.address(), rest));
     }
 
     /**
@@ -185,7 +228,7 @@ public final class Slider {
     }
 
     /**
-     * Show a value the slider did not choose, <b>without</b> notifying {@link #onChange}.
+     * Show a value the slider did not choose, <b>without</b> publishing {@link #CHANGED}.
      *
      * <p>A sync is not an edit. Where a panel re-reads its model and writes what it finds back into its rows,
      * {@link #value(float)} tells the application the user just dragged this — so it writes to the model, the
@@ -224,13 +267,16 @@ public final class Slider {
      * Give the thumb its time, so it settles onto a point rather than jumping there. Passing null, or never
      * calling this, places it in one step — which is the whole of the reduced-motion path.
      */
-    public Slider transition(Ramp ramp) {
-        this.ramp = ramp;
+    public Slider transition(Timing timing) {
+        this.ramp = Ramp.of(gui, timing);
         return this;
     }
 
-    /** React to value changes (fired on drag, keys and {@link #value(float)}). Runs on a worker thread. */
-    public Slider onChange(DoubleConsumer handler) {
+    /**
+     * The widget library's hook on the value moving, for a widget built from sliders: run as it moves, and as well as
+     * {@link #CHANGED} rather than instead. Package-private, because an application hears a slider by its messages.
+     */
+    Slider onChange(DoubleConsumer handler) {
         this.onChange = handler == null ? v -> { } : handler;
         return this;
     }
@@ -292,12 +338,12 @@ public final class Slider {
             }
         }
         if (changed) {
-            onChange.accept(rest);
+            changed(rest);
         }
         if (e.phase() == DragEvent.Phase.END) {
             // The decision, and the step: one for the whole drag, however many points it crossed on the way.
             if (rest != from) {
-                onCommit.accept(rest);
+                committed(rest);
             }
             undo.edited(from, rest, true);
         }
@@ -307,8 +353,8 @@ public final class Slider {
     private void edit(float raw) {
         float from = value;
         float rest = move(raw, true);
-        onChange.accept(rest);
-        onCommit.accept(rest);
+        changed(rest);
+        committed(rest);
         undo.edited(from, rest);
     }
 

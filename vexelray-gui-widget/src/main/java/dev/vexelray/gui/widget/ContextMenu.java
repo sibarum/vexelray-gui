@@ -177,7 +177,10 @@ public final class ContextMenu implements MenuPresenter {
                 .elevation(gui.theme().elevation(Relief.FLOATING))
                 .padding(Length.dp(PAD_DP))
                 .gap(Length.dp(1))
-                .scroll(false, false);
+                // Down, when it must: the layout caps a float at its parent, so a menu taller than the window is cut to
+                // the window's height, and without a scroller the lines past the cut could not be reached at all — a
+                // title-bar menu in a small window lost its last items off the bottom. A menu that fits never scrolls.
+                .scroll(false, true);
     }
 
     /** A panel's padding: how far its first row stands below its top edge, which a submenu is raised by. */
@@ -237,6 +240,7 @@ public final class ContextMenu implements MenuPresenter {
         closeSubmenus(0);
         keyAt = -1;
         rebuild(menuItems);
+        menu.scrollTo(0f, 0f);   // each opening is a new menu, read from its first line
         float dpi = Math.max(0.0001f, Seams.of(gui).dpi().value());
         menu.floatAt(Length.dp(where.x() / dpi), Length.dp(where.y() / dpi));
         if (!shown) {
@@ -423,6 +427,7 @@ public final class ContextMenu implements MenuPresenter {
         keyAt = i;
         Node row = rowsAt(d).get(i);
         paint(row, rowIcons.get(row), itemsAt(d).get(i), InteractionState.HOVER);
+        row.scrollIntoView();   // a panel the window cut short scrolls to the line the keyboard walked onto
     }
 
     /** Take the mark off its line, which goes back to rest unless it is the way to an open submenu. */
@@ -609,6 +614,7 @@ public final class ContextMenu implements MenuPresenter {
         level.opener = row;
         level.item = item;
         fill(level.panel, level.rows, null, item.children(), at + 1);
+        level.panel.scrollTo(0f, 0f);
         // Beside the row, its first row level with it. The row's rect is a frame old, which is the frame the pointer
         // found it in; px are converted to dp against the density, as the menu's own anchor is. Clamped into the
         // window by the layout, so one that would run off the right edge stands over the menu instead.

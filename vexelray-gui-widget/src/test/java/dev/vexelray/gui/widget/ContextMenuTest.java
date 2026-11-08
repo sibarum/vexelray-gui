@@ -323,6 +323,39 @@ class ContextMenuTest {
         }
     }
 
+    /**
+     * A menu taller than the window is cut to the window and scrolls, rather than running off the bottom with its last
+     * lines out of reach: a title-bar menu in a small window could not be finished. The keyboard follows its line down.
+     */
+    @Test
+    void aMenuTallerThanTheWindowScrollsToItsLastLine() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Node target = page(h);
+            new ContextMenu(h.gui);
+            Seams.of(h.gui).onContextMenu(target, m -> {
+                for (int i = 0; i < 30; i++) {
+                    m.item("Line " + i, () -> { });
+                }
+            });
+            h.gui.root().children(target);
+            h.frame();
+
+            h.rightClick(100f, 10f);
+            h.frame();
+            ContextMenu menu = (ContextMenu) Seams.of(h.gui).menus();
+            var l = menu.node().layout();
+            assertTrue(l.rect().y() >= -0.5f && l.rect().y() + l.rect().h() <= 600f + 0.5f,
+                    "the panel is inside the 800x600 window");
+            assertTrue(l.overflowY(), "thirty lines do not fit, so the panel overflows into a scroller");
+            assertEquals(0f, l.scrollY(), 0.5f, "and opens at its first line");
+
+            h.tap(Key.END);
+            h.frame();
+            assertTrue(menu.node().layout().scrollY() > 0f, "walking to the last line scrolled the panel to it");
+            menu.close();
+        }
+    }
+
     @Test
     void anItemActionRunsExactlyOnce() {
         try (HeadlessGui h = new HeadlessGui()) {

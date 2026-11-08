@@ -66,6 +66,8 @@
         <!-- Drives a real GuiApp loop under a test's control: synthetic input, an observable frame
              budget, and a wait that ends only when something asks for a frame. See docs/render-on-demand. -->
         <module>vexelray-gui-harness</module>
+        <!-- SDG against SVG and a shipped raster: size, load, draw (CPU and GPU) and error, published from a run. -->
+        <module>vexelray-gui-format-bench</module>
         <!-- The flight recorder: a ring of the probe's recent rows inside the application, and the questions asked
              of it, each answered as a plain record with its text reply a pure function of it. On atchung-probe
              only: no GUI or bus type, so the answers can travel any transport. See docs/plans/flight-recorder.md. -->

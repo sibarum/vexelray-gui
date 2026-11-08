@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>dev.vexelray.gui</groupId>
+        <artifactId>vexelray-gui</artifactId>
+        <version>0.2.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>vexelray-gui-format-bench</artifactId>
+    <name>VexelRay GUI :: Format comparison</name>
+    <description>
+        SDG against SVG and against a shipped raster, on the same art at the same sizes: size on disk, time to load,
+        time to draw, and error against a supersampled reference, CPU and GPU. The run writes its document (by default
+        vexelray-fields/docs/comparison.md, beside benchmarks.md). Not shipped; nothing depends on it.
+
+            mvn -pl vexelray-gui-format-bench -am install -DskipTests
+            mvn -pl vexelray-gui-format-bench exec:exec
+    </description>
+
+    <properties>
+        <jmh.version>1.37</jmh.version>
+        <maven.deploy.skip>true</maven.deploy.skip>
+        <compare.out>${project.basedir}/../../vexelray-fields/docs/comparison.md</compare.out>
+        <compare.only></compare.only>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>dev.vexelray.gui</groupId>
+            <artifactId>vexelray-gui-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>dev.vexelray.fields</groupId>
+            <artifactId>vexelray-fields-sdg</artifactId>
+            <version>${vexelray-fields.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>sibarum.imagelib</groupId>
+            <artifactId>imagelib-wrapper</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.openjdk.jmh</groupId>
+            <artifactId>jmh-core</artifactId>
+            <version>${jmh.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.openjdk.jmh</groupId>
+            <artifactId>jmh-generator-annprocess</artifactId>
+            <version>${jmh.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.openjdk.jmh</groupId>
+                            <artifactId>jmh-generator-annprocess</artifactId>
+                            <version>${jmh.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.0</version>
+                <configuration>
+                    <!-- the parent skips exec for every module; this one has a program to run -->
+                    <skip>false</skip>
+                    <executable>${java.home}/bin/java</executable>
+                    <commandlineArgs>--enable-native-access=ALL-UNNAMED -classpath %classpath dev.vexelray.gui.formatbench.Publish ${compare.out} ${compare.only}</commandlineArgs>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

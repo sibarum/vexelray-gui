@@ -450,8 +450,9 @@ public final class TitleBar {
 
     /**
      * The application's name as a logo, after the mark in the lockup: a typeface the application owns, set as it
-     * would set it anywhere. The framework gives every bar the name in the theme's type ({@link Wordmark#of}) unless
-     * the application gave its own first. Replacing, like {@link #icon(Node)}; {@code null} takes it off.
+     * would set it anywhere. The framework gives the main window's bar, and any window standing beside it, the name in the
+     * theme's type ({@link Wordmark#of}) unless the application gave its own first; a satellite (About, settings) wears
+     * the mark alone, its app menu, and then its title. Replacing, like {@link #icon(Node)}; {@code null} takes it off.
      */
     public TitleBar wordmark(Wordmark mark) {
         Wordmark old = wordmark;

@@ -63,12 +63,21 @@ public final class Publish {
                         Quality.compare(Quality.over(truth, bg), Quality.gpu(art, side, bg, shots)));
             }
         }
-        Files.writeString(out, render(time, err, quality, only), StandardCharsets.UTF_8);
+        // the GPU's draw time, by Vulkan timestamps: the SDG, and the shipped picture as a texture
+        Map<String, Double> gpu = new LinkedHashMap<>();
+        for (String name : Corpus.names()) {
+            for (int side : Corpus.SIZES) {
+                for (GpuTime.Kind k : GpuTime.Kind.values()) {
+                    gpu.put(name + "|" + k.name() + "|" + side, GpuTime.millis(Corpus.get(name), side, k));
+                }
+            }
+        }
+        Files.writeString(out, render(time, err, quality, gpu, only), StandardCharsets.UTF_8);
         System.out.println("wrote " + out.toAbsolutePath());
     }
 
     static String render(Map<String, Double> time, Map<String, Double> err, Map<String, Quality.Error> quality,
-                         String only) {
+                         Map<String, Double> gpu, String only) {
         StringBuilder s = new StringBuilder();
         s.append("# SDG, SVG and rasters compared\n\n");
         s.append("**Written by vexelray-gui-format-bench's `Publish`, not by hand.** The same art in each form, at the\n");
@@ -100,8 +109,12 @@ public final class Publish {
         for (Contender c : Contender.all()) {
             s.append("  * **").append(c.label).append("**: ").append(c.how).append('\n');
         }
-        s.append("  * **SDG, GPU**: the SDG drawn by a node in a headless window (`GuiApp.capture`), the stack's own\n");
-        s.append("    renderer; measured for error only so far, its time waiting on GPU timestamp queries.\n\n");
+        s.append("  * **SDG, GPU**: the SDG drawn by a node in a headless window, the stack's own renderer: its error from\n");
+        s.append("    a capture (`GuiApp.capture`), its time from Vulkan timestamps (`GuiApp.gpuMillis`): ")
+                .append(GpuTime.COPIES).append(" copies in a frame,\n    less an empty frame, over ")
+                .append(GpuTime.COPIES).append(", the median of ").append(GpuTime.FRAMES).append(" frames.\n");
+        s.append("  * **PNG 1024, GPU**: the 1024 px PNG drawn the way a picture is, a still feed with its mip chain,\n");
+        s.append("    sampled at the size: the GPU's own way to show a raster, the one to set SDG against there.\n\n");
         s.append("* **The truth** is the SVG drawn by imagelib at four times the size and averaged down four by four.\n");
         s.append("  Error is in premultiplied colour, every channel of every pixel, in steps of 1/255: the mean, the\n");
         s.append("  worst, and the share of pixels with a channel more than ").append(Quality.VISIBLE)
@@ -148,6 +161,20 @@ public final class Publish {
                 s.append("| `").append(name).append("` |");
                 for (Contender c : Contender.all()) {
                     s.append(' ').append(time(time, err, "draw|" + name + "|" + c.name() + "|" + side)).append(" |");
+                }
+                s.append('\n');
+            }
+            s.append("\n### GPU draw time\n\nOne drawing at the size, by Vulkan timestamps (see *Method*).\n\n| Art |");
+            for (GpuTime.Kind k : GpuTime.Kind.values()) {
+                s.append(' ').append(k.label).append(" |");
+            }
+            s.append("\n| --- |").append(" ---: |".repeat(GpuTime.Kind.values().length)).append('\n');
+            for (String name : Corpus.names()) {
+                s.append("| `").append(name).append("` |");
+                for (GpuTime.Kind k : GpuTime.Kind.values()) {
+                    Double ms = gpu.get(name + "|" + k.name() + "|" + side);
+                    s.append(' ').append(ms == null ? "—" : ms >= 1 ? String.format(Locale.ROOT, "%.2f ms", ms)
+                            : String.format(Locale.ROOT, "%.1f µs", ms * 1000)).append(" |");
                 }
                 s.append('\n');
             }

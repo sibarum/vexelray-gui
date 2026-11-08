@@ -2093,6 +2093,27 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
     // --- headless capture ---
 
     /**
+     * The GPU's time to draw {@code gui}, reconciled and laid out at {@code width}×{@code height} as {@link #capture}
+     * lays it out, in vexelray-text's standard fonts: the same frame drawn {@code frames} times on one device, offscreen,
+     * each frame's milliseconds from before its group passes to the end of its pass. A measuring tool's: the format
+     * comparison times SDG drawing by it.
+     */
+    public static double[] gpuMillis(Gui gui, int width, int height, int frames) {
+        TextFaces faces = TextFaces.standard();
+        Seams.of(gui).frame(width, height, faces);
+        settle(gui, width, height, faces);
+        RetainedNode root = Seams.of(gui).frame(width, height, faces);
+        double[] out = new double[frames];
+        render(faces, null, width, height, 0f, 0f, 0f, canvas -> {
+            if (root != null) {
+                TreeRenderer.emit(root, canvas, faces, gui);
+            }
+        }, out);
+        return out;
+    }
+
+
+    /**
      * Reconcile + lay out {@code gui} at {@code width}×{@code height}, render one frame, and write a PNG — in
      * vexelray-text's standard fonts.
      */
@@ -2142,6 +2163,18 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
      */
     static byte[] render(TextFaces faces, CanvasShader.Composed asked, int width, int height,
                          float bgR, float bgG, float bgB, java.util.function.Consumer<Canvas> emit) {
+        return render(faces, asked, width, height, bgR, bgG, bgB, emit, null);
+    }
+
+    /**
+     * As {@link #render(TextFaces, CanvasShader.Composed, int, int, float, float, float, java.util.function.Consumer)},
+     * drawn {@code gpuMillis.length} times on the one device, each frame's GPU time in milliseconds put in
+     * {@code gpuMillis} (from before its group passes to the end of its pass; {@link GpuTimer}); the last frame's
+     * pixels returned. Null for one frame, untimed.
+     */
+    static byte[] render(TextFaces faces, CanvasShader.Composed asked, int width, int height,
+                         float bgR, float bgG, float bgB, java.util.function.Consumer<Canvas> emit,
+                         double[] gpuMillis) {
         CanvasShader.Composed canvasShader = canvasShader(faces, asked);
         NativePlatform platform = NativePlatform.current();
         try (VulkanInstance instance = new VulkanInstance("vexelray-gui",
@@ -2170,10 +2203,23 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                     // are given their targets first, as a window gives them.
                     try (GroupPasses groups = new GroupPasses(device, images, fonts.first(), fonts.textures(), tables)) {
                         dev.vexelray.vulkan.present.Recorder pre = groups.prepare(canvas, vertexCount, vb.handle());
-                        return OffscreenDraw.toRgba(device, rp.handle(), pipeline, width, height, vb.handle(),
-                                fonts.first().descriptorSet(), tables.buffer().descriptorSet(),
-                                bind(runs, vertexCount, images, fonts.textures()),
-                                bgR, bgG, bgB, 1f, pre);
+                        List<WindowedPresenter.Run> bound = bind(runs, vertexCount, images, fonts.textures());
+                        if (gpuMillis == null) {
+                            return OffscreenDraw.toRgba(device, rp.handle(), pipeline, width, height, vb.handle(),
+                                    fonts.first().descriptorSet(), tables.buffer().descriptorSet(), bound,
+                                    bgR, bgG, bgB, 1f, pre);
+                        }
+                        byte[] rgba = null;
+                        try (dev.vexelray.vulkan.present.GpuTimer timer =
+                                     new dev.vexelray.vulkan.present.GpuTimer(instance.handle(), device)) {
+                            for (int i = 0; i < gpuMillis.length; i++) {
+                                rgba = OffscreenDraw.toRgba(device, rp.handle(), pipeline, width, height, vb.handle(),
+                                        fonts.first().descriptorSet(), tables.buffer().descriptorSet(), bound,
+                                        bgR, bgG, bgB, 1f, pre, timer);
+                                gpuMillis[i] = timer.millis();
+                            }
+                        }
+                        return rgba;
                     }
                 }
             }

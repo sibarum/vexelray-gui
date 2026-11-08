@@ -14,31 +14,38 @@ import java.util.List;
  */
 enum Contender {
 
-    SDG_CPU("SDG, CPU", "the drawing by SdgRender, the reference a GPU drawing is checked against") {
+    SDG_CPU("SDG, Java", "the drawing by SdgRender (Java, one thread): the reference, written to be read, not tuned") {
         @Override
         byte[] draw(Corpus.Art art, int side) {
             return SdgRender.render(art.sdg(), side, side).rgba();
         }
     },
-    SVG_IMAGELIB("SVG, imagelib", "the SVG rasterised by imagelib (native), parse included, as Ico.java made icons") {
+    SDG_C("SDG, C", "the drawing by sdg-signed-distance-graphics' C rasterizer (native, one thread, /O2): SdgRender's "
+            + "algorithm, bit for bit, called through the foreign-function API") {
+        @Override
+        byte[] draw(Corpus.Art art, int side) {
+            return NativeSdg.render(art, side);
+        }
+    },
+    SVG_IMAGELIB("SVG, imagelib", "the SVG rasterised by imagelib (native, built from Rust), parse included, as Ico.java made icons") {
         @Override
         byte[] draw(Corpus.Art art, int side) {
             return Imagelib.rasterize(art.svg(), side, side).rgba();
         }
     },
-    SVG_JAVA("SVG, Java", "the SVG, parsed once, rasterised by vexelray-fields' renderer at 4 × 4 samples a pixel") {
+    SVG_JAVA("SVG, Java", "the SVG, parsed once, rasterised by vexelray-fields' renderer (Java, one thread) at 4 × 4 samples a pixel") {
         @Override
         byte[] draw(Corpus.Art art, int side) {
             return art.parsed().render(side, side, 4).rgba();
         }
     },
-    PNG_256("PNG 256, scaled", "a 256 px PNG, decoded once, scaled to the size by bilinear filtering") {
+    PNG_256("PNG 256, scaled", "a 256 px PNG, decoded once, scaled to the size by bilinear filtering (Java)") {
         @Override
         byte[] draw(Corpus.Art art, int side) {
             return Resample.bilinear(art.raster().get(256), side);
         }
     },
-    PNG_1024("PNG 1024, scaled", "a 1024 px PNG, decoded once, scaled to the size by bilinear filtering") {
+    PNG_1024("PNG 1024, scaled", "a 1024 px PNG, decoded once, scaled to the size by bilinear filtering (Java)") {
         @Override
         byte[] draw(Corpus.Art art, int side) {
             return Resample.bilinear(art.raster().get(1024), side);
@@ -55,8 +62,9 @@ enum Contender {
 
     abstract byte[] draw(Corpus.Art art, int side);
 
+    /** Every contender that can run here: the C one only where its library was built. */
     static List<Contender> all() {
-        return List.of(values());
+        return java.util.Arrays.stream(values()).filter(c -> c != SDG_C || NativeSdg.available()).toList();
     }
 
     /** Bilinear scaling of straight RGBA, through premultiplied colour, so a transparent neighbour never darkens. */

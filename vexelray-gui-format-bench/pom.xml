@@ -83,7 +83,7 @@
                     <!-- the parent skips exec for every module; this one has a program to run -->
                     <skip>false</skip>
                     <executable>${java.home}/bin/java</executable>
-                    <commandlineArgs>--enable-native-access=ALL-UNNAMED -classpath %classpath dev.vexelray.gui.formatbench.Publish ${compare.out} ${compare.only}</commandlineArgs>
+                    <commandlineArgs>--enable-native-access=ALL-UNNAMED -Dsdg.native.dir=${project.basedir}/../../sdg-signed-distance-graphics/c/build -classpath %classpath dev.vexelray.gui.formatbench.Publish ${compare.out} ${compare.only}</commandlineArgs>
                 </configuration>
             </plugin>
         </plugins>

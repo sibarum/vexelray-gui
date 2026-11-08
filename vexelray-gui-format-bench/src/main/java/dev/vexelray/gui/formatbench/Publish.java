@@ -39,7 +39,9 @@ public final class Publish {
             }
         }
         Options opt = new OptionsBuilder().include(FormatBench.class.getName())
-                .param("key", keys.toArray(new String[0])).build();
+                .param("key", keys.toArray(new String[0]))
+                .jvmArgsAppend("-D" + NativeSdg.DIR_PROPERTY + "=" + System.getProperty(NativeSdg.DIR_PROPERTY, ""))
+                .build();
         Map<String, Double> time = new LinkedHashMap<>();
         Map<String, Double> err = new LinkedHashMap<>();
         for (RunResult r : new Runner(opt).run()) {
@@ -115,6 +117,9 @@ public final class Publish {
                 .append(GpuTime.COPIES).append(", the median of ").append(GpuTime.FRAMES).append(" frames.\n");
         s.append("  * **PNG 1024, GPU**: the 1024 px PNG drawn the way a picture is, a still feed with its mip chain,\n");
         s.append("    sampled at the size: the GPU's own way to show a raster, the one to set SDG against there.\n\n");
+        if (!NativeSdg.available()) {
+            s.append("  * **SDG, C** is left out of this run: ").append(NativeSdg.why()).append(".\n\n");
+        }
         s.append("* **The truth** is the SVG drawn by imagelib at four times the size and averaged down four by four.\n");
         s.append("  Error is in premultiplied colour, every channel of every pixel, in steps of 1/255: the mean, the\n");
         s.append("  worst, and the share of pixels with a channel more than ").append(Quality.VISIBLE)

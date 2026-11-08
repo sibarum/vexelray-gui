@@ -70,6 +70,8 @@ Verified against the current libraries.
   (`vexelray-msdf-maven-plugin`'s `<families>`), one atlas each, listed in `fonts.json`, with per-code-point
   fallback between faces — over `AtlasData` (one face's msdf-atlas-gen JSON). `GlyphLayout`, `TextLayout`:
   line breaking + wrapping, H/V alignment (incl. justify), `measure` → bounds, fit queries, anchor placement.
+  The reference is vexelray's [docs/text.md](../../../vexelray/docs/text.md) for the runtime, and the plugin's
+  [README](../../../vexelray/vexelray-msdf-maven-plugin/README.md) for baking a font or adding a face.
 - *Runtime (`vexelray-vulkan`).* `VulkanInstance → Device → Swapchain → RenderPass → GraphicsPipeline →
   WindowedPresenter`. `WindowedPresenter` drives a **per-frame callback** with a **dynamic vertex
   buffer** at one frame in flight — rebuild-and-present each frame is a solved path
@@ -688,7 +690,10 @@ input-subsystem coupling).
 
 **Which face draws a character.** All of an application's fonts are built in, and every face's atlas is
 uploaded when the `GuiApp` is made. Nothing is generated, loaded on demand or evicted, so the memory text takes is
-a fact of the build (docs/plans/font-families.md).
+a fact of the build (docs/plans/font-families.md). How the faces are baked, named and matched, and how fallback
+between them works, is in vexelray's [docs/text.md](../../../vexelray/docs/text.md) and
+[vexelray-msdf-maven-plugin/README.md](../../../vexelray/vexelray-msdf-maven-plugin/README.md); this section is
+what the GUI adds on top.
 - **One deciding class.** `TextFaces` (core.text) decides each character's face from the node's family, weight
   and slope (`Node.font`, `fontWeight`, `fontSlope`) and its styled spans. A style the family lacks gets the
   nearest face, by CSS font matching.

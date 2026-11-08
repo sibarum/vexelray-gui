@@ -49,6 +49,13 @@ class PictureTest {
             ops.add("glyphs \"" + text + "\" " + x + "," + y + " @" + sizePx + tagged(tag));
         }
 
+        @Override
+        public void drawing(double x, double y, double w, double h, dev.vexelray.fields.sdg.Sdg drawing,
+                            List<? extends dev.vexelray.target.ImageHandle> pages, String tag) {
+            ops.add("drawing " + x + "," + y + " " + w + "x" + h + " " + drawing.layers().size() + " layers"
+                    + tagged(tag));
+        }
+
         private static String tagged(String tag) {
             return tag == null ? "" : " [" + tag + "]";
         }

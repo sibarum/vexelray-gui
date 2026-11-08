@@ -65,10 +65,21 @@ class SdgCaptureTest {
     void aNodesDrawingIsItsReferenceOverThePage() throws Exception {
         Sdg sdg = badge();
         Rect[] where = new Rect[1];
-        BufferedImage shot = capture("badge", ImageSdg.of(sdg), Theme.DARK, null, where);
-        Rect r = where[0];
+        BufferedImage shot = capture("badge", ImageSdg.of(sdg), null, Theme.DARK, null, where);
+        int[] counts = compare(shot, sdg, where[0]);
+        int worst = counts[0], different = counts[1], pixels = counts[2];
+        System.out.printf("[sdg capture] box %s: %d of %d pixels differ by more than %d; worst %d%n",
+                where[0], different, pixels, TOLERANCE, worst);
+        assertTrue(different <= pixels / 100, different + " pixels differ from the reference (worst " + worst + ")");
+        assertTrue(worst <= WORST, "a pixel differs from the reference by " + worst);
+    }
 
-        // The canvas fits the drawing into the box as SdgRender.render fits it: k pixels a unit, centred.
+    /**
+     * The capture inside {@code r} against {@code sdg} fitted into it, as the canvas fits a drawing and as
+     * {@code SdgRender.render} does (k pixels a unit, centred), over the dark theme's page: {@code {worst, pixels past
+     * TOLERANCE, pixels}}. Writes a diff image beside the capture.
+     */
+    private static int[] compare(BufferedImage shot, Sdg sdg, Rect r) throws java.io.IOException {
         double k = Math.min(r.w() / sdg.width(), r.h() / sdg.height());
         double ox = r.x() + (r.w() - sdg.width() * k) / 2, oy = r.y() + (r.h() - sdg.height() * k) / 2;
         Raster ref = SdgRender.render(sdg, shot.getWidth(), shot.getHeight(), -ox / k, -oy / k, 1 / k);
@@ -97,10 +108,30 @@ class SdgCaptureTest {
             }
         }
         ImageIO.write(diff, "png", Path.of("target", "sdg", "badge-diff.png").toFile());
-        System.out.printf("[sdg capture] box %s: %d of %d pixels differ by more than %d; worst %d%n",
-                r, different, pixels, TOLERANCE, worst);
-        assertTrue(different <= pixels / 100, different + " pixels differ from the reference (worst " + worst + ")");
-        assertTrue(worst <= WORST, "a pixel differs from the reference by " + worst);
+        return new int[]{worst, different, pixels};
+    }
+
+    /**
+     * A drawing in a picture ({@code Sketch.drawing}) draws as a node's drawing does: the same badge, a mark in a
+     * picture over the same box, against the reference; and its SVG export holds it, drawn, as an image.
+     */
+    @Test
+    void aPicturesDrawingIsItsReferenceAndExportsAsAnImage() throws Exception {
+        Sdg sdg = badge();
+        ImageSdg drawing = ImageSdg.of(sdg);
+        dev.vexelray.gui.draw.Picture picture = new dev.vexelray.gui.draw.Sketch().tag("badge")
+                .drawing(0, 0, 256, 192, drawing.source(), drawing.pages()).picture();
+        Rect[] where = new Rect[1];
+        BufferedImage shot = capture("picture", null, picture, Theme.DARK, null, where);
+        int[] counts = compare(shot, sdg, where[0]);
+        System.out.printf("[sdg capture] picture %s: %d of %d pixels differ by more than %d; worst %d%n",
+                where[0], counts[1], counts[2], TOLERANCE, counts[0]);
+        assertTrue(counts[1] <= counts[2] / 100, counts[1] + " pixels differ (worst " + counts[0] + ")");
+        assertTrue(counts[0] <= WORST);
+
+        String svg = dev.vexelray.gui.draw.Svg.document(picture, 256, 192);
+        assertTrue(svg.contains("<image ") && svg.contains("href=\"data:image/png;base64,")
+                && svg.contains("class=\"badge\""), "the export holds the drawing as an image, its tag its class");
     }
 
     /** The star names the foreground: drawn in the dark theme's ink, and swapped to the light theme's with it. */
@@ -114,8 +145,8 @@ class SdgCaptureTest {
         }
         ImageSdg themed = ImageSdg.of(new Sdg(sdg.width(), sdg.height(), sdg.pages(), layers));
         Rect[] where = new Rect[1];
-        BufferedImage dark = capture("role-dark", themed, Theme.DARK, null, where);
-        BufferedImage light = capture("role-light", themed, Theme.DARK, Theme.LIGHT, new Rect[1]);
+        BufferedImage dark = capture("role-dark", themed, null, Theme.DARK, null, where);
+        BufferedImage light = capture("role-light", themed, null, Theme.DARK, Theme.LIGHT, new Rect[1]);
 
         Rect r = where[0];
         double k = Math.min(r.w() / sdg.width(), r.h() / sdg.height());
@@ -133,14 +164,15 @@ class SdgCaptureTest {
     }
 
     /** A page with {@code drawing} in a box on it, built in {@code born}, swapped to {@code then} if not null. */
-    private static BufferedImage capture(String name, ImageSdg drawing, Theme born, Theme then, Rect[] where)
+    private static BufferedImage capture(String name, ImageSdg drawing,
+                                         dev.vexelray.gui.draw.Picture picture, Theme born, Theme then, Rect[] where)
             throws Exception {
         Path dir = Path.of("target", "sdg");
         Files.createDirectories(dir);
         File out = dir.resolve(name + ".png").toFile();
         Files.deleteIfExists(out.toPath());
         Gui gui = new Gui().theme(born);
-        Node box = gui.box().width(Length.dp(256)).height(Length.dp(192)).sdg(drawing);
+        Node box = gui.box().width(Length.dp(256)).height(Length.dp(192)).sdg(drawing).picture(picture);
         Node page = gui.box().direction(Direction.COLUMN).width(Length.FILL).height(Length.FILL)
                 .background(Role.PAGE);
         // Off the window's edge, which the window draws a line of its own round.

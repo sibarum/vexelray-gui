@@ -789,7 +789,8 @@ public final class TreeRenderer {
         canvas.pushClip(n.x + transX, n.y + transY, n.w, n.h, Math.max(n.cornerPx, n.cornerBottomPx));
         canvas.pushTranslate(n.x, n.y);
         // Stretched along x if an asked half said so (Drawn.stretch): the marks, not the clip or the box.
-        picture.emitTo(Picture.stretchX(new CanvasSink(canvas, text, alpha), n.drawnStretch, n.drawnStretchX));
+        picture.emitTo(Picture.stretchX(new CanvasSink(canvas, text, alpha, sdgRoles), n.drawnStretch,
+                n.drawnStretchX));
         canvas.popTranslate();
         canvas.popClip();
     }

@@ -29,5 +29,12 @@
             <groupId>dev.vexelray</groupId>
             <artifactId>vexelray-text</artifactId>
         </dependency>
+        <!-- SDG: a picture's drawing mark draws natively through the canvas (the format comes with it); an SVG export
+             embeds it drawn by SdgRender, the format's reference renderer, since SVG has no distance fields. -->
+        <dependency>
+            <groupId>dev.vexelray.fields</groupId>
+            <artifactId>vexelray-fields-sdg</artifactId>
+            <version>${vexelray-fields.version}</version>
+        </dependency>
     </dependencies>
 </project>

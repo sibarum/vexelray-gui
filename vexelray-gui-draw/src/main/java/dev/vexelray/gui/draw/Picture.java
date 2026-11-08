@@ -1,6 +1,8 @@
 package dev.vexelray.gui.draw;
 
 import dev.vexelray.canvas.Color;
+import dev.vexelray.fields.sdg.Sdg;
+import dev.vexelray.target.ImageHandle;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -118,6 +120,13 @@ public record Picture(List<Mark> marks) {
         public void glyphs(String text, double x, double y, double sizePx, Color color, String tag) {
             to.glyphs(text, x(x), y, sizePx, color, tag);
         }
+
+        /** A drawing's box is stretched; the drawing keeps its aspect inside it. */
+        @Override
+        public void drawing(double x, double y, double w, double h, Sdg drawing, List<? extends ImageHandle> pages,
+                            String tag) {
+            to.drawing(x(x), y, w * factor, h, drawing, pages, tag);
+        }
     }
 
     /** This picture translated by {@code (dx, dy)} px — how a drawing places a sub-drawing. */
@@ -184,9 +193,18 @@ public record Picture(List<Mark> marks) {
          * rather than laying out.
          */
         void glyphs(String text, double x, double y, double sizePx, Color color, String tag);
+
+        /**
+         * A drawing in signed distance graphics fitted into the box at {@code (x, y)}, its aspect kept and centred:
+         * full colour, sharp at any size. {@code drawing} is the drawing with its texels, every layer's stencil and
+         * paint on one page ({@code SdgPages.colocated}); {@code pages} are its pages as the screen uploads them, in
+         * order, one handle per page, kept for as long as the drawing is shown (a GUI's {@code ImageSdg.pages()}).
+         */
+        void drawing(double x, double y, double w, double h, Sdg drawing, List<? extends ImageHandle> pages,
+                     String tag);
     }
 
-    // --- the four marks -------------------------------------------------------------------------------------
+    // --- the marks -------------------------------------------------------------------------------------------
 
     /** A filled rounded box — see {@link Sink#fill}. */
     public record Fill(double x, double y, double w, double h, double radiusTop, double radiusBottom, Color color,
@@ -265,6 +283,29 @@ public record Picture(List<Mark> marks) {
         @Override
         public void emitTo(Sink sink) {
             sink.glyphs(text, x, y, sizePx, color, tag);
+        }
+    }
+
+    /** A drawing in signed distance graphics fitted into a box — see {@link Sink#drawing}. */
+    public record Drawing(double x, double y, double w, double h, Sdg drawing, List<? extends ImageHandle> pages,
+                          String tag) implements Mark {
+
+        public Drawing {
+            pages = List.copyOf(pages);
+            if (pages.size() != drawing.pages().size()) {
+                throw new IllegalArgumentException("a drawing on " + drawing.pages().size() + " pages, and "
+                        + pages.size() + " handles for them");
+            }
+        }
+
+        @Override
+        public Mark shifted(double dx, double dy) {
+            return new Drawing(x + dx, y + dy, w, h, drawing, pages, tag);
+        }
+
+        @Override
+        public void emitTo(Sink sink) {
+            sink.drawing(x, y, w, h, drawing, pages, tag);
         }
     }
 }

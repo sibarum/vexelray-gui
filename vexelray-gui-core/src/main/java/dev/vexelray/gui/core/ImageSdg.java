@@ -34,8 +34,10 @@ import java.util.Map;
  *
  * @param drawing the layers, every one's stencil and paint on one page, and the pages' sizes
  * @param pages   the pages, in order, uploaded as they are (RGBA8, never sRGB-decoded)
+ * @param source  the drawing with its texels, when it was made from one ({@link #of(Sdg)}): what a picture's drawing
+ *                mark and an export take. Null for an icon over an atlas, whose texels are never read here
  */
-public record ImageSdg(SdgDrawing drawing, List<Pixels> pages, Color tint, Look look, float[] instance) {
+public record ImageSdg(SdgDrawing drawing, List<Pixels> pages, Color tint, Look look, float[] instance, Sdg source) {
 
     /** The role an icon of one colour paints its shape in: the node's {@code tint}. */
     public static final String TINT = "tint";
@@ -57,7 +59,7 @@ public record ImageSdg(SdgDrawing drawing, List<Pixels> pages, Color tint, Look 
         for (Sdg.Page page : ready.pages()) {
             pages.add(new Page(page));
         }
-        return new ImageSdg(SdgDrawing.of(ready), pages, null, null, NONE);
+        return new ImageSdg(SdgDrawing.of(ready), pages, null, null, NONE, ready);
     }
 
     /**
@@ -119,7 +121,7 @@ public record ImageSdg(SdgDrawing drawing, List<Pixels> pages, Color tint, Look 
             heights[i] = pages.get(i).height();
         }
         SdgDrawing drawing = new SdgDrawing(inner, inner, layers, widths, heights);
-        return new ImageSdg(drawing, pages, tint, sdgLook(first.look()), first.instance());
+        return new ImageSdg(drawing, pages, tint, sdgLook(first.look()), first.instance(), null);
     }
 
     /**
@@ -153,12 +155,12 @@ public record ImageSdg(SdgDrawing drawing, List<Pixels> pages, Color tint, Look 
 
     /** This drawing with {@code tint} for its paints in the role {@value #TINT}; null for the theme's ink. */
     public ImageSdg tint(Color tint) {
-        return new ImageSdg(drawing, pages, tint, look, instance);
+        return new ImageSdg(drawing, pages, tint, look, instance, source);
     }
 
     /** This drawing's back-most layer drawn by {@code look} with {@code instance}; null for none. */
     public ImageSdg look(Look look, float... instance) {
-        return new ImageSdg(drawing, pages, tint, look, instance);
+        return new ImageSdg(drawing, pages, tint, look, instance, source);
     }
 
     /** The look's per-element values, a copy. */

@@ -121,6 +121,8 @@ final class GuiWindow implements AutoCloseable {
     private final ShadeletTables tables;
     private final GraphicsPipeline pipeline;
     private final WindowPresenter presenter;
+    /** The passes for SDG groups drawn apart, recorded before each frame's own (and each capture's). */
+    private final GroupPasses groupPasses;
     private final Canvas canvas;
     /** Bound at the image set for every span that draws no image -- see {@link AtlasTexture#placeholder}. */
     private final DeviceImages images;
@@ -227,6 +229,7 @@ final class GuiWindow implements AutoCloseable {
         this.canvas = new Canvas(initialWidth, initialHeight);
         this.vertexBuffer = new VertexBuffer(device, CAPACITY_FLOATS);
         this.tables = new ShadeletTables(device);
+        this.groupPasses = new GroupPasses(device, images, fonts.first(), fonts.textures(), tables);
         canvas.looks(images.looks());
         ComposedShader vs = CanvasShader.vertex();
         ComposedShader fs = images.fragment();
@@ -577,9 +580,11 @@ final class GuiWindow implements AutoCloseable {
         tables.upload(images.looks(), canvas);
 
         Color page = gui.drawnTheme().color(Role.PAGE);
+        dev.vexelray.vulkan.present.Recorder groups = groupPasses.prepare(canvas, vertexCount, vertexBuffer.handle());
         byte[] rgba = OffscreenDraw.toRgba(device, capturePass.handle(), capturePipeline, w, h,
                 vertexBuffer.handle(), fonts.first().descriptorSet(), tables.buffer().descriptorSet(),
-                GuiApp.bind(canvas.runs(), vertexCount, images, fonts.textures()), page.r(), page.g(), page.b(), 1f);
+                GuiApp.bind(canvas.runs(), vertexCount, images, fonts.textures()), page.r(), page.g(), page.b(), 1f,
+                groups);
 
         // The vertex buffer now holds the capture's geometry and the presenter's run list still describes the
         // last presented frame. Nothing reads either until the next frame rewrites both, but leaving the two
@@ -671,6 +676,8 @@ final class GuiWindow implements AutoCloseable {
             vertexCount = room;
         }
         vertexBuffer.update(vertices, vertexCount * CanvasVertex.FLOATS_PER_VERTEX);
+        // groups first: their targets are given here, and the frame's own runs read them
+        presenter.prePass(groupPasses.prepare(canvas, vertexCount, vertexBuffer.handle()));
         presenter.setRuns(GuiApp.bind(runs, vertexCount, images, fonts.textures()));
     }
 
@@ -737,6 +744,7 @@ final class GuiWindow implements AutoCloseable {
         // finished now, whole, rather than left for a shutdown hook a killed process never runs.
         dev.vexelray.gui.core.WindowRecording.windowClosed(window.osHandle());
         closeCapture();
+        groupPasses.close();   // after the presenter has waited the device idle: no frame reads its targets now
         pipeline.close();
         vertexBuffer.close();
         tables.close();

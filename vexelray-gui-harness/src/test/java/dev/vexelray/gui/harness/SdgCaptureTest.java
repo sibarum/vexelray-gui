@@ -74,6 +74,42 @@ class SdgCaptureTest {
         assertTrue(worst <= WORST, "a pixel differs from the reference by " + worst);
     }
 
+    /** SDG 1.2's groups: an overlap under a group opacity, a clip, a luminance mask, each drawn apart on the GPU. */
+    @Test
+    void groupsDrawnApartAreTheirReference() throws Exception {
+        String[] svgs = {
+                """
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+                  <g opacity="0.5"><rect x="10" y="10" width="50" height="50" fill="#ff3030"/>
+                    <rect x="40" y="40" width="50" height="50" fill="#3060ff"/></g>
+                </svg>""",
+                """
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+                  <defs><clipPath id="round"><circle cx="50" cy="50" r="34"/></clipPath></defs>
+                  <rect x="8" y="8" width="84" height="84" fill="#20c060" clip-path="url(#round)"/>
+                </svg>""",
+                """
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+                  <defs><mask id="half"><rect x="0" y="0" width="50" height="100" fill="#ffffff"/>
+                    <rect x="50" y="0" width="50" height="100" fill="#404040"/></mask></defs>
+                  <rect x="10" y="10" width="80" height="80" fill="#ff9020" mask="url(#half)"/>
+                </svg>"""};
+        String[] names = {"group-opacity", "group-clip", "group-mask"};
+        for (int i = 0; i < svgs.length; i++) {
+            Svg svg = Svg.parse(svgs[i]);
+            Sdg sdg = SvgToSdg.convert(svg, SvgToSdg.Options.across(svg, 64));
+            assertTrue(sdg.layers().getFirst().isGroup(), names[i] + " converts to a group");
+            Rect[] where = new Rect[1];
+            BufferedImage shot = capture(names[i], ImageSdg.of(sdg), null, Theme.DARK, null, where);
+            int[] counts = compare(shot, sdg, where[0]);
+            System.out.printf("[sdg capture] %s %s: %d of %d pixels differ by more than %d; worst %d%n",
+                    names[i], where[0], counts[1], counts[2], TOLERANCE, counts[0]);
+            assertTrue(counts[1] <= counts[2] / 100, names[i] + ": " + counts[1] + " pixels differ (worst "
+                    + counts[0] + ")");
+            assertTrue(counts[0] <= WORST, names[i] + ": a pixel differs by " + counts[0]);
+        }
+    }
+
     /**
      * The capture inside {@code r} against {@code sdg} fitted into it, as the canvas fits a drawing and as
      * {@code SdgRender.render} does (k pixels a unit, centred), over the dark theme's page: {@code {worst, pixels past

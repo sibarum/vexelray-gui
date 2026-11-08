@@ -2166,11 +2166,15 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                              CanvasShader.vertex().spirv(), "main", images.fragment().spirv(), "main",
                              canvasConfig(fonts.first(), images.placeholder(), tables.buffer(), false))) { // fixed viewport: offscreen, no resize
                     // The same run list the windowed path walks, so a tree holding images captures to PNG exactly as
-                    // it presents — which is what makes the image kind checkable without a window.
-                    return OffscreenDraw.toRgba(device, rp.handle(), pipeline, width, height, vb.handle(),
-                            fonts.first().descriptorSet(), tables.buffer().descriptorSet(),
-                            bind(runs, vertexCount, images, fonts.textures()),
-                            bgR, bgG, bgB, 1f);
+                    // it presents — which is what makes the image kind checkable without a window. Groups drawn apart
+                    // are given their targets first, as a window gives them.
+                    try (GroupPasses groups = new GroupPasses(device, images, fonts.first(), fonts.textures(), tables)) {
+                        dev.vexelray.vulkan.present.Recorder pre = groups.prepare(canvas, vertexCount, vb.handle());
+                        return OffscreenDraw.toRgba(device, rp.handle(), pipeline, width, height, vb.handle(),
+                                fonts.first().descriptorSet(), tables.buffer().descriptorSet(),
+                                bind(runs, vertexCount, images, fonts.textures()),
+                                bgR, bgG, bgB, 1f, pre);
+                    }
                 }
             }
         }

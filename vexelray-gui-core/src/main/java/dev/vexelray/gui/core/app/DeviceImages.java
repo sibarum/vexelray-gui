@@ -104,6 +104,10 @@ final class DeviceImages implements AutoCloseable {
      * the placeholder, and say so once; so does a feed that is closed or has nothing handed over yet.
      */
     ImageHandle resolve(ImageHandle image) {
+        if (image instanceof dev.vexelray.canvas.Canvas.GroupTarget g) {
+            // an SDG group drawn apart: the target this frame's pre-pass draws it into (GroupPasses)
+            return g.bound() instanceof ImageHandle bound ? bound : placeholder;
+        }
         if (image instanceof Feed feed) {
             return fed(feed);
         }

@@ -1,6 +1,6 @@
 # The frame contract: one way for code to run on the GUI thread
 
-Status: **Proposed 2026-10-29; steps 1 to 4 done** (4 on 2026-10-31, built device-free rather than in the engine:
+Status: **Proposed 2026-10-29; steps 1 to 5 done** (5 on 2026-11-10) (4 on 2026-10-31, built device-free rather than in the engine:
 see step 4). Supersedes *pacers.md* (committed as `06f27c2` the same day), which
 proposed a third exception to T7.1 for video; the author pointed out that pacing is drawing, and that drawing,
 presentation and pacing should be one API. The ask first, then what the code does today, then the design, how each
@@ -261,7 +261,7 @@ application** (ruled 2026-10-30, below): it needs no feed, so it does not wait f
      devices in one frame shows the same slot.
    - Not done: freeing slots on a seek back (a producer that refills with earlier stamps must `drop` what it holds,
      or the newer slots wait); that is step 5's, with the codec.
-5. **The codec on it.** The video and animated-image widgets as parts; `Playback`'s loop deleted. Measure against
+5. ~~**The codec on it.**~~ The video and animated-image widgets as parts; `Playback`'s loop deleted. Measure against
    step 0. **Begun 2026-11-10, with Rasterware's animated pictures as its first application.** Built so far:
    - **The feed keeps the producer's time** (open question 2, answered): `Feed.time(monoNanos, stamp, running)` says
      what the feed's time is at a moment on the machine's clock and whether it runs on from there, and an asked half
@@ -285,9 +285,38 @@ application** (ruled 2026-10-30, below): it needs no feed, so it does not wait f
      handed over is due, which is when the renderer frees the one before; it is told nothing by the feed. After a seek,
      whose stale slots come free at the window's next frame, it looks again every 4 ms until they have. A
      notification from `select` would remove both; not needed yet.
-   Still to do: `ImageView` and `VideoView` moved onto `Player`, and `Playback` deleted; a video's sound through it in an
-   application (`Footage`'s clock is followed, held by a unit test only); the clock topic for a seek bar and an end
-   (C); step 0's measurement, and the same numbers taken here.
+   **Done 2026-11-10**, the rest of it:
+   - **A widget's asked half goes through `Seams.ask`**, the widget library's seam as well as the host's, as its input
+     handlers do (ruled by the author; `Asked`, `Seams.ask` and threading.md T7.6 say so). No new door: `spi` was
+     already the widget library's, and no `@View` may import it. A widget's asked half is library code, held by the
+     library's tests; the processor checks an application's `@Draw` only.
+   - **`ImageView` and `VideoView` are on `Player`**, each registering one asked half when it is made. `ImageView` shows
+     a picture that plays on a node of its own over the poster, which its asked half hides once a frame is due;
+     `VideoView` plays a `Clip` handed in (pictures only) or a `VideoFile` (with its sound). **`Playback` is deleted**,
+     with its krono loop, `POLL_MS`, locks and `StreamTexture`; nothing in the codec paces a picture any more.
+   - **The clock topic (C) is not built, and is struck** (ruled by the author): the seek bar's place is drawn by the
+     asked half from the feed's time (`Player.positionOf`, exact because every pass, a seek's included, starts on a
+     whole number of passes), and an end is the player's to notice. A part that must act on an end hears it as a
+     `Timer` message, as C already allowed; none has needed to yet, since Rasterware loops.
+   - **A video crosses the bus as values**: `Videos.probe` opens, measures and closes a file and answers a `Probed`
+     with a `VideoFile` (its stamp, size, length, rate, sound), which a player opens again on its own thread. An open
+     `Clip` never could cross.
+   - **Witnesses**: Rasterware plays animated GIF, WebP and APNG and videos with their sound, Space to pause and a seek
+     track clicked to seek, its `View.draw` choosing the frame and placing the playhead; the codec's video-player demo
+     is a 0.2 application again (a `@Job` probes, a `@View` plays), and its meter is step 0's instrument.
+   - **Step 0's numbers, taken after rather than before** (the author chose to skip it first; 0.1's player is deleted
+     now, so there is no "before" to measure). The demo playing 10 s AV1 clips at 960 x 540, distinct frames reaching
+     the screen per second, seconds 2 to 8, twelve runs: 24 fps 23.0 to 25.0; 30 fps 29.9 to 31.0; 60 fps 58.9 to 60.9.
+     One run of the 30 fps clip froze for about 2 s mid-clip (13, 0, 21 fps) and did not repeat in eleven runs after;
+     its cause was not found, and the demo's log said nothing. Not measured: the offset from sound, and an emit's cost.
+   - **Decided in the building:** a feed's node is drawn at nothing until its first frame is due (an empty feed draws
+     a white placeholder), and a node drawn at nothing may never be drawn, so never hear the hand-over that would
+     wake it; so while a first frame is coming an asked half looks again a frame on (16 ms). A feed that woke its part
+     on its first hand-over without being drawn would remove that. And `Node.image(Feed)` takes no region, so a
+     picture that plays is not mirrored by `ImageView`'s pose, where 0.1's stream was.
+   Left: `ImageView`'s own slide and its packed-sheet animation are still krono's (the fades row below, not a player's);
+   vex-suite-common's `PictureViewer` is not ported (its view package does not compile on 0.2 for other reasons
+   already); the budget that freezes a slow asked half.
 6. **A third witness, not a player:** the fluid simulator's field through a feed, its producer on a declared lane,
    so the contract is shown to be general rather than shaped round video.
 

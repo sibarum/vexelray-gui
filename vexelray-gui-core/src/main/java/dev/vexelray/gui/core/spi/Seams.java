@@ -406,8 +406,8 @@ public abstract class Seams {
 
     /**
      * Ask {@code part} what its nodes show on every frame from the next one on, and park the loop only until the
-     * earliest time it says it is due ({@link Asked}). The host's: vexelray-framework registers a view's declared draw
-     * here. GUI thread.
+     * earliest time it says it is due ({@link Asked}). The host's and the widget library's: vexelray-framework registers
+     * a view's declared draw here, and a widget whose picture moves registers its own. GUI thread.
      */
     public abstract Seams ask(Asked part);
 

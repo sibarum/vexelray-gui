@@ -17,6 +17,12 @@ public enum Dock {
         void reserve(Bands bands, RetainedNode parent, RetainedNode c) {
             bands.top = Math.max(bands.top, c.y + c.h - parent.y);
         }
+
+        @Override
+        void floor(Floor floor, float x, float y, float w, float h) {
+            floor.top = Math.max(floor.top, y + h);
+            floor.across = Math.max(floor.across, x + w);
+        }
     },
 
     /** Content stops left of the float. */
@@ -24,6 +30,12 @@ public enum Dock {
         @Override
         void reserve(Bands bands, RetainedNode parent, RetainedNode c) {
             bands.right = Math.max(bands.right, parent.x + parent.w - c.x);
+        }
+
+        @Override
+        void floor(Floor floor, float x, float y, float w, float h) {
+            floor.right = Math.max(floor.right, w);
+            floor.along = Math.max(floor.along, y + h);
         }
     },
 
@@ -33,10 +45,42 @@ public enum Dock {
         void reserve(Bands bands, RetainedNode parent, RetainedNode c) {
             bands.bottom = Math.max(bands.bottom, parent.y + parent.h - c.y);
         }
+
+        @Override
+        void floor(Floor floor, float x, float y, float w, float h) {
+            floor.bottom = Math.max(floor.bottom, h);
+            floor.across = Math.max(floor.across, x + w);
+        }
     };
 
     /** Widen {@code bands} by the band placed child {@code c} keeps clear along this edge of {@code parent}. */
     abstract void reserve(Bands bands, RetainedNode parent, RetainedNode c);
+
+    /**
+     * Raise {@code floor} by what a float docked on this edge needs of its parent: its least size {@code w × h} at
+     * offsets {@code (x, y)}. A bar along the top or bottom needs its band in height and its whole length across; one
+     * along the right needs its band in width and its whole length down.
+     */
+    abstract void floor(Floor floor, float x, float y, float w, float h);
+
+    /** The smallest box a parent's docked floats all fit in, gathered edge by edge ({@link #floor}). */
+    static final class Floor {
+        float top;
+        float bottom;
+        float right;
+        /** The longest bar along the top or bottom, offset included. */
+        float across;
+        /** The longest bar down the right, offset included. */
+        float along;
+
+        float width() {
+            return Math.max(across, right);
+        }
+
+        float height() {
+            return Math.max(top + bottom, along);
+        }
+    }
 
     /** How far in from each edge a parent's docked floats reach, in px from its border box. */
     static final class Bands {

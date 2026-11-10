@@ -59,6 +59,9 @@ public final class Metrics {
     // The smallest canvas the UI is laid out on, whatever the window does (see minSize).
     private volatile Length minWidth = Length.ZERO;
     private volatile Length minHeight = Length.ZERO;
+    // That minimum resolved at the last frame's zoom and density: the canvas floor, and part of the window's (Seams).
+    private float minWidthPx;
+    private float minHeightPx;
 
     // How far into its own dead space the GUI hands the window manager a resize grip, and that Length resolved
     // against this frame's zoom and density — read by the host right after frame().
@@ -128,8 +131,10 @@ public final class Metrics {
         // context built from the *window* size, because a minimum in vw/vh against the clamped size would define
         // itself; em/dp — the units this is for — do not consult the viewport at all.
         LayoutContext windowCtx = new LayoutContext(ROOT_EM_PX, z, d, viewportW, viewportH);
-        float layoutW = Math.max(viewportW, minWidth.scalarPx(windowCtx, viewportW));
-        float layoutH = Math.max(viewportH, minHeight.scalarPx(windowCtx, viewportH));
+        minWidthPx = Math.max(0f, minWidth.scalarPx(windowCtx, viewportW));
+        minHeightPx = Math.max(0f, minHeight.scalarPx(windowCtx, viewportH));
+        float layoutW = Math.max(viewportW, minWidthPx);
+        float layoutH = Math.max(viewportH, minHeightPx);
 
         // Resolved every frame like everything else: a zoomed UI whose gutter grew has a grip that grew with it.
         resizeBorderPx = Math.round(resizeBorder.scalarPx(windowCtx, viewportW));
@@ -323,6 +328,16 @@ public final class Metrics {
     /** How thick a resize grip the window manager gets inside each edge, over this GUI's own dead space. */
     public void resizeBorder(Length thickness) {
         this.resizeBorder = thickness == null ? Length.ZERO : thickness;
+    }
+
+    /** {@link #minSize}'s width in pixels as of the last {@link #measure}, at that frame's zoom and density. */
+    public float minWidthPx() {
+        return minWidthPx;
+    }
+
+    /** {@link #minSize}'s height in pixels as of the last {@link #measure}. */
+    public float minHeightPx() {
+        return minHeightPx;
     }
 
     /** {@link #resizeBorder} in pixels as of the last {@link #measure}. {@code 0} means "the platform's own". */

@@ -322,8 +322,8 @@ shot zoomed.png
 zoom 1
 resize 24emx16em              # ok 384x256    -- the application's declared minimum, in em, at this zoom
 shot smallest.png
-resize 24emx12em              # below it: a small screen or a saved size does this, and nothing stops it
-shot below-minimum.png        #   the root scrolls here, and never at the minimum itself (scrolling.md §2)
+resize 24emx12em              # ok 384x256 (asked for 384x192; the window would not go there)
+                              #   the minimum is the window's floor too, so a resize stops at it as a drag does
 resize 1600x900               # pixels need no unit
 dpi 2                         # ok dpi=2      -- the framework's density factor, in the same window
 shot dense.png

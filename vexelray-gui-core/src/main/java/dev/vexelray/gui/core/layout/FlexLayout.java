@@ -731,6 +731,37 @@ public final class FlexLayout {
     }
 
     /**
+     * The smallest window {@code root}'s frame can hold its chrome in: what its visible <b>docked</b> floats — a title
+     * bar, a status bar — need at their {@link #least} size, edge by edge ({@link Dock#floor}). Width and height, in
+     * px.
+     *
+     * <p><b>Docked floats only, because they are what is anchored to the window.</b> The root's flow is laid out on a
+     * canvas that may be larger than the window and scrolls ({@code Gui.minSize}), so nothing in it is ever cut off by
+     * a narrow window; a docked bar is laid out on the window itself, so a window narrower than the bar's least size
+     * lays its trailing controls out past the edge. An undocked float (a menu, a tooltip) is transient and sets no
+     * floor.
+     *
+     * <p>The least size is the one a row already gives way to: clipped boxes and Scrollers count as their inset,
+     * so a title bar that clips its identity zone needs only its window controls and whatever does not clip. A bar
+     * declares its minimum by how it is built, not by a number it reports.
+     */
+    public static float[] frameFloor(RetainedNode root, LayoutContext ctx, TextMeasurer tm) {
+        Dock.Floor floor = new Dock.Floor();
+        if (root != null) {
+            for (RetainedNode c : root.children) {
+                if (c.visible() && c.docked()) {
+                    LayoutContext own = own(c, ctx);
+                    float w = least(c, Axis.HORIZONTAL, ctx, tm, -1f);
+                    float h = least(c, Axis.VERTICAL, ctx, tm, w);
+                    c.dockEdge().floor(floor, Math.max(0f, c.floatX().scalarPx(own, 0f)),
+                            Math.max(0f, c.floatY().scalarPx(own, 0f)), w, h);
+                }
+            }
+        }
+        return new float[] {floor.width(), floor.height()};
+    }
+
+    /**
      * How many scrollbar thicknesses a container's content box must be along an axis before it scrolls there without
      * having been asked to: a minimum-length thumb (two thicknesses) plus as much again to travel.
      */

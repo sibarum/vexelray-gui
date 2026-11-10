@@ -1,7 +1,7 @@
 # Window grips: resize controls you can see, and a window that will not shrink past its chrome
 
-Status: **Proposed 2026-10-25, not started.** Optional at first, shown in the demo for refinement, and then a
-decision (§7) about whether it becomes the template's default.
+Status: **Proposed 2026-10-25. Step 1 (the floor, §3.6) landed 2026-11-10; steps 2–8 not started.** Optional at
+first, shown in the demo for refinement, and then a decision (§7) about whether it becomes the template's default.
 
 ## 1. The problem
 
@@ -104,9 +104,19 @@ its ellipsis. Body content is not in it, because the body scrolls under `Gui.min
 keeps the separation `Gui.minSize` documents: the canvas floor and the window floor stay two facts, and the
 second now has a source.
 
-`NativeWindow` gains `setMinSize(w, h)` (default no-op); Win32 makes its min fields volatile for
+`NativeWindow` gains `setMinClientSize(w, h)` (default no-op); Win32 makes its min fields volatile for
 `WM_GETMINMAXINFO`, X11 rewrites `WM_NORMAL_HINTS`. Zooming in raises the floor; a window already smaller than a
 new floor is not forced bigger (that is a resize nobody asked for), and `Gui.minSize` keeps it laid out.
+
+**As built (step 1).** The floor is a *client* size (`setMinClientSize`), because that is the rect the GUI lays out in.
+The backend adds its frame: nothing for a `CLIENT` window, the live outer-minus-client difference for a system frame
+on Windows, and nothing on X11, whose hints are client px already. `WindowConfig.minSize` (outer, fixed) still applies,
+and the larger wins. "What the chrome needs" turned out to need no reporting: `FlexLayout.frameFloor` takes the
+root's visible **docked** floats at the *least* size a row already shrinks them to (clipped boxes and Scrollers
+count as their inset), edge by edge through `Dock.floor`. `TitleBar` is unchanged. Its identity zone is clipped, so
+its floor is the three caption buttons and the zone's padding (146dp), and a long title gives way instead of raising
+it. `Gui` derives `WindowFloor` on each layout pass (`Seams.windowFloor`), and `GuiWindow` pushes it when it changes.
+Tested in `TitleBarFloorTest` and `Win32ClientChromeSmoke` §4b.
 
 ## 4. The styles
 
@@ -160,6 +170,5 @@ step 1 (the floor) is not optional: there is no application that wants its title
 - **When an X11 resize ends.** The window manager owns the pointer after `_NET_WM_MOVERESIZE`; the end may have to
   be inferred (the pointer's button state on the next motion, or `ConfigureNotify` going quiet). To be measured on
   a real window manager, not guessed.
-- **The chrome minimum.** Whether the layout can already report a docked bar's minimum width, or `TitleBar`
-  computes it itself. Look before building.
+- ~~**The chrome minimum.**~~ Answered in step 1: the layout reports it (§3.6, *as built*).
 - **`CORNER` with no status bar.** A reserved square in the corner of the body may look odd; the demo will show.

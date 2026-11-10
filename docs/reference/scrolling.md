@@ -92,6 +92,12 @@ resize 51emx30em      # below it: what a small screen or a saved size gives
 shot below-minimum.png
 ```
 
+**Since 2026-11-10 the second `resize` stops at the minimum** (`ok 816x560 (asked for 816x480; the window would not go
+there)`): `Gui.minSize` is also the window's floor (`Seams.windowFloor`, docs/plans/window-grips.md §3.6), and a
+programmatic resize is held to it as a drag is. A window still arrives below it without being sized (restored at
+a saved size, or on a screen smaller than its first-run size), and that is the state the shot is for. `resize` can no
+longer produce it.
+
 ## 5. A sideways scrollbar nobody asked for
 
 Down is how a page longer than its window is read, so a box that scrolls vertically without saying so is ordinary.

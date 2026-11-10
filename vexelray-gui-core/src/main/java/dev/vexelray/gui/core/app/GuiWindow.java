@@ -128,6 +128,8 @@ final class GuiWindow implements AutoCloseable {
     private final DeviceImages images;
     private final TextMeasurer measurer;
     private final boolean clientChrome;
+    /** The floor last told to the window, so it is told only when the tree's floor moves. */
+    private dev.vexelray.gui.core.layout.WindowFloor pushedFloor = dev.vexelray.gui.core.layout.WindowFloor.NONE;
     /** The host's per-frame hook, held so a platform-pulled frame runs the same step the host loop would. */
     private Runnable beforeFrame = () -> { };
     /**
@@ -712,6 +714,15 @@ final class GuiWindow implements AutoCloseable {
             // The tree's own declarations, plus how far into its dead space it hands over a resize grip — both
             // derived from the frame just laid out, so the band scales with the gutter it was set from.
             window.setHitRegions(ChromeRegions.of(root, gui == null ? 0 : gui.resizeBorderPx()));
+        }
+        // The smallest the window may be dragged, from the same frame: its docked chrome or its canvas floor. In
+        // layout px, which is the client px the hit regions are already pushed in. Every window, not only a
+        // client-drawn one: a system frame has chrome of its own, but its body can still carry a docked bar.
+        dev.vexelray.gui.core.layout.WindowFloor floor =
+                gui == null ? dev.vexelray.gui.core.layout.WindowFloor.NONE : Seams.of(gui).windowFloor();
+        if (!floor.equals(pushedFloor)) {
+            window.setMinClientSize(floor.width(), floor.height());
+            pushedFloor = floor;
         }
         return root;
     }

@@ -23,6 +23,7 @@ import dev.vexelray.gui.core.layout.NodeLayout;
 import dev.vexelray.gui.core.layout.SemanticSnapshot;
 import dev.vexelray.gui.core.layout.Rect;
 import dev.vexelray.gui.core.layout.TextMeasurer;
+import dev.vexelray.gui.core.layout.WindowFloor;
 import dev.vexelray.gui.core.model.Mutation;
 import dev.vexelray.gui.core.model.PropKey;
 import dev.vexelray.gui.core.model.Reconciler;
@@ -244,6 +245,8 @@ public final class Gui implements AutoCloseable {
      * {@link Metrics}, which owns the remembered values the dirty-check compares against.
      */
     private final Metrics metrics = new Metrics();
+    /** The window floor the last layout pass derived (Seams.windowFloor). GUI thread: written and read in the frame. */
+    private WindowFloor windowFloor = WindowFloor.NONE;
     /** Where nodes are drawn relative to where layout put them; NONE until a motion source is attached. */
     private volatile LayoutMotion motion = LayoutMotion.NONE;
     /** Whether the last frame's displacement walk left any node displaced, so this one owes a walk to undo it. */
@@ -625,11 +628,12 @@ public final class Gui implements AutoCloseable {
      * <p>{@code vw}/{@code vh} resolve against this clamped canvas rather than the window, since that is the area
      * actually laid out. {@link #viewport()} continues to report the real window size.
      *
-     * <p><b>Not an OS window minimum</b>, and the two are worth having separately. This one decides what the UI
-     * is laid out on when the window is smaller than the UI can represent, and shows part of it. Stopping the
-     * <em>drag</em> is {@code WindowConfig.minSize}, which the window manager enforces — and a window can still
-     * arrive under its minimum without any drag (a restore, a display-mode change, a programmatic resize), which
-     * is exactly when this one is what saves the layout.
+     * <p><b>Also the drag floor, and still two facts.</b> A window showing this GUI cannot be dragged smaller than
+     * this minimum, or than its docked chrome needs, whichever is larger ({@code Seams.windowFloor}, pushed to the
+     * window each frame). So a drag never takes it into the scroll. But a window can still arrive under the minimum
+     * without any drag (a restore, a display-mode change, a saved size, a zoom that raised the floor), and that is
+     * when this one saves the layout: the floor stops the user, this decides what is shown when the user was not
+     * the cause.
      *
      * <p><b>Size it to what cannot scroll, not to the content.</b> Every window under the minimum scrolls as a
      * whole, so a minimum as tall as content that a growing body already scrolls gives each such window two
@@ -2010,6 +2014,14 @@ public final class Gui implements AutoCloseable {
                     layoutRan = true;
                 }
             }
+            if (layoutRan) {
+                // What the window may not be dragged smaller than: re-derived only when the tree or its scale moved,
+                // since nothing else can change it, and read by the host right after this frame (Seams.windowFloor).
+                float[] chrome = FlexLayout.frameFloor(r, m.windowCtx(), tm);
+                windowFloor = new WindowFloor(
+                        (int) Math.ceil(Math.max(chrome[0], metrics.minWidthPx())),
+                        (int) Math.ceil(Math.max(chrome[1], metrics.minHeightPx())));
+            }
             // The compute phase (docs/reference/layout-read-model.md §2.1): resolve everything that is a pure function of the
             // laid-out tree — caret-follow scroll, text metrics — then publish. It runs whenever the geometry could
             // have moved, which includes a caret move that reflows nothing, and it runs in *every* host: this is
@@ -2485,6 +2497,11 @@ public final class Gui implements AutoCloseable {
         public dev.vexelray.gui.core.spi.Seams onPointerWarp(dev.vexelray.gui.core.input.PointerWarp warp) {
             input.pointerWarp(warp);
             return this;
+        }
+
+        @Override
+        public WindowFloor windowFloor() {
+            return windowFloor;
         }
 
         @Override

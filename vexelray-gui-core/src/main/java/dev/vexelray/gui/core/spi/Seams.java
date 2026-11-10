@@ -515,4 +515,11 @@ public abstract class Seams {
      * text intrinsic sizes.
      */
     public abstract RetainedNode frame(float viewportW, float viewportH, TextMeasurer tm);
+
+    /**
+     * The smallest client area the window showing this tree may be dragged to, as of the last {@link #frame}: what
+     * its docked chrome needs, or {@link Gui#minSize}, whichever is larger on each axis. A host pushes it to the
+     * window after each frame, as it does the hit regions.
+     */
+    public abstract dev.vexelray.gui.core.layout.WindowFloor windowFloor();
 }

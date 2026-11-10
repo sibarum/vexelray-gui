@@ -1,5 +1,6 @@
 package dev.vexelray.gui.core.app;
 
+import dev.vexelray.gui.core.WindowEdge;
 import dev.vexelray.gui.core.WindowRegion;
 import dev.vexelray.gui.core.model.RetainedNode;
 import dev.vexelray.os.HitRegions;
@@ -35,7 +36,8 @@ final class ChromeRegions {
      *
      * @param resizeBorder the resize band, in pixels, over the parts of the window the tree declares nothing
      *                     about — a GUI's margins and padding, handed to the window manager
-     *                     ({@link dev.vexelray.gui.core.Gui#resizeBorder}). {@code 0} keeps the platform's.
+     *                     ({@link dev.vexelray.gui.core.Gui#resizeBorder}). {@code 0} keeps the platform's. A tree
+     *                     that declares {@link WindowRegion#RESIZE grips} has no band at all.
      */
     static HitRegions of(RetainedNode root, int resizeBorder) {
         if (root == null) {
@@ -44,16 +46,18 @@ final class ChromeRegions {
         Collector collector = new Collector();
         collector.walk(root);
         if (collector.caption.isEmpty() && collector.interactive.isEmpty() && collector.maximize == null
-                && resizeBorder == 0) {
+                && collector.grips.isEmpty() && resizeBorder == 0) {
             return HitRegions.NONE;
         }
-        return new HitRegions(collector.caption, collector.interactive, collector.maximize, resizeBorder);
+        return new HitRegions(collector.caption, collector.interactive, collector.maximize, resizeBorder,
+                collector.grips);
     }
 
-    private static final class Collector {
+    private static final class Collector implements WindowRegion.Sink {
 
         private final List<HitRegions.Rect> caption = new ArrayList<>();
         private final List<HitRegions.Rect> interactive = new ArrayList<>();
+        private final List<HitRegions.Grip> grips = new ArrayList<>();
         private HitRegions.Rect maximize;
 
         void walk(RetainedNode n) {
@@ -66,21 +70,36 @@ final class ChromeRegions {
             if (region != null) {
                 HitRegions.Rect rect = rectOf(n);
                 if (rect != null) {
-                    switch (region) {
-                        case DRAG -> caption.add(rect);
-                        case INTERACTIVE -> interactive.add(rect);
-                        // One maximize button per window: the last one declared wins, which is the one drawn on
-                        // top of the others and so the one the pointer would reach.
-                        case MAXIMIZE_BUTTON -> {
-                            interactive.add(rect);
-                            maximize = rect;
-                        }
-                    }
+                    region.publish(this, rect, n.windowEdge());
                 }
             }
             for (RetainedNode c : n.children) {
                 walk(c);
             }
+        }
+
+        @Override
+        public void caption(HitRegions.Rect rect) {
+            caption.add(rect);
+        }
+
+        @Override
+        public void interactive(HitRegions.Rect rect) {
+            interactive.add(rect);
+        }
+
+        @Override
+        public void maximizeButton(HitRegions.Rect rect) {
+            // One maximize button per window: the last one declared wins, which is the one drawn on top of the
+            // others and so the one the pointer would reach.
+            interactive.add(rect);
+            maximize = rect;
+        }
+
+        @Override
+        public void grip(HitRegions.Rect rect, WindowEdge edge) {
+            // In tree order, which is paint order: HitRegions lets the last one win where two overlap.
+            grips.add(new HitRegions.Grip(rect, edge.zone()));
         }
 
         private static HitRegions.Rect rectOf(RetainedNode n) {

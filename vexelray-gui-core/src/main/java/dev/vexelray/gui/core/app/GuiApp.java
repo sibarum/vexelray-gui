@@ -2285,7 +2285,9 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
                     dev.vexelray.gui.core.input.CursorShape.TEXT, NativeWindow.Cursor.TEXT,
                     dev.vexelray.gui.core.input.CursorShape.POINTER, NativeWindow.Cursor.POINTER,
                     dev.vexelray.gui.core.input.CursorShape.RESIZE_HORIZONTAL, NativeWindow.Cursor.RESIZE_HORIZONTAL,
-                    dev.vexelray.gui.core.input.CursorShape.RESIZE_VERTICAL, NativeWindow.Cursor.RESIZE_VERTICAL);
+                    dev.vexelray.gui.core.input.CursorShape.RESIZE_VERTICAL, NativeWindow.Cursor.RESIZE_VERTICAL,
+                    dev.vexelray.gui.core.input.CursorShape.RESIZE_NWSE, NativeWindow.Cursor.RESIZE_NWSE,
+                    dev.vexelray.gui.core.input.CursorShape.RESIZE_NESW, NativeWindow.Cursor.RESIZE_NESW);
 
     /**
      * Resolve each {@link Canvas.Run}'s opaque image handle to the descriptor set to bind, clipped to the vertices

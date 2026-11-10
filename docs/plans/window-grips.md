@@ -1,6 +1,7 @@
 # Window grips: resize controls you can see, and a window that will not shrink past its chrome
 
-Status: **Proposed 2026-10-25. Step 1 (the floor, §3.6) landed 2026-11-10; steps 2–8 not started.** Optional at
+Status: **Proposed 2026-10-25. Steps 1 (the floor, §3.6) and 2 (grips in `HitRegions`, §3.1/§3.5) landed
+2026-11-10; steps 3–8 not started.** Optional at
 first, shown in the demo for refinement, and then a decision (§7) about whether it becomes the template's default.
 
 ## 1. The problem
@@ -47,6 +48,17 @@ RESIZE   // carries its edge: node.windowRegion(WindowRegion.RESIZE, Edge.BOTTOM
 
 How the edge is carried (a second enum, or eight `RESIZE_*` values) is decided when it is written; the rule is
 that it is a fact on the node, like the other regions.
+
+**As built (step 2).** A second enum, `WindowEdge`, and the edge *is* the declaration:
+`node.windowRegion(WindowEdge.BOTTOM_RIGHT)` stores the edge in the one `WINDOW_REGION` prop, `RetainedNode.windowRegion()`
+reads it back as `RESIZE` and `windowEdge()` as the edge, so being a grip and having an edge cannot disagree.
+`windowRegion(WindowRegion.RESIZE)` is refused. Each `WindowEdge` carries its `HitRegions.Zone` and its `CursorShape`.
+`ChromeRegions` no longer switches on the region: `WindowRegion.publish(Sink, rect, edge)` with a closed
+`WindowRegion.Sink` (no defaults), the `Picture.Mark`/`Sink` pattern. On overlap the grip declared last wins (paint
+order). Tested in `HitRegionsTest`, `ChromeRegionsTest` and `Win32ClientChromeSmoke` §4c. X11 maps the grips through
+its existing `MOVERESIZE_DIRECTION` with no change. Its diagonal cursors are corner arrows
+(`XC_bottom_right_corner`, `XC_bottom_left_corner`), because the cursor font has no two-headed diagonal. Not yet
+run on a real X server.
 
 `HitRegions` gains `List<Grip> grips` (a rect and a `Zone`). **Invariant: a window that declares grips is resized
 only from its grips.** The implicit edge band is then off everywhere, so content that runs to the window edge

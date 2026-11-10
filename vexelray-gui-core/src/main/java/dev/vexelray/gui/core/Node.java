@@ -678,9 +678,27 @@ public final class Node {
      *
      * <p>Affects nothing else: the node lays out, draws and hit-tests exactly as it did. Only a window created
      * with client decorations consults these at all.
+     *
+     * <p>{@link WindowRegion#RESIZE} is declared by its edge, {@link #windowRegion(WindowEdge)}: a grip with no edge
+     * would be a resize control that sizes nothing, so it is refused here.
      */
     public Node windowRegion(WindowRegion region) {
+        if (region == WindowRegion.RESIZE) {
+            throw new IllegalArgumentException("a resize grip is declared by its edge: windowRegion(WindowEdge)");
+        }
         return prop(PropKey.WINDOW_REGION, region);
+    }
+
+    /**
+     * Declare this node a {@link WindowRegion#RESIZE resize grip}: dragging it sizes the window from {@code edge}.
+     * The edge is the declaration: one prop says both that the node is a grip and which way it drags, so the two can
+     * never disagree. Pass {@code null} to clear, as {@link #windowRegion(WindowRegion)} does.
+     *
+     * <p>Like the other regions, it changes nothing about how the node lays out, draws or hit-tests. Its look and its
+     * cursor ({@link WindowEdge#cursor}) are the widget's to set.
+     */
+    public Node windowRegion(WindowEdge edge) {
+        return prop(PropKey.WINDOW_REGION, edge);
     }
 
     public Node gap(Length g) {

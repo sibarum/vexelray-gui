@@ -1,5 +1,7 @@
 package dev.vexelray.gui.core;
 
+import dev.vexelray.os.HitRegions;
+
 /**
  * What a node is, as far as the <em>window manager</em> is concerned — the one declaration a GUI that draws its
  * own window chrome has to make.
@@ -20,14 +22,24 @@ public enum WindowRegion {
      * the system menu. The window manager takes the pointer here, so a node inside a drag region that the user is
      * meant to click must declare itself {@link #INTERACTIVE}.
      */
-    DRAG,
+    DRAG {
+        @Override
+        public void publish(Sink sink, HitRegions.Rect rect, WindowEdge edge) {
+            sink.caption(rect);
+        }
+    },
 
     /**
      * Ordinary content, even inside a {@link #DRAG} region — the hole a title bar is punched with. Every control
      * drawn on the chrome (buttons, menu items, tabs) needs this, or the window manager will start a window drag
      * from it instead of letting the click through.
      */
-    INTERACTIVE,
+    INTERACTIVE {
+        @Override
+        public void publish(Sink sink, HitRegions.Rect rect, WindowEdge edge) {
+            sink.interactive(rect);
+        }
+    },
 
     /**
      * The application's maximize button: interactive like {@link #INTERACTIVE}, and additionally reported to the
@@ -35,5 +47,44 @@ public enum WindowRegion {
      * UI on hover (Windows 11's Snap Layouts flyout). The click is still the application's to handle — declaring
      * this does not make the button do anything.
      */
-    MAXIMIZE_BUTTON
+    MAXIMIZE_BUTTON {
+        @Override
+        public void publish(Sink sink, HitRegions.Rect rect, WindowEdge edge) {
+            sink.maximizeButton(rect);
+        }
+    },
+
+    /**
+     * A resize grip: dragging it sizes the window from its {@link WindowEdge}, which the node declares with
+     * {@link Node#windowRegion(WindowEdge)}; there is no grip without an edge. The window manager runs the drag,
+     * as it runs a title bar's move. <b>A window that declares any grip is resized only from its grips</b>: the
+     * invisible band along its edges is off ({@code HitRegions.grips}). A maximized window's grips do nothing.
+     */
+    RESIZE {
+        @Override
+        public void publish(Sink sink, HitRegions.Rect rect, WindowEdge edge) {
+            sink.grip(rect, edge);
+        }
+    };
+
+    /**
+     * Tell {@code sink} what a node declaring this region at {@code rect} is to the window manager. {@code edge} is
+     * the node's {@link WindowEdge}, and only {@link #RESIZE} reads it.
+     */
+    public abstract void publish(Sink sink, HitRegions.Rect rect, WindowEdge edge);
+
+    /**
+     * Where {@link #publish} puts each region: one method per kind, no default, so a new region is a compile error in
+     * every collector until it says where the region goes.
+     */
+    public interface Sink {
+
+        void caption(HitRegions.Rect rect);
+
+        void interactive(HitRegions.Rect rect);
+
+        void maximizeButton(HitRegions.Rect rect);
+
+        void grip(HitRegions.Rect rect, WindowEdge edge);
+    }
 }

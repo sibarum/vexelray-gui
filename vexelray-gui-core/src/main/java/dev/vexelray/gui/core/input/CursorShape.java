@@ -55,6 +55,25 @@ public enum CursorShape {
         public CursorShape whileDragging() {
             return this;
         }
+    },
+
+    /**
+     * The diagonal arrow from top-left to bottom-right, over a corner that sizes both ways: a window's top-left or
+     * bottom-right grip. Held for the whole drag.
+     */
+    RESIZE_NWSE {
+        @Override
+        public CursorShape whileDragging() {
+            return this;
+        }
+    },
+
+    /** The diagonal arrow from top-right to bottom-left, over the other two corners. Held for the whole drag. */
+    RESIZE_NESW {
+        @Override
+        public CursorShape whileDragging() {
+            return this;
+        }
     };
 
     /**

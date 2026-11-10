@@ -787,7 +787,13 @@ public final class RetainedNode {
      */
     public dev.vexelray.gui.core.WindowRegion windowRegion() {
         Object v = props.get(PropKey.WINDOW_REGION);
-        return v instanceof dev.vexelray.gui.core.WindowRegion r ? r : null;
+        return v instanceof dev.vexelray.gui.core.WindowRegion r ? r
+                : v instanceof dev.vexelray.gui.core.WindowEdge ? dev.vexelray.gui.core.WindowRegion.RESIZE : null;
+    }
+
+    /** The edge this node sizes the window from when it is a {@link #windowRegion() RESIZE} grip, else {@code null}. */
+    public dev.vexelray.gui.core.WindowEdge windowEdge() {
+        return props.get(PropKey.WINDOW_REGION) instanceof dev.vexelray.gui.core.WindowEdge e ? e : null;
     }
 
     /** Whether this node grows past its slot to fit its content ({@link PropKey#OVERHANG}). */

@@ -81,6 +81,38 @@ class ChromeRegionsTest {
     }
 
     @Test
+    void aGripIsPublishedWithItsEdgeAndTurnsTheBandOff() {
+        try (Gui gui = new Gui(Atchung.create())) {
+            Node corner = gui.box().size(Length.dp(16), Length.dp(16))
+                    .floatAt(Length.dp(384), Length.dp(284))
+                    .windowRegion(dev.vexelray.gui.core.WindowEdge.BOTTOM_RIGHT);
+            gui.root().children(corner);
+
+            HitRegions regions = ChromeRegions.of(Seams.of(gui).frame(400f, 300f, ChromeRegionsTest::noText), 8);
+
+            assertEquals(java.util.List.of(new HitRegions.Grip(new HitRegions.Rect(384, 284, 16, 16),
+                    HitRegions.Zone.BOTTOM_RIGHT)), regions.grips());
+            assertEquals(HitRegions.Zone.BOTTOM_RIGHT, regions.zone(390, 290, 400, 300, false, 8));
+            assertEquals(HitRegions.Zone.CLIENT, regions.zone(2, 150, 400, 300, false, 8),
+                    "a window with a grip has no band, however wide the one it asked for");
+        }
+    }
+
+    @Test
+    void aGripIsDeclaredByItsEdge() {
+        try (Gui gui = new Gui(Atchung.create())) {
+            Node n = gui.box();
+            org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                    () -> n.windowRegion(WindowRegion.RESIZE), "a grip with no edge sizes nothing");
+            n.windowRegion(dev.vexelray.gui.core.WindowEdge.LEFT);
+            gui.root().children(n);
+            RetainedNode r = Seams.of(gui).frame(400f, 300f, ChromeRegionsTest::noText).children.get(0);
+            assertEquals(WindowRegion.RESIZE, r.windowRegion(), "the edge is the declaration");
+            assertEquals(dev.vexelray.gui.core.WindowEdge.LEFT, r.windowEdge());
+        }
+    }
+
+    @Test
     void aHiddenBarPublishesNothing() {
         // A hidden node keeps its last rect but was not laid out, so publishing it would hand the window manager
         // a title bar that is not on screen — draggable empty space.

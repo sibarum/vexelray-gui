@@ -289,7 +289,7 @@ application** (ruled 2026-10-30, below): it needs no feed, so it does not wait f
    - **A widget's asked half goes through `Seams.ask`**, the widget library's seam as well as the host's, as its input
      handlers do (ruled by the author; `Asked`, `Seams.ask` and threading.md T7.6 say so). No new door: `spi` was
      already the widget library's, and no `@View` may import it. A widget's asked half is library code, held by the
-     library's tests; the processor checks an application's `@Draw` only.
+     library's tests; the processor checks an application's `@Draw` only. [seams.md](../reference/seams.md) is the map.
    - **`ImageView` and `VideoView` are on `Player`**, each registering one asked half when it is made. `ImageView` shows
      a picture that plays on a node of its own over the poster, which its asked half hides once a frame is due;
      `VideoView` plays a `Clip` handed in (pictures only) or a `VideoFile` (with its sound). **`Playback` is deleted**,

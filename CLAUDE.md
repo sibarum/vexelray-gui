@@ -47,6 +47,12 @@ the engine's `Surface`, and renders as enclosure boxes for the reasons in
 
 ## Constraints that are not visible in the code
 
+- **A widget, in any repo, runs code in the frame through `Seams`, and nothing else.** `Seams.of(gui)` (`spi`) is the
+  widget library's and the host's: input handlers, resize, menus, drag and drop, the read models, and a moving
+  widget's asked half (`ask`). An application uses `gui.hear`, declared chords and menus, and `@Draw` instead. Before
+  proposing any new way onto the GUI thread, read [docs/reference/seams.md](docs/reference/seams.md); the door you
+  want is probably there already.
+
 - **An application an agent starts is a background run, and that is not optional.** `CLAUDECODE`/`AI_AGENT` in the
   environment make every window cloaked, never activated and deaf to the real devices (`dev.vexelray.os.BackgroundRun`,
   [docs/plans/background-runs.md](docs/plans/background-runs.md)). Verbs and `shot` work as in a visible run. Never

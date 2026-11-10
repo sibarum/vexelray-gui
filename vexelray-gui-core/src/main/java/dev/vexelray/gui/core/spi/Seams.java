@@ -35,15 +35,24 @@ import java.util.function.Function;
  * <b>host's</b>, and nobody else's (vexelray-framework's {@code docs/threading.md}, T7.2).
  *
  * <p>A widget is the GUI answering its own input, so it registers code the dispatcher calls in order with the input
- * around it: a button's press, a field's keys and caret, a tree's drop resolution. A host (the application shell, the
- * automation driver) installs the sinks the GUI reports to: undo feedback, the cursor, the pointer lock, the wake. An
- * application does none of this. Its logic hears a widget by message on its own thread, and its view hears a node by
- * {@link Gui#hear} and declares what the dispatcher must know ahead of time ({@link Gui#menu}, a shortcut that sends
- * a message), so no application code is ever handed to the GUI to run in the frame.
+ * around it: a button's press, a field's keys and caret, a tree's drop resolution, and, for one whose picture moves,
+ * its asked half ({@link #ask}). A widget library is any library of widgets, in this repo or another: vexelray-codec's
+ * {@code ImageView} and {@code VideoView} and vex-suite-common's {@code TerminalScreen} register here as
+ * {@code vexelray-gui-widget}'s do. A host (the application shell, the automation driver) installs the sinks the GUI
+ * reports to: undo feedback, the cursor, the pointer lock, the wake, the clock. An application does none of this. Its
+ * logic hears a widget by message on its own thread, and its view hears a node by {@link Gui#hear}, declares what the
+ * dispatcher must know ahead of time ({@link Gui#menu}, a shortcut that sends a message), and draws what moves in its
+ * {@code @Draw}, so no application code is ever handed to the GUI to run in the frame.
+ *
+ * <p><b>The map</b> (which seam is whose, how the boundary is held, a widget's asked half, and what to do before asking
+ * for a new door) is {@code docs/reference/seams.md}. Each method's own contract is its Javadoc here.
  *
  * <p><b>Why a type of its own rather than methods on {@link Gui}:</b> a view is handed the {@code Gui}, and a seam on it
- * is a side channel a view could do logic through. Here, nothing an application is handed reaches it: the
- * framework's API walk holds that, and its processor refuses a {@code @View} that imports this package.
+ * is a side channel a view could do logic through. Here, nothing an application is handed reaches it: vexelray-gui's
+ * {@code GuiSurfaceTest} holds that nothing on {@code Gui} leads here, and the framework's API walk that no framework
+ * type an application is handed does. The processor's refusal of a {@code @View} that imports this package is owed
+ * (with phase 4's {@code @View} checks): until it is built, {@link #of} is public and an application calling it is
+ * caught by review, not by the compiler.
  *
  * <p>{@code Seams.of(gui)} is the tree's own; it is cheap to ask for, so a widget asks where it registers.
  */

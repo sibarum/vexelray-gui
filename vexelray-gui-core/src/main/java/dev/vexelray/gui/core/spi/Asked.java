@@ -10,7 +10,8 @@ import dev.vexelray.gui.core.Frame;
  * is: vexelray-framework's generated wiring registers a {@code @View}'s {@code @Draw} function here, closed over the
  * view's state, after the processor has checked it; and a widget whose picture moves (vexelray-codec's {@code ImageView}
  * and {@code VideoView}, playing a feed) registers its own while it moves, and lets it go when it stops. A widget's is
- * library code, held by the library's tests to the same rules, as its input handlers are. It runs on the GUI thread on every frame the tree runs, in the motion stage, after layout and the told
+ * library code, held by the library's tests to the same rules, as its input handlers are. How a widget writes and tests
+ * one: {@code docs/reference/seams.md}, <i>A widget's asked half</i>. It runs on the GUI thread on every frame the tree runs, in the motion stage, after layout and the told
  * halves, and before publish, so hit-testing reads what it set.
  *
  * <p>It chooses and sets numbers; it builds nothing, sends nothing and waits on nothing. What it would report, its told

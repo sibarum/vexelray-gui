@@ -27,6 +27,7 @@ documents that are cited this way. See [plans/reference-rewrite.md](plans/refere
 | | |
 | --- | --- |
 | [architecture.md](reference/architecture.md) | The full design: the one rule, the substrate contracts, the retained model, threading, layout, dispatch, the frame loop, and the twenty-three modules. Start here after the root README |
+| [seams.md](reference/seams.md) | **Landed.** `Seams`, the one place the GUI takes code to run in the frame: which seam is a widget library's and which a host's (a widget library in any repo), what an application uses instead, how the boundary is held and what is owed, and how a widget that moves writes and tests its asked half. Read it before asking for a new way onto the GUI thread |
 
 ### The read-models — one pattern, two instances
 

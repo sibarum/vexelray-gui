@@ -173,7 +173,8 @@ gui.claim(node, Shortcut.of(Key.LEFT), ClaimScope.FOCUSED, moves, new Move(-1));
 
 The registrations a widget is built from, which run code in the dispatch in order with the input around it, are the
 widget library's and the host's, on `Seams.of(gui)`, and nothing an application is handed reaches them
-(vexelray-framework's `docs/threading.md`, T7.2):
+(vexelray-framework's `docs/threading.md`, T7.2). A widget library in another repo uses them too; [docs/reference/seams.md](docs/reference/seams.md)
+is the map of which is whose:
 
 ```java
 Seams seams = Seams.of(gui);

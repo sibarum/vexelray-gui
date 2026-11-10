@@ -48,8 +48,8 @@ thread.
 | **Geometry and navigation** | `onResize` ("my geometry is real now", first time included), `reveals`, `scrollSource`, `scrollAxes` | W |
 | **Menus and commands** | `onContextMenu`, `openMenu`; `menus(presenter)` and `commands(commands)` install what draws menus and names chords (`ContextMenu`, `Keymap` install themselves) | W |
 | **The frame** | `ask`, `unask`: a part's asked half (frame-contract.md). `clock()`: the tree's clock, read | W, H |
-| **Read models** | `drag()`, `modifiers()`, `viewport()`, `zoom()`, `zoomSizesWindow()`, `dpi()`, `layout()`, `semantics()`: the GUI's own state, as bus `State`s a widget restyles from | W |
-| **Host sinks** | `onUndo`, `onCursorChange`, `onPointerLock`, `onPointerWarp` / `pointerWarp`, `onWork` (the wake: required by any loop that sleeps) | H |
+| **Read models** | `drag()`, `modifiers()`, `resizing()` (the edge a window resize is under way from, for a grip), `viewport()`, `zoom()`, `zoomSizesWindow()`, `dpi()`, `layout()`, `semantics()`: the GUI's own state, as bus `State`s a widget restyles from | W |
+| **Host sinks** | `onUndo`, `onCursorChange`, `onPointerLock`, `onPointerWarp` / `pointerWarp`, `resizing(edge)` (from the window, each frame), `onWork` (the wake: required by any loop that sleeps) | H |
 | **The loop** | `clock(Clock)` installs the tree's clock; `frame(w, h, measurer)` runs one frame; `windowFloor()` | H; `frame` is also how a test runs frames headless |
 
 ## How the boundary is held
@@ -59,7 +59,8 @@ thread.
 | Nothing on `Gui` returns `Seams` or takes a function the GUI keeps | vexelray-gui's `GuiSurfaceTest` (`nothingOnGuiLeadsToTheSeams`) |
 | No framework type an application is handed takes or returns a function | vexelray-framework's `ApiWalkTest` (T2.5, T7.2) |
 | An application's `@Draw` is a pure, allocation-free asked half | vexelray-framework's processor (`DrawCheckTest`) |
-| **A `@View` that imports `spi` is refused** | **Owed**, with phase 4's `@View` checks (frame-contract.md, *How each guarantee is held*). Until then `Seams.of(gui)` is a public static an application could call; that it does not is review, not a compile error |
+| A `@View` that names `spi` is refused, imported or spelt out | vexelray-framework's processor (`SpiBoundary`; `Seams.of(gui)` is public, so this is what keeps a view off it) |
+| This page's table names every public method of `Seams` | `SeamsMapTest` |
 | A widget's handlers and asked half keep the rules | the widget library's own tests |
 
 ## A widget's asked half

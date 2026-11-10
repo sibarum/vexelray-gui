@@ -50,9 +50,9 @@ import java.util.function.Function;
  * <p><b>Why a type of its own rather than methods on {@link Gui}:</b> a view is handed the {@code Gui}, and a seam on it
  * is a side channel a view could do logic through. Here, nothing an application is handed reaches it: vexelray-gui's
  * {@code GuiSurfaceTest} holds that nothing on {@code Gui} leads here, and the framework's API walk that no framework
- * type an application is handed does. The processor's refusal of a {@code @View} that imports this package is owed
- * (with phase 4's {@code @View} checks): until it is built, {@link #of} is public and an application calling it is
- * caught by review, not by the compiler.
+ * type an application is handed does. {@link #of} is public, so the framework's processor refuses a {@code @View} that
+ * names this package, imported or spelt out (vexelray-framework's {@code SpiBoundary}). Every public method here has a
+ * row in {@code docs/reference/seams.md}, held by {@code SeamsMapTest}.
  *
  * <p>{@code Seams.of(gui)} is the tree's own; it is cheap to ask for, so a widget asks where it registers.
  */

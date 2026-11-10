@@ -76,7 +76,8 @@ public final class Tooltip implements AutoCloseable {
 
     /**
      * Show {@code text} for {@code target}: after the pointer rests on it for the delay, the bubble appears just
-     * below the target's box (clamped on-screen by the float layout), and hides on leave or press. Registration
+     * below the target's box — kept inside the window, and above the target where below has no room, never over
+     * it — and hides on leave or press. Registration
      * is an added state observer, so the target's own hover styling keeps working.
      *
      * <p><b>Attach again to change what it says</b>: the target keeps its one observer and the bubble shows the latest
@@ -184,7 +185,8 @@ public final class Tooltip implements AutoCloseable {
     }
 
     /** Place the bubble just below {@code target}'s published box and show it. Anchored to the box, not the
-     *  pointer, so it appears once and stays put. */
+     *  pointer, so it appears once and stays put. The box is also the bubble's keep-clear rectangle: kept inside the
+     *  window, it never slides back over the control it describes, but shows above it, or beside it, instead. */
     private void showFor(Node target, java.util.function.Supplier<String> source) {
         String text = source.get();
         if (text == null || text.isBlank()) {
@@ -200,7 +202,9 @@ public final class Tooltip implements AutoCloseable {
         }
         float dpi = Math.max(0.0001f, Seams.of(gui).dpi().value());
         bubble.text(text);
-        bubble.floatAt(Length.dp(rect.x() / dpi), Length.dp((rect.y() + rect.h() + GAP_PX) / dpi));
+        bubble.floatAt(Length.dp(rect.x() / dpi), Length.dp((rect.y() + rect.h() + GAP_PX) / dpi))
+                .keepClear(Length.dp(rect.x() / dpi), Length.dp(rect.y() / dpi),
+                        Length.dp(rect.w() / dpi), Length.dp(rect.h() / dpi));
         bubble.visible(true);
         shown = true;
     }

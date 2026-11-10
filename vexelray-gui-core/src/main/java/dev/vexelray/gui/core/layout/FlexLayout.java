@@ -716,8 +716,17 @@ public final class FlexLayout {
         h = Math.min(Math.max(0f, h), n.h);
         c.w = w;
         c.h = h;
-        c.x = n.x + clamp(c.floatX().scalarPx(own, n.w), 0f, Math.max(0f, n.w - w));
-        c.y = n.y + clamp(c.floatY().scalarPx(own, n.h), 0f, Math.max(0f, n.h - h));
+        float askX = c.floatX().scalarPx(own, n.w);
+        float askY = c.floatY().scalarPx(own, n.h);
+        KeepClear clear = c.keepClear();
+        if (clear != null) {
+            float[] at = clear.place(askX, askY, w, h, n.w, n.h, own);
+            c.x = n.x + at[0];
+            c.y = n.y + at[1];
+        } else {
+            c.x = n.x + clamp(askX, 0f, Math.max(0f, n.w - w));
+            c.y = n.y + clamp(askY, 0f, Math.max(0f, n.h - h));
+        }
         layoutBox(c, ctx, tm);
     }
 

@@ -173,6 +173,55 @@ class TooltipTest {
         }
     }
 
+    /**
+     * A control in a bottom bar, at the right edge: below it is off the window, and keeping the bubble on-screen
+     * must not slide it back over the control. It shows above, inside the window, with the control in full view.
+     */
+    @Test
+    void atTheWindowsBottomRightTheBubbleShowsAboveAndInside() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Tooltip tip = new Tooltip(h.gui);
+            Node button = h.gui.box().width(Length.dp(32)).height(Length.dp(32))
+                    .floatAt(Length.dp(760), Length.dp(560));
+            tip.delayMillis(0).attach(button, "a hint long enough to run past the right edge");
+            h.gui.root().children(button);
+            h.frame();
+
+            h.hover(776f, 576f);
+            h.frame();
+
+            assertTrue(tip.isOpen());
+            var b = tip.node().layout().rect();
+            var t = button.layout().rect();
+            assertTrue(b.y() + b.h() <= t.y(), "above the control, not over it: " + b + " vs " + t);
+            assertTrue(b.x() >= 0f && b.x() + b.w() <= 800.5f, "inside the window horizontally: " + b);
+            assertTrue(b.y() >= 0f && b.y() + b.h() <= 600.5f, "and vertically: " + b);
+            tip.close();
+        }
+    }
+
+    /** Where below has room, nothing changes: below the control, left edges aligned. */
+    @Test
+    void withRoomBelowTheBubbleStaysBelow() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Tooltip tip = new Tooltip(h.gui);
+            Node button = h.gui.box().width(Length.dp(32)).height(Length.dp(32))
+                    .floatAt(Length.dp(400), Length.dp(100));
+            tip.delayMillis(0).attach(button, "hint");
+            h.gui.root().children(button);
+            h.frame();
+
+            h.hover(416f, 116f);
+            h.frame();
+
+            var b = tip.node().layout().rect();
+            var t = button.layout().rect();
+            assertEquals(t.x(), b.x(), 0.5f);
+            assertTrue(b.y() >= t.y() + t.h(), "below: " + b + " vs " + t);
+            tip.close();
+        }
+    }
+
     /** Attached again, a target says the new text, on the one observer it already had. */
     @Test
     void attachingAgainChangesWhatItSays() {

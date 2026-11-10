@@ -592,9 +592,21 @@ public final class Node {
         return prop(PropKey.DOCK, edge);
     }
 
+    /**
+     * Keep this floating node off a rectangle — {@code x, y, w, h} from the parent's border-box origin, as
+     * {@link #floatAt}'s offsets are. Placed where {@link #floatAt} says and kept inside its parent as ever, it goes to
+     * the rectangle's other side, at the same distance, when the parent's edge would otherwise push it over it: a
+     * tooltip asked below a button in a bottom bar shows above it. {@code layout.KeepClear} has the rule. Null for
+     * none.
+     */
+    public Node keepClear(Length x, Length y, Length w, Length h) {
+        return prop(PropKey.KEEP_CLEAR, x == null ? null : new dev.vexelray.gui.core.layout.KeepClear(x, y, w, h));
+    }
+
     /** Return this node to normal flow. */
     public Node unfloat() {
         prop(PropKey.FLOAT_X, null);
+        prop(PropKey.KEEP_CLEAR, null);
         return prop(PropKey.FLOAT_Y, null);
     }
 

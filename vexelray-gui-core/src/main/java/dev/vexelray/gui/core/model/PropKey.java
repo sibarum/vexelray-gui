@@ -274,6 +274,12 @@ public enum PropKey {
     FLOAT_X(true),
     FLOAT_Y(true),
     /**
+     * A rectangle a floating node must not cover ({@code layout.KeepClear}, absent for none): when keeping it inside
+     * its parent would slide it over this rectangle, it goes to the rectangle's other side instead. What keeps a
+     * tooltip off the control it describes. Meaningless on an in-flow node.
+     */
+    KEEP_CLEAR(true),
+    /**
      * Which edge a floating node keeps its parent's content away from ({@code layout.Dock}, absent for none): the
      * parent's viewport stops short of the band between the docked node and that edge. Meaningless on an in-flow
      * node, which already takes its own space. What a find bar over a field is (the top), and a field's scrollbar

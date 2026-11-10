@@ -720,6 +720,11 @@ public final class RetainedNode {
                 ? d : dev.vexelray.gui.core.layout.Dock.TOP;
     }
 
+    /** The rectangle this float must not cover (see {@link PropKey#KEEP_CLEAR}), or null for none. */
+    public dev.vexelray.gui.core.layout.KeepClear keepClear() {
+        return props.get(PropKey.KEEP_CLEAR) instanceof dev.vexelray.gui.core.layout.KeepClear k ? k : null;
+    }
+
     /** The floating x offset from the parent's border-box origin (only meaningful when {@link #floating()}). */
     public Length floatX() {
         return len(PropKey.FLOAT_X, Length.ZERO);

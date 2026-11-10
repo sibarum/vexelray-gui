@@ -14,6 +14,32 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /** The dialog spec: buttons in the order given, at most one Enter and one Escape, and no null to trip over. */
 class ModalTest {
 
+    /**
+     * A dialog button grows with its label. It was 32dp tall around a rem label, and at 200% the label's lower half
+     * hung out of it; growing in step keeps the proportions it has at 100%, where the label fits.
+     */
+    @Test
+    void aDialogButtonZoomsWithItsLabel() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Modal m = Modal.of("Title", "Message").defaultButton("Do it", () -> { });
+            dev.vexelray.gui.core.Node b = Modals.buttonNode(h.gui, m.defaultButton());
+            h.gui.root().children(h.gui.row().children(b));
+            h.frame();
+            dev.vexelray.gui.core.layout.Rect at100 = h.gui.layoutSnapshot().node(h.retained(b).id).rect();
+            float text100 = h.retained(b).textSizePx;
+            assertEquals(32f, at100.h(), 0.5f, "32 at 100%, as it was");
+
+            for (float zoom : new float[] {1.5f, 2f, 3f}) {
+                h.gui.zoom(zoom);
+                h.frame();
+                dev.vexelray.gui.core.layout.Rect r = h.gui.layoutSnapshot().node(h.retained(b).id).rect();
+                assertEquals(text100 * zoom, h.retained(b).textSizePx, 0.05f, "the label zooms");
+                assertEquals(at100.h() * zoom, r.h(), 0.5f, "and the button with it, at " + zoom);
+                assertEquals(at100.w() * zoom, r.w(), 2f * zoom, "across too, at " + zoom);
+            }
+        }
+    }
+
     @Test
     void buttonsKeepTheOrderTheyWereAddedIn() {
         Modal m = Modal.of("Title", "Message")

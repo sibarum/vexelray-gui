@@ -79,6 +79,9 @@ public final class Modals implements AutoCloseable {
     private static final int BODY_PADDING = 18;    // the body's padding, left and right
     private static final int BUTTON_PADDING = 18;  // a button's padding, left and right
     private static final int BUTTON_GAP = 8;       // between two buttons
+    /** A button's height and side padding as the button draws them: {@code rem}, zooming with its label. */
+    static final Length BUTTON_H = Length.rem(2f);
+    static final Length BUTTON_PAD = Length.rem(BUTTON_PADDING / 16f);
 
     private static final AtomicReference<Modals> INSTANCE = new AtomicReference<>();
 
@@ -342,13 +345,22 @@ public final class Modals implements AutoCloseable {
 
     /** One dialog button: the default one accented, the rest quiet, all of them dismissing the dialog. */
     private Node button(Modal.Button spec) {
+        Node b = buttonNode(gui, spec);
+        Seams.of(gui).onClick(b, () -> dismiss(spec));
+        return b;
+    }
+
+    /** How a dialog button looks and responds to the pointer, without the dialog it dismisses: what a test can build. */
+    static Node buttonNode(Gui gui, Modal.Button spec) {
         // One role for the whole button, whatever the pointer is doing: the default button is a filled control, the
         // rest are panels, and hover/press are the theme shading each of those -- not six more colours to pick.
         Role fill = spec.isDefault() ? Role.ACTION : Role.PANEL;
         Role label = spec.isDefault() ? Role.ON_ACTION : Role.INK;
+        // Its height and its side padding are its label's, so rem with it: they were dp around a rem label, and two
+        // steps of zoom put the label's lower half outside the button. 32 and BUTTON_PADDING at 100%, as before.
         Node b = gui.text(spec.label())
-                .height(Length.dp(32))
-                .padding(Length.ZERO, Length.dp(BUTTON_PADDING))
+                .height(BUTTON_H)
+                .padding(Length.ZERO, BUTTON_PAD)
                 .background(fill)
                 .corner(Length.rem(0.5f))
                 .border(Length.rem(0.1f), Role.LINE)
@@ -359,7 +371,6 @@ public final class Modals implements AutoCloseable {
             b.background(fill.at(state));
             b.elevation(gui.theme().elevation(Relief.CONTROL, state));
         });
-        Seams.of(gui).onClick(b, () -> dismiss(spec));
         return b;
     }
 

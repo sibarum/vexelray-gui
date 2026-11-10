@@ -70,6 +70,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * an item with no mark still takes its share of the column, and a menu of plain items is drawn with no column at
  * all, exactly as it was before there were icons.
  *
+ * <p><b>A line that is a setting</b> ({@link MenuItem#chooses()}) says where it stands in a second column, before the
+ * icons and reserved the same way: a tick for a toggle that is on, a dot for the radio line chosen, nothing when off.
+ * Its row's role is {@code menuitemcheckbox} or {@code menuitemradio}, and the mark's is {@code checked}.
+ *
  * <p>A disabled row is inert by construction: it carries no click handler, so choosing it does nothing — and it is
  * still one of the menu's own nodes, so the menu stays open rather than treating the click as "somewhere else".
  *
@@ -189,6 +193,12 @@ public final class ContextMenu implements MenuPresenter {
     /** A line's icon: a little larger than its words, so its detail reads, in a cell a little larger again. */
     private static final Length ICON = Length.rem(1.25f);
     private static final Length ICON_CELL = Length.rem(1.5f);
+
+    /** The choice column's cell, its tick and its dot: narrower than the icons, since what it holds is smaller. */
+    private static final Length CHOICE_CELL = Length.rem(1f);
+    private static final Length CHECK = Length.rem(0.9f);
+    private static final Length RADIO_DOT = Length.rem(0.4f);
+    private static final Length RADIO_DOT_CORNER = Length.rem(0.2f);
 
     /**
      * Make sure {@code gui} can show context menus, without disturbing a presenter it already has. Called by every
@@ -747,8 +757,13 @@ public final class ContextMenu implements MenuPresenter {
         // items has no column at all and is drawn exactly as it was before there were icons. Decided per opening,
         // which is the only time it can be decided without something moving under the pointer.
         boolean iconColumn = menuItems.stream().anyMatch(MenuItem::marked);
+        // The choice column likewise: reserved before the icons when any line on this panel is a setting, so a tick or
+        // a dot coming and going between openings never moves a label, and a panel of commands has none.
+        boolean choiceColumn = menuItems.stream().anyMatch(MenuItem::chooses);
         for (MenuItem item : menuItems) {
-            Node row = item.separator() ? own(rule()) : item.heading() ? own(heading(item)) : row(item, iconColumn, at);
+            Node row = item.separator() ? own(rule())
+                    : item.heading() ? own(heading(item))
+                    : row(item, choiceColumn, iconColumn, at);
             rows.add(row);
             if (record != null) {
                 record.add(item);
@@ -764,10 +779,6 @@ public final class ContextMenu implements MenuPresenter {
     }
 
     /**
-     * One command row: full-width, hover-shaded while it can be chosen, dimmed and inert when it cannot. {@code at} is
-     * the depth of the panel it is on, the menu's own being 0.
-     */
-    /**
      * What {@code item} says at its right: its command's first trigger as the tree's {@link Commands} has it now, so a
      * rebound chord is what the menu shows; or, naming no command, the chord it states; or nothing. A command that is
      * named and has no trigger now says nothing, rather than a chord the keyboard no longer has.
@@ -780,9 +791,13 @@ public final class ContextMenu implements MenuPresenter {
         return item.shortcut() == null ? "" : item.shortcut().text();
     }
 
-    private Node row(MenuItem item, boolean iconColumn, int at) {
+    /**
+     * One command row: full-width, hover-shaded while it can be chosen, dimmed and inert when it cannot. {@code at} is
+     * the depth of the panel it is on, the menu's own being 0.
+     */
+    private Node row(MenuItem item, boolean choiceColumn, boolean iconColumn, int at) {
         Node row = own(gui.row()
-                .role("menuitem")
+                .role(!item.chooses() ? "menuitem" : item.choice().radio() ? "menuitemradio" : "menuitemcheckbox")
                 .width(Length.FILL)
                 .corner(Length.rem(0.5f))
                 .padding(Length.dp(6), Length.dp(10))
@@ -790,6 +805,9 @@ public final class ContextMenu implements MenuPresenter {
                 .alignItems(dev.vexelray.gui.core.layout.LayoutEnums.AlignItems.CENTER)
                 .border(Length.dp(1), Role.NONE)
                 .scroll(false, false));
+        if (choiceColumn) {
+            row.append(choiceCell(item));
+        }
         IconView mark = null;
         if (iconColumn) {
             // A cell of fixed width whether or not this item fills it: the column is what aligns the labels, so an
@@ -909,6 +927,30 @@ public final class ContextMenu implements MenuPresenter {
                     .glow(item.current() ? 0.2f : 0f)
                     .shadow(!item.current() && lit ? 0.08f : 0f);
         }
+    }
+
+    /**
+     * The cell before the icon column that says where a setting stands: a tick for one on by itself, a dot for the one
+     * of a radio group chosen, in the accent as a chosen option is; faint on a greyed line. Empty for a line that is off
+     * and for a command, which still takes its share so the labels line up. The mark answers to {@code checked} in the
+     * tree, so a script can read where a setting stands from the open menu.
+     */
+    private Node choiceCell(MenuItem item) {
+        Node cell = own(gui.row()
+                .width(CHOICE_CELL)
+                .height(ICON_CELL)
+                .justify(dev.vexelray.gui.core.layout.LayoutEnums.Justify.CENTER)
+                .alignItems(dev.vexelray.gui.core.layout.LayoutEnums.AlignItems.CENTER)
+                .scroll(false, false));
+        if (!item.chooses() || !item.choice().on()) {
+            return cell;
+        }
+        Role tone = item.enabled() ? Role.ACCENT : Role.FAINT;
+        Node mark = item.choice().radio()
+                ? gui.box().width(RADIO_DOT).height(RADIO_DOT).corner(RADIO_DOT_CORNER).background(tone)
+                : IconView.of(gui, Icon.CHECK).size(CHECK).tint(tone).node();
+        cell.append(own(mark.role("checked")));
+        return cell;
     }
 
     /** A group's heading: small capitals in the secondary ink, standing a little off the line above. */

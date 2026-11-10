@@ -1,0 +1,14 @@
+<svg color="#e9ecf2" width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<mask id="ws13" maskUnits="userSpaceOnUse" x="0" y="0" width="16" height="16">
+<rect width="16" height="16" fill="#000"/>
+<ellipse cx="8" cy="8" rx="6.5" ry="7" fill="#fff"/>
+<path d="M8 4.5 L10.5 6.25 V9.75 L8 11.5 L5.5 9.75 V6.25 Z" fill="#000"/>
+<path d="M8 4.5 V2.5 M8 11.5 V13.5 M10.5 6.25 L12.2 5.2 M10.5 9.75 L12.2 10.8 M5.5 6.25 L3.8 5.2 M5.5 9.75 L3.8 10.8" stroke="#000" stroke-width="1" fill="none"/>
+<path d="M8 6 L9.2 6.85 V9.15 L8 10 L6.8 9.15 V6.85 Z" fill="#fff"/>
+</mask>
+</defs>
+<g mask="url(#ws13)">
+<rect width="16" height="16" fill="currentColor"/>
+</g>
+</svg>

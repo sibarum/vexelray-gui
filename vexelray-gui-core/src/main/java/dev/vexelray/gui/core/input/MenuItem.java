@@ -51,10 +51,39 @@ import java.util.function.UnaryOperator;
  * @param command  the command this line does, by the name it is bound by ({@link #command(String)}), or {@code null}:
  *                 when set, the line says that command's chord as the tree's {@link Commands} has it now, so a
  *                 rebound chord is what the menu says, and {@code shortcut} is only what it says when none answers
+ * @param choice   what this line says about the setting it is ({@link Choice}), or {@code null} for a command: a
+ *                 tick for one on by itself, a dot for the one of a radio group chosen, in a column before the icons
  */
 public record MenuItem(String icon, String label, Runnable action, boolean enabled, IconSource mark,
                        List<MenuItem> children, boolean heading, boolean current, Shortcut shortcut,
-                       String command) {
+                       String command, Choice choice) {
+
+    /**
+     * What a line that is a setting says about it: whether it is on, and, for one of several of which one is chosen,
+     * the group it is one of. A line with no group is on or off by itself and is drawn with a tick while on; a line in
+     * a group is drawn with a dot while it is the one chosen. Off, either leaves its cell empty.
+     *
+     * <p>Said, not kept: the menu is declared again when the setting changes, as every declared menu is, so a line
+     * says what the application last said. Choosing it sends its message, as any line does, and what that message
+     * means (flip this, choose this one) is the application's.
+     *
+     * @param on    whether the setting is on, or this line is the one of its group chosen
+     * @param group the radio group this line is one of, by a name its lines share, or {@code null} for a setting on
+     *              its own
+     */
+    public record Choice(boolean on, String group) {
+
+        /** Whether this line is one of a group, of which one is chosen, rather than on or off by itself. */
+        public boolean radio() {
+            return group != null;
+        }
+    }
+
+    /** A line that is a command rather than a setting: every line there was before a line could be one. */
+    public MenuItem(String icon, String label, Runnable action, boolean enabled, IconSource mark,
+                    List<MenuItem> children, boolean heading, boolean current, Shortcut shortcut, String command) {
+        this(icon, label, action, enabled, mark, children, heading, current, shortcut, command, null);
+    }
 
     /** A line with no chord said beside it. */
     public MenuItem(String icon, String label, Runnable action, boolean enabled, IconSource mark,
@@ -79,7 +108,7 @@ public record MenuItem(String icon, String label, Runnable action, boolean enabl
 
     /** This line, drawn as about something going on now when {@code current}, everything else as it is. */
     public MenuItem current(boolean current) {
-        return new MenuItem(icon, label, action, enabled, mark, children, heading, current, shortcut, command);
+        return new MenuItem(icon, label, action, enabled, mark, children, heading, current, shortcut, command, choice);
     }
 
     /** An item marked by a glyph, or by nothing. */
@@ -164,7 +193,7 @@ public record MenuItem(String icon, String label, Runnable action, boolean enabl
 
     /** This line running {@code action} instead, everything else as it is. */
     public MenuItem withAction(Runnable action) {
-        return new MenuItem(icon, label, action, enabled, mark, children, heading, current, shortcut, command);
+        return new MenuItem(icon, label, action, enabled, mark, children, heading, current, shortcut, command, choice);
     }
 
     /**
@@ -174,7 +203,7 @@ public record MenuItem(String icon, String label, Runnable action, boolean enabl
     public MenuItem wrapActions(UnaryOperator<Runnable> wrap) {
         List<MenuItem> wrapped = children.stream().map(c -> c.wrapActions(wrap)).toList();
         return new MenuItem(icon, label, action == null ? null : wrap.apply(action), enabled, mark, wrapped, heading,
-                current, shortcut, command);
+                current, shortcut, command, choice);
     }
 
     /**
@@ -182,7 +211,7 @@ public record MenuItem(String icon, String label, Runnable action, boolean enabl
      * of opening the menu. It binds nothing; the chord is the application's to declare as it declares every chord.
      */
     public MenuItem shortcut(Shortcut chord) {
-        return new MenuItem(icon, label, action, enabled, mark, children, heading, current, chord, command);
+        return new MenuItem(icon, label, action, enabled, mark, children, heading, current, chord, command, choice);
     }
 
     /**
@@ -190,6 +219,29 @@ public record MenuItem(String icon, String label, Runnable action, boolean enabl
      * ({@link Commands}), following a rebind. It binds nothing, and runs what it ran.
      */
     public MenuItem command(String id) {
-        return new MenuItem(icon, label, action, enabled, mark, children, heading, current, shortcut, id);
+        return new MenuItem(icon, label, action, enabled, mark, children, heading, current, shortcut, id, choice);
+    }
+
+    /**
+     * This line as a setting on or off by itself, ticked while {@code on}: Show hidden files, Word wrap. It still runs
+     * what it ran; that is what flips the setting, and the menu is declared again saying where it now stands.
+     */
+    public MenuItem toggle(boolean on) {
+        return new MenuItem(icon, label, action, enabled, mark, children, heading, current, shortcut, command,
+                new Choice(on, null));
+    }
+
+    /**
+     * This line as one of the radio group {@code group}, of which one is chosen, marked with a dot while it is the one
+     * ({@code on}): the lines of a menu that share a group name are its choices.
+     */
+    public MenuItem radio(String group, boolean on) {
+        return new MenuItem(icon, label, action, enabled, mark, children, heading, current, shortcut, command,
+                new Choice(on, java.util.Objects.requireNonNull(group, "group")));
+    }
+
+    /** Whether this line is a setting ({@link #toggle(boolean)}, {@link #radio(String, boolean)}) rather than a command. */
+    public boolean chooses() {
+        return choice != null;
     }
 }

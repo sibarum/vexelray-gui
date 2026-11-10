@@ -4,8 +4,10 @@ import dev.vexelray.gui.core.IconSource;
 import sibarum.atchung.Sender;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * A context menu <b>declared</b> on a node ({@code Gui.menu}): what is on it, and the message each item sends when it
@@ -115,6 +117,52 @@ public final class Menu {
             return this;
         }
 
+        /**
+         * Make the line added last a setting on or off by itself, ticked while {@code on} ({@link MenuItem#toggle}).
+         * Its message is still what choosing it sends, so it says what to do (flip, or set to {@code !on}); declare
+         * the menu again once the setting has changed. After no line, a separator, a heading or a submenu, it does
+         * nothing.
+         *
+         * {@snippet :
+         * Menu.builder()
+         *         .item("Word wrap", view, new Wrap(!wrapping)).toggle(wrapping)
+         *         .build();
+         * }
+         */
+        public Builder toggle(boolean on) {
+            if (choosable()) {
+                items.set(items.size() - 1, items.getLast().toggle(on));
+            }
+            return this;
+        }
+
+        /**
+         * Make the line added last one of the radio group {@code group}, marked with a dot while it is the one chosen
+         * ({@link MenuItem#radio}). The lines that share a group name are its choices, and at most one of them is
+         * {@code on}: {@link #build()} refuses a group with two. Each sends its own message, the one that chooses it.
+         * After no line, a separator, a heading or a submenu, it does nothing.
+         *
+         * {@snippet :
+         * Menu.builder()
+         *         .heading("Sort by")
+         *         .item("Name", view, new Sort(NAME)).radio("sort", sort == NAME)
+         *         .item("Date", view, new Sort(DATE)).radio("sort", sort == DATE)
+         *         .build();
+         * }
+         */
+        public Builder radio(String group, boolean on) {
+            Objects.requireNonNull(group, "group");
+            if (choosable()) {
+                items.set(items.size() - 1, items.getLast().radio(group, on));
+            }
+            return this;
+        }
+
+        private boolean choosable() {
+            return !items.isEmpty() && !items.getLast().separator() && !items.getLast().heading()
+                    && !items.getLast().submenu();
+        }
+
         /** A line between groups of items. */
         public Builder separator() {
             if (!items.isEmpty() && !items.getLast().separator()) {
@@ -135,8 +183,21 @@ public final class Menu {
             return this;
         }
 
-        /** The menu as declared so far. */
+        /**
+         * The menu as declared so far.
+         *
+         * @throws IllegalStateException if a radio group has more than one line on: the menu would say two things are
+         *                               chosen of which one can be, so it is refused where it is declared rather than
+         *                               drawn wrong
+         */
         public Menu build() {
+            Set<String> chosen = new HashSet<>();
+            for (MenuItem item : items) {
+                if (item.chooses() && item.choice().radio() && item.choice().on() && !chosen.add(item.choice().group())) {
+                    throw new IllegalStateException("radio group \"" + item.choice().group()
+                            + "\" has more than one line chosen, \"" + item.label() + "\" among them");
+                }
+            }
             List<MenuItem> kept = new ArrayList<>(items);
             while (!kept.isEmpty() && kept.getLast().separator()) {
                 kept.removeLast();

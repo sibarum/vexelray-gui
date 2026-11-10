@@ -807,7 +807,7 @@ module can add its own without `TitleBar` knowing it exists. It does: `WindowIns
 debug mode* in the menu, and in a debug run `WindowInstrument.debugging` heads its section *Debug run* with the
 ports, and stands at the right as the bug with its lamps (role, and landmark, `instrument-automation`) the whole run
 long. The menu's items are landmarks by what they say (`menu.restart-in-debug-mode`), so a script can choose one:
-`click titlebar-mark`, then `click menu.restart-in-debug-mode`. The menu is handed the window's own
+`click titlebar-mark`, then `click menu.restart-in-debug-mode`. A line that is a setting (`Menu.Builder.toggle`, `.radio`) has the role `menuitemcheckbox` or `menuitemradio`, and while it is on its mark has the role `checked`, so `tree` says where it stands. The menu is handed the window's own
 `WindowControls`, as an action is, so what it does is to the window it was opened in.
 
 **The menu is drawn as a card** (`ContextMenu`, every context menu's presenter): a section can open with a heading

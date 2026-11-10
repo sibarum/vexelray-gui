@@ -145,4 +145,24 @@ class ButtonTest {
             assertEquals(1, doubled.get(), "a double click on the box itself is the box's");
         }
     }
+
+    @Test
+    void anUnclippedButtonCutsALongLabelOffAndShowsItWholeOnHover() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Button b = new Button(h.gui, "a-label-much-wider-than-its-button").unclip(new Unclip(h.gui));
+            b.node().width(Length.dp(100));
+            h.gui.root().children(b.node());
+            h.frame();
+            assertTrue(b.labelNode().layout().clipped(), "the button cuts the label off at its edge");
+
+            var r = b.node().layout().rect();
+            h.hover(r.x() + r.w() / 2f, r.y() + r.h() / 2f);
+            h.frame();
+            assertEquals(1f, h.retained(b.labelNode()).unclip(), 0.001f, "on the button: the label is drawn whole");
+
+            h.hover(r.x() + r.w() + 50f, r.y() + r.h() / 2f);
+            h.frame();
+            assertEquals(0f, h.retained(b.labelNode()).unclip(), 0.001f, "off it: back under the clip");
+        }
+    }
 }

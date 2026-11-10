@@ -283,6 +283,26 @@ public final class Button {
     }
 
 
+    /**
+     * Cut a label wider than the button off at the button's edge, and show it whole, in place, while the pointer
+     * is on the button, through {@code reveal} ({@link Unclip#of} for the window's own). Without this a label that
+     * does not fit paints past the button over whatever is beside it. A label that fits is left alone. Call once.
+     */
+    public Button unclip(Unclip reveal) {
+        // The label as wide as its words, not the room left, so a long one is the box the button cuts off and
+        // Unclip can see it is; the spacer keeps the badge at the far end, as the growing label did.
+        label.width(Length.AUTO);
+        node.children(label, gui.box().width(Length.grow(1f)).hitInert(true), badge);
+        node.clip(true);
+        reveal.attach(node, label);
+        return this;
+    }
+
+    /** The label's node, for a test. */
+    Node labelNode() {
+        return label;
+    }
+
     /** Whether a chip's presses are undoable: on by default. Off for a chip that is not an edit, a filter or a view. */
     public Button undoable(boolean undoable) {
         undo.enabled(undoable);

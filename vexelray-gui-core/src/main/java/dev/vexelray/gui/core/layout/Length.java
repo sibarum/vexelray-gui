@@ -86,6 +86,21 @@ public interface Length {
         }
     }
 
+    /**
+     * {@code v}, but never less than {@code floor}: the larger of two fixed lengths. For a box that holds both text
+     * and chrome — a title bar that grows with its zoomed labels but never gets shorter than the window controls it
+     * also holds. A flex keyword on either side leaves the decision to the layout ({@link #FLEX}): "at least AUTO" has
+     * no size to compare.
+     */
+    record AtLeast(Length floor, Length v) implements Length {
+        @Override
+        public float resolve(LayoutContext ctx, float basisPx) {
+            float min = floor.resolve(ctx, basisPx);
+            float px = v.resolve(ctx, basisPx);
+            return min == FLEX || px == FLEX ? FLEX : Math.max(min, px);
+        }
+    }
+
     /** Flex-grow weight; basis 0, shares remaining main-axis space in proportion to {@code factor}. */
     record Grow(float factor) implements Length {
         @Override
@@ -149,6 +164,11 @@ public interface Length {
 
     static Length vh(float v) {
         return new Vh(v);
+    }
+
+    /** {@code v}, but never less than {@code floor}; see {@link AtLeast}. */
+    static Length atLeast(Length floor, Length v) {
+        return new AtLeast(floor, v);
     }
 
     static Length grow(float factor) {

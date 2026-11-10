@@ -27,7 +27,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class TitleBarTest {
 
-    /** {@code TitleBar.BUTTON_W} and {@code BAR_H} — the metrics the click geometry below is derived from. */
+    /**
+     * {@code TitleBar.BUTTON_W} and {@code BUTTON_H} — the metrics the click geometry below is derived from. At 100%
+     * the bar is as tall as its buttons.
+     */
     private static final float BUTTON_W = 46f;
     private static final float BAR_H = 32f;
     /** The harness viewport width; the caption buttons sit against its right edge. */
@@ -153,23 +156,54 @@ class TitleBarTest {
     }
 
     /**
-     * The bar is a fixed-height strip, so what is drawn in it has to be fixed too. Its glyphs were once {@code rem}
-     * while the strip was {@code dp}: Ctrl+= grew the title and the close glyph and not the bar, and a few steps in
-     * they no longer fit in it.
+     * The labels zoom with the content, and the bar grows to hold them; the window controls do not. The labels were
+     * once {@code rem} in a fixed {@code dp} strip, and a few steps of Ctrl+= pushed them out of it, so every label is
+     * checked to lie inside the bar at each step, as are the controls to stay 46 x 32 in the top right corner.
      */
     @Test
-    void zoomLeavesTheBarsTextAlone() {
+    void zoomGrowsTheLabelsAndTheBarButNotTheControls() {
         try (HeadlessGui h = new HeadlessGui()) {
-            TitleBar bar = bar(h, WindowControls.NONE);
-            java.util.Map<String, Float> before = textSizes(h.retained(bar.node()), new java.util.HashMap<>());
-
-            h.gui.zoom(3f);
+            Recorder window = new Recorder();
+            TitleBar bar = bar(h, window).wordmark("Test App").menu("view", "View", dev.vexelray.gui.core.input.Menu.NONE);
             h.frame();
-            java.util.Map<String, Float> after = textSizes(h.retained(bar.node()), new java.util.HashMap<>());
+            java.util.Map<String, Float> at100 = textSizes(h.retained(bar.node()), new java.util.HashMap<>());
+            assertEquals(java.util.Set.of("Test", "Test App", "View"), at100.keySet(),
+                    "the title, the wordmark and the menu; the window controls are drawings");
+            assertEquals(BAR_H, rect(h, bar.node()).h(), 0.5f, "32 at 100%, as it always was");
 
-            assertEquals(java.util.Set.of("Test"), before.keySet(), "the title; the window controls are icons, sized in dp");
-            assertEquals(before, after, "zoom is the content's; the window's chrome stays the size the OS's is");
+            for (float zoom : new float[] {0.5f, 1.5f, 2f, 3f}) {
+                h.gui.zoom(zoom);
+                h.frame();
+                String at = " at " + (int) (zoom * 100) + "%";
+                dev.vexelray.gui.core.layout.Rect barRect = rect(h, bar.node());
+                assertEquals(Math.max(BAR_H, BAR_H * zoom), barRect.h(), 0.5f, "the bar holds its labels" + at);
+
+                java.util.Map<String, Float> sizes = textSizes(h.retained(bar.node()), new java.util.HashMap<>());
+                for (String label : at100.keySet()) {
+                    assertEquals(at100.get(label) * zoom, sizes.get(label), 0.05f, label + " zooms" + at);
+                    dev.vexelray.gui.core.layout.Rect r = h.gui.layoutSnapshot()
+                            .node(byText(h.retained(bar.node()), label).id).rect();
+                    assertTrue(r.y() >= barRect.y() - 0.5f && r.y() + r.h() <= barRect.y() + barRect.h() + 0.5f,
+                            label + " lies inside the bar" + at + ": " + r + " in " + barRect);
+                }
+
+                // The controls: top right, a 32 tall target at every zoom, and nothing below it is theirs.
+                window.calls.clear();
+                h.click(buttonX(0), 1f);
+                h.click(buttonX(0), BAR_H - 1f);
+                h.click(buttonX(2), BAR_H / 2f);
+                assertEquals(List.of("close", "close", "minimize"), window.calls, "the controls are where they were" + at);
+                if (barRect.h() > BAR_H + 2f) {
+                    window.calls.clear();
+                    h.click(buttonX(0), BAR_H + 1f);
+                    assertEquals(List.of(), window.calls, "below the controls is caption, not close" + at);
+                }
+            }
         }
+    }
+
+    private static dev.vexelray.gui.core.layout.Rect rect(HeadlessGui h, dev.vexelray.gui.core.Node node) {
+        return h.gui.layoutSnapshot().node(h.retained(node).id).rect();
     }
 
     /**

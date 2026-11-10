@@ -56,16 +56,27 @@ public final class TitleBar {
         Hosting.install();
     }
 
-    /** Caption button footprint — the Windows caption-button metrics, in density-independent pixels. */
-    private static final Length BUTTON_W = Length.dp(46);
-    private static final Length BAR_H = Length.dp(32);
     /**
-     * The bar's glyphs are chrome too, so they are {@code dp} like the strip they sit in — the native caption does
-     * not grow with an application's zoom either. In {@code rem} they zoomed and the bar did not, so a few steps of
-     * Ctrl+= pushed the title and the close glyph out of a 32dp strip. (Sizes are today's 0.85rem and 1.4rem at
-     * the 16px root, so nothing moves at 100%.)
+     * Caption button footprint — the Windows caption-button metrics, in density-independent pixels. The window
+     * controls and the instruments beside them are the window's, and the native caption does not grow with an
+     * application's zoom, so they stay this size at every zoom, pinned to the bar's top right.
      */
-    private static final Length TITLE_SIZE = Length.dp(13.6f);
+    private static final Length BUTTON_W = Length.dp(46);
+    private static final Length BUTTON_H = Length.dp(32);
+    /**
+     * The bar: as tall as the window controls, or as its zoomed labels need, whichever is more. The left of the bar
+     * — the mark, the wordmark, the menus, the title — is the application's and is {@code rem}, so it zooms with the
+     * content and the menus it drops (which always did). Its glyphs were once {@code rem} in a {@code dp} strip, and a
+     * few steps of Ctrl+= pushed them out of it; growing the strip with them is what keeps them in. At 100% this is
+     * 32dp, as it always was.
+     */
+    private static final Length BAR_H = Length.atLeast(BUTTON_H, Length.rem(2f));
+    /** The labels: the title, the wordmark, the menus. */
+    private static final Length TITLE_SIZE = Length.rem(0.85f);
+    /** The plate behind the lockup and each menu's label: 24dp at 100%, growing with the label in it. */
+    private static final Length LABEL_H = Length.rem(1.5f);
+    private static final Length LABEL_PAD = Length.rem(0.5f);
+    private static final Length LABEL_CORNER = Length.rem(0.3125f);
     /** An application's own window-control glyph ({@link #glyphs}), drawn at this size. */
     private static final Length GLYPH = Length.dp(16);
     /**
@@ -83,8 +94,13 @@ public final class TitleBar {
     private static final Glyph CLOSE = (g, ink, under) -> Picture.of(
             g.line(-4.75, -4.75, 4.75, 4.75, ink),
             g.line(-4.75, 4.75, 4.75, -4.75, ink));
-    /** The mark's side: the native caption's small icon, 16px at 100%. */
+    /**
+     * The mark's side: the native caption's small icon, 16px at 100%, and the cap on the raster sizes uploaded for it
+     * (four times that, for scale and zoom together). The box itself is {@link #MARK_SIZE}.
+     */
     private static final int ICON_DP = 16;
+    /** The mark's box: {@value #ICON_DP}px at 100%, zooming with the wordmark beside it. */
+    private static final Length MARK_SIZE = Length.rem(1f);
     /** The landmark the mark is reached by, so a script can {@code click titlebar-mark}. */
     public static final String MARK = "titlebar-mark";
 
@@ -173,11 +189,11 @@ public final class TitleBar {
         // its menu has something on it (lockupRegion), and hidden until it has something to show.
         this.lockup = gui.row()
                 .role("titlebar-lockup")
-                .height(Length.dp(24))
+                .height(LABEL_H)
                 .alignItems(AlignItems.CENTER)
-                .gap(Length.dp(7))
-                .padding(Length.ZERO, Length.dp(8))
-                .corner(Length.dp(5))
+                .gap(Length.rem(0.4375f))
+                .padding(Length.ZERO, LABEL_PAD)
+                .corner(LABEL_CORNER)
                 .background(Role.NONE)
                 .scroll(false, false)
                 .visible(false);
@@ -188,13 +204,13 @@ public final class TitleBar {
         });
         gui.landmark(MARK, lockup);
         // EDGE, not LINE: an application may give the bar its page colour, and LINE all but vanishes on that.
-        this.menuRule = gui.box().width(Length.dp(1)).height(Length.dp(16)).margin(Length.dp(6))
+        this.menuRule = gui.box().width(Length.dp(1)).height(Length.rem(1f)).margin(Length.rem(0.375f))
                 .background(Role.EDGE).scroll(false, false).visible(false);
         this.leading = gui.row()
                 .height(Length.FILL)
                 .alignItems(AlignItems.CENTER)
-                .gap(Length.dp(6))
-                .padding(Length.ZERO, Length.dp(4))
+                .gap(Length.rem(0.375f))
+                .padding(Length.ZERO, Length.rem(0.25f))
                 .scroll(false, false)
                 .clip(true)
                 .children(lockup, menuRule, titleText);
@@ -246,15 +262,21 @@ public final class TitleBar {
         // The bar's own height, not FILL. `buttons` can say FILL because it is given its children here and so has
         // a content height to resolve against; this strip is filled later, and a row that is empty when the first
         // layout runs resolves FILL to nothing and stays a zero-height strip that swallows its buttons.
-        this.instruments = gui.row().height(BAR_H)
+        this.instruments = gui.row().height(BUTTON_H)
                 .alignItems(AlignItems.STRETCH).scroll(false, false);
+        // The window's own end of the bar: instruments, hairline, controls, at the caption's size whatever the zoom,
+        // in the top right corner where the native caption puts them however tall the bar has grown.
+        Node trailing = gui.row().height(BUTTON_H).alignItems(AlignItems.CENTER).scroll(false, false)
+                .children(instruments, divider, buttons);
 
         this.root = gui.row()
                 .role("titlebar")
                 .width(Length.FILL)
                 .height(BAR_H)
                 .background(Role.CHROME)
-                .alignItems(AlignItems.CENTER)
+                // START, so the controls stay at the top of a bar zoomed taller; the left side and the caption are
+                // FILL, and centre their own contents.
+                .alignItems(AlignItems.START)
                 .scroll(false, false)
                 // Everything the buttons do not claim is caption: drag to move, double-click to maximize,
                 // right-click for the system menu — all of it the window manager's, none of it re-implemented.
@@ -264,7 +286,7 @@ public final class TitleBar {
                 // past the minimum laid the bar out on that canvas and the window controls off the window.
                 .floatAt(Length.ZERO, Length.ZERO)
                 .dock(true)
-                .children(leading, caption, instruments, divider, buttons);
+                .children(leading, caption, trailing);
 
         // The window can be maximized or restored without this widget being the cause, and every one of those
         // routes changes the viewport. Re-deriving from the window on that signal is what keeps the icon honest.
@@ -667,7 +689,7 @@ public final class TitleBar {
     }
 
     /**
-     * The mark the window wears in the taskbar, worn in this bar too: {@code mark} shown {@value #ICON_DP}dp
+     * The mark the window wears in the taskbar, worn in this bar too: {@code mark} shown {@link #MARK_SIZE}
      * square, as the native caption shows a window's small icon. {@code null} takes the mark off.
      *
      * <p><b>Each size the icon was drawn at stays that size.</b> An {@link Icon} is a set of sizes, and a
@@ -692,7 +714,7 @@ public final class TitleBar {
                 image -> app.texture(rgba(image), image.width(), image.height()));
         Icon uploaded = new Icon(java.util.List.copyOf(sizes.keySet()));
 
-        Node node = gui.box().size(Length.dp(ICON_DP), Length.dp(ICON_DP)).scroll(false, false);
+        Node node = gui.box().size(MARK_SIZE, MARK_SIZE).scroll(false, false);
         // Chosen against the box the layout settled on, which is in pixels and so already carries the scale.
         Seams.of(gui).onResize(node, computed -> node.image(sizes.get(uploaded.bestFor(
                 Math.round(Math.max(computed.rect().w(), computed.rect().h()))))));
@@ -700,7 +722,7 @@ public final class TitleBar {
     }
 
     /**
-     * The mark as a drawing: {@code drawing} shown {@value #ICON_DP}dp square, as {@link #icon(GuiApp, Icon)} shows
+     * The mark as a drawing: {@code drawing} shown {@link #MARK_SIZE} square, as {@link #icon(GuiApp, Icon)} shows
      * the taskbar's raster, but sharp at every scale from the one drawing, with nothing chosen per display. What the
      * framework shows when the application's mark has an SDG beside its {@code .ico}. {@code null} takes the mark off.
      */
@@ -708,7 +730,7 @@ public final class TitleBar {
         if (drawing == null) {
             return icon((Node) null);
         }
-        return icon(gui.box().size(Length.dp(ICON_DP), Length.dp(ICON_DP)).scroll(false, false).sdg(drawing));
+        return icon(gui.box().size(MARK_SIZE, MARK_SIZE).scroll(false, false).sdg(drawing));
     }
 
     /** {@code image}'s straight {@code 0xAARRGGBB} pixels as the straight RGBA8 bytes a texture takes. */
@@ -792,9 +814,9 @@ public final class TitleBar {
             // label taking the accent, and the menu hung from its lower left. Its siblings, so they read as one bar.
             this.target = gui.text("")
                     .role("titlebar-menu")
-                    .height(Length.dp(24))
-                    .padding(Length.ZERO, Length.dp(8))
-                    .corner(Length.dp(5))
+                    .height(LABEL_H)
+                    .padding(Length.ZERO, LABEL_PAD)
+                    .corner(LABEL_CORNER)
                     .textSize(TITLE_SIZE)
                     .fontWeight(500)
                     .wordWrap(false)

@@ -57,7 +57,8 @@ public final class Lengths {
     public static boolean areBlendable(Length from, Length to) {
         return from.getClass() == to.getClass()
                 && !(from instanceof Length.Auto)
-                && !(from instanceof Length.FillT);
+                && !(from instanceof Length.FillT)
+                && !(from instanceof Length.AtLeast);   // two lengths in one: LERP steps it
     }
 
     private static float mix(float a, float b, float alpha) {

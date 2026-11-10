@@ -154,9 +154,11 @@ public final class TitleBar {
         this.gui = gui;
         this.controls = controls == null ? WindowControls.NONE : controls;
 
+        // FAINT, a step under the menus' DIM: in their ink the title read as one more menu, and it is the part of the
+        // bar nobody reads.
         this.titleText = gui.text(title == null ? "" : title)
                 .textSize(TITLE_SIZE)
-                .textColor(Role.DIM)
+                .textColor(Role.FAINT)
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE)
                 // The title is the first thing to give way when the window is narrow: clipped, it can be narrowed,
                 // and narrowed it ends in an ellipsis rather than half a glyph.

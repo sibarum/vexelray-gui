@@ -127,6 +127,11 @@ public final class TitleBar {
     private final Node titleText;
     /** The hairline between the instruments and the window controls; shown while there are instruments. */
     private final Node divider;
+    /**
+     * The hairline between the application's menus and the title; shown once there is a menu. Without it the title,
+     * in the same size and ink, read as one more menu.
+     */
+    private final Node menuRule;
     /** The window controls, each painting its own plate and glyph. */
     private final Caption minimize;
     private final Caption maximize;
@@ -180,6 +185,9 @@ public final class TitleBar {
             paintLockup();
         });
         gui.landmark(MARK, lockup);
+        // EDGE, not LINE: an application may give the bar its page colour, and LINE all but vanishes on that.
+        this.menuRule = gui.box().width(Length.dp(1)).height(Length.dp(16)).margin(Length.dp(6))
+                .background(Role.EDGE).scroll(false, false).visible(false);
         this.leading = gui.row()
                 .height(Length.FILL)
                 .alignItems(AlignItems.CENTER)
@@ -187,7 +195,7 @@ public final class TitleBar {
                 .padding(Length.ZERO, Length.dp(4))
                 .scroll(false, false)
                 .clip(true)
-                .children(lockup, titleText);
+                .children(lockup, menuRule, titleText);
 
         // An application's own glyphs, if it gives any (glyphs()); until then the buttons draw their own and these are
         // hidden. Maximize and restore share a button and swap with the window's state, which syncMaximized()
@@ -858,7 +866,8 @@ public final class TitleBar {
         if (m == null) {
             m = new AppMenu(name);
             menus.put(name, m);
-            leading.insert(m.target, menus.size());   // after the lockup and the menus before it, before the title
+            leading.insert(m.target, menus.size());   // after the lockup and the menus before it, before the rule
+            menuRule.visible(true);
         }
         m.declare(label, menu);
         return this;

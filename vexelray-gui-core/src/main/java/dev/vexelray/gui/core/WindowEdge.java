@@ -39,4 +39,14 @@ public enum WindowEdge {
     public CursorShape cursor() {
         return cursor;
     }
+
+    /** The edge whose {@link #zone()} is {@code zone}, or {@code null} for a zone that is no edge (or {@code null}). */
+    public static WindowEdge of(HitRegions.Zone zone) {
+        for (WindowEdge e : values()) {
+            if (e.zone == zone) {
+                return e;
+            }
+        }
+        return null;
+    }
 }

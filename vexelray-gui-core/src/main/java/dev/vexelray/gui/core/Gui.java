@@ -304,6 +304,9 @@ public final class Gui implements AutoCloseable {
     /** The modifiers held right now (see {@link #modifiers}). */
     private final State<java.util.Set<Modifier>> modifierState;
     private final Committer<java.util.Set<Modifier>, java.util.Set<Modifier>> setModifiers;
+    /** The edge the window manager is resizing the window from, if it is (Seams.resizing). Host-written, GUI thread. */
+    private final State<java.util.Optional<WindowEdge>> resizingState;
+    private final Committer<java.util.Optional<WindowEdge>, java.util.Optional<WindowEdge>> setResizing;
     /**
      * Both published views of the tree — where each node is, and what it is — computed and published together at
      * one version from one walk. See {@link ReadModels} for why the two cannot be separated, and for the
@@ -504,6 +507,10 @@ public final class Gui implements AutoCloseable {
         this.setModifiers = mb.mutation("set", (held, next) -> next);
         this.modifierState = mb.build();
         input.onModifiers(held -> modifierState.commit(setModifiers, held));
+        // A condition too: which edge a resize is running from, so a grip can hold its light for the whole drag.
+        State.Builder<java.util.Optional<WindowEdge>> rb = State.of(java.util.Optional.<WindowEdge>empty());
+        this.setResizing = rb.mutation("set", (was, next) -> next);
+        this.resizingState = rb.build();
         // The focus ring is drawn from the dispatcher's focus state, not from a prop, so moving it edits nothing
         // the frame loop can see.
         input.onFocusState(this::requestFrame);
@@ -2250,6 +2257,20 @@ public final class Gui implements AutoCloseable {
         @Override
         public sibarum.atchung.State<java.util.Set<Modifier>> modifiers() {
             return modifierState;
+        }
+
+        @Override
+        public sibarum.atchung.State<java.util.Optional<WindowEdge>> resizing() {
+            return resizingState;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams resizing(WindowEdge edge) {
+            java.util.Optional<WindowEdge> next = java.util.Optional.ofNullable(edge);
+            if (!next.equals(resizingState.value())) {
+                resizingState.commit(setResizing, next);
+            }
+            return this;
         }
 
         @Override

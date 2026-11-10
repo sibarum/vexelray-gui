@@ -1,7 +1,7 @@
 # Window grips: resize controls you can see, and a window that will not shrink past its chrome
 
-Status: **Proposed 2026-10-25. Steps 1 (the floor, §3.6), 2 (grips in `HitRegions`, §3.1/§3.5) and 3 (hover over
-grips, §3.3) landed 2026-11-10; steps 4–8 not started.** Optional at
+Status: **Proposed 2026-10-25. Steps 1 (the floor, §3.6), 2 (grips in `HitRegions`, §3.1/§3.5), 3 (hover over
+grips, §3.3) and 4 (`resizing()`, §3.4) landed 2026-11-10; steps 5–8 not started.** Optional at
 first, shown in the demo for refinement, and then a decision (§7) about whether it becomes the template's default.
 
 ## 1. The problem
@@ -107,6 +107,16 @@ During a resize the pointer is the window manager's. The window knows it is bein
 
 `NativeWindow` gains `resizing()` (the zone being dragged, or none). `GuiWindow` reads it each frame like the
 other window states, and the grip with that zone holds the accent.
+
+**As built (step 4).** `NativeWindow.resizing()` returns the resize `HitRegions.Zone`, or `null`. On Windows the edge
+comes from the `WM_SYSCOMMAND` that starts the loop (`SC_SIZE`, whose low four bits name it for a mouse resize). It is
+held until `WM_ENTERSIZEMOVE`, then kept current by `WM_SIZING`'s `WMSZ_*`, which is also how a keyboard size gets one.
+`WM_EXITSIZEMOVE` clears it, and a move names no edge. In the tree it is `Seams.resizing()`, a
+`State<Optional<WindowEdge>>` committed on change only. `GuiWindow` writes it before each frame, so a frame pulled from
+inside the resize loop sees it. Tested in `Win32ClientChromeSmoke` §4d (the loop's messages sent one by one) and
+`WindowResizingTest`. **Not yet seen in a real drag**: that comes with the grips widget and the demo (steps 5–6),
+which will also show whether the `SC_SIZE` low bits arrive as expected. If they don't, the first `WM_SIZING` sets the
+edge a move later. **X11 reports none** (the default): when an X11 resize ends is still §8's open question.
 
 ### 3.5 The cursor
 

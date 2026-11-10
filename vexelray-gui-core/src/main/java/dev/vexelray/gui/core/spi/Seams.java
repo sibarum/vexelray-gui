@@ -460,6 +460,17 @@ public abstract class Seams {
     public abstract sibarum.atchung.State<java.util.Set<Modifier>> modifiers();
 
     /**
+     * The edge the window manager is resizing this tree's window from, or empty when no resize is under way: what a
+     * {@link dev.vexelray.gui.core.WindowRegion#RESIZE resize grip} reads to stay lit for the whole drag, during which
+     * the pointer is the window manager's and the grip hears nothing else. Written by the host from the window each
+     * frame ({@link #resizing(dev.vexelray.gui.core.WindowEdge)}), committed on change only.
+     */
+    public abstract sibarum.atchung.State<java.util.Optional<dev.vexelray.gui.core.WindowEdge>> resizing();
+
+    /** For the host: the edge the window is being resized from, {@code null} for none. A no-op unless it changed. */
+    public abstract Seams resizing(dev.vexelray.gui.core.WindowEdge edge);
+
+    /**
      * The live window size as a bus {@code State} — subscribe with {@code Seams.of(gui).viewport().onCommit(...)}. The
      * drawable area in layout px, the space {@link #layout()} rects and input events are in: always the real
      * window, never the canvas {@link Gui#minSize} may clamp it to, and not the OS outer rect a window is created at.

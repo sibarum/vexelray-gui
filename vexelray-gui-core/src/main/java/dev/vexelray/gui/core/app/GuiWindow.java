@@ -705,6 +705,11 @@ final class GuiWindow implements AutoCloseable {
             canvas.resize(ww, wh);
         }
         RetainedNode root;
+        if (gui != null) {
+            // Which edge a resize is running from, read off the window like its size: before the frame, so a grip
+            // that lights for it does so in the frame drawn at the size the drag has reached.
+            Seams.of(gui).resizing(dev.vexelray.gui.core.WindowEdge.of(window.resizing()));
+        }
         // Everything between a mutation and a drawable node: dispatch, drain, reconcile, layout, publish. The
         // LAYOUT lane names the pieces; this is their sum, and the one number to compare against DRAW and GPU.
         try (Zone z = Probe.zone(Lane.LAYOUT, "tree update")) {

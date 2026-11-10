@@ -93,7 +93,7 @@ class MenuChoiceTest {
     }
 
     @Test
-    void aSettingIsTickedOrDottedOnlyWhileOnInAColumnTheWholeMenuShares() {
+    void aSettingWithNoIconIsTickedOrDottedInTheIconColumn() {
         try (HeadlessGui h = new HeadlessGui()) {
             Sender<String> to = Sender.collecting(Topic.of("test.menu", String.class), new ArrayList<>());
             ContextMenu menu = open(h, Menu.builder()
@@ -112,7 +112,7 @@ class MenuChoiceTest {
             assertEquals(List.of(1, 0, 1, 0, 0), rows.stream().map(MenuChoiceTest::checked).toList(),
                     "a mark on the toggle that is on and the radio line chosen, and nowhere else");
             for (RetainedNode row : rows) {
-                assertEquals(2, row.children.size(), "a choice cell and the label, the command's cell empty");
+                assertEquals(2, row.children.size(), "the icon cell and the label, the command's cell empty");
             }
             float labelX = rows.get(0).children.get(1).x;
             for (RetainedNode row : rows) {
@@ -123,7 +123,7 @@ class MenuChoiceTest {
     }
 
     @Test
-    void theChoiceColumnStandsBeforeTheIcons() {
+    void aSettingWithAnIconMarksItselfByItsIconAndTakesNoColumnOfItsOwn() {
         try (HeadlessGui h = new HeadlessGui()) {
             Sender<String> to = Sender.collecting(Topic.of("test.menu", String.class), new ArrayList<>());
             ContextMenu menu = open(h, Menu.builder()
@@ -133,17 +133,16 @@ class MenuChoiceTest {
 
             List<RetainedNode> rows = rows(h, menu);
             for (RetainedNode row : rows) {
-                assertEquals(3, row.children.size(), "the choice, the icon, the label");
-                assertTrue(row.children.get(0).x < row.children.get(1).x, "the choice first");
+                assertEquals(2, row.children.size(), "the icon and the label, nothing before them");
             }
             assertEquals(0, checked(rows.get(0).children.get(0)));
-            assertEquals(1, checked(rows.get(1).children.get(0)), "the dot is on the line chosen");
+            assertEquals(1, checked(rows.get(1).children.get(0)), "the icon of the line chosen is what says so");
             menu.close();
         }
     }
 
     @Test
-    void aMenuWithNoSettingsReservesNoChoiceColumn() {
+    void aMenuWithNoSettingsAndNoIconsReservesNoColumn() {
         try (HeadlessGui h = new HeadlessGui()) {
             Sender<String> to = Sender.collecting(Topic.of("test.menu", String.class), new ArrayList<>());
             ContextMenu menu = open(h, Menu.builder()

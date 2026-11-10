@@ -33,6 +33,15 @@ import java.util.concurrent.atomic.AtomicReference;
  * <p><b>Which slot is shown</b> is the newest handed over, unless a part's asked half chooses another
  * ({@link Drawn#show}), which a video does by its stamps ({@link #due}). A still needs no asked half at all.
  *
+ * <p><b>Its time is the producer's</b> (frame-contract.md, open question 2). A producer that plays says what the feed's
+ * time is at a moment on the machine's clock, and whether it runs on from there ({@link #time}); an asked half then
+ * asks which slot is due for its frame ({@link #due(Frame)}) and when the next one will be ({@link #next(Frame)}),
+ * and holds no clock of its own. So a video that follows its sound re-times the feed from the sound as it goes, a
+ * pause is a time that stops, and the part's state is the feed and nothing else. Stamps are on that time, and a
+ * producer keeps them increasing for as long as the feed lives, round a loop and across a seek alike; a seek also says
+ * which stamps are {@linkplain #stale stale}, so the frames made for where it was are never shown and their slots
+ * come free.
+ *
  * <p><b>Given back with {@link #close}</b>, from any thread, by whoever owns it: the producer stops being given slots,
  * a node naming it draws nothing, and each renderer lets go of its texture once no frame in flight samples it.
  */
@@ -56,10 +65,19 @@ public final class Feed implements ImageHandle {
     /** What wakes the window that draws this feed, set by its renderer when it first draws it. */
     private final AtomicReference<Runnable> wake = new AtomicReference<>();
 
+    /** The feed's time, as its producer last said it ({@link #time}); null until it has. */
+    private final AtomicReference<Timebase> time = new AtomicReference<>();
+    /** Stamps below this are stale ({@link #stale}): never chosen, and freed when not shown. */
+    private volatile long floor = Long.MIN_VALUE;
+
     /** The slot shown, and the one an asked half last chose; the GUI thread's alone. */
     private int shown = -1;
     private int chosen = -1;
     private volatile boolean closed;
+
+    /** At {@code monoNanos} on the machine's clock the feed's time was {@code stamp}, and ran on from there or not. */
+    private record Timebase(long monoNanos, long stamp, boolean running) {
+    }
 
     private Feed(int width, int height, int slots, boolean picture) {
         if (width <= 0 || height <= 0) {
@@ -193,19 +211,93 @@ public final class Feed implements ImageHandle {
         return true;
     }
 
+    /**
+     * Say what the feed's time is: {@code stamp} at {@code monoNanos} on the machine's clock ({@code System.nanoTime()}'s,
+     * as {@link Frame#monoNanos}), running on with that clock from there, or, not {@code running}, held at it. Said again
+     * whenever it changes: a start, a pause, a seek, a late frame waited for, or a correction from what keeps the real
+     * time (a video's sound). Until it is first said, the newest slot handed over is the one due, as for a still. Wakes
+     * whoever draws the feed, so the change is drawn.
+     */
+    public void time(long monoNanos, long stamp, boolean running) {
+        time.set(new Timebase(monoNanos, stamp, running));
+        Runnable w = wake.get();
+        if (w != null) {
+            w.run();
+        }
+    }
+
+    /**
+     * Every slot stamped below {@code stamp} is stale, made for a place the producer has since left (a seek): it is
+     * never chosen again, and its slot comes free at the next frame, unless it is the one still on screen, which stays
+     * until a newer one is due in its place. Wakes whoever draws the feed, so the slots come free.
+     */
+    public void stale(long stamp) {
+        floor = stamp;
+        Runnable w = wake.get();
+        if (w != null) {
+            w.run();
+        }
+    }
+
     // ------------------------------------------------------------------ the asked half's side, the GUI thread
 
     /**
+     * The feed's time at {@code monoNanos} on the machine's clock, as its producer said it ({@link #time});
+     * {@link Long#MAX_VALUE} before it has, so the newest slot is the one due.
+     */
+    public long now(long monoNanos) {
+        Timebase t = time.get();
+        if (t == null) {
+            return Long.MAX_VALUE;
+        }
+        return t.running() ? t.stamp() + (monoNanos - t.monoNanos()) : t.stamp();
+    }
+
+    /** Whether the feed's time runs: said so by its producer, and not since held. */
+    public boolean running() {
+        Timebase t = time.get();
+        return t != null && t.running();
+    }
+
+    /**
+     * The slot due in {@code frame}, by the feed's time at the frame's moment: what an asked half shows
+     * ({@link Drawn#show}). {@code -1} when none is due yet, and then whatever is shown stays. Allocates nothing.
+     */
+    public int due(Frame frame) {
+        return due(now(frame.monoNanos()));
+    }
+
+    /**
+     * When, on the tree's clock (as {@link Frame#presentNanos}), the slot after the one due in {@code frame} comes due:
+     * what an asked half answers. {@link Frame#NEVER} while the feed's time is held, or when no later slot is handed
+     * over yet, in which case the hand-over itself wakes the window. Allocates nothing.
+     */
+    public long next(Frame frame) {
+        Timebase t = time.get();
+        if (t == null || !t.running()) {
+            return Frame.NEVER;
+        }
+        long s = nextAfter(now(frame.monoNanos()));
+        if (s == Frame.NEVER) {
+            return Frame.NEVER;
+        }
+        long atMono = t.monoNanos() + (s - t.stamp());
+        return frame.presentNanos() + Math.max(0L, atMono - frame.monoNanos());
+    }
+
+    /**
      * The handed-over slot whose stamp is the latest at or before {@code stamp}, or {@code -1} when every one is later or
-     * none is handed over: the frame a video owes at that moment. Allocates nothing.
+     * none is handed over: the frame a video owes at that moment. Allocates nothing. A {@linkplain #stale stale} slot is
+     * never due.
      */
     public int due(long stamp) {
         int best = -1;
         long bestStamp = Long.MIN_VALUE;
+        long fl = floor;
         for (int i = 0; i < slots; i++) {
             if (state.get(i) == HANDED) {
                 long s = stamps.get(i);
-                if (s <= stamp && (best < 0 || s > bestStamp)) {
+                if (s >= fl && s <= stamp && (best < 0 || s > bestStamp)) {
                     best = i;
                     bestStamp = s;
                 }
@@ -214,14 +306,15 @@ public final class Feed implements ImageHandle {
         return best;
     }
 
-    /** The handed-over slot with the latest stamp, or {@code -1}: what is shown when no part chooses. */
+    /** The handed-over slot with the latest stamp, or {@code -1}: what is shown when no part chooses. Never a stale one. */
     public int newest() {
         int best = -1;
         long bestStamp = Long.MIN_VALUE;
+        long fl = floor;
         for (int i = 0; i < slots; i++) {
             if (state.get(i) == HANDED) {
                 long s = stamps.get(i);
-                if (best < 0 || s > bestStamp) {
+                if (s >= fl && (best < 0 || s > bestStamp)) {
                     best = i;
                     bestStamp = s;
                 }
@@ -233,10 +326,11 @@ public final class Feed implements ImageHandle {
     /** The earliest stamp handed over after {@code stamp}, or {@link Frame#NEVER}: when a video next needs asking. */
     public long nextAfter(long stamp) {
         long next = Frame.NEVER;
+        long fl = floor;
         for (int i = 0; i < slots; i++) {
             if (state.get(i) == HANDED) {
                 long s = stamps.get(i);
-                if (s > stamp && s < next) {
+                if (s >= fl && s > stamp && s < next) {
                     next = s;
                 }
             }
@@ -271,11 +365,20 @@ public final class Feed implements ImageHandle {
 
     /**
      * The renderer's: settle which slot this frame shows (the asked half's choice, or the newest handed over), and free
-     * every handed-over slot older than it, which nothing will show again. The slot shown, or {@code -1}. Asked again in
-     * the same frame, by a second run or a second device, it answers the same.
+     * every handed-over slot older than it, which nothing will show again, and every stale one but the slot on screen.
+     * The slot shown, or {@code -1}. Asked again in the same frame, by a second run or a second device, it answers the
+     * same.
      */
     public int select() {
-        int pick = chosen >= 0 && state.get(chosen) == HANDED ? chosen : newest();
+        long fl = floor;
+        if (fl != Long.MIN_VALUE) {
+            for (int i = 0; i < slots; i++) {
+                if (i != shown && state.get(i) == HANDED && stamps.get(i) < fl) {
+                    state.compareAndSet(i, HANDED, FREE);
+                }
+            }
+        }
+        int pick = chosen >= 0 && state.get(chosen) == HANDED && stamps.get(chosen) >= fl ? chosen : newest();
         if (pick >= 0 && pick != shown) {
             long at = stamps.get(pick);
             int was = shown;

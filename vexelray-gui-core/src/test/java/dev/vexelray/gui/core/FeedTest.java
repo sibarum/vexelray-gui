@@ -92,6 +92,83 @@ class FeedTest {
     }
 
     @Test
+    void untilItsTimeIsSaidTheNewestIsDue() {
+        Feed f = Feed.of(2, 2, 3, false);
+        f.write(filled(f, 1), 10L);
+        f.write(filled(f, 2), 20L);
+        Frame frame = new Frame(1_000L, 5_000L, false);
+        assertEquals(20L, f.stamp(f.due(frame)));
+        assertEquals(Frame.NEVER, f.next(frame), "with no time of its own, a feed is never due again on its own account");
+        assertFalse(f.running());
+    }
+
+    @Test
+    void itsTimeRunsWithTheMachinesClockFromWhereTheProducerSaidItWas() {
+        Feed f = Feed.of(2, 2, 3, false);
+        f.write(filled(f, 1), 100L);
+        f.write(filled(f, 2), 200L);
+        f.write(filled(f, 3), 300L);
+        f.time(5_000L, 100L, true);
+        // The tree's clock and the machine's differ by a constant: 1 000 against 5 000.
+        Frame at = new Frame(1_050L, 5_050L, false);
+        assertEquals(150L, f.now(5_050L));
+        assertEquals(100L, f.stamp(f.due(at)));
+        assertEquals(1_100L, f.next(at), "the slot stamped 200 is due 50 ns on, on the tree's clock");
+        assertEquals(300L, f.stamp(f.due(new Frame(1_250L, 5_250L, false))));
+        assertEquals(Frame.NEVER, f.next(new Frame(1_250L, 5_250L, false)), "nothing later is handed over yet");
+    }
+
+    @Test
+    void aHeldTimeStaysWhereItIsAndIsNeverDueAgain() {
+        Feed f = Feed.of(2, 2, 3, false);
+        f.write(filled(f, 1), 100L);
+        f.write(filled(f, 2), 200L);
+        f.time(5_000L, 150L, false);
+        Frame later = new Frame(9_000L, 9_000L, false);
+        assertEquals(150L, f.now(9_000L));
+        assertEquals(100L, f.stamp(f.due(later)), "paused, the frame due stays the one it was");
+        assertEquals(Frame.NEVER, f.next(later));
+        assertFalse(f.running());
+    }
+
+    @Test
+    void aSeekMakesTheFramesForWhereItWasStaleAndFreesThemButTheOneOnScreen() {
+        Feed f = Feed.of(2, 2, 3, false);
+        f.write(filled(f, 1), 100L);
+        f.write(filled(f, 2), 200L);
+        f.write(filled(f, 3), 300L);
+        f.choose(f.due(100L));
+        int onScreen = f.select();
+        assertEquals(100L, f.stamp(onScreen));
+        assertEquals(-1, f.take(), "the two later frames wait their turn");
+        f.stale(1_000L);
+        assertEquals(-1, f.due(5_000L), "nothing made before the seek is ever due");
+        assertEquals(-1, f.newest());
+        assertEquals(onScreen, f.select(), "the frame on screen stays until a newer one is due");
+        int a = f.take();
+        int b = f.take();
+        assertTrue(a >= 0 && b >= 0, "the stale frames waiting came free");
+        assertEquals(-1, f.take());
+        f.handOver(a, 1_000L);
+        f.drop(b);
+        int now = f.select();
+        assertEquals(a, now);
+        assertTrue(f.take() >= 0);
+        assertTrue(f.take() >= 0, "and the old frame on screen came free once the new one replaced it");
+        assertEquals(-1, f.take());
+    }
+
+    @Test
+    void sayingItsTimeWakesWhoeverDrawsIt() {
+        Feed f = Feed.of(2, 2, 3, false);
+        AtomicInteger woken = new AtomicInteger();
+        f.wake(woken::incrementAndGet);
+        f.time(0L, 0L, true);
+        f.stale(10L);
+        assertEquals(2, woken.get());
+    }
+
+    @Test
     void aChoiceStaysChosenUntilTheNext() {
         Feed f = Feed.of(2, 2, 3, false);
         f.write(filled(f, 1), 10L);

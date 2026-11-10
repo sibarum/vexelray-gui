@@ -262,7 +262,32 @@ application** (ruled 2026-10-30, below): it needs no feed, so it does not wait f
    - Not done: freeing slots on a seek back (a producer that refills with earlier stamps must `drop` what it holds,
      or the newer slots wait); that is step 5's, with the codec.
 5. **The codec on it.** The video and animated-image widgets as parts; `Playback`'s loop deleted. Measure against
-   step 0.
+   step 0. **Begun 2026-11-10, with Rasterware's animated pictures as its first application.** Built so far:
+   - **The feed keeps the producer's time** (open question 2, answered): `Feed.time(monoNanos, stamp, running)` says
+     what the feed's time is at a moment on the machine's clock and whether it runs on from there, and an asked half
+     asks `feed.due(frame)` for the slot due and `feed.next(frame)` for when the next one is, on the tree's clock. So the
+     part's drawn state is the feed and nothing else, a pause is a time that stops, and a video that follows its sound
+     re-times the feed from the sound as it goes: the GUI thread never reads a mutable clock. Before a time is said the
+     newest slot is due, so a still and a picture not yet playing need nothing. A wake on each, so the change is drawn.
+   - **Seeking back** (step 4's leftover): `Feed.stale(stamp)` makes every slot stamped below it never due again;
+     `select` frees them on the GUI thread, all but the one on screen, which stays until a newer one is due. A producer
+     keeps its stamps increasing for the feed's life, round a loop and across a seek, so stale is a floor.
+   - **`Player`** (vexelray-codec-image, `codec.image.gui`): the producer. It owns the `Playable` (a `Movie`, or a
+     video's `Footage`) and one thread that writes frames ahead into a feed of three slots, stamps them, and says the
+     feed's time; play, pause, hold, seek, step, loop and volume from any thread, none waiting on the decoder or on a
+     copy (the copy into a slot is outside its lock). No krono, no `POLL_MS` on the GUI side, no `StreamTexture`. A late
+     frame of an animation holds the time until it is made; a video's is dropped for the one due. It starts from a feed
+     `Player.feed` made where the first frame was decoded (a job), the first frame handed over at stamp 0, so the
+     picture is shown before anything plays and no node is swapped when it starts. Held by `PlayerTest` (a stepped clock
+     and frames by hand, and a real `Movie` of each animated sample) and `FeedTest`; driven in Rasterware, where an
+     animated GIF plays at its own pace, looping, its frames chosen by `View.draw`.
+   - **Decided in the building:** the producer's thread waits on a slot coming free by sleeping until the next stamp it
+     handed over is due, which is when the renderer frees the one before; it is told nothing by the feed. After a seek,
+     whose stale slots come free at the window's next frame, it looks again every 4 ms until they have. A
+     notification from `select` would remove both; not needed yet.
+   Still to do: `ImageView` and `VideoView` moved onto `Player`, and `Playback` deleted; a video's sound through it in an
+   application (`Footage`'s clock is followed, held by a unit test only); the clock topic for a seek bar and an end
+   (C); step 0's measurement, and the same numbers taken here.
 6. **A third witness, not a player:** the fluid simulator's field through a feed, its producer on a declared lane,
    so the contract is shown to be general rather than shaped round video.
 

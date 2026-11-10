@@ -87,7 +87,7 @@ public final class TextChapter implements Chapter {
                     s.undoDepth(), s.redoDepth(), s.clean() ? "clean" : "modified"));
             counter.textColor(s.clean() ? Role.FAINT : Role.DIM);
         };
-        gui.mailbox(History.STATUS, gui.address(History.ADDRESS), c -> show.accept(c.status()));
+        gui.mailbox(History.STATUS, c -> show.accept(c.status()), 1, java.util.Set.of(gui.address(History.ADDRESS)));
         // The mailbox says what happens *next*; the counter also has to be right before anything has happened, which
         // is a read of the status the history already holds.
         show.accept(history.status());

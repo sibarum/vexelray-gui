@@ -103,10 +103,11 @@ public final class UndoChapter implements Chapter {
         gui.mailbox(Select.COMMITTED, select.address(), m -> readOut.run());
         gui.mailbox(TextField.CHANGED, text.address(), m -> readOut.run());
         gui.mailbox(Button.TOGGLED, chip.address(), m -> readOut.run());
-        gui.mailbox(History.STATUS, gui.address(History.ADDRESS), c -> {
+        // The window's history is heard by key: the text page hears it too, and a history answers to any number.
+        gui.mailbox(History.STATUS, c -> {
             readOut.run();   // a command's change has no handler of its own to say so
             status.text(depths(c.status()) + "  ·  last: " + last);
-        });
+        }, 1, java.util.Set.of(gui.address(History.ADDRESS)));
 
         // ---- the three refusals ----------------------------------------------------------------------------
 

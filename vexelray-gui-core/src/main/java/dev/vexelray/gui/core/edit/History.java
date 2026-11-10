@@ -30,8 +30,16 @@ import java.util.Objects;
  * <p><b>Status rides the bus.</b> {@link #status()} reads it now; a history {@link #announceOn announced} on a bus
  * publishes every change as {@link Changed} on {@link #STATUS}, so a menu item's enablement, a title bar's dirty dot
  * and an unsaved-changes gate hear it in their mailboxes instead of polling. A window's history is announced by the
- * tree it is bound to ({@code Gui.history}), at {@code gui.address(History.ADDRESS)}. It is published with the monitor
+ * tree it is bound to ({@code Gui.history}), as {@code gui.address(History.ADDRESS)}. It is published with the monitor
  * released, so nothing hearing it can re-enter the history it is being told about.
+ *
+ * <p><b>Heard by key, by as many as like.</b> Those three are three hearers of one history and none of them owns it,
+ * so {@link Changed} is not {@link Addressed}: a widget's address answers to one mailbox, and on that route table the
+ * second part of a window to hear its history would be refused. It is heard with a key filter instead, which admits
+ * any number:
+ * {@snippet :
+ * gui.mailbox(History.STATUS, c -> dot.visible(!c.status().clean()), 1, Set.of(gui.address(History.ADDRESS)));
+ * }
  *
  * <p><b>An entry may refuse, and a refusal moves nothing.</b> Each entry is asked {@link Change#check()} before it
  * applies; a conflict or a refusal leaves both stacks as they were, so a failed undo never costs the redo, and
@@ -51,17 +59,16 @@ public final class History {
      * for each history. Published only for a history {@link #announceOn announced} on a bus.
      */
     public static final Topic<Changed> STATUS =
-            Addressed.state(Changed.class, Changed::history);
+            Topic.state(Changed.class, Changed::history).scoped(c -> Addressed.tree(c.history()));
 
     /** What a tree calls the window's history on the bus: {@code gui.address(History.ADDRESS)}. */
     public static final String ADDRESS = "history";
 
-    /** The history at {@code history} now stands at {@code status}. */
-    public record Changed(String history, Status status) implements Addressed {
-        @Override
-        public Object address() {
-            return history;
-        }
+    /**
+     * The history at {@code history} now stands at {@code status}. The key names the history that spoke, not a
+     * mailbox that answers, so this is not {@link Addressed}: see "Heard by key" above.
+     */
+    public record Changed(String history, Status status) {
     }
 
     /** Default cap on retained entries, so a long session cannot grow the stacks without bound. */

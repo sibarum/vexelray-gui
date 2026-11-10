@@ -78,7 +78,8 @@ final class Routes {
         Subscription add(Object address, Subscriber<T> stage) {
             if (routes.putIfAbsent(address, stage) != null) {
                 throw new IllegalStateException("two mailboxes answer to '" + address + "' on " + topic.name()
-                        + ": an address is one widget's");
+                        + ": an address is one widget's. Something many parts hear, and none owns, is not Addressed: "
+                        + "key its topic and hear it with a key filter, which admits any number");
             }
             return new Subscription() {
                 private boolean active = true;

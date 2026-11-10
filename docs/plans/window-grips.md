@@ -1,7 +1,7 @@
 # Window grips: resize controls you can see, and a window that will not shrink past its chrome
 
-Status: **Proposed 2026-10-25. Steps 1 (the floor, §3.6) and 2 (grips in `HitRegions`, §3.1/§3.5) landed
-2026-11-10; steps 3–8 not started.** Optional at
+Status: **Proposed 2026-10-25. Steps 1 (the floor, §3.6), 2 (grips in `HitRegions`, §3.1/§3.5) and 3 (hover over
+grips, §3.3) landed 2026-11-10; steps 4–8 not started.** Optional at
 first, shown in the demo for refinement, and then a decision (§7) about whether it becomes the template's default.
 
 ## 1. The problem
@@ -83,6 +83,18 @@ Today a resize band is not a pointer target at all, so a grip under it would nev
 tactroller, which is where every pointer event already comes from: over a resize band the pointer keeps
 **moving** (position and hover are delivered) but a **press** is not routed, because it belongs to the window
 manager. That keeps the one-path rule and makes the grip an ordinary hovered node.
+
+**As built (step 3).** The backend's positional answer has three outcomes, not two: `PointerTarget` is `ELSEWHERE`,
+`WINDOW_MANAGER` or `CONTENT`, and `InputBackend.pointerTarget()` gives it, asked once a frame. `InputFrame` carries
+it as `pointerTarget` (over the window: motion, wheel, touch) and the new `pressTarget` (a press is the window's).
+`InputPublisher` gates presses on `pressTarget`, and everything else positional on `pointerTarget` as before.
+`WindowsInputBackend` reports `WINDOW_MANAGER` where the window's own `WM_NCHITTEST` says resize, which covers the
+platform band and drawn grips alike. `isPointerTarget()` keeps its meaning, the press half. A press the window manager
+took is never believed held, so its release is not invented either. Tested in `InputPublisherTest` and
+`PointerTargetResizeTest`, which puts a scratch window under the cursor (not moving it) and subclasses its hit test.
+**Linux is not done:** `LinuxInputBackend` keeps the default (`CONTENT` wherever the pointer is inside), because
+the hit regions live in `X11Window` and the backend cannot see them. A press on an X11 grip therefore still reaches
+the GUI as well as the window manager.
 
 ### 3.4 Lit for the whole drag
 

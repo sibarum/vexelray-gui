@@ -52,12 +52,13 @@ import java.util.function.Consumer;
  * @param icon    the icon its line in the app menu wears, from the icon set; {@code null} for none
  * @param badge   whether its button stands at the bar's right now, read again whenever {@code live} says something
  *                changed; {@code null} for an instrument that is only ever a line in the app menu
+ * @param place   which part of the app menu its section belongs in ({@link Place}); {@code null} is {@link Place#TOOL}
  */
 public record WindowInstrument(String role, String tooltip,
                                java.util.function.BiFunction<Rect, Color, Picture> mark,
                                Consumer<WindowControls> action, Live live,
                                java.util.function.BiConsumer<WindowControls, dev.vexelray.gui.core.input.MenuSink> menu,
-                               IconSource icon, java.util.function.BooleanSupplier badge) {
+                               IconSource icon, java.util.function.BooleanSupplier badge, Place place) {
 
     /** Where a screenshot goes when nobody said: a timestamped PNG in the working directory. */
     private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
@@ -65,6 +66,31 @@ public record WindowInstrument(String role, String tooltip,
     public WindowInstrument {
         role = role == null ? "" : role;
         tooltip = tooltip == null ? "" : tooltip;
+        place = place == null ? Place.TOOL : place;
+    }
+
+    /**
+     * Where an instrument's section stands in the app menu. The list a bar is handed is assembled by several hands —
+     * the application's own instruments, then the key bindings once it has declared commands, then the automation
+     * module's — so the order they were added in is an accident of start-up, not a statement about the menu. Each
+     * instrument says what kind of line it is instead, and the bar orders by that, keeping the order added within a
+     * place.
+     */
+    public enum Place {
+        /** About the application, as About is: its key bindings. In About's group, right after it, with no rule. */
+        APPLICATION,
+        /** A tool used on the window: a screenshot, a recording. */
+        TOOL,
+        /** About this run rather than the application: the automation button, debug mode. Last. */
+        RUN
+    }
+
+    /** An instrument with an icon and a badge, among the tools. */
+    public WindowInstrument(String role, String tooltip, java.util.function.BiFunction<Rect, Color, Picture> mark,
+                            Consumer<WindowControls> action, Live live,
+                            java.util.function.BiConsumer<WindowControls, dev.vexelray.gui.core.input.MenuSink> menu,
+                            IconSource icon, java.util.function.BooleanSupplier badge) {
+        this(role, tooltip, mark, action, live, menu, icon, badge, Place.TOOL);
     }
 
     /** An instrument with no icon of its own in the app menu, and never a badge. */
@@ -88,12 +114,17 @@ public record WindowInstrument(String role, String tooltip,
 
     /** This instrument, its line in the app menu wearing {@code icon}. */
     public WindowInstrument icon(IconSource icon) {
-        return new WindowInstrument(role, tooltip, mark, action, live, menu, icon, badge);
+        return new WindowInstrument(role, tooltip, mark, action, live, menu, icon, badge, place);
     }
 
     /** This instrument, standing at the bar's right while {@code badge} says so. */
     public WindowInstrument badge(java.util.function.BooleanSupplier badge) {
-        return new WindowInstrument(role, tooltip, mark, action, live, menu, icon, badge);
+        return new WindowInstrument(role, tooltip, mark, action, live, menu, icon, badge, place);
+    }
+
+    /** This instrument, its section in {@code place} of the app menu. */
+    public WindowInstrument place(Place place) {
+        return new WindowInstrument(role, tooltip, mark, action, live, menu, icon, badge, place);
     }
 
     /** Whether its button stands at the bar's right now. */
@@ -196,7 +227,8 @@ public record WindowInstrument(String role, String tooltip,
      * <p>Never in {@link #standard()}: an application without rebindable commands has nothing for it to open.
      */
     public static WindowInstrument keymap(String tooltip, Consumer<WindowControls> open) {
-        return new WindowInstrument("instrument-keymap", tooltip, WindowInstrument::keyboardMark, open);
+        return new WindowInstrument("instrument-keymap", tooltip, WindowInstrument::keyboardMark, open)
+                .place(Place.APPLICATION);   // about the application, so beside About
     }
 
     /**
@@ -209,7 +241,7 @@ public record WindowInstrument(String role, String tooltip,
      */
     public static WindowInstrument automation(String tooltip, Consumer<dev.vexelray.gui.core.input.MenuSink> menu) {
         return new WindowInstrument("instrument-automation", tooltip, WindowInstrument::plugMark, c -> { }, null,
-                (controls, sink) -> menu.accept(sink));
+                (controls, sink) -> menu.accept(sink)).place(Place.RUN);
     }
 
     /**
@@ -232,7 +264,8 @@ public record WindowInstrument(String role, String tooltip,
             marks.addAll(lampMarks(g, -8.5, l.control(), l.controlColor(), l.used()));
             marks.addAll(lampMarks(g, 8.5, l.diagnostics(), l.diagnosticsColor(), l.used()));
             return Picture.of(marks.toArray(Picture.Mark[]::new));
-        }, c -> { }, live, (controls, sink) -> menu.accept(sink)).badge(() -> true);   // the whole run long
+        }, c -> { }, live, (controls, sink) -> menu.accept(sink)).badge(() -> true)   // the whole run long
+                .place(Place.RUN);
     }
 
     /**

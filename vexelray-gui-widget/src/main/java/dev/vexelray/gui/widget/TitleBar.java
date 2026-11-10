@@ -613,8 +613,9 @@ public final class TitleBar {
     }
 
     /**
-     * Open the app menu under the lockup, or close it if it is open: the About line, then each instrument's section,
-     * a rule between, built now against what is true now, for the window this bar commands.
+     * Open the app menu under the lockup, or close it if it is open: the About line, then each instrument's section
+     * in its {@link WindowInstrument.Place}'s order, a rule between, built now against what is true now, for the
+     * window this bar commands.
      */
     private void appMenu(dev.vexelray.gui.core.input.ClickEvent at) {
         if (!hasAppMenu()) {
@@ -637,8 +638,15 @@ public final class TitleBar {
             if (about != null) {
                 sink.item(dev.vexelray.gui.icons.Icon.INFO, markTip, about);
             }
-            for (WindowInstrument tool : tools) {
-                sink.separator();
+            // In place order, not the order the instruments were handed over in (WindowInstrument.Place): a sort that
+            // is stable, so within a place the order added stands. What is about the application joins About's
+            // group, with no rule between; every other section opens with one.
+            java.util.List<WindowInstrument> ordered = new java.util.ArrayList<>(tools);
+            ordered.sort(java.util.Comparator.comparing(WindowInstrument::place));
+            for (WindowInstrument tool : ordered) {
+                if (tool.place() != WindowInstrument.Place.APPLICATION || about == null) {
+                    sink.separator();
+                }
                 tool.section(window, sink);
             }
         });

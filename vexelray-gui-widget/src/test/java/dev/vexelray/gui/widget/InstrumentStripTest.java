@@ -124,6 +124,29 @@ class InstrumentStripTest {
         }
     }
 
+    /**
+     * The menu is in place order, whatever order the hands that assembled the list added in: what is about the
+     * application joins About's group, the tools follow, the run's own line is last. The shell adds the key bindings
+     * after the application's screenshot, and the automation module adds its line after both.
+     */
+    @Test
+    void theMenuIsInPlaceOrderNotTheOrderAdded() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            List<String> fired = new ArrayList<>();
+            ContextMenu menu = new ContextMenu(h.gui);
+            TitleBar bar = bar(h, new Recorder()).instruments(List.of(
+                    WindowInstrument.automation("debug", m -> m.item("Restart in debug mode", () -> { })),
+                    marker("Screenshot", fired),
+                    WindowInstrument.keymap("Key bindings…", c -> fired.add("keys"))));
+            bar.onMark("About App", () -> fired.add("about"));
+            h.frame();
+
+            click(h, TitleBar.MARK);
+            assertEquals(List.of("About App", "Key bindings…", "-", "Screenshot", "-", "Restart in debug mode"),
+                    labels(menu));
+        }
+    }
+
     @Test
     void theWindowControlsKeepTheCorner() {
         try (HeadlessGui h = new HeadlessGui()) {

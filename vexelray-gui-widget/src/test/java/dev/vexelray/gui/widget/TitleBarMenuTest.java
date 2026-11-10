@@ -96,6 +96,50 @@ class TitleBarMenuTest {
         }
     }
 
+    /**
+     * One press goes from one open menu to the next, as a menu bar does: a click on another menu's target opens that
+     * menu in place of the open one, rather than only closing it. A press on the open menu's own target still closes it.
+     */
+    @Test
+    void oneClickGoesFromOneMenuToTheNext() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Sender<Build> build = sender(h);
+            ContextMenu menu = new ContextMenu(h.gui);
+            TitleBar bar = bar(h)
+                    .menu("run", "Run", Menu.builder().item("Compile", build, new Build("compile")).build())
+                    .menu("view", "View", Menu.builder().item("Zoom", build, new Build("zoom")).build());
+            bar.onMark("About App", () -> { });
+            h.frame();
+
+            click(h, TitleBar.menuLandmark("run"));
+            assertEquals(List.of("Compile"), labels(menu));
+
+            click(h, TitleBar.menuLandmark("view"));
+            h.frame();
+            assertTrue(menu.isOpen(), "the press on View opened View, not merely closed Run");
+            assertEquals(List.of("Zoom"), labels(menu));
+
+            click(h, TitleBar.MARK);
+            h.frame();
+            assertTrue(menu.isOpen(), "and from an application menu to the app menu");
+            assertEquals("About App", labels(menu).getFirst());
+
+            click(h, TitleBar.menuLandmark("run"));
+            h.frame();
+            assertTrue(menu.isOpen(), "and back");
+            assertEquals(List.of("Compile"), labels(menu));
+
+            click(h, TitleBar.menuLandmark("run"));
+            h.frame();
+            assertFalse(menu.isOpen(), "its own target's press still closes it");
+
+            click(h, TitleBar.MARK);
+            click(h, TitleBar.MARK);
+            h.frame();
+            assertFalse(menu.isOpen(), "and so does the lockup's, for the app menu");
+        }
+    }
+
     @Test
     void openDropsItAsAClickWouldAndClosesItAgain() {
         try (HeadlessGui h = new HeadlessGui()) {

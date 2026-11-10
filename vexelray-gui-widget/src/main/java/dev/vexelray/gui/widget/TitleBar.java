@@ -621,7 +621,10 @@ public final class TitleBar {
         if (!hasAppMenu()) {
             return;
         }
-        if (Seams.of(gui).menus() instanceof ContextMenu open && open.isOpen()) {
+        // A second press on the lockup closes its own menu; with another menu open (an application menu beside it), the
+        // press opens this one in its place, as ContextMenu.drop does. lockupOpen is the app menu's, so it asks
+        // nothing about which of the lockup's parts the press landed on.
+        if (lockupOpen && Seams.of(gui).menus() instanceof ContextMenu open && open.isOpen()) {
             open.hide();
             return;
         }
@@ -819,7 +822,8 @@ public final class TitleBar {
                     : lockupInk(s, lit));
         }
 
-        /** Open the menu under the target, or close whichever menu is open; {@code at} is the click, or null for a key. */
+        /** Open the menu under the target in place of any other, or close it if it is open; {@code at} is the click, or
+         *  null for a key. */
         void show(dev.vexelray.gui.core.input.ClickEvent at) {
             ContextMenu.drop(gui, target, at, menu, now -> {
                 open = now;

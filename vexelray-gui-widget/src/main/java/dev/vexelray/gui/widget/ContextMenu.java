@@ -285,16 +285,18 @@ public final class ContextMenu implements MenuPresenter {
     }
 
     /**
-     * Drop {@code menu} from {@code target}'s lower left, as a menu bar's menu drops, or close whichever menu is open:
+     * Drop {@code menu} from {@code target}'s lower left, as a menu bar's menu drops, or close it if it is the one open:
      * the one behaviour of everything whose plain press is a menu (a title-bar menu, a {@link Button#menu menu
-     * button}). {@code at} is the click, or null for a key, which puts the keyboard on the first line
-     * ({@link #markFirst}). Nothing for an empty menu or a target not laid out yet. In the dispatch, as a click's is.
+     * button}). Another target's menu open is replaced, in one press, as a menu bar goes from one menu to the next;
+     * closing it and making the person press again would spend the press on the wrong menu. {@code at} is the click,
+     * or null for a key, which puts the keyboard on the first line ({@link #markFirst}). Nothing for an empty menu or
+     * a target not laid out yet. In the dispatch, as a click's is.
      */
     static void drop(Gui gui, Node target, ClickEvent at, dev.vexelray.gui.core.input.Menu menu) {
         if (menu.isEmpty()) {
             return;
         }
-        if (Seams.of(gui).menus() instanceof ContextMenu open && open.isOpen()) {
+        if (Seams.of(gui).menus() instanceof ContextMenu open && open.isOpen() && open.openedFrom(target.id())) {
             open.hide();
             return;
         }
@@ -938,6 +940,12 @@ public final class ContextMenu implements MenuPresenter {
         if (shown && e.button() == MouseButton.LEFT && !ownIds.contains(e.nodeId()) && !opened(e)) {
             hide();
         }
+    }
+
+    /** Whether the menu open now was opened at node {@code id}: {@link #drop}'s toggle, which closes only its own. */
+    private boolean openedFrom(long id) {
+        ClickEvent o = opener;
+        return o != null && o.nodeId() == id;
     }
 
     /**

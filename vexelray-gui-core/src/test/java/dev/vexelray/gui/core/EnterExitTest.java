@@ -4,6 +4,7 @@ import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.layout.EnterMotion;
 import dev.vexelray.gui.core.layout.ExitMotion;
 import dev.vexelray.gui.core.layout.LayoutEnums.Axis;
+import dev.vexelray.gui.core.layout.LayoutMotion;
 import dev.vexelray.gui.core.layout.Length;
 import dev.vexelray.gui.core.layout.NodeLayout;
 import dev.vexelray.gui.core.model.RetainedNode;
@@ -351,6 +352,172 @@ class EnterExitTest {
 
             assertTrue(d.leaving);
             assertFalse(d.lifted, "something was kept, so this is a removal, and it holds its place");
+        }
+    }
+
+    /**
+     * A node fades out only as it was last drawn. Hidden in the same edit that resizes it, a fade would show a size never
+     * drawn: a tree's subtree, shut on its own ramp, was given back its full height as it was hidden, and the fade held
+     * it there, fully open, for the frames it took.
+     */
+    @Test
+    void aNodeHiddenAsItIsResizedGoesAtOnce() {
+        Scripted s = new Scripted();
+        try (Gui gui = withScripted(s)) {
+            Node list = gui.column();
+            Node a = row(gui);
+            Node b = row(gui);
+            gui.root().children(list.children(a, b));
+            frame(gui);
+            float bY = find(frame(gui), b.id()).y;
+
+            a.height(Length.dp(60)).visible(false);
+            RetainedNode root = frame(gui);
+            RetainedNode ra = find(root, a.id());
+            assertFalse(ra.leaving, "not faded out at a size it never had");
+            assertFalse(ra.visible());
+            assertTrue(find(root, b.id()).y < bY, "its place given up in the same frame");
+        }
+    }
+
+    /** The order of the writes in an edit does not matter: hidden first and resized after is the same edit. */
+    @Test
+    void aNodeHiddenThenResizedInOneEditGoesAtOnce() {
+        Scripted s = new Scripted();
+        try (Gui gui = withScripted(s)) {
+            Node list = gui.column();
+            Node a = row(gui);
+            gui.root().children(list.children(a, row(gui)));
+            frame(gui);
+
+            a.visible(false);
+            a.height(Length.dp(60));
+            assertFalse(find(frame(gui), a.id()).leaving);
+        }
+    }
+
+    /** Anything inside it counts: a panel closed as its words are changed would fade out showing the new words. */
+    @Test
+    void aNodeHiddenAsSomethingInItChangesGoesAtOnce() {
+        Scripted s = new Scripted();
+        try (Gui gui = withScripted(s)) {
+            Node words = gui.text("before");
+            Node panel = gui.column().children(row(gui), words);
+            gui.root().children(gui.column().children(panel));
+            frame(gui);
+
+            words.text("after");
+            panel.visible(false);
+            RetainedNode rp = find(frame(gui), panel.id());
+            assertFalse(rp.leaving, "the words it would fade with were never drawn");
+            assertFalse(rp.visible());
+        }
+    }
+
+    /** A removal is a departure as a hide is, and goes at once on the same terms. */
+    @Test
+    void aNodeRemovedAsItIsReshapedGoesAtOnce() {
+        Scripted s = new Scripted();
+        try (Gui gui = withScripted(s)) {
+            Node list = gui.column();
+            Node a = row(gui);
+            gui.root().children(list.children(a, row(gui)));
+            frame(gui);
+
+            a.width(Length.dp(80));
+            a.remove();
+            frame(gui);
+            assertNull(find(frame(gui), a.id()), "out of the tree, not fading at a width it never had");
+            assertEquals(List.of(a.id()), s.left, "and released as one that faded would be");
+        }
+    }
+
+    /**
+     * What a node says about itself without changing its shape (a colour, which crossfades from the one drawn; a role)
+     * does not stop a fade, and nor does a reshape an edit earlier, which was drawn.
+     */
+    @Test
+    void aHideWithNoReshapeInTheSameEditStillFades() {
+        Scripted s = new Scripted();
+        try (Gui gui = withScripted(s)) {
+            Node list = gui.column();
+            Node a = row(gui);
+            Node b = row(gui);
+            gui.root().children(list.children(a, b));
+            frame(gui);
+
+            a.height(Length.dp(30));
+            frame(gui);
+            a.background(dev.vexelray.canvas.Color.rgb(0x336699)).role("panel").visible(false);
+            assertTrue(find(frame(gui), a.id()).leaving, "a colour and a role are not a shape");
+
+            b.remove();
+            assertTrue(find(frame(gui), b.id()).leaving, "a plain removal fades as ever");
+        }
+    }
+
+    /**
+     * Focus and the pointer end as a node is hidden, and what they wrote goes with them: a focused field's overhang, a
+     * hovered label shown whole. That is state, not a shape the application gave it, and the node still fades (VexelRay
+     * IDE's source view, swapped for the formatted one while its field had focus).
+     */
+    @Test
+    void focusAndPointerStateEndingAsItIsHiddenDoNotStopTheFade() {
+        Scripted s = new Scripted();
+        try (Gui gui = withScripted(s)) {
+            Node list = gui.column();
+            Node field = row(gui).overhang(true);
+            Node label = row(gui).unclip(1f);
+            gui.root().children(list.children(field, label, row(gui)));
+            frame(gui);
+
+            field.overhang(false).visible(false);
+            label.unclip(0f).visible(false);
+            RetainedNode root = frame(gui);
+            assertTrue(find(root, field.id()).leaving, "focus left the field as it was hidden");
+            assertTrue(find(root, label.id()).leaving, "the pointer left the label as it was hidden");
+        }
+    }
+
+    /**
+     * Something the application moves on every frame is on its own clock, its end included: hidden when the motion
+     * stops, it goes then, rather than fading after it as a second clock would.
+     */
+    @Test
+    void aNodeMovedOnEveryFrameGoesAtOnceWhenHidden() {
+        Scripted s = new Scripted();
+        try (Gui gui = withScripted(s)) {
+            gui.motion(new LayoutMotion() {
+                @Override
+                public void moved(RetainedNode node, float fromX, float fromY, float toX, float toY) {
+                }
+
+                @Override
+                public float displacementX(RetainedNode node) {
+                    return 0f;
+                }
+
+                @Override
+                public float displacementY(RetainedNode node) {
+                    return 0f;
+                }
+
+                @Override
+                public long draw(Frame frame) {
+                    return Frame.NEVER;
+                }
+            });
+            Node list = gui.column();
+            Node a = row(gui);
+            gui.root().children(list.children(a, row(gui)));
+            frame(gui);
+            for (int i = 1; i <= 6; i++) {
+                a.height(Length.dp(20 - 3 * i));
+                frame(gui);
+            }
+
+            a.visible(false);   // nothing else: the ramp's last step was the frame before
+            assertFalse(find(frame(gui), a.id()).leaving, "followed to the end, not faded after it");
         }
     }
 

@@ -68,6 +68,17 @@ public final class Displacement {
     static final int CHASED_FRAMES = 2;
 
     /**
+     * Whether {@code node} is being moved or resized on every frame, up to frame {@code frame} (the last one
+     * {@link #settle(RetainedNode, LayoutMotion, long)} was given): followed, by the rule there. Something an
+     * application drives frame by frame is timed by its own clock, its ending included, so the framework adds no
+     * motion of its own to it, and that includes a fade as it is hidden or removed (Reconciler.goesAtOnce). A frame
+     * with no layout between the last move and now is allowed for.
+     */
+    public static boolean followed(RetainedNode node, long frame) {
+        return node.moveStreak > CHASED_FRAMES && node.movedFrame >= frame - 1;
+    }
+
+    /**
      * {@link #settle(RetainedNode, LayoutMotion)} on frame {@code frame} of a loop that numbers its frames one apart.
      *
      * <p><b>A node moved on every frame is followed, not chased.</b> A pointer dragging a split, a ramp growing a tree's

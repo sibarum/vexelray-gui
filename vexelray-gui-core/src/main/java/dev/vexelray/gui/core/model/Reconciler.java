@@ -1,6 +1,7 @@
 package dev.vexelray.gui.core.model;
 
 import dev.vexelray.canvas.Color;
+import dev.vexelray.gui.core.layout.Displacement;
 import dev.vexelray.gui.core.layout.EnterMotion;
 import dev.vexelray.gui.core.layout.ExitMotion;
 import dev.vexelray.gui.core.style.Paint;
@@ -117,8 +118,22 @@ public final class Reconciler implements Mutation.Sink {
      * put in place of another, though its parent keeps everything else. Holding the hidden one's place would squeeze
      * the two into it together and then slide the new one into the gap, so it is lifted as a replaced node is. Beside
      * means next to it with nothing visible between; a hide and a show further apart are two edits, each kept in place.
+     *
+     * <p><b>It also decides which departures fade at all</b> ({@link #goesAtOnce}), and ends the drain: what is
+     * written after it is the next one's.
+     *
+     * @param frame the last frame settled ({@code Displacement.settle}), against which "moved on every frame" is told
      */
-    public void liftReplaced() {
+    public void liftReplaced(long frame) {
+        try {
+            liftReplacedIn(frame);
+        } finally {
+            drain++;
+        }
+    }
+
+    private void liftReplacedIn(long frame) {
+        wentAtOnce.clear();
         if (!lifted.isEmpty()) {
             lifted.removeIf(n -> !n.leaving || n.parent == null);   // gone, or put back: nothing left to let go of
         }
@@ -126,6 +141,17 @@ public final class Reconciler implements Mutation.Sink {
             gainedArrival.clear();
             arrivedNow.clear();
             return;
+        }
+        // Decided now, with the whole drain applied, so the order of the writes in it does not matter: a hide written
+        // before the resize that goes with it is the same edit as one written after.
+        for (RetainedNode n : beganLeaving) {
+            if (n.leaving && !n.lifted) {
+                boolean followed = Displacement.followed(n, frame);
+                if (followed || reshapedIn(n)) {
+                    wentAtOnce.put(n.id, followed);
+                    goNow(n);
+                }
+            }
         }
         for (RetainedNode n : beganLeaving) {
             RetainedNode p = n.parent;
@@ -160,6 +186,76 @@ public final class Reconciler implements Mutation.Sink {
         beganLeaving.clear();
         gainedArrival.clear();
         arrivedNow.clear();
+    }
+
+    /** The drain being applied: counted by {@link #liftReplaced}, which ends each one. See {@link #reshaped}. */
+    private long drain;
+
+    /**
+     * Whether {@code n}, which began to leave in this drain, goes at once rather than fading out where it stands.
+     *
+     * <p><b>A node fades out only as it was last drawn.</b> A fade shows the node leaving, so what fades has to be
+     * what was on screen. Two things break that, and either makes the node go at once:
+     * <ul>
+     *   <li><b>It was reshaped in the same drain</b>: it, or anything in it, was resized, clipped, reworded, given
+     *       children or had them taken away (see {@link PropKey#reshapes}). Faded, it would show a state nobody ever
+     *       drew. The case that found it: a tree's subtree shrinks to nothing on its own ramp, and its last step gives
+     *       the box back its natural height and hides it. The fade kept it, fully open, for the frames it took, so a
+     *       closed folder showed its rows again before it shut. A dialog cleared as it closes is the same edit.</li>
+     *   <li><b>It is being moved on every frame</b> ({@link Displacement#followed}): the application times it with
+     *       a clock of its own, and the end of its motion is the application's too. A fade added after it is a second
+     *       clock, and the lag shows (the About window's words, before they took {@code paintCuts}).</li>
+     * </ul>
+     * A hide or removal with nothing else changed fades exactly as before.
+     */
+    private boolean goesAtOnce(RetainedNode n, long frame) {
+        return reshapedIn(n) || Displacement.followed(n, frame);
+    }
+
+    /** The nodes that went at once in this frame's {@link #liftReplaced}, each with whether it was followed. */
+    private final Map<Long, Boolean> wentAtOnce = new HashMap<>();
+
+    /**
+     * The nodes {@link #goesAtOnce} sent at once in this frame, by id, each with whether it went because it was moved on
+     * every frame ({@code true}, the end of the application's own motion) rather than reshaped as it left. Read by the
+     * {@code Cuts} watch, which counts the first as followed, and the second as a cut it explains. GUI thread; replaced
+     * at each frame.
+     */
+    public Map<Long, Boolean> wentAtOnce() {
+        return wentAtOnce;
+    }
+
+    /** Whether {@code n} or anything under it was reshaped in this drain. */
+    private boolean reshapedIn(RetainedNode n) {
+        if (n.reshapedDrain == drain) {
+            return true;
+        }
+        for (RetainedNode c : n.children) {
+            if (reshapedIn(c)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Say that {@code n}'s shape changed in this drain (see {@link #goesAtOnce}). Null is nothing. */
+    private void reshaped(RetainedNode n) {
+        if (n != null) {
+            n.reshapedDrain = drain;
+        }
+    }
+
+    /** End {@code n}'s departure now: hidden for real, or out of the tree, as though it had faded already. */
+    private void goNow(RetainedNode n) {
+        if (n.hiding) {
+            hideNow(n);
+        } else if (n.parent != null) {
+            n.parent.children.remove(n);
+            n.parent = null;
+            departed.add(n);   // released by the next depart, as one that faded is
+        }
+        layoutDirty = true;
+        drawDirty = true;
     }
 
     /** Parents found replaced in this {@link #liftReplaced}; scratch, empty between calls. */
@@ -483,6 +579,8 @@ public final class Reconciler implements Mutation.Sink {
             if (ch.parent != null) {
                 ch.parent.children.remove(ch);
             }
+            reshaped(was);
+            reshaped(p);
             ch.parent = p;
             if (index < 0 || index >= p.children.size()) {
                 p.children.add(ch);
@@ -571,8 +669,10 @@ public final class Reconciler implements Mutation.Sink {
             order.add(at, c);
         }
         Map<RetainedNode, RetainedNode> was = new HashMap<>();
+        reshaped(p);
         for (RetainedNode n : named) {
             was.put(n, n.parent);
+            reshaped(n.parent);
             if (n.parent != null && n.parent != p) {
                 n.parent.children.remove(n);
             }
@@ -636,6 +736,7 @@ public final class Reconciler implements Mutation.Sink {
     public void remove(long id) {
         RetainedNode n = index.get(id);
         if (n != null) {
+            reshaped(n.parent);   // whether it fades or goes, what its parent holds has changed
             // Offered to the exit motion first, if it is on screen to be seen going: one that takes it keeps it in
             // place, drawn leaving, until the frame detaches it (depart). A second remove of a leaving node is "now".
             // A child of a container that owns its children's motion is not offered (PropKey.OWN_CHILD_MOTION). Nor
@@ -702,6 +803,11 @@ public final class Reconciler implements Mutation.Sink {
             }
             n.set(key, value);
             drawDirty = true;
+            if (key == PropKey.VISIBLE) {
+                reshaped(n.parent);   // shown or hidden at once: the parent's content changed, not this node
+            } else if (key.reshapes()) {
+                reshaped(n);
+            }
             // A paint is reported as the colours it is in the theme being drawn: a hover from ACTION to ACTION-at-HOVER
             // is a change of colour, and a write of another role that happens to resolve the same is not.
             if (before instanceof Paint from && value instanceof Paint to && !n.paintCuts()) {
@@ -746,6 +852,7 @@ public final class Reconciler implements Mutation.Sink {
             }
             retexted(n);
             n.set(PropKey.TEXT, text);
+            reshaped(n);
             layoutDirty = true;
             drawDirty = true;
         }
@@ -955,6 +1062,7 @@ public final class Reconciler implements Mutation.Sink {
             if (show) {
                 // Put back before it had gone: still visible underneath, so it only stops leaving, back in the flow if it
                 // was swapped out.
+                reshaped(n.parent);
                 n.hiding = false;
                 n.leaving = false;
                 if (n.lifted) {
@@ -985,6 +1093,7 @@ public final class Reconciler implements Mutation.Sink {
         // have been laid out.
         if (!n.visible() && n.parent.layoutCtx != null && shown(n.parent)) {
             n.set(PropKey.VISIBLE, Boolean.TRUE);
+            reshaped(n.parent);
             layoutDirty = true;
             drawDirty = true;
             if (enters != EnterMotion.NONE) {

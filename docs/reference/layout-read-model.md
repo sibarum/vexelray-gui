@@ -124,6 +124,18 @@ row.remove();        // fades out in place, then leaves; list.append(row) before
   `Displacement.CHASED_FRAMES` (2) frames of a run are reported, and after that it is followed: drawn where layout puts
   it, less whatever lag it already carried. A frame with no move ends the run, and so does the loop having been
   parked for longer than a frame could take (the frame number skips), so two clicks a moment apart each animate.
+  Its going is followed too: hidden or removed while it is being moved like this, it goes at once, because the end
+  of the application's motion is the application's (below).
+- **A departure that would fade something never drawn.** A node fades out only as it was last drawn. Hidden or
+  removed in the same edit that reshapes it, or anything in it (`PropKey.reshapes`: size, place, clip, opacity,
+  transform, picture, words, children), it goes at once, whatever order the writes came in. The case that found it:
+  `TreeView`'s subtree shrinks to nothing on its own ramp, and its last step gives the box back its natural height
+  and hides it; the fade held it there, fully open, so a closed folder showed its rows again for a frame or two. A
+  colour, a role, or what focus and the pointer wrote and take back as the node goes (a focused field's `overhang`, a
+  hovered label's `unclip`) does not count (the paint motion crossfades a colour from the one drawn), and a hide or
+  removal with nothing else changed fades as ever. `Reconciler.goesAtOnce` has the rule. The `Cuts` watch agrees with
+  it: a node followed to its end is no cut, and one reshaped as it left is reported as "gone in one frame: it was
+  reshaped in the edit that hid or removed it", with what to do instead (hide it alone; change it once it has gone).
 - **A recycling container's children** (`Node.recycles`, `PropKey.OWN_CHILD_MOTION`): a virtualised list's rows are realized,
   dropped and shifted as the user scrolls. None of them arrives, leaves or slides. `ListView` says it of itself.
 

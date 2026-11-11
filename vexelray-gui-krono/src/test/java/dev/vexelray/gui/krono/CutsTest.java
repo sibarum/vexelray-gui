@@ -106,6 +106,53 @@ class CutsTest {
     }
 
     @Test
+    @DisplayName("a box shut on its own ramp and hidden as the ramp ends is the end of that motion, not a cut")
+    void aBoxShutOnItsOwnRampIsNoCut() {
+        // VexelRay IDE's navigator, 2026-11-10: a subtree shrinks on the tree's ramp, and its last step gives the box back
+        // its natural height and hides it in one edit. The frame now lets it go at once rather than fade it out fully
+        // open (Reconciler.goesAtOnce), and that going is the ramp's end, which the watch follows as it follows a value
+        // given anew at every frame.
+        Scene s = scene(true);
+        try (KronoGui krono = s.krono()) {
+            krono.gui().motion(Transitions.on(krono));
+            Node kids = krono.gui().column().clip(true).children(
+                    krono.gui().box().size(Length.dp(40), Length.dp(10)).background(Role.LINE),
+                    krono.gui().box().size(Length.dp(40), Length.dp(10)).background(Role.LINE));
+            s.list().append(kids);
+            long t = 0;
+            at(s, t += 300);
+            Cuts cuts = Cuts.watch(krono.gui());
+            at(s, t += 16);
+            for (int h = 18; h > 0; h -= 3) {
+                kids.height(Length.dp(h));
+                at(s, t += 16);
+            }
+            kids.height(Length.AUTO).clip(false).visible(false);   // the ramp's last step and its settle, together
+            for (int i = 0; i < 10; i++) {
+                at(s, t += 16);
+            }
+            assertEquals(List.of(), cuts.found());
+        }
+    }
+
+    @Test
+    @DisplayName("a node reshaped in the edit that hides it goes at once, and the watch says why and what to do")
+    void aNodeReshapedAsItIsHiddenIsACutThatSaysWhy() {
+        Scene s = scene(true);
+        try (KronoGui krono = s.krono()) {
+            Cuts cuts = Cuts.watch(krono.gui());
+            at(s, 300);
+            s.label().text("cleared");
+            s.label().visible(false);   // a dialog cleared as it closes
+            at(s, 316);
+            at(s, 332);
+            String found = cuts.found().toString();
+            assertEquals(1, cuts.found().size(), found);
+            assertTrue(found.contains("reshaped in the edit that hid or removed it"), found);
+        }
+    }
+
+    @Test
     @DisplayName("a fill that comes up from Role.NONE and is cleared again before the clock moves is no cut")
     void clearedBeforeItCameUpIsNoCut() throws InterruptedException {
         // IDE FN-4: the fade's first frame draws the colour at no alpha, and cleared there it was told to go from that

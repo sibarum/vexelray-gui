@@ -397,4 +397,28 @@ public enum PropKey {
     public boolean geometryAffecting() {
         return layoutAffecting || this == CARET || this == H_ALIGN || this == V_ALIGN;
     }
+
+    /**
+     * Whether writing this prop changes the <b>shape</b> of what the node shows: its size or place, its clip, its
+     * opacity or transform, its picture. Not a colour, which the paint motion crossfades from the one drawn, and not a
+     * state (pointer, focus, selection, role), which says what is happening to the node rather than what it is.
+     * {@link #VISIBLE} is not one either: a show or a hide reshapes the parent's content, not the node.
+     *
+     * <p>It is what {@code Reconciler} asks of a node that leaves: a node reshaped in the edit that hides or removes it
+     * would fade out as something never drawn (a subtree given back its full height as its shutting ends, a dialog
+     * cleared as it closes), so it goes at once instead. The words are {@code setText}'s, and count as well.
+     *
+     * <p>Two keys that move what is drawn are state all the same, written by the framework for focus and the pointer:
+     * {@link #OVERHANG}, a focused field grown past its slot, which focus leaving a field as it is hidden clears; and
+     * {@link #UNCLIP}, a cut-off label shown whole under the pointer, which a click that closes its panel ends. Counted,
+     * every field hidden while focused and every button that closes its own panel would lose its fade.
+     */
+    public boolean reshapes() {
+        if (this == VISIBLE || this == OVERHANG || this == UNCLIP) {
+            return false;
+        }
+        return layoutAffecting || this == CLIP || this == OPACITY || this == TRANSLATE_X
+                || this == TRANSLATE_Y || this == ROTATE || this == SCALE || this == IMAGE || this == IMAGE_REGION
+                || this == IMAGE_SCALING || this == FIELD || this == SDG || this == PICTURE || this == OVERLAY;
+    }
 }

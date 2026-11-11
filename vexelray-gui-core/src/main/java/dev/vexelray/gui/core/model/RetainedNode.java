@@ -101,6 +101,10 @@ public final class RetainedNode {
     // A leaving node that was hidden rather than removed (visible(false)): when it has faded it is hidden for real and
     // stays in the tree, where a removed one would be detached (Reconciler.hide, Reconciler.depart).
     public boolean hiding;
+    // The drain in which this node's shape (PropKey.reshapes, its words, its children) last changed. A node leaving in
+    // a drain that reshaped it, or anything in it, goes at once rather than fading out as something never drawn
+    // (Reconciler.goesAtOnce).
+    public long reshapedDrain = Long.MIN_VALUE;
 
     // What this node showed before its words or its image were last replaced, so the renderer can fade it out under
     // what it shows now (Reconciler.replacing, PaintMotion.Channel.REPLACED); let go of once that is all the way up

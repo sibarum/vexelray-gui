@@ -176,6 +176,59 @@ class TreeMotionTest {
     }
 
     /**
+     * The same, in a window whose exit motion fades whatever leaves. The shutting's last step gives the subtree back its
+     * natural height and hides it in one edit, and the window used to take that hide as a departure and keep the
+     * subtree in place, fully open, while it faded: the closed folder showed its rows again for a frame or two, and
+     * the row below jumped back down to make room for them. The framework now lets a node reshaped as it leaves go at
+     * once (Reconciler.goesAtOnce), with nothing asked of the tree.
+     */
+    @Test
+    void aShutSubtreeDoesNotReappearUnderAnExitMotion() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            h.gui.exitMotion(new dev.vexelray.gui.core.layout.ExitMotion() {
+                @Override
+                public boolean leave(dev.vexelray.gui.core.model.RetainedNode node) {
+                    return true;   // takes everything, and never lets go
+                }
+
+                @Override
+                public float presence(dev.vexelray.gui.core.model.RetainedNode node) {
+                    return 1f;
+                }
+
+                @Override
+                public void left(dev.vexelray.gui.core.model.RetainedNode node) {
+                }
+            });
+            Steps ramp = new Steps();
+            TreeView<String> tree = Listing.tree(h, new MapSource()).motion(TestClocks.drive(h, ramp));
+            h.gui.root().children(tree.node());
+            h.frame();
+            float shut = docsY(h, tree);
+
+            tree.expand("src");
+            h.frame();
+            ramp.to(1.0);
+            ramp.finish();
+            h.frame();
+
+            tree.collapse("src");
+            h.frame();
+            for (double p = 0.25; p <= 1.0; p += 0.25) {
+                ramp.to(p);
+                h.frame();
+            }
+            ramp.finish();
+            h.frame();
+            assertEquals(shut, docsY(h, tree), 0.5f, "the row below stays up: nothing opened again under it");
+            dev.vexelray.gui.core.model.RetainedNode kids =
+                    h.retained(tree.rowNode("main")).parent.parent;   // the row, its entry, the subtree
+            assertTrue(!kids.leaving && !kids.visible(), "the subtree is hidden, not fading out at its full height");
+            tree.close();
+        }
+    }
+
+    /**
      * A subtree toggled while it is still opening reverses from where it got to.
      *
      * <p>The alternative — restarting from the far end — makes a fast second click show the subtree jumping to a

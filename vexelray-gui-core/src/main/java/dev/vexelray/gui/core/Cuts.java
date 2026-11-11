@@ -38,7 +38,8 @@ import java.util.Objects;
  *
  * <p><b>What is not.</b> A node that says its look is data ({@code paintCuts}), and the children of a container that
  * moves its own ({@code childMotion(false)}). A value given anew at two frames running, which is driven by a clock of
- * its own and followed rather than faded behind. The first frame watched, which has nothing before it. Anything under
+ * its own and followed rather than faded behind; and, the same way, a node the application moved or resized on every
+ * frame up to the edit that hid or removed it, whose going is the end of its own motion. The first frame watched, which has nothing before it. Anything under
  * what arrived or left, which is the top's to have done. A node at no opacity, which nobody sees change.
  *
  * <p>A watch walks the tree at every frame, so it is for tests and checks, not for a running application. Positions
@@ -114,8 +115,14 @@ public final class Cuts {
 
     private static final long NEVER = Long.MIN_VALUE / 2;
 
-    /** One frame, after the paint motion was asked for it. GUI thread. */
-    synchronized void frame(RetainedNode root, PaintMotion paint, Theme theme) {
+    /**
+     * One frame, after the paint motion was asked for it. GUI thread.
+     *
+     * @param wentAtOnce the nodes the frame sent at once rather than fading them ({@code Reconciler.wentAtOnce}), each
+     *                   with whether it was moved on every frame up to it: that one is followed, as a look given anew
+     *                   at every frame is, and the other is a cut said with what to do about it
+     */
+    synchronized void frame(RetainedNode root, PaintMotion paint, Theme theme, Map<Long, Boolean> wentAtOnce) {
         nowNanos = System.nanoTime();
         Map<Long, Seen> now = new HashMap<>();
         walk(root, paint, theme, now);
@@ -124,7 +131,14 @@ public final class Cuts {
                 Seen s = e.getValue();
                 if (!now.containsKey(e.getKey()) && now.containsKey(s.parent) && !s.parentOwnsChildren && !s.leaving
                         && s.presence > 0f && s.opacity > 0f) {
-                    found.add(new Cut(e.getKey(), s.name, "gone in one frame"));
+                    Boolean followed = wentAtOnce.get(e.getKey());
+                    if (Boolean.TRUE.equals(followed)) {
+                        continue;   // the end of the application's own motion, which it timed
+                    }
+                    found.add(new Cut(e.getKey(), s.name, followed == null ? "gone in one frame"
+                            : "gone in one frame: it was reshaped in the edit that hid or removed it, so it could not"
+                                    + " fade out as it was drawn. Hide or remove it alone, and change it once it has"
+                                    + " gone (or as it is next shown)"));
                 }
             }
         }

@@ -1966,7 +1966,7 @@ public final class Gui implements AutoCloseable {
         pump.drain();
         // A panel rebuilt by removing what it held and appending new nodes is a replacement: what leaves lets go of its
         // place and fades out over what arrives, rather than doubling the panel (Reconciler.liftReplaced).
-        reconciler.liftReplaced();
+        reconciler.liftReplaced(motionFrame);   // the last frame settled: what has moved on every frame up to it is followed
         // Undo is judged here, against the tree the drain just brought up to date, and before navigation steps,
         // so a reveal it asks for takes its first step this frame.
         undoing.step();
@@ -2135,7 +2135,8 @@ public final class Gui implements AutoCloseable {
             reconciler.settleReplaced();   // words or an image all the way up: what they replaced is let go
             Cuts watching = cuts;
             if (watching != null) {
-                watching.frame(reconciler.root(), paintMotion, reconciler.theme());   // a test watching for cuts
+                watching.frame(reconciler.root(), paintMotion, reconciler.theme(),   // a test watching for cuts
+                        reconciler.wentAtOnce());
             }
             boolean fading = paintDue != Frame.NEVER;
             if (frame.owes(paintDue)) {

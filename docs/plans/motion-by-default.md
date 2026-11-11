@@ -63,6 +63,14 @@ one view hidden as the sibling beside it is shown (MainFrame's hint and tabs, th
 squeezed the two into one place for the fade and then slid the new one into it. That is now a swap, lifted as a
 panel rebuilt whole is (`Reconciler.liftReplaced`): the new view takes the place at once, the old fades out over it.
 
+A third came from VexelRay IDE's navigator (2026-11-10): a folder collapsed on the tree's own ramp showed its rows
+again for the last frame or two. The ramp's last step gave the subtree back its natural height and hid it in one
+edit, and the fade kept it in place at that height. The About window had the same shape earlier (the framework's fade
+on top of motion the intro timed itself), and was mended with `paintCuts` on its nodes, which every widget would have
+had to know to do. Now the frame decides it for everyone: a node fades out only as it was last drawn, so one
+reshaped in the edit that hides or removes it, or moved on every frame up to it, goes at once
+(`Reconciler.goesAtOnce`, layout-read-model.md's *What is not motion*). **Built.**
+
 ### 2.3 Words replaced crossfade
 
 A text write to a node on screen, from words to other words, draws the old words fading out where they were and the

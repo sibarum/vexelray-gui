@@ -783,12 +783,12 @@ public final class ContextMenu implements MenuPresenter {
      * rebound chord is what the menu shows; or, naming no command, the chord it states; or nothing. A command that is
      * named and has no trigger now says nothing, rather than a chord the keyboard no longer has.
      */
-    private String chord(MenuItem item) {
+    private Trigger chord(MenuItem item) {
         if (item.command() != null) {
             List<Trigger> now = Seams.of(gui).commands().triggers(item.command());
-            return now.isEmpty() ? "" : now.getFirst().text();
+            return now.isEmpty() ? null : now.getFirst();
         }
-        return item.shortcut() == null ? "" : item.shortcut().text();
+        return item.shortcut();
     }
 
     /**
@@ -845,15 +845,11 @@ public final class ContextMenu implements MenuPresenter {
                 .textSize(Length.rem(1))
                 .textColor(item.enabled() ? Role.INK : Role.FAINT)
                 .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE)));
-        String chord = chord(item);
-        if (!chord.isEmpty()) {
-            // The chord that does the same, dim at the line's end: said here so a person learns it from the menu, and
-            // bound where every chord is, not by this line.
-            row.append(own(gui.text(chord)
-                    .textSize(Length.rem(0.9f))
-                    .wordWrap(false)
-                    .textColor(item.enabled() ? Role.DIM : Role.FAINT)
-                    .align(TextLayout.HAlign.RIGHT, TextLayout.VAlign.MIDDLE)));
+        Trigger chord = chord(item);
+        if (chord != null) {
+            // The chord that does the same, dim at the line's end, as keys: said here so a person learns it from the
+            // menu, and bound where every chord is, not by this line.
+            row.append(own(ChordView.of(gui, chord, 0.9f, item.enabled() ? Role.DIM : Role.FAINT)));
         }
         if (item.submenu()) {
             // The sign that this line goes further rather than doing something: a chevron at its end, where the

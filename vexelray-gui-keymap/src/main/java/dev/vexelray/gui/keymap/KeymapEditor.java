@@ -14,6 +14,7 @@ import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.icons.Icon;
 import dev.vexelray.gui.scroll.Scrollbars;
 import dev.vexelray.gui.widget.Button;
+import dev.vexelray.gui.widget.ChordView;
 import dev.vexelray.gui.widget.IconButton;
 import dev.vexelray.gui.widget.TextField;
 import dev.vexelray.gui.widget.Unclip;
@@ -55,7 +56,8 @@ import java.util.Set;
  */
 public final class KeymapEditor implements AutoCloseable {
 
-    private static final Length TEXT = Length.rem(0.8125f);
+    private static final float TEXT_REM = 0.8125f;
+    private static final Length TEXT = Length.rem(TEXT_REM);
     private static final String HINT =
             "Click a chord to change it, × to remove it, + to add another. Esc cancels a recording.";
 
@@ -331,8 +333,7 @@ public final class KeymapEditor implements AutoCloseable {
             chip = gui.row().role("keymap-chord").alignItems(AlignItems.CENTER).gap(Length.rem(0.4f))
                     .padding(Length.rem(0.15f), Length.rem(0.5f)).corner(Length.rem(0.3f))
                     .background(Role.RAISED).border(Length.rem(0.1f), Role.LINE)
-                    .children(gui.text(chord.text()).wordWrap(false).textSize(TEXT)
-                            .textColor(Role.INK), remove);
+                    .children(ChordView.of(gui, chord, TEXT_REM, Role.INK), remove);
             Seams.of(gui).claim(chip, DELETE, ClaimScope.FOCUSED, () -> remove(s));
             Seams.of(gui).claim(chip, BACKSPACE, ClaimScope.FOCUSED, () -> remove(s));
         }

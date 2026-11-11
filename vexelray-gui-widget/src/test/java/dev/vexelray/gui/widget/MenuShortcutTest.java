@@ -61,8 +61,10 @@ class MenuShortcutTest {
             texts(h.retained(h.gui.root()), all);
             RetainedNode chord = text(all, "Ctrl+S");
             RetainedNode save = text(all, "Save");
-            assertSame(save.parent, chord.parent, "the chord is on the Save line");
-            assertEquals(1, all.stream().filter(n -> n.textString().startsWith("Ctrl")).count(),
+            // The chord is drawn as caps; its spelling is its row's name, a hidden label one level under the line.
+            assertSame(save.parent, chord.parent.parent, "the chord is on the Save line");
+            assertEquals("shortcut", chord.parent.role());
+            assertEquals(1, all.stream().filter(n -> n.textString().startsWith("Ctrl+")).count(),
                     "Rename has none");
         }
     }
@@ -89,7 +91,7 @@ class MenuShortcutTest {
 
             List<RetainedNode> all = new ArrayList<>();
             texts(h.retained(h.gui.root()), all);
-            assertSame(text(all, "Save").parent, text(all, "Ctrl+Alt+K").parent, "the chord the person set");
+            assertSame(text(all, "Save").parent, text(all, "Ctrl+Alt+K").parent.parent, "the chord the person set");
             assertNull(text(all, "Ctrl+S"), "not the one the code started with, and none for an unbound command");
         }
     }

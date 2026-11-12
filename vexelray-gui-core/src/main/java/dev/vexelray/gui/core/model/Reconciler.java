@@ -238,6 +238,17 @@ public final class Reconciler implements Mutation.Sink {
         return false;
     }
 
+    /**
+     * Whether writing {@code key} over {@code before} gives an icon its first drawing: an SDG or a field where there was
+     * none. That is the icon finishing its own build, not a change of shape. An {@code IconView} draws once layout has
+     * given it a size, so its first drawing lands in the drain after the one that built it; counted as a reshape, a
+     * panel holding an icon, hidden in the very next frame, would go at once instead of fading. Its box was laid out
+     * and drawn already, and the icon only fills it. A drawing replaced by another is a reshape as before.
+     */
+    private static boolean firstIcon(PropKey key, Object before) {
+        return before == null && (key == PropKey.SDG || key == PropKey.FIELD);
+    }
+
     /** Say that {@code n}'s shape changed in this drain (see {@link #goesAtOnce}). Null is nothing. */
     private void reshaped(RetainedNode n) {
         if (n != null) {
@@ -805,7 +816,7 @@ public final class Reconciler implements Mutation.Sink {
             drawDirty = true;
             if (key == PropKey.VISIBLE) {
                 reshaped(n.parent);   // shown or hidden at once: the parent's content changed, not this node
-            } else if (key.reshapes()) {
+            } else if (key.reshapes() && !firstIcon(key, before)) {
                 reshaped(n);
             }
             // A paint is reported as the colours it is in the theme being drawn: a hover from ACTION to ACTION-at-HOVER

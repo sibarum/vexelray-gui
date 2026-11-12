@@ -412,6 +412,10 @@ public enum PropKey {
      * {@link #OVERHANG}, a focused field grown past its slot, which focus leaving a field as it is hidden clears; and
      * {@link #UNCLIP}, a cut-off label shown whole under the pointer, which a click that closes its panel ends. Counted,
      * every field hidden while focused and every button that closes its own panel would lose its fade.
+     *
+     * <p>{@link #SDG} and {@link #FIELD} written where there was none are not counted either: that is an icon's first
+     * drawing, which {@code IconView} writes once layout has sized it, a drain after it was built ({@code Reconciler}'s
+     * {@code firstIcon}). Counted, a panel with an icon in it, hidden the frame after it was built, would go at once.
      */
     public boolean reshapes() {
         if (this == VISIBLE || this == OVERHANG || this == UNCLIP) {

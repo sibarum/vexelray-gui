@@ -103,7 +103,7 @@ class TreeActionsTest {
             h.frame();
 
             rightClickRow(h, tree, "src");
-            choose(h, "Expand");
+            choose(h, "Expand All");
             h.frame();
 
             assertEquals(List.of("src", "main", "App.java", "Util.java", "test", "AppTest.java", "docs"),
@@ -111,7 +111,7 @@ class TreeActionsTest {
             assertEquals(3, source.fetches.get(), "one fetch per level that had children to ask for");
 
             rightClickRow(h, tree, "src");
-            choose(h, "Collapse");
+            choose(h, "Collapse All");
             h.frame();
             assertEquals(List.of("src", "docs"), visibleRows(h, tree), "the subtree is shut");
 
@@ -134,22 +134,22 @@ class TreeActionsTest {
             h.frame();
 
             rightClickRow(h, tree, "src");
-            assertEquals(List.of("Expand", "Collapse"), labels(h), "the menu a tree answers with on its own");
-            assertSame(dev.vexelray.gui.icons.Icon.PLUS, item(h, "Expand").mark(), "marked open-all and shut-all");
-            assertSame(dev.vexelray.gui.icons.Icon.MINUS, item(h, "Collapse").mark());
-            assertTrue(enabled(h, "Expand"), "a shut folder can be expanded");
-            assertFalse(enabled(h, "Collapse"), "and is already collapsed");
+            assertEquals(List.of("Expand All", "Collapse All"), labels(h), "the menu a tree answers with on its own");
+            assertSame(dev.vexelray.gui.icons.Icon.PLUS, item(h, "Expand All").mark(), "marked open-all and shut-all");
+            assertSame(dev.vexelray.gui.icons.Icon.MINUS, item(h, "Collapse All").mark());
+            assertTrue(enabled(h, "Expand All"), "a shut folder can be expanded");
+            assertFalse(enabled(h, "Collapse All"), "and is already collapsed");
 
-            choose(h, "Expand");
+            choose(h, "Expand All");
             h.frame();
 
             rightClickRow(h, tree, "src");
-            assertTrue(enabled(h, "Collapse"), "an open folder can be shut");
+            assertTrue(enabled(h, "Collapse All"), "an open folder can be shut");
 
             rightClickRow(h, tree, "App.java");
-            assertEquals(List.of("Expand", "Collapse"), labels(h), "still on the menu on a leaf");
-            assertFalse(enabled(h, "Expand"), "which has nothing to expand");
-            assertFalse(enabled(h, "Collapse"), "and nothing to collapse");
+            assertEquals(List.of("Expand All", "Collapse All"), labels(h), "still on the menu on a leaf");
+            assertFalse(enabled(h, "Expand All"), "which has nothing to expand");
+            assertFalse(enabled(h, "Collapse All"), "and nothing to collapse");
             tree.close();
         }
     }
@@ -180,11 +180,11 @@ class TreeActionsTest {
             h.frame();
 
             rightClickRow(h, tree, "src");
-            assertEquals(List.of("Expand", "Collapse"), labels(h),
+            assertEquals(List.of("Expand All", "Collapse All"), labels(h),
                     "not on the menu at all for a row the command has no business on");
 
             rightClickRow(h, tree, "main");
-            assertEquals(Arrays.asList("Expand", "Collapse", null, "Delete"), labels(h),
+            assertEquals(Arrays.asList("Expand All", "Collapse All", null, "Delete"), labels(h),
                     "behind a rule, after the tree's own");
             assertFalse(enabled(h, "Delete"), "shown and greyed: it belongs on this row, it just does not apply");
 
@@ -194,6 +194,51 @@ class TreeActionsTest {
             choose(h, "Delete");
             assertEquals(List.of(new TreeView.Chosen(tree.address(), "delete", "App.java")), chosen,
                     "announced with the id and the item it was chosen on");
+            tree.close();
+        }
+    }
+
+    /**
+     * Actions declared under one label are the lines of one submenu, standing where the first of them was declared;
+     * an entry hides or greys a line in it as it would on the menu, and a submenu with every line hidden is not there.
+     */
+    @Test
+    void actionsUnderOneLabelAreOneSubmenu() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            MapSource source = new MapSource() {
+                @Override
+                public TreeView.Entry entry(String item) {
+                    TreeView.Entry entry = super.entry(item);
+                    if (item.equals("src")) {
+                        return entry.hides("new-file", "new-folder");
+                    }
+                    return item.equals("docs") ? entry.greys("new-folder") : entry;
+                }
+            };
+            TreeView<String> tree = Listing.tree(h, source)
+                    .action(MenuAction.of("open", "Open"))
+                    .action(MenuAction.of("new-file", "File…").under("New"))
+                    .action(MenuAction.of("copy-path", "Copy path"))
+                    .action(MenuAction.of("new-folder", "Folder…").under("New"));
+            List<TreeView.Chosen> chosen = hear(h, tree);
+            h.gui.root().children(tree.node());
+            h.frame();
+
+            rightClickRow(h, tree, "docs");
+            assertEquals(Arrays.asList("Expand All", "Collapse All", null, "Open", "New", "Copy path"), labels(h),
+                    "one line for the submenu, where its first line was declared");
+            MenuItem submenu = item(h, "New");
+            assertTrue(submenu.submenu());
+            assertEquals(List.of("File…", "Folder…"), submenu.children().stream().map(MenuItem::label).toList());
+            assertFalse(submenu.children().get(1).enabled(), "a line greyed on the entry is greyed in the submenu");
+            menu(h).hide();
+            submenu.children().get(0).action().run();
+            assertEquals(List.of(new TreeView.Chosen(tree.address(), "new-file", "docs")), chosen,
+                    "a line in it is chosen as one on the menu is");
+
+            rightClickRow(h, tree, "src");
+            assertEquals(Arrays.asList("Expand All", "Collapse All", null, "Open", "Copy path"), labels(h),
+                    "a submenu with nothing in it is not offered");
             tree.close();
         }
     }
@@ -242,9 +287,9 @@ class TreeActionsTest {
             h.frame();
 
             rightClickRow(h, tree, "docs");
-            assertEquals(List.of("Collapse"), labels(h));
+            assertEquals(List.of("Collapse All"), labels(h));
             rightClickRow(h, tree, "src");
-            assertEquals(List.of("Expand", "Collapse"), labels(h), "and only off its own");
+            assertEquals(List.of("Expand All", "Collapse All"), labels(h), "and only off its own");
             tree.close();
         }
     }
@@ -282,7 +327,7 @@ class TreeActionsTest {
             };
 
             rightClickRow(h, tree, "l0");
-            choose(h, "Expand");
+            choose(h, "Expand All");
             h.frame();
 
             assertEquals(2, source.fetches.get(), "the walk stopped at the level it was superseded on");
@@ -311,7 +356,7 @@ class TreeActionsTest {
             };
 
             rightClickRow(h, tree, "l0");
-            choose(h, "Expand");
+            choose(h, "Expand All");
             h.frame();
 
             assertEquals(2, source.fetches.get(), "the walk gave way to the flip");

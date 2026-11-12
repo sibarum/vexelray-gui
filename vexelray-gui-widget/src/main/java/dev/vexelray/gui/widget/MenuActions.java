@@ -57,20 +57,43 @@ final class MenuActions {
     }
 
     /**
-     * Put every action on {@code menu} for {@code item}, but those {@code hidden}, greying those {@code greyed}.
-     * Choosing one runs {@code first} (a tree's walk giving way) and then publishes on {@code topic} what
+     * Put every action on {@code menu} for {@code item}, but those {@code hidden}, greying those {@code greyed}; the
+     * actions declared {@link MenuAction#under under} a submenu go in it, and it stands where the first of them was
+     * declared. Choosing one runs {@code first} (a tree's walk giving way) and then publishes on {@code topic} what
      * {@code choice} makes of it.
      */
     <T> void offer(MenuSink menu, Gui gui, Topic<T> topic, Choice<T> choice, String at, Object item, Set<String> hidden,
                    Set<String> greyed, Runnable first) {
+        Set<String> placed = new java.util.HashSet<>();
         for (MenuAction action : actions) {
-            if (!hidden.contains(action.id())) {
-                T chosen = choice.of(at, action.id(), item);
-                menu.item(new MenuItem(action.icon(), action.label(), () -> {
-                    first.run();
-                    gui.bus().publish(topic, chosen);
-                }, !greyed.contains(action.id()), action.mark()).shortcut(action.shortcut()).command(action.command()));
+            if (action.under() == null) {
+                if (!hidden.contains(action.id())) {
+                    menu.item(line(action, gui, topic, choice, at, item, greyed, first));
+                }
+                continue;
+            }
+            if (!placed.add(action.under())) {
+                continue;   // its submenu is on the menu already, made when its first line was reached
+            }
+            List<MenuItem> lines = new java.util.ArrayList<>();
+            for (MenuAction a : actions) {
+                if (action.under().equals(a.under()) && !hidden.contains(a.id())) {
+                    lines.add(line(a, gui, topic, choice, at, item, greyed, first));
+                }
+            }
+            if (!lines.isEmpty()) {
+                menu.item(MenuItem.submenu(action.under(), true, lines));
             }
         }
+    }
+
+    /** {@code action}'s line for {@code item}: choosing it runs {@code first}, then publishes the widget's Chosen. */
+    private static <T> MenuItem line(MenuAction action, Gui gui, Topic<T> topic, Choice<T> choice, String at,
+                                     Object item, Set<String> greyed, Runnable first) {
+        T chosen = choice.of(at, action.id(), item);
+        return new MenuItem(action.icon(), action.label(), () -> {
+            first.run();
+            gui.bus().publish(topic, chosen);
+        }, !greyed.contains(action.id()), action.mark()).shortcut(action.shortcut()).command(action.command());
     }
 }

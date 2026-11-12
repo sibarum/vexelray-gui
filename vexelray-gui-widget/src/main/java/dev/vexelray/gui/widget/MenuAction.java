@@ -25,12 +25,20 @@ import java.util.Objects;
  *                 or null
  * @param command  the command it does, by the name it is bound by ({@link MenuItem#command(String)}), whose chord
  *                 as it is now the line says; or null
+ * @param under    the submenu it is a line of, by that submenu's label ({@link #under(String)}), or null for a line
+ *                 of the item's menu itself
  */
-public record MenuAction(String id, String icon, IconSource mark, String label, Shortcut shortcut, String command) {
+public record MenuAction(String id, String icon, IconSource mark, String label, Shortcut shortcut, String command,
+                         String under) {
 
     /** A command with no chord said beside it. */
     public MenuAction(String id, String icon, IconSource mark, String label) {
-        this(id, icon, mark, label, null, null);
+        this(id, icon, mark, label, null, null, null);
+    }
+
+    /** A command on the item's menu itself, in no submenu. */
+    public MenuAction(String id, String icon, IconSource mark, String label, Shortcut shortcut, String command) {
+        this(id, icon, mark, label, shortcut, command, null);
     }
 
     public MenuAction {
@@ -38,6 +46,9 @@ public record MenuAction(String id, String icon, IconSource mark, String label, 
         Objects.requireNonNull(label, "label");
         if (id.isBlank()) {
             throw new IllegalArgumentException("an action's id is what Chosen names it by, so it has one");
+        }
+        if (under != null && under.isBlank()) {
+            throw new IllegalArgumentException("a submenu is found by its label, so '" + id + "' names one or none");
         }
     }
 
@@ -61,7 +72,7 @@ public record MenuAction(String id, String icon, IconSource mark, String label, 
      * chords are. It binds nothing.
      */
     public MenuAction shortcut(Shortcut chord) {
-        return new MenuAction(id, icon, mark, label, chord, command);
+        return new MenuAction(id, icon, mark, label, chord, command, under);
     }
 
     /**
@@ -69,6 +80,16 @@ public record MenuAction(String id, String icon, IconSource mark, String label, 
      * ({@link MenuItem#command(String)}), following a rebind. It binds nothing.
      */
     public MenuAction command(String bound) {
-        return new MenuAction(id, icon, mark, label, shortcut, bound);
+        return new MenuAction(id, icon, mark, label, shortcut, bound, under);
+    }
+
+    /**
+     * This command as a line of the submenu labelled {@code submenu}: New ▸ File, Open in ▸ Vexplore. Every action
+     * declared under the same label is a line of the one submenu, in the order declared, and the submenu stands where
+     * the first of them was declared. It is left off an item whose entry hides every line of it, and a line greyed on
+     * the entry is greyed in it. Null puts it back on the item's menu itself.
+     */
+    public MenuAction under(String submenu) {
+        return new MenuAction(id, icon, mark, label, shortcut, command, submenu);
     }
 }

@@ -152,6 +152,9 @@ public final class TreeView<T> implements AutoCloseable {
     /** What is ticked, for the tree that is told: applied on the GUI thread, in the frame it arrives. Every one. */
     public static final Topic<Marks> MARKS = Addressed.edge(Marks.class);
 
+    /** What ink rows' labels are in, for the tree that is told: applied on the GUI thread, in the frame it arrives. */
+    public static final Topic<Inks> INKS = Addressed.edge(Inks.class);
+
     /**
      * An item put somewhere in a {@link #reorderable} tree, by a drop or a paste. The tree moves no row for it: the
      * hierarchy is the application's, and it says when it has changed with {@link #REFRESH}. Every one, in order.
@@ -306,6 +309,26 @@ public final class TreeView<T> implements AutoCloseable {
     public record Marks(String tree, Map<Object, Check> marks) implements Addressed {
         public Marks {
             marks = Map.copyOf(marks);
+        }
+
+        /** Routed by the tree's name, as {@link Children} is. */
+        @Override
+        public Object address() {
+            return tree;
+        }
+    }
+
+    /**
+     * What ink the labels of the items named are drawn in at rest: a file's state in version control, a disabled
+     * account, a row that is only a stand-in. The rest keep what they were last told, and an item never named is
+     * {@link Role#INK}; name an item with {@code Role.INK} to put it back. A selected row is drawn in the selection's
+     * ink whatever it was told, and a tree with a hover ink of its own uses it under the pointer. An item with no row
+     * yet is kept for when its row is built, so a level and its inks may arrive in either order. Facts, as an
+     * {@link Entry}'s are, said apart from the listing because they are often learned apart from it, and later.
+     */
+    public record Inks(String tree, Map<Object, Role> inks) implements Addressed {
+        public Inks {
+            inks = Map.copyOf(inks);
         }
 
         /** Routed by the tree's name, as {@link Children} is. */
@@ -635,7 +658,7 @@ public final class TreeView<T> implements AutoCloseable {
             // cut name is read in full.
             this.label = gui.text(name)
                     .textSize(Length.rem(1))
-                    .textColor(Role.INK)
+                    .textColor(inks.getOrDefault(item, Role.INK))
                     .align(TextLayout.HAlign.LEFT, TextLayout.VAlign.MIDDLE);
             this.labelBox = gui.row()
                     .width(Length.grow(1))
@@ -791,9 +814,10 @@ public final class TreeView<T> implements AutoCloseable {
     private final String name;
     /** Where it is on the bus, the GUI's name and {@link #name}: what every message to or from it carries. */
     private final String address;
-    /** The tree's mailboxes for {@link #CHILDREN}, {@link #MARKS} and {@link #REFRESH}, routed by {@link #address}. */
+    /** The mailboxes for {@link #CHILDREN}, {@link #MARKS}, {@link #INKS} and {@link #REFRESH}, by {@link #address}. */
     private final Subscription childrenSub;
     private final Subscription marksSub;
+    private final Subscription inksSub;
     private final Subscription refreshSub;
     private final Node root;
 
@@ -843,6 +867,8 @@ public final class TreeView<T> implements AutoCloseable {
     private volatile boolean checkable;
     /** What the application last said is ticked, by item, whether or not the item has a row. Guarded by this. */
     private final Map<Object, Check> checks = new HashMap<>();
+    /** What ink the application last said each item's label is in, whether or not it has a row. Guarded by this. */
+    private final Map<Object, Role> inks = new HashMap<>();
     /** The form this tree offers its rows as -- per instance, so two trees do not silently accept each other's. */
     private final PayloadType<T> itemType = PayloadType.of("tree-item");
     /** How the drop target is shown; replaceable, defaulted to the theme accent at construction. */
@@ -910,6 +936,7 @@ public final class TreeView<T> implements AutoCloseable {
         this.address = gui.address(name);
         this.childrenSub = gui.mailbox(CHILDREN, address, this::listed);
         this.marksSub = gui.mailbox(MARKS, address, this::marked);
+        this.inksSub = gui.mailbox(INKS, address, this::inked);
         this.refreshSub = gui.mailbox(REFRESH, address, r -> refresh());
         ContextMenu.presentOn(gui);   // rows carry whatever menu the application declares; this shows it
         // Marked plus and minus, the set's own for "open everything under it" and "shut it": the row's chevron
@@ -924,8 +951,8 @@ public final class TreeView<T> implements AutoCloseable {
         // Paste "does not apply right now". Paste is greyed rather than hidden when nothing is in hand, because that
         // genuinely is "not right now", and the line disappearing would leave the user wondering where it went.
         this.lines = List.of(
-                new Line<>(EXPAND, Icon.PLUS, "Expand", this::expandDeep, always, this::canOpen),
-                new Line<>(COLLAPSE, Icon.MINUS, "Collapse", this::collapseDeep, always, this::isOpen),
+                new Line<>(EXPAND, Icon.PLUS, "Expand All", this::expandDeep, always, this::canOpen),
+                new Line<>(COLLAPSE, Icon.MINUS, "Collapse All", this::collapseDeep, always, this::isOpen),
                 new Line<>(CUT, Icon.CUT, "Cut", (item, job) -> take(item, DropEffect.MOVE),
                         item -> offers(DropEffect.MOVE), always),
                 new Line<>(COPY, Icon.COPY, "Copy", (item, job) -> take(item, DropEffect.COPY),
@@ -1095,6 +1122,17 @@ public final class TreeView<T> implements AutoCloseable {
             Row row = rowsByItem.get(mark.getKey());
             if (row != null) {
                 row.paintCheck(mark.getValue());
+            }
+        }
+    }
+
+    /** What ink labels are in has changed: keep it for every item named, and restyle those that have rows. */
+    private synchronized void inked(Inks told) {
+        for (Map.Entry<Object, Role> ink : told.inks().entrySet()) {
+            inks.put(ink.getKey(), ink.getValue());
+            Row row = rowsByItem.get(ink.getKey());
+            if (row != null) {
+                styleLocked(row, row.pointer);
             }
         }
     }
@@ -1894,6 +1932,7 @@ public final class TreeView<T> implements AutoCloseable {
         }
         childrenSub.close();
         marksSub.close();
+        inksSub.close();
         refreshSub.close();
         begin();   // a walk waiting on a level stays waiting; the reply that would resume it no longer arrives
         synchronized (this) {
@@ -2883,7 +2922,9 @@ public final class TreeView<T> implements AutoCloseable {
             // Transparent at rest, so an unselected row is the well it sits in rather than a rectangle of its own.
             boolean over = state != InteractionState.NORMAL && !opener;
             row.rowNode.background(over ? hoverFill : null);
-            row.label.textColor(over ? hoverInk : Role.INK);
+            // At rest in the ink the application gave it; under the pointer in the tree's hover ink, if it has one.
+            Role rest = inks.getOrDefault(row.item, Role.INK);
+            row.label.textColor(over && hoverInk != Role.INK ? hoverInk : rest);
         }
     }
 

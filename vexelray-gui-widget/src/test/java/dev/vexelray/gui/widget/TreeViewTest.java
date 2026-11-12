@@ -382,7 +382,7 @@ class TreeViewTest {
 
             assertEquals("src", tree.selected(), "the row under the pointer became the selection");
             ContextMenu menu = (ContextMenu) Seams.of(h.gui).menus();
-            assertEquals(java.util.Arrays.asList("Expand", "Collapse", null, "Open"),
+            assertEquals(java.util.Arrays.asList("Expand All", "Collapse All", null, "Open"),
                     menu.items().stream().map(MenuItem::label).toList(),
                     "the tree's own two commands, a rule, then what the application declared — and a presenter of "
                             + "the tree's own installing, so the menu is actually on screen");

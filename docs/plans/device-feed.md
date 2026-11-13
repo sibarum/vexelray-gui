@@ -135,7 +135,7 @@ codec's `Player` thread, infrastructure, which takes the queue from the view tha
 | --- | --- |
 | An asked half chooses only a landed slot | `due` and `newest` answer among landed slots; a device feed test with a timeline held back |
 | A slot is never written while a frame may read it | it comes free on the reading frame's fence; a test that holds a frame in flight and asks `take` |
-| No application code runs on the GUI thread, a technique's `record` aside | the processor: a technique is declared, `record` is the engine's contract (open question 2 on whether the processor reads its body) |
+| No application code runs on the GUI thread, a technique's `record` aside | the processor: a technique is declared and never called; `record` is the engine's contract, held by the technique's own tests (open question 2, ruled) |
 | The GUI thread waits for no fence | the host records into the frame; an architecture test that the technique host calls no `renderInto` and no fence wait |
 | The device feed is the only new shared memory | T7.3's allowlist names it beside the feed |
 | A lent queue does not outlive the device | the wiring takes it back in the shutdown order before the device is closed; a test of the order |
@@ -155,16 +155,16 @@ codec's `Player` thread, infrastructure, which takes the queue from the view tha
 
 ## Open questions
 
-1. **Where a technique's bindings are declared.** Growing `RenderTechnique` (vexelray) so a technique says what it
-   binds is the clean answer and changes the SPI every technique implements; a host-side wrapper that binds and then
-   calls `record` keeps the SPI and puts the knowledge in the wrong place. vexelray-framework's TODO said this choice
-   decides whether the work belongs before the freeze. Leaning: grow the SPI, with the four built-in techniques
-   declaring nothing.
-2. **Is a technique checked?** A widget's asked half is library code held by the library's tests; an application's
-   `@Draw` is read by the processor. A technique is the engine's contract, not the frame contract's, and its body is
-   Vulkan calls the step check could not read usefully. Leaning: a technique is library code, an application's own
-   technique is held to the engine's contract by its tests, and the processor checks only that it is declared and not
-   called.
+1. ~~**Where a technique's bindings are declared.**~~ **Ruled 2026-11-13: `RenderTechnique` grows**, so a technique
+   says what it binds, and the four built-in techniques declare nothing. Over a host-side wrapper that binds and then
+   calls `record`, which would have kept the SPI and put the knowledge of what a technique reads outside it. It
+   changes the SPI every technique implements, so the work is before the freeze (vexelray-framework's TODO, *one
+   `Viewport3D` component*, moves to Blocks v1 by its own rule).
+2. ~~**Is a technique checked?**~~ **Ruled 2026-11-13: a technique is library code**, as a widget's asked half is. It
+   is the engine's contract, not the frame contract's, and is held to `techniques.md` by its own tests, an
+   application's own technique included. The processor checks only that a technique is declared and never called
+   directly; it does not read `record`'s body, which is Vulkan calls through Panama the step check could not read
+   usefully.
 3. **Queue family ownership.** A slot written on a compute or transfer queue and read on the graphics queue needs an
    ownership transfer (a release on the producer's side and an acquire on the frame's) or concurrent sharing. Which
    one `KeptSlots` relies on now, and which costs less, is to be measured, not assumed.
@@ -205,4 +205,6 @@ Each step lands on its own and leaves the suites green.
 
 - 2026-11-12, by the author: the simulations' 0.2 port and Rasterware's video wait on the same thing, and it is built
   once for both (this document).
+- 2026-11-13, by the author: `RenderTechnique` grows to declare its bindings (open question 1), and a technique is
+  library code the processor does not read (open question 2).
 - *Proposed, not ruled:* video first (step 3 before step 5), as the simpler producer and the one already on 0.2.

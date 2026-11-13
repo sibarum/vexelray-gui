@@ -8,7 +8,9 @@ import dev.vexelray.gui.core.app.AppWindow;
 import dev.vexelray.gui.core.app.GuiApp;
 import dev.vexelray.gui.core.app.WindowSpec;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.spi.Seams;
 import dev.vexelray.gui.core.style.Role;
+import dev.vexelray.gui.widget.Button;
 import dev.vexelray.gui.widget.TitleBar;
 import dev.vexelray.gui.widget.ZoomKeys;
 import dev.vexelray.os.Decorations;
@@ -26,8 +28,9 @@ import java.util.List;
  * }
  *
  * <p>One window, however often it is asked for: a second click raises the one that is open ({@link AppWindow}).
- * It wears the main window's theme and the same client-drawn chrome every other window of the application
- * does, and its tree outlives it, so a filter typed and the window closed is still there when it comes back.
+ * It wears the main window's theme, following it when it changes, and client-drawn chrome; and its tree outlives it,
+ * so a filter typed and the window closed is still there when it comes back. Its bar has no mark and no app menu: an
+ * application that has those builds the window itself round a {@link KeymapEditor}, as vexelray-framework does.
  * Each opening is a visit: the editor's Cancel puts back what the bindings were when the window opened, and
  * closes it.
  */
@@ -61,13 +64,21 @@ public final class KeymapWindow {
     public static AppWindow window(GuiApp app, Gui main, Keymap keymap) {
         return app.window(KEY, () -> {
             Gui g = new Gui();
+            // The main tree's theme, and every theme it is given after this: a light/dark choice made while the window
+            // is open reaches it, and fades with it. Heard in the main tree's frame; the swap lands in this tree's next.
             g.theme(main.theme());
+            Seams.of(main).onTheme(() -> g.theme(main.theme()));
             // Readable at the zoom the person chose for the window they opened it from, and zoomable on its own.
             float zoom = ZoomKeys.follow(g, main);
             TitleBar bar = new TitleBar(g, WindowControls.NONE, TITLE);
             // Cancel undoes what was changed since this window opened, and closes it.
-            KeymapEditor editor = new KeymapEditor(g, keymap)
-                    .onCancel(() -> app.window(KEY).ifPresent(AppWindow::close));
+            KeymapEditor editor = new KeymapEditor(g, keymap);
+            String cancel = editor.cancelAddress();
+            g.mailbox(Button.PRESSED, pressed -> {
+                if (cancel.equals(pressed.address())) {
+                    app.window(KEY).ifPresent(AppWindow::close);
+                }
+            }, 16);
             // The bar is a child of the root and the padding is the editor's own, below it: a bar inset from the
             // window edge is a bar with a gap the window manager still treats as caption.
             Node body = g.column().width(Length.FILL).height(Length.FILL).children(editor.node());

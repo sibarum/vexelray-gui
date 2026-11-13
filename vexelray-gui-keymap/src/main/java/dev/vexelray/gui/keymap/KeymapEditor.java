@@ -100,8 +100,6 @@ public final class KeymapEditor implements AutoCloseable {
     private volatile String query = "";
     /** What {@link #cancel} goes back to: the bindings as they were at the last {@link #checkpoint}. */
     private volatile Overrides opened;
-    /** Run after the Cancel button has reverted — where a window closes itself. */
-    private volatile Runnable onCancel = () -> { };
     /** The slot being recorded, and the node recording it; both null while nothing is. */
     private Slot recording;
     private Node capture;
@@ -136,7 +134,6 @@ public final class KeymapEditor implements AutoCloseable {
         this.cancel = new Button(gui, "Cancel").enabled(false);
         widgetSubs.add(gui.mailbox(Button.PRESSED, cancel.address(), pressed -> {
             cancel();
-            onCancel.run();
         }));
         cancel.node().role("keymap-cancel");
         Node footer = gui.row().width(Length.FILL).gap(Length.rem(0.5f)).alignItems(AlignItems.CENTER)
@@ -185,12 +182,14 @@ public final class KeymapEditor implements AutoCloseable {
     }
 
     /**
-     * Run {@code then} after the Cancel button has reverted — to close the window the editor is in. The keymap
-     * module's own ({@link KeymapWindow}): code a view would run in the frame (vexelray-framework's threading.md, T7.2).
+     * The Cancel button's address. Whoever holds the window the editor is in hears {@code Button.PRESSED} with this
+     * address and closes it. The address already has the editor's own mailbox (one per address), so the host opens a
+     * mailbox on the topic and compares ({@code pressed.address()}). A message rather than a callback,
+     * so the window's host need not be this module: {@link KeymapWindow} hears it, and so does vexelray-framework's
+     * key-bindings window, which is one of the framework's own windows (threading.md, T7.2).
      */
-    KeymapEditor onCancel(Runnable then) {
-        this.onCancel = then == null ? () -> { } : then;
-        return this;
+    public String cancelAddress() {
+        return cancel.address();
     }
 
     /** The chip for {@code action}'s {@code index}th chord ({@code -1}: its {@code +}), as last rendered. */

@@ -2,6 +2,7 @@ package dev.vexelray.gui.keymap;
 
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.input.Shortcut;
+import dev.vexelray.gui.widget.Button;
 import org.junit.jupiter.api.Test;
 import sibarum.tactroller.api.Key;
 import sibarum.tactroller.api.Modifier;
@@ -167,6 +168,31 @@ class KeymapEditorTest {
 
             assertEquals(List.of(CTRL_S), f.save().chords(), "the recording is undone");
             assertEquals(List.of(CTRL_K), f.open().chords(), "back to the checkpoint, not to the defaults");
+        }
+    }
+
+    /**
+     * The Cancel press reaches the editor, which reverts, and the window's host too, which closes the window: the host
+     * hears it as a message on the topic, beside the editor's own mailbox on the address.
+     */
+    @Test
+    void theCancelPressRevertsAndIsHeardByTheWindowsHost() {
+        try (Headless h = new Headless()) {
+            Fixture f = fixture(h);
+            List<String> host = new ArrayList<>();
+            String cancel = f.editor().cancelAddress();
+            h.gui.mailbox(Button.PRESSED, pressed -> {
+                if (cancel.equals(pressed.address())) {
+                    host.add("close");
+                }
+            }, 16);
+            f.keys().bind(f.save(), List.of(CTRL_K));
+
+            h.bus.publish(Button.PRESSED, new Button.Pressed(cancel));
+            h.frame();
+
+            assertEquals(List.of(CTRL_S), f.save().chords(), "the editor heard it, and put Save back");
+            assertEquals(List.of("close"), host, "and the host heard it once, to close the window");
         }
     }
 }

@@ -10,6 +10,7 @@ import dev.vexelray.gui.demo.chapter.ImageChapter;
 import dev.vexelray.gui.demo.chapter.LayoutChapter;
 import dev.vexelray.gui.demo.chapter.MotionChapter;
 import dev.vexelray.gui.demo.chapter.PlotChapter;
+import dev.vexelray.gui.demo.chapter.ProgressChapter;
 import dev.vexelray.gui.demo.chapter.TableChapter;
 import dev.vexelray.gui.demo.chapter.TextChapter;
 import dev.vexelray.gui.demo.chapter.IconsChapter;
@@ -45,6 +46,7 @@ public final class Gallery {
                 new CardsChapter(),
                 new TableChapter(),
                 new ChooserChapter(),
+                new ProgressChapter(),
                 new FocusChapter(),
                 new UndoChapter(),
                 new DrawChapter(),

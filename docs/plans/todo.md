@@ -765,8 +765,14 @@ of doing this first was that fifteen components should not each remember their o
 
 ### 4.6 Status
 
-- **`Progress`,** determinate and indeterminate. Deliberately distinct from `Cue`, which is one-shot by design; a
-  long operation has a value that changes and usually a cancel beside it.
+- ~~**`Progress`,**~~ **Done (2026-11-12), for Rasterware's conversions and the installer.** Determinate (`show(f)`,
+  `show(done, total)`) and indeterminate (`indeterminate()`, or a total of zero). Shown, never chosen: it publishes
+  nothing and records no undo. The fill is translated, so a value lays nothing out, and a value under half a pixel
+  from the last drawn is held, so a job reporting thousands of times costs frames by track width, not by report count.
+  The sweep is an asked half paced at ~60 fps that asks nothing out of the tree or out of sight; reduced motion is a
+  still wash. **The Cancel stays the application's** (a `Button` beside it), because what cancelling means is the
+  job's. Demo: the Progress chapter. Original note: determinate and indeterminate. Deliberately distinct from `Cue`,
+  which is one-shot by design; a long operation has a value that changes and usually a cancel beside it.
 - **`Toasts`.** A non-modal transient stack — the same ordering problem `ModalQueue` already solves, with a
   timeout and no scrim.
 - ~~**`StatusBar` and `Breadcrumb`.**~~ **Done, but as projections of what the caller hands them, not of the read model** -- the question below is still open: whether `SemanticSnapshot` and `nav.Address` could have supplied them. Original note: both are projections of state that already exists (`SemanticSnapshot`,

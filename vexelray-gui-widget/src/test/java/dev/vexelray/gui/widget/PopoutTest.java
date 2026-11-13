@@ -236,6 +236,54 @@ class PopoutTest {
         }
     }
 
+    /** A choice of look made while the panel is out reaches the window it is in, not only the window it came from. */
+    @Test
+    void theWindowTreeFollowsTheHostsTheme() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Popout panel = dockRight(h, h.gui.column(), (gui, into) -> into.append(gui.text("outline")));
+            h.frame();
+            panel.buildAway();
+            assertEquals(dev.vexelray.gui.core.style.Theme.DARK, panel.away().theme());
+
+            h.gui.theme(dev.vexelray.gui.core.style.Theme.LIGHT);
+            h.frame();   // the host hears its own swap in its frame, and hands it on
+
+            assertEquals(dev.vexelray.gui.core.style.Theme.LIGHT, panel.away().theme());
+        }
+    }
+
+    /**
+     * The window's bar wears the host window's: its mark built in the window's own tree, its About line and its tools,
+     * and no wordmark, as a window that belongs to another wears it; and it keeps wearing them as they change.
+     */
+    @Test
+    void theWindowsBarWearsTheHostWindowsMarkAndAppMenu() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            TitleBar hostBar = new TitleBar(h.gui, dev.vexelray.gui.core.WindowControls.NONE, "Host");
+            hostBar.made(g -> g.box().size(Length.dp(16), Length.dp(16)));
+            hostBar.wordmark("Host");
+            Runnable about = () -> { };
+            hostBar.onMark("About Host", about);
+            dev.vexelray.gui.core.WindowInstrument shot = dev.vexelray.gui.core.WindowInstrument.screenshot();
+            hostBar.instruments(List.of(shot));
+            Popout panel = dockRight(h, h.gui.column(), (gui, into) -> into.append(gui.text("outline")));
+            h.frame();
+            panel.buildAway();
+
+            TitleBar bar = panel.awayBar();
+            assertNotNull(bar.markNode(), "the window wears the application's mark");
+            assertNotSame(hostBar.markNode(), bar.markNode(), "built again, in the window's own tree");
+            assertNotNull(HeadlessGui.find(h.frame(panel.away()), bar.markNode()), "and drawn there");
+            assertEquals(List.of(shot), bar.instruments(), "the same tools, so the same app menu");
+            assertEquals(null, bar.wordmark(), "the mark alone: the window it came out of says the name");
+
+            dev.vexelray.gui.core.WindowInstrument keys =
+                    dev.vexelray.gui.core.WindowInstrument.keymap("Key bindings…", c -> { });
+            hostBar.instruments(List.of(shot, keys));
+            assertEquals(List.of(shot, keys), bar.instruments(), "a tool added to the host's bar later is here too");
+        }
+    }
+
     @Test
     void aPanelWithNoWindowNamedStaysWhereItIs() {
         try (HeadlessGui h = new HeadlessGui()) {

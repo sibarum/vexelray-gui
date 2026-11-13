@@ -165,10 +165,35 @@ public final class TitleBar {
     private volatile boolean restoreOwn;
     private volatile boolean closeOwn;
 
+    /**
+     * How this bar's mark is built in a tree, so a bar that {@link #wear wears} this one can build it in its own: set by
+     * {@link #icon(GuiApp, Icon)} and {@link #icon(dev.vexelray.gui.core.ImageSdg)}; null for none, and for a node the
+     * caller built ({@link #icon(Node)}), which belongs to one tree and cannot be built again in another.
+     */
+    private volatile java.util.function.Function<Gui, Node> markMaker;
+    /** The maker of the mark this bar shows now, so a wearer rebuilds its mark only when the host's changed. */
+    private volatile java.util.function.Function<Gui, Node> shownMaker;
+    /** The bars wearing this one ({@link #wear}): told whenever its mark, About line or instruments change. */
+    private final java.util.List<TitleBar> wearers = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /**
+     * The first bar built for each tree, so a widget that opens a window of its own from a tree ({@link Popout}) finds the
+     * bar that tree's window wears. Weak both ways: a bar holds its tree, so a strong value would keep the key alive.
+     */
+    private static final java.util.Map<Gui, java.lang.ref.WeakReference<TitleBar>> BARS =
+            java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
+
+    /** The bar of {@code gui}'s window, the first one built in it; null for a tree with none. */
+    static TitleBar of(Gui gui) {
+        java.lang.ref.WeakReference<TitleBar> ref = BARS.get(gui);
+        return ref == null ? null : ref.get();
+    }
+
     /** Build a title bar showing {@code title}, driving {@code controls}. */
     public TitleBar(Gui gui, WindowControls controls, String title) {
         this.gui = gui;
         this.controls = controls == null ? WindowControls.NONE : controls;
+        BARS.putIfAbsent(gui, new java.lang.ref.WeakReference<>(this));
 
         // FAINT, a step under the menus' DIM: in their ink the title read as one more menu, and it is the part of the
         // bar nobody reads.
@@ -342,6 +367,7 @@ public final class TitleBar {
         }
         badges = java.util.Map.copyOf(standing);
         showBadges();
+        dressed();
         return this;
     }
 
@@ -469,6 +495,11 @@ public final class TitleBar {
      * {@link #icon(GuiApp, Icon)} builds it from the {@link Icon} the window itself wears.
      */
     public TitleBar icon(Node node) {
+        return mark(node, null);
+    }
+
+    /** Show {@code node} as the mark, built by {@code maker} (null: the caller's own node), and tell the wearers. */
+    private TitleBar mark(Node node, java.util.function.Function<Gui, Node> maker) {
         if (icon != null) {
             icon.remove();
         }
@@ -476,8 +507,48 @@ public final class TitleBar {
         if (node != null) {
             lockup.insert(node.hitInert(true), 0);
         }
+        markMaker = maker;
+        shownMaker = maker;
         lockupShown();
+        dressed();
         return this;
+    }
+
+    /**
+     * Wear {@code host}'s mark, its About line and its instruments, and keep wearing them as they change: the bar of a
+     * window a widget opens beside the application's own ({@link Popout}), which is still the application and so
+     * carries the same app menu. The mark alone, as a satellite does, with no wordmark: the window it came out of
+     * already says the name. A mark the host's caller built as a node ({@link #icon(Node)}) belongs to that tree and
+     * is not copied; then this bar shows none, and so no app menu.
+     */
+    TitleBar wear(TitleBar host) {
+        if (host == null || host == this) {
+            return this;
+        }
+        host.wearers.add(this);
+        copy(host);
+        return this;
+    }
+
+    /** Take {@code host}'s mark, About line and instruments, changing only what differs, so nothing is rebuilt for nothing. */
+    private void copy(TitleBar host) {
+        java.util.function.Function<Gui, Node> maker = host.markMaker;
+        if (maker != shownMaker) {
+            mark(maker == null ? null : maker.apply(gui), maker);
+        }
+        if (markAction != host.markAction || !java.util.Objects.equals(markTip, host.markTip)) {
+            onMark(host.markTip, host.markAction);
+        }
+        if (!tools.equals(host.tools)) {
+            instruments(host.tools);
+        }
+    }
+
+    /** This bar's mark, About line or instruments changed: every bar wearing it takes them. */
+    private void dressed() {
+        for (TitleBar w : wearers) {
+            w.copy(this);
+        }
     }
 
     /**
@@ -574,6 +645,7 @@ public final class TitleBar {
         this.markTip = tooltip;
         this.markAction = action;
         lockupRegion();
+        dressed();
         return this;
     }
 
@@ -714,11 +786,16 @@ public final class TitleBar {
                 image -> app.texture(rgba(image), image.width(), image.height()));
         Icon uploaded = new Icon(java.util.List.copyOf(sizes.keySet()));
 
-        Node node = gui.box().size(MARK_SIZE, MARK_SIZE).scroll(false, false);
-        // Chosen against the box the layout settled on, which is in pixels and so already carries the scale.
-        Seams.of(gui).onResize(node, computed -> node.image(sizes.get(uploaded.bestFor(
-                Math.round(Math.max(computed.rect().w(), computed.rect().h()))))));
-        return icon(node);
+        // Built by a function of the tree, so a bar wearing this one (wear) builds it in its own from the same
+        // textures, uploaded once here: a texture is the device's, not a tree's.
+        java.util.function.Function<Gui, Node> maker = g -> {
+            Node node = g.box().size(MARK_SIZE, MARK_SIZE).scroll(false, false);
+            // Chosen against the box the layout settled on, which is in pixels and so already carries the scale.
+            Seams.of(g).onResize(node, computed -> node.image(sizes.get(uploaded.bestFor(
+                    Math.round(Math.max(computed.rect().w(), computed.rect().h()))))));
+            return node;
+        };
+        return made(maker);
     }
 
     /**
@@ -730,7 +807,19 @@ public final class TitleBar {
         if (drawing == null) {
             return icon((Node) null);
         }
-        return icon(gui.box().size(MARK_SIZE, MARK_SIZE).scroll(false, false).sdg(drawing));
+        java.util.function.Function<Gui, Node> maker =
+                g -> g.box().size(MARK_SIZE, MARK_SIZE).scroll(false, false).sdg(drawing);
+        return made(maker);
+    }
+
+    /** Show the mark {@code maker} builds, built in this bar's tree, and remember how, for a bar that wears this one. */
+    TitleBar made(java.util.function.Function<Gui, Node> maker) {
+        return mark(maker.apply(gui), maker);
+    }
+
+    /** The mark this bar shows now, or null for none: for a test. */
+    Node markNode() {
+        return icon;
     }
 
     /** {@code image}'s straight {@code 0xAARRGGBB} pixels as the straight RGBA8 bytes a texture takes. */

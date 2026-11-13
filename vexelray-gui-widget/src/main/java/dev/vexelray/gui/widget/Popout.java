@@ -441,14 +441,23 @@ public final class Popout {
      *
      * <p>Built here rather than in the constructor so that a panel never popped costs no nodes. The nodes hold
      * roles, not colours, so nothing here is decided by which theme is in force at the time: the away tree takes
-     * the host's theme as it stands at the first pop, and paints in whatever theme it is given after that.
+     * the host's theme at the first pop and every theme the host is given after it.
+     *
+     * <p><b>Its bar wears the host window's</b> ({@link TitleBar#wear}): the same mark, About line and app menu, so a
+     * screenshot, a key binding or a choice of look is reached from the panel's window as from any other. The mark
+     * alone, with no wordmark, as every window that belongs to another wears it.
      */
     void buildAway() {
         if (awayBody != null) {
             return;   // idempotent: the spec is built once per name, but nothing here depends on that
         }
+        // The host's theme, and every theme it is given after this: a light/dark choice made while the panel is out
+        // reaches it, and fades with it. Heard in the host's frame; the swap lands in the away tree's next.
         away.theme(host.theme());
+        Seams.of(host).onTheme(() -> away.theme(host.theme()));
         this.awayBar = new TitleBar(away, WindowControls.NONE, title);
+        // The mark, About and the app menu the host window's bar carries, as they change: see TitleBar.wear.
+        awayBar.wear(TitleBar.of(host));
         awayBar.addLeading(button(away, IconView.of(away, Icon.DOCK).size(Length.rem(0.875f)).node(),
                 Role.RAISED, WindowRegion.INTERACTIVE, this::dock));
         this.awayBody = away.column()

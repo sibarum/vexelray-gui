@@ -49,6 +49,27 @@ class SplitPaneTest {
         }
     }
 
+    /**
+     * A size given in rem stays rem: zoomed, the pane grows with the type in it, and showing it again after it was
+     * hidden puts it back at that size, not at what the rem came to before the zoom.
+     */
+    @Test
+    void aSizeInRemGrowsWithTheZoomAndComesBackAtItAfterBeingHidden() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Mounted m = mount(h, SplitPane.Orientation.SIDE_BY_SIDE);
+            h.gui.zoom(1.5f);
+            h.frame().frame();
+            assertEquals(240f, m.first().layout().rect().w(), 1f, "ten rem at 16px, zoomed half again");
+
+            m.pane().alone(SplitPane.Pane.SECOND);
+            h.frame();
+            m.pane().alone(null);
+            h.frame().frame();
+            assertEquals(240f, m.first().layout().rect().w(), 1f, "and still ten rem when it comes back");
+            h.gui.zoom(1f);
+        }
+    }
+
     @Test
     void draggingTheDividerMovesTheFirstPaneByTheDisplacement() {
         try (HeadlessGui h = new HeadlessGui()) {

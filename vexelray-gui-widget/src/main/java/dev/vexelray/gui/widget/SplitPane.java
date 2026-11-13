@@ -106,6 +106,12 @@ public final class SplitPane {
     private volatile Length minFirst = Length.rem(6);
     private volatile Length minSecond = Length.rem(6);
     private volatile float sizeDp;
+    /**
+     * The sized pane's size as it was last given: what {@link #size} was told, in its own unit, until a drag makes it
+     * the dp the divider was left at. Placed again whenever the panes are, so a size in rem keeps growing with the zoom
+     * rather than turning into what it came to when it was given.
+     */
+    private volatile Length placed = Length.rem(16);
     private final WidgetName name;
 
     /**
@@ -187,7 +193,7 @@ public final class SplitPane {
     /** Which pane has the explicit size; the other takes what is left. The first, unless this says otherwise. */
     public SplitPane sized(Pane pane) {
         this.sized = pane;
-        place(Length.dp(sizeDp));
+        place(placed);
         return this;
     }
 
@@ -201,7 +207,7 @@ public final class SplitPane {
         firstBox.visible(pane != Pane.SECOND);
         secondBox.visible(pane != Pane.FIRST);
         divider.visible(pane == null);
-        place(Length.dp(sizeDp));
+        place(placed);
         return this;
     }
 
@@ -210,6 +216,7 @@ public final class SplitPane {
         float em = Math.max(1f, gui.rootEmPx());
         this.sizeDp = size.scalarPx(LayoutContext.of(em * 100f, em * 100f), 0f)
                 / Math.max(0.0001f, Seams.of(gui).dpi().value());
+        this.placed = size;
         place(size);
         return this;
     }
@@ -306,7 +313,8 @@ public final class SplitPane {
             wanted = Math.min(hi, Math.max(lo, anchorPx + travelPx));
         }
         this.sizeDp = wanted / dpi;
-        place(Length.dp(sizeDp));
+        this.placed = Length.dp(sizeDp);
+        place(placed);
     }
 
     /** Head for the accent if the pointer is on the divider or dragging it, for the resting colour otherwise. */

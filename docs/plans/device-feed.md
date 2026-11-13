@@ -175,17 +175,67 @@ codec's `Player` thread, infrastructure, which takes the queue from the view tha
    the device. The feed's shape is the same; who writes the slot and on which queue is not. After B, measured against it.
 6. **Several devices.** Not designed for. A feed is on the application's one device; a second device would need the
    feed to say which, and a copy between them.
-7. **The budget that freezes a slow asked half** (frame-contract.md) now has a second customer: a slow technique holds
+7. **A device feed's mips.** Step 0 found the producer's mip chain, built on the CPU, is three quarters of a video
+   frame's cost. Planes (B) carry no mips; a picture drawn well below its size needs them. Either the GPU makes them
+   after the hand-over (a blit chain on the producer's queue, before the timeline value), or the feed says it has none
+   and the canvas samples it as it is. Decided with B, by step 0's numbers repeated.
+8. **The budget that freezes a slow asked half** (frame-contract.md) now has a second customer: a slow technique holds
    the frame the same way, and wants the same freeze and report.
 
 ## Order of work
 
 Each step lands on its own and leaves the suites green.
 
-0. **Measure today.** Video: the codec's video-player demo at 1080p and 2160p, 30 and 60 fps, with the GUI thread's
-   time per upload and the process's CPU; its meter is frame-contract step 5's instrument. The simulations: their 0.1
-   numbers in vexelray-sim-rigid's `physics-timing.md` (frame time at the display's rate, `a step every N ms`, world
-   speed), taken again so the port has a before.
+0. ~~**Measure today.**~~ **Done 2026-11-13**, below. Video: the codec's video-player demo at 1080p and 2160p, 30 and
+   60 fps, with the GUI thread's time per upload and the process's CPU; its meter is frame-contract step 5's
+   instrument. The simulations: their 0.1 numbers in vexelray-sim-rigid's `physics-timing.md` (frame time at the
+   display's rate, `a step every N ms`, world speed), taken again so the port has a before.
+
+   *How:* the laptop (RTX 5070 Ti Laptop, Core Ultra 7 255HX, one 1920 × 1200 display at 144 Hz), each application a
+   background run driven by ottermate, with a JFR recording (`settings=profile`). A window of 20 s between two
+   `mark`s, after warm-up; the probe's rows in it give the frames (`frame`, `frame.present` and the spans of a drawn
+   frame), JFR's samples in it give the threads and `jdk.CPULoad`. Other sessions were building on the machine at the
+   same time (machine load 6 to 42%), so a CPU figure is good to a few percent. The clips are synthetic, `testsrc2`
+   encoded by SVT-AV1 (preset 10, 9 at 2160p; CRF 35; its default GOP of about 5.3 s), 40 s, no sound; the demo opens
+   every clip at a side of 1920 (`Player.SIDE`), so a 2160p clip is decoded at 2160p and scaled down, and what is
+   uploaded is 1920 × 1080 whatever the clip.
+
+   | Clip | Shown | Process CPU | GUI thread, a drawn frame (median / p95) | Upload, GUI thread | Decoder thread |
+   | --- | --- | --- | --- | --- | --- |
+   | 1080p30 | 30.0 fps | 1.27 cores | 2.35 / 4.60 ms, 46 drawn a second | 1.3 ms a frame, 30% of its samples | about 9.6 ms a frame |
+   | 2160p30 | 30.0 fps | 1.66 cores | 2.23 / 4.23 ms, 47 drawn a second | 1.1 ms a frame, 25% | about 9.7 ms a frame |
+   | 1080p60 | **0.0 fps** | 1.39 cores | (nothing to draw) | none | decoding, never handing over |
+   | 2160p60 | **0.0 fps** | 2.18 cores | (nothing to draw) | none | decoding, never handing over |
+
+   What it says:
+   - **The upload is what the plan said it is**: `StreamTexture.Slot.write` under `DeviceImages.fed`, on the GUI
+     thread, about 1.2 ms for each 1080p frame with its mips, a quarter to a third of that thread's work while a video
+     plays. B and A remove all of it.
+   - **The bigger cost is the producer's, and it is mips.** Three quarters of the decoder thread's samples are
+     `MipChain.half`, building each frame's mip chain on the CPU; FFmpeg's decode and conversion are about an eighth.
+     About 10 ms a 1080p frame, so a 60 fps clip at this size has 6.7 ms left in each frame's 16.7 for everything else.
+     B's planes would not take mips with them: a video drawn near its own size needs none, or the GPU can make them.
+     The device feed has to say which (open question 7).
+   - **60 fps at 1080p does not play.** `shown 0.0 fps` while the clock runs, at both sizes: the player hands over
+     its first frame and none after. Read from the code, not proven: the decoder thread falls behind, and once the
+     wanted frame is more than `Footage.RUN_SECONDS` (2 s) ahead it is sought; `Video.seek` is exact, so it decodes
+     from the keyframe, up to 5.3 s of frames here, while the wanted frame moves on again, and it never lands. Step 5's
+     60 fps clips were 960 × 540 and played. A codec bug in its own right (a seek that cannot catch up should give up
+     on exactness), and a cost the device feed would hide but not fix.
+
+   | Demo, on 0.1 | Scenario | Physics | Frames presented (gap p50 / p99 / max) | GUI thread, a frame (median) |
+   | --- | --- | --- | --- | --- |
+   | Rigid | 1000 spheres, 10 × 1 a step | step 7.47 ms (GPU 3.91), picture 3.84; world at 100%, a step every 17.4 ms | 57.1 a second (17.40 / 21.24 / 23.58 ms) | 5.76 ms, of which the draw (`before frame`, `renderInto` and its fence) 4.21 |
+   | Fluid | 3D dam break, 40³, 41,600 particles | 58 steps a world step, 14.29 ms; world at 100%, a step every 17.3 ms | 57.1 a second (17.50 / 21.12 / 22.19 ms) | 5.54 ms: draw 1.47, the panel's layout 2.57 |
+
+   What it says:
+   - **The frame follows the steps, not the display.** Both demos present one frame per step, 57 a second, where
+     `physics-timing.md` recorded 140 to 144 for the rigid demo in stage 4 and 5. The blend between steps (by
+     `Dilated.phase`) is computed every frame and never seen between two steps. Not yet known whether that is the loop
+     drawing only on change (frame-loop.md) since then, or a background run's cloaked window; it is noted in
+     vexelray-sim-rigid's TODO. The port's E keeps the frame off the step either way, and is measured against this.
+   - **The draw holds the GUI thread for its fence**: 4.2 ms of the rigid demo's 5.8 ms frame is `renderInto`, most of
+     it waiting. E is the change that removes it.
 1. **Argue it in vexelray-framework's `threading.md`.** T7.3 names the device feed; T7.6 says where a technique's
    `record` stands (open question 2); the lent queue as a declared service, and its place in the shutdown order.
 2. **The device feed in vexelray-gui**, slots as buffers and RGBA8 images first: landed by timeline, freed by the

@@ -861,6 +861,11 @@ public final class TreeView<T> implements AutoCloseable {
     private final Map<T, Row> rowsByItem = new HashMap<>();
     private final List<Row> visible = new ArrayList<>();
     private Row selected;
+    /**
+     * The row a {@link #revealPath} walk landed on while a level above it was still opening, to be brought on screen
+     * again as each settles ({@link #settleOpen}); null when none is waiting. Guarded by {@code this}.
+     */
+    private Row revealing;
     /** The effects a placement may have, or null until reorderable() is called. */
     private volatile java.util.Set<DropEffect> effects;
     /** Whether checkable() has been called, which is what shows every box. */
@@ -2500,7 +2505,7 @@ public final class TreeView<T> implements AutoCloseable {
                     target = rowsByItem.get(path.getLast());
                 }
                 if (target != null) {
-                    select(target, true);
+                    land(target);
                     reached = true;
                 }
             }
@@ -2635,6 +2640,37 @@ public final class TreeView<T> implements AutoCloseable {
         }
     }
 
+    /**
+     * Where a {@link #revealPath} walk ends: {@code row} selected and on screen. A reveal is a request to see the row,
+     * so one already selected is scrolled to all the same, which {@link #select} would leave. And a level the walk
+     * opened may still be opening, its box shorter than what is in it: the scroll asked now is worked out against
+     * that, and stops short, so the row is kept in {@link #revealing} and asked for again as each level settles.
+     */
+    private void land(Row row) {
+        boolean already;
+        synchronized (this) {
+            already = row == selected;
+        }
+        if (already) {
+            row.rowNode.scrollIntoView();
+        } else {
+            select(row, true);
+        }
+        synchronized (this) {
+            revealing = opening(row) ? row : null;
+        }
+    }
+
+    /** Whether a row above {@code row} is not yet all the way open. Guarded by {@code this}. */
+    private boolean opening(Row row) {
+        for (Row p = row.parent; p != null; p = p.parent) {
+            if (p.openness < 1f) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** Ask for the selected row to be on screen again, without selecting anything or telling anyone. */
     private void revealSelected() {
         Row row;
@@ -2746,6 +2782,18 @@ public final class TreeView<T> implements AutoCloseable {
         row.openness = to;
         row.kidsBox.clip(false).height(Length.AUTO).visible(to > 0f);
         row.turnDisclosure();
+        // A reveal that landed under this row while it opened: now that the row is there, look again. Once, not for
+        // good: it ends when nothing above it is opening, or when the selection has moved on.
+        if (revealing != null && isUnder(revealing, row)) {
+            if (revealing != selected || to < 1f) {
+                revealing = null;
+            } else {
+                revealing.rowNode.scrollIntoView();
+                if (!opening(revealing)) {
+                    revealing = null;
+                }
+            }
+        }
     }
 
     /**

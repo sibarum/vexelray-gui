@@ -318,7 +318,9 @@ application** (ruled 2026-10-30, below): it needs no feed, so it does not wait f
    vex-suite-common's `PictureViewer` is not ported (its view package does not compile on 0.2 for other reasons
    already); the budget that freezes a slow asked half.
 6. **A third witness, not a player:** the fluid simulator's field through a feed, its producer on a declared lane,
-   so the contract is shown to be general rather than shaped round video.
+   so the contract is shown to be general rather than shaped round video. **Taken up 2026-11-12 by
+   [device-feed.md](device-feed.md)**, widened: the simulations' pictures are made on the GPU and video's should be, so
+   both need a feed whose slots are on the device, and the simulations a technique to draw from one.
 
 ## Decided
 

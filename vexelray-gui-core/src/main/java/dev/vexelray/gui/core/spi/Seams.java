@@ -392,6 +392,17 @@ public abstract class Seams {
     public abstract void onWork(Runnable listener);
 
     /**
+     * Run {@code listener} each time the tree's theme is swapped, on the GUI thread, in the frame the swap lands in,
+     * after every node's colours have been reported to the paint motion. Any number of listeners.
+     *
+     * <p><b>Most widgets never need this.</b> A node, a span, a picture mark, a cue or a tint that holds a {@code Role}
+     * is drawn in whichever theme the tree is in, and fades with it, with nothing run. This is for what a widget worked
+     * out <em>from</em> the theme and keeps: which of a layered icon's two variants reads on this page, a colour baked
+     * into a shader's style. Rebuild that here; what it writes lands as any write does, and fades.
+     */
+    public abstract Seams onTheme(Runnable listener);
+
+    /**
      * Install where the pointer is put when this tree asks to carry it — the host's half of
      * {@link Gui#ridePointer}. The same seam as {@link #onPointerLock}: core can say where it wants the pointer and
      * cannot reach an OS to put it there. Until one is installed, a ride moves nothing.

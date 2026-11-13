@@ -20,4 +20,18 @@ public interface IconSource {
     default ImageSdg sdg(float px, Color tint) {
         return ImageSdg.ofField(field(px, tint));
     }
+
+    /**
+     * This icon as a field drawn {@code px} pixels square in {@code tint}, a paint: a {@code Role} follows the theme,
+     * fading with the tree when it is swapped. A field's colour is only its tint, so this is {@link #field(float, Color)}
+     * tinted again.
+     */
+    default ImageField field(float px, dev.vexelray.gui.core.style.Paint tint) {
+        return field(px, tint.in(dev.vexelray.gui.core.style.Theme.DARK)).tint(tint);   // any colour: the tint replaces it
+    }
+
+    /** As {@link #sdg(float, Color)}, the tint a paint: a {@code Role} follows the theme. */
+    default ImageSdg sdg(float px, dev.vexelray.gui.core.style.Paint tint) {
+        return ImageSdg.ofField(field(px, tint));
+    }
 }

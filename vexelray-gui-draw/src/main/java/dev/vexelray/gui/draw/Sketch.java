@@ -9,6 +9,9 @@ import java.util.List;
  * Builds a {@link Picture}. Every method returns {@code this}, so a drawing reads as the sequence of marks it is,
  * and {@link #picture()} takes the immutable value out.
  *
+ * <p>Every mark takes an {@link Ink} or a {@link Color}: a name ({@code Role.INK}, from vexelray-gui-core) the look decides
+ * when the picture is drawn, so it follows a theme swap, or a colour that is the same in every look.
+ *
  * <p>A sketch is a builder and nothing more: it holds no geometry of its own, resolves no units, and knows no
  * colours. What it does hold is the <b>current tag</b> — {@link #tag(String)} stamps a name onto every mark added
  * after it, the same stamping idiom the engine's canvas uses for its clip and its translation, so a renderer can
@@ -39,44 +42,85 @@ public final class Sketch {
     // --- shapes ---------------------------------------------------------------------------------------------
 
     /** A filled rectangle with its top-left at {@code (x, y)}. */
-    public Sketch fill(double x, double y, double w, double h, Color color) {
+    public Sketch fill(double x, double y, double w, double h, Ink color) {
         return add(new Picture.Fill(x, y, w, h, 0, 0, color, tag));
     }
 
+    /** As above, in a fixed colour: the same in every look. */
+    public Sketch fill(double x, double y, double w, double h, Color color) {
+        return fill(x, y, w, h, Ink.of(color));
+    }
+
     /** A filled rounded rectangle. */
-    public Sketch fill(double x, double y, double w, double h, double radius, Color color) {
+    public Sketch fill(double x, double y, double w, double h, double radius, Ink color) {
         return add(new Picture.Fill(x, y, w, h, radius, radius, color, tag));
+    }
+
+    /** As above, in a fixed colour: the same in every look. */
+    public Sketch fill(double x, double y, double w, double h, double radius, Color color) {
+        return fill(x, y, w, h, radius, Ink.of(color));
     }
 
     /** As {@link #fill(double, double, double, double, double, Color)} with independent top and bottom radii. */
     public Sketch fill(double x, double y, double w, double h, double radiusTop, double radiusBottom,
-                       Color color) {
+                       Ink color) {
         return add(new Picture.Fill(x, y, w, h, radiusTop, radiusBottom, color, tag));
     }
 
+    /** As above, in a fixed colour: the same in every look. */
+    public Sketch fill(double x, double y, double w, double h, double radiusTop, double radiusBottom,
+                       Color color) {
+        return fill(x, y, w, h, radiusTop, radiusBottom, Ink.of(color));
+    }
+
     /** A filled circle of radius {@code r} centred at {@code (cx, cy)} — the rounded box with nothing straight left. */
-    public Sketch circle(double cx, double cy, double r, Color color) {
+    public Sketch circle(double cx, double cy, double r, Ink color) {
         return add(new Picture.Fill(cx - r, cy - r, 2 * r, 2 * r, r, r, color, tag));
     }
 
+    /** As above, in a fixed colour: the same in every look. */
+    public Sketch circle(double cx, double cy, double r, Color color) {
+        return circle(cx, cy, r, Ink.of(color));
+    }
+
     /** A {@code width}-px outline inside the edge of the rectangle {@code (x, y, w, h)}. */
-    public Sketch outline(double x, double y, double w, double h, double width, Color color) {
+    public Sketch outline(double x, double y, double w, double h, double width, Ink color) {
         return add(new Picture.Outline(x, y, w, h, 0, 0, width, color, tag));
     }
 
+    /** As above, in a fixed colour: the same in every look. */
+    public Sketch outline(double x, double y, double w, double h, double width, Color color) {
+        return outline(x, y, w, h, width, Ink.of(color));
+    }
+
     /** A {@code width}-px outline inside the edge of the rounded rectangle. */
-    public Sketch outline(double x, double y, double w, double h, double radius, double width, Color color) {
+    public Sketch outline(double x, double y, double w, double h, double radius, double width, Ink color) {
         return add(new Picture.Outline(x, y, w, h, radius, radius, width, color, tag));
     }
 
+    /** As above, in a fixed colour: the same in every look. */
+    public Sketch outline(double x, double y, double w, double h, double radius, double width, Color color) {
+        return outline(x, y, w, h, radius, width, Ink.of(color));
+    }
+
     /** An outlined circle: the ring of a marker, without a fill under it. */
-    public Sketch ring(double cx, double cy, double r, double width, Color color) {
+    public Sketch ring(double cx, double cy, double r, double width, Ink color) {
         return add(new Picture.Outline(cx - r, cy - r, 2 * r, 2 * r, r, r, width, color, tag));
     }
 
+    /** As above, in a fixed colour: the same in every look. */
+    public Sketch ring(double cx, double cy, double r, double width, Color color) {
+        return ring(cx, cy, r, width, Ink.of(color));
+    }
+
     /** A line at any angle, {@code thickness} px wide, round-capped. */
-    public Sketch line(double x0, double y0, double x1, double y1, double thickness, Color color) {
+    public Sketch line(double x0, double y0, double x1, double y1, double thickness, Ink color) {
         return add(new Picture.Line(x0, y0, x1, y1, thickness, color, tag));
+    }
+
+    /** As above, in a fixed colour: the same in every look. */
+    public Sketch line(double x0, double y0, double x1, double y1, double thickness, Color color) {
+        return line(x0, y0, x1, y1, thickness, Ink.of(color));
     }
 
     /**
@@ -84,7 +128,7 @@ public final class Sketch {
      * curve is. One mark per segment, so the picture stays a flat list and a consumer needs no new operation; the
      * round caps make the joints look joined.
      */
-    public Sketch polyline(double[] xs, double[] ys, double thickness, Color color) {
+    public Sketch polyline(double[] xs, double[] ys, double thickness, Ink color) {
         if (xs.length != ys.length) {
             throw new IllegalArgumentException("polyline xs/ys length mismatch: " + xs.length + " vs " + ys.length);
         }
@@ -94,9 +138,19 @@ public final class Sketch {
         return this;
     }
 
+    /** As above, in a fixed colour: the same in every look. */
+    public Sketch polyline(double[] xs, double[] ys, double thickness, Color color) {
+        return polyline(xs, ys, thickness, Ink.of(color));
+    }
+
     /** A run of text starting at {@code x} with its baseline at {@code y}. */
-    public Sketch text(String text, double x, double y, double sizePx, Color color) {
+    public Sketch text(String text, double x, double y, double sizePx, Ink color) {
         return add(new Picture.Text(text, x, y, sizePx, color, tag));
+    }
+
+    /** As above, in a fixed colour: the same in every look. */
+    public Sketch text(String text, double x, double y, double sizePx, Color color) {
+        return text(text, x, y, sizePx, Ink.of(color));
     }
 
     /**

@@ -80,8 +80,8 @@ public final class AutomationButton {
      * which shows {@code OFF} (or {@code UNAVAILABLE}) until they exist.
      */
     public static WindowInstrument.Lamps lamps(Gui main, Sockets.State control, Sockets.State diagnostics) {
-        return new WindowInstrument.Lamps(lamp(control), lamp(diagnostics), main.theme().color(CONTROL_LAMP),
-                main.theme().color(DIAGNOSTICS_LAMP), main.theme().color(USED_LAMP));
+        // The roles, not their colours now: the lamps follow a theme swap with the rest of the bar.
+        return new WindowInstrument.Lamps(lamp(control), lamp(diagnostics), CONTROL_LAMP, DIAGNOSTICS_LAMP, USED_LAMP);
     }
 
     /** The lamp a state shows; {@code null} for a socket this run cannot open, which shows none. */

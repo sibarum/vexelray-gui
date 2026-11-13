@@ -10,6 +10,7 @@ import dev.vexelray.gui.core.ImageSdg;
 import dev.vexelray.gui.core.LayeredIcon;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.layout.Length;
+import dev.vexelray.gui.core.style.Paint;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.shadelets.Effects;
 import dev.vexelray.shadelets.OutlineStyle;
@@ -59,6 +60,8 @@ public final class IconView {
     private volatile IconSize forced;
     private volatile float px;
     private volatile Length side = Length.rem(1f);
+    /** Whether this view has asked to be painted again on a theme swap: asked once, the first time it needs to. */
+    private volatile boolean followsTheme;
 
     private IconView(Gui gui, IconSource icon) {
         this.gui = gui;
@@ -181,14 +184,23 @@ public final class IconView {
             node.sdg(null);
             return;
         }
+        // What is worked out from the theme rather than named in it (a layered icon's variant for this page, an outline's
+        // colour baked into its look) is worked out again when the theme is swapped. Asked once, and only by a view
+        // that has such a thing, so a list of plain icons adds nothing to the swap.
+        if (!followsTheme && (i instanceof LayeredIcon || outlineRole != null)) {
+            followsTheme = true;
+            Seams.of(gui).onTheme(this::paint);
+        }
         Look effects = ImageSdg.sdgLook(look(side));
         if (i instanceof LayeredIcon layered) {
             node.sdg(layered.sdg(side, LayeredIcon.dark(gui.theme())).look(effects));
             return;
         }
-        Color c = color != null ? color : gui.theme().color(role);
-        ImageSdg drawing = forced != null && i instanceof BakedIcon set ? ImageSdg.ofField(set.field(forced, c))
-                : i.sdg(side, c);
+        // The tint as a paint: a role is drawn in whichever theme is drawing, and fades with it when it is swapped. The
+        // drawing is built in a placeholder colour, and every layer in the tint role is then painted in that paint.
+        Paint c = color != null ? Paint.of(color) : role;
+        ImageSdg drawing = forced != null && i instanceof BakedIcon set ? ImageSdg.ofField(set.field(forced, c.in(gui.theme())))
+                : i.sdg(side, c.in(gui.theme()));
         node.sdg(drawing.tint(c).look(effects));
     }
 

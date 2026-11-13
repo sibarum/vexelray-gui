@@ -2,6 +2,7 @@ package dev.vexelray.gui.widget;
 
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.layout.NodeLayout;
+import dev.vexelray.gui.core.style.Paint;
 import dev.vexelray.gui.draw.Picture;
 
 import java.util.ArrayList;
@@ -145,8 +146,18 @@ public interface Cue {
      *
      * @param color the line's colour, at the alpha it should have at its brightest; the glow derives from it
      */
-    static Cue scanline(Color color) {
+    static Cue scanline(Paint color) {
         return scanline(color, 0.6f, 0.08f);
+    }
+
+    /** A scanline in a fixed colour, the same in every theme. */
+    static Cue scanline(Color color) {
+        return scanline(Paint.of(color));
+    }
+
+    /** As {@link #scanline(Paint, float, float)}, in a fixed colour. */
+    static Cue scanline(Color color, float trail, float core) {
+        return scanline(Paint.of(color), trail, core);
     }
 
     /**
@@ -154,7 +165,7 @@ public interface Cue {
      * the same cue reads the same on a one-line field and on a panel, and it survives a zoom without being
      * rebuilt — the box it is handed is already in the pixels the layout just resolved.
      */
-    static Cue scanline(Color color, float trail, float core) {
+    static Cue scanline(Paint color, float trail, float core) {
         return (t, box) -> {
             if (box.isEmpty()) {
                 return Picture.EMPTY;
@@ -178,7 +189,7 @@ public interface Cue {
                 // their own.
                 float k = (i + 1f) / TRAIL_BANDS;
                 marks.add(new Picture.Fill(0f, head - trailH + band * i, box.w(), band + 0.5f, 0f, 0f,
-                        Color.withAlpha(color, color.a() * k * k * 0.55f), "cue-scanline-trail"));
+                        color.alpha(k * k * 0.55f), "cue-scanline-trail"));
             }
             marks.add(new Picture.Fill(0f, head, box.w(), coreH, 0f, 0f, color, "cue-scanline"));
             return new Picture(marks);
@@ -194,12 +205,12 @@ public interface Cue {
      * read as a flash: a symmetric fade in and out reads as something appearing, which invites a look at what it
      * <em>is</em>, and there is nothing there to look at.
      */
-    static Cue wash(Color color) {
+    static Cue wash(Paint color) {
         return wash(color, 0.15f);
     }
 
     /** A wash with its attack named, as a fraction of the duration. */
-    static Cue wash(Color color, float attack) {
+    static Cue wash(Paint color, float attack) {
         return (t, box) -> {
             if (box.isEmpty()) {
                 return Picture.EMPTY;
@@ -207,7 +218,7 @@ public interface Cue {
             float a = envelope((float) t, attack);
             return a <= 0f ? Picture.EMPTY : Picture.of(new Picture.Fill(
                     0f, 0f, box.w(), box.h(), box.cornerTopPx(), box.cornerBottomPx(),
-                    Color.withAlpha(color, color.a() * a), "cue-wash"));
+                    color.alpha(a), "cue-wash"));
         };
     }
 
@@ -220,12 +231,12 @@ public interface Cue {
      * <p>It hugs the border box, matching the corners it was handed, and it draws over the node's real border —
      * so a field keeps its outline and briefly wears another, rather than appearing to change shape.
      */
-    static Cue ring(Color color) {
+    static Cue ring(Paint color) {
         return ring(color, 2);
     }
 
     /** A ring with its pulse count named. Every pulse starts and ends at nothing, so the cue ends invisible. */
-    static Cue ring(Color color, int pulses) {
+    static Cue ring(Paint color, int pulses) {
         int n = Math.max(1, pulses);
         return (t, box) -> {
             if (box.isEmpty()) {
@@ -239,7 +250,7 @@ public interface Cue {
             float width = Math.max(1.5f, box.minSide() * 0.06f);
             return Picture.of(new Picture.Outline(
                     0f, 0f, box.w(), box.h(), box.cornerTopPx(), box.cornerBottomPx(), width,
-                    Color.withAlpha(color, color.a() * a), "cue-ring"));
+                    color.alpha(a), "cue-ring"));
         };
     }
 
@@ -259,7 +270,7 @@ public interface Cue {
      * @param x     where it was pressed, px right of the box's left edge
      * @param y     px below its top edge
      */
-    static Cue ripple(Color color, float x, float y) {
+    static Cue ripple(Paint color, float x, float y) {
         return (t, box) -> {
             if (box.isEmpty() || t >= 1d) {
                 return Picture.EMPTY;
@@ -272,18 +283,51 @@ public interface Cue {
             float covering = (float) Math.sqrt(dx * dx + dy * dy);
             float behind = (float) (1d - t);
             float r = covering * (1f - behind * behind * behind);
-            float a = color.a() * behind;
+            float a = behind;
             if (r <= 0f || a <= 0f) {
                 return Picture.EMPTY;
             }
             return Picture.of(new Picture.Fill(px - r, py - r, 2f * r, 2f * r, r, r,
-                    Color.withAlpha(color, a), "cue-ripple"));
+                    color.alpha(a), "cue-ripple"));
         };
     }
 
     /** A ripple from the middle of the box: a press from the keyboard, which has no point. */
-    static Cue ripple(Color color) {
+    static Cue ripple(Paint color) {
         return (t, box) -> ripple(color, box.w() * 0.5f, box.h() * 0.5f).at(t, box);
+    }
+
+    // Every cue above takes a paint: a Role, drawn in the theme the tree is in when each frame of it is, so a cue
+    // playing across a theme swap fades with everything else. These take a colour, the same in every theme.
+
+    /** A wash in a fixed colour. */
+    static Cue wash(Color color) {
+        return wash(Paint.of(color));
+    }
+
+    /** A wash in a fixed colour, its attack named. */
+    static Cue wash(Color color, float attack) {
+        return wash(Paint.of(color), attack);
+    }
+
+    /** A ring in a fixed colour. */
+    static Cue ring(Color color) {
+        return ring(Paint.of(color));
+    }
+
+    /** A ring in a fixed colour, its pulse count named. */
+    static Cue ring(Color color, int pulses) {
+        return ring(Paint.of(color), pulses);
+    }
+
+    /** A ripple in a fixed colour, from where the box was pressed. */
+    static Cue ripple(Color color, float x, float y) {
+        return ripple(Paint.of(color), x, y);
+    }
+
+    /** A ripple in a fixed colour, from the middle of the box. */
+    static Cue ripple(Color color) {
+        return ripple(Paint.of(color));
     }
 
     /** Fast up over {@code attack}, slow down over the rest; 0 at both ends. */

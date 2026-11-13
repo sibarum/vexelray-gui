@@ -71,6 +71,12 @@ public final class Reconciler implements Mutation.Sink {
      */
     private volatile Theme theme = Theme.DARK;
 
+    /** The theme before the last swap, which named colours fade from; null before any. Written beside {@link #theme}. */
+    private volatile Theme before;
+
+    /** Run in the frame each swap lands in, after every node has been reported: see {@link #onTheme}. */
+    private final java.util.List<Runnable> themeListeners = new java.util.concurrent.CopyOnWriteArrayList<>();
+
     /**
      * Report every colour change (background, border colour, text colour) to {@code sink}'s
      * {@link dev.vexelray.gui.core.style.PaintMotion#repainted repainted}, on the thread applying the change. Only a
@@ -838,13 +844,13 @@ public final class Reconciler implements Mutation.Sink {
             // An icon recoloured is a new field with another tint: its tint is its ink, and fades as a text colour does.
             if (key == PropKey.FIELD && before instanceof dev.vexelray.gui.core.ImageField was
                     && value instanceof dev.vexelray.gui.core.ImageField now && !n.paintCuts()) {
-                report(id, PaintMotion.Channel.TEXT, was.tint(), now.tint());
+                report(id, PaintMotion.Channel.TEXT, was.tint().in(theme), now.tint().in(theme));
             }
             // An icon drawn as SDG likewise: its tint, the colour of its paints in the tint role.
             if (key == PropKey.SDG && before instanceof dev.vexelray.gui.core.ImageSdg was
                     && value instanceof dev.vexelray.gui.core.ImageSdg now && was.tint() != null && now.tint() != null
                     && !n.paintCuts()) {
-                report(id, PaintMotion.Channel.TEXT, was.tint(), now.tint());
+                report(id, PaintMotion.Channel.TEXT, was.tint().in(theme), now.tint().in(theme));
             }
             if (key.affectsLayout(before, value)) {
                 layoutDirty = true;
@@ -1038,7 +1044,13 @@ public final class Reconciler implements Mutation.Sink {
         if (was.equals(theme)) {
             return;
         }
+        before = was;
         drawDirty = true;
+        // The named colours no node's channel holds (spans, picture marks, tints) fade on one amount for the whole
+        // tree, from the look before to this one. Let go first, so a swap made while one was fading starts from none.
+        repaints.repainted(PaintMotion.TREE, PaintMotion.Channel.THEME, PaintMotion.NONE_OF_IT, PaintMotion.NONE_OF_IT);
+        repaints.repainted(PaintMotion.TREE, PaintMotion.Channel.THEME, PaintMotion.NONE_OF_IT,
+                PaintMotion.ALL_OF_IT);
         for (RetainedNode n : index.values()) {
             Paint bg = n.background();
             if (bg != null) {
@@ -1053,11 +1065,30 @@ public final class Reconciler implements Mutation.Sink {
                 report(n.id, PaintMotion.Channel.TEXT, ink.in(was), ink.in(theme));
             }
         }
+        for (Runnable listener : themeListeners) {
+            listener.run();
+        }
     }
 
     /** The theme the tree is drawn in: the last one {@link #retheme} applied, {@link Theme#DARK} before any. */
     public Theme theme() {
         return theme;
+    }
+
+    /**
+     * The theme the tree was in before the last swap, which named colours fade from ({@code Channel.THEME}); null
+     * before any swap.
+     */
+    public Theme themeBefore() {
+        return before;
+    }
+
+    /**
+     * Run {@code listener} in the frame each swap lands in, on the GUI thread, after every node has been reported:
+     * for a widget that keeps something it worked out from the theme. What {@code Seams.onTheme} reaches.
+     */
+    public void onTheme(Runnable listener) {
+        themeListeners.add(java.util.Objects.requireNonNull(listener, "listener"));
     }
 
     /**

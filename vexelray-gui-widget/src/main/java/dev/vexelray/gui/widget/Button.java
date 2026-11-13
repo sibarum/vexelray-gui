@@ -324,8 +324,8 @@ public final class Button {
         if (cues == null || !enabled) {
             return;
         }
-        Color ink = gui.theme().color(inkRole);
-        cues.play(node, Cue.ripple(Color.withAlpha(ink, ink.a() * RIPPLE_STRENGTH), x, y));
+        // The role, not its colour now: a ripple playing across a theme swap fades with everything else.
+        cues.play(node, Cue.ripple(inkRole.alpha(RIPPLE_STRENGTH), x, y));
     }
 
     /** A press: {@code at} is the click, or null for a key. */

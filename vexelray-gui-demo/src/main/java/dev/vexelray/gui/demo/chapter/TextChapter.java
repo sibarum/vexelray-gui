@@ -74,9 +74,9 @@ public final class TextChapter implements Chapter {
         // re-runs a highlighter here — the spans are not recomputed at all, which is the difference between a
         // framework that supports syntax highlighting and one that supports a highlighter being written.
         notes.setSpans(List.of(
-                Span.foreground(14, 26, theme.color(Role.ACCENT)),      // "Node handles"
+                Span.foreground(14, 26, Role.ACCENT),      // "Node handles"
                 Span.underline(39, 47),                                 // "messages"
-                Span.background(61, 65, theme.color(Role.LINE))));      // "flex"
+                Span.background(61, 65, Role.LINE)));      // "flex"
 
         // The window's history, which the field records into. Hearing it is a mailbox rather than a poll: the status is
         // announced when it changes and not once per frame, so a counter that is right is also a counter that is free.
@@ -97,17 +97,17 @@ public final class TextChapter implements Chapter {
         // the case with nothing for them to have watched; refusal is a ring, and it gets longer than the other
         // two because it is asking to be read rather than merely noticed.
         Cues cues = stage.cues();
-        Cue accepted = Cue.scanline(theme.color(Role.ACCENT));
-        Cue written = Cue.wash(Color.withAlpha(theme.color(Role.ACCENT), 0.5f));
-        Cue rejected = Cue.ring(theme.color(Role.DANGER))
-                .with(Cue.wash(Color.withAlpha(theme.color(Role.DANGER), 0.45f)));
+        Cue accepted = Cue.scanline(Role.ACCENT);
+        Cue written = Cue.wash(Role.ACCENT.alpha(0.5f));
+        Cue rejected = Cue.ring(Role.DANGER)
+                .with(Cue.wash(Role.DANGER.alpha(0.45f)));
         Timing insistent = Timing.millis(650, Timing.Curve.LINEAR);
 
         TextField line = new TextField(gui, "type here, Enter to log — long text scrolls and is masked at the edge");
         line.node().width(Length.grow(1));
         line.setSpans(List.of(
-                Span.foreground(0, 4, theme.color(Role.ACCENT)),        // "type"
-                Span.background(5, 9, theme.color(Role.LINE)),          // "here"
+                Span.foreground(0, 4, Role.ACCENT),        // "type"
+                Span.background(5, 9, Role.LINE),          // "here"
                 Span.underline(11, 16)));                               // "Enter"
         gui.mailbox(TextField.SUBMITTED, line.address(), submitted -> {
             String s = submitted.text();

@@ -38,9 +38,15 @@ class RethemeTest {
     private static final class Recording implements PaintMotion {
         final List<String> told = new ArrayList<>();
         final List<Color[]> colours = new ArrayList<>();
+        /** What the tree as a whole was told (Channel.THEME, under PaintMotion.TREE): the amount the swap has come. */
+        final List<Float> whole = new ArrayList<>();
 
         @Override
         public void repainted(long node, Channel channel, Color from, Color to) {
+            if (node == PaintMotion.TREE) {
+                whole.add(to.a());
+                return;
+            }
             told.add(channel.name());
             colours.add(new Color[] {from, to});
         }
@@ -105,6 +111,9 @@ class RethemeTest {
             // The themed node's fill, and its text in the theme's ink, which it never stated. The fixed colour is the
             // same in every theme, which is exactly what is wrong with writing one.
             assertEquals(List.of("BACKGROUND", "TEXT"), paint.told);
+            // And the tree as a whole, once: let go, then from none of the way to all of it. What every named colour no
+            // node's channel holds (a span's, a picture mark's, a tint) fades on, so it fades with these.
+            assertEquals(List.of(0f, 1f), paint.whole);
             assertEquals(Theme.DARK.color(Role.PANEL), paint.colours.get(0)[0]);
             assertEquals(Theme.LIGHT.color(Role.PANEL), paint.colours.get(0)[1]);
             assertEquals(Theme.LIGHT.color(Role.INK), paint.colours.get(1)[1]);

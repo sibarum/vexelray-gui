@@ -3,6 +3,7 @@ package dev.vexelray.gui.core;
 import dev.vexelray.canvas.Color;
 import dev.vexelray.canvas.shadelet.CoreShadelets;
 import dev.vexelray.canvas.shadelet.Look;
+import dev.vexelray.gui.core.style.Paint;
 import dev.vexelray.target.ImageHandle;
 
 import java.util.ArrayList;
@@ -25,10 +26,13 @@ import java.util.List;
  * position. A field that animates is a new one each frame with new values, which costs a prop write and nothing else;
  * the texture and the look stay as they are. Empty for a look with none, and for none.
  */
-public record ImageField(ImageHandle texture, ImageRegion region, int side, int spread, Color tint, Look look,
+public record ImageField(ImageHandle texture, ImageRegion region, int side, int spread, Paint tint, Look look,
                          float[] instance) {
 
     private static final float[] NONE = new float[0];
+
+    // The tint is a paint: a Role, drawn in the theme the tree is in and fading with it when it is swapped, or a colour,
+    // the same in every theme. Every form below takes either.
 
     public ImageField {
         if (texture == null || region == null || tint == null || side <= 2 * spread || spread < 0) {
@@ -37,19 +41,40 @@ public record ImageField(ImageHandle texture, ImageRegion region, int side, int 
         instance = instance == null || instance.length == 0 ? NONE : instance.clone();
     }
 
+    /** In a fixed tint, the same in every theme. */
+    public ImageField(ImageHandle texture, ImageRegion region, int side, int spread, Color tint, Look look,
+                      float[] instance) {
+        this(texture, region, side, spread, Paint.of(tint), look, instance);
+    }
+
     /** Drawn by {@code look}, which carries no per-element values. */
-    public ImageField(ImageHandle texture, ImageRegion region, int side, int spread, Color tint, Look look) {
+    public ImageField(ImageHandle texture, ImageRegion region, int side, int spread, Paint tint, Look look) {
         this(texture, region, side, spread, tint, look, NONE);
     }
 
+    /** Drawn by {@code look}, in a fixed tint. */
+    public ImageField(ImageHandle texture, ImageRegion region, int side, int spread, Color tint, Look look) {
+        this(texture, region, side, spread, Paint.of(tint), look, NONE);
+    }
+
     /** The shape alone, in {@code tint}. */
+    public ImageField(ImageHandle texture, ImageRegion region, int side, int spread, Paint tint) {
+        this(texture, region, side, spread, tint, (Look) null);
+    }
+
+    /** The shape alone, in a fixed tint. */
     public ImageField(ImageHandle texture, ImageRegion region, int side, int spread, Color tint) {
-        this(texture, region, side, spread, tint, null);
+        this(texture, region, side, spread, Paint.of(tint), (Look) null);
     }
 
     /** A field filling the whole of {@code texture}. */
-    public ImageField(ImageHandle texture, int side, int spread, Color tint) {
+    public ImageField(ImageHandle texture, int side, int spread, Paint tint) {
         this(texture, ImageRegion.WHOLE, side, spread, tint);
+    }
+
+    /** A field filling the whole of {@code texture}, in a fixed tint. */
+    public ImageField(ImageHandle texture, int side, int spread, Color tint) {
+        this(texture, ImageRegion.WHOLE, side, spread, Paint.of(tint));
     }
 
     /** The shape's own square, in texels. */
@@ -63,6 +88,11 @@ public record ImageField(ImageHandle texture, ImageRegion region, int side, int 
     }
 
     /** This field in another colour: what a state change often is, since the texture stays as it is. */
+    public ImageField tint(Paint tint) {
+        return new ImageField(texture, region, side, spread, tint, look, instance);
+    }
+
+    /** This field in a fixed colour, the same in every theme. */
     public ImageField tint(Color tint) {
         return new ImageField(texture, region, side, spread, tint, look, instance);
     }

@@ -435,7 +435,7 @@ public final class Slider {
         int stride = n < 2 ? 1 : stride(minGap / (travel / (n - 1)));
         float last = h / 2f + l.point(n - 1) * travel;
         Sketch s = new Sketch();
-        Color ink = gui.theme().color(Role.FAINT);
+        Role ink = Role.FAINT;   // a name: the ticks follow a theme swap
         for (int i = 0; i < n; i += stride) {
             float x = h / 2f + l.point(i) * travel;
             // The far end is always drawn, so a regular tick that would crowd it gives way.

@@ -158,6 +158,11 @@ public final class Node {
         return field(texture == null ? null : new ImageField(texture, side, spread, tint));
     }
 
+    /** As above, the tint a paint: a {@code Role} follows the theme, fading with the tree when it is swapped. */
+    public Node field(SampledImage texture, int side, int spread, Paint tint) {
+        return field(texture == null ? null : new ImageField(texture, side, spread, tint));
+    }
+
     /**
      * Draw {@code picture} inside this node's box — a plot, a diagram, a sparkline. Marks are in pixels with
      * {@code (0, 0)} at the box's top-left corner, so a drawing is authored against the box's own size and knows

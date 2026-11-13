@@ -33,16 +33,31 @@ public final class SvgSink implements Picture.Sink {
 
     private final StringBuilder out;
     private final String indent;
+    private final Ink.Resolver inks;
 
-    /** Append elements to {@code out}, each on its own line, indented by {@code indent}. */
+    /** Append elements to {@code out}, each on its own line, indented by {@code indent}. Colours only: a name refuses. */
     public SvgSink(StringBuilder out, String indent) {
+        this(out, indent, Ink.Resolver.FIXED);
+    }
+
+    /**
+     * As above, each named colour ({@link Ink}) written as {@code inks} decides it: a file has one look, so a picture
+     * with names is exported in the theme it should be read in ({@code Paint.resolver(theme)}, in vexelray-gui-core).
+     */
+    public SvgSink(StringBuilder out, String indent, Ink.Resolver inks) {
         this.out = out;
         this.indent = indent == null ? "" : indent;
+        this.inks = inks == null ? Ink.Resolver.FIXED : inks;
     }
 
     /** Append elements to {@code out} with no indentation. */
     public SvgSink(StringBuilder out) {
         this(out, "");
+    }
+
+    @Override
+    public Color color(Ink ink) {
+        return inks.color(ink);
     }
 
     @Override

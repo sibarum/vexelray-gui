@@ -14,8 +14,8 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <pre>{@code
  * Cues cues = new Cues((p, done) -> krono.ramp(Dur.millis(240), Ease.LINEAR, p, done));
- * Cue submitted = Cue.scanline(theme.color(Role.ACCENT));
- * Cue rejected  = Cue.ring(theme.color(Role.DANGER));
+ * Cue submitted = Cue.scanline(Role.ACCENT);   // names, so a cue follows the theme
+ * Cue rejected  = Cue.ring(Role.DANGER);
  *
  * field.onSubmit(line -> { run(line); cues.play(field.node(), submitted); });
  * ...

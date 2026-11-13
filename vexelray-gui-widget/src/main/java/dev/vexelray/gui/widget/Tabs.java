@@ -614,7 +614,7 @@ public final class Tabs {
         }
         float barH = b.rect().h();
         float thick = Math.max(2f, Math.round(barH * 0.07f));
-        Color accent = gui.theme().color(Role.ACCENT);
+        Role accent = Role.ACCENT;   // a name: the indicator follows a theme swap
         bar.overlay(Picture.of(new Picture.Fill(left, barH - thick, Math.max(0f, right - left), thick,
                 thick * 0.5f, 0f, accent, "tab-indicator")));
     }

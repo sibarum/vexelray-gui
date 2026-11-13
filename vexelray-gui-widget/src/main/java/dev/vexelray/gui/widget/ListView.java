@@ -628,7 +628,7 @@ public final class ListView<T> implements AutoCloseable {
                 ? new Rect(1f, 1f, Math.max(0f, at.w() - 2f), Math.max(0f, at.h() - 2f))
                 : new Rect(at.x() - box.x(), at.y() - box.y(), at.w(), at.h());
         painting = true;
-        root.overlay(DropIndicator.of(gui.theme().color(Role.ACCENT)).paint(local, drag.effect()));
+        root.overlay(DropIndicator.of(Role.ACCENT).paint(local, drag.effect()));
     }
 
     /**

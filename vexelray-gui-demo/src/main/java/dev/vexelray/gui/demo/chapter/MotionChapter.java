@@ -80,17 +80,17 @@ public final class MotionChapter implements Chapter {
                 target,
                 Ui.controls(gui,
                         Ui.button(gui, "Accepted", () -> {
-                            stage.cues().play(target, Cue.scanline(theme.color(Role.ACCENT)));
+                            stage.cues().play(target, Cue.scanline(Role.ACCENT));
                             console.good("scanline: the field took the command");
                         }),
                         Ui.button(gui, "Written to", () -> {
                             stage.cues().play(target,
-                                    Cue.wash(Color.withAlpha(theme.color(Role.ACCENT), 0.5f)));
+                                    Cue.wash(Role.ACCENT.alpha(0.5f)));
                             console.note("wash: something changed that the user did not cause");
                         }),
                         Ui.button(gui, "Refused", () -> {
-                            stage.cues().play(target, Cue.ring(theme.color(Role.DANGER))
-                                    .with(Cue.wash(Color.withAlpha(theme.color(Role.DANGER), 0.45f))),
+                            stage.cues().play(target, Cue.ring(Role.DANGER)
+                                    .with(Cue.wash(Role.DANGER.alpha(0.45f))),
                                     insistent);
                             console.refused("ring: refusal, and it runs longer because it asks to be read");
                         })),

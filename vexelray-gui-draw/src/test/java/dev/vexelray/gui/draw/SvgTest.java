@@ -107,7 +107,7 @@ class SvgTest {
         // The one deliberate difference between the targets: the canvas cannot draw an unpainted shape, while an
         // unpainted element with a class is exactly what a host stylesheet is for.
         assertEquals("<rect x=\"0\" y=\"0\" width=\"4\" height=\"4\" fill=\"none\" class=\"band\"/>\n",
-                svg(new Sketch().tag("band").fill(0, 0, 4, 4, null).picture()));
+                svg(new Sketch().tag("band").fill(0, 0, 4, 4, (Color) null).picture()));
     }
 
     @Test

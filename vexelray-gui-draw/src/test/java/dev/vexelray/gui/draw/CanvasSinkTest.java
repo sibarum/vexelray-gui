@@ -74,7 +74,7 @@ class CanvasSinkTest {
         // Not drawn transparent: the vertices of an invisible shape are still vertices, and a picture is allowed
         // to carry a mark whose colour a host stylesheet is expected to supply (see the SVG side).
         Canvas c = canvas();
-        new Sketch().fill(0, 0, 10, 10, null).picture().emitTo(new CanvasSink(c, null));
+        new Sketch().fill(0, 0, 10, 10, (Color) null).picture().emitTo(new CanvasSink(c, null));
         assertEquals(0, c.vertexCount());
     }
 

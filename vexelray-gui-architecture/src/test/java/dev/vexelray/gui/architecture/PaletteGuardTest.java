@@ -52,8 +52,10 @@ class PaletteGuardTest {
             }
         }
         assertEquals(List.of(), violations,
-                "a framework class named a colour instead of a role. Colour comes from Gui.theme(): "
-                        + "gui.theme().color(Role.PANEL), or color(Role.PANEL, state) for hover and press. A shade "
+                "a framework class named a colour instead of a role. Write the role itself, which every API that "
+                        + "takes a colour also takes (Role.PANEL, Role.PANEL.at(state) for hover and press), so it is "
+                        + "drawn in whichever theme the tree is in and follows a swap; a colour resolved from "
+                        + "gui.theme() keeps the look it was resolved in. A shade "
                         + "the vocabulary is missing is a new Role (a lambda over Palette), not a new literal — "
                         + "otherwise a second theme has to fork the widget to exist.");
     }

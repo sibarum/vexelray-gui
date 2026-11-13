@@ -9,7 +9,7 @@ import dev.vexelray.gui.draw.Picture;
  * How a widget shows where a drop would land.
  *
  * <pre>{@code
- * tree.dropIndicator(DropIndicator.of(theme.color(Role.ACCENT)));      // the default, restated
+ * tree.dropIndicator(DropIndicator.of(Role.ACCENT));      // the default, restated: a name, so it follows the theme
  * tree.dropIndicator((where, effect) -> Picture.of(myOwnMark(where))); // or anything at all
  * tree.dropIndicator(DropIndicator.NONE);                              // or nothing
  * }</pre>
@@ -56,11 +56,16 @@ public interface DropIndicator {
      * different kind of mark from anything the row already paints, so it reads immediately as "this one" without
      * having to be brighter than everything else.
      */
-    static DropIndicator of(Color color) {
+    static DropIndicator of(dev.vexelray.gui.draw.Ink color) {
         return (where, effect) -> where.h() <= SEAM_MAX_PX
                 ? Picture.of(new Picture.Fill(where.x(), where.y(), where.w(), where.h(),
                         where.h() / 2f, where.h() / 2f, color))
                 : Picture.of(new Picture.Outline(where.x(), where.y(), where.w(), where.h(),
                         4f, 4f, 2f, color));
+    }
+
+    /** The default in a fixed colour, the same in every theme. A {@code Role} ({@link #of(dev.vexelray.gui.draw.Ink)}) follows it. */
+    static DropIndicator of(Color color) {
+        return of(dev.vexelray.gui.draw.Ink.of(color));
     }
 }

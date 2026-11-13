@@ -27,6 +27,11 @@ class PictureTest {
         private final List<String> ops = new ArrayList<>();
 
         @Override
+        public Color color(Ink ink) {
+            return Ink.Resolver.FIXED.color(ink);
+        }
+
+        @Override
         public void fill(double x, double y, double w, double h, double rTop, double rBottom, Color color,
                          String tag) {
             ops.add("fill " + x + "," + y + " " + w + "x" + h + " r" + rTop + "/" + rBottom + tagged(tag));

@@ -978,7 +978,7 @@ public final class TreeView<T> implements AutoCloseable {
         this.scrolling = Scrollbars.vertical(gui, entries);
         this.rows = scrolling.scroller().node();
         scrolling.node().width(Length.FILL).height(Length.FILL);
-        this.dropIndicator = DropIndicator.of(gui.theme().color(Role.ACCENT));
+        this.dropIndicator = DropIndicator.of(Role.ACCENT);
         // The window's reveal, so it fades as every other one does. Before any row: each attaches as it is built.
         this.unclip = Unclip.of(gui);
 

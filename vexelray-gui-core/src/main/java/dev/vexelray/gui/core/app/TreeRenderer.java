@@ -12,6 +12,7 @@ import dev.vexelray.gui.core.layout.LayoutContext;
 import dev.vexelray.gui.core.model.PropKey;
 import dev.vexelray.gui.core.model.RetainedNode;
 import dev.vexelray.gui.core.style.FocusRing;
+import dev.vexelray.gui.core.style.Paint;
 import dev.vexelray.gui.core.style.PaintMotion;
 import dev.vexelray.gui.core.style.Role;
 import dev.vexelray.gui.core.style.Theme;
@@ -136,6 +137,10 @@ public final class TreeRenderer {
     }
     /** The colour each node is drawn in on its way to the one it was given. */
     private PaintMotion paint = PaintMotion.NONE;
+    /** The theme the tree was in before its last swap, null for none: what a named colour fades from. */
+    private Theme before;
+    /** How far this frame is from {@link #before} to {@link #theme}, 1 once the swap has finished ({@code Channel.THEME}). */
+    private float swap = 1f;
     /**
      * Flat shading ({@code Gui.flatShading}): every box this frame is drawn flat — a lit fill plain, no
      * shadow — and letterpressed text once. Decided here, before a look is chosen, so a flat box asks for one of the
@@ -216,7 +221,7 @@ public final class TreeRenderer {
         LayoutContext ctx = new LayoutContext(gui.rootEmPx(), Seams.of(gui).zoom().value(), Seams.of(gui).dpi().value(),
                 v == null ? 0f : v.width(), v == null ? 0f : v.height());
         emit(node, canvas, faces, gui.drawnTheme(), gui.focusState(), ctx, gui.paintMotion(),
-                gui.flatShading());
+                gui.flatShading(), gui.drawnThemeBefore());
     }
 
     /**
@@ -241,9 +246,22 @@ public final class TreeRenderer {
      */
     public static void emit(RetainedNode node, Canvas canvas, TextFaces faces, Theme theme, FocusState focus,
                             LayoutContext ctx, PaintMotion paint, boolean flat) {
+        emit(node, canvas, faces, theme, focus, ctx, paint, flat, null);
+    }
+
+    /**
+     * As {@link #emit(RetainedNode, Canvas, TextFaces, Theme, FocusState, LayoutContext, PaintMotion, boolean)}, with
+     * {@code before}, the theme the tree was in before its last swap, which every named colour no node's channel holds
+     * fades from ({@code PaintMotion.Channel.THEME}); null for none.
+     */
+    public static void emit(RetainedNode node, Canvas canvas, TextFaces faces, Theme theme, FocusState focus,
+                            LayoutContext ctx, PaintMotion paint, boolean flat, Theme before) {
         TreeRenderer renderer = new TreeRenderer(theme == null ? Theme.DARK : theme, faces, focus, ctx);
         renderer.paint = paint == null ? PaintMotion.NONE : paint;
         renderer.flat = flat;
+        renderer.before = before;
+        renderer.swap = before == null ? 1f
+                : renderer.paint.drawn(PaintMotion.TREE, PaintMotion.Channel.THEME, PaintMotion.ALL_OF_IT).a();
         renderer.top = node;
         renderer.host = node;
         renderer.walk(node, canvas);
@@ -800,7 +818,8 @@ public final class TreeRenderer {
         canvas.pushClip(n.x + transX, n.y + transY, n.w, n.h, Math.max(n.cornerPx, n.cornerBottomPx));
         canvas.pushTranslate(n.x, n.y);
         // Stretched along x if an asked half said so (Drawn.stretch): the marks, not the clip or the box.
-        picture.emitTo(Picture.stretchX(new CanvasSink(canvas, text, alpha, sdgRoles), n.drawnStretch,
+        // Each mark's named colour in this frame's theme, fading with the nodes when it is swapped (resolve).
+        picture.emitTo(Picture.stretchX(new CanvasSink(canvas, text, alpha, sdgRoles, inks), n.drawnStretch,
                 n.drawnStretchX));
         canvas.popTranslate();
         canvas.popClip();
@@ -922,6 +941,27 @@ public final class TreeRenderer {
     }
 
     /**
+     * The colour {@code p} is drawn in this frame, for a paint no node's channel holds: a span's, a picture mark's, a
+     * tint. In this frame's theme, or, while a swap is on its way, that far from its colour in the theme before
+     * ({@code Channel.THEME}), so it fades with the nodes around it. A fixed colour is itself in both, and costs
+     * nothing; null stays null.
+     */
+    Color resolve(dev.vexelray.gui.draw.Ink ink) {
+        if (ink == null) {
+            return null;
+        }
+        Color fixed = ink.fixed();
+        if (fixed != null || !(ink instanceof Paint p)) {
+            return fixed;
+        }
+        Color now = p.in(theme);
+        return swap >= 1f || before == null ? now : Paint.blend(p.in(before), now, swap);
+    }
+
+    /** {@link #resolve}, as a picture's sink asks it: made once per renderer, so a picture costs no new one. */
+    private final dev.vexelray.gui.draw.Ink.Resolver inks = this::resolve;
+
+    /**
      * {@code n}'s own opacity on its way to the one it was given ({@code Channel.OPACITY}): asked only of a node that
      * stated one, since one that never did has never changed it.
      */
@@ -989,11 +1029,11 @@ public final class TreeRenderer {
             if (field.look() == null) {
                 canvas.field(n.x, n.y, n.w, n.h, field.texture(), cell.u0(), cell.v0(), cell.u1(), cell.v1(),
                         field.side(), field.spread(), field.margin(),
-                        fade(drawn(n, PaintMotion.Channel.TEXT, field.tint())));
+                        fade(drawn(n, PaintMotion.Channel.TEXT, resolve(field.tint()))));
             } else {
                 canvas.field(n.x, n.y, n.w, n.h, field.texture(), cell.u0(), cell.v0(), cell.u1(), cell.v1(),
                         field.side(), field.spread(), field.margin(),
-                        fade(drawn(n, PaintMotion.Channel.TEXT, field.tint())), field.look(),
+                        fade(drawn(n, PaintMotion.Channel.TEXT, resolve(field.tint()))), field.look(),
                         field.instance());
             }
         }
@@ -1004,7 +1044,7 @@ public final class TreeRenderer {
             // An icon's tint fades as a field's did (Channel.TEXT); the subtree's opacity is the drawing's. A drawing with no
             // tint of its own takes the node's text colour as one, a paint resolved in this frame's theme, so a mark lit in
             // "tint" follows a theme swap and the pointer as a text wordmark does.
-            Color tint = sdg.tint() != null ? sdg.tint() : n.textColor(theme);
+            Color tint = sdg.tint() != null ? resolve(sdg.tint()) : n.textColor(theme);
             sdgRoles.tint = tint == null ? null : drawn(n, PaintMotion.Channel.TEXT, tint);
             canvas.sdg(sdg.drawing(), sdg.pages().toArray(new ImageHandle[0]), n.x, n.y, n.w, n.h, sdgRoles, alpha,
                     sdg.look(), sdg.instanceUnsafe());
@@ -1224,7 +1264,7 @@ public final class TreeRenderer {
             java.util.List<Span> lineSpans = spansOn(visibleSpans, line.start(), line.end());
             for (Span sp : lineSpans) {
                 if (sp.bg() != null) {
-                    fillLineRange(line, sp.start(), sp.end(), fade(sp.bg()), canvas);
+                    fillLineRange(line, sp.start(), sp.end(), fade(resolve(sp.bg())), canvas);
                 }
             }
             if (selHi > selLo) {
@@ -1235,7 +1275,7 @@ public final class TreeRenderer {
             for (Span sp : lineSpans) {
                 if (sp.underline()) {
                     underlineLineRange(n, line, sp.start(), sp.end(),
-                            fade(sp.fg() != null ? sp.fg() : inkOf(n)), canvas, text);
+                            fade(sp.fg() != null ? resolve(sp.fg()) : inkOf(n)), canvas, text);
                 }
             }
         }
@@ -1390,13 +1430,13 @@ public final class TreeRenderer {
     }
 
     /** The effective foreground colour at character {@code i}: the last fg span covering it, else {@code base}. */
-    private static Color fgAt(java.util.List<Span> spans, int i, Color base) {
-        Color fg = base;
+    private Color fgAt(java.util.List<Span> spans, int i, Color base) {
+        Paint fg = null;
         for (Span sp : spans) {
             if (sp.fg() != null && sp.covers(i)) {
                 fg = sp.fg();
             }
         }
-        return fg;
+        return fg == null ? base : resolve(fg);
     }
 }

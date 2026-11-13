@@ -1,6 +1,8 @@
 package dev.vexelray.gui.core;
 
 import dev.vexelray.canvas.Color;
+import dev.vexelray.gui.core.style.Paint;
+import dev.vexelray.gui.draw.Ink;
 import dev.vexelray.gui.core.layout.Rect;
 import dev.vexelray.gui.draw.Picture;
 
@@ -55,7 +57,7 @@ import java.util.function.Consumer;
  * @param place   which part of the app menu its section belongs in ({@link Place}); {@code null} is {@link Place#TOOL}
  */
 public record WindowInstrument(String role, String tooltip,
-                               java.util.function.BiFunction<Rect, Color, Picture> mark,
+                               java.util.function.BiFunction<Rect, Paint, Picture> mark,
                                Consumer<WindowControls> action, Live live,
                                java.util.function.BiConsumer<WindowControls, dev.vexelray.gui.core.input.MenuSink> menu,
                                IconSource icon, java.util.function.BooleanSupplier badge, Place place) {
@@ -86,7 +88,7 @@ public record WindowInstrument(String role, String tooltip,
     }
 
     /** An instrument with an icon and a badge, among the tools. */
-    public WindowInstrument(String role, String tooltip, java.util.function.BiFunction<Rect, Color, Picture> mark,
+    public WindowInstrument(String role, String tooltip, java.util.function.BiFunction<Rect, Paint, Picture> mark,
                             Consumer<WindowControls> action, Live live,
                             java.util.function.BiConsumer<WindowControls, dev.vexelray.gui.core.input.MenuSink> menu,
                             IconSource icon, java.util.function.BooleanSupplier badge) {
@@ -94,20 +96,20 @@ public record WindowInstrument(String role, String tooltip,
     }
 
     /** An instrument with no icon of its own in the app menu, and never a badge. */
-    public WindowInstrument(String role, String tooltip, java.util.function.BiFunction<Rect, Color, Picture> mark,
+    public WindowInstrument(String role, String tooltip, java.util.function.BiFunction<Rect, Paint, Picture> mark,
                             Consumer<WindowControls> action, Live live,
                             java.util.function.BiConsumer<WindowControls, dev.vexelray.gui.core.input.MenuSink> menu) {
         this(role, tooltip, mark, action, live, menu, null, null);
     }
 
     /** An instrument whose mark changes only with its box. */
-    public WindowInstrument(String role, String tooltip, java.util.function.BiFunction<Rect, Color, Picture> mark,
+    public WindowInstrument(String role, String tooltip, java.util.function.BiFunction<Rect, Paint, Picture> mark,
                             Consumer<WindowControls> action) {
         this(role, tooltip, mark, action, null, null);
     }
 
     /** An instrument that acts when clicked. */
-    public WindowInstrument(String role, String tooltip, java.util.function.BiFunction<Rect, Color, Picture> mark,
+    public WindowInstrument(String role, String tooltip, java.util.function.BiFunction<Rect, Paint, Picture> mark,
                             Consumer<WindowControls> action, Live live) {
         this(role, tooltip, mark, action, live, null);
     }
@@ -182,7 +184,12 @@ public record WindowInstrument(String role, String tooltip,
      * of the dot that says something connected earlier. A {@code null} lamp (a socket this run cannot open) draws
      * nothing.
      */
-    public record Lamps(Lamp control, Lamp diagnostics, Color controlColor, Color diagnosticsColor, Color used) {
+    public record Lamps(Lamp control, Lamp diagnostics, Paint controlColor, Paint diagnosticsColor, Paint used) {
+
+        /** In fixed colours, the same in every theme. */
+        public Lamps(Lamp control, Lamp diagnostics, Color controlColor, Color diagnosticsColor, Color used) {
+            this(control, diagnostics, Paint.of(controlColor), Paint.of(diagnosticsColor), Paint.of(used));
+        }
     }
 
     /**
@@ -287,6 +294,11 @@ public record WindowInstrument(String role, String tooltip,
 
     /** One lamp centred in {@code box}, for a panel that shows the same lamp beside a row. */
     public static Picture lamp(Rect box, Lamp lamp, Color color, Color used) {
+        return lamp(box, lamp, Paint.of(color), Paint.of(used));
+    }
+
+    /** One lamp centred in {@code box}, in paints: a {@code Role} follows the theme. */
+    public static Picture lamp(Rect box, Lamp lamp, Paint color, Paint used) {
         double r = Math.min(box.w(), box.h()) * 0.3;
         double cx = box.w() * 0.5;
         double cy = box.h() * 0.5;
@@ -297,8 +309,8 @@ public record WindowInstrument(String role, String tooltip,
     }
 
     /** A title-bar lamp: radius two grid units, {@code gx} from the button's centre, at the bar's stroke. */
-    private static java.util.List<Picture.Mark> lampMarks(CaptionGrid g, double gx, Lamp lamp, Color color,
-                                                          Color used) {
+    private static java.util.List<Picture.Mark> lampMarks(CaptionGrid g, double gx, Lamp lamp, Ink color,
+                                                          Ink used) {
         return lampMarks(lamp, color, used,
                 (d, c) -> g.dot(gx, 0, 4 * d, c),
                 c -> g.outline(gx - 2, -2, 4, 4, 2, c));
@@ -309,9 +321,9 @@ public record WindowInstrument(String role, String tooltip,
      * has gone. Shapes as well as colours, so the states differ for a reader who cannot tell red from grey.
      * {@code disc} draws a filled disc at a fraction of the lamp's radius; {@code ring} the open ring.
      */
-    private static java.util.List<Picture.Mark> lampMarks(Lamp lamp, Color color, Color used,
-                                                          java.util.function.BiFunction<Double, Color, Picture.Mark> disc,
-                                                          java.util.function.Function<Color, Picture.Mark> ring) {
+    private static java.util.List<Picture.Mark> lampMarks(Lamp lamp, Ink color, Ink used,
+                                                          java.util.function.BiFunction<Double, Ink, Picture.Mark> disc,
+                                                          java.util.function.Function<Ink, Picture.Mark> ring) {
         if (lamp == null) {
             return java.util.List.of();
         }
@@ -336,7 +348,7 @@ public record WindowInstrument(String role, String tooltip,
      * a wall socket: a ring with two slots, at caption size, is a pause button.
      */
     /** A bug: head and antennae, a body split down its back, three legs a side kept clear of the lamps. */
-    private static Picture bugMark(Rect box, Color ink) {
+    private static Picture bugMark(Rect box, Paint ink) {
         CaptionGrid g = CaptionGrid.of(box);
         return Picture.of(
                 g.outline(-1.75, -5, 3.5, 3, 1.5, ink),
@@ -352,7 +364,7 @@ public record WindowInstrument(String role, String tooltip,
                 g.line(3, 5, 5.5, 6, ink));
     }
 
-    private static Picture plugMark(Rect box, Color ink) {
+    private static Picture plugMark(Rect box, Paint ink) {
         CaptionGrid g = CaptionGrid.of(box);
         return Picture.of(
                 g.vline(-2, -6, -2.5, ink),
@@ -366,7 +378,7 @@ public record WindowInstrument(String role, String tooltip,
      * are points one stroke square, so the gaps between them survive at 100%; drawn as blocks they ran together into
      * a bar.
      */
-    private static Picture keyboardMark(Rect box, Color ink) {
+    private static Picture keyboardMark(Rect box, Paint ink) {
         CaptionGrid g = CaptionGrid.of(box);
         java.util.List<Picture.Mark> marks = new java.util.ArrayList<>();
         marks.add(g.outline(-8, -5.5, 16, 11, 2, ink));
@@ -384,7 +396,7 @@ public record WindowInstrument(String role, String tooltip,
      * ring in it. Drawn rather than typed — the primary atlas carries no camera glyph, and a mark composed against
      * the button's own box is crisp at every density the window is opened at.
      */
-    private static Picture cameraMark(Rect box, Color ink) {
+    private static Picture cameraMark(Rect box, Paint ink) {
         CaptionGrid g = CaptionGrid.of(box);
         return Picture.of(
                 // The housing first, so its lower edge lies under the body's top edge: one stroke where they meet.
@@ -398,7 +410,7 @@ public record WindowInstrument(String role, String tooltip,
      * The camera recording: the same body, its lens filled solid. A shape rather than a colour, because an instrument
      * does not pick colours and a red dot would be read only by those who see red.
      */
-    private static Picture recordingMark(Rect box, Color ink) {
+    private static Picture recordingMark(Rect box, Paint ink) {
         CaptionGrid g = CaptionGrid.of(box);
         return Picture.of(
                 g.outline(-3, -6, 6, 3, 1, 0, ink),

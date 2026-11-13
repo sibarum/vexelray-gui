@@ -1470,7 +1470,7 @@ public final class Board<T> {
      * step of every animation, so what lands in a frame is one consistent picture.
      */
     private void paint() {
-        Color accent = gui.theme().color(Role.ACCENT);
+        Role accent = Role.ACCENT;   // a name, drawn in whichever theme is drawing
         // Lanes scrolling back go first, so every slot measured below is measured against the offset this batch
         // writes rather than the one the last frame drew.
         for (Deck<T> deck : decks) {
@@ -1609,7 +1609,7 @@ public final class Board<T> {
      * also focused would otherwise wear two accent outlines a few pixels apart. The focus ring comes back when the
      * card has set down.
      */
-    private void paintLift(Card<T> card, Color accent) {
+    private void paintLift(Card<T> card, Role accent) {
         paintPull(card);
         float lift = card.lift.value;
         float rim = Math.max(lift, card.rimFloor);
@@ -1645,6 +1645,6 @@ public final class Board<T> {
         card.carrier.overlay(Picture.of(new Picture.Outline(
                 fr.x() - cr.x(), fr.y() - cr.y(), fr.w(), fr.h(),
                 f.cornerTopPx(), f.cornerBottomPx(), RIM_PX,
-                Color.withAlpha(accent, RIM_ALPHA * rim))));
+                accent.alpha(RIM_ALPHA * rim))));
     }
 }

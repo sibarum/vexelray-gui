@@ -943,7 +943,7 @@ public final class TitleBar {
     /** A caption glyph: drawn on the button's grid, in {@code ink}, over {@code under} (what is behind it). */
     @FunctionalInterface
     private interface Glyph {
-        Picture draw(CaptionGrid grid, Color ink, Color under);
+        Picture draw(CaptionGrid grid, dev.vexelray.gui.core.style.Paint ink, dev.vexelray.gui.core.style.Paint under);
     }
 
     /**
@@ -1025,12 +1025,13 @@ public final class TitleBar {
             if (b == null) {
                 return;
             }
-            Theme theme = gui.theme();
+            // Names, not the colours they are now: each glyph is drawn in whichever theme the bar is in, and follows a
+            // swap with the plate under it, where colours resolved here would keep the look the glyph was authored in.
             CaptionGrid g = CaptionGrid.of(b);
             for (InteractionState s : InteractionState.values()) {
-                Color under = s == InteractionState.NORMAL ? theme.color(Role.CHROME) : plateIn(s).in(theme);
-                Color ink = s == InteractionState.NORMAL ? theme.color(Role.DIM)
-                        : theme.color(danger ? Role.ON_DANGER : Role.INK);
+                dev.vexelray.gui.core.style.Paint under = s == InteractionState.NORMAL ? Role.CHROME : plateIn(s);
+                dev.vexelray.gui.core.style.Paint ink = s == InteractionState.NORMAL ? Role.DIM
+                        : danger ? Role.ON_DANGER : Role.INK;
                 glyphs[s.ordinal()].picture(glyph.draw(g, ink, under));
             }
             show();

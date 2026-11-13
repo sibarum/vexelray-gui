@@ -1388,7 +1388,7 @@ public final class TextField implements AutoCloseable {
             if (m[0] == d.selectionStart() && m[1] == d.selectionEnd()) {
                 current = i;   // the one the caret is on wears the selection, so it does not also wear a wash
             } else {
-                washes.add(Span.background(m[0], m[1], gui.theme().color(Role.SELECTION)));
+                washes.add(Span.background(m[0], m[1], Role.SELECTION));
             }
         }
         findSpans = washes;

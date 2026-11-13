@@ -32,6 +32,7 @@ public final class CanvasSink implements Picture.Sink {
     private final TextLayout text;
     private final float alpha;
     private final Canvas.Roles roles;
+    private final Ink.Resolver inks;
 
     /**
      * Draw into {@code canvas}, setting glyphs with {@code text}, at {@code alpha}.
@@ -49,10 +50,24 @@ public final class CanvasSink implements Picture.Sink {
      * a tree renderer draws the picture. {@link Canvas.Roles#NONE} draws every paint as authored.
      */
     public CanvasSink(Canvas canvas, TextLayout text, float alpha, Canvas.Roles roles) {
+        this(canvas, text, alpha, roles, Ink.Resolver.FIXED);
+    }
+
+    /**
+     * As the constructor above, each mark's named colour ({@link Ink}) decided by {@code inks}: the tree renderer's, in
+     * the theme the tree is drawn in. {@link Ink.Resolver#FIXED}, the others' answer, draws colours and refuses names.
+     */
+    public CanvasSink(Canvas canvas, TextLayout text, float alpha, Canvas.Roles roles, Ink.Resolver inks) {
         this.canvas = canvas;
         this.text = text;
         this.alpha = alpha;
         this.roles = roles == null ? Canvas.Roles.NONE : roles;
+        this.inks = inks == null ? Ink.Resolver.FIXED : inks;
+    }
+
+    @Override
+    public Color color(Ink ink) {
+        return inks.color(ink);
     }
 
     /** Fully opaque. */

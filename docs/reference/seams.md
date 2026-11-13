@@ -46,6 +46,7 @@ thread.
 | **Input** | `onClick`, `onDoubleClick`, `onContextClick`, `onKey`, `onChar`, `shortcut`, `claim`, `claimAny` | W |
 | **Pointer and drag** | `onState`, `onPointer`, `onDrag`, `onWheel`, `onDragSource`, `onDrop`, `dropTargetsAt`, `watchDrag` | W |
 | **Geometry and navigation** | `onResize` ("my geometry is real now", first time included), `reveals`, `scrollSource`, `scrollAxes` | W |
+| **The look** | `onTheme`: each theme swap, after every node is reported. Only for what a widget worked out *from* the theme and keeps (a layered icon's variant, a colour baked into a shader style); anything that names a `Role` is drawn in the new theme with nothing run | W |
 | **Menus and commands** | `onContextMenu`, `openMenu`; `menus(presenter)` and `commands(commands)` install what draws menus and names chords (`ContextMenu`, `Keymap` install themselves) | W |
 | **The frame** | `ask`, `unask`: a part's asked half (frame-contract.md). `clock()`: the tree's clock, read | W, H |
 | **Read models** | `drag()`, `modifiers()`, `resizing()` (the edge a window resize is under way from, for a grip), `viewport()`, `zoom()`, `zoomSizesWindow()`, `dpi()`, `layout()`, `semantics()`: the GUI's own state, as bus `State`s a widget restyles from | W |

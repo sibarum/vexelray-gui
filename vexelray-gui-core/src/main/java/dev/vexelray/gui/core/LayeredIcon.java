@@ -25,7 +25,7 @@ public interface LayeredIcon extends IconSource {
      * layered icon is drawn, in one node. Its effects are its bottom layer's, as they always were.
      */
     default ImageSdg sdg(float px, boolean dark) {
-        return ImageSdg.ofFields(layers(px, dark), null);
+        return ImageSdg.ofFields(layers(px, dark), (dev.vexelray.gui.core.style.Paint) null);
     }
 
     /** A theme is dark when its ink is light: which of an icon's two rows of colours it is drawn with. */

@@ -144,7 +144,7 @@ class CueTest {
         assertEquals(20d, half.x() + half.w() / 2, 1e-3, "centred on the point across");
         assertEquals(10d, half.y() + half.h() / 2, 1e-3, "and down");
         assertEquals(half.w() / 2, half.radiusTop(), 1e-3, "a disc: as round as it is wide");
-        assertEquals(ACCENT.a() * 0.5f, half.color().a(), 1e-4f, "half way, half the ink: a linear fade");
+        assertEquals(ACCENT.a() * 0.5f, dev.vexelray.gui.core.style.Paint.from(half.ink()).in(dev.vexelray.gui.core.style.Theme.DARK).a(), 1e-4f, "half way, half the ink: a linear fade");
 
         double farthest = Math.hypot(120d - 20d, 32d - 10d);
         Picture.Fill late = (Picture.Fill) ripple.at(0.95d, box).marks().get(0);

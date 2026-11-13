@@ -1404,6 +1404,15 @@ public final class Gui implements AutoCloseable {
     }
 
     /**
+     * The theme the tree was drawn in before its last swap, or null before any: what a named colour that no node's
+     * channel holds (a span's, a picture mark's, a tint) fades from, as far as {@code PaintMotion.Channel.THEME} says.
+     * The renderer's, beside {@link #drawnTheme()}.
+     */
+    public Theme drawnThemeBefore() {
+        return reconciler.themeBefore();
+    }
+
+    /**
      * Ask for the next frame to be <em>drawn</em>, for a change the tree cannot see. Safe from any thread; any
      * number of calls before the frame arrives ask for one draw.
      *
@@ -2488,6 +2497,12 @@ public final class Gui implements AutoCloseable {
         @Override
         public dev.vexelray.gui.core.spi.Seams onPointerLock(java.util.function.Consumer<Boolean> sink) {
             input.pointerLockSink(sink);
+            return this;
+        }
+
+        @Override
+        public dev.vexelray.gui.core.spi.Seams onTheme(Runnable listener) {
+            reconciler.onTheme(listener);
             return this;
         }
 

@@ -77,7 +77,7 @@ class FaceRangeTest {
                 Span.italic(10, 40),
                 Span.bold(0, 25),
                 Span.weight(20, 30, 300),
-                Span.foreground(5, 50, null),
+                Span.foreground(5, 50, (dev.vexelray.canvas.Color) null),
                 Span.slope(35, 60, FontSet.Slope.NORMAL),
                 Span.bold(45, 80));
         Styling style = styled(spans);
@@ -102,7 +102,7 @@ class FaceRangeTest {
             for (int k = rnd.nextInt(12); k > 0; k--) {
                 int a = rnd.nextInt(length + 1);
                 int b = a + rnd.nextInt(length + 1 - a);
-                spans.add(new Span(a, b, null, null, false, weights[rnd.nextInt(weights.length)],
+                spans.add(new Span(a, b, (dev.vexelray.canvas.Color) null, null, false, weights[rnd.nextInt(weights.length)],
                         slopes[rnd.nextInt(slopes.length)]));
             }
             Styling style = styled(spans);
@@ -118,7 +118,7 @@ class FaceRangeTest {
 
     @Test
     void unstyledRangeIsTheNodeFace() {
-        Styling style = styled(List.of(Span.foreground(0, 10, null)));
+        Styling style = styled(List.of(Span.foreground(0, 10, (dev.vexelray.canvas.Color) null)));
         int[] ids = FACES.faceIds(style, 3, 8);
         assertEquals(5, ids.length);
         assertTrue(Arrays.stream(ids).allMatch(id -> id == FACES.face(style).id()));

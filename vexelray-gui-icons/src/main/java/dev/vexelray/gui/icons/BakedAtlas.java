@@ -91,11 +91,21 @@ public abstract class BakedAtlas implements Pixels {
         return field(side, largeSpread, (cell % columns) * side, (cell / columns) * side, tint);
     }
 
+    /** Large cell {@code cell} as a field in {@code tint}, a paint: a {@code Role} follows the theme. */
+    public ImageField large(int cell, dev.vexelray.gui.core.style.Paint tint) {
+        return large(cell, tint.in(dev.vexelray.gui.core.style.Theme.DARK)).tint(tint);   // any colour: the tint replaces it
+    }
+
     /** Small cell {@code cell} as a field in {@code tint}. */
     public ImageField small(int cell, Color tint) {
         int side = smallInner + 2 * smallSpread;
         int columns = width / side;
         return field(side, smallSpread, (cell % columns) * side, smallTop + (cell / columns) * side, tint);
+    }
+
+    /** Small cell {@code cell} as a field in {@code tint}, a paint: a {@code Role} follows the theme. */
+    public ImageField small(int cell, dev.vexelray.gui.core.style.Paint tint) {
+        return small(cell, tint.in(dev.vexelray.gui.core.style.Theme.DARK)).tint(tint);
     }
 
     private ImageField field(int side, int spread, int x, int y, Color tint) {

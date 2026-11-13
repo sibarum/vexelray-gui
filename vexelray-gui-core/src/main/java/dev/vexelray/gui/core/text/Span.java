@@ -1,6 +1,7 @@
 package dev.vexelray.gui.core.text;
 
 import dev.vexelray.canvas.Color;
+import dev.vexelray.gui.core.style.Paint;
 import dev.vexelray.text.FontSet;
 
 import java.util.List;
@@ -20,10 +21,17 @@ import java.util.List;
  * (via {@link #remap(TextEdit)}), so an insertion before a span shifts it and an edit inside it grows/shrinks it,
  * keeping every span attached to its text with no manual bookkeeping.
  *
+ * <p><b>A span's colours are paints</b>, so a span says what its text <em>is</em>, a {@code Role}, as a node does,
+ * and is drawn in whichever theme the tree is in: a theme swap recolours every span, fading with the nodes around it,
+ * and nothing re-marks the text. A {@code Color} is still taken everywhere one was, as {@link Paint#of(Color)}: the
+ * same colour in every theme, which is what an application that wants that is asking for.
+ *
+ * @param fg     the text's paint, or null for the node's own
+ * @param bg     the highlight behind the text, or null for none
  * @param weight 100–1000, or 0 to leave the weight as the node has it
  * @param slope  upright, italic or oblique, or null to leave the slope as the node has it
  */
-public record Span(int start, int end, Color fg, Color bg, boolean underline, int weight, FontSet.Slope slope) {
+public record Span(int start, int end, Paint fg, Paint bg, boolean underline, int weight, FontSet.Slope slope) {
 
     public Span {
         if (start < 0 || end < start) {
@@ -34,29 +42,49 @@ public record Span(int start, int end, Color fg, Color bg, boolean underline, in
         }
     }
 
+    /** A span of fixed colours, weight and slope: the same colours in every theme. */
+    public Span(int start, int end, Color fg, Color bg, boolean underline, int weight, FontSet.Slope slope) {
+        this(start, end, Paint.of(fg), Paint.of(bg), underline, weight, slope);
+    }
+
     /** A span of colour and underline only — the shape every span had before weight and slope. */
-    public Span(int start, int end, Color fg, Color bg, boolean underline) {
+    public Span(int start, int end, Paint fg, Paint bg, boolean underline) {
         this(start, end, fg, bg, underline, 0, null);
     }
 
-    /** A foreground (text) colour span. */
-    public static Span foreground(int start, int end, Color color) {
-        return new Span(start, end, color, null, false);
+    /** As {@link #Span(int, int, Paint, Paint, boolean)}, in fixed colours: the same in every theme. */
+    public Span(int start, int end, Color fg, Color bg, boolean underline) {
+        this(start, end, Paint.of(fg), Paint.of(bg), underline, 0, null);
     }
 
-    /** A background (highlight) colour span. */
+    /** A foreground (text) span in {@code paint}: a {@code Role}, to follow the theme. */
+    public static Span foreground(int start, int end, Paint paint) {
+        return new Span(start, end, paint, null, false);
+    }
+
+    /** A foreground (text) span in a fixed colour, the same in every theme. */
+    public static Span foreground(int start, int end, Color color) {
+        return foreground(start, end, Paint.of(color));
+    }
+
+    /** A background (highlight) span in {@code paint}: a {@code Role}, to follow the theme. */
+    public static Span background(int start, int end, Paint paint) {
+        return new Span(start, end, null, paint, false);
+    }
+
+    /** A background (highlight) span in a fixed colour, the same in every theme. */
     public static Span background(int start, int end, Color color) {
-        return new Span(start, end, null, color, false);
+        return background(start, end, Paint.of(color));
     }
 
     /** An underline span. */
     public static Span underline(int start, int end) {
-        return new Span(start, end, null, null, true);
+        return new Span(start, end, (Paint) null, null, true);
     }
 
     /** A weight span: 700 is bold. The text is drawn, and measured, in the family's face nearest that weight. */
     public static Span weight(int start, int end, int weight) {
-        return new Span(start, end, null, null, false, weight, null);
+        return new Span(start, end, (Paint) null, null, false, weight, null);
     }
 
     /** A bold span — weight 700. */
@@ -66,7 +94,7 @@ public record Span(int start, int end, Color fg, Color bg, boolean underline, in
 
     /** A slope span: italic or oblique (or upright, inside text the node sets slanted). */
     public static Span slope(int start, int end, FontSet.Slope slope) {
-        return new Span(start, end, null, null, false, 0, slope);
+        return new Span(start, end, (Paint) null, null, false, 0, slope);
     }
 
     /** An italic span. */

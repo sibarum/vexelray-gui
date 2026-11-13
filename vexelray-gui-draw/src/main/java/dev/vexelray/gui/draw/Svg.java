@@ -34,6 +34,15 @@ public final class Svg {
 
     /** {@code picture} as a standalone document {@code width} x {@code height} px, set in {@code fontFamily}. */
     public static String document(Picture picture, double width, double height, String fontFamily) {
+        return document(picture, width, height, fontFamily, Ink.Resolver.FIXED);
+    }
+
+    /**
+     * As above, each named colour written as {@code inks} decides it: a file has one look, so a picture that names its
+     * colours is exported in the theme it should be read in ({@code Paint.resolver(theme)}, in vexelray-gui-core).
+     */
+    public static String document(Picture picture, double width, double height, String fontFamily,
+                                  Ink.Resolver inks) {
         StringBuilder out = new StringBuilder();
         out.append("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"").append(SvgSink.num(width))
                 .append("\" height=\"").append(SvgSink.num(height))
@@ -43,7 +52,7 @@ public final class Svg {
             out.append(" font-family=\"").append(SvgSink.escape(fontFamily)).append('"');
         }
         out.append(">\n");
-        picture.emitTo(new SvgSink(out, "  "));
+        picture.emitTo(new SvgSink(out, "  ", inks));
         return out.append("</svg>\n").toString();
     }
 }

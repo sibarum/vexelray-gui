@@ -2,6 +2,7 @@ package dev.vexelray.gui.core;
 
 import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.layout.Rect;
+import dev.vexelray.gui.draw.Ink;
 import dev.vexelray.gui.draw.Picture;
 
 /**
@@ -63,12 +64,12 @@ public record CaptionGrid(Rect box, double u, double stroke) {
     }
 
     /** A rounded box outlined at the grid's stroke: top-left {@code (gx, gy)}, {@code gw × gh} units, radius {@code r}. */
-    public Picture.Mark outline(double gx, double gy, double gw, double gh, double r, Color ink) {
+    public Picture.Mark outline(double gx, double gy, double gw, double gh, double r, Ink ink) {
         return outline(gx, gy, gw, gh, r, r, ink);
     }
 
-    /** As {@link #outline(double, double, double, double, double, Color)}, with separate top and bottom radii. */
-    public Picture.Mark outline(double gx, double gy, double gw, double gh, double rTop, double rBottom, Color ink) {
+    /** As {@link #outline(double, double, double, double, double, Ink)}, with separate top and bottom radii. */
+    public Picture.Mark outline(double gx, double gy, double gw, double gh, double rTop, double rBottom, Ink ink) {
         double x0 = edgeX(gx);
         double y0 = edgeY(gy);
         return new Picture.Outline(x0, y0, edgeX(gx + gw) - x0, edgeY(gy + gh) - y0, u(rTop), u(rBottom), stroke,
@@ -76,38 +77,76 @@ public record CaptionGrid(Rect box, double u, double stroke) {
     }
 
     /** A rounded box filled: what an outline is drawn over when something behind it must not show through. */
-    public Picture.Mark fill(double gx, double gy, double gw, double gh, double r, Color color) {
+    public Picture.Mark fill(double gx, double gy, double gw, double gh, double r, Ink color) {
         double x0 = edgeX(gx);
         double y0 = edgeY(gy);
         return new Picture.Fill(x0, y0, edgeX(gx + gw) - x0, edgeY(gy + gh) - y0, u(r), u(r), color, null);
     }
 
     /** A horizontal stroke at {@code gy}, from {@code gx0} to {@code gx1}, its round caps inside the ends. */
-    public Picture.Mark hline(double gx0, double gx1, double gy, Color ink) {
+    public Picture.Mark hline(double gx0, double gx1, double gy, Ink ink) {
         double y = lineY(gy);
         double inset = stroke * 0.5;
         return new Picture.Line(edgeX(gx0) + inset, y, edgeX(gx1) - inset, y, stroke, ink, null);
     }
 
     /** A vertical stroke at {@code gx}, from {@code gy0} to {@code gy1}, its round caps inside the ends. */
-    public Picture.Mark vline(double gx, double gy0, double gy1, Color ink) {
+    public Picture.Mark vline(double gx, double gy0, double gy1, Ink ink) {
         double x = lineX(gx);
         double inset = stroke * 0.5;
         return new Picture.Line(x, edgeY(gy0) + inset, x, edgeY(gy1) - inset, stroke, ink, null);
     }
 
     /** A stroke between two grid points, unsnapped: a diagonal has no grid to sit on. */
-    public Picture.Mark line(double gx0, double gy0, double gx1, double gy1, Color ink) {
+    public Picture.Mark line(double gx0, double gy0, double gx1, double gy1, Ink ink) {
         double cx = box.w() * 0.5;
         double cy = box.h() * 0.5;
         return new Picture.Line(cx + gx0 * u, cy + gy0 * u, cx + gx1 * u, cy + gy1 * u, stroke, ink, null);
     }
 
     /** A filled disc of diameter {@code d} units centred {@code (gx, gy)} from centre. */
-    public Picture.Mark dot(double gx, double gy, double d, Color color) {
+    public Picture.Mark dot(double gx, double gy, double d, Ink color) {
         double r = Math.max(stroke * 0.5, u(d) * 0.5);
         double cx = box.w() * 0.5 + gx * u;
         double cy = box.h() * 0.5 + gy * u;
         return new Picture.Fill(cx - r, cy - r, r * 2, r * 2, r, r, color, null);
+    }
+
+    // Every mark above takes an Ink: a name ({@code Role.DIM}), drawn in whichever theme the tree is in and fading with
+    // it when it is swapped, or a colour. These take a colour, the same in every theme.
+
+    /** {@link #outline(double, double, double, double, double, Ink)} in a fixed colour. */
+    public Picture.Mark outline(double gx, double gy, double gw, double gh, double r, Color ink) {
+        return outline(gx, gy, gw, gh, r, Ink.of(ink));
+    }
+
+    /** {@link #outline(double, double, double, double, double, double, Ink)} in a fixed colour. */
+    public Picture.Mark outline(double gx, double gy, double gw, double gh, double rTop, double rBottom, Color ink) {
+        return outline(gx, gy, gw, gh, rTop, rBottom, Ink.of(ink));
+    }
+
+    /** {@link #fill(double, double, double, double, double, Ink)} in a fixed colour. */
+    public Picture.Mark fill(double gx, double gy, double gw, double gh, double r, Color color) {
+        return fill(gx, gy, gw, gh, r, Ink.of(color));
+    }
+
+    /** {@link #hline(double, double, double, Ink)} in a fixed colour. */
+    public Picture.Mark hline(double gx0, double gx1, double gy, Color ink) {
+        return hline(gx0, gx1, gy, Ink.of(ink));
+    }
+
+    /** {@link #vline(double, double, double, Ink)} in a fixed colour. */
+    public Picture.Mark vline(double gx, double gy0, double gy1, Color ink) {
+        return vline(gx, gy0, gy1, Ink.of(ink));
+    }
+
+    /** {@link #line(double, double, double, double, Ink)} in a fixed colour. */
+    public Picture.Mark line(double gx0, double gy0, double gx1, double gy1, Color ink) {
+        return line(gx0, gy0, gx1, gy1, Ink.of(ink));
+    }
+
+    /** {@link #dot(double, double, double, Ink)} in a fixed colour. */
+    public Picture.Mark dot(double gx, double gy, double d, Color color) {
+        return dot(gx, gy, d, Ink.of(color));
     }
 }

@@ -60,8 +60,19 @@ public interface PaintMotion {
          * no alpha to full when they are replaced; the renderer draws what was there before at the rest. Only for a
          * node on screen.
          */
-        REPLACED
+        REPLACED,
+        /**
+         * How far the whole tree has come from the look it was in to the one it is in now: reported under {@link #TREE}
+         * as an {@link #amount} from none to all when the theme is swapped. What a named colour that no node's channel
+         * holds is drawn through: a span's, a picture mark's, an image's tint. The renderer draws each one {@code t} of
+         * the way from its colour in the look before to its colour in this one, so they fade with the nodes around
+         * them rather than changing in one frame.
+         */
+        THEME
     }
+
+    /** The id {@link Channel#THEME} is reported under: the tree as a whole, which no node's id ever is. */
+    long TREE = -1L;
 
     /**
      * An amount, not a colour, as {@link Channel#OPACITY} and {@link Channel#REPLACED} carry one: white at alpha

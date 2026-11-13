@@ -7,6 +7,7 @@ import dev.vexelray.canvas.shadelet.CoreShadelets;
 import dev.vexelray.canvas.shadelet.Look;
 import dev.vexelray.diag.Diagnostics;
 import dev.vexelray.fields.sdg.Sdg;
+import dev.vexelray.gui.core.style.Paint;
 import dev.vexelray.target.ImageHandle;
 
 import java.util.ArrayList;
@@ -39,7 +40,7 @@ import java.util.Map;
  * @param source  the drawing with its texels, when it was made from one ({@link #of(Sdg)}): what a picture's drawing
  *                mark and an export take. Null for an icon over an atlas, whose texels are never read here
  */
-public record ImageSdg(SdgDrawing drawing, List<Pixels> pages, Color tint, Look look, float[] instance, Sdg source) {
+public record ImageSdg(SdgDrawing drawing, List<Pixels> pages, Paint tint, Look look, float[] instance, Sdg source) {
 
     /** The role an icon of one colour paints its shape in: the node's {@code tint}. */
     public static final String TINT = "tint";
@@ -54,6 +55,11 @@ public record ImageSdg(SdgDrawing drawing, List<Pixels> pages, Color tint, Look 
         instance = instance == null || instance.length == 0 ? NONE : instance.clone();
     }
 
+    /** In a fixed tint, the same in every theme; null for the node's own text colour. */
+    public ImageSdg(SdgDrawing drawing, List<Pixels> pages, Color tint, Look look, float[] instance, Sdg source) {
+        this(drawing, pages, Paint.of(tint), look, instance, source);
+    }
+
     /** {@code drawing} ready to draw: colocated, its pages as pixels made here; in the theme, with no look. */
     public static ImageSdg of(Sdg drawing) {
         Sdg ready = SdgPages.colocated(drawing);
@@ -61,7 +67,7 @@ public record ImageSdg(SdgDrawing drawing, List<Pixels> pages, Color tint, Look 
         for (Sdg.Page page : ready.pages()) {
             pages.add(new Page(page));
         }
-        return new ImageSdg(SdgDrawing.of(ready), pages, null, null, NONE, ready);
+        return new ImageSdg(SdgDrawing.of(ready), pages, (Paint) null, null, NONE, ready);
     }
 
     /**
@@ -80,9 +86,15 @@ public record ImageSdg(SdgDrawing drawing, List<Pixels> pages, Color tint, Look 
      * {@link Pixels}; fields of one texture share a page.
      *
      * @param tint the node's tint: given, every layer is painted in the role {@value #TINT} (an icon of one colour);
-     *             null, each in its field's own colour (a layered icon)
+     *             null, each in its field's own colour (a layered icon). A field whose own colour is a name rather than a
+     *             colour is painted in {@value #TINT} too, so it follows the theme through the node's tint
      */
     public static ImageSdg ofFields(List<ImageField> fields, Color tint) {
+        return ofFields(fields, Paint.of(tint));
+    }
+
+    /** As {@link #ofFields(List, Color)}, the tint a paint: a role follows the theme. */
+    public static ImageSdg ofFields(List<ImageField> fields, Paint tint) {
         if (fields.isEmpty()) {
             throw new IllegalArgumentException("a drawing of no fields");
         }
@@ -111,10 +123,13 @@ public record ImageSdg(SdgDrawing drawing, List<Pixels> pages, Color tint, Look 
             double origin = -f.spread() * ((double) inner / f.inner());
             Sdg.Stencil stencil = new Sdg.Stencil(Sdg.Stencil.SDF, page, 0, x, y, w, h, origin, origin,
                     w / ((double) f.side() * inner / f.inner()), 2.0 * f.spread() * w / f.side());
-            Color c = f.tint();
-            int rgba = byte8(c.r()) << 24 | byte8(c.g()) << 16 | byte8(c.b()) << 8 | byte8(c.a());
-            // With a tint, the drawing is an icon of one colour, in the node's tint; without one, each field's own.
-            Sdg.Paint.Solid paint = tint != null ? new Sdg.Paint.Solid(rgba, TINT) : new Sdg.Paint.Solid(rgba);
+            Color c = dev.vexelray.gui.draw.Ink.fixedOf(f.tint());
+            Color baked = c == null ? f.tint().in(dev.vexelray.gui.core.style.Theme.DARK) : c;   // a name: painted in TINT below
+            int rgba = byte8(baked.r()) << 24 | byte8(baked.g()) << 16 | byte8(baked.b()) << 8 | byte8(baked.a());
+            // With a tint, the drawing is an icon of one colour, in the node's tint; without one, each field's own. A
+            // field's own colour that is a name cannot be baked into a layer, so it is drawn in the node's tint instead.
+            Sdg.Paint.Solid paint = tint != null || c == null ? new Sdg.Paint.Solid(rgba, TINT)
+                    : new Sdg.Paint.Solid(rgba);
             layers.add(new Sdg.Layer("field " + layers.size(), stencil, paint, 1f));
         }
         int[] widths = new int[pages.size()], heights = new int[pages.size()];
@@ -156,8 +171,13 @@ public record ImageSdg(SdgDrawing drawing, List<Pixels> pages, Color tint, Look 
     }
 
     /** This drawing with {@code tint} for its paints in the role {@value #TINT}; null for the theme's ink. */
-    public ImageSdg tint(Color tint) {
+    public ImageSdg tint(Paint tint) {
         return new ImageSdg(drawing, pages, tint, look, instance, source);
+    }
+
+    /** This drawing with a fixed tint, the same in every theme; null for the node's own text colour. */
+    public ImageSdg tint(Color tint) {
+        return tint(Paint.of(tint));
     }
 
     /** This drawing's back-most layer drawn by {@code look} with {@code instance}; null for none. */

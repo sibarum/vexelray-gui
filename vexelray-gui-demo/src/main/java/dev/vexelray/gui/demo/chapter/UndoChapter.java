@@ -182,7 +182,7 @@ public final class UndoChapter implements Chapter {
         Outcome o = e.outcome();
         String what = e.redo() ? "redo" : "undo";
         if (o == Outcome.REFUSED && e.target() != null) {
-            stage.cues().play(e.target(), Cue.ring(stage.theme().color(Role.DANGER)));
+            stage.cues().play(e.target(), Cue.ring(Role.DANGER));
             console.refused(what + " refused: that control is locked");
         } else if (o == Outcome.UNREACHABLE) {
             console.refused(what + " failed: what it changed is no longer here, so the step is cleared away");

@@ -1,7 +1,6 @@
 package dev.vexelray.gui.scroll;
 
 import dev.vexelray.gui.core.spi.Seams;
-import dev.vexelray.canvas.Color;
 import dev.vexelray.gui.core.Gui;
 import dev.vexelray.gui.core.Node;
 import dev.vexelray.gui.core.ScrollRange;
@@ -179,9 +178,11 @@ public final class Scrollbar implements AutoCloseable {
             return;
         }
 
-        Color edge = gui.theme().color(Role.EDGE);
-        Color trough = gui.theme().color(Role.CHROME);
-        Color grip = gui.theme().color(Role.GRIP);
+        // Names, not the colours they are now: the picture is drawn again only when the scroll or the size moves, so
+        // colours resolved here would keep the look it was drawn in across a theme swap.
+        Role edge = Role.EDGE;
+        Role trough = Role.CHROME;
+        Role grip = Role.GRIP;
         float r = Math.min(w, h) * 0.5f;
         // An outlined track, as the old strip had: a rim and a trough inside it, so it reads against any panel.
         Sketch s = new Sketch()

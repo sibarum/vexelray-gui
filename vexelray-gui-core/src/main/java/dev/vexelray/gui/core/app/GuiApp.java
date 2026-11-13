@@ -199,7 +199,7 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
      * tree's theme says" (Role.SCRIM), so a dialog over a light window dims correctly without the application
      * restating it; set it explicitly to override, or to null for no scrim at all.
      */
-    private volatile dev.vexelray.canvas.Color modalDim;
+    private volatile dev.vexelray.gui.core.style.Paint modalDim;
     private volatile boolean modalDimSet;
 
     /** One scrim node per blocked tree, created on first use and hidden between modals. */
@@ -1224,7 +1224,15 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
 
     /** The colour the rest of the application is dimmed with while a modal is up; {@code null} draws no scrim. */
     public GuiApp modalDim(dev.vexelray.canvas.Color color) {
-        this.modalDim = color;
+        return modalDim(dev.vexelray.gui.core.style.Paint.of(color));
+    }
+
+    /**
+     * The paint the rest of the application is dimmed with while a modal is up: a {@code Role} follows the theme, as
+     * {@code Role.SCRIM}, the default, does. {@code null} draws no scrim.
+     */
+    public GuiApp modalDim(dev.vexelray.gui.core.style.Paint paint) {
+        this.modalDim = paint;
         this.modalDimSet = true;
         return this;
     }
@@ -1235,7 +1243,7 @@ public final class GuiApp implements AutoCloseable, LoopCounters {
             return;   // a tree that has never been dimmed needs no scrim to un-dim
         }
         scrims.computeIfAbsent(gui, ModalScrim::install)
-                .dim(dimmed, modalDimSet ? dev.vexelray.gui.core.style.Paint.of(modalDim) : dev.vexelray.gui.core.style.Role.SCRIM);
+                .dim(dimmed, modalDimSet ? modalDim : dev.vexelray.gui.core.style.Role.SCRIM);
     }
 
     /**

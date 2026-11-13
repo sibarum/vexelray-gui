@@ -100,6 +100,11 @@ public record Picture(List<Mark> marks) {
         }
 
         @Override
+        public Color color(Ink ink) {
+            return to.color(ink);
+        }
+
+        @Override
         public void fill(double x, double y, double w, double h, double radiusTop, double radiusBottom, Color color,
                          String tag) {
             to.fill(x(x), y, w * factor, h, radiusTop, radiusBottom, color, tag);
@@ -169,6 +174,14 @@ public record Picture(List<Mark> marks) {
     public interface Sink {
 
         /**
+         * The colour {@code ink} is drawn in here: itself for a colour, and for a name ({@link Ink}), the look this sink
+         * draws in decides. The screen's is the tree's theme, fading with every node when the theme is swapped; an
+         * export's is the theme it is exported in. Null for no ink, which a mark is then not drawn in. Every mark asks
+         * this before the four operations below, which take the colour it answers.
+         */
+        Color color(Ink ink);
+
+        /**
          * A filled rounded box with its top-left at {@code (x, y)}. Corner radii are per vertical half —
          * {@code radiusTop} above the centre line, {@code radiusBottom} below — so a rectangle is {@code (0, 0)},
          * a circle is a square with both radii at half its side, and a tab is {@code (r, 0)}.
@@ -206,83 +219,129 @@ public record Picture(List<Mark> marks) {
 
     // --- the marks -------------------------------------------------------------------------------------------
 
+    // Each mark holds an Ink: a colour, or a name the look decides when the mark is drawn ({@link Ink}). Every one keeps
+    // its Color constructors, which are the same colour in every look.
+
     /** A filled rounded box — see {@link Sink#fill}. */
-    public record Fill(double x, double y, double w, double h, double radiusTop, double radiusBottom, Color color,
+    public record Fill(double x, double y, double w, double h, double radiusTop, double radiusBottom, Ink ink,
                        String tag) implements Mark {
 
+        /** In a fixed colour. */
+        public Fill(double x, double y, double w, double h, double radiusTop, double radiusBottom, Color color,
+                    String tag) {
+            this(x, y, w, h, radiusTop, radiusBottom, Ink.of(color), tag);
+        }
+
         /** Untagged. */
+        public Fill(double x, double y, double w, double h, double radiusTop, double radiusBottom, Ink ink) {
+            this(x, y, w, h, radiusTop, radiusBottom, ink, null);
+        }
+
+        /** Untagged, in a fixed colour. */
         public Fill(double x, double y, double w, double h, double radiusTop, double radiusBottom, Color color) {
-            this(x, y, w, h, radiusTop, radiusBottom, color, null);
+            this(x, y, w, h, radiusTop, radiusBottom, Ink.of(color), null);
         }
 
         @Override
         public Mark shifted(double dx, double dy) {
-            return new Fill(x + dx, y + dy, w, h, radiusTop, radiusBottom, color, tag);
+            return new Fill(x + dx, y + dy, w, h, radiusTop, radiusBottom, ink, tag);
         }
 
         @Override
         public void emitTo(Sink sink) {
-            sink.fill(x, y, w, h, radiusTop, radiusBottom, color, tag);
+            sink.fill(x, y, w, h, radiusTop, radiusBottom, sink.color(ink), tag);
         }
     }
 
     /** An outlined rounded box — see {@link Sink#outline}. */
     public record Outline(double x, double y, double w, double h, double radiusTop, double radiusBottom,
-                          double width, Color color, String tag) implements Mark {
+                          double width, Ink ink, String tag) implements Mark {
+
+        /** In a fixed colour. */
+        public Outline(double x, double y, double w, double h, double radiusTop, double radiusBottom, double width,
+                       Color color, String tag) {
+            this(x, y, w, h, radiusTop, radiusBottom, width, Ink.of(color), tag);
+        }
 
         /** Untagged. */
         public Outline(double x, double y, double w, double h, double radiusTop, double radiusBottom, double width,
+                       Ink ink) {
+            this(x, y, w, h, radiusTop, radiusBottom, width, ink, null);
+        }
+
+        /** Untagged, in a fixed colour. */
+        public Outline(double x, double y, double w, double h, double radiusTop, double radiusBottom, double width,
                        Color color) {
-            this(x, y, w, h, radiusTop, radiusBottom, width, color, null);
+            this(x, y, w, h, radiusTop, radiusBottom, width, Ink.of(color), null);
         }
 
         @Override
         public Mark shifted(double dx, double dy) {
-            return new Outline(x + dx, y + dy, w, h, radiusTop, radiusBottom, width, color, tag);
+            return new Outline(x + dx, y + dy, w, h, radiusTop, radiusBottom, width, ink, tag);
         }
 
         @Override
         public void emitTo(Sink sink) {
-            sink.outline(x, y, w, h, radiusTop, radiusBottom, width, color, tag);
+            sink.outline(x, y, w, h, radiusTop, radiusBottom, width, sink.color(ink), tag);
         }
     }
 
     /** A line at any angle — see {@link Sink#line}. */
-    public record Line(double x0, double y0, double x1, double y1, double thickness, Color color,
+    public record Line(double x0, double y0, double x1, double y1, double thickness, Ink ink,
                        String tag) implements Mark {
 
+        /** In a fixed colour. */
+        public Line(double x0, double y0, double x1, double y1, double thickness, Color color, String tag) {
+            this(x0, y0, x1, y1, thickness, Ink.of(color), tag);
+        }
+
         /** Untagged. */
+        public Line(double x0, double y0, double x1, double y1, double thickness, Ink ink) {
+            this(x0, y0, x1, y1, thickness, ink, null);
+        }
+
+        /** Untagged, in a fixed colour. */
         public Line(double x0, double y0, double x1, double y1, double thickness, Color color) {
-            this(x0, y0, x1, y1, thickness, color, null);
+            this(x0, y0, x1, y1, thickness, Ink.of(color), null);
         }
 
         @Override
         public Mark shifted(double dx, double dy) {
-            return new Line(x0 + dx, y0 + dy, x1 + dx, y1 + dy, thickness, color, tag);
+            return new Line(x0 + dx, y0 + dy, x1 + dx, y1 + dy, thickness, ink, tag);
         }
 
         @Override
         public void emitTo(Sink sink) {
-            sink.line(x0, y0, x1, y1, thickness, color, tag);
+            sink.line(x0, y0, x1, y1, thickness, sink.color(ink), tag);
         }
     }
 
     /** A run of text on a baseline — see {@link Sink#glyphs}. */
-    public record Text(String text, double x, double y, double sizePx, Color color, String tag) implements Mark {
+    public record Text(String text, double x, double y, double sizePx, Ink ink, String tag) implements Mark {
+
+        /** In a fixed colour. */
+        public Text(String text, double x, double y, double sizePx, Color color, String tag) {
+            this(text, x, y, sizePx, Ink.of(color), tag);
+        }
 
         /** Untagged. */
+        public Text(String text, double x, double y, double sizePx, Ink ink) {
+            this(text, x, y, sizePx, ink, null);
+        }
+
+        /** Untagged, in a fixed colour. */
         public Text(String text, double x, double y, double sizePx, Color color) {
-            this(text, x, y, sizePx, color, null);
+            this(text, x, y, sizePx, Ink.of(color), null);
         }
 
         @Override
         public Mark shifted(double dx, double dy) {
-            return new Text(text, x + dx, y + dy, sizePx, color, tag);
+            return new Text(text, x + dx, y + dy, sizePx, ink, tag);
         }
 
         @Override
         public void emitTo(Sink sink) {
-            sink.glyphs(text, x, y, sizePx, color, tag);
+            sink.glyphs(text, x, y, sizePx, sink.color(ink), tag);
         }
     }
 

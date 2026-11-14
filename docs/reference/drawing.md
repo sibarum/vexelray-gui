@@ -57,7 +57,7 @@ Four operations:
 
 | | |
 |---|---|
-| `fill` | a rounded box — so also a rectangle, and a circle |
+| `fill` | a rounded box — so also a rectangle, and a circle — whose edges may be soft |
 | `outline` | that box's inside edge, one stroke wide |
 | `line` | a line at **any angle**, round-capped |
 | `glyphs` | one run of text on a baseline |
@@ -71,6 +71,23 @@ about this module. The uber-shader has no triangle or convex-polygon kind, so a 
 canvas while SVG drew it exactly — and a picture that means two different things on two targets is worse than one
 that cannot express the shape. Widening `Sink` therefore has a prerequisite, and the prerequisite lands in
 `vexelray`, not here.
+
+**A soft edge is a property of `fill`, not a fifth operation.** `Picture.Soft` gives each of the four edges a
+width to fade over, and `Picture.Soft.NONE` — what every constructor without one means — is the ordinary sharp
+box. It exists for one thing: a mark that moves, blurred along its motion. The tab indicator is the user. While
+it glides, each end is soft over half of how far it moved since it was last drawn, like a camera shutter open
+half the frame. It is measured in steps rather than time, because the clock delivers its steps late and sometimes
+two at once after a stall, and a speed taken from their arrival times was a streak the length of the strip. A
+long jump after a stall gets a long blur, which is the right answer for it: the blur hides the jump. Motion blur
+is opt-in per mark, not something the renderer does to everything that animates. A velocity buffer would cost
+every frame a pass for the two or three marks that want it.
+
+It is still one canvas primitive. The engine draws it with the core set's `SOFT_FILL` painter: each edge is
+spread evenly over its softness, centred on where the edge is, so the mark keeps its total brightness — a
+blurred bar is not a dimmer bar. The quad grows by half the softest edge. Below twice the antialias width the
+painter draws exactly the plain rounded fill, pixel for pixel, and `CanvasSink` takes the plain path whenever
+the softness is `NONE`. So a mark coming to rest switches paths with no change on screen. `Picture.stretchX`
+stretches the left and right softness with the box, since a fade across x is a span along x.
 
 A polyline is not an exception: it is one `line` per segment, so it needs no operation nobody has implemented, and
 the round caps the canvas draws anyway are what make a joint look joined.
@@ -139,6 +156,11 @@ Smaller decisions, each with a reason worth keeping:
   the picture put it and is exactly as wide as the viewer's font makes it. That is the honest trade for a
   resolution-independent file; the alternative is converting every glyph to a path, which is a font-embedding
   problem rather than a drawing one. The family is declared once on the root, where a stylesheet can override it.
+- **A soft edge is a gradient mask.** The element is grown by half of each softness, as the canvas grows its
+  quad, and masked by a `linearGradient` that rises over the left softness and falls over the right one (and a
+  second, vertical one masking the first when the top or bottom is soft too, so the two multiply). A mask rather
+  than a gradient fill, so the colour stays a presentation attribute a stylesheet can override by class. Each
+  soft fill's ids are its own, `soft-N`, counted per sink.
 - **No background.** A drawing is transparent where it drew nothing, and a viewer supplies its own page.
 
 The one deliberate difference between the targets: **a mark with no colour** is written as `fill="none"` rather

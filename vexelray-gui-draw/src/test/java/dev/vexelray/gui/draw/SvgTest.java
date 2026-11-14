@@ -32,6 +32,34 @@ class SvgTest {
     }
 
     @Test
+    void aSoftEdgeIsTheBoxGrownByHalfItAndMaskedByAGradient() {
+        // Soft over 4 on the left and 8 on the right: the box grows by 2 and 4, to 18 wide, and the mask rises over
+        // the first 4/18 and falls over the last 8/18. The colour stays a presentation attribute on the element.
+        String out = svg(Picture.of(new Picture.Fill(10, 0, 12, 4, 0, 0, Picture.Soft.across(4, 8), Ink.of(INK),
+                "tab-indicator")));
+        assertEquals("<defs>\n"
+                + "  <linearGradient id=\"soft-1-x\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\">"
+                + "<stop offset=\"0\" stop-color=\"#fff\" stop-opacity=\"0\"/>"
+                + "<stop offset=\"0.222\" stop-color=\"#fff\" stop-opacity=\"1\"/>"
+                + "<stop offset=\"0.556\" stop-color=\"#fff\" stop-opacity=\"1\"/>"
+                + "<stop offset=\"1\" stop-color=\"#fff\" stop-opacity=\"0\"/></linearGradient>\n"
+                + "  <mask id=\"soft-1\"><rect x=\"8\" y=\"0\" width=\"18\" height=\"4\" fill=\"url(#soft-1-x)\"/>"
+                + "</mask>\n"
+                + "</defs>\n"
+                + "<rect x=\"8\" y=\"0\" width=\"18\" height=\"4\" fill=\"" + HEX
+                + "\" mask=\"url(#soft-1)\" class=\"tab-indicator\"/>\n", out);
+        // Soft on both axes: the x gradient's mask is itself masked by the y one, so the two multiply.
+        String both = svg(Picture.of(new Picture.Fill(0, 0, 10, 10, 0, 0, new Picture.Soft(2, 2, 2, 2),
+                Ink.of(INK), null)));
+        assertTrue(both.contains("<mask id=\"soft-1-ym\">"), both);
+        assertTrue(both.contains("fill=\"url(#soft-1-x)\" mask=\"url(#soft-1-ym)\""), both);
+        // And a second soft fill in the same document has ids of its own.
+        String two = svg(Picture.of(new Picture.Fill(0, 0, 10, 4, 0, 0, Picture.Soft.across(2, 2), Ink.of(INK), null),
+                new Picture.Fill(0, 6, 10, 4, 0, 0, Picture.Soft.across(2, 2), Ink.of(INK), null)));
+        assertTrue(two.contains("id=\"soft-1\"") && two.contains("id=\"soft-2\""), two);
+    }
+
+    @Test
     void aRoundedFillCarriesOneRadiusAndATwoRadiusBoxBecomesAPath() {
         assertEquals("<rect x=\"0\" y=\"0\" width=\"10\" height=\"4\" rx=\"1.5\" fill=\"" + HEX + "\"/>\n",
                 svg(new Sketch().fill(0, 0, 10, 4, 1.5, INK).picture()));

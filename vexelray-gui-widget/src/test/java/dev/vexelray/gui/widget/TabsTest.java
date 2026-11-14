@@ -93,6 +93,44 @@ class TabsTest {
     }
 
     @Test
+    void aGlidingIndicatorIsBlurredAlongTheBarAndSharpAtRest() {
+        try (HeadlessGui h = new HeadlessGui()) {
+            Manual ramp = new Manual();
+            Tabs tabs = new Tabs(h.gui).indicator(TestClocks.drive(h, ramp));
+            tabs.add("One", page(h, "one"));
+            tabs.add("Two", page(h, "two"));
+            tabs.add("Three", page(h, "three"));
+            h.gui.root().children(tabs.node());
+            h.frame();
+            assertEquals(Picture.Soft.NONE, indicator(h, tabs).soft(), "at rest, a fill's own edges");
+
+            tabs.select(2);
+            ramp.progress.accept(0d);
+            assertEquals(Picture.Soft.NONE, indicator(h, tabs).soft(), "not yet moved, not yet blurred");
+            ramp.progress.accept(0.25d);
+            ramp.progress.accept(0.5d);
+            Picture.Soft moving = indicator(h, tabs).soft();
+            assertTrue(moving.left() > 0 && moving.right() > 0, "both ends moved, both are blurred: " + moving);
+            assertTrue(moving.right() > moving.left(),
+                    "moving right while it stretches, the leading end went further and is the softer: " + moving);
+            // Half of each end's last step, a half-open shutter: the right (leading) end went a quarter of the way,
+            // 0.25 to 0.5; the left (trailing, squared) 0.0625 to 0.25.
+            float[] first = header(tabs, 0);
+            float[] third = header(tabs, 2);
+            double rightWay = third[0] + third[1] - first[0] - first[1];
+            double leftWay = third[0] - first[0];
+            assertEquals(0.5 * 0.25 * rightWay, moving.right(), 0.01, "half the leading end's step");
+            assertEquals(0.5 * (0.25 - 0.0625) * leftWay, moving.left(), 0.01, "half the trailing end's");
+            assertEquals(0.0, moving.top(), "only along the bar: its top and bottom stay a fill's");
+            assertEquals(0.0, moving.bottom());
+
+            ramp.progress.accept(1d);
+            ramp.done.run();
+            assertEquals(Picture.Soft.NONE, indicator(h, tabs).soft(), "landed, sharp again");
+        }
+    }
+
+    @Test
     void aSelectionMidGlideTurnsRoundFromWhereTheIndicatorIs() {
         try (HeadlessGui h = new HeadlessGui()) {
             Manual ramp = new Manual();

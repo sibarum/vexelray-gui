@@ -60,9 +60,79 @@ public final class SvgSink implements Picture.Sink {
         return inks.color(ink);
     }
 
+    /**
+     * A fill with a soft edge is the same element over the box grown by half each softness, masked by a gradient that
+     * rises across each soft edge from nothing to whole: the colour stays a presentation attribute a stylesheet can
+     * override, and the softness is geometry, which it cannot. Both axes soft is one mask of the x gradient, itself
+     * masked by the y one, so the two multiply as on screen.
+     */
     @Override
-    public void fill(double x, double y, double w, double h, double radiusTop, double radiusBottom, Color color,
-                     String tag) {
+    public void fill(double x, double y, double w, double h, double radiusTop, double radiusBottom, Picture.Soft soft,
+                     Color color, String tag) {
+        if (soft.none()) {
+            fill(x, y, w, h, radiusTop, radiusBottom, color, tag, null);
+            return;
+        }
+        double ex = x - soft.left() / 2;
+        double ey = y - soft.top() / 2;
+        double ew = w + (soft.left() + soft.right()) / 2;
+        double eh = h + (soft.top() + soft.bottom()) / 2;
+        if (!(ew > 0) || !(eh > 0)) {
+            return;
+        }
+        String id = "soft-" + (++masks);
+        boolean across = soft.left() > 0 || soft.right() > 0;
+        boolean down = soft.top() > 0 || soft.bottom() > 0;
+        out.append(indent).append("<defs>\n");
+        if (across) {
+            gradient(id + "-x", "1\" y2=\"0", soft.left() / ew, soft.right() / ew);
+        }
+        if (down) {
+            gradient(id + "-y", "0\" y2=\"1", soft.top() / eh, soft.bottom() / eh);
+        }
+        if (across && down) {
+            out.append(indent).append("  <mask id=\"").append(id).append("-ym\">");
+            maskRect(ex, ey, ew, eh, id + "-y", null);
+            out.append("</mask>\n");
+        }
+        out.append(indent).append("  <mask id=\"").append(id).append("\">");
+        maskRect(ex, ey, ew, eh, across ? id + "-x" : id + "-y", across && down ? id + "-ym" : null);
+        out.append("</mask>\n");
+        out.append(indent).append("</defs>\n");
+        fill(ex, ey, ew, eh, radiusTop, radiusBottom, color, tag, id);
+    }
+
+    /** Masks this sink has written, so each soft fill's ids are its own within the document. */
+    private int masks;
+
+    /** A white gradient along {@code direction} ({@code x2} then {@code y2}), rising over {@code from}, falling over {@code to}. */
+    private void gradient(String id, String direction, double from, double to) {
+        out.append(indent).append("  <linearGradient id=\"").append(id).append("\" x1=\"0\" y1=\"0\" x2=\"")
+                .append(direction).append("\">");
+        stop(0, 0);
+        stop(Math.min(1, from), 1);
+        stop(Math.max(0, 1 - to), 1);
+        stop(1, 0);
+        out.append("</linearGradient>\n");
+    }
+
+    private void stop(double offset, double opacity) {
+        out.append("<stop offset=\"").append(num(offset)).append("\" stop-color=\"#fff\" stop-opacity=\"")
+                .append(num(opacity)).append("\"/>");
+    }
+
+    private void maskRect(double x, double y, double w, double h, String gradient, String mask) {
+        out.append("<rect");
+        rect(x, y, w, h, 0);
+        out.append(" fill=\"url(#").append(gradient).append(")\"");
+        if (mask != null) {
+            out.append(" mask=\"url(#").append(mask).append(")\"");
+        }
+        out.append("/>");
+    }
+
+    private void fill(double x, double y, double w, double h, double radiusTop, double radiusBottom, Color color,
+                      String tag, String mask) {
         if (isCircle(w, h, radiusTop, radiusBottom)) {
             out.append(indent).append("<circle");
             circle(x, y, w);
@@ -74,6 +144,9 @@ public final class SvgSink implements Picture.Sink {
                     .append('"');
         }
         paint("fill", color);
+        if (mask != null) {
+            out.append(" mask=\"url(#").append(mask).append(")\"");
+        }
         cssClass(tag);
         out.append("/>\n");
     }

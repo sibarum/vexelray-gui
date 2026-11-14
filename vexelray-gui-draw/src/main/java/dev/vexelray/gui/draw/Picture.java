@@ -104,10 +104,13 @@ public record Picture(List<Mark> marks) {
             return to.color(ink);
         }
 
+        /** A soft edge across x is a span along x, so it stretches with the box; one across y does not. */
         @Override
-        public void fill(double x, double y, double w, double h, double radiusTop, double radiusBottom, Color color,
-                         String tag) {
-            to.fill(x(x), y, w * factor, h, radiusTop, radiusBottom, color, tag);
+        public void fill(double x, double y, double w, double h, double radiusTop, double radiusBottom, Soft soft,
+                         Color color, String tag) {
+            Soft stretched = soft.none() ? soft
+                    : new Soft(soft.left() * factor, soft.top(), soft.right() * factor, soft.bottom());
+            to.fill(x(x), y, w * factor, h, radiusTop, radiusBottom, stretched, color, tag);
         }
 
         @Override
@@ -184,10 +187,11 @@ public record Picture(List<Mark> marks) {
         /**
          * A filled rounded box with its top-left at {@code (x, y)}. Corner radii are per vertical half —
          * {@code radiusTop} above the centre line, {@code radiusBottom} below — so a rectangle is {@code (0, 0)},
-         * a circle is a square with both radii at half its side, and a tab is {@code (r, 0)}.
+         * a circle is a square with both radii at half its side, and a tab is {@code (r, 0)}. Each edge as soft as
+         * {@code soft} says ({@link Soft}), and {@link Soft#NONE} for a fill's ordinary edge.
          */
-        void fill(double x, double y, double w, double h, double radiusTop, double radiusBottom, Color color,
-                  String tag);
+        void fill(double x, double y, double w, double h, double radiusTop, double radiusBottom, Soft soft,
+                  Color color, String tag);
 
         /**
          * A {@code width}-px outline hugging the <b>inside</b> edge of that same rounded box, so an outline never
@@ -222,9 +226,52 @@ public record Picture(List<Mark> marks) {
     // Each mark holds an Ink: a colour, or a name the look decides when the mark is drawn ({@link Ink}). Every one keeps
     // its Color constructors, which are the same colour in every look.
 
-    /** A filled rounded box — see {@link Sink#fill}. */
-    public record Fill(double x, double y, double w, double h, double radiusTop, double radiusBottom, Ink ink,
-                       String tag) implements Mark {
+    /**
+     * How soft each edge of a {@link Fill} is, px: the edge's position spread evenly over that width, centred on where
+     * the edge is, so it reaches half the width out and half in and the box keeps its area. Zero is a fill's ordinary
+     * edge, one pixel soft, and nothing is drawn sharper than that.
+     *
+     * <p>What a mark that moved during the frame is drawn with: a box that travelled is exactly a box whose edges are
+     * spread over how far each went, so a part animating a mark along x gives it a soft left and right as wide as each
+     * edge moved in a shutter's time. Also a fade-out edge that is not motion at all.
+     */
+    public record Soft(double left, double top, double right, double bottom) {
+
+        /** Every edge a fill's own. */
+        public static final Soft NONE = new Soft(0, 0, 0, 0);
+
+        public Soft {
+            if (!(left >= 0) || !(top >= 0) || !(right >= 0) || !(bottom >= 0) || Double.isInfinite(left + top
+                    + right + bottom)) {
+                throw new IllegalArgumentException("an edge is soft by a finite width of at least 0 px: " + left
+                        + ", " + top + ", " + right + ", " + bottom);
+            }
+        }
+
+        /** Soft across x only: the left and the right edges, the top and bottom a fill's. */
+        public static Soft across(double left, double right) {
+            return left == 0 && right == 0 ? NONE : new Soft(left, 0, right, 0);
+        }
+
+        /** True when every edge is a fill's own. */
+        public boolean none() {
+            return left == 0 && top == 0 && right == 0 && bottom == 0;
+        }
+    }
+
+    /** A filled rounded box, each edge as soft as {@link Soft} says — see {@link Sink#fill}. */
+    public record Fill(double x, double y, double w, double h, double radiusTop, double radiusBottom, Soft soft,
+                       Ink ink, String tag) implements Mark {
+
+        public Fill {
+            soft = soft == null ? Soft.NONE : soft;
+        }
+
+        /** With a fill's ordinary edges. */
+        public Fill(double x, double y, double w, double h, double radiusTop, double radiusBottom, Ink ink,
+                    String tag) {
+            this(x, y, w, h, radiusTop, radiusBottom, Soft.NONE, ink, tag);
+        }
 
         /** In a fixed colour. */
         public Fill(double x, double y, double w, double h, double radiusTop, double radiusBottom, Color color,
@@ -242,14 +289,19 @@ public record Picture(List<Mark> marks) {
             this(x, y, w, h, radiusTop, radiusBottom, Ink.of(color), null);
         }
 
+        /** This fill with each edge as soft as {@code soft}. */
+        public Fill withSoft(Soft soft) {
+            return new Fill(x, y, w, h, radiusTop, radiusBottom, soft, ink, tag);
+        }
+
         @Override
         public Mark shifted(double dx, double dy) {
-            return new Fill(x + dx, y + dy, w, h, radiusTop, radiusBottom, ink, tag);
+            return new Fill(x + dx, y + dy, w, h, radiusTop, radiusBottom, soft, ink, tag);
         }
 
         @Override
         public void emitTo(Sink sink) {
-            sink.fill(x, y, w, h, radiusTop, radiusBottom, sink.color(ink), tag);
+            sink.fill(x, y, w, h, radiusTop, radiusBottom, soft, sink.color(ink), tag);
         }
     }
 

@@ -58,6 +58,35 @@ class CanvasSinkTest {
     }
 
     @Test
+    void aSoftFillIsOneQuadGrownByHalfItsSoftestEdge() {
+        // Still one mark, one quad, in the one batch: a soft edge is a look with a record, not a second draw.
+        Canvas plain = canvas();
+        Picture.of(new Picture.Fill(40, 40, 80, 4, 2, 2, INK)).emitTo(new CanvasSink(plain, null));
+        Canvas soft = canvas();
+        Picture.of(new Picture.Fill(40, 40, 80, 4, 2, 2, Picture.Soft.across(8, 24), Ink.of(INK), null))
+                .emitTo(new CanvasSink(soft, null));
+        assertEquals(PER_MARK, soft.vertexCount());
+        assertEquals(1, soft.runs().size());
+        assertEquals(5, soft.recordCount(), "its own record: the look, and the four softnesses");
+        assertEquals(0, plain.recordCount(), "a plain fill names the box's shared record, as it always did");
+        assertEquals(24f, width(soft) - width(plain), 1e-3f,
+                "the quad reaches half the softest edge, 24, further each way");
+    }
+
+    /** The quad's width in clip space, over the canvas's width: its first two corners' x apart, in px. */
+    private static float width(Canvas c) {
+        float[] v = c.toVertexArray();
+        float min = Float.MAX_VALUE;
+        float max = -Float.MAX_VALUE;
+        for (int k = 0; k < c.vertexCount(); k++) {
+            float x = v[k * CanvasVertex.FLOATS_PER_VERTEX];
+            min = Math.min(min, x);
+            max = Math.max(max, x);
+        }
+        return (max - min) * 0.5f * 200f;
+    }
+
+    @Test
     void everyColourGoesThroughTheSubtreeOpacity() {
         // A picture inside a fading subtree fades with it — the same treatment the tree renderer gives every
         // colour it paints, applied here because the sink is the only place a picture's colours are read.

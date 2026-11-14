@@ -83,15 +83,29 @@ public final class CanvasSink implements Picture.Sink {
                 (float) h, roles, alpha, null);
     }
 
+    /**
+     * A fill with ordinary edges is the canvas's own; one with a soft edge is the core set's soft fill, whose quad grows
+     * by half the softest edge. The two draw the same pixels while nothing is softer than a fill's edge, so a mark that
+     * comes to rest moves from one to the other with no change on screen.
+     */
     @Override
-    public void fill(double x, double y, double w, double h, double radiusTop, double radiusBottom, Color color,
-                     String tag) {
+    public void fill(double x, double y, double w, double h, double radiusTop, double radiusBottom, Picture.Soft soft,
+                     Color color, String tag) {
         if (color == null) {
             return;
         }
-        canvas.fillRoundRect((float) x, (float) y, (float) w, (float) h, (float) radiusTop, (float) radiusBottom,
-                fade(color));
+        if (soft.none()) {
+            canvas.fillRoundRect((float) x, (float) y, (float) w, (float) h, (float) radiusTop, (float) radiusBottom,
+                    fade(color));
+            return;
+        }
+        canvas.box((float) x, (float) y, (float) w, (float) h, (float) radiusTop, (float) radiusBottom, fade(color),
+                SOFT, (float) soft.left(), (float) soft.top(), (float) soft.right(), (float) soft.bottom());
     }
+
+    /** A soft fill: the box, filled with each edge as soft as the element says. */
+    private static final Look SOFT = Look.of(Look.Use.of(CoreShadelets.BOX.name()),
+            Look.Use.of(CoreShadelets.SOFT_FILL.name()));
 
     @Override
     public void outline(double x, double y, double w, double h, double radiusTop, double radiusBottom,

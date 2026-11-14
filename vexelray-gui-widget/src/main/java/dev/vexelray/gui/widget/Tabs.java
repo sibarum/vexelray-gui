@@ -150,6 +150,25 @@ public final class Tabs {
     private float indicatorRight = Float.NaN;
     private int indicatorGlide;
     private boolean indicatorGliding;
+    /**
+     * How soft each end of the indicator is drawn, px: {@link #SHUTTER} of how far that edge went since the indicator
+     * was last drawn. The edges of that last place, to measure the next from. Zero at rest. Guarded by
+     * {@code indicatorLock}.
+     */
+    private float indicatorSoftLeft;
+    private float indicatorSoftRight;
+    private float indicatorDrawnLeft = Float.NaN;
+    private float indicatorDrawnRight = Float.NaN;
+
+    /**
+     * The share of each step a gliding end is spread over: a film camera's half-open (180°) shutter, which blurs a
+     * moving thing over half the way it went between two frames. Measured in steps and not in time on purpose: a
+     * clock's steps are delivered later than the moments they stand for, sometimes two together after a stalled frame,
+     * so a speed taken from when they arrive is wildly wrong (a prototype measured one and drew a bar smeared across
+     * the whole tab strip). What a step moved is exact, and a step that jumped further, after a stall, gets the longer
+     * blur that hides the jump.
+     */
+    private static final float SHUTTER = 0.5f;
 
 
     /**
@@ -484,7 +503,8 @@ public final class Tabs {
      * <p>The ramp's own curve is the glide's: give it an eased-out one ({@code OUT_CUBIC}, around 200ms), since the
      * indicator is arriving somewhere. The leading edge goes first and the trailing one follows a little behind, so
      * the bar stretches toward where it is going and closes up when it gets there. A selection mid-glide turns round
-     * from where the bar is drawn.
+     * from where the bar is drawn. While it glides, each end is blurred along the bar by how fast it is going
+     * ({@link Picture.Soft}), so a quick move reads as motion rather than as a bar redrawn a little further on.
      *
      * <p>It is drawn over the bar, in the bar's overlay; the headers themselves are painted as before. For reduced
      * motion, pass a ramp that arrives at once, and the indicator still marks the selection.
@@ -534,8 +554,23 @@ public final class Tabs {
             }
             indicatorLeft = to[0];
             indicatorRight = to[1];
+            indicatorSoftLeft = 0f;    // at rest: a fill's own edges
+            indicatorSoftRight = 0f;
         }
         drawIndicator();
+    }
+
+    /**
+     * Put the gliding indicator at {@code (left, right)}, each end spread over {@link #SHUTTER} of how far it went since
+     * it was last drawn. Called with {@code indicatorLock} held.
+     */
+    private void placeGliding(float left, float right) {
+        if (!Float.isNaN(indicatorDrawnLeft)) {
+            indicatorSoftLeft = Math.abs(left - indicatorDrawnLeft) * SHUTTER;
+            indicatorSoftRight = Math.abs(right - indicatorDrawnRight) * SHUTTER;
+        }
+        indicatorLeft = left;
+        indicatorRight = right;
     }
 
     /** Glide the indicator from where it is drawn to header {@code index}. */
@@ -554,6 +589,8 @@ public final class Tabs {
             if (to == null || Float.isNaN(indicatorLeft)) {
                 // Nowhere to come from, or nowhere yet to go: be there. The header's resize places it when it can.
                 indicatorGliding = false;
+                indicatorSoftLeft = 0f;
+                indicatorSoftRight = 0f;
                 if (to != null) {
                     indicatorLeft = to[0];
                     indicatorRight = to[1];
@@ -581,8 +618,7 @@ public final class Tabs {
                 if (indicatorGlide != glide) {
                     return;   // superseded: a later selection owns the indicator now
                 }
-                indicatorLeft = l;
-                indicatorRight = Math.max(l, r);
+                placeGliding(l, Math.max(l, r));
             }
             drawIndicator();
         }, () -> {
@@ -597,16 +633,27 @@ public final class Tabs {
         });
     }
 
-    /** Paint the indicator where it is, along the bottom of the bar. */
+    /**
+     * Paint the indicator where it is, along the bottom of the bar: at rest a pill of the accent, and gliding the same
+     * pill with each end spread over half of how far it went since the last. The leading end, ahead, is the softer while
+     * the bar stretches, and the trailing one while it closes up. Nothing changes on screen as it comes to rest: a
+     * softness under a pixel is a fill's own edge.
+     */
     private void drawIndicator() {
         float left;
         float right;
+        float softLeft;
+        float softRight;
         synchronized (indicatorLock) {
             if (indicatorRamp == null || Float.isNaN(indicatorLeft)) {
                 return;
             }
             left = indicatorLeft;
             right = indicatorRight;
+            softLeft = indicatorSoftLeft;
+            softRight = indicatorSoftRight;
+            indicatorDrawnLeft = left;
+            indicatorDrawnRight = right;
         }
         NodeLayout b = bar.layout();
         if (!b.present()) {
@@ -616,7 +663,7 @@ public final class Tabs {
         float thick = Math.max(2f, Math.round(barH * 0.07f));
         Role accent = Role.ACCENT;   // a name: the indicator follows a theme swap
         bar.overlay(Picture.of(new Picture.Fill(left, barH - thick, Math.max(0f, right - left), thick,
-                thick * 0.5f, 0f, accent, "tab-indicator")));
+                thick * 0.5f, 0f, Picture.Soft.across(softLeft, softRight), accent, "tab-indicator")));
     }
 
     /**

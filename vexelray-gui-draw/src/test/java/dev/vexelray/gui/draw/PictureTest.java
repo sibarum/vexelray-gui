@@ -32,9 +32,11 @@ class PictureTest {
         }
 
         @Override
-        public void fill(double x, double y, double w, double h, double rTop, double rBottom, Color color,
-                         String tag) {
-            ops.add("fill " + x + "," + y + " " + w + "x" + h + " r" + rTop + "/" + rBottom + tagged(tag));
+        public void fill(double x, double y, double w, double h, double rTop, double rBottom, Picture.Soft soft,
+                         Color color, String tag) {
+            ops.add("fill " + x + "," + y + " " + w + "x" + h + " r" + rTop + "/" + rBottom
+                    + (soft.none() ? "" : " soft" + soft.left() + "/" + soft.top() + "/" + soft.right() + "/"
+                    + soft.bottom()) + tagged(tag));
         }
 
         @Override
@@ -73,6 +75,18 @@ class PictureTest {
     }
 
     @Test
+    void aFillCarriesItsSoftEdgesAndNoneByDefault() {
+        Picture.Fill plain = new Picture.Fill(0, 0, 10, 4, 0, 0, INK);
+        assertEquals(Picture.Soft.NONE, plain.soft(), "a fill's ordinary edges, unless it says otherwise");
+        Picture.Fill moving = plain.withSoft(Picture.Soft.across(2, 6));
+        assertEquals(List.of("fill 0.0,0.0 10.0x4.0 r0.0/0.0", "fill 5.0,0.0 10.0x4.0 r0.0/0.0 soft2.0/0.0/6.0/0.0"),
+                emitted(Picture.of(plain, moving.shifted(5, 0))), "the softness survives a shift");
+        assertSame(Picture.Soft.NONE, Picture.Soft.across(0, 0));
+        assertThrows(IllegalArgumentException.class, () -> new Picture.Soft(-1, 0, 0, 0));
+        assertThrows(IllegalArgumentException.class, () -> new Picture.Soft(Double.NaN, 0, 0, 0));
+    }
+
+    @Test
     void marksReachTheSinkInSubmissionOrder() {
         // Paint order is submission order, which is what lets a drawing say "this goes on top" by saying it last.
         Picture p = new Sketch()
@@ -103,6 +117,12 @@ class PictureTest {
                         "glyphs \"t\" 18.0,9.0 @12.0"),
                 r.ops);
         assertSame(r, Picture.stretchX(r, 1, 10), "no stretch: the sink itself");
+
+        // A soft edge across x is a span along x, so it stretches with the box; one across y keeps its width.
+        Recorder soft = new Recorder();
+        Picture.of(new Picture.Fill(20, 1, 4, 6, 0, 0, new Picture.Soft(3, 1, 5, 2), Ink.of(INK), null))
+                .emitTo(Picture.stretchX(soft, 2, 10));
+        assertEquals(List.of("fill 30.0,1.0 8.0x6.0 r0.0/0.0 soft6.0/1.0/10.0/2.0"), soft.ops);
         assertThrows(IllegalArgumentException.class, () -> Picture.stretchX(r, 0, 0));
         assertThrows(IllegalArgumentException.class, () -> Picture.stretchX(r, -1, 0));
     }
